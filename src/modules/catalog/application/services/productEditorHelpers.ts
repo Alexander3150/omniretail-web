@@ -30,8 +30,11 @@ export async function validateEditorProduct(
     throw new CatalogServiceError(Object.values(baseErrors)[0] ?? "Revisa los datos del producto.");
   }
 
-  if (dto.baseUnitId !== dto.saleUnitId && dto.saleToBaseFactor <= 0) {
-    throw new CatalogServiceError("El factor de conversion de venta debe ser mayor a 0.");
+  if (
+    dto.baseUnitId !== dto.saleUnitId &&
+    (!isPositiveNumber(dto.inventoryQuantity) || !isPositiveNumber(dto.saleQuantity))
+  ) {
+    throw new CatalogServiceError("La equivalencia de venta debe tener cantidades mayores a 0.");
   }
   const invalidMedia = dto.media.find(
     (media) => media.url.trim() && !isValidProductImageUrl(media.url.trim()),
@@ -137,9 +140,9 @@ async function syncUnitConversion(
       : [
           {
             tenantId: product.tenantId,
-            fromUnitId: dto.saleUnitId,
-            toUnitId: dto.baseUnitId,
-            factor: dto.saleToBaseFactor,
+            fromUnitId: dto.baseUnitId,
+            toUnitId: dto.saleUnitId,
+            factor: Number(dto.saleQuantity) / dto.inventoryQuantity,
           },
         ],
   );
@@ -170,7 +173,13 @@ async function syncAttributes(
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-|-$/g, "");
       definition =
-        definitions.find((item) => item.code === code) ??
+        definitions.find(
+          (item) =>
+            item.tenantId === product.tenantId &&
+            item.code === code &&
+            item.dataType === "text" &&
+            item.active,
+        ) ??
         (await repositories.attributes.createDefinition({
           tenantId: product.tenantId,
           name,
@@ -209,7 +218,7 @@ async function syncSupplierProducts(
       productId: product.id,
       supplierSku: supplierProduct.supplierSku?.trim() || undefined,
       purchaseUnitId: supplierProduct.purchaseUnitId,
-      purchaseToBaseFactor: supplierProduct.purchaseToBaseFactor,
+      purchaseToBaseFactor: Number(supplierProduct.purchaseToBaseFactor),
       lastCost: supplierProduct.lastCost,
       leadTimeDays: supplierProduct.leadTimeDays,
       minimumOrderQuantity: supplierProduct.minimumOrderQuantity,
@@ -312,7 +321,7 @@ function assertSupplierProducts(supplierProducts: ProductEditorDto["supplierProd
       throw new CatalogServiceError("No puedes asociar el mismo proveedor dos veces.");
     }
     suppliers.add(supplierProduct.supplierId);
-    if (supplierProduct.purchaseToBaseFactor <= 0) {
+    if (!isPositiveNumber(supplierProduct.purchaseToBaseFactor)) {
       throw new CatalogServiceError("El contenido de compra debe ser mayor a 0.");
     }
     if (supplierProduct.lastCost < 0) {
@@ -338,6 +347,10 @@ function assertSupplierProducts(supplierProducts: ProductEditorDto["supplierProd
       quantities.add(tier.minQuantity);
     }
   }
+}
+
+function isPositiveNumber(value: number | "") {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
 function normalizePreferredSupplier(supplierProducts: ProductEditorDto["supplierProducts"]) {

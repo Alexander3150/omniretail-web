@@ -165,11 +165,9 @@ export function ProductForm({
             ? getDefaultTracking(options.businessCapabilities, patch.productType)
             : applyTrackingRules(patch.productType, next.tracking, options.businessCapabilities);
       }
-      if (patch.baseUnitId && next.saleUnitId === current.baseUnitId) {
-        next.saleUnitId = patch.baseUnitId;
-      }
       if (next.baseUnitId === next.saleUnitId) {
-        next.saleToBaseFactor = 1;
+        next.inventoryQuantity = 1;
+        next.saleQuantity = 1;
       }
       return next;
     });
@@ -297,6 +295,8 @@ export function ProductForm({
           ) : null}
           {activeTab === "suppliers" ? (
             <SuppliersTab
+              baseUnitId={value.baseUnitId}
+              baseUnitName={baseUnit?.name ?? "unidad de inventario"}
               onChange={(supplierProducts) => updateValue({ supplierProducts })}
               suppliers={editorData.suppliers}
               units={options.units}
@@ -557,7 +557,13 @@ function UnitsTab({
         <FormField id="baseUnitId" label="Unidad de inventario *" error={errors.baseUnitId}>
           <Select
             id="baseUnitId"
-            onChange={(event) => onChange({ baseUnitId: event.target.value })}
+            onChange={(event) =>
+              onChange({
+                baseUnitId: event.target.value,
+                inventoryQuantity: 1,
+                saleQuantity: event.target.value === value.saleUnitId ? 1 : "",
+              })
+            }
             value={value.baseUnitId}
           >
             <option value="">Selecciona una unidad</option>
@@ -571,7 +577,13 @@ function UnitsTab({
         <FormField id="saleUnitId" label="Unidad de venta *" error={errors.saleUnitId}>
           <Select
             id="saleUnitId"
-            onChange={(event) => onChange({ saleUnitId: event.target.value })}
+            onChange={(event) =>
+              onChange({
+                saleUnitId: event.target.value,
+                inventoryQuantity: 1,
+                saleQuantity: event.target.value === value.baseUnitId ? 1 : "",
+              })
+            }
             value={value.saleUnitId}
           >
             <option value="">Selecciona una unidad</option>
@@ -585,18 +597,41 @@ function UnitsTab({
       </div>
       {needsConversion ? (
         <div className="rounded-md border border-[var(--color-border)] p-4">
-          <FormField id="saleToBaseFactor" label={`1 ${saleUnit?.name ?? "unidad de venta"} =`}>
-            <div className="grid gap-3 sm:grid-cols-[160px_1fr]">
-              <Input
-                id="saleToBaseFactor"
-                min="0.0001"
-                onChange={(event) => onChange({ saleToBaseFactor: Number(event.target.value) })}
-                step="0.0001"
-                type="number"
-                value={value.saleToBaseFactor}
-              />
-              <div className="flex min-h-11 items-center rounded-md bg-[var(--color-app-background)] px-3 text-sm font-semibold text-[var(--color-title)]">
-                {baseUnit?.name ?? "unidad base"}
+          <FormField id="saleQuantity" label="Equivalencia inventario -> venta">
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+              <div className="grid gap-2 sm:grid-cols-[120px_1fr]">
+                <Input
+                  id="inventoryQuantity"
+                  min="0.0001"
+                  onChange={(event) => onChange({ inventoryQuantity: Number(event.target.value) })}
+                  step="0.0001"
+                  type="number"
+                  value={value.inventoryQuantity}
+                />
+                <div className="flex min-h-11 items-center rounded-md bg-[var(--color-app-background)] px-3 text-sm font-semibold text-[var(--color-title)]">
+                  {baseUnit?.name ?? "unidad de inventario"}
+                </div>
+              </div>
+              <div className="flex min-h-11 items-center justify-center text-sm font-bold text-[var(--color-title)]">
+                =
+              </div>
+              <div className="grid gap-2 sm:grid-cols-[120px_1fr]">
+                <Input
+                  id="saleQuantity"
+                  min="0.0001"
+                  onChange={(event) =>
+                    onChange({
+                      saleQuantity:
+                        event.target.value === "" ? "" : Number(event.target.value),
+                    })
+                  }
+                  step="0.0001"
+                  type="number"
+                  value={value.saleQuantity}
+                />
+                <div className="flex min-h-11 items-center rounded-md bg-[var(--color-app-background)] px-3 text-sm font-semibold text-[var(--color-title)]">
+                  {saleUnit?.name ?? "unidad de venta"}
+                </div>
               </div>
             </div>
           </FormField>
@@ -1191,11 +1226,15 @@ function PromotionEditor({
 }
 
 function SuppliersTab({
+  baseUnitId,
+  baseUnitName,
   value,
   suppliers,
   units,
   onChange,
 }: {
+  baseUnitId: string;
+  baseUnitName: string;
   value: SupplierProductEditorValue[];
   suppliers: ProductEditorData["suppliers"];
   units: ProductFormOptions["units"];
@@ -1205,7 +1244,7 @@ function SuppliersTab({
   const availableSuppliers = suppliers.filter(
     (supplier) => !value.some((item) => item.supplierId === supplier.id),
   );
-  const defaultUnitId = units[0]?.id ?? "";
+  const defaultUnitId = baseUnitId || units[0]?.id || "";
 
   function updateSupplier(index: number, patch: Partial<SupplierProductEditorValue>) {
     let next = value.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item));
@@ -1275,13 +1314,16 @@ function SuppliersTab({
           {value.map((item, index) => {
             const supplier = suppliers.find((supplierItem) => supplierItem.id === item.supplierId);
             const purchaseUnit = units.find((unit) => unit.id === item.purchaseUnitId);
+            const needsPurchaseConversion = item.purchaseUnitId !== baseUnitId;
             return (
               <article className="space-y-4 rounded-md border border-[var(--color-border)] p-4" key={`${item.id ?? "new"}-${item.supplierId}`}>
                 <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                   <div>
                     <h3 className="font-bold text-[var(--color-title)]">{supplier?.name ?? "Proveedor"}</h3>
                     <p className="text-sm text-[var(--color-text-muted)]">
-                      1 {purchaseUnit?.name ?? "unidad de compra"} = {item.purchaseToBaseFactor} unidades base
+                      {needsPurchaseConversion
+                        ? `1 ${purchaseUnit?.name ?? "unidad de compra"} = ${item.purchaseToBaseFactor || "-"} ${baseUnitName}`
+                        : "La compra usa la unidad de inventario."}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -1312,7 +1354,12 @@ function SuppliersTab({
                   <NativeField label="Presentacion/unidad de compra">
                     <select
                       className={inputClassName}
-                      onChange={(event) => updateSupplier(index, { purchaseUnitId: event.target.value })}
+                      onChange={(event) =>
+                        updateSupplier(index, {
+                          purchaseUnitId: event.target.value,
+                          purchaseToBaseFactor: event.target.value === baseUnitId ? 1 : "",
+                        })
+                      }
                       value={item.purchaseUnitId}
                     >
                       {units.map((unit) => (
@@ -1322,16 +1369,28 @@ function SuppliersTab({
                       ))}
                     </select>
                   </NativeField>
-                  <NativeField label="Contenido en unidad base">
-                    <input
-                      className={inputClassName}
-                      min="0.0001"
-                      onChange={(event) => updateSupplier(index, { purchaseToBaseFactor: Number(event.target.value) })}
-                      step="0.0001"
-                      type="number"
-                      value={item.purchaseToBaseFactor}
-                    />
-                  </NativeField>
+                  {needsPurchaseConversion ? (
+                    <NativeField label="Contenido en inventario">
+                      <input
+                        className={inputClassName}
+                        min="0.0001"
+                        onChange={(event) =>
+                          updateSupplier(index, {
+                            purchaseToBaseFactor:
+                              event.target.value === "" ? "" : Number(event.target.value),
+                          })
+                        }
+                        placeholder="Cantidad"
+                        step="0.0001"
+                        type="number"
+                        value={item.purchaseToBaseFactor}
+                      />
+                    </NativeField>
+                  ) : (
+                    <div className="rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-title)]">
+                      Factor implicito 1
+                    </div>
+                  )}
                   <NativeField label="Costo">
                     <input
                       className={inputClassName}
@@ -1707,8 +1766,11 @@ function validatePromotionForm(state: PromotionFormState, salePrice: number) {
 }
 
 function validateEditor(value: ProductEditorDto) {
-  if (value.baseUnitId !== value.saleUnitId && value.saleToBaseFactor <= 0) {
-    return "El factor de conversion de venta debe ser mayor a 0.";
+  if (
+    value.baseUnitId !== value.saleUnitId &&
+    (!isPositiveNumber(value.inventoryQuantity) || !isPositiveNumber(value.saleQuantity))
+  ) {
+    return "La equivalencia de venta debe tener cantidades mayores a 0.";
   }
   const salesQuantities = new Set<number>();
   for (const tier of value.salesPriceTiers) {
@@ -1721,7 +1783,7 @@ function validateEditor(value: ProductEditorDto) {
   for (const supplierProduct of value.supplierProducts) {
     if (supplierIds.has(supplierProduct.supplierId)) return "No repitas proveedores.";
     supplierIds.add(supplierProduct.supplierId);
-    if (supplierProduct.purchaseToBaseFactor <= 0) return "El contenido de compra debe ser mayor a 0.";
+    if (!isPositiveNumber(supplierProduct.purchaseToBaseFactor)) return "El contenido de compra debe ser mayor a 0.";
     if (supplierProduct.lastCost < 0) return "El costo del proveedor debe ser mayor o igual a 0.";
     if (supplierProduct.minimumOrderQuantity <= 0) return "El pedido minimo debe ser mayor a 0.";
     if (supplierProduct.leadTimeDays < 0) return "La entrega no puede ser negativa.";
@@ -1767,7 +1829,7 @@ function routeToFirstError(
     setActiveTab("media");
   } else if (editorError) {
     setActiveTab(
-      editorError.includes("conversion")
+      editorError.includes("conversion") || editorError.includes("equivalencia")
         ? "units"
         : editorError.includes("mayorista")
           ? "prices"
@@ -1805,6 +1867,15 @@ function buildInitialValue(options: ProductFormOptions, editorData: ProductEdito
   const detail = editorData.detail;
   if (detail) {
     const saleUnitId = detail.product.saleUnitId ?? detail.product.baseUnitId;
+    const sameUnit = detail.product.baseUnitId === saleUnitId;
+    const conversion = editorData.unitConversion;
+    const conversionQuantities: Pick<ProductEditorDto, "inventoryQuantity" | "saleQuantity"> =
+      sameUnit || !conversion
+        ? { inventoryQuantity: 1, saleQuantity: sameUnit ? 1 : "" }
+        : conversion.fromUnitId === detail.product.baseUnitId &&
+            conversion.toUnitId === saleUnitId
+          ? { inventoryQuantity: 1, saleQuantity: conversion.factor }
+          : { inventoryQuantity: conversion.factor, saleQuantity: 1 };
     return {
       sku: detail.product.sku,
       barcode: detail.product.barcode,
@@ -1815,8 +1886,8 @@ function buildInitialValue(options: ProductFormOptions, editorData: ProductEdito
       categoryId: detail.product.categoryId,
       baseUnitId: detail.product.baseUnitId,
       saleUnitId,
-      saleToBaseFactor:
-        detail.product.baseUnitId === saleUnitId ? 1 : editorData.unitConversion?.factor ?? 1,
+      inventoryQuantity: conversionQuantities.inventoryQuantity,
+      saleQuantity: conversionQuantities.saleQuantity,
       salePrice: detail.product.salePrice,
       status: detail.product.status,
       tracking: applyTrackingRules(
@@ -1843,7 +1914,8 @@ function buildInitialValue(options: ProductFormOptions, editorData: ProductEdito
     categoryId: options.categories[0]?.id ?? "",
     baseUnitId: unitId,
     saleUnitId: unitId,
-    saleToBaseFactor: 1,
+    inventoryQuantity: 1,
+    saleQuantity: 1,
     salePrice: 0,
     status: ProductStatus.published,
     tracking: getDefaultTracking(options.businessCapabilities, ProductType.physical),
@@ -1857,3 +1929,7 @@ function buildInitialValue(options: ProductFormOptions, editorData: ProductEdito
 
 const inputClassName =
   "h-10 w-full rounded-md border border-[var(--color-border)] bg-white px-3 text-sm text-[var(--color-text)] outline-none transition hover:border-[var(--color-structure)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40";
+
+function isPositiveNumber(value: number | "") {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}

@@ -62,12 +62,19 @@ export class GetProductEditorDataService {
       this.repositories.promotions.getByProduct(productId),
     ]);
 
+    const saleUnitId = detail.product.saleUnitId ?? detail.product.baseUnitId;
     const unitConversion =
       conversions.find(
         (conversion) =>
-          conversion.fromUnitId === (detail.product.saleUnitId ?? detail.product.baseUnitId) &&
+          conversion.fromUnitId === detail.product.baseUnitId &&
+          conversion.toUnitId === saleUnitId,
+      ) ??
+      conversions.find(
+        (conversion) =>
+          conversion.fromUnitId === saleUnitId &&
           conversion.toUnitId === detail.product.baseUnitId,
-      ) ?? null;
+      ) ??
+      null;
 
     const supplierProductsWithCosts: SupplierProductEditorValue[] = await Promise.all(
       supplierProducts.map(async (supplierProduct) => ({

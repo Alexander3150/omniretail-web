@@ -32,7 +32,6 @@ export type SupplierProductEditorValue = Pick<
   | "supplierId"
   | "supplierSku"
   | "purchaseUnitId"
-  | "purchaseToBaseFactor"
   | "lastCost"
   | "leadTimeDays"
   | "minimumOrderQuantity"
@@ -40,6 +39,7 @@ export type SupplierProductEditorValue = Pick<
   | "active"
 > & {
   id?: string;
+  purchaseToBaseFactor: number | "";
   costTiers: SupplierCostTierEditorValue[];
 };
 
@@ -51,7 +51,8 @@ export type ProductMediaEditorValue = Pick<
 };
 
 export interface ProductEditorDto extends Omit<CreateProductDto, "primaryImageUrl"> {
-  saleToBaseFactor: number;
+  inventoryQuantity: number;
+  saleQuantity: number | "";
   attributes: ProductAttributeEditorValue[];
   salesPriceTiers: ProductSalesPriceTierEditorValue[];
   supplierProducts: SupplierProductEditorValue[];
