@@ -12,18 +12,21 @@ import type { ProductStatus, ProductType } from "@/core/enums";
 import type { ProductChannels } from "@/core/entities/Product";
 import type { ProductTrackingConfig } from "@/core/types/tracking.types";
 
-export type ProductChannelFilter = "all" | keyof ProductChannels;
+export type ProductPromotionFilter = "all" | "with" | "without";
+export type ProductChannelKey = keyof ProductChannels;
 
 export interface ProductFiltersState {
   search: string;
   status: "all" | ProductStatus;
   productType: "all" | ProductType;
   categoryId: "all" | string;
-  channel: ProductChannelFilter;
+  channels: ProductChannelKey[];
+  promotion: ProductPromotionFilter;
 }
 
 export interface ProductListItem {
   id: string;
+  tenantId: string;
   imageUrl: string;
   sku: string;
   barcode?: string;
@@ -36,6 +39,7 @@ export interface ProductListItem {
   productType: ProductType;
   salePrice: number;
   channels: ProductChannels;
+  hasActivePromotion: boolean;
   status: ProductStatus;
   tracking: ProductTrackingConfig;
 }

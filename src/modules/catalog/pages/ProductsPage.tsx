@@ -16,6 +16,7 @@ import { ProductPromotionDialog } from "@/modules/catalog/components/ProductProm
 import { ProductQuickView } from "@/modules/catalog/components/ProductQuickView";
 import { ProductTable } from "@/modules/catalog/components/ProductTable";
 import { ProductToolbar } from "@/modules/catalog/components/ProductToolbar";
+import { ChevronLeftIcon, ChevronRightIcon } from "@/modules/catalog/components/CatalogIcons";
 import { useProductFormOptions } from "@/modules/catalog/hooks/useProductFormOptions";
 import { useProductMutations } from "@/modules/catalog/hooks/useProductMutations";
 import { useProducts } from "@/modules/catalog/hooks/useProducts";
@@ -135,7 +136,7 @@ export function ProductsPage() {
           ) : null}
           {products.length > 0 && filteredProducts.length === 0 ? (
             <div className="flex justify-center">
-              <Button onClick={clearAllFilters} type="button">
+              <Button onClick={clearAllFilters} type="button" variant="secondary">
                 Limpiar filtros
               </Button>
             </div>
@@ -143,7 +144,11 @@ export function ProductsPage() {
         </>
       )}
       <ProductQuickView product={quickViewProduct} onClose={() => setQuickViewProduct(null)} />
-      <ProductPromotionDialog product={promotionTarget} onClose={() => setPromotionTarget(null)} />
+      <ProductPromotionDialog
+        key={promotionTarget?.id ?? "promotion-dialog"}
+        product={promotionTarget}
+        onClose={() => setPromotionTarget(null)}
+      />
       <ProductPriceHistoryDialog
         product={priceHistoryTarget}
         onClose={() => setPriceHistoryTarget(null)}
@@ -206,8 +211,9 @@ function ProductTableFooter({
           disabled={page <= 1}
           onClick={() => onPageChange(page - 1)}
           type="button"
+          variant="secondary"
         >
-          &lt;
+          <ChevronLeftIcon />
         </Button>
         <span className="min-w-12 text-center text-sm font-semibold text-[var(--color-text)]">
           {page} / {totalPages}
@@ -218,8 +224,9 @@ function ProductTableFooter({
           disabled={page >= totalPages}
           onClick={() => onPageChange(page + 1)}
           type="button"
+          variant="secondary"
         >
-          &gt;
+          <ChevronRightIcon />
         </Button>
       </nav>
     </div>

@@ -2,6 +2,7 @@
 
 import { Button } from "@/shared/components/Button";
 import { SearchInput } from "@/shared/components/SearchInput";
+import { FilterIcon, PlusIcon } from "@/modules/catalog/components/CatalogIcons";
 
 interface ProductToolbarProps {
   search: string;
@@ -39,10 +40,20 @@ export function ProductToolbar({
           aria-expanded={filtersOpen}
           onClick={onToggleFilters}
           type="button"
+          variant="secondary"
         >
-          Filtros{activeFiltersCount ? ` ${activeFiltersCount}` : ""}
+          <FilterIcon />
+          Filtros
+          {activeFiltersCount ? (
+            <span className="rounded-full bg-[var(--color-primary)] px-2 py-0.5 text-xs text-white">
+              {activeFiltersCount}
+            </span>
+          ) : null}
         </Button>
-        <Button href="/catalogo/productos/nuevo">+ Nuevo producto</Button>
+        <Button href="/catalogo/productos/nuevo">
+          <PlusIcon />
+          Nuevo producto
+        </Button>
       </div>
     </header>
   );

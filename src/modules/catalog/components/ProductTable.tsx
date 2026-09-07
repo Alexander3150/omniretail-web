@@ -5,6 +5,12 @@
 import type { ReactNode } from "react";
 import { ProductStatus } from "@/core/enums";
 import { ProductActionsMenu } from "@/modules/catalog/components/ProductActionsMenu";
+import {
+  GlobeIcon,
+  MobileIcon,
+  PosIcon,
+  TagIcon,
+} from "@/modules/catalog/components/CatalogIcons";
 import { productTypeLabels } from "@/modules/catalog/components/productLabels";
 import type { ProductListItem } from "@/modules/catalog/types/catalog.types";
 import { StatusBadge } from "@/shared/components/StatusBadge";
@@ -31,7 +37,7 @@ export function ProductTable({
   footer,
 }: ProductTableProps) {
   return (
-    <div className="rounded-md border border-[var(--color-border)] bg-white">
+    <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-sm">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[920px] border-collapse text-left text-sm">
           <thead className="bg-[var(--color-app-background)] text-xs uppercase text-[var(--color-title)]">
@@ -55,8 +61,8 @@ export function ProductTable({
               products.map((product) => (
                 <tr
                   className={cn(
-                    "cursor-pointer border-t border-[var(--color-border)] transition hover:bg-[var(--color-app-background)]/70 focus:bg-[var(--color-app-background)]/70 focus:outline focus:outline-2 focus:outline-inset focus:outline-[var(--color-structure)]",
-                    product.status === ProductStatus.archived && "opacity-70",
+                    "cursor-pointer border-t border-[var(--color-border)] transition hover:bg-[var(--color-primary)]/5 focus:bg-[var(--color-primary)]/5 focus:outline focus:outline-2 focus:outline-inset focus:outline-[var(--color-structure)]",
+                    product.status === ProductStatus.archived && "bg-slate-50/70 opacity-75",
                   )}
                   key={product.id}
                   onClick={() => onOpenQuickView(product)}
@@ -78,6 +84,12 @@ export function ProductTable({
                         </p>
                         <div className="mt-1 flex flex-wrap gap-1.5">
                           <StatusBadge status={product.status} />
+                          {product.hasActivePromotion ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-1 text-xs font-semibold text-[var(--color-title)]">
+                              <TagIcon />
+                              Promo
+                            </span>
+                          ) : null}
                           <span className="inline-flex rounded-md bg-[var(--color-app-background)] px-2 py-1 text-xs font-semibold text-[var(--color-title)]">
                             {productTypeLabels[product.productType]}
                           </span>
@@ -96,9 +108,15 @@ export function ProductTable({
                   <td className="px-4 py-3 text-[var(--color-text)]">{product.baseUnitName}</td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1.5">
-                      <ChannelChip active={product.channels.pos}>POS</ChannelChip>
-                      <ChannelChip active={product.channels.ecommerce}>Web</ChannelChip>
-                      <ChannelChip active={product.channels.mobileApp}>App</ChannelChip>
+                      <ChannelChip active={product.channels.pos} icon={<PosIcon />}>
+                        POS
+                      </ChannelChip>
+                      <ChannelChip active={product.channels.ecommerce} icon={<GlobeIcon />}>
+                        Web
+                      </ChannelChip>
+                      <ChannelChip active={product.channels.mobileApp} icon={<MobileIcon />}>
+                        App
+                      </ChannelChip>
                     </div>
                   </td>
                   <td className="px-4 py-3">
@@ -122,16 +140,25 @@ export function ProductTable({
   );
 }
 
-function ChannelChip({ active, children }: { active: boolean; children: string }) {
+function ChannelChip({
+  active,
+  children,
+  icon,
+}: {
+  active: boolean;
+  children: string;
+  icon: ReactNode;
+}) {
   return (
     <span
       className={cn(
-        "inline-flex rounded-md border px-2 py-1 text-xs font-semibold",
+        "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold",
         active
-          ? "border-[var(--color-primary)] bg-[var(--color-app-background)] text-[var(--color-title)]"
+          ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-title)]"
           : "border-[var(--color-border)] bg-white text-[var(--color-text-muted)]",
       )}
     >
+      {icon}
       {children}
     </span>
   );

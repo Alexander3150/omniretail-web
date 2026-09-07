@@ -10,10 +10,15 @@ import { StatusBadge } from "@/shared/components/StatusBadge";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
 import { cn } from "@/shared/utils/cn";
 import {
-  formatChannels,
   formatTracking,
   productTypeLabels,
 } from "@/modules/catalog/components/productLabels";
+import {
+  GlobeIcon,
+  MobileIcon,
+  PencilIcon,
+  PosIcon,
+} from "@/modules/catalog/components/CatalogIcons";
 import { useProductQuickView } from "@/modules/catalog/hooks/useProductQuickView";
 import type { ProductListItem, ProductQuickViewModel } from "@/modules/catalog/types/catalog.types";
 
@@ -139,6 +144,7 @@ export function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
             }}
             type="button"
           >
+            <PencilIcon />
             Editar
           </Button>
         </footer>
@@ -164,7 +170,7 @@ function QuickViewGeneral({ detail }: { detail: ProductQuickViewModel }) {
         <DetailItem label="Estado" value={<StatusBadge status={product.status} />} />
         <DetailItem label="Precio" value={formatCurrency(product.salePrice)} />
         <DetailItem label="Tipo" value={productTypeLabels[product.productType]} />
-        <DetailItem label="Canales" value={formatChannels(product.channels)} />
+        <DetailItem label="Canales" value={<ChannelSummary product={product} />} />
         <DetailItem label="Tracking" value={formatTracking(product.tracking)} />
       </dl>
     </div>
@@ -273,6 +279,46 @@ function DetailItem({ label, value }: { label: string; value: ReactNode }) {
       <dt className="text-xs font-semibold uppercase text-[var(--color-text-muted)]">{label}</dt>
       <dd className="mt-1 text-sm font-semibold text-[var(--color-text)]">{value}</dd>
     </div>
+  );
+}
+
+function ChannelSummary({ product }: { product: ProductQuickViewModel["product"] }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      <ChannelPill active={product.channels.pos} icon={<PosIcon />}>
+        POS
+      </ChannelPill>
+      <ChannelPill active={product.channels.ecommerce} icon={<GlobeIcon />}>
+        Web
+      </ChannelPill>
+      <ChannelPill active={product.channels.mobileApp} icon={<MobileIcon />}>
+        App
+      </ChannelPill>
+    </div>
+  );
+}
+
+function ChannelPill({
+  active,
+  children,
+  icon,
+}: {
+  active: boolean;
+  children: string;
+  icon: ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold",
+        active
+          ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-title)]"
+          : "border-[var(--color-border)] bg-white text-[var(--color-text-muted)]",
+      )}
+    >
+      {icon}
+      {children}
+    </span>
   );
 }
 

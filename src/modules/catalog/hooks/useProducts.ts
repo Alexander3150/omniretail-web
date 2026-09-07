@@ -14,7 +14,8 @@ const initialFilters: ProductFiltersState = {
   status: "all",
   productType: "all",
   categoryId: "all",
-  channel: "all",
+  channels: [],
+  promotion: "all",
 };
 
 export function useProducts() {
@@ -40,6 +41,7 @@ export function useProducts() {
   }, [service]);
 
   useDataEvent("product.changed", reload);
+  useDataEvent("promotion.changed", reload);
 
   useEffect(() => {
     let active = true;
@@ -122,9 +124,22 @@ function filterProducts(products: ProductListItem[], filters: ProductFiltersStat
       filters.productType === "all" || product.productType === filters.productType;
     const matchesCategory =
       filters.categoryId === "all" || product.categoryId === filters.categoryId;
-    const matchesChannel = filters.channel === "all" || product.channels[filters.channel];
+    const matchesChannel =
+      filters.channels.length === 0 ||
+      filters.channels.some((channel) => product.channels[channel]);
+    const matchesPromotion =
+      filters.promotion === "all" ||
+      (filters.promotion === "with" && product.hasActivePromotion) ||
+      (filters.promotion === "without" && !product.hasActivePromotion);
 
-    return matchesSearch && matchesStatus && matchesType && matchesCategory && matchesChannel;
+    return (
+      matchesSearch &&
+      matchesStatus &&
+      matchesType &&
+      matchesCategory &&
+      matchesChannel &&
+      matchesPromotion
+    );
   });
 }
 

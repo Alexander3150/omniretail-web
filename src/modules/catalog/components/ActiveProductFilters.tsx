@@ -3,12 +3,17 @@
 import type { Category } from "@/core/entities";
 import { ProductStatus, ProductType } from "@/core/enums";
 import { productTypeLabels } from "@/modules/catalog/components/productLabels";
-import type { ProductFiltersState } from "@/modules/catalog/types/catalog.types";
+import type { ProductChannelKey, ProductFiltersState } from "@/modules/catalog/types/catalog.types";
 
-const channelLabels: Record<Exclude<ProductFiltersState["channel"], "all">, string> = {
+const channelLabels: Record<ProductChannelKey, string> = {
   pos: "POS",
   ecommerce: "Web",
   mobileApp: "App",
+};
+
+const promotionLabels: Record<Exclude<ProductFiltersState["promotion"], "all">, string> = {
+  with: "Con promoción",
+  without: "Sin promoción",
 };
 
 interface ActiveProductFiltersProps {
@@ -23,7 +28,8 @@ export function getActiveProductFiltersCount(filters: ProductFiltersState) {
     filters.status !== "all",
     filters.productType !== "all",
     filters.categoryId !== "all",
-    filters.channel !== "all",
+    filters.channels.length > 0,
+    filters.promotion !== "all",
   ].filter(Boolean).length;
 }
 
@@ -56,11 +62,18 @@ export function ActiveProductFilters({
           clear: () => onRemove({ categoryId: "all" }),
         }
       : null,
-    filters.channel !== "all"
+    filters.channels.length
       ? {
-          key: "channel",
-          label: channelLabels[filters.channel],
-          clear: () => onRemove({ channel: "all" }),
+          key: "channels",
+          label: `Canales: ${filters.channels.map((channel) => channelLabels[channel]).join(" + ")}`,
+          clear: () => onRemove({ channels: [] }),
+        }
+      : null,
+    filters.promotion !== "all"
+      ? {
+          key: "promotion",
+          label: promotionLabels[filters.promotion],
+          clear: () => onRemove({ promotion: "all" }),
         }
       : null,
   ].filter((chip): chip is { key: string; label: string; clear: () => void } => Boolean(chip));
@@ -71,7 +84,7 @@ export function ActiveProductFilters({
     <div className="flex flex-wrap items-center gap-2">
       {chips.map((chip) => (
         <button
-          className="inline-flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--color-title)] transition hover:bg-[var(--color-app-background)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]"
+          className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--color-title)] transition hover:bg-[var(--color-app-background)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]"
           key={chip.key}
           onClick={chip.clear}
           type="button"

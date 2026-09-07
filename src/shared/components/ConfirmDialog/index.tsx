@@ -26,10 +26,10 @@ export function ConfirmDialog({
       onClose={onCancel}
       footer={
         <div className="flex justify-end gap-2">
-          <Button onClick={onCancel} type="button">
+          <Button onClick={onCancel} type="button" variant="secondary">
             {cancelLabel}
           </Button>
-          <Button onClick={onConfirm} type="button">
+          <Button onClick={onConfirm} type="button" variant="danger">
             {confirmLabel}
           </Button>
         </div>
