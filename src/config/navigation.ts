@@ -10,7 +10,16 @@ import { receivingNavigation } from "@/modules/receiving/navigation";
 import { storefrontNavigation } from "@/modules/storefront/navigation";
 import type { NavigationItem } from "@/shared/types/navigation.types";
 
+export const baseNavigation = [
+  {
+    id: "home",
+    label: "Inicio",
+    href: "/inicio",
+  },
+] satisfies NavigationItem[];
+
 export const navigationConfig = [
+  ...baseNavigation,
   ...authNavigation,
   ...customerNavigation,
   ...storefrontNavigation,

@@ -1,6 +1,7 @@
 export interface NavigationItem {
+  id: string;
   label: string;
-  href: string;
-  permissionKey?: string;
+  href?: string;
+  permission?: string;
   children?: NavigationItem[];
 }
