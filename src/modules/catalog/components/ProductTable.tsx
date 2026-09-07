@@ -2,87 +2,128 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useRouter } from "next/navigation";
 import { ProductStatus } from "@/core/enums";
-import { Button } from "@/shared/components/Button";
-import { DataTable, type DataTableColumn } from "@/shared/components/DataTable";
-import { StatusBadge } from "@/shared/components/StatusBadge";
-import { formatCurrency } from "@/shared/utils/formatCurrency";
+import { ProductActionsMenu } from "@/modules/catalog/components/ProductActionsMenu";
+import { productTypeLabels } from "@/modules/catalog/components/productLabels";
 import type { ProductListItem } from "@/modules/catalog/types/catalog.types";
-import { formatChannels, productTypeLabels } from "@/modules/catalog/components/productLabels";
+import { StatusBadge } from "@/shared/components/StatusBadge";
+import { cn } from "@/shared/utils/cn";
+import { formatCurrency } from "@/shared/utils/formatCurrency";
 
 interface ProductTableProps {
   products: ProductListItem[];
   emptyMessage: string;
+  onOpenQuickView: (product: ProductListItem) => void;
+  onPromotion: (product: ProductListItem) => void;
+  onPriceHistory: (product: ProductListItem) => void;
   onArchive: (product: ProductListItem) => void;
 }
 
-export function ProductTable({ products, emptyMessage, onArchive }: ProductTableProps) {
-  const router = useRouter();
-  const columns: DataTableColumn<ProductListItem>[] = [
-    {
-      key: "image",
-      header: "Imagen",
-      cell: (product) => (
-        <img
-          alt={product.name}
-          className="h-12 w-12 rounded-md border border-[var(--color-border)] object-cover"
-          src={product.imageUrl}
-        />
-      ),
-      className: "w-20",
-    },
-    { key: "sku", header: "Codigo / SKU", cell: (product) => product.sku },
-    {
-      key: "product",
-      header: "Producto",
-      cell: (product) => (
-        <div>
-          <p className="font-semibold text-[var(--color-title)]">{product.name}</p>
-          {product.brand ? (
-            <p className="text-xs text-[var(--color-text-muted)]">{product.brand}</p>
-          ) : null}
-        </div>
-      ),
-    },
-    { key: "category", header: "Categoria", cell: (product) => product.categoryName },
-    { key: "type", header: "Tipo", cell: (product) => productTypeLabels[product.productType] },
-    { key: "price", header: "Precio", cell: (product) => formatCurrency(product.salePrice) },
-    { key: "channels", header: "Canales", cell: (product) => formatChannels(product.channels) },
-    { key: "status", header: "Estado", cell: (product) => <StatusBadge status={product.status} /> },
-    {
-      key: "actions",
-      header: "Acciones",
-      cell: (product) => (
-        <div className="flex flex-wrap gap-2" onClick={(event) => event.stopPropagation()}>
-          <Button className="min-h-9 px-3 py-1.5" href={`/catalogo/productos/${product.id}`}>
-            Ver
-          </Button>
-          <Button className="min-h-9 px-3 py-1.5" href={`/catalogo/productos/${product.id}/editar`}>
-            Editar
-          </Button>
-          {product.status === ProductStatus.published ? (
-            <Button
-              className="min-h-9 px-3 py-1.5"
-              onClick={() => onArchive(product)}
-              type="button"
-            >
-              Archivar
-            </Button>
-          ) : null}
-        </div>
-      ),
-    },
-  ];
-
+export function ProductTable({
+  products,
+  emptyMessage,
+  onOpenQuickView,
+  onPromotion,
+  onPriceHistory,
+  onArchive,
+}: ProductTableProps) {
   return (
-    <DataTable
-      columns={columns}
-      data={products}
-      emptyMessage={emptyMessage}
-      onRowClick={(product) => router.push(`/catalogo/productos/${product.id}`)}
-      onRowDoubleClick={(product) => router.push(`/catalogo/productos/${product.id}/editar`)}
-      rowKey={(product) => product.id}
-    />
+    <div className="overflow-x-auto rounded-md border border-[var(--color-border)] bg-white">
+      <table className="w-full min-w-[920px] border-collapse text-left text-sm">
+        <thead className="bg-[var(--color-app-background)] text-xs uppercase text-[var(--color-title)]">
+          <tr>
+            <th className="px-4 py-3 font-bold">Producto</th>
+            <th className="px-4 py-3 font-bold">Categoría</th>
+            <th className="px-4 py-3 font-bold">Precio</th>
+            <th className="px-4 py-3 font-bold">Unidad</th>
+            <th className="px-4 py-3 font-bold">Canales</th>
+            <th className="w-24 px-4 py-3 text-right font-bold">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {products.length === 0 ? (
+            <tr>
+              <td className="px-4 py-8 text-center text-[var(--color-text-muted)]" colSpan={6}>
+                {emptyMessage}
+              </td>
+            </tr>
+          ) : (
+            products.map((product) => (
+              <tr
+                className={cn(
+                  "cursor-pointer border-t border-[var(--color-border)] transition hover:bg-[var(--color-app-background)]/70 focus:bg-[var(--color-app-background)]/70 focus:outline focus:outline-2 focus:outline-inset focus:outline-[var(--color-structure)]",
+                  product.status === ProductStatus.archived && "opacity-70",
+                )}
+                key={product.id}
+                onClick={() => onOpenQuickView(product)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") onOpenQuickView(product);
+                }}
+                tabIndex={0}
+              >
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <img
+                      alt={product.name}
+                      className="h-11 w-11 rounded-md border border-[var(--color-border)] object-contain"
+                      src={product.imageUrl}
+                    />
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-[var(--color-title)]">
+                        {product.name}
+                      </p>
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        <StatusBadge status={product.status} />
+                        <span className="inline-flex rounded-md bg-[var(--color-app-background)] px-2 py-1 text-xs font-semibold text-[var(--color-title)]">
+                          {productTypeLabels[product.productType]}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                        SKU {product.sku}
+                        {product.brand ? ` · ${product.brand}` : ""}
+                      </p>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-[var(--color-text)]">{product.categoryName}</td>
+                <td className="px-4 py-3 font-semibold text-[var(--color-text)]">
+                  {formatCurrency(product.salePrice)}
+                </td>
+                <td className="px-4 py-3 text-[var(--color-text)]">{product.baseUnitName}</td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-wrap gap-1.5">
+                    <ChannelChip active={product.channels.pos}>POS</ChannelChip>
+                    <ChannelChip active={product.channels.ecommerce}>Web</ChannelChip>
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <ProductActionsMenu
+                    onArchive={onArchive}
+                    onPriceHistory={onPriceHistory}
+                    onPromotion={onPromotion}
+                    product={product}
+                  />
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ChannelChip({ active, children }: { active: boolean; children: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex rounded-md border px-2 py-1 text-xs font-semibold",
+        active
+          ? "border-[var(--color-primary)] bg-[var(--color-app-background)] text-[var(--color-title)]"
+          : "border-[var(--color-border)] bg-white text-[var(--color-text-muted)]",
+      )}
+    >
+      {children}
+    </span>
   );
 }

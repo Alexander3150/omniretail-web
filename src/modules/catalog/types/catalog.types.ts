@@ -1,4 +1,13 @@
-import type { BusinessCapabilitiesConfig, Category, Product, Unit } from "@/core/entities";
+import type {
+  BusinessCapabilitiesConfig,
+  Category,
+  InventoryBalance,
+  Product,
+  Promotion,
+  Supplier,
+  SupplierProduct,
+  Unit,
+} from "@/core/entities";
 import type { ProductStatus, ProductType } from "@/core/enums";
 import type { ProductChannels } from "@/core/entities/Product";
 import type { ProductTrackingConfig } from "@/core/types/tracking.types";
@@ -22,6 +31,8 @@ export interface ProductListItem {
   brand?: string;
   categoryName: string;
   categoryId: string;
+  baseUnitName: string;
+  baseUnitId: string;
   productType: ProductType;
   salePrice: number;
   channels: ProductChannels;
@@ -41,4 +52,23 @@ export interface ProductFormOptions {
   categories: Category[];
   units: Unit[];
   businessCapabilities: BusinessCapabilitiesConfig;
+}
+
+export interface ProductInventorySummaryItem {
+  balance: InventoryBalance;
+  branchName: string;
+  locationName?: string;
+  stockStatus: "Sin stock" | "Bajo" | "Disponible";
+}
+
+export interface ProductSupplierSummaryItem {
+  supplier: Supplier;
+  supplierProduct: SupplierProduct;
+  purchaseUnitName?: string;
+}
+
+export interface ProductQuickViewModel extends ProductDetailViewModel {
+  inventory: ProductInventorySummaryItem[];
+  suppliers: ProductSupplierSummaryItem[];
+  promotions: Promotion[];
 }

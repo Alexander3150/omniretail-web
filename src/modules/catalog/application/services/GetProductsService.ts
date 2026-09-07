@@ -10,6 +10,7 @@ export class GetProductsService {
       this.repositories.products.getAll(),
       this.repositories.categories.getAll(),
     ]);
+    const units = await this.repositories.units.getAll();
     const mediaEntries = await Promise.all(
       products.map(
         async (product) =>
@@ -18,6 +19,7 @@ export class GetProductsService {
     );
     const mediaByProduct = new Map(mediaEntries);
     const categoryNames = new Map(categories.map((category) => [category.id, category.name]));
+    const unitNames = new Map(units.map((unit) => [unit.id, unit.name]));
 
     return products
       .map<ProductListItem>((product) => ({
@@ -29,6 +31,8 @@ export class GetProductsService {
         brand: product.brand,
         categoryName: categoryNames.get(product.categoryId) ?? "Sin categoria",
         categoryId: product.categoryId,
+        baseUnitName: unitNames.get(product.baseUnitId) ?? "Sin unidad",
+        baseUnitId: product.baseUnitId,
         productType: product.productType,
         salePrice: product.salePrice,
         channels: product.channels,

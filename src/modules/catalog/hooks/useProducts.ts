@@ -73,6 +73,16 @@ export function useProducts() {
     setPage(1);
   }, []);
 
+  const clearFilters = useCallback(() => {
+    setFilters((current) => ({ ...initialFilters, search: current.search }));
+    setPage(1);
+  }, []);
+
+  const clearAllFilters = useCallback(() => {
+    setFilters(initialFilters);
+    setPage(1);
+  }, []);
+
   return {
     loading,
     error,
@@ -85,6 +95,8 @@ export function useProducts() {
     totalPages,
     setPage,
     updateFilters,
+    clearFilters,
+    clearAllFilters,
     reload,
   };
 }
