@@ -2,20 +2,23 @@
 
 Responsable: Riquelme
 
-## Alcance
+## Territorio del modulo
 
-Este modulo contendra preparacion, despacho, picking y seguimiento operativo cuando los contratos sean definidos.
+Este modulo desarrolla su funcionalidad propia sin duplicar contratos compartidos.
 
-## No colocar aqui
+## Contracts que consume
 
-- Contratos compartidos de pedidos, envios o inventario.
-- Acceso directo a LocalStorage desde paginas o componentes.
-- Componentes visuales globales.
-- Logica de POS, compras o recepcion que pertenezca a sus modulos.
+OrderRepository, PickingRepository, DispatchRepository, InventoryRepository
 
-Los contratos compartidos de `core/` no deben duplicarse. LocalStorage no debe ser utilizado directamente por las pantallas; posteriormente se accedera mediante Repository / Infrastructure. `shared/` contiene componentes globales.
+## Reglas
 
-## Plantilla futura
+- No duplicar entities de `core/`.
+- No acceder directamente a LocalStorage.
+- Usar repositories desde `RepositoryProvider`.
+- Usar `shared/` para componentes globales.
+- Crear DTO, Mappers y Services propios dentro del modulo cuando empiece cada feature.
+
+## Estructura futura
 
 ```text
 logistics/
