@@ -1,14 +1,42 @@
+import { PromotionType, SalesChannel } from "@/core/enums";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { createMockDatabase } from "@/infrastructure/mock/database/createMockDatabase";
 import type { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import { MOCK_DATABASE_STORAGE_KEY } from "@/infrastructure/storage/storageKeys";
 
+type PersistedMockDatabase = Partial<MockDatabase>;
+
+function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
+  const base = createMockDatabase();
+  const normalized = { ...base, ...database } as MockDatabase;
+
+  normalized.productPriceHistory = database.productPriceHistory ?? [];
+  normalized.products = (database.products ?? base.products).map((product) => ({
+    ...product,
+    channels: {
+      ecommerce: product.channels.ecommerce,
+      pos: product.channels.pos,
+      mobileApp: product.channels.mobileApp ?? false,
+    },
+  }));
+  normalized.promotions = (database.promotions ?? base.promotions).map((promotion) => ({
+    ...promotion,
+    type:
+      String(promotion.type) === "fixed_amount"
+        ? PromotionType.fixedDiscount
+        : promotion.type,
+    channels: promotion.channels ?? [SalesChannel.pos, SalesChannel.ecommerce],
+  }));
+
+  return normalized;
+}
+
 export class MockDatabaseStore {
   private database: MockDatabase;
 
   constructor(private readonly storage: LocalStorageAdapter) {
-    this.database =
-      this.storage.get<MockDatabase>(MOCK_DATABASE_STORAGE_KEY) ?? createMockDatabase();
+    const persisted = this.storage.get<PersistedMockDatabase>(MOCK_DATABASE_STORAGE_KEY);
+    this.database = normalizeMockDatabase(persisted ?? createMockDatabase());
   }
 
   getSnapshot(): MockDatabase {

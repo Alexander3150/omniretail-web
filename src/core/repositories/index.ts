@@ -4,6 +4,7 @@ export type * from "./AuthRepository";
 export type * from "./UserRepository";
 export type * from "./BranchRepository";
 export type * from "./ProductRepository";
+export type * from "./ProductPriceHistoryRepository";
 export type * from "./ProductMediaRepository";
 export type * from "./CategoryRepository";
 export type * from "./UnitRepository";

@@ -15,6 +15,7 @@ export * from "./MockPaymentRepository";
 export * from "./MockPickingRepository";
 export * from "./MockProductMediaRepository";
 export * from "./MockProductRepository";
+export * from "./MockProductPriceHistoryRepository";
 export * from "./MockPromotionRepository";
 export * from "./MockPurchaseOrderRepository";
 export * from "./MockReceiptRepository";
