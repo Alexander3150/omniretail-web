@@ -121,7 +121,7 @@ export function Sidebar({ items }: SidebarProps) {
   const visibleItems = useMemo(() => getRenderableNavigationItems(items), [items]);
 
   return (
-    <aside className="w-56 border-r border-[var(--color-border)] bg-[var(--color-structure)] px-4 py-5 text-white">
+    <aside className="min-h-screen w-56 border-r border-[var(--color-border)] bg-[var(--color-structure)] px-4 py-5 text-white">
       <nav aria-label="Navegacion principal">
         <ul className="space-y-1">
           {visibleItems.map((item) => (
