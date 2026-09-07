@@ -18,6 +18,17 @@ ProductRepository, CategoryRepository, UnitRepository, AttributeRepository, Prom
 - Usar `shared/` para componentes globales.
 - Crear DTO, Mappers y Services propios dentro del modulo cuando empiece cada feature.
 
+## Gestion de productos
+
+Implementado en esta rama:
+
+- Listado, busqueda, filtros, paginacion y detalle de productos.
+- Creacion, edicion y archivo mediante `ProductRepository`.
+- Imagen principal mediante `ProductMediaRepository`, con fallback visual.
+- Opciones de categoria, unidad y capacidades de negocio desde repositories.
+- Tracking adaptable por `BusinessCapabilitiesConfig`; productos `service` fuerzan tracking inactivo.
+- Rutas privadas `/catalogo/productos`, `/catalogo/productos/nuevo`, `/catalogo/productos/[id]` y `/catalogo/productos/[id]/editar`.
+
 ## Estructura futura
 
 ```text
