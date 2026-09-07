@@ -1,0 +1,109 @@
+# OmniRetail Source Of Truth
+
+Este documento es la fuente funcional autoritativa. El codigo TypeScript actual sigue siendo la verdad ejecutable de firmas y estructuras exactas.
+
+## Jerarquia Documental
+
+1. Codigo TypeScript actual.
+2. `docs/SOURCE_OF_TRUTH.md`.
+3. `docs/ARCHITECTURE.md`.
+4. `docs/CONTRACTS.md`.
+5. `docs/GIT_WORKFLOW.md`.
+6. `docs/MODULE_OWNERSHIP.md`.
+7. `docs/AI_WORKFLOW.md`.
+8. `AGENTS.md` y `CLAUDE.md`.
+
+Si dos documentos contradicen el codigo actual, no corregir silenciosamente el codigo. Reportar la inconsistencia antes de cambiar contratos compartidos.
+
+## Multi-Tenant
+
+Jerarquia: Platform -> Tenant / negocio -> Branch / sucursal. Las entidades de negocio pertenecen a tenant; las operativas relevantes tambien pertenecen a branch. El aislamiento entre tenants es obligatorio conceptualmente.
+
+## Producto
+
+Existe una sola Entity `Product`. No crear `StorefrontProduct`, `InventoryProduct` ni `PosProduct`. Product es consumido por Catalog, Storefront, Inventory, POS, Logistics y Purchasing cuando corresponde.
+
+Termino visible estandar: Codigo / SKU. Diferenciar `id`, `sku`, `barcode` opcional y `supplierSku` en `SupplierProduct`.
+
+## Trazabilidad Adaptable
+
+`BusinessCapabilitiesConfig` define capacidades/defaults del negocio. `Product.tracking` define el comportamiento real por producto: `stock`, `lot`, `expiration`, `serial`.
+
+Ejemplos: taladro usa stock y serial; tornillos usan stock; medicamento usa stock, lote y vencimiento; servicio no usa inventario ni trazabilidad. No mostrar lote/vencimiento/serie cuando el producto no los utiliza. Aplica a Catalog, Receiving, Inventory y Picking.
+
+## Product Type
+
+`physical` puede requerir inventario y logistica. `service` no requiere inventario/picking. `kit` eventualmente resuelve componentes.
+
+## Catalogo E Inventario
+
+`Product` describe que es el producto. `InventoryBalance` describe cuanto existe y donde. No almacenar stock oficial dentro de Product.
+
+Stock es por tenant, branch y location. Catalogo es global dentro del tenant. Precios son globales por tenant durante esta fase. Promociones pueden tener scope por sucursal.
+
+## Inventory Movements
+
+`InventoryMovement` es append-only. No modificar historia. Todo ajuste, entrada, salida o transferencia debe generar movimiento. Evitar doble registro de stock entre POS, Receiving, Picking y Dispatch.
+
+## Supplier
+
+`Supplier` es entidad maestra comun. Administracion mantiene el CRUD maestro y Purchasing consume el mismo Supplier. `SupplierProduct` contiene supplierSku, costos, unidad de compra, lead time y minimos. No crear proveedores independientes por modulo.
+
+## Customer
+
+`Customer` puede estar asociado a `User`. Perfil y autenticacion son dominios relacionados pero distintos. Andy administra perfil, direcciones, metodos guardados y seguridad; Maria consume Customer para compras.
+
+## Saved Payment Methods
+
+Solo simulacion frontend. Nunca guardar full card number, CVV ni PIN. Guardar solo brand, last4, expiry, holder e isDefault. Backend/pasarela real vendra despues.
+
+## Ecommerce
+
+Guest checkout permitido por defecto. `requireAccountForCheckout` permite al tenant decidir si exige cuenta. En compra invitado, email es obligatorio conceptualmente para seguimiento/envios; telefono no necesariamente. Guest tracking usa `trackingToken`. No existe correo real todavia.
+
+## Order
+
+`Order` representa pedido, preparacion y entrega. Puede provenir de ecommerce o POS. Puede ser de cliente registrado o invitado. Es compartido por Storefront, POS cuando aplica, Logistics y Customer Tracking.
+
+## Sale
+
+`Sale` representa una venta POS. Order y Sale no son sinonimos. Una venta inmediata puede terminar sin logistica; una venta con retiro/envio puede generar Order.
+
+## Delivery
+
+`DeliveryMethod`: immediate, store_pickup, home_delivery. `TransportMode`: none, customer, own_fleet, third_party. No mezclar ambos conceptos.
+
+## POS
+
+Metodos: cash, card, transfer, mixed. Transferencia simula validacion manual de comprobante. No existe modulo independiente `bank_validator` ni integracion bancaria real.
+
+## Logistics
+
+Flujo: Order -> Picking -> Packing -> Dispatch -> Tracking. Productos service no pasan por Picking. Trazabilidad debe respetar `Product.tracking`.
+
+## Auth
+
+Frontend simula auth; no es seguridad real. Diferenciar `temporarily_locked` de bloqueo/deshabilitacion administrativa. Nunca mostrar o almacenar password en texto plano. No usar preguntas de seguridad tradicionales.
+
+## Branch Scope
+
+Empleado puede tener assigned branch, selected branches o all branches. Branch selector solo aparece cuando puede cambiar de sucursal.
+
+## Delete / Archive
+
+Elementos nunca usados podrian eliminarse fisicamente en el futuro. Elementos con historial deben archivarse.
+
+## Frontend Vs Backend
+
+Frontend actual simula emails, pagos, persistencia, auth, notificaciones e integraciones mediante Repository, MockRepository, MockDatabase, LocalStorage y EventBus.
+
+Backend futuro: API, DB, seguridad real, correo, pasarelas, SAT/FEL, transportistas y bancos.
+
+## Prevencion De Drift Documental
+
+- Si cambia una decision funcional, actualizar este documento.
+- Si cambia estructura tecnica, actualizar `docs/ARCHITECTURE.md`.
+- Si cambia un patron conceptual de Entity/Repository, actualizar codigo primero y `docs/CONTRACTS.md` si aplica.
+- Si cambia flujo Git, actualizar `docs/GIT_WORKFLOW.md`.
+- Si cambia ownership, actualizar `docs/MODULE_OWNERSHIP.md`.
+- `AGENTS.md` y `CLAUDE.md` deben seguir siendo entry points, no historial acumulado.
