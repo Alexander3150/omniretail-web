@@ -20,3 +20,20 @@ UI
 -> ApiRepository
 -> Backend
 ```
+
+## Navegacion Privada
+
+Los modulos declaran sus entradas en `src/modules/*/navigation.ts`.
+`src/config/navigation.ts` agrega esas listas junto con la navegacion base y
+el layout privado entrega `navigationConfig` al `Sidebar`.
+
+```text
+modules/*/navigation.ts
+-> config/navigation.ts
+-> PrivateLayout
+-> Sidebar
+```
+
+`Sidebar` renderiza `NavigationItem[]` sin importar modulos concretos. La
+metadata de permisos se conserva en los items; cuando Auth este integrado, la
+sesion podra filtrar la navegacion antes de renderizar el Sidebar.

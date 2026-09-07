@@ -57,6 +57,7 @@ UI
 - AuditLog es append-only;
 - Shared no contiene logica de negocio;
 - navegacion/permisos estan distribuidos por modulo;
+- `config/navigation.ts` agrega la navegacion y el shell privado la entrega a `Sidebar`;
 - feature branches nacen de development.
 
 Para decisiones completas consultar:
