@@ -25,6 +25,14 @@ Existe una sola Entity `Product`. No crear `StorefrontProduct`, `InventoryProduc
 
 Termino visible estandar: Codigo / SKU. Diferenciar `id`, `sku`, `barcode` opcional y `supplierSku` en `SupplierProduct`.
 
+## Product Media
+
+`Product` y `ProductMedia` son conceptos separados. Product no contiene imagenes directamente; ProductMedia guarda referencias URL/path y permite cero, una o multiples imagenes por producto. Solo una imagen debe ser primaria y `sortOrder` define el orden visual.
+
+Las imagenes demo actuales viven en `public/images/products/`. Los modulos deben consultar `ProductMediaRepository`; no deben importar `demoSeed` ni resolver logica leyendo `public/` directamente. `placeholder-product.webp` se usa solo como fallback de UI.
+
+En una feature futura, Catalog / Crear-Editar Producto podra usar `FileUpload -> preview local -> ProductMediaRepository`. Durante el frontend mock no guardar imagenes grandes/base64 en LocalStorage. Con backend real el flujo sera `FileUpload -> API -> Storage/CDN -> URL -> ProductMedia`.
+
 ## Trazabilidad Adaptable
 
 `BusinessCapabilitiesConfig` define capacidades/defaults del negocio. `Product.tracking` define el comportamiento real por producto: `stock`, `lot`, `expiration`, `serial`.

@@ -10,4 +10,6 @@ REPOSITORY: contrato de acceso a datos definido en `src/core/repositories`.
 
 MOCK REPOSITORY: implementacion temporal frontend que usa `MockDatabaseStore`.
 
+`ProductMediaRepository` es el contrato compartido para consultar y administrar referencias de imagenes de producto sin acoplar modulos a seeds, LocalStorage o assets fisicos.
+
 No crear `StorefrontProduct`, `InventoryProduct` o `PosProduct`. Debe existir un unico `Product` compartido en `core/`.

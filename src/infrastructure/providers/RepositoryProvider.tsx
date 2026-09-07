@@ -17,6 +17,7 @@ import type {
   OrderRepository,
   PaymentRepository,
   PickingRepository,
+  ProductMediaRepository,
   ProductRepository,
   PromotionRepository,
   PurchaseOrderRepository,
@@ -46,6 +47,7 @@ import {
   MockOrderRepository,
   MockPaymentRepository,
   MockPickingRepository,
+  MockProductMediaRepository,
   MockProductRepository,
   MockPromotionRepository,
   MockPurchaseOrderRepository,
@@ -82,6 +84,7 @@ export interface RepositoryRegistry {
   sales: SalesRepository;
   cashShifts: CashShiftRepository;
   picking: PickingRepository;
+  productMedia: ProductMediaRepository;
   dispatches: DispatchRepository;
   notifications: NotificationRepository;
   auditLogs: AuditLogRepository;
@@ -123,6 +126,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       sales: new MockSalesRepository(store, eventBus),
       cashShifts: new MockCashShiftRepository(store, eventBus),
       picking: new MockPickingRepository(store, eventBus),
+      productMedia: new MockProductMediaRepository(store, eventBus),
       dispatches: new MockDispatchRepository(store, eventBus),
       notifications: new MockNotificationRepository(store, eventBus),
       auditLogs: new MockAuditLogRepository(store, eventBus),
