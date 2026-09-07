@@ -13,18 +13,35 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   normalized.productPriceHistory = database.productPriceHistory ?? [];
   normalized.products = (database.products ?? base.products).map((product) => ({
     ...product,
+    saleUnitId: product.saleUnitId ?? product.baseUnitId,
     channels: {
       ecommerce: product.channels.ecommerce,
       pos: product.channels.pos,
       mobileApp: product.channels.mobileApp ?? false,
     },
   }));
+  normalized.productSalesPriceTiers = database.productSalesPriceTiers ?? [];
+  normalized.unitConversions = database.unitConversions ?? [];
+  normalized.attributeDefinitions = database.attributeDefinitions ?? [];
+  normalized.productAttributeValues = database.productAttributeValues ?? [];
+  normalized.supplierCostTiers = database.supplierCostTiers ?? [];
+  normalized.supplierProducts = (database.supplierProducts ?? base.supplierProducts).map(
+    (supplierProduct) => {
+      const product = normalized.products.find((item) => item.id === supplierProduct.productId);
+      return {
+        ...supplierProduct,
+        purchaseUnitId: supplierProduct.purchaseUnitId ?? product?.baseUnitId ?? "unit-unit",
+        purchaseToBaseFactor: supplierProduct.purchaseToBaseFactor ?? 1,
+        lastCost: supplierProduct.lastCost ?? 0,
+        leadTimeDays: supplierProduct.leadTimeDays ?? 0,
+        minimumOrderQuantity: supplierProduct.minimumOrderQuantity ?? 1,
+        preferred: supplierProduct.preferred ?? false,
+      };
+    },
+  );
   normalized.promotions = (database.promotions ?? base.promotions).map((promotion) => ({
     ...promotion,
-    type:
-      String(promotion.type) === "fixed_amount"
-        ? PromotionType.fixedDiscount
-        : promotion.type,
+    type: String(promotion.type) === "fixed_amount" ? PromotionType.fixedDiscount : promotion.type,
     channels: promotion.channels ?? [SalesChannel.pos, SalesChannel.ecommerce],
   }));
 

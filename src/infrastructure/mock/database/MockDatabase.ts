@@ -30,6 +30,7 @@ import type {
   PriceTier,
   Product,
   ProductPriceHistory,
+  ProductSalesPriceTier,
   ProductAttributeValue,
   ProductMedia,
   Promotion,
@@ -49,6 +50,7 @@ import type {
   StockLot,
   StorageLocation,
   Supplier,
+  SupplierCostTier,
   SupplierProduct,
   Tenant,
   Unit,
@@ -73,6 +75,7 @@ export interface MockDatabase {
   products: Product[];
   productPriceHistory: ProductPriceHistory[];
   productMedia: ProductMedia[];
+  productSalesPriceTiers: ProductSalesPriceTier[];
   categories: Category[];
   units: Unit[];
   unitConversions: UnitConversion[];
@@ -87,6 +90,7 @@ export interface MockDatabase {
   storageLocations: StorageLocation[];
   suppliers: Supplier[];
   supplierProducts: SupplierProduct[];
+  supplierCostTiers: SupplierCostTier[];
   purchaseOrders: PurchaseOrder[];
   purchaseOrderItems: PurchaseOrderItem[];
   receipts: Receipt[];

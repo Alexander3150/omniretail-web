@@ -10,4 +10,8 @@ export interface AttributeRepository {
     input: Partial<Omit<AttributeDefinition, "id" | "createdAt" | "updatedAt">>,
   ): Promise<AttributeDefinition>;
   setProductValue(input: Omit<ProductAttributeValue, "id">): Promise<ProductAttributeValue>;
+  replaceValuesForProduct(
+    productId: string,
+    values: Omit<ProductAttributeValue, "id" | "productId">[],
+  ): Promise<ProductAttributeValue[]>;
 }

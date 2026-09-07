@@ -19,6 +19,7 @@ export interface Product {
   productType: ProductType;
   categoryId: string;
   baseUnitId: string;
+  saleUnitId?: string;
   salePrice: number;
   status: ProductStatus;
   tracking: ProductTrackingConfig;

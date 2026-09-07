@@ -28,7 +28,7 @@ export class MockAttributeRepository extends BaseMockRepository implements Attri
     );
   }
   async setProductValue(input: Parameters<AttributeRepository["setProductValue"]>[0]) {
-    return this.store.mutate((db) => {
+    const item = this.store.mutate((db) => {
       const existing = db.productAttributeValues.find(
         (item) =>
           item.productId === input.productId &&
@@ -42,5 +42,26 @@ export class MockAttributeRepository extends BaseMockRepository implements Attri
       db.productAttributeValues.push(created);
       return created;
     });
+    this.emit("product.changed", { productId: item.productId, action: "updated" });
+    return item;
+  }
+  async replaceValuesForProduct(
+    productId: string,
+    values: Parameters<AttributeRepository["replaceValuesForProduct"]>[1],
+  ) {
+    const items = this.store.mutate((db) => {
+      db.productAttributeValues = db.productAttributeValues.filter(
+        (item) => item.productId !== productId,
+      );
+      const created = values.map((value) => ({
+        ...value,
+        productId,
+        id: this.id("attribute-value"),
+      }));
+      db.productAttributeValues.push(...created);
+      return created;
+    });
+    this.emit("product.changed", { productId, action: "updated" });
+    return items;
   }
 }

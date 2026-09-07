@@ -20,11 +20,13 @@ import type {
   ProductMediaRepository,
   ProductPriceHistoryRepository,
   ProductRepository,
+  ProductSalesPriceTierRepository,
   PromotionRepository,
   PurchaseOrderRepository,
   ReceiptRepository,
   SalesRepository,
   SavedPaymentMethodRepository,
+  SupplierProductRepository,
   SupplierRepository,
   TenantRepository,
   UnitRepository,
@@ -51,11 +53,13 @@ import {
   MockProductMediaRepository,
   MockProductPriceHistoryRepository,
   MockProductRepository,
+  MockProductSalesPriceTierRepository,
   MockPromotionRepository,
   MockPurchaseOrderRepository,
   MockReceiptRepository,
   MockSalesRepository,
   MockSavedPaymentMethodRepository,
+  MockSupplierProductRepository,
   MockSupplierRepository,
   MockTenantRepository,
   MockUnitRepository,
@@ -71,12 +75,14 @@ export interface RepositoryRegistry {
   branches: BranchRepository;
   products: ProductRepository;
   productPriceHistory: ProductPriceHistoryRepository;
+  productSalesPriceTiers: ProductSalesPriceTierRepository;
   categories: CategoryRepository;
   units: UnitRepository;
   attributes: AttributeRepository;
   promotions: PromotionRepository;
   inventory: InventoryRepository;
   suppliers: SupplierRepository;
+  supplierProducts: SupplierProductRepository;
   purchaseOrders: PurchaseOrderRepository;
   receipts: ReceiptRepository;
   customers: CustomerRepository;
@@ -114,12 +120,14 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       branches: new MockBranchRepository(store, eventBus),
       products: new MockProductRepository(store, eventBus),
       productPriceHistory: new MockProductPriceHistoryRepository(store, eventBus),
+      productSalesPriceTiers: new MockProductSalesPriceTierRepository(store, eventBus),
       categories: new MockCategoryRepository(store, eventBus),
       units: new MockUnitRepository(store, eventBus),
       attributes: new MockAttributeRepository(store, eventBus),
       promotions: new MockPromotionRepository(store, eventBus),
       inventory: new MockInventoryRepository(store, eventBus),
       suppliers: new MockSupplierRepository(store, eventBus),
+      supplierProducts: new MockSupplierProductRepository(store, eventBus),
       purchaseOrders: new MockPurchaseOrderRepository(store, eventBus),
       receipts: new MockReceiptRepository(store, eventBus),
       customers: new MockCustomerRepository(store, eventBus),
