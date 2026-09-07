@@ -37,3 +37,25 @@ modules/*/navigation.ts
 `Sidebar` renderiza `NavigationItem[]` sin importar modulos concretos. La
 metadata de permisos se conserva en los items; cuando Auth este integrado, la
 sesion podra filtrar la navegacion antes de renderizar el Sidebar.
+
+## Private Shell
+
+El shell privado organiza el backoffice como una barra lateral de altura
+completa y una columna de contenido con header ligero y main.
+
+```text
+PrivateShell
+|-- Sidebar
+`-- Content column
+    |-- PrivateHeader
+    |   |-- ActiveBranch
+    |   |-- Notifications
+    |   `-- User slot
+    `-- Main
+```
+
+La sucursal actual es contexto global del shell privado y se obtiene desde
+`BranchRepository`. En una fase posterior Auth/Role/BranchScope filtrara las
+sucursales disponibles para cada empleado. Notifications queda preparado para
+conectarse al centro de notificaciones real. UserMenu queda reservado para
+Session -> User -> Profile cuando Auth/Profile este completo.
