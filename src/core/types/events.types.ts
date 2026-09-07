@@ -4,6 +4,7 @@ export type DataEventName =
   | "branch.changed"
   | "business-config.changed"
   | "product.changed"
+  | "product-price.changed"
   | "category.changed"
   | "promotion.changed"
   | "inventory.changed"
@@ -26,6 +27,8 @@ export interface DataEventPayload {
   tenantId?: string;
   branchId?: string;
   productId?: string;
+  previousPrice?: number;
+  newPrice?: number;
   action?: "created" | "updated" | "archived" | "deleted" | "status_changed" | "reset";
   metadata?: Record<string, unknown>;
 }

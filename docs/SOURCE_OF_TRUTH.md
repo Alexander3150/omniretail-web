@@ -47,7 +47,13 @@ Ejemplos: taladro usa stock y serial; tornillos usan stock; medicamento usa stoc
 
 `Product` describe que es el producto. `InventoryBalance` describe cuanto existe y donde. No almacenar stock oficial dentro de Product.
 
-Stock es por tenant, branch y location. Catalogo es global dentro del tenant. Precios son globales por tenant durante esta fase. Promociones pueden tener scope por sucursal.
+Stock es por tenant, branch y location. Catalogo es global dentro del tenant. Precios son globales por tenant durante esta fase. `Product.salePrice` es el precio base; cualquier precio promocional se deriva y no se guarda como campo mutable en `Product`.
+
+OmniRetail reconoce tres canales comerciales: POS (`pos`), e-commerce/web (`ecommerce`) y app movil (`mobileApp`). `Product.channels` define en que canales puede publicarse un producto.
+
+Promociones V1 soporta descuento porcentual (`percentage`), descuento fijo (`fixedDiscount`) y precio promocional fijo (`fixedPrice`). Una promocion puede aplicar a uno o varios productos, a uno o varios canales y puede tener scope por sucursal. `branchIds: []` significa todas las sucursales del tenant; valores explicitos limitan la promocion a esas sucursales. No se permiten promociones solapadas para el mismo tenant, producto, canal, scope de sucursal y rango de fechas. `untilStockEnds` conserva la intencion contractual, pero la aplicacion efectiva contra stock debe validarla el servicio consumidor usando inventario, sin duplicar stock en Promotion.
+
+`ProductPriceHistory` registra automaticamente cambios de `Product.salePrice` con precio anterior, precio nuevo, producto, tenant, fecha y `actorUserId` opcional para integracion futura con Auth. `AuditLog` puede registrar el mismo cambio como auditoria generica. `OrderItem` y `SaleItem` deben conservar snapshot de precio y descuento al crear la transaccion para no recalcular historia con promociones actuales.
 
 ## Inventory Movements
 

@@ -40,6 +40,11 @@ export enum ProductType {
   service = "service",
   kit = "kit",
 }
+export enum SalesChannel {
+  pos = "pos",
+  ecommerce = "ecommerce",
+  mobileApp = "mobileApp",
+}
 export enum CategoryStatus {
   active = "active",
   archived = "archived",
@@ -197,7 +202,8 @@ export enum PromotionStatus {
 }
 export enum PromotionType {
   percentage = "percentage",
-  fixed_amount = "fixed_amount",
+  fixedDiscount = "fixedDiscount",
+  fixedPrice = "fixedPrice",
 }
 export enum NotificationStatus {
   unread = "unread",
