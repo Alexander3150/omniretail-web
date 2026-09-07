@@ -7,7 +7,7 @@ import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { GetProductsService } from "@/modules/catalog/application/services/GetProductsService";
 import type { ProductFiltersState, ProductListItem } from "@/modules/catalog/types/catalog.types";
 
-const PAGE_SIZE = 10;
+const DEFAULT_PAGE_SIZE = 10;
 
 const initialFilters: ProductFiltersState = {
   search: "",
@@ -24,6 +24,7 @@ export function useProducts() {
   const [products, setProducts] = useState<ProductListItem[]>([]);
   const [filters, setFilters] = useState<ProductFiltersState>(initialFilters);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSizeState] = useState(DEFAULT_PAGE_SIZE);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
@@ -61,11 +62,11 @@ export function useProducts() {
   }, [service]);
 
   const filteredProducts = useMemo(() => filterProducts(products, filters), [filters, products]);
-  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paginatedProducts = filteredProducts.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE,
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize,
   );
 
   const updateFilters = useCallback((nextFilters: Partial<ProductFiltersState>) => {
@@ -83,6 +84,11 @@ export function useProducts() {
     setPage(1);
   }, []);
 
+  const setPageSize = useCallback((nextPageSize: number) => {
+    setPageSizeState(nextPageSize);
+    setPage(1);
+  }, []);
+
   return {
     loading,
     error,
@@ -91,9 +97,10 @@ export function useProducts() {
     paginatedProducts,
     filters,
     page: currentPage,
-    pageSize: PAGE_SIZE,
+    pageSize,
     totalPages,
     setPage,
+    setPageSize,
     updateFilters,
     clearFilters,
     clearAllFilters,

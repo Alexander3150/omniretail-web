@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ProductStatus } from "@/core/enums";
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
+import { Select } from "@/shared/components/Select";
 import { useToast } from "@/shared/components/Toast";
 import {
   ActiveProductFilters,
@@ -33,6 +34,7 @@ export function ProductsPage() {
     pageSize,
     totalPages,
     setPage,
+    setPageSize,
     updateFilters,
     clearFilters,
     clearAllFilters,
@@ -106,6 +108,20 @@ export function ProductsPage() {
         <>
           <ProductTable
             emptyMessage={emptyMessage}
+            footer={
+              filteredProducts.length > 0 ? (
+                <ProductTableFooter
+                  firstVisible={firstVisible}
+                  lastVisible={lastVisible}
+                  onPageChange={setPage}
+                  onPageSizeChange={setPageSize}
+                  page={page}
+                  pageSize={pageSize}
+                  totalItems={filteredProducts.length}
+                  totalPages={totalPages}
+                />
+              ) : null
+            }
             onArchive={setArchiveTarget}
             onOpenQuickView={setQuickViewProduct}
             onPriceHistory={setPriceHistoryTarget}
@@ -124,36 +140,6 @@ export function ProductsPage() {
               </Button>
             </div>
           ) : null}
-          {filteredProducts.length > 0 ? (
-            <footer className="flex flex-col gap-3 rounded-md border border-[var(--color-border)] bg-white px-4 py-3 md:flex-row md:items-center md:justify-between">
-              <p className="text-sm text-[var(--color-text-muted)]">
-                Mostrando {firstVisible}-{lastVisible} de {filteredProducts.length} productos
-              </p>
-              <nav aria-label="Paginación de productos" className="flex items-center gap-3">
-                <Button
-                  aria-label="Página anterior"
-                  className="min-h-9 px-3 py-1.5"
-                  disabled={page <= 1}
-                  onClick={() => setPage(page - 1)}
-                  type="button"
-                >
-                  &lt;
-                </Button>
-                <span className="text-sm font-semibold text-[var(--color-text)]">
-                  {page} / {totalPages}
-                </span>
-                <Button
-                  aria-label="Página siguiente"
-                  className="min-h-9 px-3 py-1.5"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage(page + 1)}
-                  type="button"
-                >
-                  &gt;
-                </Button>
-              </nav>
-            </footer>
-          ) : null}
         </>
       )}
       <ProductQuickView product={quickViewProduct} onClose={() => setQuickViewProduct(null)} />
@@ -170,6 +156,72 @@ export function ProductsPage() {
         onCancel={() => setArchiveTarget(null)}
         onConfirm={archiveProduct}
       />
+    </div>
+  );
+}
+
+function ProductTableFooter({
+  firstVisible,
+  lastVisible,
+  page,
+  pageSize,
+  totalItems,
+  totalPages,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  firstVisible: number;
+  lastVisible: number;
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="text-sm text-[var(--color-text-muted)]">
+          Mostrando {firstVisible}-{lastVisible} de {totalItems} productos
+        </p>
+        <label className="flex items-center gap-2 text-sm text-[var(--color-text-muted)]">
+          Filas
+          <Select
+            aria-label="Filas por página"
+            className="h-9 w-20 px-2"
+            onChange={(event) => onPageSizeChange(Number(event.target.value))}
+            value={pageSize}
+          >
+            <option value={10}>10</option>
+            <option value={20}>20</option>
+            <option value={50}>50</option>
+          </Select>
+        </label>
+      </div>
+      <nav aria-label="Paginación de productos" className="flex items-center gap-3">
+        <Button
+          aria-label="Página anterior"
+          className="min-h-9 px-3 py-1.5"
+          disabled={page <= 1}
+          onClick={() => onPageChange(page - 1)}
+          type="button"
+        >
+          &lt;
+        </Button>
+        <span className="min-w-12 text-center text-sm font-semibold text-[var(--color-text)]">
+          {page} / {totalPages}
+        </span>
+        <Button
+          aria-label="Página siguiente"
+          className="min-h-9 px-3 py-1.5"
+          disabled={page >= totalPages}
+          onClick={() => onPageChange(page + 1)}
+          type="button"
+        >
+          &gt;
+        </Button>
+      </nav>
     </div>
   );
 }
