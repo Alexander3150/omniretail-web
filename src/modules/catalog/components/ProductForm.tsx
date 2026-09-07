@@ -129,7 +129,7 @@ function buildInitialValue(options: ProductFormOptions, detail?: ProductDetailVi
     salePrice: 0,
     status: ProductStatus.published,
     tracking: getDefaultTracking(options.businessCapabilities, ProductType.physical),
-    channels: { ecommerce: true, pos: true },
+    channels: { ecommerce: true, pos: true, mobileApp: false },
     primaryImageUrl: "",
   };
 }

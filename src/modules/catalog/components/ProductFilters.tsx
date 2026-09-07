@@ -76,8 +76,9 @@ export function ProductFilters({
           value={filters.channel}
         >
           <option value="all">Todos los canales</option>
-          <option value="ecommerce">Web</option>
           <option value="pos">POS</option>
+          <option value="ecommerce">Web</option>
+          <option value="mobileApp">App</option>
         </Select>
         {hasActiveFilters ? (
           <Button className="min-h-10 whitespace-nowrap px-3 py-2" onClick={onClear} type="button">

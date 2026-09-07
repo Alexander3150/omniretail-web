@@ -9,7 +9,11 @@ export const productTypeLabels: Record<ProductType, string> = {
 };
 
 export function formatChannels(channels: ProductChannels) {
-  const enabled = [channels.ecommerce ? "Web" : null, channels.pos ? "POS" : null].filter(Boolean);
+  const enabled = [
+    channels.pos ? "POS" : null,
+    channels.ecommerce ? "Web" : null,
+    channels.mobileApp ? "App" : null,
+  ].filter(Boolean);
   return enabled.length ? enabled.join(" + ") : "Sin canales";
 }
 

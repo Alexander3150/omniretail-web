@@ -98,6 +98,7 @@ export function ProductTable({
                     <div className="flex flex-wrap gap-1.5">
                       <ChannelChip active={product.channels.pos}>POS</ChannelChip>
                       <ChannelChip active={product.channels.ecommerce}>Web</ChannelChip>
+                      <ChannelChip active={product.channels.mobileApp}>App</ChannelChip>
                     </div>
                   </td>
                   <td className="px-4 py-3">

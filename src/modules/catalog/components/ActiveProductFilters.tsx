@@ -5,6 +5,12 @@ import { ProductStatus, ProductType } from "@/core/enums";
 import { productTypeLabels } from "@/modules/catalog/components/productLabels";
 import type { ProductFiltersState } from "@/modules/catalog/types/catalog.types";
 
+const channelLabels: Record<Exclude<ProductFiltersState["channel"], "all">, string> = {
+  pos: "POS",
+  ecommerce: "Web",
+  mobileApp: "App",
+};
+
 interface ActiveProductFiltersProps {
   filters: ProductFiltersState;
   categories: Category[];
@@ -53,7 +59,7 @@ export function ActiveProductFilters({
     filters.channel !== "all"
       ? {
           key: "channel",
-          label: filters.channel === "pos" ? "POS" : "Web",
+          label: channelLabels[filters.channel],
           clear: () => onRemove({ channel: "all" }),
         }
       : null,
