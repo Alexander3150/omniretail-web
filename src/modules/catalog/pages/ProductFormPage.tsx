@@ -5,10 +5,10 @@ import { useState } from "react";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { useToast } from "@/shared/components/Toast";
 import { ProductForm } from "@/modules/catalog/components/ProductForm";
-import { useProductDetail } from "@/modules/catalog/hooks/useProductDetail";
+import type { ProductEditorDto } from "@/modules/catalog/application/dto/ProductEditorDto";
+import { useProductEditorData } from "@/modules/catalog/hooks/useProductEditorData";
 import { useProductFormOptions } from "@/modules/catalog/hooks/useProductFormOptions";
 import { useProductMutations } from "@/modules/catalog/hooks/useProductMutations";
-import type { CreateProductDto } from "@/modules/catalog/application/dto/CreateProductDto";
 
 interface ProductFormPageProps {
   mode: "create" | "edit";
@@ -19,15 +19,17 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
   const productId = params.id ?? "";
   const router = useRouter();
   const { showToast } = useToast();
-  const optionsState = useProductFormOptions();
-  const detailState = useProductDetail(productId);
-  const mutations = useProductMutations();
   const isEdit = mode === "edit";
+  const optionsState = useProductFormOptions();
+  const editorState = useProductEditorData(isEdit ? productId : undefined);
+  const mutations = useProductMutations();
   const [confirmArchive, setConfirmArchive] = useState(false);
 
-  async function submit(dto: CreateProductDto) {
+  async function submit(dto: ProductEditorDto) {
     try {
-      const product = isEdit ? await mutations.update(productId, dto) : await mutations.create(dto);
+      const product = isEdit
+        ? await mutations.updateWithCommercialData(productId, dto)
+        : await mutations.createWithCommercialData(dto);
       showToast({
         title: isEdit ? "Producto actualizado" : "Producto creado",
         tone: "success",
@@ -43,12 +45,12 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
   }
 
   async function archiveProduct() {
-    if (!detailState.detail) return;
+    if (!editorState.data?.detail) return;
     try {
-      await mutations.archive(detailState.detail.product.id);
+      await mutations.archive(editorState.data.detail.product.id);
       showToast({ title: "Producto archivado", tone: "success" });
       setConfirmArchive(false);
-      router.push(`/catalogo/productos/${detailState.detail.product.id}`);
+      router.push(`/catalogo/productos/${editorState.data.detail.product.id}`);
     } catch (caughtError) {
       showToast({
         title: "No se pudo archivar",
@@ -58,7 +60,7 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
     }
   }
 
-  if (optionsState.loading || (isEdit && detailState.loading)) {
+  if (optionsState.loading || editorState.loading) {
     return (
       <p className="rounded-md border border-[var(--color-border)] bg-white p-5 text-sm text-[var(--color-text-muted)]">
         Preparando formulario...
@@ -74,7 +76,15 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
     );
   }
 
-  if (isEdit && !detailState.detail) {
+  if (editorState.error) {
+    return (
+      <p className="rounded-md border border-[var(--color-danger)] bg-white p-5 text-sm font-medium text-[var(--color-danger)]">
+        {editorState.error}
+      </p>
+    );
+  }
+
+  if (!editorState.data || (isEdit && !editorState.data.detail)) {
     return (
       <div className="space-y-4 rounded-md border border-[var(--color-border)] bg-white p-6">
         <h1 className="text-xl font-bold text-[var(--color-title)]">Producto no encontrado</h1>
@@ -87,7 +97,7 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
     <>
       <ProductForm
         busy={mutations.busy}
-        detail={detailState.detail}
+        editorData={editorState.data}
         error={mutations.error}
         mode={mode}
         onArchive={() => setConfirmArchive(true)}

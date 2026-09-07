@@ -11,6 +11,7 @@ export interface CreateProductDto {
   productType: ProductType;
   categoryId: string;
   baseUnitId: string;
+  saleUnitId: string;
   salePrice: number;
   status: ProductStatus;
   tracking: ProductTrackingConfig;

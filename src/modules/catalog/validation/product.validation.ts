@@ -41,6 +41,7 @@ export function validateProductDto(dto: CreateProductDto): ProductValidationErro
   if (!dto.productType) errors.productType = "El tipo de producto es requerido.";
   if (!dto.categoryId) errors.categoryId = "La categoria es requerida.";
   if (!dto.baseUnitId) errors.baseUnitId = "La unidad base es requerida.";
+  if (!dto.saleUnitId) errors.saleUnitId = "La unidad de venta es requerida.";
   if (!Number.isFinite(dto.salePrice) || dto.salePrice < 0) {
     errors.salePrice = "El precio debe ser mayor o igual a 0.";
   }
