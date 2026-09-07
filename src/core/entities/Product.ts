@@ -5,6 +5,7 @@ import type { ProductTrackingConfig } from "@/core/types/tracking.types";
 export interface ProductChannels {
   ecommerce: boolean;
   pos: boolean;
+  mobileApp: boolean;
 }
 
 export interface Product {

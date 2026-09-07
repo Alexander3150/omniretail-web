@@ -24,7 +24,7 @@ export async function runDemoScenario() {
     salePrice: 10,
     status: ProductStatus.published,
     tracking: { stock: true, lot: false, expiration: false, serial: false },
-    channels: { ecommerce: true, pos: true },
+    channels: { ecommerce: true, pos: true, mobileApp: false },
   });
   const foundProduct = await products.getById(product.id);
   const pendingOrders = await orders.getPendingForLogistics();
