@@ -1,7 +1,8 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { PageHeader } from "@/shared/components/PageHeader";
+import { useState } from "react";
+import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { useToast } from "@/shared/components/Toast";
 import { ProductForm } from "@/modules/catalog/components/ProductForm";
 import { useProductDetail } from "@/modules/catalog/hooks/useProductDetail";
@@ -22,6 +23,7 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
   const detailState = useProductDetail(productId);
   const mutations = useProductMutations();
   const isEdit = mode === "edit";
+  const [confirmArchive, setConfirmArchive] = useState(false);
 
   async function submit(dto: CreateProductDto) {
     try {
@@ -34,6 +36,22 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
     } catch (caughtError) {
       showToast({
         title: "No se pudo guardar",
+        description: caughtError instanceof Error ? caughtError.message : undefined,
+        tone: "danger",
+      });
+    }
+  }
+
+  async function archiveProduct() {
+    if (!detailState.detail) return;
+    try {
+      await mutations.archive(detailState.detail.product.id);
+      showToast({ title: "Producto archivado", tone: "success" });
+      setConfirmArchive(false);
+      router.push(`/catalogo/productos/${detailState.detail.product.id}`);
+    } catch (caughtError) {
+      showToast({
+        title: "No se pudo archivar",
         description: caughtError instanceof Error ? caughtError.message : undefined,
         tone: "danger",
       });
@@ -66,19 +84,24 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
   }
 
   return (
-    <div className="space-y-5">
-      <PageHeader
-        title={isEdit ? "Editar producto" : "Nuevo producto"}
-        description="Configura la informacion comercial, canales y trazabilidad del producto."
-      />
+    <>
       <ProductForm
         busy={mutations.busy}
         detail={detailState.detail}
         error={mutations.error}
         mode={mode}
+        onArchive={() => setConfirmArchive(true)}
         onSubmit={submit}
         options={optionsState.options}
       />
-    </div>
+      <ConfirmDialog
+        open={confirmArchive}
+        title="Archivar producto"
+        message="El producto dejara de estar disponible para nuevas operaciones, pero se conservara su historial."
+        confirmLabel="Archivar"
+        onCancel={() => setConfirmArchive(false)}
+        onConfirm={archiveProduct}
+      />
+    </>
   );
 }
