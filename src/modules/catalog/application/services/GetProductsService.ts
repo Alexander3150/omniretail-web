@@ -1,12 +1,19 @@
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { getProductImage } from "@/shared/utils/getProductImage";
 import type { ProductListItem } from "@/modules/catalog/types/catalog.types";
-import { PromotionStatus } from "@/core/enums";
+import { PromotionStatus, PromotionType } from "@/core/enums";
 import type { Promotion } from "@/core/entities";
+import { calculateEffectivePrice } from "@/core/pricing";
+import { formatCurrency } from "@/shared/utils/formatCurrency";
 
-function hasCurrentPromotion(productId: string, tenantId: string, promotions: Promotion[], now: Date) {
+function getCurrentPromotion(
+  productId: string,
+  tenantId: string,
+  promotions: Promotion[],
+  now: Date,
+) {
   const timestamp = now.getTime();
-  return promotions.some((promotion) => {
+  return promotions.find((promotion) => {
     const startsAt = new Date(promotion.startAt).getTime();
     const endsAt = promotion.endAt ? new Date(promotion.endAt).getTime() : Number.POSITIVE_INFINITY;
     return (
@@ -17,6 +24,17 @@ function hasCurrentPromotion(productId: string, tenantId: string, promotions: Pr
       timestamp <= endsAt
     );
   });
+}
+
+function formatPromotionLabel(promotion: Promotion) {
+  const value =
+    promotion.type === PromotionType.percentage
+      ? `${promotion.value}% descuento`
+      : promotion.type === PromotionType.fixedDiscount
+        ? `${formatCurrency(promotion.value)} descuento`
+        : `Precio ${formatCurrency(promotion.value)}`;
+
+  return `${value} · Activa`;
 }
 
 export class GetProductsService {
@@ -41,25 +59,39 @@ export class GetProductsService {
     const now = new Date();
 
     return products
-      .map<ProductListItem>((product) => ({
-        id: product.id,
-        tenantId: product.tenantId,
-        imageUrl: getProductImage(mediaByProduct.get(product.id) ?? []),
-        sku: product.sku,
-        barcode: product.barcode,
-        name: product.name,
-        brand: product.brand,
-        categoryName: categoryNames.get(product.categoryId) ?? "Sin categoria",
-        categoryId: product.categoryId,
-        baseUnitName: unitNames.get(product.baseUnitId) ?? "Sin unidad",
-        baseUnitId: product.baseUnitId,
-        productType: product.productType,
-        salePrice: product.salePrice,
-        channels: product.channels,
-        hasActivePromotion: hasCurrentPromotion(product.id, product.tenantId, promotions, now),
-        status: product.status,
-        tracking: product.tracking,
-      }))
+      .map<ProductListItem>((product) => {
+        const activePromotion = getCurrentPromotion(product.id, product.tenantId, promotions, now);
+        const effectivePrice = activePromotion
+          ? calculateEffectivePrice(product.salePrice, activePromotion).effectivePrice
+          : product.salePrice;
+
+        return {
+          id: product.id,
+          tenantId: product.tenantId,
+          imageUrl: getProductImage(mediaByProduct.get(product.id) ?? []),
+          sku: product.sku,
+          barcode: product.barcode,
+          name: product.name,
+          brand: product.brand,
+          categoryName: categoryNames.get(product.categoryId) ?? "Sin categoría",
+          categoryId: product.categoryId,
+          baseUnitName: unitNames.get(product.baseUnitId) ?? "Sin unidad",
+          baseUnitId: product.baseUnitId,
+          productType: product.productType,
+          salePrice: product.salePrice,
+          channels: product.channels,
+          hasActivePromotion: Boolean(activePromotion),
+          activePromotion: activePromotion
+            ? {
+                id: activePromotion.id,
+                label: formatPromotionLabel(activePromotion),
+                effectivePrice,
+              }
+            : undefined,
+          status: product.status,
+          tracking: product.tracking,
+        };
+      })
       .sort((left, right) => left.name.localeCompare(right.name));
   }
 }

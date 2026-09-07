@@ -8,6 +8,7 @@ import {
   TagIcon,
 } from "@/modules/catalog/components/CatalogIcons";
 import type { ProductListItem } from "@/modules/catalog/types/catalog.types";
+import { cn } from "@/shared/utils/cn";
 
 interface ProductActionsMenuProps {
   product: ProductListItem;
@@ -55,7 +56,12 @@ export function ProductActionsMenu({
         aria-expanded={open}
         aria-haspopup="menu"
         aria-label={`Acciones de ${product.name}`}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-[var(--color-border)] bg-white text-lg font-bold text-[var(--color-title)] transition hover:border-[var(--color-structure)] hover:bg-[var(--color-app-background)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]"
+        className={cn(
+          "inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white text-xl font-bold leading-none text-[var(--color-title)] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
+          open
+            ? "border-[var(--color-structure)] bg-[var(--color-primary)]/10"
+            : "border-[var(--color-border)] hover:border-[var(--color-structure)] hover:bg-[var(--color-app-background)]",
+        )}
         onClick={(event) => {
           event.stopPropagation();
           setOpen((current) => !current);
@@ -66,7 +72,7 @@ export function ProductActionsMenu({
       </button>
       {open ? (
         <div
-          className="absolute right-0 top-10 z-20 w-60 rounded-xl border border-[var(--color-border)] bg-white py-2 shadow-lg"
+          className="absolute right-0 top-10 z-20 w-60 overflow-hidden rounded-xl border border-[var(--color-border)] bg-white py-2 shadow-lg"
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}
           role="menu"
@@ -78,9 +84,11 @@ export function ProductActionsMenu({
             Historial de precios
           </MenuItem>
           {product.status === ProductStatus.published ? (
-            <MenuItem icon={<ArchiveIcon />} onClick={() => selectAction(onArchive)}>
-              Archivar
-            </MenuItem>
+            <div className="mt-1 border-t border-[var(--color-border)] pt-1">
+              <MenuItem destructive icon={<ArchiveIcon />} onClick={() => selectAction(onArchive)}>
+                Archivar
+              </MenuItem>
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -90,21 +98,28 @@ export function ProductActionsMenu({
 
 function MenuItem({
   children,
+  destructive,
   icon,
   onClick,
 }: {
   children: string;
+  destructive?: boolean;
   icon: ReactNode;
   onClick: () => void;
 }) {
   return (
     <button
-      className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm font-semibold text-[var(--color-text)] transition hover:bg-[var(--color-app-background)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[var(--color-structure)]"
+      className={cn(
+        "flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold transition hover:bg-[var(--color-app-background)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[var(--color-structure)]",
+        destructive ? "text-[var(--color-danger)]" : "text-[var(--color-text)]",
+      )}
       onClick={onClick}
       role="menuitem"
       type="button"
     >
-      <span className="text-[var(--color-title)]">{icon}</span>
+      <span className={destructive ? "text-[var(--color-danger)]" : "text-[var(--color-title)]"}>
+        {icon}
+      </span>
       {children}
     </button>
   );

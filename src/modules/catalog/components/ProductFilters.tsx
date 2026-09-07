@@ -3,7 +3,6 @@
 import type { ReactNode } from "react";
 import type { Category } from "@/core/entities";
 import { ProductStatus } from "@/core/enums";
-import { Button } from "@/shared/components/Button";
 import { Select } from "@/shared/components/Select";
 import { cn } from "@/shared/utils/cn";
 import {
@@ -25,16 +24,12 @@ interface ProductFiltersProps {
   filters: ProductFiltersState;
   categories: Category[];
   onChange: (filters: Partial<ProductFiltersState>) => void;
-  onClear: () => void;
-  hasActiveFilters: boolean;
 }
 
 export function ProductFilters({
   filters,
   categories,
   onChange,
-  onClear,
-  hasActiveFilters,
 }: ProductFiltersProps) {
   function toggleStatus(status: ProductStatus) {
     onChange({ status: filters.status === status ? "all" : status });
@@ -57,7 +52,7 @@ export function ProductFilters({
       className="rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm"
       id="product-filters-panel"
     >
-      <div className="grid gap-4 xl:grid-cols-[1.05fr_1fr_1fr_1.15fr_1.2fr_auto] xl:items-end">
+      <div className="grid gap-4 xl:grid-cols-[1.05fr_1fr_1fr_1.15fr_1.2fr] xl:items-end">
         <FilterGroup label="Estado">
           <div className="flex flex-wrap gap-2">
             {productStatusOptions.map((status) => (
@@ -147,16 +142,6 @@ export function ProductFilters({
             </FilterChip>
           </div>
         </FilterGroup>
-        {hasActiveFilters ? (
-          <Button
-            className="min-h-10 whitespace-nowrap px-3 py-2"
-            onClick={onClear}
-            type="button"
-            variant="secondary"
-          >
-            Limpiar
-          </Button>
-        ) : null}
       </div>
     </section>
   );

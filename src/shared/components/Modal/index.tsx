@@ -1,6 +1,8 @@
 "use client";
-import { useEffect } from "react";
-import type { ReactNode } from "react";
+
+import { useEffect, type ReactNode } from "react";
+import { cn } from "@/shared/utils/cn";
+
 export interface ModalProps {
   open: boolean;
   title: string;
@@ -8,8 +10,24 @@ export interface ModalProps {
   children: ReactNode;
   onClose: () => void;
   footer?: ReactNode;
+  size?: "md" | "lg" | "xl";
 }
-export function Modal({ open, title, subtitle, children, onClose, footer }: ModalProps) {
+
+const sizeClassNames: Record<NonNullable<ModalProps["size"]>, string> = {
+  md: "max-w-lg",
+  lg: "max-w-2xl",
+  xl: "max-w-4xl",
+};
+
+export function Modal({
+  open,
+  title,
+  subtitle,
+  children,
+  onClose,
+  footer,
+  size = "md",
+}: ModalProps) {
   useEffect(() => {
     if (!open) return;
 
@@ -22,6 +40,7 @@ export function Modal({ open, title, subtitle, children, onClose, footer }: Moda
   }, [onClose, open]);
 
   if (!open) return null;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-topbar)]/35 p-4"
@@ -30,19 +49,20 @@ export function Modal({ open, title, subtitle, children, onClose, footer }: Moda
       <button aria-label="Cerrar" className="absolute inset-0" onClick={onClose} type="button" />
       <section
         aria-modal="true"
-        className="relative max-h-[90vh] w-full max-w-lg overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-xl"
+        className={cn(
+          "relative max-h-[90vh] w-full overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-xl",
+          sizeClassNames[size],
+        )}
         role="dialog"
       >
-        <header className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] bg-[var(--color-app-background)] px-5 py-4">
+        <header className="flex items-start justify-between gap-4 border-b border-[var(--color-structure)] bg-[var(--color-structure)] px-5 py-4">
           <div className="min-w-0">
-            <h2 className="text-lg font-bold text-[var(--color-title)]">{title}</h2>
-            {subtitle ? (
-              <p className="mt-1 truncate text-sm text-[var(--color-text-muted)]">{subtitle}</p>
-            ) : null}
+            <h2 className="text-lg font-bold text-white">{title}</h2>
+            {subtitle ? <p className="mt-1 truncate text-sm text-white/75">{subtitle}</p> : null}
           </div>
           <button
             aria-label="Cerrar"
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[var(--color-border)] bg-white text-lg font-bold text-[var(--color-title)] transition hover:bg-white/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/20 bg-white/10 text-lg font-bold text-white transition hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
             onClick={onClose}
             type="button"
           >

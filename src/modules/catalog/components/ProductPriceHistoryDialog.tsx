@@ -18,6 +18,7 @@ export function ProductPriceHistoryDialog({ product, onClose }: ProductPriceHist
   return (
     <Modal
       open={Boolean(product)}
+      size="lg"
       subtitle={currentProduct?.name}
       title="Historial de precios"
       onClose={onClose}
@@ -29,13 +30,13 @@ export function ProductPriceHistoryDialog({ product, onClose }: ProductPriceHist
           {error}
         </p>
       ) : history.length ? (
-        <div className="overflow-x-auto rounded-xl border border-[var(--color-border)]">
-          <table className="w-full min-w-[520px] text-left text-sm">
+        <div className="overflow-hidden rounded-xl border border-[var(--color-border)]">
+          <table className="w-full text-left text-sm">
             <thead className="bg-[var(--color-app-background)] text-xs uppercase text-[var(--color-title)]">
               <tr>
                 <th className="px-4 py-3 font-bold">Fecha</th>
-                <th className="px-4 py-3 font-bold">Anterior</th>
-                <th className="px-4 py-3 font-bold">Nuevo</th>
+                <th className="px-4 py-3 text-right font-bold">Anterior</th>
+                <th className="px-4 py-3 text-right font-bold">Nuevo</th>
                 <th className="px-4 py-3 font-bold">Responsable</th>
               </tr>
             </thead>
@@ -45,10 +46,10 @@ export function ProductPriceHistoryDialog({ product, onClose }: ProductPriceHist
                   <td className="px-4 py-3 text-[var(--color-text)]">
                     {formatDateTime(item.changedAt)}
                   </td>
-                  <td className="px-4 py-3 font-semibold text-[var(--color-text)]">
+                  <td className="px-4 py-3 text-right font-semibold text-[var(--color-text-muted)]">
                     {formatCurrency(item.previousPrice)}
                   </td>
-                  <td className="px-4 py-3 font-semibold text-[var(--color-title)]">
+                  <td className="px-4 py-3 text-right font-bold text-[var(--color-title)]">
                     {formatCurrency(item.newPrice)}
                   </td>
                   <td className="px-4 py-3 text-[var(--color-text-muted)]">

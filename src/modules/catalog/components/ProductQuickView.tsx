@@ -4,7 +4,9 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ProductType } from "@/core/enums";
+import type { Promotion } from "@/core/entities";
+import { ProductType, PromotionStatus, PromotionType } from "@/core/enums";
+import { calculateEffectivePrice } from "@/core/pricing";
 import { Button } from "@/shared/components/Button";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
@@ -75,7 +77,7 @@ export function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
       <aside
         aria-label="Consulta rápida de producto"
         aria-modal="true"
-        className="absolute right-0 top-0 flex h-full w-[min(94vw,600px)] flex-col border-l border-[var(--color-border)] bg-white shadow-xl"
+        className="absolute right-0 top-0 flex h-full w-[min(94vw,540px)] flex-col border-l border-[var(--color-border)] bg-white shadow-xl"
         role="dialog"
       >
         <header className="border-b border-[var(--color-border)] px-5 py-4">
@@ -102,9 +104,9 @@ export function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
               <button
                 aria-selected={activeTab === tab.id}
                 className={cn(
-                  "rounded-md px-3 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
+                  "rounded-full px-3 py-1.5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
                   activeTab === tab.id
-                    ? "bg-[var(--color-app-background)] text-[var(--color-title)]"
+                    ? "bg-[var(--color-primary)]/10 text-[var(--color-title)]"
                     : "text-[var(--color-text-muted)] hover:bg-[var(--color-app-background)]/70",
                 )}
                 key={tab.id}
@@ -155,15 +157,35 @@ export function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
 
 function QuickViewGeneral({ detail }: { detail: ProductQuickViewModel }) {
   const { product } = detail;
+  const [nowTimestamp] = useState(() => Date.now());
+  const activePromotion = getCurrentPromotion(detail.promotions, nowTimestamp);
+  const effectivePrice = activePromotion
+    ? calculateEffectivePrice(product.salePrice, activePromotion)
+    : null;
 
   return (
-    <div className="space-y-5">
-      <img
-        alt={product.name}
-        className="aspect-square w-full rounded-md border border-[var(--color-border)] object-contain"
-        src={detail.imageUrl}
-      />
-      <dl className="grid gap-4 md:grid-cols-2">
+    <div className="space-y-4">
+      <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-app-background)] p-3">
+        <img
+          alt={product.name}
+          className="mx-auto h-56 max-h-56 w-full object-contain"
+          src={detail.imageUrl}
+        />
+      </div>
+      {activePromotion && effectivePrice ? (
+        <section className="rounded-xl border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 p-4">
+          <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">Promoción activa</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <DetailItem label="Precio regular" value={formatCurrency(effectivePrice.basePrice)} />
+            <DetailItem
+              label="Precio promocional"
+              value={formatCurrency(effectivePrice.effectivePrice)}
+            />
+            <DetailItem label="Tipo" value={promotionTypeLabels[activePromotion.type]} />
+          </div>
+        </section>
+      ) : null}
+      <dl className="grid gap-3 rounded-xl border border-[var(--color-border)] bg-white p-4 md:grid-cols-2">
         <DetailItem label="Marca" value={product.brand ?? "Sin marca"} />
         <DetailItem label="Categoría" value={detail.category?.name ?? "Sin categoría"} />
         <DetailItem label="Unidad" value={detail.unit?.name ?? "Sin unidad"} />
@@ -280,6 +302,20 @@ function DetailItem({ label, value }: { label: string; value: ReactNode }) {
       <dd className="mt-1 text-sm font-semibold text-[var(--color-text)]">{value}</dd>
     </div>
   );
+}
+
+const promotionTypeLabels: Record<PromotionType, string> = {
+  [PromotionType.percentage]: "Descuento porcentual",
+  [PromotionType.fixedDiscount]: "Descuento fijo",
+  [PromotionType.fixedPrice]: "Precio promocional",
+};
+
+function getCurrentPromotion(promotions: Promotion[], now: number) {
+  return promotions.find((promotion) => {
+    const startsAt = new Date(promotion.startAt).getTime();
+    const endsAt = promotion.endAt ? new Date(promotion.endAt).getTime() : Number.POSITIVE_INFINITY;
+    return promotion.status === PromotionStatus.active && startsAt <= now && now <= endsAt;
+  });
 }
 
 function ChannelSummary({ product }: { product: ProductQuickViewModel["product"] }) {

@@ -6,17 +6,18 @@ import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { Select } from "@/shared/components/Select";
 import { useToast } from "@/shared/components/Toast";
-import {
-  ActiveProductFilters,
-  getActiveProductFiltersCount,
-} from "@/modules/catalog/components/ActiveProductFilters";
+import { getActiveProductFiltersCount } from "@/modules/catalog/components/ActiveProductFilters";
 import { ProductFilters } from "@/modules/catalog/components/ProductFilters";
 import { ProductPriceHistoryDialog } from "@/modules/catalog/components/ProductPriceHistoryDialog";
 import { ProductPromotionDialog } from "@/modules/catalog/components/ProductPromotionDialog";
 import { ProductQuickView } from "@/modules/catalog/components/ProductQuickView";
 import { ProductTable } from "@/modules/catalog/components/ProductTable";
 import { ProductToolbar } from "@/modules/catalog/components/ProductToolbar";
-import { ChevronLeftIcon, ChevronRightIcon } from "@/modules/catalog/components/CatalogIcons";
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  PlusIcon,
+} from "@/modules/catalog/components/CatalogIcons";
 import { useProductFormOptions } from "@/modules/catalog/hooks/useProductFormOptions";
 import { useProductMutations } from "@/modules/catalog/hooks/useProductMutations";
 import { useProducts } from "@/modules/catalog/hooks/useProducts";
@@ -37,8 +38,6 @@ export function ProductsPage() {
     setPage,
     setPageSize,
     updateFilters,
-    clearFilters,
-    clearAllFilters,
   } = useProducts();
   const { options } = useProductFormOptions();
   const mutations = useProductMutations();
@@ -48,7 +47,6 @@ export function ProductsPage() {
   const [promotionTarget, setPromotionTarget] = useState<ProductListItem | null>(null);
   const [priceHistoryTarget, setPriceHistoryTarget] = useState<ProductListItem | null>(null);
   const activeFiltersCount = getActiveProductFiltersCount(filters);
-  const hasActiveFilters = activeFiltersCount > 0;
   const firstVisible = filteredProducts.length === 0 ? 0 : (page - 1) * pageSize + 1;
   const lastVisible = Math.min(page * pageSize, filteredProducts.length);
 
@@ -85,17 +83,9 @@ export function ProductsPage() {
         <ProductFilters
           categories={options?.categories ?? []}
           filters={filters}
-          hasActiveFilters={hasActiveFilters}
           onChange={updateFilters}
-          onClear={clearFilters}
         />
       ) : null}
-      <ActiveProductFilters
-        categories={options?.categories ?? []}
-        filters={filters}
-        onClear={clearFilters}
-        onRemove={updateFilters}
-      />
       {error ? (
         <p className="rounded-md border border-[var(--color-danger)] bg-white px-4 py-3 text-sm font-medium text-[var(--color-danger)]">
           {error}
@@ -131,13 +121,9 @@ export function ProductsPage() {
           />
           {products.length === 0 ? (
             <div className="flex justify-center">
-              <Button href="/catalogo/productos/nuevo">Nuevo producto</Button>
-            </div>
-          ) : null}
-          {products.length > 0 && filteredProducts.length === 0 ? (
-            <div className="flex justify-center">
-              <Button onClick={clearAllFilters} type="button" variant="secondary">
-                Limpiar filtros
+              <Button href="/catalogo/productos/nuevo">
+                <PlusIcon />
+                Nuevo producto
               </Button>
             </div>
           ) : null}

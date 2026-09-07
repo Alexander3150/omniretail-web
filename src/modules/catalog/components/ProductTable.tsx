@@ -39,21 +39,22 @@ export function ProductTable({
   return (
     <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-sm">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[920px] border-collapse text-left text-sm">
-          <thead className="bg-[var(--color-app-background)] text-xs uppercase text-[var(--color-title)]">
+        <table className="w-full min-w-[1040px] border-collapse text-left text-sm">
+          <thead className="bg-[var(--color-structure)] text-xs uppercase text-white">
             <tr>
-              <th className="px-4 py-3 font-bold">Producto</th>
-              <th className="px-4 py-3 font-bold">Categoría</th>
-              <th className="px-4 py-3 font-bold">Precio</th>
-              <th className="px-4 py-3 font-bold">Unidad</th>
-              <th className="px-4 py-3 font-bold">Canales</th>
-              <th className="w-24 px-4 py-3 text-right font-bold">Acciones</th>
+              <th className="px-4 py-3 font-semibold">Producto</th>
+              <th className="px-4 py-3 font-semibold">Categoría</th>
+              <th className="px-4 py-3 font-semibold">Precio</th>
+              <th className="px-4 py-3 font-semibold">Unidad</th>
+              <th className="px-4 py-3 font-semibold">Canales</th>
+              <th className="px-4 py-3 font-semibold">Promoción</th>
+              <th className="w-24 px-4 py-3 text-right font-semibold">Acciones</th>
             </tr>
           </thead>
           <tbody>
             {products.length === 0 ? (
               <tr>
-                <td className="px-4 py-8 text-center text-[var(--color-text-muted)]" colSpan={6}>
+                <td className="px-4 py-8 text-center text-[var(--color-text-muted)]" colSpan={7}>
                   {emptyMessage}
                 </td>
               </tr>
@@ -84,12 +85,6 @@ export function ProductTable({
                         </p>
                         <div className="mt-1 flex flex-wrap gap-1.5">
                           <StatusBadge status={product.status} />
-                          {product.hasActivePromotion ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-1 text-xs font-semibold text-[var(--color-title)]">
-                              <TagIcon />
-                              Promo
-                            </span>
-                          ) : null}
                           <span className="inline-flex rounded-md bg-[var(--color-app-background)] px-2 py-1 text-xs font-semibold text-[var(--color-title)]">
                             {productTypeLabels[product.productType]}
                           </span>
@@ -102,8 +97,21 @@ export function ProductTable({
                     </div>
                   </td>
                   <td className="px-4 py-3 text-[var(--color-text)]">{product.categoryName}</td>
-                  <td className="px-4 py-3 font-semibold text-[var(--color-text)]">
-                    {formatCurrency(product.salePrice)}
+                  <td className="px-4 py-3">
+                    {product.activePromotion ? (
+                      <div>
+                        <p className="text-xs font-semibold text-[var(--color-text-muted)] line-through">
+                          {formatCurrency(product.salePrice)}
+                        </p>
+                        <p className="mt-0.5 text-sm font-bold text-[var(--color-title)]">
+                          {formatCurrency(product.activePromotion.effectivePrice)}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="font-semibold text-[var(--color-text)]">
+                        {formatCurrency(product.salePrice)}
+                      </p>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-[var(--color-text)]">{product.baseUnitName}</td>
                   <td className="px-4 py-3">
@@ -118,6 +126,18 @@ export function ProductTable({
                         App
                       </ChannelChip>
                     </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    {product.activePromotion ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2.5 py-1 text-xs font-semibold text-[var(--color-title)]">
+                        <TagIcon />
+                        {product.activePromotion.label}
+                      </span>
+                    ) : (
+                      <span className="text-xs font-medium text-[var(--color-text-muted)]">
+                        Sin promoción
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <ProductActionsMenu

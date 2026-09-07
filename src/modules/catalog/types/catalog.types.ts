@@ -12,6 +12,12 @@ import type { ProductStatus, ProductType } from "@/core/enums";
 import type { ProductChannels } from "@/core/entities/Product";
 import type { ProductTrackingConfig } from "@/core/types/tracking.types";
 
+export interface ProductListPromotion {
+  id: string;
+  label: string;
+  effectivePrice: number;
+}
+
 export type ProductPromotionFilter = "all" | "with" | "without";
 export type ProductChannelKey = keyof ProductChannels;
 
@@ -40,6 +46,7 @@ export interface ProductListItem {
   salePrice: number;
   channels: ProductChannels;
   hasActivePromotion: boolean;
+  activePromotion?: ProductListPromotion;
   status: ProductStatus;
   tracking: ProductTrackingConfig;
 }
