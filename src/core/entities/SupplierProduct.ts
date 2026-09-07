@@ -6,10 +6,12 @@ export interface SupplierProduct {
   supplierId: string;
   productId: string;
   supplierSku?: string;
-  purchaseUnitId?: string;
-  lastCost?: number;
-  leadTimeDays?: number;
-  minimumOrderQuantity?: number;
+  purchaseUnitId: string;
+  purchaseToBaseFactor: number;
+  lastCost: number;
+  leadTimeDays: number;
+  minimumOrderQuantity: number;
+  preferred: boolean;
   active: boolean;
   createdAt: ISODateString;
   updatedAt: ISODateString;
