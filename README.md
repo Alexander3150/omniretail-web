@@ -1,36 +1,78 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# OmniRetail
 
-## Getting Started
+Frontend Web para el SaaS OmniRetail.
 
-First, run the development server:
+Este repositorio contiene la base tecnica del frontend: Next.js, React, TypeScript, App Router, Tailwind CSS, ESLint, Prettier y estructura por modulos.
+
+## Stack
+
+- Next.js
+- React
+- TypeScript
+- Tailwind CSS
+- App Router
+- npm
+
+## Arquitectura
+
+- `src/app`: rutas y layouts de Next.js.
+- `src/core`: contratos oficiales compartidos por todo OmniRetail.
+- `src/infrastructure`: implementacion simulada de backend, storage, eventos y providers.
+- `src/modules`: funcionalidades por dominio y responsable.
+- `src/shared`: componentes, layouts, hooks, utilidades y constantes reutilizables.
+- `src/config`: configuracion global de navegacion, permisos, estados y politicas.
+- `src/styles`: tokens visuales y utilidades CSS.
+
+## Ownership
+
+Maria
+
+- `storefront`
+
+Andy
+
+- `auth`
+- `customer`
+
+Jose
+
+- `administration`
+
+Melbyn
+
+- `catalog`
+- `inventory`
+- `purchasing`
+- `receiving`
+
+Riquelme
+
+- `pos`
+- `logistics`
+
+Yimmy
+
+- aplicacion movil
+- repositorio independiente
+
+## Instalacion
+
+```bash
+npm install
+```
+
+## Ejecucion local
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Compilacion
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run build
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Flujo Git
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Trabajar en ramas `feature/*`, mantener PR pequenos y ejecutar `npm run lint` y `npm run build` antes de solicitar revision. Las zonas comunes (`core/`, `infrastructure/`, `shared/`, `config/`, `styles/`) requieren coordinacion cuando el cambio afecte a mas de un modulo.

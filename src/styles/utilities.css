@@ -1,0 +1,4 @@
+.app-focus-ring {
+  outline: 2px solid var(--color-structure);
+  outline-offset: 2px;
+}

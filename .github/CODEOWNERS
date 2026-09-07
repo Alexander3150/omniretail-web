@@ -1,0 +1,16 @@
+# CODEOWNERS de OmniRetail
+#
+# Cuando el equipo tenga usernames reales de GitHub, configurar reglas activas.
+# No se agregan usuarios ficticios en esta fase.
+#
+# Ejemplo futuro:
+# /src/modules/storefront/ @username-maria
+# /src/modules/auth/ @username-andy
+# /src/modules/customer/ @username-andy
+# /src/modules/administration/ @username-jose
+# /src/modules/catalog/ @username-melbyn
+# /src/modules/inventory/ @username-melbyn
+# /src/modules/purchasing/ @username-melbyn
+# /src/modules/receiving/ @username-melbyn
+# /src/modules/pos/ @username-riquelme
+# /src/modules/logistics/ @username-riquelme

@@ -1,0 +1,15 @@
+:root {
+  --color-app-background: #fff2d0;
+  --color-surface: #ffffff;
+  --color-structure: #3e668f;
+  --color-topbar: #1e293b;
+  --color-primary: #81a9ee;
+  --color-primary-hover: #6f99de;
+  --color-title: #315d8c;
+  --color-text: #23364d;
+  --color-text-muted: #7488a6;
+  --color-border: #a8b8f2;
+  --color-success: #22a06b;
+  --color-warning: #e0a11b;
+  --color-danger: #d64545;
+}
