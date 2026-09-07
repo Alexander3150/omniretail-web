@@ -47,7 +47,9 @@ Ejemplos: taladro usa stock y serial; tornillos usan stock; medicamento usa stoc
 
 `Product` describe que es el producto. `InventoryBalance` describe cuanto existe y donde. No almacenar stock oficial dentro de Product.
 
-Stock es por tenant, branch y location. Catalogo es global dentro del tenant. Precios son globales por tenant durante esta fase. `Product.salePrice` es el precio base; cualquier precio promocional se deriva y no se guarda como campo mutable en `Product`.
+Stock es por tenant, branch y location. Catalogo es global dentro del tenant. Precios son globales por tenant durante esta fase. `Product.baseUnitId` es la unidad base de inventario. `Product.saleUnitId` es la unidad/presentacion normal de venta y, si falta en datos legados, se interpreta como `baseUnitId`. `Product.salePrice` es el precio base; cualquier precio promocional se deriva y no se guarda como campo mutable en `Product`.
+
+`ProductSalesPriceTier` representa precios mayoristas de venta por producto usando `minQuantity` y `unitPrice`. No mezclar estos precios de venta con costos por volumen de proveedor.
 
 OmniRetail reconoce tres canales comerciales: POS (`pos`), e-commerce/web (`ecommerce`) y app movil (`mobileApp`). `Product.channels` define en que canales puede publicarse un producto.
 
@@ -61,7 +63,7 @@ Promociones V1 soporta descuento porcentual (`percentage`), descuento fijo (`fix
 
 ## Supplier
 
-`Supplier` es entidad maestra comun. Administracion mantiene el CRUD maestro y Purchasing consume el mismo Supplier. `SupplierProduct` contiene supplierSku, costos, unidad de compra, lead time y minimos. No crear proveedores independientes por modulo.
+`Supplier` es entidad maestra comun. Administracion mantiene el CRUD maestro y Purchasing consume el mismo Supplier. `SupplierProduct` contiene supplierSku, costos, unidad de compra, factor hacia unidad base, lead time, minimos y proveedor preferido por producto. La unidad de compra depende del proveedor. `SupplierCostTier` representa costos por volumen de proveedor y no se mezcla con precios mayoristas de venta. No crear proveedores independientes por modulo.
 
 ## Customer
 

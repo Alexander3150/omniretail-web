@@ -22,7 +22,9 @@ export class MockProductRepository extends BaseMockRepository implements Product
   }
   async getPublishedForChannel(channel: SalesChannel) {
     return this.read((db) =>
-      db.products.filter((item) => item.status === ProductStatus.published && item.channels[channel]),
+      db.products.filter(
+        (item) => item.status === ProductStatus.published && item.channels[channel],
+      ),
     );
   }
   async create(input: Parameters<ProductRepository["create"]>[0]) {
@@ -31,6 +33,7 @@ export class MockProductRepository extends BaseMockRepository implements Product
       const created = {
         ...input,
         sku: normalizeSku(input.sku),
+        saleUnitId: input.saleUnitId ?? input.baseUnitId,
         id: this.id("product"),
         createdAt: now,
         updatedAt: now,
