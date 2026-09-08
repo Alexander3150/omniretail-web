@@ -25,4 +25,10 @@ export const catalogPermissions = [
     name: "Gestionar categorias",
     description: "Permite administrar categorias.",
   },
+  {
+    key: "catalog.locations.manage",
+    module: "catalog",
+    name: "Gestionar ubicaciones",
+    description: "Permite administrar ubicaciones.",
+  },
 ] satisfies PermissionDefinition[];

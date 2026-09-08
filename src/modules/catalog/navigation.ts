@@ -18,6 +18,12 @@ export const catalogNavigation = [
         href: "/catalogo/categorias",
         permission: "catalog.categories.manage",
       },
+      {
+        id: "catalog-locations",
+        label: "Ubicaciones",
+        href: "/catalogo/ubicaciones",
+        permission: "catalog.locations.manage",
+      },
     ],
   },
 ] satisfies NavigationItem[];
