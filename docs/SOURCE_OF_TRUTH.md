@@ -67,6 +67,8 @@ Promociones V1 soporta descuento porcentual (`percentage`), descuento fijo (`fix
 
 `InventoryMovement` es append-only. No modificar historia. Todo ajuste, entrada, salida o transferencia debe generar movimiento. Evitar doble registro de stock entre POS, Receiving, Picking y Dispatch.
 
+`InventoryTransferRequest` representa la solicitud operativa entre sucursales antes del movimiento fisico: una sucursal solicitante pide producto a una sucursal origen/proveedora. Crear, aprobar o rechazar una solicitud no modifica `InventoryBalance` ni crea `InventoryMovement`. `InventoryRepository.transferStock()` conserva su semantica actual de transferencia inmediata entre ubicaciones y no debe usarse para solicitudes pendientes. El lifecycle canonico de solicitud es `requested -> approved/rejected/cancelled -> inTransit -> received`; despacho/recepcion futura debera coordinar explicitamente balance y movimiento cuando exista la regla operativa final.
+
 ## Supplier
 
 `Supplier` es entidad maestra comun. Administracion mantiene el CRUD maestro y Purchasing consume el mismo Supplier. `SupplierProduct` contiene supplierSku, costos, unidad de compra, factor hacia unidad base, lead time, minimos y proveedor preferido por producto. La unidad de compra depende del proveedor. `SupplierCostTier` representa costos por volumen de proveedor y no se mezcla con precios mayoristas de venta. No crear proveedores independientes por modulo.

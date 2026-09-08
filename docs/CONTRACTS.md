@@ -26,6 +26,8 @@ MOCK REPOSITORY: implementacion temporal frontend que usa `MockDatabaseStore`.
 
 `ProductInventorySettings` administra configuracion operativa por `tenantId + productId + branchId`: `minStock`, `reorderPoint` opcional y `defaultLocationId` opcional. `InventoryRepository` es el owner del contrato mediante `getProductInventorySettings` y `upsertProductInventorySettings`. `InventoryBalance` sigue representando stock real; sus campos `minStock/reorderPoint` son compatibilidad legacy temporal.
 
+`InventoryTransferRequestRepository` administra solicitudes de transferencia entre sucursales. `requestingBranchId` es la sucursal que necesita el producto y `sourceBranchId` es la sucursal proveedora/origen futuro. Las solicitudes usan `InventoryTransferRequestStatus` y `InventoryTransferReason`; crear/aprobar/rechazar no mueve stock ni crea `InventoryMovement`. `receivedQuantity` es opcional y se completa solo cuando una recepcion futura confirme cantidades.
+
 `SupplierProductRepository` administra la relacion producto-proveedor, incluyendo unidad de compra por proveedor, factor hacia unidad base, costo, minimo, lead time, preferred y `SupplierCostTier`.
 
 `CustomerPaymentMethodRepository` administra metodos de pago guardados del cliente. El contrato persiste solo datos seguros de referencia (`providerPaymentMethodId`, brand, last4, vencimiento, cardholderName, default y estado). No reemplaza `Payment`, que conserva el pago historico de una compra concreta.

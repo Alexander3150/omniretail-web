@@ -72,6 +72,21 @@ export enum InventoryHealthStatus {
   out_of_stock = "out_of_stock",
   overstock = "overstock",
 }
+export enum InventoryTransferRequestStatus {
+  requested = "requested",
+  approved = "approved",
+  rejected = "rejected",
+  inTransit = "inTransit",
+  received = "received",
+  cancelled = "cancelled",
+}
+export enum InventoryTransferReason {
+  replenishment = "replenishment",
+  demandCoverage = "demandCoverage",
+  urgentRequest = "urgentRequest",
+  inventoryBalancing = "inventoryBalancing",
+  other = "other",
+}
 export enum LocationStatus {
   active = "active",
   inactive = "inactive",

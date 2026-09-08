@@ -18,6 +18,7 @@ import type {
   IncidentType,
   InventoryBalance,
   InventoryMovement,
+  InventoryTransferRequest,
   MfaEnrollment,
   Notification,
   Order,
@@ -87,6 +88,7 @@ export interface MockDatabase {
   productInventorySettings: ProductInventorySettings[];
   inventoryBalances: InventoryBalance[];
   inventoryMovements: InventoryMovement[];
+  inventoryTransferRequests: InventoryTransferRequest[];
   stockLots: StockLot[];
   serialNumbers: SerialNumber[];
   storageLocations: StorageLocation[];
