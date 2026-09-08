@@ -5,7 +5,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Promotion } from "@/core/entities";
-import { ProductType, PromotionStatus, PromotionType } from "@/core/enums";
+import { ProductStatus, ProductType, PromotionStatus, PromotionType } from "@/core/enums";
 import { calculateEffectivePrice } from "@/core/pricing";
 import { Button } from "@/shared/components/Button";
 import { StatusBadge } from "@/shared/components/StatusBadge";
@@ -158,7 +158,10 @@ export function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
 function QuickViewGeneral({ detail }: { detail: ProductQuickViewModel }) {
   const { product } = detail;
   const [nowTimestamp] = useState(() => Date.now());
-  const activePromotion = getCurrentPromotion(detail.promotions, nowTimestamp);
+  const activePromotion =
+    product.status === ProductStatus.published
+      ? getCurrentPromotion(detail.promotions, nowTimestamp)
+      : undefined;
   const effectivePrice = activePromotion
     ? calculateEffectivePrice(product.salePrice, activePromotion)
     : null;

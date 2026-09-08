@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import type { Product, Promotion } from "@/core/entities";
-import { PromotionStatus, PromotionType, SalesChannel } from "@/core/enums";
+import { ProductStatus, PromotionStatus, PromotionType, SalesChannel } from "@/core/enums";
 import { calculateEffectivePrice } from "@/core/pricing";
 import { Button } from "@/shared/components/Button";
 import { Modal } from "@/shared/components/Modal";
@@ -61,7 +61,8 @@ export function ProductPromotionDialog({ product, onClose }: ProductPromotionDia
 
   const promotions = data?.promotions ?? [];
   const currentProduct = data?.product ?? product;
-  const form = mode === "form" || (!loading && promotions.length === 0);
+  const productArchived = currentProduct?.status === ProductStatus.archived;
+  const form = !productArchived && (mode === "form" || (!loading && promotions.length === 0));
 
   async function handleSave(state: PromotionFormState) {
     if (!currentProduct) return;
@@ -174,6 +175,7 @@ export function ProductPromotionDialog({ product, onClose }: ProductPromotionDia
             setMode("form");
           }}
           onFinalize={handleFinalize}
+          readOnly={productArchived}
         />
       )}
     </Modal>
@@ -188,6 +190,7 @@ function PromotionOverview({
   onCreate,
   onEdit,
   onFinalize,
+  readOnly,
 }: {
   busy: boolean;
   error: string | null;
@@ -196,6 +199,7 @@ function PromotionOverview({
   onCreate: () => void;
   onEdit: (promotion: Promotion) => void;
   onFinalize: (promotion: Promotion) => void;
+  readOnly?: boolean;
 }) {
   return (
     <div className="space-y-4">
@@ -204,12 +208,18 @@ function PromotionOverview({
           {error}
         </p>
       ) : null}
+      {readOnly ? (
+        <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 text-sm font-semibold text-[var(--color-text)]">
+          Restaura el producto para gestionar promociones.
+        </p>
+      ) : (
       <div className="flex justify-end">
         <Button className="w-full min-h-10 px-3 py-2 sm:w-auto" onClick={onCreate} type="button" variant="secondary">
           <TagIcon />
           Nueva promoción
         </Button>
       </div>
+      )}
       <div className="space-y-3">
         {promotions.map((promotion) => {
           const price = calculateEffectivePrice(product.salePrice, promotion);
@@ -242,6 +252,7 @@ function PromotionOverview({
                 />
               </dl>
               <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+                {readOnly ? null : (
                 <Button
                   className="min-h-10 px-3 py-2"
                   onClick={() => onEdit(promotion)}
@@ -250,7 +261,8 @@ function PromotionOverview({
                 >
                   Editar
                 </Button>
-                {promotion.status !== PromotionStatus.ended ? (
+                )}
+                {!readOnly && promotion.status !== PromotionStatus.ended ? (
                   <Button
                     className="min-h-10 px-3 py-2"
                     disabled={busy}

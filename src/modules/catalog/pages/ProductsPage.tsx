@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ProductStatus } from "@/core/enums";
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
@@ -65,10 +65,28 @@ export function ProductsPage() {
     }
   }
 
+  async function restoreProduct(product: ProductListItem) {
+    try {
+      await mutations.restore(product.id);
+      showToast({ title: "Producto restaurado", tone: "success" });
+    } catch (caughtError) {
+      showToast({
+        title: "No se pudo restaurar",
+        description: caughtError instanceof Error ? caughtError.message : undefined,
+        tone: "danger",
+      });
+    }
+  }
+
   const emptyMessage =
     products.length === 0
       ? "Aun no hay productos registrados."
       : "No hay productos que coincidan con los filtros.";
+
+  useEffect(() => {
+    const categoryId = new URLSearchParams(window.location.search).get("categoryId");
+    if (categoryId) updateFilters({ categoryId });
+  }, [updateFilters]);
 
   return (
     <div className="min-w-0 space-y-5">
@@ -117,6 +135,7 @@ export function ProductsPage() {
             onOpenQuickView={setQuickViewProduct}
             onPriceHistory={setPriceHistoryTarget}
             onPromotion={setPromotionTarget}
+            onRestore={restoreProduct}
             products={paginatedProducts}
           />
           {products.length === 0 ? (

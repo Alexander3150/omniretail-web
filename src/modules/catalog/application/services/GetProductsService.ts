@@ -1,7 +1,7 @@
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { getProductImage } from "@/shared/utils/getProductImage";
 import type { ProductListItem } from "@/modules/catalog/types/catalog.types";
-import { PromotionStatus, PromotionType } from "@/core/enums";
+import { ProductStatus, PromotionStatus, PromotionType } from "@/core/enums";
 import type { Promotion } from "@/core/entities";
 import { calculateEffectivePrice } from "@/core/pricing";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
@@ -60,7 +60,10 @@ export class GetProductsService {
 
     return products
       .map<ProductListItem>((product) => {
-        const activePromotion = getCurrentPromotion(product.id, product.tenantId, promotions, now);
+        const activePromotion =
+          product.status === ProductStatus.published
+            ? getCurrentPromotion(product.id, product.tenantId, promotions, now)
+            : undefined;
         const effectivePrice = activePromotion
           ? calculateEffectivePrice(product.salePrice, activePromotion).effectivePrice
           : product.salePrice;

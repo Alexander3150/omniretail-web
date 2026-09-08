@@ -6,6 +6,7 @@ import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { ArchiveProductService } from "@/modules/catalog/application/services/ArchiveProductService";
 import { CreateProductService } from "@/modules/catalog/application/services/CreateProductService";
 import { CreateProductWithCommercialDataService } from "@/modules/catalog/application/services/CreateProductWithCommercialDataService";
+import { RestoreProductService } from "@/modules/catalog/application/services/RestoreProductService";
 import { UpdateProductService } from "@/modules/catalog/application/services/UpdateProductService";
 import { UpdateProductWithCommercialDataService } from "@/modules/catalog/application/services/UpdateProductWithCommercialDataService";
 import { cleanError } from "@/modules/catalog/application/services/serviceHelpers";
@@ -26,6 +27,7 @@ export function useProductMutations() {
     [repositories],
   );
   const archiveService = useMemo(() => new ArchiveProductService(repositories), [repositories]);
+  const restoreService = useMemo(() => new RestoreProductService(repositories), [repositories]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,5 +56,6 @@ export function useProductMutations() {
     updateWithCommercialData: (productId: string, dto: ProductEditorDto) =>
       runMutation(() => updateWithCommercialDataService.execute(productId, dto)),
     archive: (productId: string) => runMutation(() => archiveService.execute(productId)),
+    restore: (productId: string) => runMutation(() => restoreService.execute(productId)),
   };
 }

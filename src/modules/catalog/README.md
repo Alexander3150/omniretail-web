@@ -29,6 +29,15 @@ Implementado en esta rama:
 - Tracking adaptable por `BusinessCapabilitiesConfig`; productos `service` fuerzan tracking inactivo.
 - Rutas privadas `/catalogo/productos`, `/catalogo/productos/nuevo`, `/catalogo/productos/[id]` y `/catalogo/productos/[id]/editar`.
 
+## Gestion de categorias
+
+Implementado en esta rama:
+
+- Listado, busqueda, filtro por estado, paginacion y panel contextual de categorias.
+- Creacion, edicion, archivo y restauracion mediante `CategoryRepository`.
+- Conteo real de productos asociados desde `ProductRepository`.
+- Ruta privada `/catalogo/categorias`.
+
 ## Estructura futura
 
 ```text

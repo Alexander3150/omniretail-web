@@ -24,6 +24,7 @@ interface ProductTableProps {
   onPromotion: (product: ProductListItem) => void;
   onPriceHistory: (product: ProductListItem) => void;
   onArchive: (product: ProductListItem) => void;
+  onRestore: (product: ProductListItem) => void;
   footer?: ReactNode;
 }
 
@@ -34,6 +35,7 @@ export function ProductTable({
   onPromotion,
   onPriceHistory,
   onArchive,
+  onRestore,
   footer,
 }: ProductTableProps) {
   return (
@@ -148,6 +150,7 @@ export function ProductTable({
                       onArchive={onArchive}
                       onPriceHistory={onPriceHistory}
                       onPromotion={onPromotion}
+                      onRestore={onRestore}
                       product={product}
                     />
                   </td>
