@@ -49,6 +49,8 @@ Ejemplos: taladro usa stock y serial; tornillos usan stock; medicamento usa stoc
 
 Stock es por tenant, branch y location. Catalogo es global dentro del tenant. Precios son globales por tenant durante esta fase. `Product.baseUnitId` es la unidad base de inventario. `Product.saleUnitId` es la unidad/presentacion normal de venta y, si falta en datos legados, se interpreta como `baseUnitId`. `Product.salePrice` es el precio base; cualquier precio promocional se deriva y no se guarda como campo mutable en `Product`.
 
+`Unit.category` es la clasificacion canonica de una unidad (`unit`, `weight`, `length`, `volume`, `other`). No depende de `Unit.code`, `Unit.name` ni `Unit.symbol`: cambiar el codigo o el simbolo no debe cambiar la categoria. `Unit.code` sigue siendo identificador interno, `Unit.symbol` sigue siendo representacion corta y `Unit.allowsDecimals` sigue indicando si permite cantidades fraccionarias.
+
 `ProductInventorySettings` representa configuracion operativa por producto+sucursal. Es la fuente canonica para `minStock`, `reorderPoint` opcional y `defaultLocationId` opcional. La unicidad conceptual es `tenantId + productId + branchId`. `InventoryBalance.minStock/reorderPoint` se conserva solo como compatibilidad legacy temporal y no debe usarse como nueva fuente de verdad.
 
 `defaultLocationId` no crea stock, no mueve stock y no crea `InventoryBalance`. Al asignarse debe apuntar a una `StorageLocation` existente, activa, del mismo tenant y de la misma sucursal. Archivar posteriormente una ubicacion no mueve stock ni borra historial; la referencia de settings se conserva como dato historico hasta que una operacion explicita la cambie.

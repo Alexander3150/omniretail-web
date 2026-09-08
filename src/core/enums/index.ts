@@ -53,6 +53,13 @@ export enum UnitStatus {
   active = "active",
   archived = "archived",
 }
+export enum UnitCategory {
+  unit = "unit",
+  weight = "weight",
+  length = "length",
+  volume = "volume",
+  other = "other",
+}
 export enum InventoryMovementType {
   in = "in",
   out = "out",

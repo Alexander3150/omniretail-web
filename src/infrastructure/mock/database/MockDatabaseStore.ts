@@ -4,8 +4,10 @@ import {
   PaymentMethod,
   PromotionType,
   SalesChannel,
+  UnitCategory,
+  UnitStatus,
 } from "@/core/enums";
-import type { CustomerPaymentMethod, ProductInventorySettings } from "@/core/entities";
+import type { CustomerPaymentMethod, ProductInventorySettings, Unit } from "@/core/entities";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { createMockDatabase } from "@/infrastructure/mock/database/createMockDatabase";
 import type { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
@@ -18,19 +20,22 @@ type PersistedCustomerPaymentMethod = Partial<CustomerPaymentMethod> & {
 };
 
 type PersistedProductInventorySettings = Partial<ProductInventorySettings>;
+type PersistedUnit = Partial<Unit>;
 
 type PersistedMockDatabase = Partial<
-  Omit<MockDatabase, "customerPaymentMethods" | "productInventorySettings">
+  Omit<MockDatabase, "customerPaymentMethods" | "productInventorySettings" | "units">
 > & {
   customerPaymentMethods?: PersistedCustomerPaymentMethod[];
   productInventorySettings?: PersistedProductInventorySettings[];
   savedPaymentMethods?: PersistedCustomerPaymentMethod[];
+  units?: PersistedUnit[];
 };
 
 function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   const base = createMockDatabase();
   const normalized = { ...base, ...database } as MockDatabase;
 
+  normalized.units = (database.units ?? base.units).map(normalizePersistedUnit);
   normalized.productPriceHistory = database.productPriceHistory ?? [];
   normalized.products = (database.products ?? base.products).map((product) => ({
     ...product,
@@ -208,6 +213,7 @@ export class MockDatabaseStore {
   constructor(private readonly storage: LocalStorageAdapter) {
     const persisted = this.storage.get<PersistedMockDatabase>(MOCK_DATABASE_STORAGE_KEY);
     this.database = normalizeMockDatabase(persisted ?? createMockDatabase());
+    this.persist();
   }
 
   getSnapshot(): MockDatabase {
@@ -233,4 +239,68 @@ export class MockDatabaseStore {
   private persist(): void {
     this.storage.set(MOCK_DATABASE_STORAGE_KEY, this.database);
   }
+}
+
+function normalizePersistedUnit(unit: PersistedUnit): Unit {
+  const now = new Date().toISOString();
+
+  return {
+    id: unit.id ?? `unit-${crypto.randomUUID()}`,
+    tenantId: unit.tenantId ?? "tenant-demo",
+    code: unit.code ?? "",
+    name: unit.name ?? "Unidad",
+    symbol: unit.symbol ?? "",
+    category: normalizeUnitCategory(unit),
+    allowsDecimals: unit.allowsDecimals ?? false,
+    status: unit.status ?? UnitStatus.active,
+    createdAt: unit.createdAt ?? now,
+    updatedAt: unit.updatedAt ?? unit.createdAt ?? now,
+  };
+}
+
+function normalizeUnitCategory(unit: PersistedUnit): UnitCategory {
+  if (isUnitCategory(unit.category)) return unit.category;
+
+  const code = unit.code?.trim().toUpperCase();
+  const symbol = unit.symbol?.trim().toUpperCase();
+  const name = stripAccents(unit.name ?? "").trim().toUpperCase();
+
+  if (code === "UND" || code === "CAJA" || code === "PAQ") return UnitCategory.unit;
+  if (code === "PAR" || code === "DOC" || code === "DOCENA" || code === "DZ") {
+    return UnitCategory.unit;
+  }
+  if (symbol === "U" || symbol === "CJ" || symbol === "PAQ") return UnitCategory.unit;
+  if (symbol === "PAR" || symbol === "DOC" || symbol === "DZ") return UnitCategory.unit;
+  if (
+    name === "UNIDAD" ||
+    name === "CAJA" ||
+    name === "PAQUETE" ||
+    name === "PAR" ||
+    name === "DOCENA"
+  ) {
+    return UnitCategory.unit;
+  }
+
+  if (code === "KG" || symbol === "KG" || name === "KILOGRAMO") return UnitCategory.weight;
+  if (code === "G" || symbol === "G" || name === "GRAMO") return UnitCategory.weight;
+  if (code === "LB" || symbol === "LB" || name === "LIBRA") return UnitCategory.weight;
+  if (code === "OZ" || symbol === "OZ" || name === "ONZA") return UnitCategory.weight;
+
+  if (code === "M" || symbol === "M" || name === "METRO") return UnitCategory.length;
+
+  return UnitCategory.other;
+}
+
+function isUnitCategory(value: unknown): value is UnitCategory {
+  return (
+    value === UnitCategory.unit ||
+    value === UnitCategory.weight ||
+    value === UnitCategory.length ||
+    value === UnitCategory.volume ||
+    value === UnitCategory.other
+  );
+}
+
+function stripAccents(value: string): string {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
