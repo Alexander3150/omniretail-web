@@ -97,6 +97,9 @@ export function InventoryAlertsPage() {
   const [actionMode, setActionMode] = useState<ActionMode>(null);
   const [requestProviderBranchId, setRequestProviderBranchId] = useState<string | null>(null);
   const [selectedTransferRequestId, setSelectedTransferRequestId] = useState<string | null>(null);
+  const [viewedTransferAlertKeys, setViewedTransferAlertKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [, setClockTick] = useState(0);
@@ -149,6 +152,13 @@ export function InventoryAlertsPage() {
     showToast({ title: "Solicitud de traslado creada", tone: "success" });
   }
 
+  function openTransferRequestDetail(request: InventoryTransferRequestRow) {
+    const alertKey = getTransferAlertKey(branchId, request);
+    setViewedTransferAlertKeys((current) => new Set(current).add(alertKey));
+    setSelectedTransferRequestId(request.id);
+    setActionMode("transfer-request-detail");
+  }
+
   return (
     <div className="min-w-0 space-y-4">
       <header className="flex min-w-0 flex-col gap-3 border-b border-[var(--color-border)] pb-4 xl:flex-row xl:items-end xl:justify-between">
@@ -191,6 +201,7 @@ export function InventoryAlertsPage() {
         activeProducts={kpis.activeProducts}
         expiringSoon={kpis.expiringSoon}
         selectedFilter={kpiFilter}
+        showExpiration={data.visibility.showExpirationFeatures}
         lowStock={kpis.lowStock}
         outOfStock={kpis.outOfStock}
         onFilterChange={(filter) => {
@@ -242,6 +253,7 @@ export function InventoryAlertsPage() {
               pageSize={pageSize}
               rows={paginatedRows}
               selectedProductId={selectedProductId}
+              showExpiration={data.visibility.showExpirationFeatures}
               totalItems={rows.length}
               totalPages={totalPages}
               onAdjust={openAdjust}
@@ -258,6 +270,7 @@ export function InventoryAlertsPage() {
 
         <ContextPanel
           activeBranchName={activeBranch?.name ?? "Sucursal"}
+          activeBranchId={branchId}
           alerts={data.alerts}
           mode={panelMode}
           row={selectedRow}
@@ -269,11 +282,9 @@ export function InventoryAlertsPage() {
           }}
           onModeChange={setPanelMode}
           onSelectProduct={selectProduct}
-          onSelectTransferRequest={(requestId) => {
-            setSelectedTransferRequestId(requestId);
-            setActionMode("transfer-request-detail");
-          }}
+          onSelectTransferRequest={openTransferRequestDetail}
           transferRequests={data.transferRequests}
+          viewedTransferAlertKeys={viewedTransferAlertKeys}
         />
       </section>
 
@@ -336,6 +347,7 @@ function KpiGrid({
   lowStock,
   outOfStock,
   selectedFilter,
+  showExpiration,
   onFilterChange,
 }: {
   activeProducts: number;
@@ -343,10 +355,16 @@ function KpiGrid({
   lowStock: number;
   outOfStock: number;
   selectedFilter: InventoryKpiFilter;
+  showExpiration: boolean;
   onFilterChange: (filter: InventoryKpiFilter) => void;
 }) {
   return (
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <section
+      className={cn(
+        "grid gap-3 sm:grid-cols-2",
+        showExpiration ? "xl:grid-cols-4" : "xl:grid-cols-3",
+      )}
+    >
       <KpiCard
         description="Productos publicados que controlan stock"
         filter="active"
@@ -366,16 +384,18 @@ function KpiGrid({
         value={lowStock}
         onSelect={onFilterChange}
       />
-      <KpiCard
-        description="Lotes dentro de la ventana de revision"
-        filter="expiringSoon"
-        icon="C"
-        label="Proximos a caducar"
-        selected={selectedFilter === "expiringSoon"}
-        tone="warning"
-        value={expiringSoon}
-        onSelect={onFilterChange}
-      />
+      {showExpiration ? (
+        <KpiCard
+          description="Lotes dentro de la ventana de revision"
+          filter="expiringSoon"
+          icon="C"
+          label="Proximos a caducar"
+          selected={selectedFilter === "expiringSoon"}
+          tone="warning"
+          value={expiringSoon}
+          onSelect={onFilterChange}
+        />
+      ) : null}
       <KpiCard
         description="Sin cantidad registrada en la sucursal"
         filter="outOfStock"
@@ -534,6 +554,7 @@ function InventoryTable({
   pageSize,
   rows,
   selectedProductId,
+  showExpiration,
   totalItems,
   totalPages,
   onAdjust,
@@ -548,6 +569,7 @@ function InventoryTable({
   pageSize: number;
   rows: InventoryProductRow[];
   selectedProductId: string | null;
+  showExpiration: boolean;
   totalItems: number;
   totalPages: number;
   onAdjust: (row: InventoryProductRow) => void;
@@ -559,7 +581,7 @@ function InventoryTable({
   return (
     <div className="border-t border-[var(--color-border)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[720px] border-collapse text-left text-sm">
           <thead className="bg-[var(--color-structure)] text-xs uppercase text-white">
             <tr>
               <th className="px-4 py-3 font-semibold">Producto</th>
@@ -567,14 +589,19 @@ function InventoryTable({
               <th className="hidden px-4 py-3 text-right font-semibold md:table-cell">Nivel minimo</th>
               <th className="hidden px-4 py-3 font-semibold lg:table-cell">Ubicacion</th>
               <th className="px-4 py-3 font-semibold">Estado</th>
-              <th className="hidden px-4 py-3 font-semibold lg:table-cell">Caducidad</th>
+              {showExpiration ? (
+                <th className="hidden px-4 py-3 font-semibold lg:table-cell">Caducidad</th>
+              ) : null}
               <th className="w-24 px-4 py-3 text-right font-semibold">Acciones</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td className="px-4 py-8 text-center text-[var(--color-text-muted)]" colSpan={7}>
+                <td
+                  className="px-4 py-8 text-center text-[var(--color-text-muted)]"
+                  colSpan={showExpiration ? 7 : 6}
+                >
                   No hay productos que coincidan con los filtros.
                 </td>
               </tr>
@@ -613,9 +640,11 @@ function InventoryTable({
                   <td className="px-4 py-4">
                     <InventoryStatusBadge status={row.status} label={row.statusLabel} />
                   </td>
-                  <td className="hidden px-4 py-4 text-[var(--color-text)] lg:table-cell">
-                    <ExpirationCell row={row} />
-                  </td>
+                  {showExpiration ? (
+                    <td className="hidden px-4 py-4 text-[var(--color-text)] lg:table-cell">
+                      <ExpirationCell row={row} />
+                    </td>
+                  ) : null}
                   <td className="px-4 py-3">
                     <RowActionsMenu row={row} onAdjust={onAdjust} onTransfer={onTransfer} />
                   </td>
@@ -883,11 +912,13 @@ function MenuItem({
 }
 
 function ContextPanel({
+  activeBranchId,
   activeBranchName,
   alerts,
   mode,
   row,
   transferRequests,
+  viewedTransferAlertKeys,
   onAdjust,
   onCloseProduct,
   onModeChange,
@@ -895,17 +926,19 @@ function ContextPanel({
   onSelectProduct,
   onSelectTransferRequest,
 }: {
+  activeBranchId: string;
   activeBranchName: string;
   alerts: InventoryAlert[];
   mode: AlertPanelMode;
   row: InventoryProductRow | null;
   transferRequests: InventoryTransferRequestRow[];
+  viewedTransferAlertKeys: Set<string>;
   onAdjust: () => void;
   onCloseProduct: () => void;
   onModeChange: (mode: AlertPanelMode) => void;
   onOtherBranches: () => void;
   onSelectProduct: (productId: string) => void;
-  onSelectTransferRequest: (requestId: string) => void;
+  onSelectTransferRequest: (request: InventoryTransferRequestRow) => void;
 }) {
   const productAlerts = row ? alerts.filter((alert) => alert.productId === row.productId) : [];
   const totalAlerts = alerts.length + transferRequests.length;
@@ -923,8 +956,10 @@ function ContextPanel({
         </button>
       ) : (
         <AlertsPanel
+          activeBranchId={activeBranchId}
           alerts={alerts}
           transferRequests={transferRequests}
+          viewedTransferAlertKeys={viewedTransferAlertKeys}
           onSelectProduct={onSelectProduct}
           onSelectTransferRequest={onSelectTransferRequest}
         />
@@ -945,17 +980,26 @@ function ContextPanel({
 }
 
 function AlertsPanel({
+  activeBranchId,
   alerts,
   transferRequests,
+  viewedTransferAlertKeys,
   onSelectProduct,
   onSelectTransferRequest,
 }: {
+  activeBranchId: string;
   alerts: InventoryAlert[];
   transferRequests: InventoryTransferRequestRow[];
+  viewedTransferAlertKeys: Set<string>;
   onSelectProduct: (productId: string) => void;
-  onSelectTransferRequest: (requestId: string) => void;
+  onSelectTransferRequest: (request: InventoryTransferRequestRow) => void;
 }) {
-  const feedItems = buildAlertFeed(alerts, transferRequests);
+  const feedItems = buildAlertFeed(
+    activeBranchId,
+    alerts,
+    transferRequests,
+    viewedTransferAlertKeys,
+  );
 
   return (
     <section>
@@ -986,12 +1030,25 @@ function AlertsPanel({
                   getTransferRequestToneClass(item.request),
                 )}
                 key={item.id}
-                onClick={() => onSelectTransferRequest(item.request.id)}
+                onClick={() => onSelectTransferRequest(item.request)}
                 type="button"
               >
-                <strong className="block text-sm text-[var(--color-title)]">
-                  {getTransferRequestAlertTitle(item.request)}
-                </strong>
+                <span className="flex min-w-0 items-center gap-2">
+                  {item.isNew ? (
+                    <span
+                      aria-label="Nueva"
+                      className="inline-flex h-2 w-2 shrink-0 rounded-full bg-[var(--color-primary)]"
+                    />
+                  ) : null}
+                  <strong className="block min-w-0 text-sm text-[var(--color-title)]">
+                    {getTransferRequestAlertTitle(item.request)}
+                  </strong>
+                  {item.isNew ? (
+                    <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-bold text-[var(--color-title)]">
+                      Nueva
+                    </span>
+                  ) : null}
+                </span>
                 <span className="mt-1 block text-sm text-[var(--color-text-muted)]">
                   {getTransferRequestAlertMessage(item.request)}
                 </span>
@@ -1610,11 +1667,20 @@ function getAlertPriority(alert: InventoryAlert) {
 
 type AlertFeedItem =
   | { id: string; kind: "inventory"; priority: number; alert: InventoryAlert }
-  | { id: string; kind: "transfer"; priority: number; request: InventoryTransferRequestRow };
+  | {
+      id: string;
+      kind: "transfer";
+      priority: number;
+      timestamp: number;
+      isNew: boolean;
+      request: InventoryTransferRequestRow;
+    };
 
 function buildAlertFeed(
+  activeBranchId: string,
   alerts: InventoryAlert[],
   transferRequests: InventoryTransferRequestRow[],
+  viewedTransferAlertKeys: Set<string>,
 ): AlertFeedItem[] {
   const inventoryItems = alerts.map((alert) => ({
     id: alert.id,
@@ -1622,15 +1688,37 @@ function buildAlertFeed(
     priority: getAlertPriority(alert),
     alert,
   }));
-  const requestItems = transferRequests.map((request) => ({
-    id: request.id,
-    kind: "transfer" as const,
-    priority: 2,
-    request,
-  }));
+  const requestItems = transferRequests.map((request) => {
+    const alertKey = getTransferAlertKey(activeBranchId, request);
+    const isNew = !viewedTransferAlertKeys.has(alertKey);
+    return {
+      id: alertKey,
+      kind: "transfer" as const,
+      priority: isNew ? 0 : 50,
+      timestamp: getTransferAlertTimestamp(request),
+      isNew,
+      request,
+    };
+  });
   return [...inventoryItems, ...requestItems].sort(
-    (left, right) => left.priority - right.priority || left.id.localeCompare(right.id),
+    (left, right) => {
+      if (left.priority !== right.priority) return left.priority - right.priority;
+      if (left.kind === "transfer" && right.kind === "transfer" && left.isNew && right.isNew) {
+        return right.timestamp - left.timestamp;
+      }
+      return left.id.localeCompare(right.id);
+    },
   );
+}
+
+function getTransferAlertKey(branchId: string, request: InventoryTransferRequestRow) {
+  return `${branchId}:${request.id}:${request.status}`;
+}
+
+function getTransferAlertTimestamp(request: InventoryTransferRequestRow) {
+  const value = request.approvedAt ?? request.rejectedAt ?? request.reviewedAt ?? request.requestedAt;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : 0;
 }
 
 function formatTransferRequestStatus(status: InventoryTransferRequestStatus) {

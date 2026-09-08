@@ -34,6 +34,7 @@ export interface InventoryProductRow {
   reorderPoint?: number;
   status: InventoryStatus;
   statusLabel: string;
+  tracksExpiration: boolean;
   nextExpirationDate?: string;
   nextExpirationLabel: string;
   activeAlerts: InventoryAlert[];
@@ -70,9 +71,16 @@ export interface InventoryAlertsData {
   alerts: InventoryAlert[];
   transferRequests: InventoryTransferRequestRow[];
   kpis: InventoryKpis;
+  visibility: InventoryAlertsVisibility;
   branches: Branch[];
   categories: Category[];
   locations: StorageLocation[];
+}
+
+export interface InventoryAlertsVisibility {
+  supportsExpiration: boolean;
+  hasExpirationProducts: boolean;
+  showExpirationFeatures: boolean;
 }
 
 export interface InventoryTransferRequestRow {

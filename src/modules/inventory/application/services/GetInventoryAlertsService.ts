@@ -26,7 +26,6 @@ export class GetInventoryAlertsService {
       units,
       locations,
       balances,
-      lots,
       receivedTransferRequests,
       approvedTransferResponses,
       rejectedTransferResponses,
@@ -37,7 +36,6 @@ export class GetInventoryAlertsService {
       this.repositories.units.getAll(),
       this.repositories.inventory.getLocations(),
       this.repositories.inventory.getBalances(),
-      this.repositories.inventory.getLots(),
       this.repositories.inventoryTransferRequests.getRequests({
         sourceBranchId: branchId,
         status: InventoryTransferRequestStatus.requested,
@@ -51,11 +49,18 @@ export class GetInventoryAlertsService {
         status: InventoryTransferRequestStatus.rejected,
       }),
     ]);
-    const stockProducts = products.filter(isActiveStockProduct);
     const activeBranch = branches.find((branch) => branch.id === branchId);
-    const branchProducts = activeBranch
-      ? stockProducts.filter((product) => product.tenantId === activeBranch.tenantId)
-      : stockProducts;
+    const tenantProducts = activeBranch
+      ? products.filter((product) => product.tenantId === activeBranch.tenantId)
+      : products;
+    const branchProducts = tenantProducts.filter(isOperationalStockProduct);
+    const capabilities = activeBranch
+      ? await this.repositories.businessConfig.getCapabilities(activeBranch.tenantId)
+      : null;
+    const visibility = getVisibilityFlags(capabilities?.supportsExpiration ?? false, tenantProducts);
+    const lots = visibility.showExpirationFeatures
+      ? await this.repositories.inventory.getLots()
+      : [];
     const settingsEntries = await Promise.all(
       branchProducts.map(async (product) => [
         product.id,
@@ -98,17 +103,29 @@ export class GetInventoryAlertsService {
           maps,
         ),
       ],
+      visibility,
       branches,
       categories,
       locations,
       kpis: {
         activeProducts: rows.length,
         lowStock: rows.filter((row) => row.status === "critical" || row.status === "near_minimum").length,
-        expiringSoon: rows.filter((row) => isExpiringSoon(row.nextExpirationDate)).length,
+        expiringSoon: visibility.showExpirationFeatures
+          ? rows.filter((row) => row.tracksExpiration && isExpiringSoon(row.nextExpirationDate)).length
+          : 0,
         outOfStock: rows.filter((row) => row.status === "out_of_stock").length,
       },
     };
   }
+}
+
+function getVisibilityFlags(supportsExpiration: boolean, products: Product[]) {
+  const hasExpirationProducts = products.some(isOperationalExpirationProduct);
+  return {
+    supportsExpiration,
+    hasExpirationProducts,
+    showExpirationFeatures: supportsExpiration && hasExpirationProducts,
+  };
 }
 
 function filterRecentTransferResponses(requests: InventoryTransferRequest[]) {
@@ -200,8 +217,12 @@ export function isExpiringSoon(value?: string) {
   return expirationTime >= now && expirationTime <= threshold;
 }
 
-function isActiveStockProduct(product: Product): product is ProductWithStock {
+function isOperationalStockProduct(product: Product): product is ProductWithStock {
   return product.status === ProductStatus.published && product.tracking.stock === true;
+}
+
+function isOperationalExpirationProduct(product: Product) {
+  return isOperationalStockProduct(product) && product.tracking.expiration === true;
 }
 
 function buildRow(
@@ -221,7 +242,10 @@ function buildRow(
   const settings = maps.settingsByProduct.get(product.id);
   const minStock = settings?.minStock ?? 0;
   const status = classifyInventoryStatus(quantity, minStock);
-  const nextExpirationDate = getNextExpirationDate(maps.lotsByProduct.get(product.id) ?? []);
+  const tracksExpiration = product.tracking.expiration;
+  const nextExpirationDate = tracksExpiration
+    ? getNextExpirationDate(maps.lotsByProduct.get(product.id) ?? [])
+    : undefined;
   const defaultLocation = settings?.defaultLocationId
     ? maps.locations.get(settings.defaultLocationId)
     : null;
@@ -246,6 +270,7 @@ function buildRow(
     reorderPoint: settings?.reorderPoint,
     status,
     statusLabel: getInventoryStatusLabel(status),
+    tracksExpiration,
     nextExpirationDate,
     nextExpirationLabel: formatExpiration(nextExpirationDate),
     activeAlerts: [],
@@ -306,7 +331,7 @@ function buildRowAlerts(row: InventoryProductRow): InventoryAlert[] {
       suggestedReorder: getSuggestedReorder(row),
     });
   }
-  if (isExpiringSoon(row.nextExpirationDate)) {
+  if (row.tracksExpiration && isExpiringSoon(row.nextExpirationDate)) {
     alerts.push({
       id: `expiration-${row.branchId}-${row.productId}`,
       type: "expiration",

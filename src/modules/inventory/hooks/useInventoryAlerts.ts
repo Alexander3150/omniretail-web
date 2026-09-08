@@ -25,6 +25,11 @@ const EMPTY_DATA: InventoryAlertsData = {
   alerts: [],
   transferRequests: [],
   kpis: { activeProducts: 0, lowStock: 0, expiringSoon: 0, outOfStock: 0 },
+  visibility: {
+    supportsExpiration: false,
+    hasExpirationProducts: false,
+    showExpirationFeatures: false,
+  },
   branches: [],
   categories: [],
   locations: [],
@@ -100,13 +105,15 @@ export function useInventoryAlerts() {
   useDataEvent("category.changed", reload);
   useDataEvent("business-config.changed", reload);
 
+  const effectiveKpiFilter: InventoryKpiFilter =
+    !data.visibility.showExpirationFeatures && kpiFilter === "expiringSoon" ? "all" : kpiFilter;
   const baseFilteredRows = useMemo(
     () => filterRows(data.rows, search, categoryId, status, "all"),
     [categoryId, data.rows, search, status],
   );
   const filteredRows = useMemo(
-    () => filterRows(baseFilteredRows, "", "all", "all", kpiFilter),
-    [baseFilteredRows, kpiFilter],
+    () => filterRows(baseFilteredRows, "", "all", "all", effectiveKpiFilter),
+    [baseFilteredRows, effectiveKpiFilter],
   );
   const filteredKpis = useMemo(
     () => ({
@@ -114,10 +121,14 @@ export function useInventoryAlerts() {
       lowStock: baseFilteredRows.filter(
         (row) => row.status === "critical" || row.status === "near_minimum",
       ).length,
-      expiringSoon: baseFilteredRows.filter((row) => isExpiringSoon(row.nextExpirationDate)).length,
+      expiringSoon: data.visibility.showExpirationFeatures
+        ? baseFilteredRows.filter(
+            (row) => row.tracksExpiration && isExpiringSoon(row.nextExpirationDate),
+          ).length
+        : 0,
       outOfStock: baseFilteredRows.filter((row) => row.status === "out_of_stock").length,
     }),
-    [baseFilteredRows],
+    [baseFilteredRows, data.visibility.showExpirationFeatures],
   );
   const activeBranch = data.branches.find((branch) => branch.id === effectiveBranchId) ?? currentBranch;
   const activeLocations = data.locations.filter(
@@ -233,7 +244,7 @@ export function useInventoryAlerts() {
     search,
     categoryId,
     status,
-    kpiFilter,
+    kpiFilter: effectiveKpiFilter,
     filtersOpen,
     loading: branchLoading || loading || (Boolean(effectiveBranchId) && loadedBranchId !== effectiveBranchId),
     busy,
@@ -273,7 +284,9 @@ function filterRows(
       kpiFilter === "active" ||
       (kpiFilter === "lowStock" &&
         (row.status === "critical" || row.status === "near_minimum")) ||
-      (kpiFilter === "expiringSoon" && isExpiringSoon(row.nextExpirationDate)) ||
+      (kpiFilter === "expiringSoon" &&
+        row.tracksExpiration &&
+        isExpiringSoon(row.nextExpirationDate)) ||
       (kpiFilter === "outOfStock" && row.status === "out_of_stock");
     return matchesSearch && matchesCategory && matchesStatus && matchesKpi;
   });
