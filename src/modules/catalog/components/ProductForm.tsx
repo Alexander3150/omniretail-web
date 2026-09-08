@@ -70,7 +70,7 @@ type ProductFormTab =
 
 type PromotionProduct = Pick<
   Product,
-  "id" | "tenantId" | "name" | "salePrice" | "tracking" | "channels"
+  "id" | "tenantId" | "name" | "salePrice" | "status" | "tracking" | "channels"
 >;
 
 interface PromotionFormState {
@@ -126,6 +126,7 @@ export function ProductForm({
         tenantId: detail.product.tenantId,
         name: value.name || detail.product.name,
         salePrice: value.salePrice,
+        status: value.status,
         tracking: value.tracking,
         channels: value.channels,
       }
@@ -933,7 +934,8 @@ function ProductPromotionWorkspace({ product }: { product: PromotionProduct }) {
     (promotion) =>
       promotion.status === PromotionStatus.active || promotion.status === PromotionStatus.scheduled,
   );
-  const showForm = mode === "form";
+  const readOnly = product.status === ProductStatus.archived;
+  const showForm = !readOnly && mode === "form";
 
   async function handleSave(state: PromotionFormState) {
     const validationError = validatePromotionForm(state, product.salePrice);
@@ -1013,6 +1015,7 @@ function ProductPromotionWorkspace({ product }: { product: PromotionProduct }) {
           onFinalize={handleFinalize}
           product={product}
           promotions={promotions}
+          readOnly={readOnly}
         />
       )}
     </section>
@@ -1026,6 +1029,7 @@ function PromotionOverview({
   promotions,
   onEdit,
   onFinalize,
+  readOnly,
 }: {
   busy: boolean;
   error: string | null;
@@ -1033,10 +1037,16 @@ function PromotionOverview({
   promotions: Promotion[];
   onEdit: (promotion: Promotion) => void;
   onFinalize: (promotion: Promotion) => void;
+  readOnly?: boolean;
 }) {
   return (
     <div className="space-y-4">
       {error ? <FieldError>{error}</FieldError> : null}
+      {readOnly ? (
+        <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 text-sm font-semibold text-[var(--color-text)]">
+          Restaura el producto para gestionar promociones.
+        </p>
+      ) : null}
       <div className="space-y-3">
         {promotions.map((promotion) => {
           const price = calculateEffectivePrice(product.salePrice, promotion);
@@ -1066,6 +1076,7 @@ function PromotionOverview({
                 />
               </dl>
               <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+                {readOnly ? null : (
                 <Button
                   className="min-h-10 px-3 py-2"
                   onClick={() => onEdit(promotion)}
@@ -1074,6 +1085,8 @@ function PromotionOverview({
                 >
                   Editar
                 </Button>
+                )}
+                {readOnly ? null : (
                 <Button
                   className="min-h-10 px-3 py-2"
                   disabled={busy}
@@ -1083,6 +1096,7 @@ function PromotionOverview({
                 >
                   Finalizar
                 </Button>
+                )}
               </div>
             </article>
           );

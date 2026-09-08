@@ -1,6 +1,7 @@
 import type { Promotion } from "@/core/entities";
-import { PromotionStatus } from "@/core/enums";
+import { ProductStatus, PromotionStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import { CatalogServiceError, ensureProduct } from "@/modules/catalog/application/services/serviceHelpers";
 
 export type SaveProductPromotionInput = Pick<
   Promotion,
@@ -16,6 +17,11 @@ export class SaveProductPromotionService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(input: SaveProductPromotionInput): Promise<Promotion> {
+    const product = ensureProduct(await this.repositories.products.getById(input.productId));
+    if (product.status === ProductStatus.archived) {
+      throw new CatalogServiceError("Restaura el producto para gestionar promociones.");
+    }
+
     const status =
       new Date(input.startAt).getTime() > Date.now()
         ? PromotionStatus.scheduled

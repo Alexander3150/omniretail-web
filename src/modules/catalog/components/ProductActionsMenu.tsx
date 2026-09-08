@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import { ProductStatus } from "@/core/enums";
 import {
   ArchiveIcon,
+  CheckIcon,
   HistoryIcon,
   TagIcon,
 } from "@/modules/catalog/components/CatalogIcons";
@@ -15,6 +16,7 @@ interface ProductActionsMenuProps {
   onPromotion: (product: ProductListItem) => void;
   onPriceHistory: (product: ProductListItem) => void;
   onArchive: (product: ProductListItem) => void;
+  onRestore: (product: ProductListItem) => void;
 }
 
 export function ProductActionsMenu({
@@ -22,6 +24,7 @@ export function ProductActionsMenu({
   onPromotion,
   onPriceHistory,
   onArchive,
+  onRestore,
 }: ProductActionsMenuProps) {
   const [open, setOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>();
@@ -34,9 +37,14 @@ export function ProductActionsMenu({
     function updateMenuPosition() {
       const rect = buttonRef.current?.getBoundingClientRect();
       if (!rect) return;
+      const menuHeight = product.status === ProductStatus.published ? 160 : 112;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const shouldOpenUp = spaceBelow < menuHeight + 12 && rect.top > spaceBelow;
       setMenuStyle({
         right: Math.max(12, window.innerWidth - rect.right),
-        top: Math.min(rect.bottom + 6, window.innerHeight - 56),
+        top: shouldOpenUp
+          ? Math.max(12, rect.top - menuHeight - 6)
+          : Math.min(rect.bottom + 6, window.innerHeight - menuHeight - 12),
       });
     }
 
@@ -47,7 +55,7 @@ export function ProductActionsMenu({
       window.removeEventListener("resize", updateMenuPosition);
       window.removeEventListener("scroll", updateMenuPosition, true);
     };
-  }, [open]);
+  }, [open, product.status]);
 
   useEffect(() => {
     if (!open) return;
@@ -102,9 +110,11 @@ export function ProductActionsMenu({
           role="menu"
           style={menuStyle}
         >
-          <MenuItem icon={<TagIcon />} onClick={() => selectAction(onPromotion)}>
+          {product.status === ProductStatus.published ? (
+            <MenuItem icon={<TagIcon />} onClick={() => selectAction(onPromotion)}>
             Promoción
           </MenuItem>
+          ) : null}
           <MenuItem icon={<HistoryIcon />} onClick={() => selectAction(onPriceHistory)}>
             Historial de precios
           </MenuItem>
@@ -114,7 +124,13 @@ export function ProductActionsMenu({
                 Archivar
               </MenuItem>
             </div>
-          ) : null}
+          ) : (
+            <div className="mt-1 border-t border-[var(--color-border)] pt-1">
+              <MenuItem icon={<CheckIcon />} onClick={() => selectAction(onRestore)}>
+                Restaurar producto
+              </MenuItem>
+            </div>
+          )}
         </div>
       ) : null}
     </div>

@@ -65,6 +65,19 @@ export function ProductsPage() {
     }
   }
 
+  async function restoreProduct(product: ProductListItem) {
+    try {
+      await mutations.restore(product.id);
+      showToast({ title: "Producto restaurado", tone: "success" });
+    } catch (caughtError) {
+      showToast({
+        title: "No se pudo restaurar",
+        description: caughtError instanceof Error ? caughtError.message : undefined,
+        tone: "danger",
+      });
+    }
+  }
+
   const emptyMessage =
     products.length === 0
       ? "Aun no hay productos registrados."
@@ -122,6 +135,7 @@ export function ProductsPage() {
             onOpenQuickView={setQuickViewProduct}
             onPriceHistory={setPriceHistoryTarget}
             onPromotion={setPromotionTarget}
+            onRestore={restoreProduct}
             products={paginatedProducts}
           />
           {products.length === 0 ? (
