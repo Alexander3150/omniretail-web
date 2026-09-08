@@ -205,7 +205,7 @@ export function LocationsPage() {
         title="Archivar ubicacion"
         message={
           archiveTarget?.productCount
-            ? "La ubicacion tiene productos asociados por inventario. Se archivara sin mover stock ni eliminar historial."
+            ? "La ubicacion tiene productos asociados como predeterminada. Se archivara sin mover stock ni eliminar historial."
             : "La ubicacion dejara de estar disponible, pero se conservara su historial."
         }
         confirmLabel="Archivar"

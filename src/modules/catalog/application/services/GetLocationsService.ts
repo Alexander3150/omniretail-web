@@ -1,4 +1,3 @@
-import type { InventoryBalance } from "@/core/entities";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { LocationListItem } from "@/modules/catalog/application/dto/LocationEditorDto";
 
@@ -6,11 +5,13 @@ export class GetLocationsService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(branchId?: string): Promise<LocationListItem[]> {
-    const [locations, balances] = await Promise.all([
+    const [locations, products] = await Promise.all([
       this.repositories.inventory.getLocations(branchId),
-      this.repositories.inventory.getBalances(),
+      this.repositories.products.getAll(),
     ]);
-    const productCounts = countProductsByLocation(balances);
+    const productCounts = branchId
+      ? await countProductsByDefaultLocation(this.repositories, products.map((product) => product.id), branchId)
+      : new Map<string, number>();
 
     return locations
       .map((location) => ({
@@ -29,20 +30,29 @@ export class GetLocationsService {
   }
 }
 
-function countProductsByLocation(balances: InventoryBalance[]) {
+async function countProductsByDefaultLocation(
+  repositories: RepositoryRegistry,
+  productIds: string[],
+  branchId: string,
+) {
   const productIdsByLocation = new Map<string, Set<string>>();
 
-  balances.forEach((balance) => {
-    if (!balance.locationId) return;
-    const productIds = productIdsByLocation.get(balance.locationId) ?? new Set<string>();
-    productIds.add(balance.productId);
-    productIdsByLocation.set(balance.locationId, productIds);
+  const settings = await Promise.all(
+    productIds.map((productId) => repositories.inventory.getProductInventorySettings(productId, branchId)),
+  );
+
+  settings.forEach((setting) => {
+    if (!setting?.defaultLocationId) return;
+    const locationProductIds =
+      productIdsByLocation.get(setting.defaultLocationId) ?? new Set<string>();
+    locationProductIds.add(setting.productId);
+    productIdsByLocation.set(setting.defaultLocationId, locationProductIds);
   });
 
   return new Map(
-    [...productIdsByLocation.entries()].map(([locationId, productIds]) => [
+    [...productIdsByLocation.entries()].map(([locationId, locationProductIds]) => [
       locationId,
-      productIds.size,
+      locationProductIds.size,
     ]),
   );
 }
