@@ -31,4 +31,10 @@ export const catalogPermissions = [
     name: "Gestionar ubicaciones",
     description: "Permite administrar ubicaciones.",
   },
+  {
+    key: "catalog.units.manage",
+    module: "catalog",
+    name: "Gestionar unidades",
+    description: "Permite administrar unidades de medida.",
+  },
 ] satisfies PermissionDefinition[];

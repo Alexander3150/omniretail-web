@@ -24,6 +24,12 @@ export const catalogNavigation = [
         href: "/catalogo/ubicaciones",
         permission: "catalog.locations.manage",
       },
+      {
+        id: "catalog-units",
+        label: "Unidades y empaques",
+        href: "/catalogo/unidades",
+        permission: "catalog.units.manage",
+      },
     ],
   },
 ] satisfies NavigationItem[];

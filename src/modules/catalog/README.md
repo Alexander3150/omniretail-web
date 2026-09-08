@@ -47,6 +47,16 @@ Implementado en esta rama:
 - Conteo real de productos asociados desde `InventoryBalance.locationId`.
 - Ruta privada `/catalogo/ubicaciones`.
 
+## Gestion de unidades
+
+Implementado en esta rama:
+
+- Listado, busqueda, filtro por categoria canonica, filtro por estado, paginacion y panel contextual de unidades.
+- Creacion, edicion, archivo y reactivacion mediante `UnitRepository`.
+- Ruta privada `/catalogo/unidades`.
+- `Unit.category` es la clasificacion canonica de la unidad; `code`, `symbol` y `name` no determinan la categoria.
+- Esta feature no administra conversiones ni empaques.
+
 ## Estructura futura
 
 ```text
