@@ -185,7 +185,7 @@ export function ProductForm({
       ...nextValue,
       primaryImageUrl: nextValue.media.find((item) => item.isPrimary)?.url,
     });
-    const nextEditorError = validateEditor(nextValue);
+    const nextEditorError = validateEditor(nextValue, editorData);
     setErrors(nextErrors);
     setEditorError(nextEditorError);
     if (hasValidationErrors(nextErrors) || nextEditorError) {
@@ -282,6 +282,8 @@ export function ProductForm({
           {activeTab === "tracking" ? (
             <TrackingTab
               capabilities={options.businessCapabilities}
+              editorData={editorData}
+              error={editorError}
               onChange={updateValue}
               value={value}
             />
@@ -650,13 +652,23 @@ function UnitsTab({
 function TrackingTab({
   value,
   capabilities,
+  editorData,
+  error,
   onChange,
 }: {
   value: ProductEditorDto;
   capabilities: ProductFormOptions["businessCapabilities"];
+  editorData: ProductEditorData;
+  error: string | null;
   onChange: (value: Partial<ProductEditorDto>) => void;
 }) {
   const isService = value.productType === ProductType.service;
+  const usesStock = !isService && value.tracking.stock;
+  const currentDefaultLocation = editorData.currentDefaultLocation;
+  const assignedArchivedDefaultLocation =
+    currentDefaultLocation &&
+    currentDefaultLocation.id === value.inventorySettings.defaultLocationId &&
+    !editorData.storageLocations.some((location) => location.id === currentDefaultLocation.id);
   const options = [
     {
       key: "stock",
@@ -690,7 +702,12 @@ function TrackingTab({
       { ...value.tracking, [key]: checked },
       capabilities,
     );
-    onChange({ tracking });
+    onChange({
+      tracking,
+      inventorySettings: tracking.stock
+        ? value.inventorySettings
+        : { ...value.inventorySettings, minStock: 0, defaultLocationId: "" },
+    });
   }
 
   return (
@@ -703,6 +720,70 @@ function TrackingTab({
         <p className="rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text)]">
           Los servicios no utilizan control de inventario.
         </p>
+      ) : null}
+      {usesStock ? (
+        <div className="grid gap-4 md:grid-cols-2">
+          <FormField id="inventory-min-stock" label="Stock minimo">
+            <Input
+              id="inventory-min-stock"
+              min={0}
+              onChange={(event) =>
+                onChange({
+                  inventorySettings: {
+                    ...value.inventorySettings,
+                    minStock: Number(event.target.value),
+                  },
+                })
+              }
+              type="number"
+              value={value.inventorySettings.minStock}
+            />
+            {error?.includes("stock minimo") ? (
+              <p className="mt-2 text-sm font-semibold text-[var(--color-danger)]">{error}</p>
+            ) : (
+              <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+                Valor operativo para la sucursal activa; no representa stock actual.
+              </p>
+            )}
+          </FormField>
+          <FormField id="default-location-id" label="Ubicacion predeterminada">
+            <Select
+              id="default-location-id"
+              onChange={(event) =>
+                onChange({
+                  inventorySettings: {
+                    ...value.inventorySettings,
+                    defaultLocationId: event.target.value,
+                  },
+                })
+              }
+              value={value.inventorySettings.defaultLocationId}
+            >
+              <option value="">Sin ubicacion predeterminada</option>
+              {assignedArchivedDefaultLocation ? (
+                <option disabled value={currentDefaultLocation.id}>
+                  {currentDefaultLocation.name} (archivada)
+                </option>
+              ) : null}
+              {editorData.storageLocations.map((location) => (
+                <option key={location.id} value={location.id}>
+                  {location.name}
+                </option>
+              ))}
+            </Select>
+            {error?.includes("ubicacion") ? (
+              <p className="mt-2 text-sm font-semibold text-[var(--color-danger)]">{error}</p>
+            ) : assignedArchivedDefaultLocation ? (
+              <p className="mt-2 text-xs font-semibold text-[var(--color-danger)]">
+                La ubicacion asignada actualmente esta archivada. Elige una activa o deja el campo sin ubicacion.
+              </p>
+            ) : (
+              <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+                Solo se muestran ubicaciones activas de la sucursal actual.
+              </p>
+            )}
+          </FormField>
+        </div>
       ) : null}
       <div className="grid gap-3 md:grid-cols-2">
         {options.map((option) => {
@@ -1785,7 +1866,7 @@ function validatePromotionForm(state: PromotionFormState, salePrice: number) {
   return null;
 }
 
-function validateEditor(value: ProductEditorDto) {
+function validateEditor(value: ProductEditorDto, editorData: ProductEditorData) {
   if (
     value.baseUnitId !== value.saleUnitId &&
     (!isPositiveNumber(value.inventoryQuantity) || !isPositiveNumber(value.saleQuantity))
@@ -1825,6 +1906,21 @@ function validateEditor(value: ProductEditorDto) {
       ),
   );
   if (invalidMedia) return "Cada imagen debe iniciar con / o una URL http(s).";
+  if (
+    value.tracking.stock &&
+    (!Number.isFinite(value.inventorySettings.minStock) || value.inventorySettings.minStock < 0)
+  ) {
+    return "El stock minimo debe ser mayor o igual a 0.";
+  }
+  if (
+    value.tracking.stock &&
+    value.inventorySettings.defaultLocationId &&
+    !editorData.storageLocations.some(
+      (location) => location.id === value.inventorySettings.defaultLocationId,
+    )
+  ) {
+    return "Selecciona una ubicacion predeterminada activa o deja el campo sin ubicacion.";
+  }
   return null;
 }
 
@@ -1849,7 +1945,9 @@ function routeToFirstError(
     setActiveTab("media");
   } else if (editorError) {
     setActiveTab(
-      editorError.includes("conversion") || editorError.includes("equivalencia")
+      editorError.includes("stock minimo") || editorError.includes("ubicacion")
+        ? "tracking"
+        : editorError.includes("conversion") || editorError.includes("equivalencia")
         ? "units"
         : editorError.includes("mayorista")
           ? "prices"
@@ -1885,6 +1983,11 @@ function formatDate(value: string) {
 
 function buildInitialValue(options: ProductFormOptions, editorData: ProductEditorData): ProductEditorDto {
   const detail = editorData.detail;
+  const inventorySettings = {
+    branchId: editorData.inventorySettings?.branchId ?? "",
+    minStock: editorData.inventorySettings?.minStock ?? 0,
+    defaultLocationId: editorData.inventorySettings?.defaultLocationId ?? "",
+  };
   if (detail) {
     const saleUnitId = detail.product.saleUnitId ?? detail.product.baseUnitId;
     const sameUnit = detail.product.baseUnitId === saleUnitId;
@@ -1915,6 +2018,7 @@ function buildInitialValue(options: ProductFormOptions, editorData: ProductEdito
         detail.product.tracking,
         options.businessCapabilities,
       ),
+      inventorySettings,
       channels: detail.product.channels,
       attributes: editorData.attributes,
       salesPriceTiers: editorData.salesPriceTiers,
@@ -1939,6 +2043,7 @@ function buildInitialValue(options: ProductFormOptions, editorData: ProductEdito
     salePrice: 0,
     status: ProductStatus.published,
     tracking: getDefaultTracking(options.businessCapabilities, ProductType.physical),
+    inventorySettings,
     channels: { ecommerce: true, pos: true, mobileApp: false },
     attributes: [],
     salesPriceTiers: [],

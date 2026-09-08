@@ -1,4 +1,4 @@
-import { PromotionStatus } from "@/core/enums";
+import { LocationStatus, PromotionStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { GetProductDetailService } from "@/modules/catalog/application/services/GetProductDetailService";
 import type {
@@ -11,16 +11,23 @@ import type {
 export class GetProductEditorDataService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async execute(productId?: string): Promise<ProductEditorData> {
-    const [attributeDefinitions, suppliers] = await Promise.all([
+  async execute(productId?: string, branchId?: string): Promise<ProductEditorData> {
+    const [attributeDefinitions, suppliers, branchLocations] = await Promise.all([
       this.repositories.attributes.getDefinitions(),
       this.repositories.suppliers.getActive(),
+      branchId ? this.repositories.inventory.getLocations(branchId) : Promise.resolve([]),
     ]);
+    const activeStorageLocations = branchLocations.filter(
+      (location) => location.status === LocationStatus.active,
+    );
 
     if (!productId) {
       return {
         detail: null,
         unitConversion: null,
+        inventorySettings: null,
+        storageLocations: activeStorageLocations,
+        currentDefaultLocation: null,
         attributeDefinitions,
         attributes: [],
         salesPriceTiers: [],
@@ -36,6 +43,9 @@ export class GetProductEditorDataService {
       return {
         detail: null,
         unitConversion: null,
+        inventorySettings: null,
+        storageLocations: activeStorageLocations,
+        currentDefaultLocation: null,
         attributeDefinitions,
         attributes: [],
         salesPriceTiers: [],
@@ -53,6 +63,7 @@ export class GetProductEditorDataService {
       supplierProducts,
       media,
       promotions,
+      inventorySettings,
     ] = await Promise.all([
       this.repositories.units.getConversionsByProduct(productId),
       this.repositories.attributes.getValuesByProduct(productId),
@@ -60,7 +71,15 @@ export class GetProductEditorDataService {
       this.repositories.supplierProducts.getByProduct(productId),
       this.repositories.productMedia.getByProduct(productId),
       this.repositories.promotions.getByProduct(productId),
+      branchId
+        ? this.repositories.inventory.getProductInventorySettings(productId, branchId)
+        : Promise.resolve(null),
     ]);
+    const currentDefaultLocation =
+      inventorySettings?.defaultLocationId
+        ? branchLocations.find((location) => location.id === inventorySettings.defaultLocationId) ??
+          null
+        : null;
 
     const saleUnitId = detail.product.saleUnitId ?? detail.product.baseUnitId;
     const unitConversion =
@@ -121,6 +140,9 @@ export class GetProductEditorDataService {
     return {
       detail,
       unitConversion,
+      inventorySettings,
+      storageLocations: activeStorageLocations,
+      currentDefaultLocation,
       attributeDefinitions,
       attributes: editableAttributes,
       salesPriceTiers: salesPriceTiers.map((tier) => ({

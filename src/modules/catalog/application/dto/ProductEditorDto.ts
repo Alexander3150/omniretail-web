@@ -1,7 +1,9 @@
 import type {
   AttributeDefinition,
   ProductMedia,
+  ProductInventorySettings,
   ProductSalesPriceTier,
+  StorageLocation,
   Supplier,
   SupplierCostTier,
   SupplierProduct,
@@ -50,9 +52,16 @@ export type ProductMediaEditorValue = Pick<
   id?: string;
 };
 
+export interface ProductInventorySettingsEditorValue {
+  branchId: string;
+  minStock: number;
+  defaultLocationId: string;
+}
+
 export interface ProductEditorDto extends Omit<CreateProductDto, "primaryImageUrl"> {
   inventoryQuantity: number;
   saleQuantity: number | "";
+  inventorySettings: ProductInventorySettingsEditorValue;
   attributes: ProductAttributeEditorValue[];
   salesPriceTiers: ProductSalesPriceTierEditorValue[];
   supplierProducts: SupplierProductEditorValue[];
@@ -62,6 +71,9 @@ export interface ProductEditorDto extends Omit<CreateProductDto, "primaryImageUr
 export interface ProductEditorData {
   detail: ProductDetailViewModel | null;
   unitConversion: UnitConversion | null;
+  inventorySettings: ProductInventorySettings | null;
+  storageLocations: StorageLocation[];
+  currentDefaultLocation: StorageLocation | null;
   attributeDefinitions: AttributeDefinition[];
   attributes: ProductAttributeEditorValue[];
   salesPriceTiers: ProductSalesPriceTierEditorValue[];
