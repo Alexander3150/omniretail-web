@@ -52,6 +52,7 @@ const STATUS_OPTIONS: Array<{ value: InventoryStatusFilter; label: string }> = [
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100];
 const DEFAULT_PAGE_SIZE = 20;
+const VIEWED_TRANSFER_ALERTS_STORAGE_KEY = "omniretail:inventory:viewed-transfer-alerts:v1";
 
 const TRANSFER_REASONS: Array<{ value: InventoryTransferReason; label: string }> = [
   { value: InventoryTransferReason.replenishment, label: "Reposicion de inventario" },
@@ -100,6 +101,7 @@ export function InventoryAlertsPage() {
   const [viewedTransferAlertKeys, setViewedTransferAlertKeys] = useState<Set<string>>(
     () => new Set(),
   );
+  const [hasRestoredViewedTransferAlerts, setHasRestoredViewedTransferAlerts] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [, setClockTick] = useState(0);
@@ -118,6 +120,18 @@ export function InventoryAlertsPage() {
   useEffect(() => {
     const timer = window.setInterval(() => setClockTick((current) => current + 1), 60_000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    window.queueMicrotask(() => {
+      if (!active) return;
+      setViewedTransferAlertKeys(readViewedTransferAlertKeys());
+      setHasRestoredViewedTransferAlerts(true);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   function selectRow(row: InventoryProductRow) {
@@ -154,7 +168,11 @@ export function InventoryAlertsPage() {
 
   function openTransferRequestDetail(request: InventoryTransferRequestRow) {
     const alertKey = getTransferAlertKey(branchId, request);
-    setViewedTransferAlertKeys((current) => new Set(current).add(alertKey));
+    setViewedTransferAlertKeys((current) => {
+      const next = new Set(current).add(alertKey);
+      persistViewedTransferAlertKeys(next);
+      return next;
+    });
     setSelectedTransferRequestId(request.id);
     setActionMode("transfer-request-detail");
   }
@@ -284,6 +302,7 @@ export function InventoryAlertsPage() {
           onSelectProduct={selectProduct}
           onSelectTransferRequest={openTransferRequestDetail}
           transferRequests={data.transferRequests}
+          hasRestoredViewedTransferAlerts={hasRestoredViewedTransferAlerts}
           viewedTransferAlertKeys={viewedTransferAlertKeys}
         />
       </section>
@@ -918,6 +937,7 @@ function ContextPanel({
   mode,
   row,
   transferRequests,
+  hasRestoredViewedTransferAlerts,
   viewedTransferAlertKeys,
   onAdjust,
   onCloseProduct,
@@ -932,6 +952,7 @@ function ContextPanel({
   mode: AlertPanelMode;
   row: InventoryProductRow | null;
   transferRequests: InventoryTransferRequestRow[];
+  hasRestoredViewedTransferAlerts: boolean;
   viewedTransferAlertKeys: Set<string>;
   onAdjust: () => void;
   onCloseProduct: () => void;
@@ -959,6 +980,7 @@ function ContextPanel({
           activeBranchId={activeBranchId}
           alerts={alerts}
           transferRequests={transferRequests}
+          hasRestoredViewedTransferAlerts={hasRestoredViewedTransferAlerts}
           viewedTransferAlertKeys={viewedTransferAlertKeys}
           onSelectProduct={onSelectProduct}
           onSelectTransferRequest={onSelectTransferRequest}
@@ -983,6 +1005,7 @@ function AlertsPanel({
   activeBranchId,
   alerts,
   transferRequests,
+  hasRestoredViewedTransferAlerts,
   viewedTransferAlertKeys,
   onSelectProduct,
   onSelectTransferRequest,
@@ -990,6 +1013,7 @@ function AlertsPanel({
   activeBranchId: string;
   alerts: InventoryAlert[];
   transferRequests: InventoryTransferRequestRow[];
+  hasRestoredViewedTransferAlerts: boolean;
   viewedTransferAlertKeys: Set<string>;
   onSelectProduct: (productId: string) => void;
   onSelectTransferRequest: (request: InventoryTransferRequestRow) => void;
@@ -998,6 +1022,7 @@ function AlertsPanel({
     activeBranchId,
     alerts,
     transferRequests,
+    hasRestoredViewedTransferAlerts,
     viewedTransferAlertKeys,
   );
 
@@ -1680,6 +1705,7 @@ function buildAlertFeed(
   activeBranchId: string,
   alerts: InventoryAlert[],
   transferRequests: InventoryTransferRequestRow[],
+  hasRestoredViewedTransferAlerts: boolean,
   viewedTransferAlertKeys: Set<string>,
 ): AlertFeedItem[] {
   const inventoryItems = alerts.map((alert) => ({
@@ -1690,7 +1716,7 @@ function buildAlertFeed(
   }));
   const requestItems = transferRequests.map((request) => {
     const alertKey = getTransferAlertKey(activeBranchId, request);
-    const isNew = !viewedTransferAlertKeys.has(alertKey);
+    const isNew = hasRestoredViewedTransferAlerts && !viewedTransferAlertKeys.has(alertKey);
     return {
       id: alertKey,
       kind: "transfer" as const,
@@ -1713,6 +1739,29 @@ function buildAlertFeed(
 
 function getTransferAlertKey(branchId: string, request: InventoryTransferRequestRow) {
   return `${branchId}:${request.id}:${request.status}`;
+}
+
+function readViewedTransferAlertKeys() {
+  try {
+    const rawValue = window.sessionStorage.getItem(VIEWED_TRANSFER_ALERTS_STORAGE_KEY);
+    if (!rawValue) return new Set<string>();
+    const parsedValue: unknown = JSON.parse(rawValue);
+    if (!Array.isArray(parsedValue)) return new Set<string>();
+    return new Set(parsedValue.filter((value): value is string => typeof value === "string"));
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function persistViewedTransferAlertKeys(keys: Set<string>) {
+  try {
+    window.sessionStorage.setItem(
+      VIEWED_TRANSFER_ALERTS_STORAGE_KEY,
+      JSON.stringify([...keys]),
+    );
+  } catch {
+    // Visual read state is best-effort session UI state.
+  }
 }
 
 function getTransferAlertTimestamp(request: InventoryTransferRequestRow) {
