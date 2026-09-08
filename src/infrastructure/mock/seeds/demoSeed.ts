@@ -720,6 +720,30 @@ export const demoSeedDatabase: MockDatabase = {
       updatedAt: now,
     },
   ],
+  productInventorySettings: [
+    {
+      id: "product-inventory-settings-drill-centro",
+      tenantId: "tenant-demo",
+      productId: "prod-drill",
+      branchId: "branch-centro",
+      minStock: 5,
+      reorderPoint: 8,
+      defaultLocationId: "loc-centro-b",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "product-inventory-settings-drill-norte",
+      tenantId: "tenant-demo",
+      productId: "prod-drill",
+      branchId: "branch-norte",
+      minStock: 10,
+      reorderPoint: 12,
+      defaultLocationId: "loc-norte-a",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ],
   inventoryBalances: [
     {
       id: "bal-drill",

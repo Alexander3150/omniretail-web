@@ -15,6 +15,7 @@ export type * from "./Product";
 export type * from "./ProductPriceHistory";
 export type * from "./ProductMedia";
 export type * from "./ProductSalesPriceTier";
+export type * from "./ProductInventorySettings";
 export type * from "./Category";
 export type * from "./Unit";
 export type * from "./UnitConversion";

@@ -49,6 +49,10 @@ Ejemplos: taladro usa stock y serial; tornillos usan stock; medicamento usa stoc
 
 Stock es por tenant, branch y location. Catalogo es global dentro del tenant. Precios son globales por tenant durante esta fase. `Product.baseUnitId` es la unidad base de inventario. `Product.saleUnitId` es la unidad/presentacion normal de venta y, si falta en datos legados, se interpreta como `baseUnitId`. `Product.salePrice` es el precio base; cualquier precio promocional se deriva y no se guarda como campo mutable en `Product`.
 
+`ProductInventorySettings` representa configuracion operativa por producto+sucursal. Es la fuente canonica para `minStock`, `reorderPoint` opcional y `defaultLocationId` opcional. La unicidad conceptual es `tenantId + productId + branchId`. `InventoryBalance.minStock/reorderPoint` se conserva solo como compatibilidad legacy temporal y no debe usarse como nueva fuente de verdad.
+
+`defaultLocationId` no crea stock, no mueve stock y no crea `InventoryBalance`. Al asignarse debe apuntar a una `StorageLocation` existente, activa, del mismo tenant y de la misma sucursal. Archivar posteriormente una ubicacion no mueve stock ni borra historial; la referencia de settings se conserva como dato historico hasta que una operacion explicita la cambie.
+
 `ProductSalesPriceTier` representa precios mayoristas de venta por producto usando `minQuantity` y `unitPrice`. No mezclar estos precios de venta con costos por volumen de proveedor.
 
 OmniRetail reconoce tres canales comerciales: POS (`pos`), e-commerce/web (`ecommerce`) y app movil (`mobileApp`). `Product.channels` define en que canales puede publicarse un producto.
