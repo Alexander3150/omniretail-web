@@ -45,6 +45,7 @@ export async function validateEditorProduct(
 
   assertUniquePositiveSalesTiers(dto.salesPriceTiers);
   assertSupplierProducts(dto.supplierProducts);
+  assertInventorySettings(dto);
 
   const normalizedSku = normalizeSku(dto.sku);
   const duplicateSku = await repositories.products.getBySku(normalizedSku);
@@ -110,6 +111,7 @@ export async function syncEditorRelatedData(
   dto: ProductEditorDto,
 ) {
   await Promise.all([
+    syncInventorySettings(repositories, product, dto),
     syncUnitConversion(repositories, product, dto),
     syncAttributes(repositories, product, dto),
     repositories.productSalesPriceTiers.replaceForProduct(
@@ -126,6 +128,29 @@ export async function syncEditorRelatedData(
     syncSupplierProducts(repositories, product, dto),
     syncMedia(repositories, product, dto.media),
   ]);
+}
+
+function assertInventorySettings(dto: ProductEditorDto) {
+  if (!dto.tracking.stock) return;
+  if (!Number.isFinite(dto.inventorySettings.minStock) || dto.inventorySettings.minStock < 0) {
+    throw new CatalogServiceError("El stock minimo debe ser mayor o igual a 0.");
+  }
+}
+
+async function syncInventorySettings(
+  repositories: RepositoryRegistry,
+  product: Product,
+  dto: ProductEditorDto,
+) {
+  if (!dto.tracking.stock || !dto.inventorySettings.branchId) return;
+
+  await repositories.inventory.upsertProductInventorySettings({
+    tenantId: product.tenantId,
+    productId: product.id,
+    branchId: dto.inventorySettings.branchId,
+    minStock: dto.inventorySettings.minStock,
+    defaultLocationId: dto.inventorySettings.defaultLocationId || undefined,
+  });
 }
 
 async function syncUnitConversion(

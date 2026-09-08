@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { useToast } from "@/shared/components/Toast";
+import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 import { ProductForm } from "@/modules/catalog/components/ProductForm";
 import type { ProductEditorDto } from "@/modules/catalog/application/dto/ProductEditorDto";
 import { useProductEditorData } from "@/modules/catalog/hooks/useProductEditorData";
@@ -20,16 +21,24 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
   const router = useRouter();
   const { showToast } = useToast();
   const isEdit = mode === "edit";
+  const { currentBranch, loading: branchLoading } = useActiveBranch();
   const optionsState = useProductFormOptions();
-  const editorState = useProductEditorData(isEdit ? productId : undefined);
+  const editorState = useProductEditorData(isEdit ? productId : undefined, currentBranch?.id);
   const mutations = useProductMutations();
   const [confirmArchive, setConfirmArchive] = useState(false);
 
   async function submit(dto: ProductEditorDto) {
     try {
+      const dtoWithActiveBranch = {
+        ...dto,
+        inventorySettings: {
+          ...dto.inventorySettings,
+          branchId: currentBranch?.id ?? dto.inventorySettings.branchId,
+        },
+      };
       const product = isEdit
-        ? await mutations.updateWithCommercialData(productId, dto)
-        : await mutations.createWithCommercialData(dto);
+        ? await mutations.updateWithCommercialData(productId, dtoWithActiveBranch)
+        : await mutations.createWithCommercialData(dtoWithActiveBranch);
       showToast({
         title: isEdit ? "Producto actualizado" : "Producto creado",
         tone: "success",
@@ -60,7 +69,7 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
     }
   }
 
-  if (optionsState.loading || editorState.loading) {
+  if (branchLoading || optionsState.loading || editorState.loading) {
     return (
       <p className="rounded-md border border-[var(--color-border)] bg-white p-5 text-sm text-[var(--color-text-muted)]">
         Preparando formulario...
@@ -72,6 +81,14 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
     return (
       <p className="rounded-md border border-[var(--color-danger)] bg-white p-5 text-sm font-medium text-[var(--color-danger)]">
         {optionsState.error ?? "No se pudieron cargar las opciones del formulario."}
+      </p>
+    );
+  }
+
+  if (!currentBranch) {
+    return (
+      <p className="rounded-md border border-[var(--color-danger)] bg-white p-5 text-sm font-medium text-[var(--color-danger)]">
+        Selecciona una sucursal activa para configurar inventario del producto.
       </p>
     );
   }
@@ -99,6 +116,7 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
         busy={mutations.busy}
         editorData={editorState.data}
         error={mutations.error}
+        key={`${mode}-${productId || "new"}-${currentBranch.id}`}
         mode={mode}
         onArchive={() => setConfirmArchive(true)}
         onSubmit={submit}

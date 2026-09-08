@@ -38,6 +38,15 @@ Implementado en esta rama:
 - Conteo real de productos asociados desde `ProductRepository`.
 - Ruta privada `/catalogo/categorias`.
 
+## Gestion de ubicaciones
+
+Implementado en esta rama:
+
+- Listado, busqueda, filtro por estado, paginacion y panel contextual de ubicaciones.
+- Creacion, edicion, archivo y reactivacion mediante `InventoryRepository`.
+- Conteo real de productos asociados desde `InventoryBalance.locationId`.
+- Ruta privada `/catalogo/ubicaciones`.
+
 ## Estructura futura
 
 ```text
