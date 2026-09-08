@@ -12,6 +12,7 @@ export type * from "./UnitRepository";
 export type * from "./AttributeRepository";
 export type * from "./PromotionRepository";
 export type * from "./InventoryRepository";
+export type * from "./InventoryTransferRequestRepository";
 export type * from "./SupplierRepository";
 export type * from "./SupplierProductRepository";
 export type * from "./PurchaseOrderRepository";

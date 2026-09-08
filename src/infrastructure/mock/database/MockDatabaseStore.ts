@@ -1,5 +1,7 @@
 import {
   CustomerPaymentMethodStatus,
+  InventoryTransferReason,
+  InventoryTransferRequestStatus,
   LocationStatus,
   PaymentMethod,
   PromotionType,
@@ -7,7 +9,12 @@ import {
   UnitCategory,
   UnitStatus,
 } from "@/core/enums";
-import type { CustomerPaymentMethod, ProductInventorySettings, Unit } from "@/core/entities";
+import type {
+  CustomerPaymentMethod,
+  InventoryTransferRequest,
+  ProductInventorySettings,
+  Unit,
+} from "@/core/entities";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { createMockDatabase } from "@/infrastructure/mock/database/createMockDatabase";
 import type { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
@@ -20,12 +27,17 @@ type PersistedCustomerPaymentMethod = Partial<CustomerPaymentMethod> & {
 };
 
 type PersistedProductInventorySettings = Partial<ProductInventorySettings>;
+type PersistedInventoryTransferRequest = Partial<InventoryTransferRequest>;
 type PersistedUnit = Partial<Unit>;
 
 type PersistedMockDatabase = Partial<
-  Omit<MockDatabase, "customerPaymentMethods" | "productInventorySettings" | "units">
+  Omit<
+    MockDatabase,
+    "customerPaymentMethods" | "inventoryTransferRequests" | "productInventorySettings" | "units"
+  >
 > & {
   customerPaymentMethods?: PersistedCustomerPaymentMethod[];
+  inventoryTransferRequests?: PersistedInventoryTransferRequest[];
   productInventorySettings?: PersistedProductInventorySettings[];
   savedPaymentMethods?: PersistedCustomerPaymentMethod[];
   units?: PersistedUnit[];
@@ -48,6 +60,7 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   }));
   normalized.productSalesPriceTiers = database.productSalesPriceTiers ?? [];
   normalized.productInventorySettings = normalizeProductInventorySettings(database, normalized);
+  normalized.inventoryTransferRequests = normalizeInventoryTransferRequests(database, normalized);
   normalized.unitConversions = database.unitConversions ?? [];
   normalized.attributeDefinitions = database.attributeDefinitions ?? [];
   normalized.productAttributeValues = database.productAttributeValues ?? [];
@@ -111,6 +124,66 @@ function normalizeProductInventorySettings(
   }
 
   return deriveProductInventorySettingsFromLegacyBalances(normalized);
+}
+
+function normalizeInventoryTransferRequests(
+  database: PersistedMockDatabase,
+  normalized: MockDatabase,
+): InventoryTransferRequest[] {
+  return (database.inventoryTransferRequests ?? []).map((request) =>
+    normalizePersistedInventoryTransferRequest(request, normalized),
+  );
+}
+
+function normalizePersistedInventoryTransferRequest(
+  request: PersistedInventoryTransferRequest,
+  normalized: MockDatabase,
+): InventoryTransferRequest {
+  const product = normalized.products.find((item) => item.id === request.productId);
+  const requestingBranch = normalized.branches.find(
+    (item) => item.id === request.requestingBranchId,
+  );
+  const sourceBranch = normalized.branches.find((item) => item.id === request.sourceBranchId);
+  const createdAt = request.createdAt ?? request.requestedAt ?? new Date().toISOString();
+  const status = isInventoryTransferRequestStatus(request.status)
+    ? request.status
+    : InventoryTransferRequestStatus.requested;
+
+  return {
+    id: request.id ?? `inventory-transfer-request-${crypto.randomUUID()}`,
+    tenantId:
+      request.tenantId ??
+      product?.tenantId ??
+      requestingBranch?.tenantId ??
+      sourceBranch?.tenantId ??
+      "tenant-demo",
+    requestingBranchId: request.requestingBranchId ?? "",
+    sourceBranchId: request.sourceBranchId ?? "",
+    productId: request.productId ?? "",
+    requestedQuantity: Math.max(0, request.requestedQuantity ?? 0),
+    receivedQuantity:
+      typeof request.receivedQuantity === "number"
+        ? Math.max(0, request.receivedQuantity)
+        : undefined,
+    reason: isInventoryTransferReason(request.reason)
+      ? request.reason
+      : InventoryTransferReason.other,
+    notes: request.notes,
+    status,
+    rejectionReason: request.rejectionReason,
+    cancellationReason: request.cancellationReason,
+    requestedAt: request.requestedAt ?? createdAt,
+    reviewedAt: request.reviewedAt,
+    approvedAt: request.approvedAt,
+    rejectedAt: request.rejectedAt,
+    dispatchedAt: request.dispatchedAt,
+    receivedAt: request.receivedAt,
+    cancelledAt: request.cancelledAt,
+    requestedByUserId: request.requestedByUserId,
+    reviewedByUserId: request.reviewedByUserId,
+    createdAt,
+    updatedAt: request.updatedAt ?? createdAt,
+  };
 }
 
 function normalizePersistedProductInventorySettings(
@@ -298,6 +371,27 @@ function isUnitCategory(value: unknown): value is UnitCategory {
     value === UnitCategory.length ||
     value === UnitCategory.volume ||
     value === UnitCategory.other
+  );
+}
+
+function isInventoryTransferRequestStatus(value: unknown): value is InventoryTransferRequestStatus {
+  return (
+    value === InventoryTransferRequestStatus.requested ||
+    value === InventoryTransferRequestStatus.approved ||
+    value === InventoryTransferRequestStatus.rejected ||
+    value === InventoryTransferRequestStatus.inTransit ||
+    value === InventoryTransferRequestStatus.received ||
+    value === InventoryTransferRequestStatus.cancelled
+  );
+}
+
+function isInventoryTransferReason(value: unknown): value is InventoryTransferReason {
+  return (
+    value === InventoryTransferReason.replenishment ||
+    value === InventoryTransferReason.demandCoverage ||
+    value === InventoryTransferReason.urgentRequest ||
+    value === InventoryTransferReason.inventoryBalancing ||
+    value === InventoryTransferReason.other
   );
 }
 

@@ -25,6 +25,7 @@ export type * from "./Promotion";
 export type * from "./PriceTier";
 export type * from "./InventoryBalance";
 export type * from "./InventoryMovement";
+export type * from "./InventoryTransferRequest";
 export type * from "./StockLot";
 export type * from "./SerialNumber";
 export type * from "./StorageLocation";
