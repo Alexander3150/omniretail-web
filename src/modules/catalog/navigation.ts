@@ -2,9 +2,22 @@ import type { NavigationItem } from "@/shared/types/navigation.types";
 
 export const catalogNavigation = [
   {
-    id: "catalog-products",
+    id: "catalog",
     label: "Catálogo y precios",
-    href: "/catalogo/productos",
     permission: "catalog.products.read",
+    children: [
+      {
+        id: "catalog-products",
+        label: "Productos",
+        href: "/catalogo/productos",
+        permission: "catalog.products.read",
+      },
+      {
+        id: "catalog-categories",
+        label: "Categorias",
+        href: "/catalogo/categorias",
+        permission: "catalog.categories.manage",
+      },
+    ],
   },
 ] satisfies NavigationItem[];
