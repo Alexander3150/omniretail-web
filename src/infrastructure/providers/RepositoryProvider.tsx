@@ -10,6 +10,7 @@ import type {
   BusinessConfigRepository,
   CashShiftRepository,
   CategoryRepository,
+  CustomerPaymentMethodRepository,
   CustomerRepository,
   DispatchRepository,
   InventoryRepository,
@@ -43,6 +44,7 @@ import {
   MockBusinessConfigRepository,
   MockCashShiftRepository,
   MockCategoryRepository,
+  MockCustomerPaymentMethodRepository,
   MockCustomerRepository,
   MockDispatchRepository,
   MockInventoryRepository,
@@ -58,7 +60,6 @@ import {
   MockPurchaseOrderRepository,
   MockReceiptRepository,
   MockSalesRepository,
-  MockSavedPaymentMethodRepository,
   MockSupplierProductRepository,
   MockSupplierRepository,
   MockTenantRepository,
@@ -86,6 +87,7 @@ export interface RepositoryRegistry {
   purchaseOrders: PurchaseOrderRepository;
   receipts: ReceiptRepository;
   customers: CustomerRepository;
+  customerPaymentMethods: CustomerPaymentMethodRepository;
   savedPaymentMethods: SavedPaymentMethodRepository;
   orders: OrderRepository;
   payments: PaymentRepository;
@@ -112,6 +114,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     const storage = new LocalStorageAdapter();
     const store = new MockDatabaseStore(storage);
     const eventBus = new DataEventBus();
+    const customerPaymentMethods = new MockCustomerPaymentMethodRepository(store, eventBus);
     const repositories: RepositoryRegistry = {
       tenants: new MockTenantRepository(store, eventBus),
       businessConfig: new MockBusinessConfigRepository(store, eventBus),
@@ -131,7 +134,8 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       purchaseOrders: new MockPurchaseOrderRepository(store, eventBus),
       receipts: new MockReceiptRepository(store, eventBus),
       customers: new MockCustomerRepository(store, eventBus),
-      savedPaymentMethods: new MockSavedPaymentMethodRepository(store, eventBus),
+      customerPaymentMethods,
+      savedPaymentMethods: customerPaymentMethods,
       orders: new MockOrderRepository(store, eventBus),
       payments: new MockPaymentRepository(store, eventBus),
       bankAccounts: new MockBankAccountRepository(store, eventBus),

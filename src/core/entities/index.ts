@@ -39,6 +39,7 @@ export type * from "./IncidentType";
 export type * from "./Customer";
 export type * from "./Address";
 export type * from "./CustomerSegment";
+export type * from "./CustomerPaymentMethod";
 export type * from "./SavedPaymentMethod";
 export type * from "./Order";
 export type * from "./OrderItem";

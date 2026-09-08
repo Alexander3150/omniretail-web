@@ -136,6 +136,10 @@ export enum PaymentStatus {
   rejected = "rejected",
   refunded = "refunded",
 }
+export enum CustomerPaymentMethodStatus {
+  active = "active",
+  archived = "archived",
+}
 export enum DeliveryMethod {
   immediate = "immediate",
   store_pickup = "store_pickup",

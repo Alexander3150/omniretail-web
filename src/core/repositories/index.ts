@@ -17,6 +17,7 @@ export type * from "./SupplierProductRepository";
 export type * from "./PurchaseOrderRepository";
 export type * from "./ReceiptRepository";
 export type * from "./CustomerRepository";
+export type * from "./CustomerPaymentMethodRepository";
 export type * from "./SavedPaymentMethodRepository";
 export type * from "./OrderRepository";
 export type * from "./PaymentRepository";
