@@ -18,7 +18,7 @@ MOCK REPOSITORY: implementacion temporal frontend que usa `MockDatabaseStore`.
 
 `Product.baseUnitId` representa la unidad base de inventario. `Product.saleUnitId` representa la unidad/presentacion normal de venta; los datos legados sin `saleUnitId` se normalizan a `baseUnitId`.
 
-`UnitRepository` administra `Unit` y expone operaciones de consulta/reemplazo de `UnitConversion` por producto. `UnitConversion` no debe duplicarse en entidades de producto o proveedor.
+`UnitRepository` administra `Unit` y expone operaciones de consulta/reemplazo de `UnitConversion` por producto. `Unit.category` es la clasificacion canonica de la unidad (`unit`, `weight`, `length`, `volume`, `other`) y no depende de `code`, `name` ni `symbol`. `UnitConversion` no debe duplicarse en entidades de producto o proveedor.
 
 `AttributeRepository.replaceValuesForProduct` permite persistir el conjunto completo de atributos key/value de un producto sin crear entidades paralelas de atributos.
 
