@@ -18,6 +18,7 @@ export function ProductPriceHistoryDialog({ product, onClose }: ProductPriceHist
   return (
     <Modal
       open={Boolean(product)}
+      maxWidth="820px"
       size="lg"
       subtitle={currentProduct?.name}
       title="Historial de precios"

@@ -115,6 +115,7 @@ export function ProductPromotionDialog({ product, onClose }: ProductPromotionDia
   return (
     <Modal
       open={Boolean(product)}
+      maxWidth="960px"
       size="lg"
       subtitle={currentProduct?.name}
       title={form ? (editingPromotion ? "Editar promoción" : "Crear promoción") : "Promoción"}

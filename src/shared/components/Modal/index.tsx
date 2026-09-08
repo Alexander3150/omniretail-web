@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, type CSSProperties, type ReactNode } from "react";
 import { cn } from "@/shared/utils/cn";
 
 export interface ModalProps {
@@ -11,6 +11,7 @@ export interface ModalProps {
   onClose: () => void;
   footer?: ReactNode;
   size?: "md" | "lg" | "xl";
+  maxWidth?: CSSProperties["maxWidth"];
 }
 
 const sizeClassNames: Record<NonNullable<ModalProps["size"]>, string> = {
@@ -27,6 +28,7 @@ export function Modal({
   onClose,
   footer,
   size = "md",
+  maxWidth,
 }: ModalProps) {
   useEffect(() => {
     if (!open) return;
@@ -43,17 +45,18 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-topbar)]/35 p-3 sm:p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-topbar)]/35 p-3 sm:p-6"
       role="presentation"
     >
       <button aria-label="Cerrar" className="absolute inset-0" onClick={onClose} type="button" />
       <section
         aria-modal="true"
         className={cn(
-          "relative flex max-h-[90dvh] w-full max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-xl sm:max-w-[calc(100vw-2rem)]",
+          "relative flex max-h-[90dvh] w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-xl sm:w-[calc(100vw-3rem)]",
           sizeClassNames[size],
         )}
         role="dialog"
+        style={maxWidth ? { maxWidth } : undefined}
       >
         <header className="flex items-start justify-between gap-4 border-b border-[var(--color-structure)] bg-[var(--color-structure)] px-5 py-4">
           <div className="min-w-0">
