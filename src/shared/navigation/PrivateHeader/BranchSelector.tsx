@@ -31,8 +31,8 @@ export function BranchSelector() {
 
   if (loading) {
     return (
-      <div className="inline-flex h-10 items-center gap-2 rounded-md border border-[var(--color-border)] bg-white px-3 text-sm font-semibold text-[var(--color-text-muted)]">
-        <StoreIcon />
+      <div className="inline-flex h-10 max-w-full items-center gap-2 rounded-md border border-[var(--color-border)] bg-white px-2 text-sm font-semibold text-[var(--color-text-muted)] sm:px-3">
+        <StoreIcon className="shrink-0" />
         Cargando sucursal
       </div>
     );
@@ -40,8 +40,8 @@ export function BranchSelector() {
 
   if (!currentBranch) {
     return (
-      <div className="inline-flex h-10 items-center gap-2 rounded-md border border-[var(--color-border)] bg-white px-3 text-sm font-semibold text-[var(--color-text-muted)]">
-        <StoreIcon />
+      <div className="inline-flex h-10 max-w-full items-center gap-2 rounded-md border border-[var(--color-border)] bg-white px-2 text-sm font-semibold text-[var(--color-text-muted)] sm:px-3">
+        <StoreIcon className="shrink-0" />
         Sin sucursales
       </div>
     );
@@ -49,29 +49,29 @@ export function BranchSelector() {
 
   if (!canSwitch) {
     return (
-      <div className="inline-flex h-10 max-w-[220px] items-center gap-2 rounded-md border border-[var(--color-border)] bg-white px-3 text-sm font-semibold text-[var(--color-title)]">
-        <StoreIcon />
+      <div className="inline-flex h-10 max-w-full items-center gap-2 rounded-md border border-[var(--color-border)] bg-white px-2 text-sm font-semibold text-[var(--color-title)] sm:max-w-[220px] sm:px-3">
+        <StoreIcon className="shrink-0" />
         <span className="truncate">{currentBranch.name}</span>
       </div>
     );
   }
 
   return (
-    <div className="relative" ref={containerRef}>
+    <div className="relative max-w-full" ref={containerRef}>
       <button
         aria-expanded={open}
         aria-haspopup="listbox"
-        className="inline-flex h-10 max-w-[240px] items-center gap-2 rounded-md border border-[var(--color-border)] bg-white px-3 text-sm font-semibold text-[var(--color-title)] transition hover:border-[var(--color-structure)] hover:bg-[var(--color-app-background)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]"
+        className="inline-flex h-10 max-w-full items-center gap-2 rounded-md border border-[var(--color-border)] bg-white px-2 text-sm font-semibold text-[var(--color-title)] transition hover:border-[var(--color-structure)] hover:bg-[var(--color-app-background)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)] sm:max-w-[240px] sm:px-3"
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
-        <StoreIcon />
+        <StoreIcon className="shrink-0" />
         <span className="truncate">{currentBranch.name}</span>
         <ChevronDownIcon className="shrink-0" />
       </button>
       {open ? (
         <div
-          className="absolute right-0 top-11 z-30 w-64 overflow-hidden rounded-xl border border-[var(--color-border)] bg-white py-2 shadow-lg"
+          className="absolute right-0 top-11 z-50 max-h-[min(24rem,70dvh)] w-[min(16rem,calc(100vw-1.5rem))] overflow-y-auto rounded-xl border border-[var(--color-border)] bg-white py-2 shadow-lg"
           role="listbox"
         >
           {branches.map((branch) => (
