@@ -10,6 +10,7 @@ import type {
   CashShift,
   Category,
   Customer,
+  CustomerPaymentMethod,
   CustomerSegment,
   Dispatch,
   EcommerceConfig,
@@ -44,7 +45,6 @@ import type {
   Role,
   Sale,
   SaleItem,
-  SavedPaymentMethod,
   SerialNumber,
   Session,
   StockLot,
@@ -100,7 +100,7 @@ export interface MockDatabase {
   customers: Customer[];
   addresses: Address[];
   customerSegments: CustomerSegment[];
-  savedPaymentMethods: SavedPaymentMethod[];
+  customerPaymentMethods: CustomerPaymentMethod[];
   orders: Order[];
   orderItems: OrderItem[];
   payments: Payment[];

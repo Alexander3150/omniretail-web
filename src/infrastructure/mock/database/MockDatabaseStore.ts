@@ -1,10 +1,25 @@
-import { PromotionType, SalesChannel } from "@/core/enums";
+import {
+  CustomerPaymentMethodStatus,
+  PaymentMethod,
+  PromotionType,
+  SalesChannel,
+} from "@/core/enums";
+import type { CustomerPaymentMethod } from "@/core/entities";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { createMockDatabase } from "@/infrastructure/mock/database/createMockDatabase";
 import type { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import { MOCK_DATABASE_STORAGE_KEY } from "@/infrastructure/storage/storageKeys";
 
-type PersistedMockDatabase = Partial<MockDatabase>;
+type PersistedCustomerPaymentMethod = Partial<CustomerPaymentMethod> & {
+  expiryMonth?: number;
+  expiryYear?: number;
+  holderName?: string;
+};
+
+type PersistedMockDatabase = Partial<Omit<MockDatabase, "customerPaymentMethods">> & {
+  customerPaymentMethods?: PersistedCustomerPaymentMethod[];
+  savedPaymentMethods?: PersistedCustomerPaymentMethod[];
+};
 
 function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   const base = createMockDatabase();
@@ -39,6 +54,31 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
       };
     },
   );
+  normalized.customerPaymentMethods = (
+    database.customerPaymentMethods ??
+    database.savedPaymentMethods ??
+    []
+  ).map((method) => {
+    const customer = normalized.customers.find((item) => item.id === method.customerId);
+    const createdAt = method.createdAt ?? new Date().toISOString();
+    return {
+      id: method.id ?? `customer-payment-method-${crypto.randomUUID()}`,
+      tenantId: method.tenantId ?? customer?.tenantId ?? "tenant-demo",
+      customerId: method.customerId ?? "",
+      type: method.type ?? PaymentMethod.card,
+      providerPaymentMethodId:
+        method.providerPaymentMethodId ?? `pm_demo_${method.id ?? crypto.randomUUID()}`,
+      brand: method.brand ?? "unknown",
+      last4: method.last4 ?? "0000",
+      expirationMonth: method.expirationMonth ?? method.expiryMonth ?? 1,
+      expirationYear: method.expirationYear ?? method.expiryYear ?? 2099,
+      cardholderName: method.cardholderName ?? method.holderName,
+      isDefault: method.isDefault ?? false,
+      status: method.status ?? CustomerPaymentMethodStatus.active,
+      createdAt,
+      updatedAt: method.updatedAt ?? createdAt,
+    };
+  });
   normalized.promotions = (database.promotions ?? base.promotions).map((promotion) => ({
     ...promotion,
     type: String(promotion.type) === "fixed_amount" ? PromotionType.fixedDiscount : promotion.type,
