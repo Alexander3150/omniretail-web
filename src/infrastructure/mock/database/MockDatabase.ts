@@ -30,6 +30,7 @@ import type {
   PickingOrder,
   PriceTier,
   Product,
+  ProductInventorySettings,
   ProductPriceHistory,
   ProductSalesPriceTier,
   ProductAttributeValue,
@@ -83,6 +84,7 @@ export interface MockDatabase {
   productAttributeValues: ProductAttributeValue[];
   promotions: Promotion[];
   priceTiers: PriceTier[];
+  productInventorySettings: ProductInventorySettings[];
   inventoryBalances: InventoryBalance[];
   inventoryMovements: InventoryMovement[];
   stockLots: StockLot[];

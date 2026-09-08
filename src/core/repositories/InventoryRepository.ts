@@ -1,6 +1,7 @@
 import type {
   InventoryBalance,
   InventoryMovement,
+  ProductInventorySettings,
   SerialNumber,
   StockLot,
   StorageLocation,
@@ -19,6 +20,12 @@ export interface RegisterInventoryMovementInput {
   referenceId?: string;
   performedByUserId?: string;
 }
+
+export type UpsertProductInventorySettingsInput = Omit<
+  ProductInventorySettings,
+  "id" | "createdAt" | "updatedAt"
+>;
+
 export interface InventoryRepository {
   getBalances(): Promise<InventoryBalance[]>;
   getBalanceByProduct(productId: string, branchId?: string): Promise<InventoryBalance[]>;
@@ -26,6 +33,20 @@ export interface InventoryRepository {
   getLots(productId?: string): Promise<StockLot[]>;
   getSerialNumbers(productId?: string): Promise<SerialNumber[]>;
   getLocations(branchId?: string): Promise<StorageLocation[]>;
+  createLocation(
+    input: Omit<StorageLocation, "id" | "createdAt" | "updatedAt">,
+  ): Promise<StorageLocation>;
+  updateLocation(
+    id: string,
+    input: Partial<Omit<StorageLocation, "id" | "createdAt" | "updatedAt">>,
+  ): Promise<StorageLocation>;
+  getProductInventorySettings(
+    productId: string,
+    branchId: string,
+  ): Promise<ProductInventorySettings | null>;
+  upsertProductInventorySettings(
+    input: UpsertProductInventorySettingsInput,
+  ): Promise<ProductInventorySettings>;
   registerMovement(input: RegisterInventoryMovementInput): Promise<InventoryMovement>;
   adjustStock(input: Omit<RegisterInventoryMovementInput, "type">): Promise<InventoryMovement>;
   transferStock(
