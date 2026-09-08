@@ -8,7 +8,7 @@ Este modulo desarrolla su funcionalidad propia sin duplicar contratos compartido
 
 ## Contracts que consume
 
-InventoryRepository, ProductRepository
+InventoryRepository, InventoryTransferRequestRepository, ProductRepository
 
 ## Reglas
 
@@ -17,6 +17,16 @@ InventoryRepository, ProductRepository
 - Usar repositories desde `RepositoryProvider`.
 - Usar `shared/` para componentes globales.
 - Crear DTO, Mappers y Services propios dentro del modulo cuando empiece cada feature.
+
+## Inventario y alertas
+
+Implementado en esta rama:
+
+- Panel `/inventario/alertas` con KPIs, busqueda, filtros por sucursal/categoria/estado, tabla de existencias y panel contextual.
+- Stock actual desde `InventoryBalance`; minimo y reposicion desde `ProductInventorySettings`.
+- Caducidad desde `StockLot.expirationDate` con regla local de proximidad de 30 dias.
+- Ajustes de entrada, salida/merma y conteo exacto mediante `InventoryRepository.registerMovement`.
+- Solicitudes de traslado entre sucursales mediante `InventoryTransferRequestRepository`: crear, aprobar y rechazar no modifican stock ni crean movimientos.
 
 ## Estructura futura
 
