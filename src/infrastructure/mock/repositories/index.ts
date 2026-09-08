@@ -7,6 +7,7 @@ export * from "./MockBusinessConfigRepository";
 export * from "./MockCashShiftRepository";
 export * from "./MockCategoryRepository";
 export * from "./MockCustomerRepository";
+export * from "./MockCustomerPaymentMethodRepository";
 export * from "./MockDispatchRepository";
 export * from "./MockInventoryRepository";
 export * from "./MockNotificationRepository";

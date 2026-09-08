@@ -69,9 +69,13 @@ Promociones V1 soporta descuento porcentual (`percentage`), descuento fijo (`fix
 
 `Customer` puede estar asociado a `User`. Perfil y autenticacion son dominios relacionados pero distintos. Andy administra perfil, direcciones, metodos guardados y seguridad; Maria consume Customer para compras.
 
-## Saved Payment Methods
+## Customer Payment Methods
 
-Solo simulacion frontend. Nunca guardar full card number, CVV ni PIN. Guardar solo brand, last4, expiry, holder e isDefault. Backend/pasarela real vendra despues.
+`CustomerPaymentMethod` representa un metodo de pago guardado y reutilizable del cliente. `Payment` representa un pago historico de una compra concreta; eliminar un metodo guardado no modifica pagos historicos.
+
+`SavedPaymentMethod` es un alias legacy/de compatibilidad de `CustomerPaymentMethod`, no una segunda definicion de dominio.
+
+Solo simulacion frontend. Nunca guardar full card number, CVV ni PIN. Guardar solo providerPaymentMethodId, brand, last4, vencimiento, cardholderName, estado e isDefault. Backend/pasarela real vendra despues.
 
 ## Ecommerce
 
