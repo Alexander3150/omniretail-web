@@ -71,7 +71,7 @@ export function ProductsPage() {
       : "No hay productos que coincidan con los filtros.";
 
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-5">
       <ProductToolbar
         activeFiltersCount={activeFiltersCount}
         filtersOpen={filtersOpen}
@@ -172,7 +172,7 @@ function ProductTableFooter({
 }) {
   return (
     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
         <p className="text-sm text-[var(--color-text-muted)]">
           Mostrando {firstVisible}-{lastVisible} de {totalItems} productos
         </p>
@@ -190,7 +190,10 @@ function ProductTableFooter({
           </Select>
         </label>
       </div>
-      <nav aria-label="Paginación de productos" className="flex items-center gap-3">
+      <nav
+        aria-label="Paginación de productos"
+        className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-start"
+      >
         <Button
           aria-label="Página anterior"
           className="min-h-9 px-3 py-1.5"

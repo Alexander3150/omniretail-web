@@ -37,17 +37,17 @@ export function ProductTable({
   footer,
 }: ProductTableProps) {
   return (
-    <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-sm">
+    <div className="max-w-full overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-sm">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1040px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[640px] border-collapse text-left text-sm lg:min-w-[920px]">
           <thead className="bg-[var(--color-structure)] text-xs uppercase text-white">
             <tr>
               <th className="px-4 py-3 font-semibold">Producto</th>
-              <th className="px-4 py-3 font-semibold">Categoría</th>
+              <th className="hidden px-4 py-3 font-semibold lg:table-cell">Categoría</th>
               <th className="px-4 py-3 font-semibold">Precio</th>
-              <th className="px-4 py-3 font-semibold">Unidad</th>
-              <th className="px-4 py-3 font-semibold">Canales</th>
-              <th className="px-4 py-3 font-semibold">Promoción</th>
+              <th className="hidden px-4 py-3 font-semibold md:table-cell">Unidad</th>
+              <th className="hidden px-4 py-3 font-semibold lg:table-cell">Canales</th>
+              <th className="hidden px-4 py-3 font-semibold xl:table-cell">Promoción</th>
               <th className="w-24 px-4 py-3 text-right font-semibold">Acciones</th>
             </tr>
           </thead>
@@ -72,7 +72,7 @@ export function ProductTable({
                   }}
                   tabIndex={0}
                 >
-                  <td className="px-4 py-3">
+                  <td className="min-w-[300px] px-4 py-3 sm:min-w-[360px]">
                     <div className="flex items-center gap-3">
                       <img
                         alt={product.name}
@@ -96,7 +96,9 @@ export function ProductTable({
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-[var(--color-text)]">{product.categoryName}</td>
+                  <td className="hidden px-4 py-3 text-[var(--color-text)] lg:table-cell">
+                    {product.categoryName}
+                  </td>
                   <td className="px-4 py-3">
                     {product.activePromotion ? (
                       <div>
@@ -113,8 +115,10 @@ export function ProductTable({
                       </p>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-[var(--color-text)]">{product.baseUnitName}</td>
-                  <td className="px-4 py-3">
+                  <td className="hidden px-4 py-3 text-[var(--color-text)] md:table-cell">
+                    {product.baseUnitName}
+                  </td>
+                  <td className="hidden px-4 py-3 lg:table-cell">
                     <div className="flex flex-wrap gap-1.5">
                       <ChannelChip active={product.channels.pos} icon={<PosIcon />}>
                         POS
@@ -127,7 +131,7 @@ export function ProductTable({
                       </ChannelChip>
                     </div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="hidden px-4 py-3 xl:table-cell">
                     {product.activePromotion ? (
                       <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2.5 py-1 text-xs font-semibold text-[var(--color-title)]">
                         <TagIcon />

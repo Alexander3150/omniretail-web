@@ -43,14 +43,14 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-topbar)]/35 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-topbar)]/35 p-3 sm:p-4"
       role="presentation"
     >
       <button aria-label="Cerrar" className="absolute inset-0" onClick={onClose} type="button" />
       <section
         aria-modal="true"
         className={cn(
-          "relative max-h-[90vh] w-full overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-xl",
+          "relative flex max-h-[90dvh] w-full max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-xl sm:max-w-[calc(100vw-2rem)]",
           sizeClassNames[size],
         )}
         role="dialog"
@@ -58,7 +58,7 @@ export function Modal({
         <header className="flex items-start justify-between gap-4 border-b border-[var(--color-structure)] bg-[var(--color-structure)] px-5 py-4">
           <div className="min-w-0">
             <h2 className="text-lg font-bold text-white">{title}</h2>
-            {subtitle ? <p className="mt-1 truncate text-sm text-white/75">{subtitle}</p> : null}
+            {subtitle ? <p className="mt-1 break-words text-sm text-white/75">{subtitle}</p> : null}
           </div>
           <button
             aria-label="Cerrar"
@@ -69,9 +69,11 @@ export function Modal({
             ×
           </button>
         </header>
-        <div className="max-h-[calc(90vh-9rem)] overflow-y-auto px-5 py-4">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 sm:px-5">
+          {children}
+        </div>
         {footer ? (
-          <footer className="border-t border-[var(--color-border)] bg-white px-5 py-4">
+          <footer className="shrink-0 border-t border-[var(--color-border)] bg-white px-4 py-4 sm:px-5">
             {footer}
           </footer>
         ) : null}

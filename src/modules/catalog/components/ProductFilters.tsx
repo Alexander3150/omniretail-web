@@ -49,12 +49,12 @@ export function ProductFilters({
 
   return (
     <section
-      className="rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm"
+      className="max-w-full overflow-hidden rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm"
       id="product-filters-panel"
     >
       <div className="grid gap-4 xl:grid-cols-[1.05fr_1fr_1fr_1.15fr_1.2fr] xl:items-end">
         <FilterGroup label="Estado">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex min-w-0 flex-wrap gap-2">
             {productStatusOptions.map((status) => (
               <FilterChip
                 active={filters.status === status}
@@ -100,7 +100,7 @@ export function ProductFilters({
           </Select>
         </FilterGroup>
         <FilterGroup label="Canales">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex min-w-0 flex-wrap gap-2">
             <FilterChip
               active={filters.channels.includes("pos")}
               icon={<PosIcon />}
@@ -125,7 +125,7 @@ export function ProductFilters({
           </div>
         </FilterGroup>
         <FilterGroup label="Promoción">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex min-w-0 flex-wrap gap-2">
             <FilterChip
               active={filters.promotion === "with"}
               icon={<TagIcon />}
@@ -171,7 +171,7 @@ function FilterChip({
     <button
       aria-pressed={active}
       className={cn(
-        "inline-flex min-h-10 items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
+        "inline-flex min-h-10 max-w-full items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
         active
           ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-title)]"
           : "border-[var(--color-border)] bg-white text-[var(--color-text-muted)] hover:border-[var(--color-structure)] hover:text-[var(--color-title)]",

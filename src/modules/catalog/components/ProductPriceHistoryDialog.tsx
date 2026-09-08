@@ -30,8 +30,8 @@ export function ProductPriceHistoryDialog({ product, onClose }: ProductPriceHist
           {error}
         </p>
       ) : history.length ? (
-        <div className="overflow-hidden rounded-xl border border-[var(--color-border)]">
-          <table className="w-full text-left text-sm">
+        <div className="overflow-x-auto rounded-xl border border-[var(--color-border)]">
+          <table className="w-full min-w-[620px] text-left text-sm">
             <thead className="bg-[var(--color-app-background)] text-xs uppercase text-[var(--color-title)]">
               <tr>
                 <th className="px-4 py-3 font-bold">Fecha</th>

@@ -196,14 +196,14 @@ export function ProductForm({
 
   return (
     <form className="space-y-5" id="catalog-product-form" onSubmit={handleSubmit}>
-      <section className="rounded-md border border-[var(--color-border)] bg-white p-5">
+      <section className="rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 space-y-2">
             <nav aria-label="Ruta" className="text-sm font-semibold text-[var(--color-text-muted)]">
               Catalogo &gt; {isEdit ? `Editar: ${detail?.product.name ?? value.name}` : "Nuevo producto"}
             </nav>
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-2xl font-bold text-[var(--color-title)]">
+              <h1 className="break-words text-2xl font-bold text-[var(--color-title)]">
                 {isEdit ? "Editar producto" : "Nuevo producto"}
               </h1>
               {isEdit ? <ProductStatusPill status={value.status} /> : null}
@@ -212,14 +212,15 @@ export function ProductForm({
               Configura la informacion comercial, inventario y venta del producto.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
             <Button
+              className="w-full sm:w-auto"
               href={detail ? `/catalogo/productos/${detail.product.id}` : "/catalogo/productos"}
               variant="secondary"
             >
               {"<-"} Volver
             </Button>
-            <Button disabled={busy} form="catalog-product-form" type="submit">
+            <Button className="w-full sm:w-auto" disabled={busy} form="catalog-product-form" type="submit">
               <CheckIcon />
               {busy ? "Guardando..." : "Guardar producto"}
             </Button>
@@ -308,7 +309,7 @@ export function ProductForm({
           ) : null}
         </div>
 
-        <aside className="space-y-4">
+        <aside className="min-w-0 space-y-4">
           <section className="rounded-md border border-[var(--color-border)] bg-white p-4">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-bold text-[var(--color-title)]">Preparacion</h2>
@@ -403,7 +404,7 @@ function GeneralTab({
   onChange: (value: Partial<ProductEditorDto>) => void;
 }) {
   return (
-    <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-5">
+    <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
       <SectionTitle
         description="Datos comerciales visibles en catalogo, ventas y operaciones."
         title="Informacion general"
@@ -548,7 +549,7 @@ function UnitsTab({
   const needsConversion = value.baseUnitId !== value.saleUnitId;
 
   return (
-    <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-5">
+    <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
       <SectionTitle
         description="Unidad base para inventario y presentacion normal de venta."
         title="Unidades"
@@ -612,7 +613,7 @@ function UnitsTab({
                   {baseUnit?.name ?? "unidad de inventario"}
                 </div>
               </div>
-              <div className="flex min-h-11 items-center justify-center text-sm font-bold text-[var(--color-title)]">
+              <div className="flex min-h-8 items-center justify-center text-sm font-bold text-[var(--color-title)] sm:min-h-11">
                 =
               </div>
               <div className="grid gap-2 sm:grid-cols-[120px_1fr]">
@@ -692,7 +693,7 @@ function TrackingTab({
   }
 
   return (
-    <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-5">
+    <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
       <SectionTitle
         description="Reglas de inventario segun tipo de producto y capacidades del negocio."
         title="Inventario y trazabilidad"
@@ -766,7 +767,7 @@ function AttributesTab({
   }
 
   return (
-    <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-5">
+    <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
       <SectionTitle
         description="Atributos descriptivos key/value persistidos por producto."
         title="Atributos"
@@ -784,7 +785,7 @@ function AttributesTab({
       {value.length ? (
         <div className="space-y-3">
           {value.map((attribute, index) => (
-            <div className="grid gap-3 rounded-md border border-[var(--color-border)] p-3 md:grid-cols-[1fr_1fr_auto]" key={index}>
+            <div className="grid gap-3 rounded-md border border-[var(--color-border)] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" key={index}>
               <Input
                 aria-label="Nombre del atributo"
                 onChange={(event) => update(index, { name: event.target.value })}
@@ -834,7 +835,7 @@ function PricesTab({
   const sortedTiers = [...value.salesPriceTiers].sort((left, right) => left.minQuantity - right.minQuantity);
 
   return (
-    <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-5">
+    <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
       <SectionTitle description="Precio base y precios mayoristas por cantidad." title="Precios" />
       <div className="grid gap-3 rounded-md bg-[var(--color-app-background)] p-4 md:grid-cols-4">
         <Metric label="Costo referencia" value="-" />
@@ -879,7 +880,7 @@ function PricesTab({
             {sortedTiers.map((tier) => {
               const index = value.salesPriceTiers.indexOf(tier);
               return (
-                <div className="grid gap-3 rounded-md bg-[var(--color-app-background)] p-3 md:grid-cols-[1fr_1fr_auto]" key={`${tier.id ?? "new"}-${index}`}>
+                <div className="grid gap-3 rounded-md bg-[var(--color-app-background)] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" key={`${tier.id ?? "new"}-${index}`}>
                   <Input
                     aria-label="Cantidad minima"
                     min="2"
@@ -978,7 +979,7 @@ function ProductPromotionWorkspace({ product }: { product: PromotionProduct }) {
   }
 
   return (
-    <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-5">
+    <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
       <SectionTitle
         description="Promociones activas o programadas existentes para este producto."
         title="Promocion"
@@ -1064,7 +1065,7 @@ function PromotionOverview({
                   value={promotion.untilStockEnds ? "Hasta agotar existencias" : "Sin limite de stock"}
                 />
               </dl>
-              <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
                 <Button
                   className="min-h-10 px-3 py-2"
                   onClick={() => onEdit(promotion)}
@@ -1212,11 +1213,11 @@ function PromotionEditor({
         Hasta agotar existencias
       </label>
       {error ? <FieldError>{error}</FieldError> : null}
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button onClick={onCancel} type="button" variant="secondary">
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+        <Button className="w-full sm:w-auto" onClick={onCancel} type="button" variant="secondary">
           Cancelar
         </Button>
-        <Button disabled={busy} onClick={() => onSubmit(state)} type="button">
+        <Button className="w-full sm:w-auto" disabled={busy} onClick={() => onSubmit(state)} type="button">
           <TagIcon />
           {busy ? "Guardando..." : "Guardar promocion"}
         </Button>
@@ -1267,12 +1268,12 @@ function SuppliersTab({
   }
 
   return (
-    <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-5">
+    <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
       <SectionTitle
         description="Asociaciones producto-proveedor y condiciones reales de compra."
         title="Proveedores"
       />
-      <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
         <Select onChange={(event) => setSelectedSupplierId(event.target.value)} value={selectedSupplierId}>
           <option value="">Proveedor registrado</option>
           {availableSuppliers.map((supplier) => (
@@ -1317,7 +1318,7 @@ function SuppliersTab({
             const needsPurchaseConversion = item.purchaseUnitId !== baseUnitId;
             return (
               <article className="space-y-4 rounded-md border border-[var(--color-border)] p-4" key={`${item.id ?? "new"}-${item.supplierId}`}>
-                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div>
                     <h3 className="font-bold text-[var(--color-title)]">{supplier?.name ?? "Proveedor"}</h3>
                     <p className="text-sm text-[var(--color-text-muted)]">
@@ -1326,8 +1327,9 @@ function SuppliersTab({
                         : "La compra usa la unidad de inventario."}
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap md:justify-end">
                     <Button
+                      className="w-full sm:w-auto"
                       onClick={() => updateSupplier(index, { preferred: true })}
                       type="button"
                       variant={item.preferred ? "primary" : "secondary"}
@@ -1335,6 +1337,7 @@ function SuppliersTab({
                       {item.preferred ? "Preferido" : "Marcar preferido"}
                     </Button>
                     <Button
+                      className="w-full sm:w-auto"
                       onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}
                       type="button"
                       variant="danger"
@@ -1440,7 +1443,7 @@ function SuppliersTab({
                   {item.costTiers.length ? (
                     <div className="space-y-2">
                       {item.costTiers.map((tier, tierIndex) => (
-                        <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]" key={`${tier.id ?? "new"}-${tierIndex}`}>
+                        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" key={`${tier.id ?? "new"}-${tierIndex}`}>
                           <input
                             aria-label="Cantidad minima proveedor"
                             className={inputClassName}
@@ -1508,7 +1511,7 @@ function MediaTab({
   }
 
   return (
-    <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-5">
+    <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
       <SectionTitle description="Referencias ProductMedia actuales, sin upload backend." title="Multimedia" />
       <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
         <div className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] p-4 text-center">
@@ -1524,6 +1527,7 @@ function MediaTab({
         <div className="space-y-4">
           <div className="flex justify-end">
             <Button
+              className="w-full sm:w-auto"
               onClick={() =>
                 onChange([
                   ...value,
@@ -1547,7 +1551,7 @@ function MediaTab({
           {value.length ? (
             <div className="space-y-3">
               {value.map((media, index) => (
-                <div className="grid gap-3 rounded-md border border-[var(--color-border)] p-3 md:grid-cols-[1fr_1fr_auto_auto]" key={`${media.id ?? "new"}-${index}`}>
+                <div className="grid gap-3 rounded-md border border-[var(--color-border)] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto]" key={`${media.id ?? "new"}-${index}`}>
                   <Input
                     aria-label="URL de imagen"
                     onChange={(event) => update(index, { url: event.target.value })}
@@ -1563,6 +1567,7 @@ function MediaTab({
                   <Button
                     onClick={() => update(index, { isPrimary: true })}
                     type="button"
+                    className="w-full sm:w-auto"
                     variant={media.isPrimary ? "primary" : "secondary"}
                   >
                     Principal
@@ -1570,6 +1575,7 @@ function MediaTab({
                   <Button
                     onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}
                     type="button"
+                    className="w-full sm:w-auto"
                     variant="danger"
                   >
                     Eliminar

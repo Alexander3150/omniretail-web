@@ -19,10 +19,10 @@ export function ProductDetailCard({ detail }: ProductDetailCardProps) {
   const { product } = detail;
 
   return (
-    <section className="grid gap-6 rounded-md border border-[var(--color-border)] bg-white p-5 lg:grid-cols-[280px_1fr]">
+    <section className="grid gap-6 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5 lg:grid-cols-[280px_1fr]">
       <img
         alt={product.name}
-        className="aspect-square w-full max-w-72 rounded-md border border-[var(--color-border)] object-cover"
+        className="mx-auto aspect-square w-full max-w-72 rounded-md border border-[var(--color-border)] object-cover lg:mx-0"
         src={detail.imageUrl}
       />
       <div className="space-y-5">
@@ -33,7 +33,7 @@ export function ProductDetailCard({ detail }: ProductDetailCardProps) {
               {productTypeLabels[product.productType]}
             </span>
           </div>
-          <h2 className="text-2xl font-bold text-[var(--color-title)]">{product.name}</h2>
+          <h2 className="break-words text-2xl font-bold text-[var(--color-title)]">{product.name}</h2>
           {product.description ? (
             <p className="mt-2 text-sm text-[var(--color-text)]">{product.description}</p>
           ) : null}
@@ -57,7 +57,7 @@ function DetailItem({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <dt className="text-xs font-semibold uppercase text-[var(--color-text-muted)]">{label}</dt>
-      <dd className="mt-1 text-sm font-semibold text-[var(--color-text)]">{value}</dd>
+      <dd className="mt-1 break-words text-sm font-semibold text-[var(--color-text)]">{value}</dd>
     </div>
   );
 }

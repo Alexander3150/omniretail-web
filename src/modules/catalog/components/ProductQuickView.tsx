@@ -77,16 +77,16 @@ export function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
       <aside
         aria-label="Consulta rápida de producto"
         aria-modal="true"
-        className="absolute right-0 top-0 flex h-full w-[min(94vw,540px)] flex-col border-l border-[var(--color-border)] bg-white shadow-xl"
+        className="absolute inset-y-0 right-0 flex h-full w-full max-w-[540px] flex-col overflow-hidden border-l border-[var(--color-border)] bg-white shadow-xl sm:w-[min(94vw,540px)]"
         role="dialog"
       >
-        <header className="border-b border-[var(--color-border)] px-5 py-4">
+        <header className="border-b border-[var(--color-border)] px-4 py-4 sm:px-5">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
                 PRODUCTO
               </p>
-              <h2 className="mt-1 truncate text-xl font-bold text-[var(--color-title)]">{title}</h2>
+              <h2 className="mt-1 break-words text-xl font-bold text-[var(--color-title)]">{title}</h2>
               <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">SKU {sku}</p>
             </div>
             <button
@@ -99,12 +99,12 @@ export function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
               ×
             </button>
           </div>
-          <div className="mt-4 flex gap-2" role="tablist">
+          <div className="mt-4 flex gap-2 overflow-x-auto pb-1" role="tablist">
             {tabs.map((tab) => (
               <button
                 aria-selected={activeTab === tab.id}
                 className={cn(
-                  "rounded-full px-3 py-1.5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
+                  "shrink-0 rounded-full px-3 py-1.5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
                   activeTab === tab.id
                     ? "bg-[var(--color-primary)]/10 text-[var(--color-title)]"
                     : "text-[var(--color-text-muted)] hover:bg-[var(--color-app-background)]/70",
@@ -119,7 +119,7 @@ export function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
             ))}
           </div>
         </header>
-        <div className="flex-1 overflow-y-auto px-5 py-5">
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-5 sm:px-5">
           {loading ? (
             <p className="text-sm text-[var(--color-text-muted)]">Cargando consulta rápida...</p>
           ) : error ? (
@@ -138,7 +138,7 @@ export function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
             </>
           )}
         </div>
-        <footer className="border-t border-[var(--color-border)] px-5 py-4">
+        <footer className="border-t border-[var(--color-border)] px-4 py-4 sm:px-5">
           <Button
             className="w-full"
             onClick={() => {
@@ -168,7 +168,7 @@ function QuickViewGeneral({ detail }: { detail: ProductQuickViewModel }) {
       <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-app-background)] p-3">
         <img
           alt={product.name}
-          className="mx-auto h-56 max-h-56 w-full object-contain"
+          className="mx-auto h-44 max-h-56 w-full object-contain sm:h-56"
           src={detail.imageUrl}
         />
       </div>
@@ -230,7 +230,7 @@ function QuickViewInventory({ detail }: { detail: ProductQuickViewModel }) {
               {item.stockStatus}
             </span>
           </div>
-          <dl className="mt-4 grid grid-cols-3 gap-3 text-sm">
+          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
             <DetailItem label="Stock" value={String(item.balance.quantity)} />
             <DetailItem label="Reservado" value={String(item.balance.reservedQuantity)} />
             <DetailItem label="Mínimo" value={String(item.balance.minStock ?? "-")} />
@@ -299,7 +299,7 @@ function DetailItem({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
       <dt className="text-xs font-semibold uppercase text-[var(--color-text-muted)]">{label}</dt>
-      <dd className="mt-1 text-sm font-semibold text-[var(--color-text)]">{value}</dd>
+      <dd className="mt-1 break-words text-sm font-semibold text-[var(--color-text)]">{value}</dd>
     </div>
   );
 }

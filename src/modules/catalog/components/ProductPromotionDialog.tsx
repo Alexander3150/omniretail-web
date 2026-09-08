@@ -121,7 +121,7 @@ export function ProductPromotionDialog({ product, onClose }: ProductPromotionDia
       onClose={onClose}
       footer={
         form && currentProduct ? (
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button
               onClick={() => {
                 setMode(promotions.length ? "view" : "form");
@@ -204,7 +204,7 @@ function PromotionOverview({
         </p>
       ) : null}
       <div className="flex justify-end">
-        <Button className="min-h-10 px-3 py-2" onClick={onCreate} type="button" variant="secondary">
+        <Button className="w-full min-h-10 px-3 py-2 sm:w-auto" onClick={onCreate} type="button" variant="secondary">
           <TagIcon />
           Nueva promoción
         </Button>
@@ -240,7 +240,7 @@ function PromotionOverview({
                   value={promotion.untilStockEnds ? "Hasta agotar existencias" : "Sin límite de stock"}
                 />
               </dl>
-              <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
                 <Button
                   className="min-h-10 px-3 py-2"
                   onClick={() => onEdit(promotion)}

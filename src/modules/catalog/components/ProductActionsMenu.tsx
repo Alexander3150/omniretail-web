@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ProductStatus } from "@/core/enums";
 import {
   ArchiveIcon,
@@ -24,7 +24,30 @@ export function ProductActionsMenu({
   onArchive,
 }: ProductActionsMenuProps) {
   const [open, setOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>();
   const containerRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    function updateMenuPosition() {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setMenuStyle({
+        right: Math.max(12, window.innerWidth - rect.right),
+        top: Math.min(rect.bottom + 6, window.innerHeight - 56),
+      });
+    }
+
+    updateMenuPosition();
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -66,16 +89,18 @@ export function ProductActionsMenu({
           event.stopPropagation();
           setOpen((current) => !current);
         }}
+        ref={buttonRef}
         type="button"
       >
         ⋮
       </button>
       {open ? (
         <div
-          className="absolute right-0 top-10 z-20 w-60 overflow-hidden rounded-xl border border-[var(--color-border)] bg-white py-2 shadow-lg"
+          className="fixed z-50 w-[min(15rem,calc(100vw-1.5rem))] overflow-hidden rounded-xl border border-[var(--color-border)] bg-white py-2 shadow-lg"
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}
           role="menu"
+          style={menuStyle}
         >
           <MenuItem icon={<TagIcon />} onClick={() => selectAction(onPromotion)}>
             Promoción

@@ -20,14 +20,14 @@ export function ProductToolbar({
   onToggleFilters,
 }: ProductToolbarProps) {
   return (
-    <header className="flex flex-col gap-4 border-b border-[var(--color-border)] pb-4 xl:flex-row xl:items-end xl:justify-between">
-      <div>
+    <header className="flex min-w-0 flex-col gap-4 border-b border-[var(--color-border)] pb-4 xl:flex-row xl:items-end xl:justify-between">
+      <div className="min-w-0">
         <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
           CATÁLOGO
         </p>
-        <h1 className="mt-1 text-2xl font-bold text-[var(--color-title)]">Catálogo y precios</h1>
+        <h1 className="mt-1 break-words text-2xl font-bold text-[var(--color-title)]">Catálogo y precios</h1>
       </div>
-      <div className="flex flex-col gap-3 md:flex-row md:items-center">
+      <div className="flex min-w-0 flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-end">
         <SearchInput
           aria-label="Buscar productos"
           className="w-full md:w-96"
@@ -38,6 +38,7 @@ export function ProductToolbar({
         <Button
           aria-controls="product-filters-panel"
           aria-expanded={filtersOpen}
+          className="w-full md:w-auto"
           onClick={onToggleFilters}
           type="button"
           variant="secondary"
@@ -50,7 +51,7 @@ export function ProductToolbar({
             </span>
           ) : null}
         </Button>
-        <Button href="/catalogo/productos/nuevo">
+        <Button className="w-full md:w-auto" href="/catalogo/productos/nuevo">
           <PlusIcon />
           Nuevo producto
         </Button>
