@@ -30,7 +30,8 @@ export interface PurchaseOrderAction {
     | "approve"
     | "cancel"
     | "continue-receiving"
-    | "download-pdf";
+    | "download-purchase-order-pdf"
+    | "download-receiving-pdf";
   label: string;
   enabled: boolean;
   statusTarget?: PurchaseOrderStatus;

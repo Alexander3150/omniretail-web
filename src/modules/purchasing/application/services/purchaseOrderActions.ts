@@ -1,17 +1,9 @@
 import { PurchaseOrderStatus } from "@/core/enums";
 import type { PurchaseOrderAction } from "@/modules/purchasing/application/dto/PurchaseOrderReadModel";
 
-const PDF_GAP = "La infraestructura de PDF aun no esta disponible.";
 const RECEIVING_ROUTE_GAP = "La ruta de recepcion por orden aun no esta disponible.";
 
 export function getPurchaseOrderActions(status: PurchaseOrderStatus): PurchaseOrderAction[] {
-  const pdfAction: PurchaseOrderAction = {
-    id: "download-pdf",
-    label: "Descargar PDF",
-    enabled: false,
-    unavailableReason: PDF_GAP,
-  };
-
   if (status === PurchaseOrderStatus.draft) {
     return [
       {
@@ -59,11 +51,28 @@ export function getPurchaseOrderActions(status: PurchaseOrderStatus): PurchaseOr
         enabled: false,
         unavailableReason: RECEIVING_ROUTE_GAP,
       },
-      pdfAction,
+      {
+        id: "download-receiving-pdf",
+        label: "Descargar estado de recepcion",
+        enabled: true,
+      },
     ];
   }
 
-  if (status === PurchaseOrderStatus.received) return [pdfAction];
+  if (status === PurchaseOrderStatus.received) {
+    return [
+      {
+        id: "download-purchase-order-pdf",
+        label: "Descargar orden original",
+        enabled: true,
+      },
+      {
+        id: "download-receiving-pdf",
+        label: "Descargar recepcion final",
+        enabled: true,
+      },
+    ];
+  }
   if (status === PurchaseOrderStatus.cancelled) return [];
 
   if (status === PurchaseOrderStatus.approved || status === PurchaseOrderStatus.sent) {
@@ -80,7 +89,11 @@ export function getPurchaseOrderActions(status: PurchaseOrderStatus): PurchaseOr
         enabled: true,
         statusTarget: PurchaseOrderStatus.cancelled,
       },
-      pdfAction,
+      {
+        id: "download-purchase-order-pdf",
+        label: "Descargar orden de compra",
+        enabled: true,
+      },
     ];
   }
 

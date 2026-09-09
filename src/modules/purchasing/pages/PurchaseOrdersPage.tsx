@@ -12,6 +12,7 @@ import {
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { PurchaseOrderStatus } from "@/core/enums";
+import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { Button } from "@/shared/components/Button";
 import { Input } from "@/shared/components/Input";
 import { PageHeader } from "@/shared/components/PageHeader";
@@ -25,14 +26,21 @@ import type {
   ReorderSuggestionReadModel,
 } from "@/modules/purchasing/application/dto/PurchaseOrderReadModel";
 import { usePurchaseOrders } from "@/modules/purchasing/hooks/usePurchaseOrders";
+import {
+  PurchaseOrderEmailSimulationService,
+  PurchaseOrderPdfService,
+} from "@/modules/purchasing/application/services/PurchaseOrderPdfService";
 
 const PAGE_SIZE = 10;
 
 export function PurchaseOrdersPage() {
   const router = useRouter();
+  const repositories = useRepositories();
   const { showToast } = useToast();
   const { data, filters, filteredOrders, loading, error, updateFilters, updateStatus } =
     usePurchaseOrders();
+  const pdfService = useMemo(() => new PurchaseOrderPdfService(repositories), [repositories]);
+  const emailSimulationService = useMemo(() => new PurchaseOrderEmailSimulationService(), []);
   const [page, setPage] = useState(1);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [openActionsOrderId, setOpenActionsOrderId] = useState<string | null>(null);
@@ -106,6 +114,10 @@ export function PurchaseOrdersPage() {
       router.push(`/compras/ordenes/${order.id}/editar`);
       return;
     }
+    if (action.id === "download-purchase-order-pdf" || action.id === "download-receiving-pdf") {
+      await downloadPdf(order, action.id);
+      return;
+    }
     if (action.id === "cancel" || action.id === "approve") {
       setPendingAction({ order, action });
       return;
@@ -138,7 +150,11 @@ export function PurchaseOrdersPage() {
     try {
       await updateStatus(pendingAction.order.id, pendingAction.action.statusTarget);
       setSelectedOrderId(null);
-      showToast({ title: "Orden actualizada", tone: "success" });
+      if (pendingAction.action.id === "approve") {
+        await handleApprovedOrder(pendingAction.order);
+      } else {
+        showToast({ title: "Orden actualizada", tone: "success" });
+      }
     } catch (caughtError) {
       showToast({
         title: "No se pudo actualizar la orden",
@@ -147,6 +163,56 @@ export function PurchaseOrdersPage() {
       });
     } finally {
       setPendingAction(null);
+    }
+  }
+
+  async function downloadPdf(
+    order: PurchaseOrderRowReadModel,
+    actionId: PurchaseOrderAction["id"],
+  ) {
+    try {
+      if (actionId === "download-purchase-order-pdf") {
+        await pdfService.downloadPurchaseOrder(order.id);
+      } else if (actionId === "download-receiving-pdf") {
+        await pdfService.downloadReceivingReport(order.id);
+      }
+      showToast({ title: "PDF generado", description: order.number, tone: "success" });
+    } catch (caughtError) {
+      showToast({
+        title: "No se pudo generar el PDF",
+        description: caughtError instanceof Error ? caughtError.message : undefined,
+        tone: "danger",
+      });
+    }
+  }
+
+  async function handleApprovedOrder(order: PurchaseOrderRowReadModel) {
+    showToast({ title: `Orden ${order.number} aprobada`, tone: "success" });
+    try {
+      const document = await pdfService.generatePurchaseOrderDocument(order.id);
+      const supplierEmail = await pdfService.getSupplierEmail(order.id);
+      const result = await emailSimulationService.simulatePurchaseOrderSend({
+        orderNumber: order.number,
+        supplierEmail,
+      });
+      showToast({
+        title: result.sent
+          ? `Orden de compra enviada a ${result.to}`
+          : "Orden aprobada",
+        description: result.sent
+          ? `Envio simulado al proveedor. Adjunto: ${document.filename}`
+          : result.message,
+        tone: result.sent ? "success" : "warning",
+      });
+    } catch (caughtError) {
+      showToast({
+        title: "Orden aprobada",
+        description:
+          caughtError instanceof Error
+            ? `No se pudo preparar el PDF o envio simulado: ${caughtError.message}`
+            : "No se pudo preparar el PDF o envio simulado.",
+        tone: "warning",
+      });
     }
   }
 
@@ -617,7 +683,7 @@ function RowActions({
           {order.actions.map((action) => (
             <button
               className={cn(
-                "block w-full px-3 py-2 text-left text-sm font-semibold transition hover:bg-[var(--color-app-background)]",
+                "flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold transition hover:bg-[var(--color-app-background)]",
                 action.id === "cancel" ? "text-[var(--color-danger)]" : "text-[var(--color-title)]",
                 !action.enabled && "text-[var(--color-text-muted)]",
               )}
@@ -630,6 +696,7 @@ function RowActions({
               role="menuitem"
               type="button"
             >
+              {getActionIcon(action.id)}
               {action.label}
             </button>
           ))}
@@ -808,6 +875,7 @@ function PurchaseOrderDrawer({
                 type="button"
                 variant={action.id === "cancel" ? "danger" : "secondary"}
               >
+                {getActionIcon(action.id)}
                 {action.label}
               </Button>
             ))
@@ -935,6 +1003,19 @@ function buildQueryString(params: Record<string, string | number | undefined>) {
   return searchParams.toString();
 }
 
+function getActionIcon(actionId: PurchaseOrderAction["id"]) {
+  const className = "h-4 w-4 shrink-0";
+  if (actionId === "edit-draft") return <PencilIcon className={className} />;
+  if (actionId === "send-approval") return <SendIcon className={className} />;
+  if (actionId === "approve") return <CheckIcon className={className} />;
+  if (actionId === "cancel") return <XIcon className={className} />;
+  if (actionId === "continue-receiving") return <PackageIcon className={className} />;
+  if (actionId === "download-receiving-pdf") {
+    return <ClipboardDownloadIcon className={className} />;
+  }
+  return <FileDownloadIcon className={className} />;
+}
+
 function Icon({ children, className, ...props }: SVGProps<SVGSVGElement>) {
   return (
     <svg
@@ -971,6 +1052,75 @@ function PlusIcon(props: SVGProps<SVGSVGElement>) {
     <Icon {...props}>
       <path d="M12 5v14" />
       <path d="M5 12h14" />
+    </Icon>
+  );
+}
+
+function PencilIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="m14 4 6 6" />
+      <path d="M4 20h6L20 10l-6-6L4 14v6Z" />
+    </Icon>
+  );
+}
+
+function SendIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="m22 2-7 20-4-9-9-4 20-7Z" />
+      <path d="M22 2 11 13" />
+    </Icon>
+  );
+}
+
+function CheckIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="m20 6-11 11-5-5" />
+    </Icon>
+  );
+}
+
+function XIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </Icon>
+  );
+}
+
+function PackageIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="m3 7 9 5 9-5" />
+      <path d="M12 22V12" />
+      <path d="M21 7v10l-9 5-9-5V7l9-5 9 5Z" />
+    </Icon>
+  );
+}
+
+function FileDownloadIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+      <path d="M14 2v6h6" />
+      <path d="M12 12v6" />
+      <path d="m9 15 3 3 3-3" />
+    </Icon>
+  );
+}
+
+function ClipboardDownloadIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M9 5h6" />
+      <path d="M9 3h6v4H9z" />
+      <path d="M5 5h2" />
+      <path d="M17 5h2v16H5V5" />
+      <path d="M12 11v6" />
+      <path d="m9 14 3 3 3-3" />
     </Icon>
   );
 }

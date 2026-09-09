@@ -1,4 +1,12 @@
-import type { Product, PurchaseOrder, PurchaseOrderItem, Receipt, Supplier, Unit } from "@/core/entities";
+import type {
+  Product,
+  PurchaseOrder,
+  PurchaseOrderItem,
+  Receipt,
+  ReceiptLine,
+  Supplier,
+  Unit,
+} from "@/core/entities";
 import { PurchaseOrderStatus, ReceiptStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { GetInventoryAlertsService } from "@/modules/inventory/application/services/GetInventoryAlertsService";
@@ -29,6 +37,8 @@ export class GetPurchaseOrdersReadModelService {
     const branchById = new Map(branches.map((branch) => [branch.id, branch]));
     const receiptsByOrderId = groupReceiptsByOrderId(receipts);
 
+    const receiptLinesByOrderId = await this.getReceiptLinesByOrderId(receipts);
+
     const mappedOrders = orders
       .map((order) =>
         this.toOrderReadModel({
@@ -38,6 +48,7 @@ export class GetPurchaseOrdersReadModelService {
           productById,
           unitById,
           receipts: receiptsByOrderId.get(order.id) ?? [],
+          receiptLines: receiptLinesByOrderId.get(order.id) ?? [],
         }),
       )
       .sort(
@@ -73,6 +84,7 @@ export class GetPurchaseOrdersReadModelService {
     productById,
     unitById,
     receipts,
+    receiptLines,
   }: {
     order: PurchaseOrder;
     supplier?: Supplier;
@@ -80,8 +92,12 @@ export class GetPurchaseOrdersReadModelService {
     productById: Map<string, Product>;
     unitById: Map<string, Unit>;
     receipts: Receipt[];
+    receiptLines: ReceiptLine[];
   }): PurchaseOrderRowReadModel {
-    const lines = (order.items ?? []).map((item) => toLineReadModel(item, productById, unitById));
+    const receivedByProductId = groupReceivedQuantityByProductId(receiptLines);
+    const lines = (order.items ?? []).map((item) =>
+      toLineReadModel(item, productById, unitById, receivedByProductId.get(item.productId) ?? 0),
+    );
     const reception = getReception(order, receipts);
     const supplierContactLabel = [supplier?.phone, supplier?.email].filter(Boolean).join(" | ");
 
@@ -161,6 +177,22 @@ export class GetPurchaseOrdersReadModelService {
     );
     return suggestions.filter((suggestion) => suggestion.suggestedQuantity > 0).slice(0, 5);
   }
+
+  private async getReceiptLinesByOrderId(receipts: Receipt[]) {
+    const entries = await Promise.all(
+      receipts
+        .filter((receipt) => receipt.purchaseOrderId)
+        .map(async (receipt) => [
+          receipt.purchaseOrderId as string,
+          await this.repositories.receipts.getLinesByReceipt(receipt.id),
+        ] as const),
+    );
+
+    return entries.reduce((map, [purchaseOrderId, lines]) => {
+      map.set(purchaseOrderId, [...(map.get(purchaseOrderId) ?? []), ...lines]);
+      return map;
+    }, new Map<string, ReceiptLine[]>());
+  }
 }
 
 function getOpenPurchaseQuantity(
@@ -188,6 +220,7 @@ function toLineReadModel(
   item: PurchaseOrderItem,
   productById: Map<string, Product>,
   unitById: Map<string, Unit>,
+  receivedQuantity: number,
 ): PurchaseOrderLineReadModel {
   const product = productById.get(item.productId);
   const unit = unitById.get(item.unitId);
@@ -199,9 +232,16 @@ function toLineReadModel(
     unitLabel: unit?.symbol ?? unit?.name ?? item.unitId,
     unitCost: item.unitCost,
     subtotal: item.subtotal,
-    receivedQuantity: undefined,
+    receivedQuantity,
     registeredCost: undefined,
   };
+}
+
+function groupReceivedQuantityByProductId(lines: ReceiptLine[]) {
+  return lines.reduce((map, line) => {
+    map.set(line.productId, (map.get(line.productId) ?? 0) + line.receivedQuantity);
+    return map;
+  }, new Map<string, number>());
 }
 
 function getReception(order: PurchaseOrder, receipts: Receipt[]): PurchaseOrderReceptionReadModel {
