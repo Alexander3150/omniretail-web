@@ -26,6 +26,13 @@ interface CheckoutModalProps {
   bankAccounts: CheckoutBankAccountDto[];
   bankAccountsLoading: boolean;
   bankAccountsError: string | null;
+  cashShiftLoading: boolean;
+  cashShiftError: string | null;
+  cashShiftRegisterCode: string | null;
+  currentBranchName: string | null;
+  hasOpenCashShift: boolean;
+  hasPosSalesPermission: boolean;
+  hasCurrentBranchAccess: boolean;
   hasUnsupportedTraceability: boolean;
   validated: boolean;
   readyToConfirm: boolean;
@@ -52,6 +59,13 @@ export function CheckoutModal({
   bankAccounts,
   bankAccountsLoading,
   bankAccountsError,
+  cashShiftLoading,
+  cashShiftError,
+  cashShiftRegisterCode,
+  currentBranchName,
+  hasOpenCashShift,
+  hasPosSalesPermission,
+  hasCurrentBranchAccess,
   hasUnsupportedTraceability,
   validated,
   readyToConfirm,
@@ -105,6 +119,16 @@ export function CheckoutModal({
           discountTotal={discountTotal}
           subtotal={subtotal}
           total={total}
+        />
+
+        <CashShiftStatusPanel
+          branchName={currentBranchName}
+          error={cashShiftError}
+          hasBranchAccess={hasCurrentBranchAccess}
+          hasOpenCashShift={hasOpenCashShift}
+          hasSalesPermission={hasPosSalesPermission}
+          loading={cashShiftLoading}
+          registerCode={cashShiftRegisterCode}
         />
 
         {hasUnsupportedTraceability ? (
@@ -342,6 +366,73 @@ export function CheckoutModal({
         ) : null}
       </form>
     </Modal>
+  );
+}
+
+function CashShiftStatusPanel({
+  branchName,
+  error,
+  hasBranchAccess,
+  hasOpenCashShift,
+  hasSalesPermission,
+  loading,
+  registerCode,
+}: {
+  branchName: string | null;
+  error: string | null;
+  hasBranchAccess: boolean;
+  hasOpenCashShift: boolean;
+  hasSalesPermission: boolean;
+  loading: boolean;
+  registerCode: string | null;
+}) {
+  if (loading) {
+    return (
+      <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-muted)]">
+        Verificando turno de caja...
+      </p>
+    );
+  }
+
+  if (error) {
+    return (
+      <p className="rounded-lg border border-[var(--color-danger)] p-4 text-sm font-semibold text-[var(--color-danger)]">
+        {error}
+      </p>
+    );
+  }
+
+  if (!hasBranchAccess) {
+    return (
+      <p className="rounded-lg border border-[var(--color-warning)] p-4 text-sm font-semibold text-[var(--color-warning)]">
+        No tienes acceso a la sucursal activa.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {hasOpenCashShift ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-muted)]">
+          <StatusBadge status="Caja abierta" tone="success" />
+          <span>
+            {[branchName, registerCode ? `Caja ${registerCode}` : null]
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
+        </div>
+      ) : (
+        <p className="rounded-lg border border-[var(--color-warning)] p-4 text-sm font-semibold text-[var(--color-warning)]">
+          No hay un turno de caja abierto para esta sucursal.
+        </p>
+      )}
+
+      {!hasSalesPermission ? (
+        <p className="rounded-lg border border-[var(--color-warning)] p-4 text-sm font-semibold text-[var(--color-warning)]">
+          No tienes permiso para crear ventas POS.
+        </p>
+      ) : null}
+    </div>
   );
 }
 

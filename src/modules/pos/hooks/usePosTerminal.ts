@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { CashShift } from "@/core/entities";
+import { CashShiftStatus } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import type {
@@ -45,6 +47,7 @@ export function usePosTerminal() {
   const {
     user,
     canAccessBranch,
+    hasPermission,
     loading: sessionLoading,
     error: sessionError,
   } = useCurrentSession();
@@ -60,6 +63,9 @@ export function usePosTerminal() {
   const [bankAccounts, setBankAccounts] = useState<CheckoutBankAccountDto[]>([]);
   const [bankAccountsLoading, setBankAccountsLoading] = useState(true);
   const [bankAccountsError, setBankAccountsError] = useState<string | null>(null);
+  const [cashShift, setCashShift] = useState<CashShift | null>(null);
+  const [cashShiftLoading, setCashShiftLoading] = useState(true);
+  const [cashShiftError, setCashShiftError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     if (branchLoading || sessionLoading) return;
@@ -149,24 +155,76 @@ export function usePosTerminal() {
     user,
   ]);
 
+  const reloadCashShift = useCallback(async () => {
+    if (branchLoading || sessionLoading) return;
+
+    setCashShift(null);
+    setCashShiftError(null);
+
+    if (
+      !currentBranch ||
+      !user ||
+      user.tenantId !== currentBranch.tenantId ||
+      !canAccessBranch(currentBranch.id)
+    ) {
+      setCashShiftLoading(false);
+      return;
+    }
+
+    setCashShiftLoading(true);
+    try {
+      const shift = await repositories.cashShifts.getOpenByUserAndBranch(
+        user.id,
+        currentBranch.id,
+      );
+      const isValidShift =
+        shift?.status === CashShiftStatus.open &&
+        shift.userId === user.id &&
+        shift.branchId === currentBranch.id &&
+        shift.tenantId === currentBranch.tenantId &&
+        user.tenantId === currentBranch.tenantId;
+
+      if (!shift) return;
+      if (!isValidShift) {
+        setCashShiftError("El turno encontrado no coincide con la sesión y sucursal actuales.");
+        return;
+      }
+
+      setCashShift(shift);
+    } catch {
+      setCashShiftError("No se pudo consultar el turno de caja abierto.");
+    } finally {
+      setCashShiftLoading(false);
+    }
+  }, [
+    branchLoading,
+    canAccessBranch,
+    currentBranch,
+    repositories,
+    sessionLoading,
+    user,
+  ]);
+
   useEffect(() => {
     let active = true;
     window.queueMicrotask(() => {
       if (!active) return;
       void reload();
       void reloadBankAccounts();
+      void reloadCashShift();
     });
 
     return () => {
       active = false;
     };
-  }, [reload, reloadBankAccounts]);
+  }, [reload, reloadBankAccounts, reloadCashShift]);
 
   useDataEvent("product.changed", reload);
   useDataEvent("promotion.changed", reload);
   useDataEvent("inventory.changed", reload);
   useDataEvent("stock.changed", reload);
   useDataEvent("payment.changed", reloadBankAccounts);
+  useDataEvent("cash-shift.changed", reloadCashShift);
 
   const filteredProducts = useMemo(
     () => filterPosProducts(products, search),
@@ -270,6 +328,28 @@ export function usePosTerminal() {
   const ticket = useMemo<SaleTicketDto>(
     () => calculateTicket(ticketState.items),
     [ticketState.items],
+  );
+  const hasCurrentBranchAccess = Boolean(
+    !branchLoading &&
+      !sessionLoading &&
+      currentBranch &&
+      user &&
+      user.tenantId === currentBranch.tenantId &&
+      canAccessBranch(currentBranch.id),
+  );
+  const hasPosSalesPermission = hasPermission("pos.sales.create");
+  const hasOpenCashShift = Boolean(
+    !cashShiftLoading &&
+      !cashShiftError &&
+      cashShift &&
+      currentBranch &&
+      user &&
+      cashShift.status === CashShiftStatus.open &&
+      cashShift.userId === user.id &&
+      cashShift.branchId === currentBranch.id &&
+      cashShift.tenantId === currentBranch.tenantId &&
+      user.tenantId === currentBranch.tenantId &&
+      hasCurrentBranchAccess,
   );
   const ticketBlockingError = useMemo(
     () =>
@@ -376,7 +456,11 @@ export function usePosTerminal() {
       const amounts = calculateCheckoutAmounts(current.value, ticket.total);
       const value = { ...current.value, changeAmount: amounts.changeAmount };
       const result = validateCheckoutDto(value, ticket.total);
-      const hasOperationalBlock = result.isValid && ticket.hasUnsupportedTraceability;
+      const hasOperationalBlock =
+        ticket.hasUnsupportedTraceability ||
+        !hasOpenCashShift ||
+        !hasPosSalesPermission ||
+        !hasCurrentBranchAccess;
 
       return {
         ...current,
@@ -386,23 +470,50 @@ export function usePosTerminal() {
         readyToConfirm: result.isValid && !hasOperationalBlock,
         hasOperationalBlock,
         message: result.isValid
-          ? hasOperationalBlock
-            ? "Cobro validado, pero la venta tiene productos con trazabilidad no soportada."
-            : "Cobro validado. Pendiente de confirmación de venta."
+          ? getCheckoutValidationMessage({
+              cashShiftError,
+              cashShiftLoading,
+              hasCurrentBranchAccess,
+              hasOpenCashShift,
+              hasPosSalesPermission,
+              hasUnsupportedTraceability: ticket.hasUnsupportedTraceability,
+            })
           : null,
       };
     });
-  }, [ticket.hasUnsupportedTraceability, ticket.total]);
+  }, [
+    cashShiftError,
+    cashShiftLoading,
+    hasCurrentBranchAccess,
+    hasOpenCashShift,
+    hasPosSalesPermission,
+    ticket.hasUnsupportedTraceability,
+    ticket.total,
+  ]);
 
   const checkoutAmounts = useMemo(
     () => calculateCheckoutAmounts(checkoutState.value, ticket.total),
     [checkoutState.value, ticket.total],
   );
-  const checkoutHasOperationalBlock = ticket.hasUnsupportedTraceability;
+  const checkoutHasOperationalBlock =
+    ticket.hasUnsupportedTraceability ||
+    !hasOpenCashShift ||
+    !hasPosSalesPermission ||
+    !hasCurrentBranchAccess;
   const checkoutReadyToConfirm =
     checkoutState.validated &&
     checkoutState.readyToConfirm &&
     !checkoutHasOperationalBlock;
+  const checkoutMessage = checkoutState.validated
+    ? getCheckoutValidationMessage({
+        cashShiftError,
+        cashShiftLoading,
+        hasCurrentBranchAccess,
+        hasOpenCashShift,
+        hasPosSalesPermission,
+        hasUnsupportedTraceability: ticket.hasUnsupportedTraceability,
+      })
+    : checkoutState.message;
 
   return {
     products,
@@ -430,12 +541,19 @@ export function usePosTerminal() {
     checkoutValidated: checkoutState.validated,
     checkoutReadyToConfirm,
     checkoutHasOperationalBlock,
-    checkoutMessage: checkoutState.message,
+    checkoutMessage,
     checkoutAppliedAmount: checkoutAmounts.appliedAmount,
     checkoutDifferenceAmount: checkoutAmounts.differenceAmount,
     bankAccounts,
     bankAccountsLoading,
     bankAccountsError,
+    cashShift,
+    cashShiftLoading,
+    cashShiftError,
+    hasOpenCashShift,
+    hasPosSalesPermission,
+    hasCurrentBranchAccess,
+    currentBranchName: currentBranch?.name ?? null,
     openCheckout,
     closeCheckout,
     resetCheckout,
@@ -508,6 +626,40 @@ function calculateTicket(items: SaleTicketItemDto[]): SaleTicketDto {
       (item) => item.requiresUnsupportedTraceability,
     ),
   };
+}
+
+function getCheckoutValidationMessage({
+  cashShiftError,
+  cashShiftLoading,
+  hasCurrentBranchAccess,
+  hasOpenCashShift,
+  hasPosSalesPermission,
+  hasUnsupportedTraceability,
+}: {
+  cashShiftError: string | null;
+  cashShiftLoading: boolean;
+  hasCurrentBranchAccess: boolean;
+  hasOpenCashShift: boolean;
+  hasPosSalesPermission: boolean;
+  hasUnsupportedTraceability: boolean;
+}) {
+  if (!hasCurrentBranchAccess) {
+    return "Cobro validado, pero no tienes acceso a la sucursal activa.";
+  }
+  if (!hasPosSalesPermission) {
+    return "Cobro validado, pero no tienes permiso para crear ventas POS.";
+  }
+  if (cashShiftLoading) {
+    return "Cobro validado, pero el turno de caja todavía se está verificando.";
+  }
+  if (cashShiftError) return `Cobro validado, pero ${cashShiftError.toLocaleLowerCase("es")}`;
+  if (!hasOpenCashShift) {
+    return "Cobro validado, pero no hay un turno de caja abierto para esta sucursal.";
+  }
+  if (hasUnsupportedTraceability) {
+    return "Cobro validado, pero la venta tiene productos con trazabilidad no soportada.";
+  }
+  return "Cobro validado. Pendiente de confirmación de venta.";
 }
 
 function createCheckoutState(total: number): CheckoutState {
