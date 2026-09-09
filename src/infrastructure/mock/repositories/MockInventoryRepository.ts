@@ -159,9 +159,9 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
         id: this.id("movement"),
         createdAt: this.now(),
       };
-      db.inventoryMovements.push(created);
-      this.applyMovementToBalances(db.inventoryBalances, created);
-      return created;
+      const movement = this.applyMovementToBalances(db.inventoryBalances, created);
+      db.inventoryMovements.push(movement);
+      return movement;
     });
     this.emit("inventory.changed", {
       entityId: movement.id,
@@ -190,7 +190,10 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
   ) {
     return this.registerMovement({ ...input, type: InventoryMovementType.transfer });
   }
-  private applyMovementToBalances(balances: InventoryBalance[], movement: InventoryMovement): void {
+  private applyMovementToBalances(
+    balances: InventoryBalance[],
+    movement: InventoryMovement,
+  ): InventoryMovement {
     const now = this.now();
     const findOrCreate = (locationId?: string) => {
       let balance = balances.find(
@@ -220,8 +223,11 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
       findOrCreate(movement.toLocationId).quantity += movement.quantity;
     } else {
       const balance = findOrCreate(movement.toLocationId ?? movement.fromLocationId);
+      const quantityBefore = balance.quantity;
       const direction = movement.type === InventoryMovementType.out ? -1 : 1;
       balance.quantity += movement.quantity * direction;
+      movement.quantityBefore = movement.quantityBefore ?? quantityBefore;
+      movement.quantityAfter = movement.quantityAfter ?? balance.quantity;
     }
     balances
       .filter(
@@ -230,6 +236,7 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
       .forEach((item) => {
         item.updatedAt = now;
       });
+    return movement;
   }
 
   private assertValidProductInventorySettings(

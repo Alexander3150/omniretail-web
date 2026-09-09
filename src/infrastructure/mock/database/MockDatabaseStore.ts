@@ -1,6 +1,7 @@
 import {
   CustomerPaymentMethodStatus,
   InventoryTransferReason,
+  InventoryTransferStatus,
   InventoryTransferRequestStatus,
   LocationStatus,
   PaymentMethod,
@@ -12,6 +13,8 @@ import {
 import type {
   CustomerPaymentMethod,
   InventoryTransferRequest,
+  InventoryTransfer,
+  InventoryTransferItem,
   ProductInventorySettings,
   Unit,
 } from "@/core/entities";
@@ -28,16 +31,25 @@ type PersistedCustomerPaymentMethod = Partial<CustomerPaymentMethod> & {
 
 type PersistedProductInventorySettings = Partial<ProductInventorySettings>;
 type PersistedInventoryTransferRequest = Partial<InventoryTransferRequest>;
+type PersistedInventoryTransfer = Partial<InventoryTransfer>;
+type PersistedInventoryTransferItem = Partial<InventoryTransferItem>;
 type PersistedUnit = Partial<Unit>;
 
 type PersistedMockDatabase = Partial<
   Omit<
     MockDatabase,
-    "customerPaymentMethods" | "inventoryTransferRequests" | "productInventorySettings" | "units"
+    | "customerPaymentMethods"
+    | "inventoryTransferItems"
+    | "inventoryTransferRequests"
+    | "inventoryTransfers"
+    | "productInventorySettings"
+    | "units"
   >
 > & {
   customerPaymentMethods?: PersistedCustomerPaymentMethod[];
+  inventoryTransferItems?: PersistedInventoryTransferItem[];
   inventoryTransferRequests?: PersistedInventoryTransferRequest[];
+  inventoryTransfers?: PersistedInventoryTransfer[];
   productInventorySettings?: PersistedProductInventorySettings[];
   savedPaymentMethods?: PersistedCustomerPaymentMethod[];
   units?: PersistedUnit[];
@@ -61,6 +73,8 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   normalized.productSalesPriceTiers = database.productSalesPriceTiers ?? [];
   normalized.productInventorySettings = normalizeProductInventorySettings(database, normalized);
   normalized.inventoryTransferRequests = normalizeInventoryTransferRequests(database, normalized);
+  normalized.inventoryTransfers = normalizeInventoryTransfers(database, normalized);
+  normalized.inventoryTransferItems = normalizeInventoryTransferItems(database, normalized);
   normalized.unitConversions = database.unitConversions ?? [];
   normalized.attributeDefinitions = database.attributeDefinitions ?? [];
   normalized.productAttributeValues = database.productAttributeValues ?? [];
@@ -111,6 +125,73 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   }));
 
   return normalized;
+}
+
+function normalizeInventoryTransfers(
+  database: PersistedMockDatabase,
+  normalized: MockDatabase,
+): InventoryTransfer[] {
+  return (database.inventoryTransfers ?? []).map((transfer) =>
+    normalizePersistedInventoryTransfer(transfer, normalized),
+  );
+}
+
+function normalizeInventoryTransferItems(
+  database: PersistedMockDatabase,
+  normalized: MockDatabase,
+): InventoryTransferItem[] {
+  return (database.inventoryTransferItems ?? []).flatMap((item) => {
+    if (!item.transferId) return [];
+    const transfer = normalized.inventoryTransfers.find((entry) => entry.id === item.transferId);
+    if (!transfer) return [];
+    const product = normalized.products.find((entry) => entry.id === item.productId);
+    if (!product || product.tenantId !== transfer.tenantId) return [];
+    return [
+      {
+        id: item.id ?? `inventory-transfer-item-${crypto.randomUUID()}`,
+        transferId: item.transferId,
+        productId: item.productId ?? "",
+        sourceRequestId: item.sourceRequestId,
+        requestedQuantity: Math.max(0, item.requestedQuantity ?? 0),
+        dispatchedQuantity: Math.max(0, item.dispatchedQuantity ?? 0),
+        receivedQuantity: Math.max(0, item.receivedQuantity ?? 0),
+      },
+    ];
+  });
+}
+
+function normalizePersistedInventoryTransfer(
+  transfer: PersistedInventoryTransfer,
+  normalized: MockDatabase,
+): InventoryTransfer {
+  const sourceBranch = normalized.branches.find((item) => item.id === transfer.sourceBranchId);
+  const destinationBranch = normalized.branches.find(
+    (item) => item.id === transfer.destinationBranchId,
+  );
+  const createdAt = transfer.createdAt ?? new Date().toISOString();
+  const tenantId =
+    transfer.tenantId ?? sourceBranch?.tenantId ?? destinationBranch?.tenantId ?? "tenant-demo";
+
+  return {
+    id: transfer.id ?? `inventory-transfer-${crypto.randomUUID()}`,
+    tenantId,
+    number: transfer.number ?? getInventoryTransferNumber(tenantId, createdAt, normalized),
+    sourceBranchId: transfer.sourceBranchId ?? "",
+    destinationBranchId: transfer.destinationBranchId ?? "",
+    status: isInventoryTransferStatus(transfer.status)
+      ? transfer.status
+      : InventoryTransferStatus.preparing,
+    sourceRequestIds: transfer.sourceRequestIds,
+    notes: transfer.notes,
+    preparedByUserId: transfer.preparedByUserId,
+    dispatchedByUserId: transfer.dispatchedByUserId,
+    receivedByUserId: transfer.receivedByUserId,
+    createdAt,
+    updatedAt: transfer.updatedAt ?? createdAt,
+    dispatchedAt: transfer.dispatchedAt,
+    receivedAt: transfer.receivedAt,
+    cancelledAt: transfer.cancelledAt,
+  };
 }
 
 function normalizeProductInventorySettings(
@@ -385,6 +466,15 @@ function isInventoryTransferRequestStatus(value: unknown): value is InventoryTra
   );
 }
 
+function isInventoryTransferStatus(value: unknown): value is InventoryTransferStatus {
+  return (
+    value === InventoryTransferStatus.preparing ||
+    value === InventoryTransferStatus.inTransit ||
+    value === InventoryTransferStatus.received ||
+    value === InventoryTransferStatus.cancelled
+  );
+}
+
 function isInventoryTransferReason(value: unknown): value is InventoryTransferReason {
   return (
     value === InventoryTransferReason.replenishment ||
@@ -397,4 +487,19 @@ function isInventoryTransferReason(value: unknown): value is InventoryTransferRe
 
 function stripAccents(value: string): string {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function getInventoryTransferNumber(
+  tenantId: string,
+  createdAt: string,
+  normalized: MockDatabase,
+): string {
+  const year = new Date(createdAt).getFullYear();
+  const prefix = `TR-${year}-`;
+  const next = normalized.inventoryTransfers
+    .filter((transfer) => transfer.tenantId === tenantId && transfer.number.startsWith(prefix))
+    .map((transfer) => Number(transfer.number.slice(prefix.length)))
+    .filter((value) => Number.isInteger(value))
+    .reduce((max, value) => Math.max(max, value), 0) + 1;
+  return `${prefix}${String(next).padStart(5, "0")}`;
 }
