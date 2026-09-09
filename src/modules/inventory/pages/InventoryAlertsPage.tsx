@@ -10,6 +10,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
+import { useRouter } from "next/navigation";
 import type { StorageLocation } from "@/core/entities";
 import { InventoryTransferReason, InventoryTransferRequestStatus } from "@/core/enums";
 import { Button } from "@/shared/components/Button";
@@ -73,6 +74,7 @@ const TRANSFER_REASONS: Array<{ value: InventoryTransferReason; label: string }>
 ];
 
 export function InventoryAlertsPage() {
+  const router = useRouter();
   const { showToast } = useToast();
   const {
     data,
@@ -169,6 +171,27 @@ export function InventoryAlertsPage() {
   function openOtherBranches(row: InventoryProductRow) {
     selectRow(row);
     setActionMode("other-branches");
+  }
+
+  function openMovementHistory(row: InventoryProductRow) {
+    router.push(
+      `/inventario/movimientos?${buildQueryString({
+        productId: row.productId,
+        branchId: row.branchId,
+        source: "inventory",
+      })}`,
+    );
+  }
+
+  function openPurchaseOrder(row: InventoryProductRow, source: "inventory" | "inventory-alert") {
+    router.push(
+      `/compras/ordenes/nueva?${buildQueryString({
+        productId: row.productId,
+        branchId: row.branchId,
+        suggestedQuantity: getSuggestedQuantity(row),
+        source,
+      })}`,
+    );
   }
 
   async function addTransferRequest(dto: TransferRequestDto) {
@@ -293,6 +316,7 @@ export function InventoryAlertsPage() {
                 setPageSize(nextPageSize);
               }}
               onTransfer={openTransfer}
+              onViewHistory={openMovementHistory}
             />
           )}
         </div>
@@ -304,7 +328,9 @@ export function InventoryAlertsPage() {
           mode={panelMode}
           row={selectedRow}
           onAdjust={() => selectedRow && openAdjust(selectedRow)}
+          onCreateOrder={() => selectedRow && openPurchaseOrder(selectedRow, "inventory-alert")}
           onOtherBranches={() => selectedRow && openOtherBranches(selectedRow)}
+          onViewHistory={() => selectedRow && openMovementHistory(selectedRow)}
           onCloseProduct={() => {
             setSelectedProductId(null);
             setPanelMode("alerts");
@@ -599,6 +625,7 @@ function InventoryTable({
   onPageChange,
   onPageSizeChange,
   onTransfer,
+  onViewHistory,
 }: {
   firstVisible: number;
   lastVisible: number;
@@ -614,6 +641,7 @@ function InventoryTable({
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
   onTransfer: (row: InventoryProductRow) => void;
+  onViewHistory: (row: InventoryProductRow) => void;
 }) {
   return (
     <div className="border-t border-[var(--color-border)]">
@@ -685,7 +713,12 @@ function InventoryTable({
                     </td>
                   ) : null}
                   <td className="px-4 py-3">
-                    <RowActionsMenu row={row} onAdjust={onAdjust} onTransfer={onTransfer} />
+                    <RowActionsMenu
+                      row={row}
+                      onAdjust={onAdjust}
+                      onTransfer={onTransfer}
+                      onViewHistory={onViewHistory}
+                    />
                   </td>
                 </tr>
               ))
@@ -841,10 +874,12 @@ function RowActionsMenu({
   row,
   onAdjust,
   onTransfer,
+  onViewHistory,
 }: {
   row: InventoryProductRow;
   onAdjust: (row: InventoryProductRow) => void;
   onTransfer: (row: InventoryProductRow) => void;
+  onViewHistory: (row: InventoryProductRow) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>();
@@ -923,7 +958,7 @@ function RowActionsMenu({
         >
           <MenuItem onClick={() => select(onAdjust)}>Ajustar existencias</MenuItem>
           <MenuItem onClick={() => select(onTransfer)}>Solicitar traslado</MenuItem>
-          <MenuItem disabled onClick={() => undefined}>
+          <MenuItem onClick={() => select(onViewHistory)}>
             Historial de movimientos
           </MenuItem>
         </div>
@@ -964,11 +999,13 @@ function ContextPanel({
   hasRestoredViewedTransferAlerts,
   viewedTransferAlertKeys,
   onAdjust,
+  onCreateOrder,
   onCloseProduct,
   onModeChange,
   onOtherBranches,
   onSelectProduct,
   onSelectTransferRequest,
+  onViewHistory,
 }: {
   activeBranchId: string;
   activeBranchName: string;
@@ -979,11 +1016,13 @@ function ContextPanel({
   hasRestoredViewedTransferAlerts: boolean;
   viewedTransferAlertKeys: Set<string>;
   onAdjust: () => void;
+  onCreateOrder: () => void;
   onCloseProduct: () => void;
   onModeChange: (mode: AlertPanelMode) => void;
   onOtherBranches: () => void;
   onSelectProduct: (productId: string) => void;
   onSelectTransferRequest: (request: InventoryTransferRequestRow) => void;
+  onViewHistory: () => void;
 }) {
   const productAlerts = row ? alerts.filter((alert) => alert.productId === row.productId) : [];
   const totalAlerts = alerts.length + transferRequests.length;
@@ -1017,8 +1056,10 @@ function ContextPanel({
           alerts={productAlerts}
           row={row}
           onAdjust={onAdjust}
+          onCreateOrder={onCreateOrder}
           onClose={onCloseProduct}
           onOtherBranches={onOtherBranches}
+          onViewHistory={onViewHistory}
         />
       ) : null}
     </aside>
@@ -1147,15 +1188,19 @@ function ProductPanel({
   alerts,
   row,
   onAdjust,
+  onCreateOrder,
   onClose,
   onOtherBranches,
+  onViewHistory,
 }: {
   activeBranchName: string;
   alerts: InventoryAlert[];
   row: InventoryProductRow;
   onAdjust: () => void;
+  onCreateOrder: () => void;
   onClose: () => void;
   onOtherBranches: () => void;
+  onViewHistory: () => void;
 }) {
   return (
     <section>
@@ -1224,13 +1269,13 @@ function ProductPanel({
           <Button onClick={onOtherBranches} type="button" variant="secondary">
             Ver existencias en otras sucursales
           </Button>
-          <Button disabled type="button" variant="secondary">
+          <Button onClick={onViewHistory} type="button" variant="secondary">
             Ver historial de movimientos
           </Button>
           <Button onClick={onAdjust} type="button">
             Ajustar existencias
           </Button>
-          <Button disabled type="button" variant="secondary">
+          <Button onClick={onCreateOrder} type="button" variant="secondary">
             Crear orden de compra
           </Button>
           <Button onClick={onClose} type="button" variant="secondary">
@@ -1763,9 +1808,23 @@ function formatLastUpdated(value: Date | null) {
 }
 
 function formatSuggestedReorder(row: InventoryProductRow) {
+  const suggestedQuantity = getSuggestedQuantity(row);
+  return suggestedQuantity ? String(suggestedQuantity) : "Sin reposicion sugerida";
+}
+
+function getSuggestedQuantity(row: InventoryProductRow) {
   const target = row.reorderPoint ?? row.minStock;
-  if (target <= row.quantity) return "Sin reposicion sugerida";
-  return String(target - row.quantity);
+  if (target <= row.quantity) return undefined;
+  return target - row.quantity;
+}
+
+function buildQueryString(params: Record<string, string | number | undefined>) {
+  const searchParams = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === "") return;
+    searchParams.set(key, String(value));
+  });
+  return searchParams.toString();
 }
 
 function getDaysUntil(value: string) {

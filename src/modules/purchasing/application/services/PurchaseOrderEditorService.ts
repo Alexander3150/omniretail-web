@@ -8,6 +8,8 @@ import type {
   PurchaseOrderEditorLine,
   PurchaseOrderEditorModel,
   PurchaseOrderEditorSupplier,
+  PurchaseOrderPrefillContext,
+  PurchaseOrderPrefillResolution,
 } from "@/modules/purchasing/application/dto/PurchaseOrderEditorModel";
 
 export class PurchaseOrderEditorService {
@@ -73,7 +75,7 @@ export class PurchaseOrderEditorService {
     const categoryById = new Map(categories.map((category) => [category.id, category]));
 
     const rows = await Promise.all(
-      supplierProducts.map(async (supplierProduct) => {
+      supplierProducts.filter((supplierProduct) => supplierProduct.active).map(async (supplierProduct) => {
         const product = productById.get(supplierProduct.productId);
         const unit = unitById.get(supplierProduct.purchaseUnitId);
         const categoryName = product?.categoryId
@@ -127,6 +129,60 @@ export class PurchaseOrderEditorService {
     );
 
     return rows.sort((left, right) => left.productName.localeCompare(right.productName));
+  }
+
+  async resolvePrefillContext(
+    context: PurchaseOrderPrefillContext,
+  ): Promise<PurchaseOrderPrefillResolution | null> {
+    if (!context.productId) return null;
+    const product = await this.repositories.products.getById(context.productId);
+    if (!product) {
+      return {
+        productId: context.productId,
+        allowedSupplierIds: [],
+        quantity: getPrefillQuantity(context.suggestedQuantity),
+        notice: getPrefillNotice(context.source),
+        warning: "El producto indicado no existe o ya no esta disponible.",
+      };
+    }
+
+    const [supplierProducts, activeSuppliers] = await Promise.all([
+      this.repositories.supplierProducts.getByProduct(product.id),
+      this.repositories.suppliers.getActive(),
+    ]);
+    const activeSupplierById = new Map(activeSuppliers.map((supplier) => [supplier.id, supplier]));
+    const associatedSupplierProducts = supplierProducts.filter(
+      (supplierProduct) =>
+        supplierProduct.active &&
+        supplierProduct.tenantId === product.tenantId &&
+        activeSupplierById.has(supplierProduct.supplierId),
+    );
+    const allowedSupplierIds = associatedSupplierProducts.map(
+      (supplierProduct) => supplierProduct.supplierId,
+    );
+    const requestedSupplierId =
+      context.supplierId && allowedSupplierIds.includes(context.supplierId)
+        ? context.supplierId
+        : undefined;
+    const preferredSupplierId = associatedSupplierProducts.find((item) => item.preferred)?.supplierId;
+    const supplierId = requestedSupplierId ?? preferredSupplierId;
+    const quantitySource =
+      associatedSupplierProducts.find((item) => item.supplierId === supplierId) ??
+      associatedSupplierProducts[0];
+
+    return {
+      productId: product.id,
+      allowedSupplierIds,
+      quantity: getPrefillQuantity(context.suggestedQuantity, quantitySource?.minimumOrderQuantity),
+      notice: getPrefillNotice(context.source),
+      ...(supplierId ? { supplierId } : {}),
+      warning:
+        allowedSupplierIds.length === 0
+          ? "Este producto no tiene proveedores asociados."
+          : supplierId
+            ? undefined
+            : "Selecciona un proveedor asociado para agregar el producto.",
+    };
   }
 
   async saveDraft(input: SavePurchaseOrderInput): Promise<PurchaseOrder> {
@@ -296,6 +352,31 @@ function toEditorLine(
 function toDateInputValue(value?: string) {
   if (!value) return "";
   return value.slice(0, 10);
+}
+
+function getPrefillQuantity(suggestedQuantity?: number, minimumOrderQuantity?: number): number {
+  if (
+    typeof suggestedQuantity === "number" &&
+    Number.isSafeInteger(suggestedQuantity) &&
+    suggestedQuantity > 0
+  ) {
+    return suggestedQuantity;
+  }
+  if (
+    typeof minimumOrderQuantity === "number" &&
+    Number.isSafeInteger(minimumOrderQuantity) &&
+    minimumOrderQuantity > 0
+  ) {
+    return minimumOrderQuantity;
+  }
+  return 1;
+}
+
+function getPrefillNotice(source?: PurchaseOrderPrefillContext["source"]) {
+  if (source === "reorder-suggestion") return "Orden iniciada desde reposicion sugerida.";
+  if (source === "inventory-alert") return "Producto agregado desde Inventario.";
+  if (source === "inventory") return "Producto agregado desde Inventario.";
+  return "Orden iniciada con contexto de producto.";
 }
 
 function getAvailabilityLabel(quantity: number, minStock: number) {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
@@ -24,6 +25,7 @@ export const MOVEMENT_PERIOD_OPTIONS: Array<{ value: MovementPeriodFilter; label
 ];
 
 export function useInventoryMovements() {
+  const searchParams = useSearchParams();
   const repositories = useRepositories();
   const { currentBranch, loading: branchLoading } = useActiveBranch();
   const activeBranchId = currentBranch?.id;
@@ -34,10 +36,14 @@ export function useInventoryMovements() {
   const [search, setSearchState] = useState("");
   const [period, setPeriodState] = useState<MovementPeriodFilter>("30d");
   const [type, setTypeState] = useState<MovementTypeFilter>("all");
-  const [branchId, setBranchIdState] = useState("all");
-  const [filtersOpen, setFiltersOpenState] = useState(false);
+  const [branchId, setBranchIdState] = useState(() => searchParams.get("branchId") ?? "all");
+  const [productId, setProductIdState] = useState(() => searchParams.get("productId") ?? "");
+  const [filtersOpen, setFiltersOpenState] = useState(
+    () => Boolean(searchParams.get("branchId") || searchParams.get("productId")),
+  );
   const [page, setPageState] = useState(1);
   const [pageSize, setPageSizeState] = useState(20);
+  const resetPage = useCallback(() => setPageState(1), []);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -83,8 +89,8 @@ export function useInventoryMovements() {
   useDataEvent("inventory-transfer.changed", reload);
 
   const filteredRows = useMemo(
-    () => filterRows(data.rows, { search, period, type, branchId }),
-    [branchId, data.rows, period, search, type],
+    () => filterRows(data.rows, { search, period, type, branchId, productId }),
+    [branchId, data.rows, period, productId, search, type],
   );
   const kpis = useMemo<InventoryMovementKpis>(() => {
     const incoming = filteredRows
@@ -100,7 +106,6 @@ export function useInventoryMovements() {
   const paginatedRows = filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const setPage = useCallback((value: number) => setPageState(value), []);
-  const resetPage = useCallback(() => setPageState(1), []);
   const setSearch = useCallback(
     (value: string) => {
       setSearchState(value);
@@ -125,6 +130,13 @@ export function useInventoryMovements() {
   const setBranchId = useCallback(
     (value: string) => {
       setBranchIdState(value);
+      resetPage();
+    },
+    [resetPage],
+  );
+  const setProductId = useCallback(
+    (value: string) => {
+      setProductIdState(value);
       resetPage();
     },
     [resetPage],
@@ -155,6 +167,7 @@ export function useInventoryMovements() {
     period,
     type,
     branchId,
+    productId,
     filtersOpen,
     page: currentPage,
     pageSize,
@@ -163,6 +176,7 @@ export function useInventoryMovements() {
     setPeriod,
     setType,
     setBranchId,
+    setProductId,
     setFiltersOpen,
     setPage,
     setPageSize,
@@ -176,6 +190,7 @@ function filterRows(
     period: MovementPeriodFilter;
     type: MovementTypeFilter;
     branchId: string;
+    productId: string;
   },
 ) {
   const query = filters.search.trim().toLowerCase();
@@ -185,6 +200,7 @@ function filterRows(
     const matchesPeriod = !threshold || createdAt >= threshold;
     const matchesType = filters.type === "all" || row.displayType === filters.type;
     const matchesBranch = filters.branchId === "all" || row.branchId === filters.branchId;
+    const matchesProduct = !filters.productId || row.productId === filters.productId;
     const matchesSearch =
       !query ||
       [
@@ -200,7 +216,7 @@ function filterRows(
         row.adjustmentDetail?.notes,
         row.transferDetail?.number,
       ].some((value) => (value ?? "").toLowerCase().includes(query));
-    return matchesPeriod && matchesType && matchesBranch && matchesSearch;
+    return matchesPeriod && matchesType && matchesBranch && matchesProduct && matchesSearch;
   });
 }
 

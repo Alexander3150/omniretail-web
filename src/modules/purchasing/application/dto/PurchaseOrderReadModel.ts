@@ -60,13 +60,16 @@ export interface PurchaseOrderRowReadModel {
 export interface ReorderSuggestionReadModel {
   id: string;
   productId: string;
+  branchId: string;
   productName: string;
   sku: string;
   currentStock: number;
   minStock: number;
   suggestedQuantity: number;
   shortage: number;
+  preferredSupplierId?: string;
   preferredSupplierName: string;
+  associatedSupplierCount: number;
 }
 
 export interface PurchaseOrdersReadModel {

@@ -77,6 +77,18 @@ export function PurchaseOrdersPage() {
     updateFilters({ supplierId });
   }
 
+  function openSuggestionOrder(suggestion: ReorderSuggestionReadModel) {
+    router.push(
+      `/compras/ordenes/nueva?${buildQueryString({
+        productId: suggestion.productId,
+        branchId: suggestion.branchId,
+        supplierId: suggestion.preferredSupplierId,
+        suggestedQuantity: suggestion.suggestedQuantity,
+        source: "reorder-suggestion",
+      })}`,
+    );
+  }
+
   function changePage(nextPage: number) {
     setSelectedOrderId(null);
     setOpenActionsOrderId(null);
@@ -162,6 +174,7 @@ export function PurchaseOrdersPage() {
       <ReorderSuggestions
         expanded={suggestionsExpanded}
         suggestions={data.suggestions}
+        onCreateOrder={openSuggestionOrder}
         onToggle={() => setSuggestionsExpanded((current) => !current)}
       />
 
@@ -263,10 +276,12 @@ export function PurchaseOrdersPage() {
 function ReorderSuggestions({
   expanded,
   suggestions,
+  onCreateOrder,
   onToggle,
 }: {
   expanded: boolean;
   suggestions: ReorderSuggestionReadModel[];
+  onCreateOrder: (suggestion: ReorderSuggestionReadModel) => void;
   onToggle: () => void;
 }) {
   const requiringPurchase = suggestions.length;
@@ -339,8 +354,7 @@ function ReorderSuggestions({
               <div className="flex justify-start sm:justify-end">
                 <Button
                   className="min-h-9 px-3 py-1.5"
-                  disabled
-                  title="Preparado para la feature de creacion de ordenes"
+                  onClick={() => onCreateOrder(suggestion)}
                   type="button"
                   variant="secondary"
                 >
@@ -910,6 +924,15 @@ function formatDate(value: string) {
     month: "short",
     year: "numeric",
   }).format(new Date(value));
+}
+
+function buildQueryString(params: Record<string, string | number | undefined>) {
+  const searchParams = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === "") return;
+    searchParams.set(key, String(value));
+  });
+  return searchParams.toString();
 }
 
 function Icon({ children, className, ...props }: SVGProps<SVGSVGElement>) {

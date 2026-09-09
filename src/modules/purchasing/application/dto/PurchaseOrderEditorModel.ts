@@ -72,6 +72,25 @@ export interface PurchaseOrderEditorModel {
   status?: PurchaseOrderStatus;
 }
 
+export type PurchaseOrderPrefillSource = "inventory" | "inventory-alert" | "reorder-suggestion";
+
+export interface PurchaseOrderPrefillContext {
+  productId?: string;
+  branchId?: string;
+  supplierId?: string;
+  suggestedQuantity?: number;
+  source?: PurchaseOrderPrefillSource;
+}
+
+export interface PurchaseOrderPrefillResolution {
+  productId: string;
+  supplierId?: string;
+  allowedSupplierIds: string[];
+  quantity: number;
+  notice: string;
+  warning?: string;
+}
+
 export interface PurchaseOrderEditorData {
   loading: boolean;
   error: string | null;

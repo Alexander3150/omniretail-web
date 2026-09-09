@@ -8,6 +8,8 @@ import type {
   PurchaseOrderEditorLine,
   PurchaseOrderEditorModel,
   PurchaseOrderEditorSupplier,
+  PurchaseOrderPrefillContext,
+  PurchaseOrderPrefillResolution,
 } from "@/modules/purchasing/application/dto/PurchaseOrderEditorModel";
 import {
   getExpectedDate,
@@ -27,7 +29,7 @@ const EMPTY_MODEL: PurchaseOrderEditorModel = {
   lines: [],
 };
 
-export function usePurchaseOrderEditor(orderId?: string) {
+export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrderPrefillContext) {
   const repositories = useRepositories();
   const { currentBranch, loading: branchLoading } = useActiveBranch();
   const { user, loading: sessionLoading } = useCurrentSession();
@@ -36,6 +38,10 @@ export function usePurchaseOrderEditor(orderId?: string) {
   const [suppliers, setSuppliers] = useState<PurchaseOrderEditorSupplier[]>([]);
   const [availableProducts, setAvailableProducts] = useState<PurchaseOrderAvailableProduct[]>([]);
   const [productSearch, setProductSearch] = useState("");
+  const [prefillResolution, setPrefillResolution] =
+    useState<PurchaseOrderPrefillResolution | null>(null);
+  const [prefillNotice, setPrefillNotice] = useState<string | null>(null);
+  const [prefillWarning, setPrefillWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,13 +63,56 @@ export function usePurchaseOrderEditor(orderId?: string) {
       try {
         const activeSuppliers = await service.getActiveSuppliers();
         if (!active) return;
-        setSuppliers(activeSuppliers);
         if (orderId) {
+          setSuppliers(activeSuppliers);
           const order = await service.getOrderForEdit(orderId, currentBranch?.id);
           const products = await service.getAvailableProducts(order.supplierId, currentBranch?.id);
           if (!active) return;
           setModel(order);
           setAvailableProducts(products);
+        } else if (prefill?.productId) {
+          const resolution = await service.resolvePrefillContext(prefill);
+          if (!active) return;
+          setPrefillResolution(resolution);
+          setPrefillNotice(resolution?.notice ?? null);
+          setPrefillWarning(resolution?.warning ?? null);
+          setSuppliers(
+            resolution
+              ? activeSuppliers.filter((supplier) =>
+                  resolution.allowedSupplierIds.includes(supplier.id),
+                )
+              : activeSuppliers,
+          );
+          if (resolution?.supplierId) {
+            const products = await service.getAvailableProducts(
+              resolution.supplierId,
+              prefill.branchId ?? currentBranch?.id,
+            );
+            if (!active) return;
+            const lineProduct = products.find(
+              (product) => product.productId === resolution.productId,
+            );
+            setModel((current) => ({
+              ...current,
+              supplierId: resolution.supplierId ?? "",
+              expectedDate: getExpectedDate(
+                current.baseDate,
+                getExpectedLeadTime(lineProduct ? [createEditorLine(lineProduct, resolution.quantity)] : [], products),
+              ),
+              lines: lineProduct ? [createEditorLine(lineProduct, resolution.quantity)] : [],
+            }));
+            setAvailableProducts(products);
+          } else {
+            setModel((current) => ({
+              ...current,
+              supplierId: "",
+              lines: [],
+              expectedDate: "",
+            }));
+            setAvailableProducts([]);
+          }
+        } else {
+          setSuppliers(activeSuppliers);
         }
       } catch (caughtError) {
         if (!active) return;
@@ -77,7 +126,7 @@ export function usePurchaseOrderEditor(orderId?: string) {
     return () => {
       active = false;
     };
-  }, [currentBranch?.id, orderId, service]);
+  }, [currentBranch?.id, orderId, prefill, service]);
 
   const linePricing = useMemo(
     () => model.lines.map((line) => ({ lineId: line.id, ...getPricingDetails(line) })),
@@ -122,48 +171,31 @@ export function usePurchaseOrderEditor(orderId?: string) {
         return { requiresConfirmation: true };
       }
       const products = await loadAvailableProducts(supplierId);
+      const prefillProduct =
+        prefillResolution && model.lines.length === 0
+          ? products.find((product) => product.productId === prefillResolution.productId)
+          : undefined;
+      const lines = prefillProduct
+        ? [createEditorLine(prefillProduct, prefillResolution?.quantity)]
+        : [];
       setModel((current) => ({
         ...current,
         supplierId,
-        lines: [],
-        expectedDate: getExpectedDate(current.baseDate, getExpectedLeadTime([], products)),
+        lines,
+        expectedDate: getExpectedDate(current.baseDate, getExpectedLeadTime(lines, products)),
       }));
+      if (prefillProduct) setPrefillWarning(null);
       setProductSearch("");
       return { requiresConfirmation: false };
     },
-    [loadAvailableProducts, model.lines.length],
+    [loadAvailableProducts, model.lines.length, prefillResolution],
   );
 
   const addProduct = useCallback(
     (product: PurchaseOrderAvailableProduct) => {
       setModel((current) => {
         if (current.lines.some((line) => line.productId === product.productId)) return current;
-        const quantity = product.minimumOrderQuantity || 1;
-        const agreedCost = getTierCost(product, quantity);
-        const line: PurchaseOrderEditorLine = {
-          id: `line-${product.id}`,
-          productId: product.productId,
-          productName: product.productName,
-          sku: product.sku,
-          supplierSku: product.supplierSku,
-          unitId: product.unitId,
-          unitLabel: product.unitLabel,
-          quantity,
-          baseCost: product.configuredCost,
-          suggestedCost: agreedCost,
-          agreedCost,
-          subtotal: quantity * agreedCost,
-          manualCost: false,
-          minimumOrderQuantity: product.minimumOrderQuantity,
-          leadTimeDays: product.leadTimeDays,
-          tiers: product.tiers,
-          stockQuantity: product.stockQuantity,
-          minStock: product.minStock,
-          reorderPoint: product.reorderPoint,
-          shortage: product.shortage,
-          suggestedReorder: product.suggestedReorder,
-          availabilityLabel: product.availabilityLabel,
-        };
+        const line = createEditorLine(product);
         const lines = [...current.lines, line];
         return {
           ...current,
@@ -286,6 +318,8 @@ export function usePurchaseOrderEditor(orderId?: string) {
     subtotalBase,
     totalSavings,
     expectedLeadTimeDays,
+    prefillNotice,
+    prefillWarning,
     pricingByLineId,
     setProductSearch,
     changeSupplier,
@@ -297,6 +331,58 @@ export function usePurchaseOrderEditor(orderId?: string) {
     saveDraft,
     createOrder,
   };
+}
+
+function createEditorLine(
+  product: PurchaseOrderAvailableProduct,
+  requestedQuantity?: number,
+): PurchaseOrderEditorLine {
+  const quantity = getInitialQuantity(product, requestedQuantity);
+  const agreedCost = getTierCost(product, quantity);
+  return {
+    id: `line-${product.id}`,
+    productId: product.productId,
+    productName: product.productName,
+    sku: product.sku,
+    supplierSku: product.supplierSku,
+    unitId: product.unitId,
+    unitLabel: product.unitLabel,
+    quantity,
+    baseCost: product.configuredCost,
+    suggestedCost: agreedCost,
+    agreedCost,
+    subtotal: quantity * agreedCost,
+    manualCost: false,
+    minimumOrderQuantity: product.minimumOrderQuantity,
+    leadTimeDays: product.leadTimeDays,
+    tiers: product.tiers,
+    stockQuantity: product.stockQuantity,
+    minStock: product.minStock,
+    reorderPoint: product.reorderPoint,
+    shortage: product.shortage,
+    suggestedReorder: product.suggestedReorder,
+    availabilityLabel: product.availabilityLabel,
+  };
+}
+
+function getInitialQuantity(
+  product: PurchaseOrderAvailableProduct,
+  requestedQuantity?: number,
+): number {
+  if (
+    typeof requestedQuantity === "number" &&
+    Number.isSafeInteger(requestedQuantity) &&
+    requestedQuantity > 0
+  ) {
+    return requestedQuantity;
+  }
+  if (
+    Number.isSafeInteger(product.minimumOrderQuantity) &&
+    product.minimumOrderQuantity > 0
+  ) {
+    return product.minimumOrderQuantity;
+  }
+  return 1;
 }
 
 function normalize(value: string) {

@@ -1,8 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type RefObject, type SVGProps } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+  type SVGProps,
+} from "react";
 import { createPortal } from "react-dom";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/shared/components/Button";
 import { Input } from "@/shared/components/Input";
 import { PageHeader } from "@/shared/components/PageHeader";
@@ -13,6 +21,8 @@ import { parseDecimalInput, parseIntegerInput, toFiniteNumber } from "@/shared/u
 import type { PurchaseOrderAvailableProduct } from "@/modules/purchasing/application/dto/PurchaseOrderEditorModel";
 import type {
   PurchaseOrderEditorLine,
+  PurchaseOrderPrefillContext,
+  PurchaseOrderPrefillSource,
   PurchaseOrderEditorSupplier,
 } from "@/modules/purchasing/application/dto/PurchaseOrderEditorModel";
 import { usePurchaseOrderEditor } from "@/modules/purchasing/hooks/usePurchaseOrderEditor";
@@ -24,9 +34,18 @@ interface PurchaseOrderFormPageProps {
 export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
   const params = useParams<{ id?: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { showToast } = useToast();
-  const editor = usePurchaseOrderEditor(mode === "edit" ? params.id : undefined);
+  const prefillContext = useMemo(
+    () => (mode === "create" ? getPrefillContext(searchParams) : undefined),
+    [mode, searchParams],
+  );
+  const editor = usePurchaseOrderEditor(
+    mode === "edit" ? params.id : undefined,
+    prefillContext,
+  );
   const [pendingSupplierId, setPendingSupplierId] = useState<string | null>(null);
+  const returnPath = getReturnPath(prefillContext?.source);
 
   async function handleSupplierChange(supplierId: string) {
     const result = await editor.changeSupplier(supplierId);
@@ -93,6 +112,19 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
           description="Selecciona proveedor, productos asociados, cantidades y costos acordados."
         />
       </div>
+
+      {editor.prefillNotice || editor.prefillWarning ? (
+        <p
+          className={cn(
+            "rounded-md border px-3 py-2 text-sm font-semibold",
+            editor.prefillWarning
+              ? "border-amber-200 bg-amber-50 text-amber-900"
+              : "border-blue-100 bg-blue-50 text-blue-900",
+          )}
+        >
+          {editor.prefillWarning ?? editor.prefillNotice}
+        </p>
+      ) : null}
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-5">
@@ -319,7 +351,7 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
             <SummaryItem label="Total" value={formatCurrency(editor.total)} strong />
           </dl>
           <div className="mt-5 flex flex-col gap-2">
-            <Button onClick={() => router.push("/compras/ordenes")} type="button" variant="secondary">
+            <Button onClick={() => router.push(returnPath)} type="button" variant="secondary">
               Volver
             </Button>
             <Button disabled={editor.saving} onClick={handleSaveDraft} type="button" variant="secondary">
@@ -699,6 +731,40 @@ function formatNumber(value: number) {
 
 function formatLeadTime(value?: number) {
   return typeof value === "number" ? `${formatNumber(value)} dias` : "No definido";
+}
+
+function getPrefillContext(searchParams: { get: (name: string) => string | null }) {
+  const productId = searchParams.get("productId") ?? undefined;
+  const branchId = searchParams.get("branchId") ?? undefined;
+  const supplierId = searchParams.get("supplierId") ?? undefined;
+  const source = getPrefillSource(searchParams.get("source"));
+  const suggestedQuantity = getSuggestedQuantityParam(searchParams.get("suggestedQuantity"));
+  if (!productId && !branchId && !supplierId && !source && !suggestedQuantity) return undefined;
+  return {
+    productId,
+    branchId,
+    supplierId,
+    source,
+    suggestedQuantity,
+  } satisfies PurchaseOrderPrefillContext;
+}
+
+function getPrefillSource(value: string | null): PurchaseOrderPrefillSource | undefined {
+  if (value === "inventory" || value === "inventory-alert" || value === "reorder-suggestion") {
+    return value;
+  }
+  return undefined;
+}
+
+function getSuggestedQuantityParam(value: string | null) {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function getReturnPath(source?: PurchaseOrderPrefillSource) {
+  if (source === "inventory" || source === "inventory-alert") return "/inventario/alertas";
+  return "/compras/ordenes";
 }
 
 function formatDate(value: string) {

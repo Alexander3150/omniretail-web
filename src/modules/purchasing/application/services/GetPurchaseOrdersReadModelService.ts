@@ -45,7 +45,7 @@ export class GetPurchaseOrdersReadModelService {
           new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
       );
     const suggestions = activeBranchId
-      ? await this.getReorderSuggestions(activeBranchId, suppliers)
+      ? await this.getReorderSuggestions(activeBranchId, suppliers, orders)
       : [];
 
     return {
@@ -117,6 +117,7 @@ export class GetPurchaseOrdersReadModelService {
   private async getReorderSuggestions(
     activeBranchId: string,
     suppliers: Supplier[],
+    orders: PurchaseOrder[],
   ): Promise<ReorderSuggestionReadModel[]> {
     const inventoryAlerts = await new GetInventoryAlertsService(this.repositories).execute(
       activeBranchId,
@@ -124,36 +125,63 @@ export class GetPurchaseOrdersReadModelService {
     const rowByProductId = new Map(inventoryAlerts.rows.map((row) => [row.productId, row]));
     const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier]));
 
-    return Promise.all(
+    const suggestions = await Promise.all(
       inventoryAlerts.alerts
         .filter((alert) => alert.type === "low_stock" && alert.suggestedReorder)
-        .slice(0, 5)
         .map(async (alert) => {
           const row = rowByProductId.get(alert.productId);
           const supplierProducts = await this.repositories.supplierProducts.getByProduct(
             alert.productId,
           );
-          const preferredSupplierProduct =
-            supplierProducts.find((item) => item.preferred && item.active) ??
-            supplierProducts.find((item) => item.active);
+          const associatedSupplierProducts = supplierProducts.filter(
+            (item) => item.active && (!row || item.tenantId === row.tenantId),
+          );
+          const preferredSupplierProduct = associatedSupplierProducts.find((item) => item.preferred);
           const preferredSupplier = preferredSupplierProduct
             ? supplierById.get(preferredSupplierProduct.supplierId)
             : undefined;
+          const openQuantity = getOpenPurchaseQuantity(orders, activeBranchId, alert.productId);
+          const remainingQuantity = Math.max(0, (alert.suggestedReorder ?? 0) - openQuantity);
 
           return {
             id: `reorder-${row?.branchId ?? activeBranchId}-${alert.productId}`,
             productId: alert.productId,
+            branchId: row?.branchId ?? activeBranchId,
             productName: row?.productName ?? alert.title,
             sku: row?.sku ?? alert.productId,
             currentStock: row?.quantity ?? 0,
             minStock: row?.minStock ?? 0,
-            suggestedQuantity: alert.suggestedReorder ?? 0,
+            suggestedQuantity: remainingQuantity,
             shortage: Math.max(0, (row?.minStock ?? 0) - (row?.quantity ?? 0)),
+            preferredSupplierId: preferredSupplier?.id,
             preferredSupplierName: preferredSupplier?.name ?? "Sin proveedor preferido",
+            associatedSupplierCount: associatedSupplierProducts.length,
           };
         }),
     );
+    return suggestions.filter((suggestion) => suggestion.suggestedQuantity > 0).slice(0, 5);
   }
+}
+
+function getOpenPurchaseQuantity(
+  orders: PurchaseOrder[],
+  branchId: string,
+  productId: string,
+) {
+  return orders
+    .filter((order) => order.branchId === branchId && isActiveReplenishmentOrder(order.status))
+    .flatMap((order) => order.items ?? [])
+    .filter((item) => item.productId === productId)
+    .reduce((total, item) => total + item.quantity, 0);
+}
+
+function isActiveReplenishmentOrder(status: PurchaseOrderStatus) {
+  return (
+    status === PurchaseOrderStatus.pending_approval ||
+    status === PurchaseOrderStatus.approved ||
+    status === PurchaseOrderStatus.sent ||
+    status === PurchaseOrderStatus.partially_received
+  );
 }
 
 function toLineReadModel(
