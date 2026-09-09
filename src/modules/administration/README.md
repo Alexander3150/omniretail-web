@@ -6,9 +6,12 @@ Responsable: Jose
 
 Este modulo desarrolla su funcionalidad propia sin duplicar contratos compartidos.
 
+El alcance completo del modulo, los contratos verificados, los bloqueantes y el orden de trabajo
+estan en `SCOPE.md`.
+
 ## Contracts que consume
 
-UserRepository, BranchRepository, BusinessConfigRepository, SupplierRepository, BankAccountRepository
+UserRepository, RoleRepository, BranchRepository, BusinessConfigRepository, TenantRepository, SupplierRepository, BankAccountRepository, CustomerRepository, AuditLogRepository
 
 ## Reglas
 
