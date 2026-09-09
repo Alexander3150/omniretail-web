@@ -78,10 +78,8 @@ export function PosTerminalPage() {
           subtotal={terminal.subtotal}
           total={terminal.total}
           onCheckout={terminal.openCheckout}
-          onClear={terminal.clearTicket}
           onDecrease={terminal.decreaseQuantity}
           onIncrease={terminal.increaseQuantity}
-          onRemove={terminal.removeItem}
         />
       </section>
 

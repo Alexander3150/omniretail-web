@@ -221,6 +221,22 @@ export function CheckoutModal({
         </section>
 
         <section className="space-y-4 rounded-lg border border-[var(--color-border)] p-4">
+          <h3 className="font-bold text-[var(--color-title)]">Entrega</h3>
+          <div className="rounded-lg border border-[var(--color-success)] p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-semibold text-[var(--color-text)]">Entrega inmediata</p>
+              <StatusBadge status="Modalidad activa" tone="success" />
+            </div>
+            <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+              El cliente se lleva los productos ahora.
+            </p>
+          </div>
+          <p className="text-xs text-[var(--color-text-muted)]">
+            Actualmente el Terminal de Cobro procesa ventas de entrega inmediata.
+          </p>
+        </section>
+
+        <section className="space-y-4 rounded-lg border border-[var(--color-border)] p-4">
           <h3 className="font-bold text-[var(--color-title)]">Método de pago</h3>
           <FormField id="checkout-payment-mode" label="Modalidad">
             <Select
@@ -260,7 +276,7 @@ export function CheckoutModal({
                 />
                 <ReadonlyAmount
                   error={errors.changeAmount}
-                  label="Vuelto"
+                  label="Cambio"
                   value={checkout.changeAmount}
                 />
               </PaymentSection>

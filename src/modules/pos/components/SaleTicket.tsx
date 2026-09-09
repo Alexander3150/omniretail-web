@@ -11,8 +11,6 @@ interface SaleTicketProps {
   canCheckout: boolean;
   onIncrease: (productId: string) => void;
   onDecrease: (productId: string) => void;
-  onRemove: (productId: string) => void;
-  onClear: () => void;
   onCheckout: () => void;
 }
 
@@ -25,24 +23,17 @@ export function SaleTicket({
   canCheckout,
   onIncrease,
   onDecrease,
-  onRemove,
-  onClear,
   onCheckout,
 }: SaleTicketProps) {
   return (
     <aside className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-sm">
-      <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] p-5">
+      <div className="border-b border-[var(--color-border)] p-5">
         <div>
           <h2 className="text-lg font-bold text-[var(--color-title)]">Ticket de venta</h2>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
             {items.length === 1 ? "1 producto" : `${items.length} productos`}
           </p>
         </div>
-        {items.length > 0 ? (
-          <Button onClick={onClear} type="button" variant="ghost">
-            Vaciar
-          </Button>
-        ) : null}
       </div>
 
       <div className="p-5">
@@ -73,7 +64,7 @@ export function SaleTicket({
                   </p>
                 </div>
 
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                <div className="mt-3 flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-2" aria-label={`Cantidad de ${item.name}`}>
                     <button
                       aria-label={`Disminuir cantidad de ${item.name}`}
@@ -98,13 +89,6 @@ export function SaleTicket({
                       +
                     </button>
                   </div>
-                  <button
-                    className="text-sm font-semibold text-[var(--color-danger)] underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]"
-                    onClick={() => onRemove(item.productId)}
-                    type="button"
-                  >
-                    Eliminar
-                  </button>
                 </div>
 
                 <div className="mt-3 text-xs text-[var(--color-text-muted)]">

@@ -44,9 +44,16 @@ export function QuickProductList({
       {products.map((product) => {
         const hasAvailableStock =
           !product.tracksStock || (product.availableQuantity ?? 0) > 0;
+        const hasUnsupportedTraceability = product.requiresUnsupportedTraceability;
         const canAdd =
-          hasAvailableStock &&
-          (product.isAvailableForSale || product.requiresUnsupportedTraceability);
+          !hasUnsupportedTraceability && hasAvailableStock && product.isAvailableForSale;
+        const buttonLabel = hasUnsupportedTraceability
+          ? "No disponible"
+          : hasAvailableStock
+            ? canAdd
+              ? "Agregar"
+              : "No disponible"
+            : "Sin existencia";
 
         return (
           <li
@@ -72,9 +79,9 @@ export function QuickProductList({
                   ? `Disponible: ${product.availableQuantity ?? 0}`
                   : "Sin control de existencia"}
               </p>
-              {product.requiresUnsupportedTraceability ? (
+              {hasUnsupportedTraceability ? (
                 <p className="mt-2 text-xs font-semibold text-[var(--color-warning)]">
-                  No podrá confirmarse hasta habilitar su trazabilidad.
+                  Producto con trazabilidad especial no disponible en POS.
                 </p>
               ) : null}
             </div>
@@ -86,7 +93,7 @@ export function QuickProductList({
               type="button"
               variant="secondary"
             >
-              {canAdd ? "Agregar" : hasAvailableStock ? "No disponible" : "Sin existencia"}
+              {buttonLabel}
             </Button>
           </li>
         );

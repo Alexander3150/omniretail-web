@@ -157,7 +157,7 @@ function validateCash(
 
   const expectedChangeCents = Math.max(0, receivedCents - cashCents);
   if (toCents(changeAmount) !== expectedChangeCents) {
-    errors.changeAmount = "El vuelto calculado no es correcto.";
+    errors.changeAmount = "El cambio calculado no es correcto.";
   }
 }
 
