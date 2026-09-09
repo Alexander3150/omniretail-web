@@ -14,6 +14,8 @@ export interface RegisterInventoryMovementInput {
   type: InventoryMovementType;
   reason: string;
   quantity: number;
+  quantityBefore?: number;
+  quantityAfter?: number;
   fromLocationId?: string;
   toLocationId?: string;
   referenceType?: string;

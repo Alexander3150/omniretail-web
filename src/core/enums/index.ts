@@ -80,6 +80,12 @@ export enum InventoryTransferRequestStatus {
   received = "received",
   cancelled = "cancelled",
 }
+export enum InventoryTransferStatus {
+  preparing = "preparing",
+  inTransit = "inTransit",
+  received = "received",
+  cancelled = "cancelled",
+}
 export enum InventoryTransferReason {
   replenishment = "replenishment",
   demandCoverage = "demandCoverage",
