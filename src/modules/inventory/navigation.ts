@@ -1,3 +1,4 @@
+import { catalogNavigationItem } from "@/modules/catalog/navigation";
 import type { NavigationItem } from "@/shared/types/navigation.types";
 
 export const inventoryNavigation = [
@@ -13,10 +14,7 @@ export const inventoryNavigation = [
         permission: "inventory.stock.read",
       },
       {
-        id: "inventory-catalog-pricing",
-        label: "Catalogo y precios",
-        href: "/catalogo/productos",
-        permission: "catalog.products.read",
+        ...catalogNavigationItem,
       },
       {
         id: "inventory-movements",

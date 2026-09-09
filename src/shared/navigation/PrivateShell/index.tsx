@@ -67,7 +67,7 @@ export function PrivateShell({ children, navigationItems }: PrivateShellProps) {
       <div className="flex min-h-screen">
         <Suspense
           fallback={
-            <aside className="hidden h-screen w-56 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-structure)] px-4 py-5 text-white lg:block" />
+            <aside className="hidden h-screen w-64 shrink-0 border-r border-white/10 bg-[var(--color-structure)] px-3 py-4 text-white lg:block" />
           }
         >
           <Sidebar
