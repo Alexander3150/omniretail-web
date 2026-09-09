@@ -10,6 +10,7 @@ export type DataEventName =
   | "promotion.changed"
   | "unit-conversion.changed"
   | "inventory.changed"
+  | "inventory-adjustment.changed"
   | "inventory-transfer.changed"
   | "inventory-transfer-request.changed"
   | "stock.changed"

@@ -792,6 +792,7 @@ export const demoSeedDatabase: MockDatabase = {
     },
   ],
   inventoryMovements: [],
+  inventoryAdjustments: [],
   inventoryTransferRequests: [
     {
       id: "transfer-request-centro-drill-requested",
