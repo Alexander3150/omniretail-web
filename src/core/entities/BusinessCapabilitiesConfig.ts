@@ -1,4 +1,4 @@
-import type { BusinessPreset } from "@/core/enums";
+import type { BusinessPreset, PaymentMethod } from "@/core/enums";
 import type { ProductTrackingConfig } from "@/core/types/tracking.types";
 
 export interface BusinessCapabilitiesConfig {
@@ -13,5 +13,6 @@ export interface BusinessCapabilitiesConfig {
   supportsProductAttributes: boolean;
   supportsKits: boolean;
   supportsServices: boolean;
+  allowedPosPaymentMethods?: PaymentMethod[];
   defaultProductTracking: ProductTrackingConfig;
 }
