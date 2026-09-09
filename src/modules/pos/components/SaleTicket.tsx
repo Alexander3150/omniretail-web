@@ -8,10 +8,12 @@ interface SaleTicketProps {
   discountTotal: number;
   total: number;
   error: string | null;
+  canCheckout: boolean;
   onIncrease: (productId: string) => void;
   onDecrease: (productId: string) => void;
   onRemove: (productId: string) => void;
   onClear: () => void;
+  onCheckout: () => void;
 }
 
 export function SaleTicket({
@@ -20,10 +22,12 @@ export function SaleTicket({
   discountTotal,
   total,
   error,
+  canCheckout,
   onIncrease,
   onDecrease,
   onRemove,
   onClear,
+  onCheckout,
 }: SaleTicketProps) {
   return (
     <aside className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-sm">
@@ -136,6 +140,16 @@ export function SaleTicket({
           <dd className="text-xl font-bold text-[var(--color-title)]">{formatCurrency(total)}</dd>
         </div>
       </dl>
+      <div className="border-t border-[var(--color-border)] p-5">
+        <Button
+          className="w-full"
+          disabled={!canCheckout}
+          onClick={onCheckout}
+          type="button"
+        >
+          Cobrar
+        </Button>
+      </div>
     </aside>
   );
 }

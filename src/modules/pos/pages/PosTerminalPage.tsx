@@ -1,6 +1,7 @@
 "use client";
 
 import { PageHeader } from "@/shared/components/PageHeader";
+import { CheckoutModal } from "@/modules/pos/components/CheckoutModal";
 import { ProductSearch } from "@/modules/pos/components/ProductSearch";
 import { QuickProductList } from "@/modules/pos/components/QuickProductList";
 import { SaleTicket } from "@/modules/pos/components/SaleTicket";
@@ -44,17 +45,45 @@ export function PosTerminalPage() {
         </div>
 
         <SaleTicket
+          canCheckout={terminal.canOpenCheckout}
           discountTotal={terminal.discountTotal}
           error={terminal.ticketError}
           items={terminal.ticketItems}
           subtotal={terminal.subtotal}
           total={terminal.total}
+          onCheckout={terminal.openCheckout}
           onClear={terminal.clearTicket}
           onDecrease={terminal.decreaseQuantity}
           onIncrease={terminal.increaseQuantity}
           onRemove={terminal.removeItem}
         />
       </section>
+
+      <CheckoutModal
+        appliedAmount={terminal.checkoutAppliedAmount}
+        bankAccounts={terminal.bankAccounts}
+        bankAccountsError={terminal.bankAccountsError}
+        bankAccountsLoading={terminal.bankAccountsLoading}
+        checkout={terminal.checkout}
+        differenceAmount={terminal.checkoutDifferenceAmount}
+        discountTotal={terminal.discountTotal}
+        errors={terminal.checkoutErrors}
+        hasOperationalBlock={terminal.checkoutHasOperationalBlock}
+        hasUnsupportedTraceability={terminal.hasUnsupportedTraceability}
+        message={terminal.checkoutMessage}
+        open={terminal.checkoutOpen}
+        readyToConfirm={terminal.checkoutReadyToConfirm}
+        subtotal={terminal.subtotal}
+        total={terminal.total}
+        validated={terminal.checkoutValidated}
+        onCheckoutChange={terminal.updateCheckout}
+        onClose={terminal.closeCheckout}
+        onDocumentTypeChange={terminal.setDocumentType}
+        onInvoiceDataChange={terminal.updateInvoiceData}
+        onPaymentModeChange={terminal.setPaymentMode}
+        onReset={terminal.resetCheckout}
+        onValidate={terminal.validateCheckout}
+      />
     </div>
   );
 }
