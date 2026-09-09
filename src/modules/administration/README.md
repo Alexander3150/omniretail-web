@@ -13,6 +13,17 @@ estan en `SCOPE.md`.
 
 UserRepository, RoleRepository, BranchRepository, BusinessConfigRepository, TenantRepository, SupplierRepository, BankAccountRepository, CustomerRepository, AuditLogRepository
 
+## Configuracion del negocio
+
+Implementado en esta rama:
+
+- Formulario de capacidades operativas y trazabilidad por defecto del tenant.
+- Presets de ferreteria, farmacia, abarroteria y servicios, con ajustes personalizados.
+- Coherencia entre control de inventario, capacidades dependientes y tracking de productos.
+- Lectura y actualizacion mediante `BusinessConfigRepository`, resuelto por `RepositoryProvider`.
+- Sincronizacion de cambios mediante el evento `business-config.changed`.
+- Ruta privada `/administracion/configuracion-negocio` y entrada de navegacion con permiso de administracion.
+
 ## Reglas
 
 - No duplicar entities de `core/`.

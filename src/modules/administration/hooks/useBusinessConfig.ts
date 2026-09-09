@@ -106,17 +106,19 @@ export function useBusinessConfig() {
     [saveService, tenantId],
   );
 
+  /**
+   * Devuelve el borrador resultante sin tocar `config`: `config` refleja lo persistido y el
+   * borrador vive en la pantalla. Con `custom` se conservan los cambios en curso.
+   */
   const applyPreset = useCallback(
-    (preset: BusinessPreset): BusinessConfigDto | null => {
-      const nextConfig =
-        preset === BusinessPreset.custom
-          ? config && cloneConfig({ ...config, preset })
-          : cloneConfig(businessDefaultsConfig[preset]);
+    (preset: BusinessPreset, current: BusinessConfigDto | null): BusinessConfigDto | null => {
+      if (preset === BusinessPreset.custom) {
+        return current ? cloneConfig({ ...current, preset }) : null;
+      }
 
-      if (nextConfig) setConfig(nextConfig);
-      return nextConfig;
+      return cloneConfig({ ...businessDefaultsConfig[preset] });
     },
-    [config],
+    [],
   );
 
   return {
