@@ -1,6 +1,5 @@
 import { administrationNavigation } from "@/modules/administration/navigation";
 import { authNavigation } from "@/modules/auth/navigation";
-import { catalogNavigation } from "@/modules/catalog/navigation";
 import { customerNavigation } from "@/modules/customer/navigation";
 import { inventoryNavigation } from "@/modules/inventory/navigation";
 import { logisticsNavigation } from "@/modules/logistics/navigation";
@@ -24,7 +23,6 @@ export const navigationConfig = [
   ...customerNavigation,
   ...storefrontNavigation,
   ...administrationNavigation,
-  ...catalogNavigation,
   ...inventoryNavigation,
   ...purchasingNavigation,
   ...receivingNavigation,
