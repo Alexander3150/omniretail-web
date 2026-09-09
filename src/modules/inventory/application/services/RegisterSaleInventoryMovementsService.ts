@@ -1,5 +1,6 @@
 import type { InventoryMovement, Sale, SaleItem } from "@/core/entities";
 import { InventoryMovementType, ProductType } from "@/core/enums";
+import { planInventoryAllocation } from "@/core/inventory/stockAvailability";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 
 export interface RegisterSaleInventoryMovementItemInput {
@@ -56,26 +57,42 @@ export class RegisterSaleInventoryMovementsService {
         product.id,
         input.sale.branchId,
       );
-      const sourceBalance = this.resolveSourceBalance(balances, item.sourceLocationId);
-      if (item.sourceLocationId && !sourceBalance) {
-        throw new Error(`Balance no encontrado para ${product.name} en la ubicacion indicada.`);
+      const settings = await this.repositories.inventory.getProductInventorySettings(
+        product.id,
+        input.sale.branchId,
+      );
+      const locations = await this.repositories.inventory.getLocations(input.sale.branchId);
+      const allocations = planInventoryAllocation({
+        tenantId: input.sale.tenantId,
+        branchId: input.sale.branchId,
+        productId: product.id,
+        quantity: item.saleItem.quantity,
+        balances: balances.map((balance) => {
+          const plannedQuantity = plannedQuantities.get(balance.id);
+          return plannedQuantity === undefined ? balance : { ...balance, quantity: plannedQuantity };
+        }),
+        locations,
+        preferredLocationId: item.sourceLocationId ?? settings?.defaultLocationId,
+      });
+      if (
+        item.sourceLocationId &&
+        allocations.some((allocation) => allocation.locationId !== item.sourceLocationId)
+      ) {
+        throw new Error(`Stock insuficiente para ${product.name} en la ubicacion indicada.`);
       }
-      const balanceKey = `${product.id}:${sourceBalance?.locationId ?? ""}`;
-      const quantityBefore =
-        plannedQuantities.get(balanceKey) ?? sourceBalance?.quantity ?? 0;
-      const quantityAfter = quantityBefore - item.saleItem.quantity;
-
-      if (quantityAfter < 0) {
+      if (allocations.length === 0) {
         throw new Error(`Stock insuficiente para ${product.name}.`);
       }
 
-      plannedQuantities.set(balanceKey, quantityAfter);
-      plannedMovements.push({
-        productId: product.id,
-        saleItem: item.saleItem,
-        quantityBefore,
-        quantityAfter,
-        fromLocationId: sourceBalance?.locationId,
+      allocations.forEach((allocation) => {
+        plannedQuantities.set(allocation.balanceId, allocation.quantityAfter);
+        plannedMovements.push({
+          productId: product.id,
+          quantity: allocation.quantity,
+          quantityBefore: allocation.quantityBefore,
+          quantityAfter: allocation.quantityAfter,
+          fromLocationId: allocation.locationId,
+        });
       });
     }
 
@@ -100,7 +117,7 @@ export class RegisterSaleInventoryMovementsService {
           productId: planned.productId,
           type: InventoryMovementType.out,
           reason: input.reason ?? `Venta ${input.sale.number}`,
-          quantity: planned.saleItem.quantity,
+          quantity: planned.quantity,
           quantityBefore: planned.quantityBefore,
           quantityAfter: planned.quantityAfter,
           fromLocationId: planned.fromLocationId,
@@ -112,16 +129,6 @@ export class RegisterSaleInventoryMovementsService {
     }
 
     return { movements, skippedItemIds };
-  }
-
-  private resolveSourceBalance(
-    balances: Array<{ locationId?: string; quantity: number }>,
-    sourceLocationId?: string,
-  ) {
-    if (sourceLocationId) {
-      return balances.find((balance) => balance.locationId === sourceLocationId);
-    }
-    return balances.find((balance) => balance.quantity > 0) ?? balances[0];
   }
 
   private matchesExistingMovements(
@@ -136,7 +143,7 @@ export class RegisterSaleInventoryMovementsService {
         (movement) =>
           movement.type === InventoryMovementType.out &&
           movement.productId === planned.productId &&
-          movement.quantity === planned.saleItem.quantity &&
+          movement.quantity === planned.quantity &&
           movement.fromLocationId === planned.fromLocationId,
       );
       if (index < 0) return false;
@@ -148,7 +155,7 @@ export class RegisterSaleInventoryMovementsService {
 
 interface PlannedSaleInventoryMovement {
   productId: string;
-  saleItem: SaleItem;
+  quantity: number;
   quantityBefore: number;
   quantityAfter: number;
   fromLocationId?: string;
