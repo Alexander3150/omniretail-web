@@ -3,6 +3,7 @@ export interface CashShiftRepository {
   getAll(): Promise<CashShift[]>;
   getById(id: string): Promise<CashShift | null>;
   getOpenByUser(userId: string): Promise<CashShift | null>;
+  getOpenByUserAndBranch(userId: string, branchId: string): Promise<CashShift | null>;
   open(
     input: Omit<CashShift, "id" | "status" | "openedAt" | "createdAt" | "updatedAt">,
   ): Promise<CashShift>;

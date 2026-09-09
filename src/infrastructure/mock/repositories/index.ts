@@ -24,6 +24,7 @@ export * from "./MockProductSalesPriceTierRepository";
 export * from "./MockPromotionRepository";
 export * from "./MockPurchaseOrderRepository";
 export * from "./MockReceiptRepository";
+export * from "./MockRoleRepository";
 export * from "./MockSalesRepository";
 export * from "./MockSavedPaymentMethodRepository";
 export * from "./MockSupplierRepository";

@@ -1,4 +1,5 @@
 import { SaleStatus } from "@/core/enums";
+import type { Sale, SaleItem } from "@/core/entities";
 import type { SalesRepository } from "@/core/repositories";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
 
@@ -12,8 +13,23 @@ export class MockSalesRepository extends BaseMockRepository implements SalesRepo
   async create(input: Parameters<SalesRepository["create"]>[0]) {
     const item = this.store.mutate((db) => {
       const now = this.now();
-      const created = { ...input, id: this.id("sales"), createdAt: now, updatedAt: now };
+      const saleId = this.id("sale");
+      const items: SaleItem[] = input.items.map((saleItem) => ({
+        ...saleItem,
+        id: this.id("sale-item"),
+        saleId,
+      }));
+      const created: Sale = {
+        ...input,
+        id: saleId,
+        number: this.nextSaleNumber(db.sales, input.tenantId),
+        items,
+        status: SaleStatus.completed,
+        createdAt: now,
+        updatedAt: now,
+      };
       db.sales.push(created);
+      db.saleItems.push(...items);
       return created;
     });
     this.emit("sale.changed", {
@@ -22,6 +38,17 @@ export class MockSalesRepository extends BaseMockRepository implements SalesRepo
       action: "created",
     });
     return item;
+  }
+
+  private nextSaleNumber(sales: Sale[], tenantId: string): string {
+    const prefix = "POS-";
+    const next =
+      sales
+        .filter((sale) => sale.tenantId === tenantId && sale.number.startsWith(prefix))
+        .map((sale) => Number(sale.number.slice(prefix.length)))
+        .filter((value) => Number.isInteger(value))
+        .reduce((max, value) => Math.max(max, value), 0) + 1;
+    return `${prefix}${String(next).padStart(3, "0")}`;
   }
   async updateStatus(id: string, status: SaleStatus) {
     const item = this.store.mutate((db) =>
