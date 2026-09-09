@@ -36,7 +36,12 @@ export class GetSuppliersReadModelService {
         );
         const productsWithCosts = await Promise.all(
           supplierProducts.map((supplierProduct) =>
-            this.toSupplierProductReadModel(supplierProduct, productById, unitById),
+            this.toSupplierProductReadModel(
+              supplierProduct,
+              productById,
+              unitById,
+              supplier.leadTimeDays,
+            ),
           ),
         );
         return this.toSupplierReadModel(
@@ -56,6 +61,7 @@ export class GetSuppliersReadModelService {
     supplierProduct: SupplierProduct,
     productById: Map<string, Product>,
     unitById: Map<string, Unit>,
+    supplierLeadTimeDays?: number,
   ): Promise<SupplierProductReadModel> {
     const product = productById.get(supplierProduct.productId);
     const unit = unitById.get(supplierProduct.purchaseUnitId);
@@ -69,7 +75,7 @@ export class GetSuppliersReadModelService {
       purchaseUnitLabel: unit?.symbol ?? unit?.name ?? supplierProduct.purchaseUnitId,
       minimumOrderQuantity: supplierProduct.minimumOrderQuantity,
       lastCost: supplierProduct.lastCost,
-      leadTimeDays: supplierProduct.leadTimeDays,
+      leadTimeDays: supplierLeadTimeDays ?? supplierProduct.leadTimeDays,
       preferred: supplierProduct.preferred,
       active: supplierProduct.active,
       costTiers: this.sortCostTiers(costTiers),
@@ -82,13 +88,9 @@ export class GetSuppliersReadModelService {
     purchaseOrders: PurchaseOrder[],
   ): SupplierListItemReadModel {
     const contacts = this.getContacts(supplier);
-    const deliveryDays = products
-      .filter((item) => item.active)
-      .map((item) => item.leadTimeDays)
-      .filter((value) => Number.isFinite(value));
     const deliveryLabel =
-      deliveryDays.length > 0
-        ? `${Math.min(...deliveryDays)}-${Math.max(...deliveryDays)} dias`
+      typeof supplier.leadTimeDays === "number"
+        ? `${supplier.leadTimeDays} dias`
         : "Sin plazo";
     const purchaseOrderItems = purchaseOrders
       .map((order) => ({

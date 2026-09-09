@@ -18,6 +18,7 @@ import { Modal } from "@/shared/components/Modal";
 import { Select } from "@/shared/components/Select";
 import { useToast } from "@/shared/components/Toast";
 import { cn } from "@/shared/utils/cn";
+import { parseDecimalInput, toFiniteNumber, type NumericInputValue } from "@/shared/utils/numberInput";
 import type {
   AdjustStockDto,
   AlertPanelMode,
@@ -42,6 +43,14 @@ import {
 
 type ActionMode =
   "adjust" | "other-branches" | "request-transfer" | "transfer-request-detail" | null;
+
+type EditableAdjustStockDto = Omit<AdjustStockDto, "quantity"> & {
+  quantity: NumericInputValue;
+};
+
+type EditableTransferRequestDto = Omit<TransferRequestDto, "quantity"> & {
+  quantity: NumericInputValue;
+};
 
 const STATUS_OPTIONS: Array<{ value: InventoryStatusFilter; label: string }> = [
   { value: "all", label: "Todos los estados" },
@@ -1258,7 +1267,7 @@ function AdjustStockModal({
   onSubmit: (dto: AdjustStockDto) => Promise<void>;
 }) {
   const defaultLocationId = row.defaultLocationId || locations[0]?.id || "";
-  const [value, setValue] = useState<AdjustStockDto>(() => ({
+  const [value, setValue] = useState<EditableAdjustStockDto>(() => ({
     productId: row.productId,
     branchId: row.branchId,
     locationId: defaultLocationId,
@@ -1274,21 +1283,22 @@ function AdjustStockModal({
   );
   const finalQuantity =
     value.movementKind === "in"
-      ? row.quantity + value.quantity
+      ? row.quantity + toFiniteNumber(value.quantity)
       : value.movementKind === "out" || value.movementKind === "waste"
-        ? row.quantity - value.quantity
-        : value.quantity;
+        ? row.quantity - toFiniteNumber(value.quantity)
+        : toFiniteNumber(value.quantity);
   const delta = finalQuantity - row.quantity;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const nextErrors = validateAdjustment(value, row, locationQuantity);
+    const dto = toAdjustStockDto(value);
+    const nextErrors = validateAdjustment(dto, row, locationQuantity);
     setErrors(nextErrors);
     if (hasValidationErrors(nextErrors)) return;
-    await onSubmit(value);
+    await onSubmit(dto);
   }
 
-  function update(patch: Partial<AdjustStockDto>) {
+  function update(patch: Partial<EditableAdjustStockDto>) {
     setValue((current) => ({ ...current, ...patch }));
   }
 
@@ -1348,10 +1358,10 @@ function AdjustStockModal({
           <Input
             id="adjust-quantity"
             min={value.movementKind === "count" ? 0 : 0.01}
-            onChange={(event) => update({ quantity: Number(event.target.value) })}
+            onChange={(event) => update({ quantity: parseDecimalInput(event.target.value) })}
             step="0.01"
             type="number"
-            value={Number.isNaN(value.quantity) ? "" : value.quantity}
+            value={value.quantity}
           />
         </Field>
         <Field id="adjust-reason" label="Motivo *" error={errors.reason}>
@@ -1385,7 +1395,7 @@ function AdjustmentSummary({
   delta: number;
   finalQuantity: number;
   row: InventoryProductRow;
-  value: AdjustStockDto;
+  value: EditableAdjustStockDto;
 }) {
   return (
     <dl className="grid gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2 text-sm sm:grid-cols-3">
@@ -1485,7 +1495,7 @@ function RequestTransferModal({
   const firstProviderWithStock = availableProviders.find((stock) => stock.availableQuantity > 0);
   const initialProvider =
     providerBranchId ?? firstProviderWithStock?.branchId ?? availableProviders[0]?.branchId ?? "";
-  const [value, setValue] = useState<TransferRequestDto>(() => ({
+  const [value, setValue] = useState<EditableTransferRequestDto>(() => ({
     productId: row.productId,
     requesterBranchId: row.branchId,
     providerBranchId: initialProvider,
@@ -1498,16 +1508,17 @@ function RequestTransferModal({
     (stock) => stock.branchId === value.providerBranchId,
   );
 
-  function update(patch: Partial<TransferRequestDto>) {
+  function update(patch: Partial<EditableTransferRequestDto>) {
     setValue((current) => ({ ...current, ...patch }));
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const nextErrors = validateTransfer(value, row);
+    const dto = toTransferRequestDto(value);
+    const nextErrors = validateTransfer(dto, row);
     setErrors(nextErrors);
     if (hasValidationErrors(nextErrors)) return;
-    onSubmit(value);
+    onSubmit(dto);
   }
 
   return (
@@ -1570,10 +1581,10 @@ function RequestTransferModal({
           <Input
             id="transfer-quantity"
             min={0.01}
-            onChange={(event) => update({ quantity: Number(event.target.value) })}
+            onChange={(event) => update({ quantity: parseDecimalInput(event.target.value) })}
             step="0.01"
             type="number"
-            value={Number.isNaN(value.quantity) ? "" : value.quantity}
+            value={value.quantity}
           />
         </Field>
         <Field id="transfer-reason" label="Motivo *" error={errors.reason}>
@@ -1910,6 +1921,20 @@ function getAdjustmentSummaryLabel(kind: AdjustStockDto["movementKind"]) {
   if (kind === "out") return "Salida manual";
   if (kind === "waste") return "Merma";
   return "Cambio";
+}
+
+function toAdjustStockDto(value: EditableAdjustStockDto): AdjustStockDto {
+  return {
+    ...value,
+    quantity: toFiniteNumber(value.quantity),
+  };
+}
+
+function toTransferRequestDto(value: EditableTransferRequestDto): TransferRequestDto {
+  return {
+    ...value,
+    quantity: toFiniteNumber(value.quantity),
+  };
 }
 
 function formatAdjustmentDelta(value: number) {

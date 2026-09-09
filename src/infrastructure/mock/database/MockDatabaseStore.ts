@@ -89,6 +89,12 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
       mobileApp: product.channels.mobileApp ?? false,
     },
   }));
+  normalized.suppliers = (database.suppliers ?? base.suppliers).map((supplier) => ({
+    ...supplier,
+    leadTimeDays:
+      supplier.leadTimeDays ??
+      getLegacySupplierLeadTimeDays(supplier.id, database.supplierProducts ?? base.supplierProducts),
+  }));
   normalized.productSalesPriceTiers = database.productSalesPriceTiers ?? [];
   normalized.productInventorySettings = normalizeProductInventorySettings(database, normalized);
   normalized.inventoryAdjustments = normalizeInventoryAdjustments(database, normalized);
@@ -435,6 +441,18 @@ function getProductInventorySettingsId(
   branchId: string,
 ): string {
   return `product-inventory-settings-${tenantId}-${productId}-${branchId}`;
+}
+
+function getLegacySupplierLeadTimeDays(
+  supplierId: string,
+  supplierProducts: Array<{ supplierId?: string; leadTimeDays?: number }>,
+) {
+  const values = supplierProducts
+    .filter((supplierProduct) => supplierProduct.supplierId === supplierId)
+    .map((supplierProduct) => supplierProduct.leadTimeDays)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (values.length === 0) return undefined;
+  return Math.max(...values);
 }
 
 export class MockDatabaseStore {

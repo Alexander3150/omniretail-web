@@ -3,7 +3,6 @@ import type { PurchaseOrderAction } from "@/modules/purchasing/application/dto/P
 
 const PDF_GAP = "La infraestructura de PDF aun no esta disponible.";
 const RECEIVING_ROUTE_GAP = "La ruta de recepcion por orden aun no esta disponible.";
-const CREATION_ROUTE_GAP = "La pantalla de creacion se implementara en la siguiente feature.";
 
 export function getPurchaseOrderActions(status: PurchaseOrderStatus): PurchaseOrderAction[] {
   const pdfAction: PurchaseOrderAction = {
@@ -17,13 +16,12 @@ export function getPurchaseOrderActions(status: PurchaseOrderStatus): PurchaseOr
     return [
       {
         id: "edit-draft",
-        label: "Editar borrador",
-        enabled: false,
-        unavailableReason: CREATION_ROUTE_GAP,
+        label: "Editar",
+        enabled: true,
       },
       {
         id: "send-approval",
-        label: "Enviar a aprobacion",
+        label: "Crear orden",
         enabled: true,
         statusTarget: PurchaseOrderStatus.pending_approval,
       },

@@ -19,6 +19,13 @@ import { Select } from "@/shared/components/Select";
 import { cn } from "@/shared/utils/cn";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
 import { PRODUCT_IMAGE_PLACEHOLDER } from "@/shared/utils/getProductImage";
+import {
+  isPositiveInteger,
+  isPositiveNumber,
+  parseDecimalInput,
+  parseIntegerInput,
+  toFiniteNumber,
+} from "@/shared/utils/numberInput";
 import type {
   ProductAttributeEditorValue,
   ProductEditorData,
@@ -125,7 +132,7 @@ export function ProductForm({
         id: detail.product.id,
         tenantId: detail.product.tenantId,
         name: value.name || detail.product.name,
-        salePrice: value.salePrice,
+        salePrice: toFiniteNumber(value.salePrice),
         status: value.status,
         tracking: value.tracking,
         channels: value.channels,
@@ -152,7 +159,10 @@ export function ProductForm({
     { label: "SKU", complete: Boolean(value.sku.trim()) },
     { label: "Categoria", complete: Boolean(value.categoryId) },
     { label: "Unidad inventario", complete: Boolean(value.baseUnitId) },
-    { label: "Precio", complete: Number.isFinite(value.salePrice) && value.salePrice >= 0 },
+    {
+      label: "Precio",
+      complete: value.salePrice !== "" && toFiniteNumber(value.salePrice) >= 0,
+    },
   ];
   const completedItems = preparationItems.filter((item) => item.complete).length;
   const completionPercentage = Math.round((completedItems / preparationItems.length) * 100);
@@ -183,6 +193,7 @@ export function ProductForm({
     };
     const nextErrors = validateProductDto({
       ...nextValue,
+      salePrice: toFiniteNumber(nextValue.salePrice),
       primaryImageUrl: nextValue.media.find((item) => item.isPrimary)?.url,
     });
     const nextEditorError = validateEditor(nextValue, editorData);
@@ -368,9 +379,9 @@ export function ProductForm({
               <SummaryItem label="Proveedor preferido" value={preferredSupplierName ?? "-"} />
               <SummaryItem
                 label="Costo proveedor"
-                value={preferredSupplier ? formatCurrency(preferredSupplier.lastCost) : "-"}
+                value={preferredSupplier ? formatCurrency(toFiniteNumber(preferredSupplier.lastCost)) : "-"}
               />
-              <SummaryItem label="Precio de venta" value={formatCurrency(value.salePrice || 0)} />
+              <SummaryItem label="Precio de venta" value={formatCurrency(toFiniteNumber(value.salePrice))} />
               <SummaryItem label="Promocion" value={showPromotionTab ? `${editorData.promotionCount} vigente` : "-"} />
             </dl>
           </section>
@@ -607,7 +618,7 @@ function UnitsTab({
                 <Input
                   id="inventoryQuantity"
                   min="0.0001"
-                  onChange={(event) => onChange({ inventoryQuantity: Number(event.target.value) })}
+                  onChange={(event) => onChange({ inventoryQuantity: parseDecimalInput(event.target.value) })}
                   step="0.0001"
                   type="number"
                   value={value.inventoryQuantity}
@@ -626,7 +637,7 @@ function UnitsTab({
                   onChange={(event) =>
                     onChange({
                       saleQuantity:
-                        event.target.value === "" ? "" : Number(event.target.value),
+                        parseDecimalInput(event.target.value),
                     })
                   }
                   step="0.0001"
@@ -731,7 +742,7 @@ function TrackingTab({
                 onChange({
                   inventorySettings: {
                     ...value.inventorySettings,
-                    minStock: Number(event.target.value),
+                    minStock: parseIntegerInput(event.target.value),
                   },
                 })
               }
@@ -914,14 +925,16 @@ function PricesTab({
     });
   }
 
-  const sortedTiers = [...value.salesPriceTiers].sort((left, right) => left.minQuantity - right.minQuantity);
+  const sortedTiers = [...value.salesPriceTiers].sort(
+    (left, right) => toFiniteNumber(left.minQuantity) - toFiniteNumber(right.minQuantity),
+  );
 
   return (
     <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
       <SectionTitle description="Precio base y precios mayoristas por cantidad." title="Precios" />
       <div className="grid gap-3 rounded-md bg-[var(--color-app-background)] p-4 md:grid-cols-4">
         <Metric label="Costo referencia" value="-" />
-        <Metric label="Precio de venta" value={formatCurrency(value.salePrice || 0)} />
+        <Metric label="Precio de venta" value={formatCurrency(toFiniteNumber(value.salePrice))} />
         <Metric label="Margen Q" value="-" />
         <Metric label="Margen %" value="-" />
       </div>
@@ -929,7 +942,7 @@ function PricesTab({
         <Input
           id="salePrice"
           min="0"
-          onChange={(event) => onChange({ salePrice: Number(event.target.value) })}
+          onChange={(event) => onChange({ salePrice: parseDecimalInput(event.target.value) })}
           step="0.01"
           type="number"
           value={value.salePrice}
@@ -946,7 +959,7 @@ function PricesTab({
               onChange({
                 salesPriceTiers: [
                   ...value.salesPriceTiers,
-                  { minQuantity: 2, unitPrice: value.salePrice || 0, active: true },
+                  { minQuantity: 2, unitPrice: toFiniteNumber(value.salePrice), active: true },
                 ],
               })
             }
@@ -966,14 +979,14 @@ function PricesTab({
                   <Input
                     aria-label="Cantidad minima"
                     min="2"
-                    onChange={(event) => updateTier(index, { minQuantity: Number(event.target.value) })}
+                    onChange={(event) => updateTier(index, { minQuantity: parseIntegerInput(event.target.value) })}
                     type="number"
                     value={tier.minQuantity}
                   />
                   <Input
                     aria-label="Precio unitario"
                     min="0"
-                    onChange={(event) => updateTier(index, { unitPrice: Number(event.target.value) })}
+                    onChange={(event) => updateTier(index, { unitPrice: parseDecimalInput(event.target.value) })}
                     step="0.01"
                     type="number"
                     value={tier.unitPrice}
@@ -1381,6 +1394,7 @@ function SuppliersTab({
           disabled={!selectedSupplierId}
           onClick={() => {
             if (!selectedSupplierId) return;
+            const selectedSupplier = suppliers.find((supplier) => supplier.id === selectedSupplierId);
             onChange([
               ...value,
               {
@@ -1390,7 +1404,7 @@ function SuppliersTab({
                 purchaseToBaseFactor: 1,
                 lastCost: 0,
                 minimumOrderQuantity: 1,
-                leadTimeDays: 0,
+                leadTimeDays: selectedSupplier?.leadTimeDays ?? 0,
                 preferred: value.length === 0,
                 active: true,
                 costTiers: [],
@@ -1475,7 +1489,7 @@ function SuppliersTab({
                         onChange={(event) =>
                           updateSupplier(index, {
                             purchaseToBaseFactor:
-                              event.target.value === "" ? "" : Number(event.target.value),
+                              parseDecimalInput(event.target.value),
                           })
                         }
                         placeholder="Cantidad"
@@ -1493,7 +1507,7 @@ function SuppliersTab({
                     <input
                       className={inputClassName}
                       min="0"
-                      onChange={(event) => updateSupplier(index, { lastCost: Number(event.target.value) })}
+                      onChange={(event) => updateSupplier(index, { lastCost: parseDecimalInput(event.target.value) })}
                       step="0.01"
                       type="number"
                       value={item.lastCost}
@@ -1503,19 +1517,15 @@ function SuppliersTab({
                     <input
                       className={inputClassName}
                       min="1"
-                      onChange={(event) => updateSupplier(index, { minimumOrderQuantity: Number(event.target.value) })}
+                      onChange={(event) => updateSupplier(index, { minimumOrderQuantity: parseIntegerInput(event.target.value) })}
                       type="number"
                       value={item.minimumOrderQuantity}
                     />
                   </NativeField>
-                  <NativeField label="Entrega dias">
-                    <input
-                      className={inputClassName}
-                      min="0"
-                      onChange={(event) => updateSupplier(index, { leadTimeDays: Number(event.target.value) })}
-                      type="number"
-                      value={item.leadTimeDays}
-                    />
+                  <NativeField label="Plazo del proveedor">
+                    <div className="flex min-h-10 items-center rounded-md bg-[var(--color-app-background)] px-3 text-sm font-semibold text-[var(--color-title)]">
+                      {formatLeadTime(supplier?.leadTimeDays)}
+                    </div>
                   </NativeField>
                 </div>
                 <div className="space-y-3 rounded-md bg-[var(--color-app-background)] p-3">
@@ -1543,7 +1553,7 @@ function SuppliersTab({
                             aria-label="Cantidad minima proveedor"
                             className={inputClassName}
                             min="1"
-                            onChange={(event) => updateCostTier(index, tierIndex, { minQuantity: Number(event.target.value) })}
+                            onChange={(event) => updateCostTier(index, tierIndex, { minQuantity: parseIntegerInput(event.target.value) })}
                             type="number"
                             value={tier.minQuantity}
                           />
@@ -1551,7 +1561,7 @@ function SuppliersTab({
                             aria-label="Costo unitario proveedor"
                             className={inputClassName}
                             min="0"
-                            onChange={(event) => updateCostTier(index, tierIndex, { unitCost: Number(event.target.value) })}
+                            onChange={(event) => updateCostTier(index, tierIndex, { unitCost: parseDecimalInput(event.target.value) })}
                             step="0.01"
                             type="number"
                             value={tier.unitCost}
@@ -1875,25 +1885,30 @@ function validateEditor(value: ProductEditorDto, editorData: ProductEditorData) 
   }
   const salesQuantities = new Set<number>();
   for (const tier of value.salesPriceTiers) {
-    if (tier.minQuantity <= 1) return "La cantidad minima mayorista debe ser mayor a 1.";
-    if (tier.unitPrice <= 0) return "El precio mayorista debe ser mayor a 0.";
-    if (salesQuantities.has(tier.minQuantity)) return "No repitas cantidades mayoristas.";
-    salesQuantities.add(tier.minQuantity);
+    const minQuantity = toFiniteNumber(tier.minQuantity);
+    if (!isPositiveInteger(tier.minQuantity) || minQuantity <= 1) {
+      return "La cantidad minima mayorista debe ser un entero mayor a 1.";
+    }
+    if (!isPositiveNumber(tier.unitPrice)) return "El precio mayorista debe ser mayor a 0.";
+    if (salesQuantities.has(minQuantity)) return "No repitas cantidades mayoristas.";
+    salesQuantities.add(minQuantity);
   }
   const supplierIds = new Set<string>();
   for (const supplierProduct of value.supplierProducts) {
     if (supplierIds.has(supplierProduct.supplierId)) return "No repitas proveedores.";
     supplierIds.add(supplierProduct.supplierId);
     if (!isPositiveNumber(supplierProduct.purchaseToBaseFactor)) return "El contenido de compra debe ser mayor a 0.";
-    if (supplierProduct.lastCost < 0) return "El costo del proveedor debe ser mayor o igual a 0.";
-    if (supplierProduct.minimumOrderQuantity <= 0) return "El pedido minimo debe ser mayor a 0.";
-    if (supplierProduct.leadTimeDays < 0) return "La entrega no puede ser negativa.";
+    if (toFiniteNumber(supplierProduct.lastCost, -1) < 0) return "El costo del proveedor debe ser mayor o igual a 0.";
+    if (!isPositiveInteger(supplierProduct.minimumOrderQuantity)) {
+      return "El pedido minimo debe ser un entero mayor a 0.";
+    }
     const costQuantities = new Set<number>();
     for (const tier of supplierProduct.costTiers) {
-      if (tier.minQuantity <= 0) return "La cantidad minima de costo debe ser mayor a 0.";
-      if (tier.unitCost < 0) return "El costo por volumen debe ser mayor o igual a 0.";
-      if (costQuantities.has(tier.minQuantity)) return "No repitas cantidades de costo.";
-      costQuantities.add(tier.minQuantity);
+      const minQuantity = toFiniteNumber(tier.minQuantity);
+      if (!isPositiveInteger(tier.minQuantity)) return "La cantidad minima de costo debe ser un entero mayor a 0.";
+      if (toFiniteNumber(tier.unitCost, -1) < 0) return "El costo por volumen debe ser mayor o igual a 0.";
+      if (costQuantities.has(minQuantity)) return "No repitas cantidades de costo.";
+      costQuantities.add(minQuantity);
     }
   }
   const invalidMedia = value.media.find(
@@ -1908,7 +1923,9 @@ function validateEditor(value: ProductEditorDto, editorData: ProductEditorData) 
   if (invalidMedia) return "Cada imagen debe iniciar con / o una URL http(s).";
   if (
     value.tracking.stock &&
-    (!Number.isFinite(value.inventorySettings.minStock) || value.inventorySettings.minStock < 0)
+    (value.inventorySettings.minStock === "" ||
+      !Number.isSafeInteger(toFiniteNumber(value.inventorySettings.minStock)) ||
+      toFiniteNumber(value.inventorySettings.minStock) < 0)
   ) {
     return "El stock minimo debe ser mayor o igual a 0.";
   }
@@ -1979,6 +1996,10 @@ function formatDate(value: string) {
     month: "short",
     year: "numeric",
   }).format(new Date(value));
+}
+
+function formatLeadTime(value?: number) {
+  return typeof value === "number" ? `${value} dias` : "No definido";
 }
 
 function buildInitialValue(options: ProductFormOptions, editorData: ProductEditorData): ProductEditorDto {
@@ -2054,7 +2075,3 @@ function buildInitialValue(options: ProductFormOptions, editorData: ProductEdito
 
 const inputClassName =
   "h-10 w-full rounded-md border border-[var(--color-border)] bg-white px-3 text-sm text-[var(--color-text)] outline-none transition hover:border-[var(--color-structure)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40";
-
-function isPositiveNumber(value: number | "") {
-  return typeof value === "number" && Number.isFinite(value) && value > 0;
-}

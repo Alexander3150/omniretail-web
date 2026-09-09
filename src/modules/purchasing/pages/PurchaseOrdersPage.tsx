@@ -10,6 +10,7 @@ import {
   type SVGProps,
 } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import type { PurchaseOrderStatus } from "@/core/enums";
 import { Button } from "@/shared/components/Button";
 import { Input } from "@/shared/components/Input";
@@ -28,12 +29,17 @@ import { usePurchaseOrders } from "@/modules/purchasing/hooks/usePurchaseOrders"
 const PAGE_SIZE = 10;
 
 export function PurchaseOrdersPage() {
+  const router = useRouter();
   const { showToast } = useToast();
   const { data, filters, filteredOrders, loading, error, updateFilters, updateStatus } =
     usePurchaseOrders();
   const [page, setPage] = useState(1);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [openActionsOrderId, setOpenActionsOrderId] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<{
+    order: PurchaseOrderRowReadModel;
+    action: PurchaseOrderAction;
+  } | null>(null);
   const [suggestionsExpanded, setSuggestionsExpanded] = useState(false);
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -83,6 +89,15 @@ export function PurchaseOrdersPage() {
   }
 
   async function handleAction(order: PurchaseOrderRowReadModel, action: PurchaseOrderAction) {
+    setOpenActionsOrderId(null);
+    if (action.id === "edit-draft") {
+      router.push(`/compras/ordenes/${order.id}/editar`);
+      return;
+    }
+    if (action.id === "cancel" || action.id === "approve") {
+      setPendingAction({ order, action });
+      return;
+    }
     if (!action.enabled) {
       showToast({
         title: action.label,
@@ -106,6 +121,23 @@ export function PurchaseOrdersPage() {
     }
   }
 
+  async function confirmPendingAction() {
+    if (!pendingAction?.action.statusTarget) return;
+    try {
+      await updateStatus(pendingAction.order.id, pendingAction.action.statusTarget);
+      setSelectedOrderId(null);
+      showToast({ title: "Orden actualizada", tone: "success" });
+    } catch (caughtError) {
+      showToast({
+        title: "No se pudo actualizar la orden",
+        description: caughtError instanceof Error ? caughtError.message : undefined,
+        tone: "danger",
+      });
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
   return (
     <div className="min-w-0 space-y-5">
       <div>
@@ -117,13 +149,7 @@ export function PurchaseOrdersPage() {
           description="Consulta ordenes, recepcion, proveedores y necesidades de reposicion."
           actions={
             <Button
-              onClick={() =>
-                showToast({
-                  title: "Nueva orden",
-                description: "El formulario de creacion se implementara en la siguiente feature.",
-                  tone: "info",
-                })
-              }
+              onClick={() => router.push("/compras/ordenes/nueva")}
               type="button"
             >
               <PlusIcon />
@@ -219,6 +245,15 @@ export function PurchaseOrdersPage() {
           order={selectedOrder}
           onAction={handleAction}
           onClose={() => setSelectedOrderId(null)}
+        />
+      ) : null}
+
+      {pendingAction ? (
+        <ConfirmActionDialog
+          action={pendingAction.action}
+          order={pendingAction.order}
+          onCancel={() => setPendingAction(null)}
+          onConfirm={confirmPendingAction}
         />
       ) : null}
     </div>
@@ -766,6 +801,45 @@ function PurchaseOrderDrawer({
         </footer>
       </aside>
     </>
+  );
+}
+
+function ConfirmActionDialog({
+  order,
+  action,
+  onCancel,
+  onConfirm,
+}: {
+  order: PurchaseOrderRowReadModel;
+  action: PurchaseOrderAction;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const isCancel = action.id === "cancel";
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-topbar)]/35 p-4">
+      <div className="w-full max-w-md rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-xl">
+        <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+          {order.number}
+        </p>
+        <h2 className="mt-1 text-lg font-bold text-[var(--color-title)]">
+          {isCancel ? "¿Cancelar esta orden de compra?" : "¿Confirmar aprobacion de la orden?"}
+        </h2>
+        <p className="mt-2 text-sm text-[var(--color-text)]">
+          {isCancel
+            ? "Esta accion cambiara el estado de la orden a Cancelada."
+            : "La orden pasara a Aprobada despues de recibir autorizacion externa."}
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button onClick={onCancel} type="button" variant="secondary">
+            Volver
+          </Button>
+          <Button onClick={onConfirm} type="button" variant={isCancel ? "danger" : "primary"}>
+            {isCancel ? "Cancelar orden" : "Aprobar orden"}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
