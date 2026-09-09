@@ -14,6 +14,8 @@ import {
   ProductType,
   SaleStatus,
 } from "@/core/enums";
+import { planInventoryAllocation } from "@/core/inventory/stockAvailability";
+import { isBranchScopedResourceAvailable } from "@/core/scopes/branchScope";
 import type {
   ConfirmSaleInput,
   ConfirmSaleResult,
@@ -72,7 +74,7 @@ export class MockSaleConfirmationRepository
         updatedAt: now,
       };
 
-      const inventoryMovements = this.registerInventoryMovements(input, sale, saleItems, db);
+      const plannedInventoryMovements = this.planInventoryMovements(input, sale, saleItems, db);
       const payments = input.payments.map<Payment>((paymentInput) => ({
         id: this.id("payments"),
         tenantId: input.tenantId,
@@ -110,6 +112,13 @@ export class MockSaleConfirmationRepository
             } satisfies CashMovement)
           : undefined;
 
+      const inventoryMovements = this.applyInventoryMovements(
+        plannedInventoryMovements,
+        input,
+        sale,
+        now,
+        db,
+      );
       db.sales.push(sale);
       db.saleItems.push(...saleItems);
       db.payments.push(...payments);
@@ -247,21 +256,20 @@ export class MockSaleConfirmationRepository
         !bankAccount ||
         bankAccount.tenantId !== input.tenantId ||
         bankAccount.status !== "active" ||
-        !bankAccount.branchIds.includes(input.branchId)
+        !isBranchScopedResourceAvailable(bankAccount.branchIds, input.branchId)
       ) {
         throw new Error("La cuenta bancaria seleccionada no esta activa para esta sucursal.");
       }
     });
   }
 
-  private registerInventoryMovements(
+  private planInventoryMovements(
     input: ConfirmSaleInput,
     sale: Sale,
     saleItems: SaleItem[],
     db: MockDatabase,
-  ): InventoryMovement[] {
-    const now = this.now();
-    const movements: InventoryMovement[] = [];
+  ): PlannedInventoryMovement[] {
+    const plannedMovements: PlannedInventoryMovement[] = [];
     const plannedQuantities = new Map<string, number>();
 
     saleItems.forEach((saleItem) => {
@@ -276,36 +284,78 @@ export class MockSaleConfirmationRepository
         );
       }
 
-      const balances = db.inventoryBalances.filter(
-        (balance) =>
-          balance.tenantId === input.tenantId &&
-          balance.branchId === input.branchId &&
-          balance.productId === saleItem.productId,
+      const settings = db.productInventorySettings.find(
+        (item) =>
+          item.tenantId === input.tenantId &&
+          item.branchId === input.branchId &&
+          item.productId === saleItem.productId,
       );
-      const sourceBalance = balances.find((balance) => balance.quantity > 0) ?? balances[0];
-      const balanceKey = `${saleItem.productId}:${sourceBalance?.locationId ?? ""}`;
-      const quantityBefore = plannedQuantities.get(balanceKey) ?? sourceBalance?.quantity ?? 0;
-      const quantityAfter = quantityBefore - saleItem.quantity;
-      if (quantityAfter < 0) throw new Error(`Stock insuficiente para ${product.name}.`);
-
-      plannedQuantities.set(balanceKey, quantityAfter);
-      if (!sourceBalance) {
+      let allocations;
+      try {
+        allocations = planInventoryAllocation({
+          tenantId: input.tenantId,
+          branchId: input.branchId,
+          productId: saleItem.productId,
+          quantity: saleItem.quantity,
+          balances: db.inventoryBalances.map((balance) => {
+            const plannedQuantity = plannedQuantities.get(balance.id);
+            return plannedQuantity === undefined
+              ? balance
+              : { ...balance, quantity: plannedQuantity };
+          }),
+          locations: db.storageLocations,
+          preferredLocationId: settings?.defaultLocationId,
+        });
+      } catch {
         throw new Error(`Stock insuficiente para ${product.name}.`);
       }
-      sourceBalance.quantity = quantityAfter;
-      sourceBalance.updatedAt = now;
+
+      allocations.forEach((allocation) => {
+        plannedQuantities.set(allocation.balanceId, allocation.quantityAfter);
+        plannedMovements.push({
+          balanceId: allocation.balanceId,
+          productId: allocation.productId,
+          quantity: allocation.quantity,
+          quantityBefore: allocation.quantityBefore,
+          quantityAfter: allocation.quantityAfter,
+          fromLocationId: allocation.locationId,
+        });
+      });
+    });
+
+    return plannedMovements;
+  }
+
+  private applyInventoryMovements(
+    plannedMovements: PlannedInventoryMovement[],
+    input: ConfirmSaleInput,
+    sale: Sale,
+    now: string,
+    db: MockDatabase,
+  ): InventoryMovement[] {
+    const movements: InventoryMovement[] = [];
+
+    plannedMovements.forEach((planned) => {
+      const balance = db.inventoryBalances.find((item) => item.id === planned.balanceId);
+      if (!balance) throw new Error(`Balance not found: ${planned.balanceId}`);
+      if (planned.quantityAfter < balance.reservedQuantity) {
+        throw new Error(`Stock reservado protegido para ${planned.productId}.`);
+      }
+
+      balance.quantity = planned.quantityAfter;
+      balance.updatedAt = now;
 
       const movement: InventoryMovement = {
         id: this.id("movement"),
         tenantId: input.tenantId,
         branchId: input.branchId,
-        productId: saleItem.productId,
+        productId: planned.productId,
         type: InventoryMovementType.out,
         reason: `Venta ${sale.number}`,
-        quantity: saleItem.quantity,
-        quantityBefore,
-        quantityAfter,
-        fromLocationId: sourceBalance.locationId,
+        quantity: planned.quantity,
+        quantityBefore: planned.quantityBefore,
+        quantityAfter: planned.quantityAfter,
+        fromLocationId: planned.fromLocationId,
         referenceType: "sale",
         referenceId: sale.id,
         performedByUserId: input.cashierUserId,
@@ -377,6 +427,15 @@ function nextSaleNumber(sales: Sale[], tenantId: string): string {
 
 function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+interface PlannedInventoryMovement {
+  balanceId: string;
+  productId: string;
+  quantity: number;
+  quantityBefore: number;
+  quantityAfter: number;
+  fromLocationId?: string;
 }
 
 function getConfirmationFingerprint(input: ConfirmSaleInput): string {

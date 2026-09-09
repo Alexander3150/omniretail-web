@@ -1,5 +1,9 @@
 import { InventoryTransferRequestStatus, ProductStatus } from "@/core/enums";
 import type { InventoryBalance, InventoryTransferRequest, Product, StockLot } from "@/core/entities";
+import {
+  getAvailableQuantity,
+  getBranchAvailableQuantity,
+} from "@/core/inventory/stockAvailability";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   InventoryAlert,
@@ -162,11 +166,12 @@ function buildTransferRequestRows(
           sourceBranchName:
             maps.branches.get(request.sourceBranchId)?.name ?? "Sucursal proveedora",
           requestedQuantity: request.requestedQuantity,
-          availableQuantity: getBranchAvailableQuantity(
-            request.productId,
-            request.sourceBranchId,
+          availableQuantity: getBranchAvailableQuantity({
+            tenantId: request.tenantId,
+            productId: request.productId,
+            branchId: request.sourceBranchId,
             balances,
-          ),
+          }),
           reason: request.reason,
           notes: request.notes,
           status: request.status,
@@ -179,16 +184,6 @@ function buildTransferRequestRows(
       ];
     })
     .sort((left, right) => left.requestedAt.localeCompare(right.requestedAt));
-}
-
-function getBranchAvailableQuantity(
-  productId: string,
-  branchId: string,
-  balances: InventoryBalance[],
-) {
-  return balances
-    .filter((balance) => balance.productId === productId && balance.branchId === branchId)
-    .reduce((total, balance) => total + Math.max(0, balance.quantity - balance.reservedQuantity), 0);
 }
 
 export function classifyInventoryStatus(quantity: number, minStock: number): InventoryStatus {
@@ -239,9 +234,13 @@ function buildRow(
     (total, balance) => total + balance.reservedQuantity,
     0,
   );
+  const availableQuantity = branchBalances.reduce(
+    (total, balance) => total + getAvailableQuantity(balance),
+    0,
+  );
   const settings = maps.settingsByProduct.get(product.id);
   const minStock = settings?.minStock ?? 0;
-  const status = classifyInventoryStatus(quantity, minStock);
+  const status = classifyInventoryStatus(availableQuantity, minStock);
   const tracksExpiration = product.tracking.expiration;
   const nextExpirationDate = tracksExpiration
     ? getNextExpirationDate(maps.lotsByProduct.get(product.id) ?? [])
@@ -265,7 +264,7 @@ function buildRow(
     locationQuantities: buildLocationQuantities(branchBalances),
     quantity,
     reservedQuantity,
-    availableQuantity: Math.max(0, quantity - reservedQuantity),
+    availableQuantity,
     minStock,
     reorderPoint: settings?.reorderPoint,
     status,
@@ -297,12 +296,16 @@ function buildOtherBranchStocks(
         (total, balance) => total + balance.reservedQuantity,
         0,
       );
+      const availableQuantity = branchBalances.reduce(
+        (total, balance) => total + getAvailableQuantity(balance),
+        0,
+      );
       return {
         branchId: branch.id,
         branchName: branch.name,
         quantity,
         reservedQuantity,
-        availableQuantity: Math.max(0, quantity - reservedQuantity),
+        availableQuantity,
       };
     });
 }
@@ -354,7 +357,7 @@ function buildAvailableElsewhereAlerts(
     (balance) =>
       balance.productId === row.productId &&
       balance.branchId !== row.branchId &&
-      balance.quantity - balance.reservedQuantity > 0,
+      getAvailableQuantity(balance) > 0,
   );
   if (!otherBranch) return [];
   return [
