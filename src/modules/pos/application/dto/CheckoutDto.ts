@@ -20,6 +20,7 @@ export interface CheckoutDto {
   transferAmount: number;
   bankAccountId: string;
   transferReference: string;
+  transferExternallyVerified: boolean;
 }
 
 export interface CheckoutBankAccountDto {

@@ -6,6 +6,8 @@ import { ProductSearch } from "@/modules/pos/components/ProductSearch";
 import { QuickProductList } from "@/modules/pos/components/QuickProductList";
 import { SaleTicket } from "@/modules/pos/components/SaleTicket";
 import { usePosTerminal } from "@/modules/pos/hooks/usePosTerminal";
+import { StatusBadge } from "@/shared/components/StatusBadge";
+import { formatCurrency } from "@/shared/utils/formatCurrency";
 
 export function PosTerminalPage() {
   const terminal = usePosTerminal();
@@ -16,6 +18,30 @@ export function PosTerminalPage() {
         title="Terminal de Cobro"
         description="Registra ventas desde la sucursal activa."
       />
+
+      {terminal.confirmationResult ? (
+        <div
+          className="rounded-xl border border-[var(--color-success)] bg-white p-4 shadow-sm"
+          role="status"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status="Venta confirmada" tone="success" />
+            <p className="font-bold text-[var(--color-title)]">
+              Venta {terminal.confirmationResult.sale.number}
+            </p>
+          </div>
+          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+            Total{" "}
+            {formatCurrency(
+              terminal.confirmationResult.sale.total,
+              terminal.confirmationResult.payments[0]?.currency,
+            )}
+            {terminal.confirmationResult.idempotent
+              ? " · Confirmación recuperada de forma idempotente."
+              : " · Confirmación completada correctamente."}
+          </p>
+        </div>
+      ) : null}
 
       <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_400px] 2xl:grid-cols-[minmax(0,1fr)_430px]">
         <div className="min-w-0 rounded-xl border border-[var(--color-border)] bg-white p-5 shadow-sm">
@@ -68,6 +94,8 @@ export function PosTerminalPage() {
         cashShiftLoading={terminal.cashShiftLoading}
         cashShiftRegisterCode={terminal.cashShift?.registerCode ?? null}
         checkout={terminal.checkout}
+        confirmationError={terminal.confirmationError}
+        confirmationLoading={terminal.confirmationLoading}
         currentBranchName={terminal.currentBranchName}
         differenceAmount={terminal.checkoutDifferenceAmount}
         discountTotal={terminal.discountTotal}
@@ -85,6 +113,7 @@ export function PosTerminalPage() {
         validated={terminal.checkoutValidated}
         onCheckoutChange={terminal.updateCheckout}
         onClose={terminal.closeCheckout}
+        onConfirm={terminal.confirmSale}
         onDocumentTypeChange={terminal.setDocumentType}
         onInvoiceDataChange={terminal.updateInvoiceData}
         onPaymentModeChange={terminal.setPaymentMode}

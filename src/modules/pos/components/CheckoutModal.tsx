@@ -38,6 +38,8 @@ interface CheckoutModalProps {
   readyToConfirm: boolean;
   hasOperationalBlock: boolean;
   message: string | null;
+  confirmationLoading: boolean;
+  confirmationError: string | null;
   onClose: () => void;
   onReset: () => void;
   onDocumentTypeChange: (documentType: CheckoutDto["documentType"]) => void;
@@ -45,6 +47,7 @@ interface CheckoutModalProps {
   onCheckoutChange: (patch: Partial<CheckoutDto>) => void;
   onInvoiceDataChange: (patch: Partial<CheckoutInvoiceDataDto>) => void;
   onValidate: () => void;
+  onConfirm: () => void;
 }
 
 export function CheckoutModal({
@@ -71,6 +74,8 @@ export function CheckoutModal({
   readyToConfirm,
   hasOperationalBlock,
   message,
+  confirmationLoading,
+  confirmationError,
   onClose,
   onReset,
   onDocumentTypeChange,
@@ -78,6 +83,7 @@ export function CheckoutModal({
   onCheckoutChange,
   onInvoiceDataChange,
   onValidate,
+  onConfirm,
 }: CheckoutModalProps) {
   const showCash = checkout.paymentMode === "cash" || checkout.paymentMode === "mixed";
   const showCard = checkout.paymentMode === "card" || checkout.paymentMode === "mixed";
@@ -88,15 +94,27 @@ export function CheckoutModal({
     <Modal
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
-          <Button onClick={onReset} type="button" variant="ghost">
+          <Button disabled={confirmationLoading} onClick={onReset} type="button" variant="ghost">
             Restablecer
           </Button>
           <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button onClick={onClose} type="button" variant="secondary">
+            <Button disabled={confirmationLoading} onClick={onClose} type="button" variant="secondary">
               Cerrar
             </Button>
-            <Button form="pos-checkout-form" type="submit">
+            <Button
+              disabled={confirmationLoading}
+              form="pos-checkout-form"
+              type="submit"
+              variant="secondary"
+            >
               Preparar cobro
+            </Button>
+            <Button
+              disabled={!readyToConfirm || confirmationLoading}
+              onClick={onConfirm}
+              type="button"
+            >
+              {confirmationLoading ? "Procesando..." : "Confirmar venta"}
             </Button>
           </div>
         </div>
@@ -104,7 +122,7 @@ export function CheckoutModal({
       onClose={onClose}
       open={open}
       size="xl"
-      subtitle="Validación local; todavía no se confirmará ni persistirá la venta."
+      subtitle="Valida el documento y el pago antes de confirmar la venta."
       title="Cobrar venta"
     >
       <form
@@ -329,6 +347,32 @@ export function CheckoutModal({
                     value={checkout.transferReference}
                   />
                 </FormField>
+                <div>
+                  <label
+                    className="flex cursor-pointer items-start gap-3 rounded-md border border-[var(--color-border)] p-3 text-sm text-[var(--color-text)]"
+                    htmlFor="checkout-transfer-verified"
+                  >
+                    <input
+                      checked={checkout.transferExternallyVerified}
+                      className="mt-0.5 h-4 w-4 accent-[var(--color-primary)]"
+                      id="checkout-transfer-verified"
+                      onChange={(event) =>
+                        onCheckoutChange({
+                          transferExternallyVerified: event.target.checked,
+                        })
+                      }
+                      type="checkbox"
+                    />
+                    <span>
+                      He verificado externamente que la transferencia fue recibida.
+                    </span>
+                  </label>
+                  {errors.transferExternallyVerified ? (
+                    <p className="mt-1 text-xs font-medium text-[var(--color-danger)]">
+                      {errors.transferExternallyVerified}
+                    </p>
+                  ) : null}
+                </div>
               </PaymentSection>
             ) : null}
           </div>
@@ -363,6 +407,12 @@ export function CheckoutModal({
               <span className="mt-1 block">Estado: no listo para confirmar.</span>
             ) : null}
           </div>
+        ) : null}
+
+        {confirmationError ? (
+          <p className="rounded-lg border border-[var(--color-danger)] p-4 text-sm font-semibold text-[var(--color-danger)]">
+            {confirmationError}
+          </p>
         ) : null}
       </form>
     </Modal>

@@ -13,6 +13,7 @@ export type CheckoutValidationErrors = Partial<
     | "transferAmount"
     | "bankAccountId"
     | "transferReference"
+    | "transferExternallyVerified"
     | "paymentTotal",
     string
   >
@@ -82,6 +83,7 @@ export function validateCheckout(checkout: CheckoutDto, total: number): Checkout
       transferCents,
       checkout.bankAccountId,
       checkout.transferReference,
+      checkout.transferExternallyVerified,
       errors,
     );
   }
@@ -101,6 +103,7 @@ export function validateCheckout(checkout: CheckoutDto, total: number): Checkout
       transferCents,
       checkout.bankAccountId,
       checkout.transferReference,
+      checkout.transferExternallyVerified,
       errors,
     );
   }
@@ -172,6 +175,7 @@ function validateTransfer(
   transferCents: number,
   bankAccountId: string,
   transferReference: string,
+  transferExternallyVerified: boolean,
   errors: CheckoutValidationErrors,
 ) {
   if (transferCents <= 0) return;
@@ -179,6 +183,10 @@ function validateTransfer(
   if (!bankAccountId) errors.bankAccountId = "Selecciona una cuenta bancaria.";
   if (!transferReference.trim()) {
     errors.transferReference = "La referencia de transferencia es obligatoria.";
+  }
+  if (!transferExternallyVerified) {
+    errors.transferExternallyVerified =
+      "Confirma que verificaste externamente la recepción de la transferencia.";
   }
 }
 

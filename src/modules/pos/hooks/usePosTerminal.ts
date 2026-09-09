@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CashShift } from "@/core/entities";
 import { CashShiftStatus } from "@/core/enums";
+import type { ConfirmSaleResult } from "@/core/repositories";
+import { isBranchScopedResourceAvailable } from "@/core/scopes/branchScope";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import type {
@@ -16,6 +18,7 @@ import type {
   SaleTicketDto,
   SaleTicketItemDto,
 } from "@/modules/pos/application/dto/SaleTicketDto";
+import { ConfirmSaleService } from "@/modules/pos/application/services/ConfirmSaleService";
 import { GetPosProductsService } from "@/modules/pos/application/services/GetPosProductsService";
 import {
   calculateCheckoutAmounts,
@@ -41,6 +44,11 @@ interface CheckoutState {
   message: string | null;
 }
 
+interface ConfirmationAttempt {
+  confirmationId: string;
+  contextKey: string;
+}
+
 export function usePosTerminal() {
   const repositories = useRepositories();
   const { currentBranch, loading: branchLoading } = useActiveBranch();
@@ -51,7 +59,14 @@ export function usePosTerminal() {
     loading: sessionLoading,
     error: sessionError,
   } = useCurrentSession();
-  const service = useMemo(() => new GetPosProductsService(repositories), [repositories]);
+  const productService = useMemo(
+    () => new GetPosProductsService(repositories),
+    [repositories],
+  );
+  const confirmationService = useMemo(
+    () => new ConfirmSaleService(repositories),
+    [repositories],
+  );
   const [products, setProducts] = useState<PosProductDto[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -66,6 +81,20 @@ export function usePosTerminal() {
   const [cashShift, setCashShift] = useState<CashShift | null>(null);
   const [cashShiftLoading, setCashShiftLoading] = useState(true);
   const [cashShiftError, setCashShiftError] = useState<string | null>(null);
+  const [confirmationAttempt, setConfirmationAttempt] =
+    useState<ConfirmationAttempt | null>(null);
+  const [confirmationLoading, setConfirmationLoading] = useState(false);
+  const [confirmationError, setConfirmationError] = useState<string | null>(null);
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmSaleResult | null>(null);
+  const confirmationLoadingRef = useRef(false);
+  const currentConfirmationContextKey =
+    user && currentBranch && cashShift
+      ? `${user.id}:${currentBranch.id}:${cashShift.id}`
+      : null;
+  const confirmationId =
+    confirmationAttempt?.contextKey === currentConfirmationContextKey
+      ? confirmationAttempt.confirmationId
+      : null;
 
   const reload = useCallback(async () => {
     if (branchLoading || sessionLoading) return;
@@ -88,7 +117,7 @@ export function usePosTerminal() {
     setError(null);
     try {
       setProducts(
-        await service.execute({
+        await productService.execute({
           tenantId: currentBranch.tenantId,
           branchId: currentBranch.id,
         }),
@@ -103,7 +132,7 @@ export function usePosTerminal() {
     branchLoading,
     canAccessBranch,
     currentBranch,
-    service,
+    productService,
     sessionError,
     sessionLoading,
     user,
@@ -133,7 +162,7 @@ export function usePosTerminal() {
           .filter(
             (account) =>
               account.tenantId === currentBranch.tenantId &&
-              (account.branchIds.length === 0 || account.branchIds.includes(currentBranch.id)),
+              isBranchScopedResourceAvailable(account.branchIds, currentBranch.id),
           )
           .map((account) => ({
             id: account.id,
@@ -231,7 +260,14 @@ export function usePosTerminal() {
     [products, search],
   );
 
+  const invalidateConfirmationAttempt = useCallback(() => {
+    setConfirmationAttempt(null);
+    setConfirmationError(null);
+    setConfirmationResult(null);
+  }, []);
+
   const invalidateCheckoutValidation = useCallback(() => {
+    invalidateConfirmationAttempt();
     setCheckoutState((current) => ({
       ...current,
       errors: {},
@@ -240,7 +276,7 @@ export function usePosTerminal() {
       hasOperationalBlock: false,
       message: null,
     }));
-  }, []);
+  }, [invalidateConfirmationAttempt]);
 
   const addProduct = useCallback((product: PosProductDto) => {
     invalidateCheckoutValidation();
@@ -321,9 +357,10 @@ export function usePosTerminal() {
   }, [invalidateCheckoutValidation]);
 
   const clearTicket = useCallback(() => {
+    invalidateConfirmationAttempt();
     setTicketState({ items: [], error: null });
     setCheckoutState(createCheckoutState(0));
-  }, []);
+  }, [invalidateConfirmationAttempt]);
 
   const ticket = useMemo<SaleTicketDto>(
     () => calculateTicket(ticketState.items),
@@ -379,18 +416,24 @@ export function usePosTerminal() {
     }
 
     setTicketState((current) => ({ ...current, error: null }));
-    setCheckoutState({ ...createCheckoutState(ticket.total), open: true });
-  }, [ticket.items.length, ticket.total, ticketBlockingError]);
+    setCheckoutState((current) =>
+      confirmationId
+        ? { ...current, open: true }
+        : { ...createCheckoutState(ticket.total), open: true },
+    );
+  }, [confirmationId, ticket.items.length, ticket.total, ticketBlockingError]);
 
   const closeCheckout = useCallback(() => {
     setCheckoutState((current) => ({ ...current, open: false }));
   }, []);
 
   const resetCheckout = useCallback(() => {
+    invalidateConfirmationAttempt();
     setCheckoutState((current) => ({ ...createCheckoutState(ticket.total), open: current.open }));
-  }, [ticket.total]);
+  }, [invalidateConfirmationAttempt, ticket.total]);
 
   const setDocumentType = useCallback((documentType: CheckoutDto["documentType"]) => {
+    invalidateConfirmationAttempt();
     setCheckoutState((current) => ({
       ...current,
       value: { ...current.value, documentType },
@@ -400,10 +443,11 @@ export function usePosTerminal() {
       hasOperationalBlock: false,
       message: null,
     }));
-  }, []);
+  }, [invalidateConfirmationAttempt]);
 
   const setPaymentMode = useCallback(
     (paymentMode: CheckoutPaymentMode) => {
+      invalidateConfirmationAttempt();
       setCheckoutState((current) => ({
         ...current,
         value: createPaymentModeValue(current.value, paymentMode, ticket.total),
@@ -414,11 +458,12 @@ export function usePosTerminal() {
         message: null,
       }));
     },
-    [ticket.total],
+    [invalidateConfirmationAttempt, ticket.total],
   );
 
   const updateCheckout = useCallback(
     (patch: Partial<CheckoutDto>) => {
+      invalidateConfirmationAttempt();
       setCheckoutState((current) => {
         const nextValue = { ...current.value, ...patch };
         const amounts = calculateCheckoutAmounts(nextValue, ticket.total);
@@ -433,10 +478,11 @@ export function usePosTerminal() {
         };
       });
     },
-    [ticket.total],
+    [invalidateConfirmationAttempt, ticket.total],
   );
 
   const updateInvoiceData = useCallback((patch: Partial<CheckoutInvoiceDataDto>) => {
+    invalidateConfirmationAttempt();
     setCheckoutState((current) => ({
       ...current,
       value: {
@@ -449,7 +495,7 @@ export function usePosTerminal() {
       hasOperationalBlock: false,
       message: null,
     }));
-  }, []);
+  }, [invalidateConfirmationAttempt]);
 
   const validateCheckout = useCallback(() => {
     setCheckoutState((current) => {
@@ -515,6 +561,69 @@ export function usePosTerminal() {
       })
     : checkoutState.message;
 
+  const confirmSale = useCallback(async () => {
+    if (confirmationLoadingRef.current || !checkoutReadyToConfirm) return;
+    if (!user || !currentBranch || !cashShift) {
+      setConfirmationError("La sesión, sucursal o caja ya no está disponible.");
+      return;
+    }
+
+    const confirmationContextKey = `${user.id}:${currentBranch.id}:${cashShift.id}`;
+    const attemptId = confirmationId ?? crypto.randomUUID();
+    if (!confirmationId) {
+      setConfirmationAttempt({
+        confirmationId: attemptId,
+        contextKey: confirmationContextKey,
+      });
+    }
+    confirmationLoadingRef.current = true;
+    setConfirmationLoading(true);
+    setConfirmationError(null);
+    setConfirmationResult(null);
+
+    try {
+      const tenant = await repositories.tenants.getById(currentBranch.tenantId);
+      if (!tenant) throw new Error("No se pudo resolver la moneda del negocio actual.");
+      const result = await confirmationService.execute({
+        confirmationId: attemptId,
+        user,
+        currentBranch,
+        cashShift,
+        hasSalesPermission: hasPosSalesPermission,
+        hasBranchAccess: hasCurrentBranchAccess,
+        ticket,
+        checkout: checkoutState.value,
+        currency: tenant.defaultCurrency,
+      });
+
+      setConfirmationResult(result);
+      setConfirmationAttempt(null);
+      setTicketState({ items: [], error: null });
+      setCheckoutState(createCheckoutState(0));
+    } catch (confirmationFailure) {
+      setConfirmationError(
+        confirmationFailure instanceof Error
+          ? confirmationFailure.message
+          : "No se pudo confirmar la venta. Puedes reintentar sin perder el ticket.",
+      );
+    } finally {
+      confirmationLoadingRef.current = false;
+      setConfirmationLoading(false);
+    }
+  }, [
+    cashShift,
+    checkoutReadyToConfirm,
+    checkoutState.value,
+    confirmationId,
+    confirmationService,
+    currentBranch,
+    hasCurrentBranchAccess,
+    hasPosSalesPermission,
+    repositories.tenants,
+    ticket,
+    user,
+  ]);
+
   return {
     products,
     filteredProducts,
@@ -554,6 +663,10 @@ export function usePosTerminal() {
     hasPosSalesPermission,
     hasCurrentBranchAccess,
     currentBranchName: currentBranch?.name ?? null,
+    confirmationId,
+    confirmationLoading,
+    confirmationError,
+    confirmationResult,
     openCheckout,
     closeCheckout,
     resetCheckout,
@@ -562,6 +675,7 @@ export function usePosTerminal() {
     updateCheckout,
     updateInvoiceData,
     validateCheckout,
+    confirmSale,
   };
 }
 
@@ -691,6 +805,7 @@ function createCheckoutValue(total: number): CheckoutDto {
     transferAmount: 0,
     bankAccountId: "",
     transferReference: "",
+    transferExternallyVerified: false,
   };
 }
 
@@ -711,6 +826,7 @@ function createPaymentModeValue(
     transferAmount: paymentMode === "transfer" ? totalAmount : 0,
     bankAccountId: "",
     transferReference: "",
+    transferExternallyVerified: false,
   };
 }
 
