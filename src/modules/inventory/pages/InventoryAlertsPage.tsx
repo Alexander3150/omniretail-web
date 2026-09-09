@@ -40,7 +40,8 @@ import {
   type TransferValidationErrors,
 } from "@/modules/inventory/validation/inventoryAlerts.validation";
 
-type ActionMode = "adjust" | "other-branches" | "request-transfer" | "transfer-request-detail" | null;
+type ActionMode =
+  "adjust" | "other-branches" | "request-transfer" | "transfer-request-detail" | null;
 
 const STATUS_OPTIONS: Array<{ value: InventoryStatusFilter; label: string }> = [
   { value: "all", label: "Todos los estados" },
@@ -105,7 +106,8 @@ export function InventoryAlertsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [, setClockTick] = useState(0);
-  const selectedRow = rows.find((row) => row.productId === selectedProductId) ??
+  const selectedRow =
+    rows.find((row) => row.productId === selectedProductId) ??
     data.rows.find((row) => row.productId === selectedProductId) ??
     null;
   const selectedTransferRequest =
@@ -188,8 +190,8 @@ export function InventoryAlertsPage() {
             Inventario y alertas
           </h1>
           <p className="mt-1 max-w-3xl text-sm text-[var(--color-text-muted)]">
-            Supervisa las existencias y atiende productos con stock bajo, caducidad proxima u
-            otras situaciones que requieren revision.
+            Supervisa las existencias y atiende productos con stock bajo, caducidad proxima u otras
+            situaciones que requieren revision.
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:items-end">
@@ -315,9 +317,12 @@ export function InventoryAlertsPage() {
           row={selectedRow}
           onClose={() => setActionMode(null)}
           onSubmit={async (dto) => {
-            await adjustStock(dto);
+            const result = await adjustStock(dto);
             setActionMode(null);
-            showToast({ title: "Ajuste registrado", tone: "success" });
+            showToast({
+              title: `Ajuste ${result.adjustmentNumber} registrado correctamente.`,
+              tone: "success",
+            });
           }}
         />
       ) : null}
@@ -346,7 +351,11 @@ export function InventoryAlertsPage() {
           onApprove={async () => {
             await approveTransferRequest(selectedTransferRequest.id);
             setActionMode(null);
-            showToast({ title: "Solicitud aprobada", description: "Queda pendiente de traslado.", tone: "success" });
+            showToast({
+              title: "Solicitud aprobada",
+              description: "Queda pendiente de traslado.",
+              tone: "success",
+            });
           }}
           onClose={() => setActionMode(null)}
           onReject={async (rejectionReason) => {
@@ -605,7 +614,9 @@ function InventoryTable({
             <tr>
               <th className="px-4 py-3 font-semibold">Producto</th>
               <th className="px-4 py-3 text-right font-semibold">Existencia</th>
-              <th className="hidden px-4 py-3 text-right font-semibold md:table-cell">Nivel minimo</th>
+              <th className="hidden px-4 py-3 text-right font-semibold md:table-cell">
+                Nivel minimo
+              </th>
               <th className="hidden px-4 py-3 font-semibold lg:table-cell">Ubicacion</th>
               <th className="px-4 py-3 font-semibold">Estado</th>
               {showExpiration ? (
@@ -721,7 +732,9 @@ function InventoryTableFooter({
             value={pageSize}
           >
             {PAGE_SIZE_OPTIONS.map((option) => (
-              <option key={option} value={option}>{option}</option>
+              <option key={option} value={option}>
+                {option}
+              </option>
             ))}
           </Select>
         </label>
@@ -901,7 +914,9 @@ function RowActionsMenu({
         >
           <MenuItem onClick={() => select(onAdjust)}>Ajustar existencias</MenuItem>
           <MenuItem onClick={() => select(onTransfer)}>Solicitar traslado</MenuItem>
-          <MenuItem disabled onClick={() => undefined}>Historial de movimientos</MenuItem>
+          <MenuItem disabled onClick={() => undefined}>
+            Historial de movimientos
+          </MenuItem>
         </div>
       ) : null}
     </div>
@@ -1077,7 +1092,12 @@ function AlertsPanel({
                 <span className="mt-1 block text-sm text-[var(--color-text-muted)]">
                   {getTransferRequestAlertMessage(item.request)}
                 </span>
-                <span className={cn("mt-2 block text-xs font-bold uppercase", getTransferRequestTextClass(item.request))}>
+                <span
+                  className={cn(
+                    "mt-2 block text-xs font-bold uppercase",
+                    getTransferRequestTextClass(item.request),
+                  )}
+                >
                   {formatTransferRequestStatus(item.request.status)}
                 </span>
               </button>
@@ -1195,10 +1215,18 @@ function ProductPanel({
           <Button onClick={onOtherBranches} type="button" variant="secondary">
             Ver existencias en otras sucursales
           </Button>
-          <Button disabled type="button" variant="secondary">Ver historial de movimientos</Button>
-          <Button onClick={onAdjust} type="button">Ajustar existencias</Button>
-          <Button disabled type="button" variant="secondary">Crear orden de compra</Button>
-          <Button onClick={onClose} type="button" variant="secondary">Cerrar</Button>
+          <Button disabled type="button" variant="secondary">
+            Ver historial de movimientos
+          </Button>
+          <Button onClick={onAdjust} type="button">
+            Ajustar existencias
+          </Button>
+          <Button disabled type="button" variant="secondary">
+            Crear orden de compra
+          </Button>
+          <Button onClick={onClose} type="button" variant="secondary">
+            Cerrar
+          </Button>
         </div>
       </div>
     </section>
@@ -1237,6 +1265,7 @@ function AdjustStockModal({
     movementKind: "in",
     quantity: 1,
     reason: "",
+    notes: "",
   }));
   const [errors, setErrors] = useState<AdjustmentValidationErrors>({});
   const locationQuantity = useMemo(
@@ -1246,9 +1275,10 @@ function AdjustStockModal({
   const finalQuantity =
     value.movementKind === "in"
       ? row.quantity + value.quantity
-      : value.movementKind === "out"
+      : value.movementKind === "out" || value.movementKind === "waste"
         ? row.quantity - value.quantity
         : value.quantity;
+  const delta = finalQuantity - row.quantity;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1266,7 +1296,9 @@ function AdjustStockModal({
     <Modal
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button onClick={onClose} type="button" variant="secondary">Cancelar</Button>
+          <Button onClick={onClose} type="button" variant="secondary">
+            Cancelar
+          </Button>
           <Button disabled={busy} form="inventory-adjust-form" type="submit">
             {busy ? "Registrando..." : "Confirmar ajuste"}
           </Button>
@@ -1292,18 +1324,23 @@ function AdjustStockModal({
             value={value.locationId}
           >
             {locations.map((location) => (
-              <option key={location.id} value={location.id}>{location.name}</option>
+              <option key={location.id} value={location.id}>
+                {location.name}
+              </option>
             ))}
           </Select>
         </Field>
-        <Field id="adjust-kind" label="Tipo de movimiento">
+        <Field id="adjust-kind" label="Tipo de ajuste">
           <Select
             id="adjust-kind"
-            onChange={(event) => update({ movementKind: event.target.value as AdjustStockDto["movementKind"] })}
+            onChange={(event) =>
+              update({ movementKind: event.target.value as AdjustStockDto["movementKind"] })
+            }
             value={value.movementKind}
           >
-            <option value="in">Entrada (+)</option>
-            <option value="out">Salida / Merma (-)</option>
+            <option value="in">Entrada manual</option>
+            <option value="out">Salida manual</option>
+            <option value="waste">Merma</option>
             <option value="count">Conteo / Correccion exacta</option>
           </Select>
         </Field>
@@ -1317,19 +1354,62 @@ function AdjustStockModal({
             value={Number.isNaN(value.quantity) ? "" : value.quantity}
           />
         </Field>
-        <Field id="adjust-reason" label="Motivo / Observaciones" error={errors.reason}>
+        <Field id="adjust-reason" label="Motivo *" error={errors.reason}>
           <textarea
-            className="min-h-24 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
+            className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
             id="adjust-reason"
             onChange={(event) => update({ reason: event.target.value })}
             value={value.reason}
           />
         </Field>
-        <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-text)]">
-          {buildAdjustmentSummary(value, row, finalQuantity)}
-        </p>
+        <Field id="adjust-notes" label="Observaciones">
+          <textarea
+            className="min-h-16 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
+            id="adjust-notes"
+            onChange={(event) => update({ notes: event.target.value })}
+            value={value.notes}
+          />
+        </Field>
+        <AdjustmentSummary delta={delta} finalQuantity={finalQuantity} row={row} value={value} />
       </form>
     </Modal>
+  );
+}
+
+function AdjustmentSummary({
+  delta,
+  finalQuantity,
+  row,
+  value,
+}: {
+  delta: number;
+  finalQuantity: number;
+  row: InventoryProductRow;
+  value: AdjustStockDto;
+}) {
+  return (
+    <dl className="grid gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2 text-sm sm:grid-cols-3">
+      <div>
+        <dt className="font-semibold text-[var(--color-text-muted)]">Stock actual</dt>
+        <dd className="font-bold text-[var(--color-title)]">
+          {row.quantity} {row.unitName}
+        </dd>
+      </div>
+      <div>
+        <dt className="font-semibold text-[var(--color-text-muted)]">
+          {getAdjustmentSummaryLabel(value.movementKind)}
+        </dt>
+        <dd className={cn("font-bold", delta < 0 ? "text-red-700" : "text-emerald-700")}>
+          {formatAdjustmentDelta(delta)} {row.unitName}
+        </dd>
+      </div>
+      <div>
+        <dt className="font-semibold text-[var(--color-text-muted)]">Stock resultante</dt>
+        <dd className="font-bold text-[var(--color-title)]">
+          {finalQuantity} {row.unitName}
+        </dd>
+      </div>
+    </dl>
   );
 }
 
@@ -1404,10 +1484,7 @@ function RequestTransferModal({
   const availableProviders = row.otherBranchStocks;
   const firstProviderWithStock = availableProviders.find((stock) => stock.availableQuantity > 0);
   const initialProvider =
-    providerBranchId ??
-    firstProviderWithStock?.branchId ??
-    availableProviders[0]?.branchId ??
-    "";
+    providerBranchId ?? firstProviderWithStock?.branchId ?? availableProviders[0]?.branchId ?? "";
   const [value, setValue] = useState<TransferRequestDto>(() => ({
     productId: row.productId,
     requesterBranchId: row.branchId,
@@ -1437,7 +1514,9 @@ function RequestTransferModal({
     <Modal
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button onClick={onClose} type="button" variant="secondary">Cerrar</Button>
+          <Button onClick={onClose} type="button" variant="secondary">
+            Cerrar
+          </Button>
           <Button form="inventory-transfer-request-form" type="submit" variant="secondary">
             Solicitar traslado
           </Button>
@@ -1463,7 +1542,11 @@ function RequestTransferModal({
             value={`${selectedProvider?.availableQuantity ?? 0} ${row.unitName}`}
           />
         </div>
-        <Field id="transfer-provider" label="Solicitar a sucursal *" error={errors.providerBranchId}>
+        <Field
+          id="transfer-provider"
+          label="Solicitar a sucursal *"
+          error={errors.providerBranchId}
+        >
           <Select
             id="transfer-provider"
             onChange={(event) => update({ providerBranchId: event.target.value })}
@@ -1496,13 +1579,13 @@ function RequestTransferModal({
         <Field id="transfer-reason" label="Motivo *" error={errors.reason}>
           <Select
             id="transfer-reason"
-            onChange={(event) =>
-              update({ reason: event.target.value as InventoryTransferReason })
-            }
+            onChange={(event) => update({ reason: event.target.value as InventoryTransferReason })}
             value={value.reason}
           >
             {TRANSFER_REASONS.map((reason) => (
-              <option key={reason.value} value={reason.value}>{reason.label}</option>
+              <option key={reason.value} value={reason.value}>
+                {reason.label}
+              </option>
             ))}
           </Select>
         </Field>
@@ -1548,8 +1631,7 @@ function TransferRequestDetailModal({
   }
 
   const isReceivedRequest =
-    request.context === "received" &&
-    request.status === InventoryTransferRequestStatus.requested;
+    request.context === "received" && request.status === InventoryTransferRequestStatus.requested;
 
   return (
     <Modal
@@ -1602,9 +1684,7 @@ function TransferRequestDetailModal({
             <ReadonlyField label="Fecha de rechazo" value={formatDateTime(request.rejectedAt)} />
           ) : null}
         </div>
-        {request.notes ? (
-          <ReadonlyField label="Observaciones" value={request.notes} />
-        ) : null}
+        {request.notes ? <ReadonlyField label="Observaciones" value={request.notes} /> : null}
         {request.status === InventoryTransferRequestStatus.approved ? (
           <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">
             Pendiente de preparacion y traslado.
@@ -1726,15 +1806,13 @@ function buildAlertFeed(
       request,
     };
   });
-  return [...inventoryItems, ...requestItems].sort(
-    (left, right) => {
-      if (left.priority !== right.priority) return left.priority - right.priority;
-      if (left.kind === "transfer" && right.kind === "transfer" && left.isNew && right.isNew) {
-        return right.timestamp - left.timestamp;
-      }
-      return left.id.localeCompare(right.id);
-    },
-  );
+  return [...inventoryItems, ...requestItems].sort((left, right) => {
+    if (left.priority !== right.priority) return left.priority - right.priority;
+    if (left.kind === "transfer" && right.kind === "transfer" && left.isNew && right.isNew) {
+      return right.timestamp - left.timestamp;
+    }
+    return left.id.localeCompare(right.id);
+  });
 }
 
 function getTransferAlertKey(branchId: string, request: InventoryTransferRequestRow) {
@@ -1755,17 +1833,15 @@ function readViewedTransferAlertKeys() {
 
 function persistViewedTransferAlertKeys(keys: Set<string>) {
   try {
-    window.sessionStorage.setItem(
-      VIEWED_TRANSFER_ALERTS_STORAGE_KEY,
-      JSON.stringify([...keys]),
-    );
+    window.sessionStorage.setItem(VIEWED_TRANSFER_ALERTS_STORAGE_KEY, JSON.stringify([...keys]));
   } catch {
     // Visual read state is best-effort session UI state.
   }
 }
 
 function getTransferAlertTimestamp(request: InventoryTransferRequestRow) {
-  const value = request.approvedAt ?? request.rejectedAt ?? request.reviewedAt ?? request.requestedAt;
+  const value =
+    request.approvedAt ?? request.rejectedAt ?? request.reviewedAt ?? request.requestedAt;
   const time = new Date(value).getTime();
   return Number.isFinite(time) ? time : 0;
 }
@@ -1787,10 +1863,16 @@ function getTransferRequestDetailTitle(request: InventoryTransferRequestRow) {
 }
 
 function getTransferRequestAlertMessage(request: InventoryTransferRequestRow) {
-  if (request.context === "response" && request.status === InventoryTransferRequestStatus.approved) {
+  if (
+    request.context === "response" &&
+    request.status === InventoryTransferRequestStatus.approved
+  ) {
     return `${request.sourceBranchName} aprobo tu solicitud de ${request.requestedQuantity} unidades de ${request.productName}.`;
   }
-  if (request.context === "response" && request.status === InventoryTransferRequestStatus.rejected) {
+  if (
+    request.context === "response" &&
+    request.status === InventoryTransferRequestStatus.rejected
+  ) {
     return `${request.sourceBranchName} rechazo tu solicitud de ${request.requestedQuantity} unidades de ${request.productName}.`;
   }
   return `${request.requestingBranchName} solicita ${request.requestedQuantity} unidades de ${request.productName}.`;
@@ -1823,23 +1905,14 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
-function buildAdjustmentSummary(
-  value: AdjustStockDto,
-  row: InventoryProductRow,
-  finalQuantity: number,
-) {
-  const sign =
-    value.movementKind === "in"
-      ? "+"
-      : value.movementKind === "out"
-        ? "-"
-        : "";
-  const quantity =
-    value.movementKind === "count" ? finalQuantity : value.quantity;
-  const action =
-    value.movementKind === "count"
-      ? "Se registrara un conteo exacto de"
-      : `Se registrara un ajuste de ${sign}`;
+function getAdjustmentSummaryLabel(kind: AdjustStockDto["movementKind"]) {
+  if (kind === "in") return "Entrada manual";
+  if (kind === "out") return "Salida manual";
+  if (kind === "waste") return "Merma";
+  return "Cambio";
+}
 
-  return `${action}${value.movementKind === "count" ? " " : ""}${quantity} ${row.unitName} para ${row.productName}.`;
+function formatAdjustmentDelta(value: number) {
+  if (value === 0) return "0";
+  return `${value > 0 ? "+" : "-"}${Math.abs(value)}`;
 }
