@@ -14,6 +14,7 @@ import type {
   CustomerRepository,
   DispatchRepository,
   InventoryRepository,
+  InventoryTransferRepository,
   InventoryTransferRequestRepository,
   NotificationRepository,
   OrderRepository,
@@ -49,6 +50,7 @@ import {
   MockCustomerRepository,
   MockDispatchRepository,
   MockInventoryRepository,
+  MockInventoryTransferRepository,
   MockInventoryTransferRequestRepository,
   MockNotificationRepository,
   MockOrderRepository,
@@ -84,6 +86,7 @@ export interface RepositoryRegistry {
   attributes: AttributeRepository;
   promotions: PromotionRepository;
   inventory: InventoryRepository;
+  inventoryTransfers: InventoryTransferRepository;
   inventoryTransferRequests: InventoryTransferRequestRepository;
   suppliers: SupplierRepository;
   supplierProducts: SupplierProductRepository;
@@ -132,6 +135,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       attributes: new MockAttributeRepository(store, eventBus),
       promotions: new MockPromotionRepository(store, eventBus),
       inventory: new MockInventoryRepository(store, eventBus),
+      inventoryTransfers: new MockInventoryTransferRepository(store, eventBus),
       inventoryTransferRequests: new MockInventoryTransferRequestRepository(store, eventBus),
       suppliers: new MockSupplierRepository(store, eventBus),
       supplierProducts: new MockSupplierProductRepository(store, eventBus),
