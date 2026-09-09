@@ -98,3 +98,14 @@ export const authPolicy = {
     passwordResetTokenMinutes: 5,
   },
 } as const;
+
+/**
+ * Given how many times an account has already been locked within the
+ * last 24 hours (including the one about to happen), returns the
+ * lockout duration in minutes per section 4.7's escalation table.
+ */
+export function getLockoutMinutesForOccurrence(occurrenceNumberIn24h: number): number {
+  if (occurrenceNumberIn24h <= 1) return LOCKOUT_ESCALATION_MINUTES.FIRST_LOCKOUT_IN_24H;
+  if (occurrenceNumberIn24h === 2) return LOCKOUT_ESCALATION_MINUTES.SECOND_LOCKOUT_IN_24H;
+  return LOCKOUT_ESCALATION_MINUTES.THIRD_LOCKOUT_IN_24H;
+}

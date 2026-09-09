@@ -1,20 +1,86 @@
 import { AccountStatus, CustomerStatus, UserStatus, UserType } from "@/core/enums";
 import type { Customer } from "@/core/entities";
 import type { AuthRepository } from "@/core/repositories";
-import { authPolicy } from "@/config/auth-policy";
+import {
+  authPolicy,
+  GENERIC_AUTH_ERROR_MESSAGE,
+  LOGIN_ATTEMPT_RULES,
+  getLockoutMinutesForOccurrence,
+} from "@/config/auth-policy";
 import { sessionPolicy } from "@/config/session-policy";
+import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
 export class MockAuthRepository extends BaseMockRepository implements AuthRepository {
   async login(input: Parameters<AuthRepository["login"]>[0]) {
-    const session = this.store.mutate((db) => {
+    const normalizedEmail = input.email.trim().toLowerCase();
+    const now = new Date();
+
+    const outcome = this.store.mutate((db) => {
       const account = db.authAccounts.find(
-        (item) => item.email.toLowerCase() === input.email.toLowerCase(),
+        (item) => item.email.toLowerCase() === normalizedEmail,
       );
-      if (!account || account.status !== AccountStatus.active)
-        throw new Error("Invalid credentials");
-      const now = new Date();
-      account.lastLoginAt = now.toISOString();
+
+      if (!account) {
+        return { ok: false as const };
+      }
+
+      const user = db.users.find((item) => item.id === account.userId);
+      const tenantId = user?.tenantId ?? "tenant-demo";
+
+      // Auto-unlock if the lockout window already elapsed.
+      if (
+        account.status === AccountStatus.temporarily_locked &&
+        account.lockedUntil &&
+        new Date(account.lockedUntil) <= now
+      ) {
+        account.status = AccountStatus.active;
+        account.failedLoginAttempts = 0;
+        account.lockedUntil = undefined;
+      }
+
+      if (account.status !== AccountStatus.active) {
+        this.logAuthAudit(db, { tenantId, actorUserId: account.userId, action: "login_failed" });
+        return { ok: false as const };
+      }
+
+      const expectedHash = `mock-hash-${input.passwordMock.length}`;
+      if (account.passwordHashMock !== expectedHash) {
+        account.failedLoginAttempts += 1;
+        const rule = LOGIN_ATTEMPT_RULES.find(
+          (item) => item.attemptNumber === account.failedLoginAttempts,
+        );
+
+        if (rule?.triggersLockout) {
+          const recentLockouts = db.auditLogs.filter(
+            (log) =>
+              log.entityType === "AuthAccount" &&
+              log.entityId === account.id &&
+              log.action === "account_locked" &&
+              now.getTime() - new Date(log.createdAt).getTime() < 24 * 60 * 60 * 1000,
+          ).length;
+          account.status = AccountStatus.temporarily_locked;
+          account.lockedUntil = new Date(
+            now.getTime() + getLockoutMinutesForOccurrence(recentLockouts + 1) * 60 * 1000,
+          ).toISOString();
+          this.logAuthAudit(db, {
+            tenantId,
+            actorUserId: account.userId,
+            action: "account_locked",
+          });
+        } else {
+          this.logAuthAudit(db, { tenantId, actorUserId: account.userId, action: "login_failed" });
+        }
+
+        account.updatedAt = now.toISOString();
+        return { ok: false as const };
+      }
+
       account.failedLoginAttempts = 0;
+      account.lockedUntil = undefined;
+      account.lastLoginAt = now.toISOString();
+      account.updatedAt = now.toISOString();
+      this.logAuthAudit(db, { tenantId, actorUserId: account.userId, action: "login_success" });
+
       const expires = new Date(
         now.getTime() +
           (input.rememberMe
@@ -33,10 +99,15 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         deviceLabel: input.deviceLabel,
       };
       db.sessions.push(created);
-      return created;
+      return { ok: true as const, session: created };
     });
-    this.emit("auth.changed", { entityId: session.id, action: "created" });
-    return session;
+
+    if (!outcome.ok) {
+      throw new Error(GENERIC_AUTH_ERROR_MESSAGE);
+    }
+
+    this.emit("auth.changed", { entityId: outcome.session.id, action: "created" });
+    return outcome.session;
   }
   async logout(sessionId: string) {
     this.store.mutate((db) => {
@@ -150,5 +221,18 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       return undefined;
     });
     this.emit("auth.changed", { action: "updated" });
+  }
+  private logAuthAudit(
+    db: MockDatabase,
+    entry: { tenantId: string; actorUserId?: string; action: string },
+  ) {
+    db.auditLogs.push({
+      id: this.id("audit"),
+      tenantId: entry.tenantId,
+      actorUserId: entry.actorUserId,
+      action: entry.action,
+      entityType: "AuthAccount",
+      createdAt: this.now(),
+    });
   }
 }
