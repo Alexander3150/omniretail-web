@@ -5,6 +5,10 @@ import { Button } from "@/shared/components/Button";
 import { Input } from "@/shared/components/Input";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
+import {
+  TablePagination,
+  type TablePageSize,
+} from "@/shared/components/TablePagination";
 import { cn } from "@/shared/utils/cn";
 import type {
   SupplierListItemReadModel,
@@ -23,18 +27,19 @@ const DETAIL_TABS: Array<{ id: SupplierDetailTab; label: string }> = [
   { id: "incidents", label: "Incidencias" },
 ];
 
-const PAGE_SIZE = 10;
+const DEFAULT_PAGE_SIZE: TablePageSize = 10;
 
 export function SuppliersPage() {
   const { suppliers, filteredSuppliers, filters, loading, error, updateFilters } = useSuppliers();
   const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(filteredSuppliers.length / PAGE_SIZE));
+  const [pageSize, setPageSize] = useState<TablePageSize>(DEFAULT_PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filteredSuppliers.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paginatedSuppliers = useMemo(
     () =>
-      filteredSuppliers.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
-    [currentPage, filteredSuppliers],
+      filteredSuppliers.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [currentPage, filteredSuppliers, pageSize],
   );
   const selectedSupplier = useMemo(
     () => paginatedSuppliers.find((supplier) => supplier.id === selectedSupplierId) ?? null,
@@ -44,10 +49,6 @@ export function SuppliersPage() {
     suppliers.length === 0
       ? "No hay proveedores registrados."
       : "No se encontraron proveedores.";
-  const firstVisible =
-    filteredSuppliers.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
-  const lastVisible = Math.min(currentPage * PAGE_SIZE, filteredSuppliers.length);
-
   function handleSearchChange(search: string) {
     setPage(1);
     setSelectedSupplierId(null);
@@ -63,6 +64,12 @@ export function SuppliersPage() {
   function changePage(nextPage: number) {
     setSelectedSupplierId(null);
     setPage(Math.min(Math.max(nextPage, 1), totalPages));
+  }
+
+  function handlePageSizeChange(nextPageSize: TablePageSize) {
+    setPageSize(nextPageSize);
+    setPage(1);
+    setSelectedSupplierId(null);
   }
 
   return (
@@ -115,16 +122,15 @@ export function SuppliersPage() {
                 suppliers={paginatedSuppliers}
                 onSelect={setSelectedSupplierId}
               />
-              {filteredSuppliers.length > 0 ? (
-                <SuppliersTableFooter
-                  currentPage={currentPage}
-                  firstVisible={firstVisible}
-                  lastVisible={lastVisible}
-                  totalItems={filteredSuppliers.length}
-                  totalPages={totalPages}
-                  onPageChange={changePage}
-                />
-              ) : null}
+              <TablePagination
+                ariaLabel="Paginacion de proveedores"
+                itemLabel="proveedores"
+                page={currentPage}
+                pageSize={pageSize}
+                totalItems={filteredSuppliers.length}
+                onPageChange={changePage}
+                onPageSizeChange={handlePageSizeChange}
+              />
             </>
           )}
         </div>
@@ -271,58 +277,6 @@ function StatusSegmentedFilter({
           {option.label}
         </button>
       ))}
-    </div>
-  );
-}
-
-function SuppliersTableFooter({
-  currentPage,
-  firstVisible,
-  lastVisible,
-  totalItems,
-  totalPages,
-  onPageChange,
-}: {
-  currentPage: number;
-  firstVisible: number;
-  lastVisible: number;
-  totalItems: number;
-  totalPages: number;
-  onPageChange: (page: number) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-3 border-t border-[var(--color-border)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-sm text-[var(--color-text-muted)]">
-        Mostrando {firstVisible}-{lastVisible} de {totalItems} proveedores
-      </p>
-      <nav
-        aria-label="Paginacion de proveedores"
-        className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-start"
-      >
-        <Button
-          aria-label="Pagina anterior"
-          className="min-h-9 px-3 py-1.5"
-          disabled={currentPage === 1}
-          onClick={() => onPageChange(currentPage - 1)}
-          type="button"
-          variant="secondary"
-        >
-          {"<"}
-        </Button>
-        <span className="min-w-12 text-center text-sm font-semibold text-[var(--color-text)]">
-          {currentPage} / {totalPages}
-        </span>
-        <Button
-          aria-label="Pagina siguiente"
-          className="min-h-9 px-3 py-1.5"
-          disabled={currentPage === totalPages}
-          onClick={() => onPageChange(currentPage + 1)}
-          type="button"
-          variant="secondary"
-        >
-          {">"}
-        </Button>
-      </nav>
     </div>
   );
 }

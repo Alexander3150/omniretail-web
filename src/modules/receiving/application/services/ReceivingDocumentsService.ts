@@ -65,6 +65,7 @@ export class ReceivingDocumentsService {
         return toPurchaseOrderRow(
           order,
           supplier?.name ?? "Proveedor no disponible",
+          orderReceipts,
           orderReceiptLines,
           productById,
         );
@@ -142,13 +143,19 @@ export function canArchiveIncidentType(active: boolean, usageCount: number) {
 function toPurchaseOrderRow(
   order: PurchaseOrder,
   supplierName: string,
+  receipts: Receipt[],
   receiptLines: ReceiptLine[],
   productById: Map<string, { name: string; sku: string }>,
 ): ReceivingDocumentRow {
   const items = order.items ?? [];
   const requestedQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
   const receivedQuantity = receiptLines.reduce((sum, line) => sum + line.receivedQuantity, 0);
-  const status = getPurchaseOrderReceivingStatus(order, receivedQuantity, requestedQuantity);
+  const status = getPurchaseOrderReceivingStatus(
+    order,
+    receipts,
+    receivedQuantity,
+    requestedQuantity,
+  );
   const productNames = items.flatMap((item) => {
     const product = productById.get(item.productId);
     return [product?.name, product?.sku];
@@ -209,16 +216,30 @@ function toTransferRow(
 
 function getPurchaseOrderReceivingStatus(
   order: PurchaseOrder,
+  receipts: Receipt[],
   receivedQuantity: number,
   requestedQuantity: number,
 ): ReceivingStatus {
-  if (order.status === PurchaseOrderStatus.received || receivedQuantity >= requestedQuantity) {
+  if (
+    order.status === PurchaseOrderStatus.received ||
+    receipts.some((receipt) => receipt.status === ReceiptStatus.received) ||
+    (requestedQuantity > 0 && receivedQuantity >= requestedQuantity)
+  ) {
     return "received";
   }
-  if (order.status === PurchaseOrderStatus.partially_received || receivedQuantity > 0) {
+  if (
+    order.status === PurchaseOrderStatus.partially_received ||
+    receipts.some((receipt) => receipt.status === ReceiptStatus.partial) ||
+    receivedQuantity > 0
+  ) {
     return "partial";
   }
-  if (order.status === PurchaseOrderStatus.sent) return "in_process";
+  if (
+    order.status === PurchaseOrderStatus.sent ||
+    receipts.some((receipt) => receipt.status === ReceiptStatus.in_progress)
+  ) {
+    return "in_process";
+  }
   return "pending";
 }
 

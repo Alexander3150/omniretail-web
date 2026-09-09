@@ -17,6 +17,10 @@ import { Button } from "@/shared/components/Button";
 import { Input } from "@/shared/components/Input";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { Select } from "@/shared/components/Select";
+import {
+  TablePagination,
+  type TablePageSize,
+} from "@/shared/components/TablePagination";
 import { useToast } from "@/shared/components/Toast";
 import { cn } from "@/shared/utils/cn";
 import type {
@@ -31,7 +35,7 @@ import {
   PurchaseOrderPdfService,
 } from "@/modules/purchasing/application/services/PurchaseOrderPdfService";
 
-const PAGE_SIZE = 10;
+const DEFAULT_PAGE_SIZE: TablePageSize = 10;
 
 export function PurchaseOrdersPage() {
   const router = useRouter();
@@ -49,18 +53,17 @@ export function PurchaseOrdersPage() {
     action: PurchaseOrderAction;
   } | null>(null);
   const [suggestionsExpanded, setSuggestionsExpanded] = useState(false);
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
+  const [pageSize, setPageSize] = useState<TablePageSize>(DEFAULT_PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paginatedOrders = useMemo(
-    () => filteredOrders.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
-    [currentPage, filteredOrders],
+    () => filteredOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [currentPage, filteredOrders, pageSize],
   );
   const selectedOrder = useMemo(
     () => paginatedOrders.find((order) => order.id === selectedOrderId) ?? null,
     [paginatedOrders, selectedOrderId],
   );
-  const firstVisible = filteredOrders.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
-  const lastVisible = Math.min(currentPage * PAGE_SIZE, filteredOrders.length);
   const emptyMessage =
     data.orders.length === 0 ? "No hay ordenes de compra registradas." : "No se encontraron ordenes.";
 
@@ -101,6 +104,13 @@ export function PurchaseOrdersPage() {
     setSelectedOrderId(null);
     setOpenActionsOrderId(null);
     setPage(Math.min(Math.max(nextPage, 1), totalPages));
+  }
+
+  function handlePageSizeChange(nextPageSize: TablePageSize) {
+    setPageSize(nextPageSize);
+    setPage(1);
+    setSelectedOrderId(null);
+    setOpenActionsOrderId(null);
   }
 
   function handleSelectOrder(orderId: string) {
@@ -305,16 +315,15 @@ export function PurchaseOrdersPage() {
               onAction={handleAction}
               onSelect={handleSelectOrder}
             />
-            {filteredOrders.length > 0 ? (
-              <OrdersTableFooter
-                currentPage={currentPage}
-                firstVisible={firstVisible}
-                lastVisible={lastVisible}
-                totalItems={filteredOrders.length}
-                totalPages={totalPages}
-                onPageChange={changePage}
-              />
-            ) : null}
+            <TablePagination
+              ariaLabel="Paginacion de ordenes"
+              itemLabel="ordenes"
+              page={currentPage}
+              pageSize={pageSize}
+              totalItems={filteredOrders.length}
+              onPageChange={changePage}
+              onPageSizeChange={handlePageSizeChange}
+            />
           </>
         )}
       </section>
@@ -704,58 +713,6 @@ function RowActions({
           document.body,
         )
         : null}
-    </div>
-  );
-}
-
-function OrdersTableFooter({
-  currentPage,
-  firstVisible,
-  lastVisible,
-  totalItems,
-  totalPages,
-  onPageChange,
-}: {
-  currentPage: number;
-  firstVisible: number;
-  lastVisible: number;
-  totalItems: number;
-  totalPages: number;
-  onPageChange: (page: number) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-3 border-t border-[var(--color-border)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-sm text-[var(--color-text-muted)]">
-        Mostrando {firstVisible}-{lastVisible} de {totalItems} ordenes
-      </p>
-      <nav
-        aria-label="Paginacion de ordenes"
-        className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-start"
-      >
-        <Button
-          aria-label="Pagina anterior"
-          className="min-h-9 px-3 py-1.5"
-          disabled={currentPage === 1}
-          onClick={() => onPageChange(currentPage - 1)}
-          type="button"
-          variant="secondary"
-        >
-          {"<"}
-        </Button>
-        <span className="min-w-12 text-center text-sm font-semibold text-[var(--color-text)]">
-          {currentPage} / {totalPages}
-        </span>
-        <Button
-          aria-label="Pagina siguiente"
-          className="min-h-9 px-3 py-1.5"
-          disabled={currentPage === totalPages}
-          onClick={() => onPageChange(currentPage + 1)}
-          type="button"
-          variant="secondary"
-        >
-          {">"}
-        </Button>
-      </nav>
     </div>
   );
 }

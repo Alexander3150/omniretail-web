@@ -5,6 +5,10 @@ import { Button } from "@/shared/components/Button";
 import { Input } from "@/shared/components/Input";
 import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
+import {
+  TablePagination,
+  type TablePageSize,
+} from "@/shared/components/TablePagination";
 import { useToast } from "@/shared/components/Toast";
 import { cn } from "@/shared/utils/cn";
 import type {
@@ -16,7 +20,7 @@ import type {
 } from "@/modules/receiving/application/dto/ReceivingDocumentsDto";
 import { useReceivingDocuments } from "@/modules/receiving/hooks/useReceivingDocuments";
 
-const PAGE_SIZE = 10;
+const DEFAULT_PAGE_SIZE: TablePageSize = 10;
 const STATUS_FILTERS: Array<{ value: ReceivingStatus; label: string }> = [
   { value: "pending", label: "Pendientes" },
   { value: "in_process", label: "En proceso" },
@@ -38,20 +42,19 @@ export function ReceivingPage() {
     deleteIncidentType,
   } = useReceivingDocuments();
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<TablePageSize>(DEFAULT_PAGE_SIZE);
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [incidentTypeModalOpen, setIncidentTypeModalOpen] = useState(false);
-  const totalPages = Math.max(1, Math.ceil(filteredDocuments.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filteredDocuments.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paginatedDocuments = useMemo(
-    () => filteredDocuments.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
-    [currentPage, filteredDocuments],
+    () => filteredDocuments.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [currentPage, filteredDocuments, pageSize],
   );
   const selectedDocument = useMemo(
     () => data.documents.find((document) => document.id === selectedDocumentId) ?? null,
     [data.documents, selectedDocumentId],
   );
-  const firstVisible = filteredDocuments.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
-  const lastVisible = Math.min(currentPage * PAGE_SIZE, filteredDocuments.length);
 
   function handleTabChange(tab: ReceivingTab) {
     updateFilters({ tab });
@@ -72,6 +75,12 @@ export function ReceivingPage() {
 
   function changePage(nextPage: number) {
     setPage(Math.min(Math.max(nextPage, 1), totalPages));
+    setSelectedDocumentId(null);
+  }
+
+  function handlePageSizeChange(nextPageSize: TablePageSize) {
+    setPageSize(nextPageSize);
+    setPage(1);
     setSelectedDocumentId(null);
   }
 
@@ -107,9 +116,9 @@ export function ReceivingPage() {
         </p>
       ) : null}
 
-      <section className="rounded-lg border border-[var(--color-border)] bg-white p-2.5 shadow-sm">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="inline-flex rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] p-1">
+      <section className="rounded-lg border border-[var(--color-border)] bg-white p-3 shadow-sm">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             <TabButton
               active={filters.tab === "orders"}
               label="Ordenes"
@@ -122,7 +131,7 @@ export function ReceivingPage() {
             />
           </div>
           {filters.tab === "orders" ? (
-            <div className="grid min-w-0 flex-1 gap-3 lg:grid-cols-[minmax(260px,1fr)_auto]">
+            <div className="grid min-w-0 flex-1 gap-3 md:grid-cols-[minmax(260px,1fr)_auto] md:items-center">
               <Input
                 aria-label="Buscar recepciones"
                 className="h-10"
@@ -133,19 +142,12 @@ export function ReceivingPage() {
               />
               <div className="flex flex-wrap gap-2">
                 {STATUS_FILTERS.map((status) => (
-                  <button
-                    className={cn(
-                      "min-h-10 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
-                      filters.status === status.value
-                        ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
-                        : "border-[var(--color-border)] bg-white text-[var(--color-title)] hover:bg-[var(--color-app-background)]",
-                    )}
+                  <ChipButton
+                    active={filters.status === status.value}
                     key={status.value}
+                    label={status.label}
                     onClick={() => handleStatusChange(status.value)}
-                    type="button"
-                  >
-                    {status.label}
-                  </button>
+                  />
                 ))}
               </div>
             </div>
@@ -164,16 +166,15 @@ export function ReceivingPage() {
                 selectedDocumentId={selectedDocumentId}
                 onSelect={setSelectedDocumentId}
               />
-              {filteredDocuments.length > 0 ? (
-                <TableFooter
-                  currentPage={currentPage}
-                  firstVisible={firstVisible}
-                  lastVisible={lastVisible}
-                  totalItems={filteredDocuments.length}
-                  totalPages={totalPages}
-                  onPageChange={changePage}
-                />
-              ) : null}
+              <TablePagination
+                ariaLabel="Paginacion de recepciones"
+                itemLabel="documentos"
+                page={currentPage}
+                pageSize={pageSize}
+                totalItems={filteredDocuments.length}
+                onPageChange={changePage}
+                onPageSizeChange={handlePageSizeChange}
+              />
             </>
           )}
         </section>
@@ -213,10 +214,35 @@ function TabButton({
   return (
     <button
       className={cn(
-        "min-h-9 rounded-md px-4 text-sm font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
+        "min-h-9 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
         active
-          ? "bg-white text-[var(--color-title)] shadow-sm"
-          : "text-[var(--color-text-muted)] hover:text-[var(--color-title)]",
+          ? "border-blue-200 bg-blue-100 text-[var(--color-title)] shadow-sm"
+          : "border-[var(--color-border)] bg-white text-[var(--color-title)] hover:bg-[var(--color-app-background)]",
+      )}
+      onClick={onClick}
+      type="button"
+    >
+      {label}
+    </button>
+  );
+}
+
+function ChipButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={cn(
+        "min-h-9 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
+        active
+          ? "border-blue-200 bg-blue-100 text-[var(--color-title)] shadow-sm"
+          : "border-[var(--color-border)] bg-white text-[var(--color-title)] hover:bg-[var(--color-app-background)]",
       )}
       onClick={onClick}
       type="button"
@@ -284,13 +310,13 @@ function ReceivingDocumentsTable({
                 }}
                 tabIndex={0}
               >
-                <td className="px-4 py-2.5">
+                <td className="px-4 py-3">
                   <p className="font-bold text-[var(--color-title)]">{document.documentNumber}</p>
                   <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
                     {document.documentTypeLabel}
                   </p>
                 </td>
-                <td className="px-4 py-2.5">
+                <td className="px-4 py-3">
                   <p className="truncate font-semibold text-[var(--color-title)]">
                     {document.supplierOrSource}
                   </p>
@@ -298,16 +324,16 @@ function ReceivingDocumentsTable({
                     <ReceivingStatusBadge status={document.status} />
                   </div>
                 </td>
-                <td className="px-4 py-2.5 font-medium text-[var(--color-text)]">
+                <td className="px-4 py-3 font-medium text-[var(--color-text)]">
                   {document.expectedDate ? formatDate(document.expectedDate) : "-"}
                 </td>
-                <td className="px-4 py-2.5 text-right font-bold text-[var(--color-title)]">
+                <td className="px-4 py-3 text-right font-bold text-[var(--color-title)]">
                   {formatNumber(document.productCount)}
                 </td>
-                <td className="px-4 py-2.5">
+                <td className="px-4 py-3">
                   <ReceivingProgress document={document} />
                 </td>
-                <td className="px-4 py-2.5 font-medium text-[var(--color-text)]">
+                <td className="px-4 py-3 font-medium text-[var(--color-text)]">
                   {formatDate(document.lastUpdatedAt)}
                 </td>
               </tr>
@@ -329,7 +355,7 @@ function SelectedDocumentPanel({
   onClose: () => void;
 }) {
   return (
-    <section className="rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm">
+    <section className="rounded-lg border border-[var(--color-border)] bg-white p-3 shadow-sm sm:p-4">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -338,7 +364,7 @@ function SelectedDocumentPanel({
             </p>
             <ReceivingStatusBadge status={document.status} />
           </div>
-          <h2 className="mt-1 text-xl font-bold text-[var(--color-title)]">
+          <h2 className="mt-1 text-lg font-bold text-[var(--color-title)]">
             {document.documentNumber}
           </h2>
           <p className="mt-1 text-sm font-semibold text-[var(--color-text)]">
@@ -610,58 +636,6 @@ function ReceivingProgress({ document }: { document: ReceivingDocumentRow }) {
           style={{ width: `${percentage}%` }}
         />
       </div>
-    </div>
-  );
-}
-
-function TableFooter({
-  currentPage,
-  firstVisible,
-  lastVisible,
-  totalItems,
-  totalPages,
-  onPageChange,
-}: {
-  currentPage: number;
-  firstVisible: number;
-  lastVisible: number;
-  totalItems: number;
-  totalPages: number;
-  onPageChange: (page: number) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-3 border-t border-[var(--color-border)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-sm text-[var(--color-text-muted)]">
-        Mostrando {firstVisible}-{lastVisible} de {totalItems} documentos
-      </p>
-      <nav
-        aria-label="Paginacion de recepciones"
-        className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-start"
-      >
-        <Button
-          aria-label="Pagina anterior"
-          className="min-h-9 px-3 py-1.5"
-          disabled={currentPage === 1}
-          onClick={() => onPageChange(currentPage - 1)}
-          type="button"
-          variant="secondary"
-        >
-          {"<"}
-        </Button>
-        <span className="min-w-12 text-center text-sm font-semibold text-[var(--color-text)]">
-          {currentPage} / {totalPages}
-        </span>
-        <Button
-          aria-label="Pagina siguiente"
-          className="min-h-9 px-3 py-1.5"
-          disabled={currentPage === totalPages}
-          onClick={() => onPageChange(currentPage + 1)}
-          type="button"
-          variant="secondary"
-        >
-          {">"}
-        </Button>
-      </nav>
     </div>
   );
 }
