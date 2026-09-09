@@ -11,11 +11,11 @@ import type {
   InventoryStatus,
   TransferRequestDto,
 } from "@/modules/inventory/application/dto/InventoryAlertsDto";
-import { AdjustInventoryStockService } from "@/modules/inventory/application/services/AdjustInventoryStockService";
 import {
   GetInventoryAlertsService,
   isExpiringSoon,
 } from "@/modules/inventory/application/services/GetInventoryAlertsService";
+import { RegisterInventoryAdjustmentService } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
 
 export type InventoryStatusFilter = InventoryStatus | "all";
 export type InventoryKpiFilter = "all" | "active" | "lowStock" | "expiringSoon" | "outOfStock";
@@ -39,7 +39,10 @@ export function useInventoryAlerts() {
   const repositories = useRepositories();
   const { currentBranch, branches: headerBranches, loading: branchLoading } = useActiveBranch();
   const getService = useMemo(() => new GetInventoryAlertsService(repositories), [repositories]);
-  const adjustService = useMemo(() => new AdjustInventoryStockService(repositories), [repositories]);
+  const adjustmentService = useMemo(
+    () => new RegisterInventoryAdjustmentService(repositories),
+    [repositories],
+  );
   const [data, setData] = useState<InventoryAlertsData>(EMPTY_DATA);
   const [branchId, setBranchIdState] = useState("");
   const [search, setSearchState] = useState("");
@@ -130,7 +133,8 @@ export function useInventoryAlerts() {
     }),
     [baseFilteredRows, data.visibility.showExpirationFeatures],
   );
-  const activeBranch = data.branches.find((branch) => branch.id === effectiveBranchId) ?? currentBranch;
+  const activeBranch =
+    data.branches.find((branch) => branch.id === effectiveBranchId) ?? currentBranch;
   const activeLocations = data.locations.filter(
     (location) => location.status === LocationStatus.active,
   );
@@ -151,9 +155,7 @@ export function useInventoryAlerts() {
     setKpiFilterState(value);
     if (value === "lowStock") {
       setStatusState((current) =>
-        current === "critical" || current === "near_minimum" || current === "all"
-          ? current
-          : "all",
+        current === "critical" || current === "near_minimum" || current === "all" ? current : "all",
       );
     }
     if (value === "outOfStock") setStatusState("out_of_stock");
@@ -164,10 +166,12 @@ export function useInventoryAlerts() {
     setBusy(true);
     setError(null);
     try {
-      await adjustService.execute(dto);
+      const result = await adjustmentService.execute(dto);
       await reload();
+      return result;
     } catch (caughtError) {
-      const message = caughtError instanceof Error ? caughtError.message : "No se pudo registrar el ajuste.";
+      const message =
+        caughtError instanceof Error ? caughtError.message : "No se pudo registrar el ajuste.";
       setError(message);
       throw new Error(message);
     } finally {
@@ -246,7 +250,10 @@ export function useInventoryAlerts() {
     status,
     kpiFilter: effectiveKpiFilter,
     filtersOpen,
-    loading: branchLoading || loading || (Boolean(effectiveBranchId) && loadedBranchId !== effectiveBranchId),
+    loading:
+      branchLoading ||
+      loading ||
+      (Boolean(effectiveBranchId) && loadedBranchId !== effectiveBranchId),
     busy,
     error,
     lastUpdatedAt,
@@ -275,15 +282,15 @@ function filterRows(
   return rows.filter((row) => {
     const matchesSearch =
       !query ||
-      [row.productName, row.sku, row.categoryName, row.defaultLocationName]
-        .some((value) => value.toLowerCase().includes(query));
+      [row.productName, row.sku, row.categoryName, row.defaultLocationName].some((value) =>
+        value.toLowerCase().includes(query),
+      );
     const matchesCategory = categoryId === "all" || row.categoryId === categoryId;
     const matchesStatus = status === "all" || row.status === status;
     const matchesKpi =
       kpiFilter === "all" ||
       kpiFilter === "active" ||
-      (kpiFilter === "lowStock" &&
-        (row.status === "critical" || row.status === "near_minimum")) ||
+      (kpiFilter === "lowStock" && (row.status === "critical" || row.status === "near_minimum")) ||
       (kpiFilter === "expiringSoon" &&
         row.tracksExpiration &&
         isExpiringSoon(row.nextExpirationDate)) ||

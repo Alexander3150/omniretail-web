@@ -27,10 +27,15 @@ export function validateAdjustment(
     errors.quantity = "Ingresa una cantidad valida.";
   } else if (dto.movementKind !== "count" && dto.quantity <= 0) {
     errors.quantity = "La cantidad debe ser mayor que cero.";
-  } else if (dto.movementKind === "out" && dto.quantity > locationQuantity) {
+  } else if (
+    (dto.movementKind === "out" || dto.movementKind === "waste") &&
+    dto.quantity > locationQuantity
+  ) {
     errors.quantity = "No puede generar stock negativo.";
   } else if (dto.movementKind === "count" && row.quantity - dto.quantity > locationQuantity) {
     errors.quantity = "La correccion no puede descontar mas stock del disponible en la ubicacion.";
+  } else if (dto.movementKind === "count" && dto.quantity === row.quantity) {
+    errors.quantity = "El conteo coincide con el stock actual.";
   }
   if (!dto.reason.trim()) errors.reason = "El motivo es requerido.";
   return errors;

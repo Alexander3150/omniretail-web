@@ -118,9 +118,11 @@ export interface AdjustStockDto {
   productId: string;
   branchId: string;
   locationId: string;
-  movementKind: "in" | "out" | "count";
+  movementKind: "in" | "out" | "waste" | "count";
   quantity: number;
   reason: string;
+  notes: string;
+  performedByUserId?: string;
 }
 
 export interface TransferRequestDto {
