@@ -17,6 +17,7 @@ import type {
   EmailVerification,
   IncidentType,
   InventoryBalance,
+  InventoryAdjustment,
   InventoryMovement,
   InventoryTransfer,
   InventoryTransferItem,
@@ -90,6 +91,7 @@ export interface MockDatabase {
   productInventorySettings: ProductInventorySettings[];
   inventoryBalances: InventoryBalance[];
   inventoryMovements: InventoryMovement[];
+  inventoryAdjustments: InventoryAdjustment[];
   inventoryTransfers: InventoryTransfer[];
   inventoryTransferItems: InventoryTransferItem[];
   inventoryTransferRequests: InventoryTransferRequest[];

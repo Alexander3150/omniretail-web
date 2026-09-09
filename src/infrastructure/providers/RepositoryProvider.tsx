@@ -13,6 +13,7 @@ import type {
   CustomerPaymentMethodRepository,
   CustomerRepository,
   DispatchRepository,
+  InventoryAdjustmentRepository,
   InventoryRepository,
   InventoryTransferRepository,
   InventoryTransferRequestRepository,
@@ -49,6 +50,7 @@ import {
   MockCustomerPaymentMethodRepository,
   MockCustomerRepository,
   MockDispatchRepository,
+  MockInventoryAdjustmentRepository,
   MockInventoryRepository,
   MockInventoryTransferRepository,
   MockInventoryTransferRequestRepository,
@@ -85,6 +87,7 @@ export interface RepositoryRegistry {
   units: UnitRepository;
   attributes: AttributeRepository;
   promotions: PromotionRepository;
+  inventoryAdjustments: InventoryAdjustmentRepository;
   inventory: InventoryRepository;
   inventoryTransfers: InventoryTransferRepository;
   inventoryTransferRequests: InventoryTransferRequestRepository;
@@ -134,6 +137,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       units: new MockUnitRepository(store, eventBus),
       attributes: new MockAttributeRepository(store, eventBus),
       promotions: new MockPromotionRepository(store, eventBus),
+      inventoryAdjustments: new MockInventoryAdjustmentRepository(store, eventBus),
       inventory: new MockInventoryRepository(store, eventBus),
       inventoryTransfers: new MockInventoryTransferRepository(store, eventBus),
       inventoryTransferRequests: new MockInventoryTransferRequestRepository(store, eventBus),
