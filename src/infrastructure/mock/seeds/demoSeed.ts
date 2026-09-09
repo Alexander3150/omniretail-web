@@ -249,7 +249,8 @@ export const demoSeedDatabase: MockDatabase = {
       id: "auth-admin",
       userId: "user-admin",
       email: "admin@ferrepharma.demo",
-      passwordHashMock: "mock-hash-admin",
+      // demo password: "AdminDemo123" (mock only, not a real credential)
+      passwordHashMock: "mock-hash-12",
       status: AccountStatus.active,
       failedLoginAttempts: 0,
       createdAt: now,
@@ -259,7 +260,8 @@ export const demoSeedDatabase: MockDatabase = {
       id: "auth-customer",
       userId: "user-customer",
       email: "ana@example.com",
-      passwordHashMock: "mock-hash-customer",
+      // demo password: "ClienteDemo1" (mock only, not a real credential)
+      passwordHashMock: "mock-hash-12",
       status: AccountStatus.active,
       failedLoginAttempts: 0,
       createdAt: now,

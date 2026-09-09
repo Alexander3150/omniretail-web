@@ -5,6 +5,7 @@ import {
   authPolicy,
   GENERIC_AUTH_ERROR_MESSAGE,
   LOGIN_ATTEMPT_RULES,
+  FAILED_ATTEMPTS_WINDOW_MINUTES,
   getLockoutMinutesForOccurrence,
 } from "@/config/auth-policy";
 import { sessionPolicy } from "@/config/session-policy";
@@ -14,6 +15,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
   async login(input: Parameters<AuthRepository["login"]>[0]) {
     const normalizedEmail = input.email.trim().toLowerCase();
     const now = new Date();
+    const windowMs = FAILED_ATTEMPTS_WINDOW_MINUTES * 60 * 1000;
 
     const outcome = this.store.mutate((db) => {
       const account = db.authAccounts.find(
@@ -39,18 +41,38 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       }
 
       if (account.status !== AccountStatus.active) {
-        this.logAuthAudit(db, { tenantId, actorUserId: account.userId, action: "login_failed" });
+        this.logAuthAudit(db, {
+          tenantId,
+          actorUserId: account.userId,
+          accountId: account.id,
+          action: "login_failed",
+        });
         return { ok: false as const };
       }
 
       const expectedHash = `mock-hash-${input.passwordMock.length}`;
       if (account.passwordHashMock !== expectedHash) {
-        account.failedLoginAttempts += 1;
-        const rule = LOGIN_ATTEMPT_RULES.find(
-          (item) => item.attemptNumber === account.failedLoginAttempts,
-        );
+        // Only count failures within the active window (doc 4.7) — older
+        // ones don't carry over. Derived from auditLogs instead of a
+        // stored counter, so it self-resets with time automatically.
+        const recentFailures = db.auditLogs.filter(
+          (log) =>
+            log.entityType === "AuthAccount" &&
+            log.entityId === account.id &&
+            (log.action === "login_failed" || log.action === "account_locked") &&
+            now.getTime() - new Date(log.createdAt).getTime() < windowMs,
+        ).length;
+        const currentAttemptNumber = recentFailures + 1;
 
-        if (rule?.triggersLockout) {
+        const rule =
+          LOGIN_ATTEMPT_RULES.find((item) => item.attemptNumber === currentAttemptNumber) ??
+          LOGIN_ATTEMPT_RULES[LOGIN_ATTEMPT_RULES.length - 1];
+
+        // Kept for display/inspection purposes; the lockout decision above
+        // uses the windowed count, not this field.
+        account.failedLoginAttempts = currentAttemptNumber;
+
+        if (rule.triggersLockout) {
           const recentLockouts = db.auditLogs.filter(
             (log) =>
               log.entityType === "AuthAccount" &&
@@ -65,10 +87,16 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
           this.logAuthAudit(db, {
             tenantId,
             actorUserId: account.userId,
+            accountId: account.id,
             action: "account_locked",
           });
         } else {
-          this.logAuthAudit(db, { tenantId, actorUserId: account.userId, action: "login_failed" });
+          this.logAuthAudit(db, {
+            tenantId,
+            actorUserId: account.userId,
+            accountId: account.id,
+            action: "login_failed",
+          });
         }
 
         account.updatedAt = now.toISOString();
@@ -79,7 +107,12 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       account.lockedUntil = undefined;
       account.lastLoginAt = now.toISOString();
       account.updatedAt = now.toISOString();
-      this.logAuthAudit(db, { tenantId, actorUserId: account.userId, action: "login_success" });
+      this.logAuthAudit(db, {
+        tenantId,
+        actorUserId: account.userId,
+        accountId: account.id,
+        action: "login_success",
+      });
 
       const expires = new Date(
         now.getTime() +
@@ -224,7 +257,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
   }
   private logAuthAudit(
     db: MockDatabase,
-    entry: { tenantId: string; actorUserId?: string; action: string },
+    entry: { tenantId: string; actorUserId?: string; accountId?: string; action: string },
   ) {
     db.auditLogs.push({
       id: this.id("audit"),
@@ -232,6 +265,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       actorUserId: entry.actorUserId,
       action: entry.action,
       entityType: "AuthAccount",
+      entityId: entry.accountId,
       createdAt: this.now(),
     });
   }
