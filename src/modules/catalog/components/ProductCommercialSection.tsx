@@ -5,16 +5,17 @@ import { ProductStatus, ProductType } from "@/core/enums";
 import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
 import { Select } from "@/shared/components/Select";
-import type { CreateProductDto } from "@/modules/catalog/application/dto/CreateProductDto";
+import type { ProductEditorDto } from "@/modules/catalog/application/dto/ProductEditorDto";
 import type { ProductValidationErrors } from "@/modules/catalog/validation/product.validation";
 import { productTypeLabels } from "@/modules/catalog/components/productLabels";
+import { parseDecimalInput } from "@/shared/utils/numberInput";
 
 interface ProductCommercialSectionProps {
-  value: CreateProductDto;
+  value: ProductEditorDto;
   categories: Category[];
   units: Unit[];
   errors: ProductValidationErrors;
-  onChange: (value: Partial<CreateProductDto>) => void;
+  onChange: (value: Partial<ProductEditorDto>) => void;
 }
 
 export function ProductCommercialSection({
@@ -73,7 +74,7 @@ export function ProductCommercialSection({
           <Input
             id="salePrice"
             min="0"
-            onChange={(event) => onChange({ salePrice: Number(event.target.value) })}
+            onChange={(event) => onChange({ salePrice: parseDecimalInput(event.target.value) })}
             step="0.01"
             type="number"
             value={value.salePrice}

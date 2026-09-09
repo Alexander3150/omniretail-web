@@ -5,6 +5,11 @@ import type {
   ProductEditorDto,
   ProductMediaEditorValue,
 } from "@/modules/catalog/application/dto/ProductEditorDto";
+import {
+  isPositiveInteger,
+  isPositiveNumber as isPositiveNumericInput,
+  toFiniteNumber,
+} from "@/shared/utils/numberInput";
 import { ProductMapper } from "@/modules/catalog/application/mappers/ProductMapper";
 import {
   applyTrackingRules,
@@ -97,7 +102,7 @@ export function toProductDto(dto: ProductEditorDto) {
     categoryId: dto.categoryId,
     baseUnitId: dto.baseUnitId,
     saleUnitId: dto.saleUnitId,
-    salePrice: dto.salePrice,
+    salePrice: toFiniteNumber(dto.salePrice),
     status: dto.status,
     tracking: dto.tracking,
     channels: dto.channels,
@@ -120,8 +125,8 @@ export async function syncEditorRelatedData(
         .filter((tier) => tier.active)
         .map((tier) => ({
           tenantId: product.tenantId,
-          minQuantity: tier.minQuantity,
-          unitPrice: tier.unitPrice,
+          minQuantity: toFiniteNumber(tier.minQuantity),
+          unitPrice: toFiniteNumber(tier.unitPrice),
           active: tier.active,
         })),
     ),
@@ -132,7 +137,12 @@ export async function syncEditorRelatedData(
 
 function assertInventorySettings(dto: ProductEditorDto) {
   if (!dto.tracking.stock) return;
-  if (!Number.isFinite(dto.inventorySettings.minStock) || dto.inventorySettings.minStock < 0) {
+  const minStock = toFiniteNumber(dto.inventorySettings.minStock);
+  if (
+    dto.inventorySettings.minStock === "" ||
+    !Number.isSafeInteger(minStock) ||
+    minStock < 0
+  ) {
     throw new CatalogServiceError("El stock minimo debe ser mayor o igual a 0.");
   }
 }
@@ -148,7 +158,7 @@ async function syncInventorySettings(
     tenantId: product.tenantId,
     productId: product.id,
     branchId: dto.inventorySettings.branchId,
-    minStock: dto.inventorySettings.minStock,
+    minStock: toFiniteNumber(dto.inventorySettings.minStock),
     defaultLocationId: dto.inventorySettings.defaultLocationId || undefined,
   });
 }
@@ -167,7 +177,7 @@ async function syncUnitConversion(
             tenantId: product.tenantId,
             fromUnitId: dto.baseUnitId,
             toUnitId: dto.saleUnitId,
-            factor: Number(dto.saleQuantity) / dto.inventoryQuantity,
+            factor: toFiniteNumber(dto.saleQuantity) / toFiniteNumber(dto.inventoryQuantity),
           },
         ],
   );
@@ -231,22 +241,27 @@ async function syncSupplierProducts(
   dto: ProductEditorDto,
 ) {
   const current = await repositories.supplierProducts.getByProduct(product.id);
+  const suppliers = await repositories.suppliers.getActive();
+  const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier]));
   const nextIds = new Set<string>();
 
   const normalizedSupplierProducts = normalizePreferredSupplier(dto.supplierProducts);
 
   for (const supplierProduct of normalizedSupplierProducts) {
     if (!supplierProduct.supplierId) continue;
+    const supplierLeadTimeDays =
+      supplierById.get(supplierProduct.supplierId)?.leadTimeDays ??
+      supplierProduct.leadTimeDays;
     const input = {
       tenantId: product.tenantId,
       supplierId: supplierProduct.supplierId,
       productId: product.id,
       supplierSku: supplierProduct.supplierSku?.trim() || undefined,
       purchaseUnitId: supplierProduct.purchaseUnitId,
-      purchaseToBaseFactor: Number(supplierProduct.purchaseToBaseFactor),
-      lastCost: supplierProduct.lastCost,
-      leadTimeDays: supplierProduct.leadTimeDays,
-      minimumOrderQuantity: supplierProduct.minimumOrderQuantity,
+      purchaseToBaseFactor: toFiniteNumber(supplierProduct.purchaseToBaseFactor),
+      lastCost: toFiniteNumber(supplierProduct.lastCost),
+      leadTimeDays: supplierLeadTimeDays,
+      minimumOrderQuantity: toFiniteNumber(supplierProduct.minimumOrderQuantity),
       preferred: supplierProduct.preferred,
       active: true,
     };
@@ -258,8 +273,8 @@ async function syncSupplierProducts(
       saved.id,
       supplierProduct.costTiers.map((tier) => ({
         tenantId: product.tenantId,
-        minQuantity: tier.minQuantity,
-        unitCost: tier.unitCost,
+          minQuantity: toFiniteNumber(tier.minQuantity),
+          unitCost: toFiniteNumber(tier.unitCost),
       })),
     );
   }
@@ -325,16 +340,17 @@ async function syncMedia(
 function assertUniquePositiveSalesTiers(tiers: ProductEditorDto["salesPriceTiers"]) {
   const quantities = new Set<number>();
   for (const tier of tiers) {
-    if (tier.minQuantity <= 1) {
+    const minQuantity = toFiniteNumber(tier.minQuantity);
+    if (!isPositiveInteger(tier.minQuantity) || minQuantity <= 1) {
       throw new CatalogServiceError("La cantidad minima mayorista debe ser mayor a 1.");
     }
-    if (tier.unitPrice <= 0) {
+    if (!isPositiveNumericInput(tier.unitPrice)) {
       throw new CatalogServiceError("El precio mayorista debe ser mayor a 0.");
     }
-    if (quantities.has(tier.minQuantity)) {
+    if (quantities.has(minQuantity)) {
       throw new CatalogServiceError("No repitas cantidades minimas en precios mayoristas.");
     }
-    quantities.add(tier.minQuantity);
+    quantities.add(minQuantity);
   }
 }
 
@@ -349,27 +365,25 @@ function assertSupplierProducts(supplierProducts: ProductEditorDto["supplierProd
     if (!isPositiveNumber(supplierProduct.purchaseToBaseFactor)) {
       throw new CatalogServiceError("El contenido de compra debe ser mayor a 0.");
     }
-    if (supplierProduct.lastCost < 0) {
+    if (toFiniteNumber(supplierProduct.lastCost, -1) < 0) {
       throw new CatalogServiceError("El costo del proveedor debe ser mayor o igual a 0.");
     }
-    if (supplierProduct.minimumOrderQuantity <= 0) {
+    if (!isPositiveNumericInput(supplierProduct.minimumOrderQuantity)) {
       throw new CatalogServiceError("El pedido minimo debe ser mayor a 0.");
-    }
-    if (supplierProduct.leadTimeDays < 0) {
-      throw new CatalogServiceError("La entrega no puede ser negativa.");
     }
     const quantities = new Set<number>();
     for (const tier of supplierProduct.costTiers) {
-      if (tier.minQuantity <= 0) {
+      const minQuantity = toFiniteNumber(tier.minQuantity);
+      if (!isPositiveInteger(tier.minQuantity)) {
         throw new CatalogServiceError("La cantidad minima de costo debe ser mayor a 0.");
       }
-      if (tier.unitCost < 0) {
+      if (toFiniteNumber(tier.unitCost, -1) < 0) {
         throw new CatalogServiceError("El costo por volumen debe ser mayor o igual a 0.");
       }
-      if (quantities.has(tier.minQuantity)) {
+      if (quantities.has(minQuantity)) {
         throw new CatalogServiceError("No repitas cantidades minimas en costos por proveedor.");
       }
-      quantities.add(tier.minQuantity);
+      quantities.add(minQuantity);
     }
   }
 }
