@@ -40,4 +40,4 @@ El servicio primero resuelve y valida todos los items y solo despues registra mo
 
 Antes de persistir una venta POS deben validarse: usuario actual, permiso `pos.sales.create`, acceso a sucursal, turno abierto por usuario+sucursal, carrito no vacio, cantidades validas, stock suficiente, bloqueo de lote/serie sin trazabilidad, pagos iguales al total y datos fiscales cuando `document.type` sea `invoice`.
 
-Esta rama no implementa UI POS ni la orquestacion atomica final de `Sale + Payments + InventoryMovements + CashMovement + Order`.
+La orquestacion atomica final vive en `SaleConfirmationRepository`. Ver `docs/POS_SALE_CONFIRMATION.md` para el contrato, reglas de transferencia manual, caja, inventario, order opcional e idempotencia.

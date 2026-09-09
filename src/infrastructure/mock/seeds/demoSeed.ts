@@ -93,6 +93,7 @@ export const demoSeedDatabase: MockDatabase = {
       supportsProductAttributes: true,
       supportsKits: true,
       supportsServices: true,
+      allowedPosPaymentMethods: [PaymentMethod.cash, PaymentMethod.card, PaymentMethod.transfer],
       defaultProductTracking: { stock: true, lot: false, expiration: false, serial: false },
     },
   ],
