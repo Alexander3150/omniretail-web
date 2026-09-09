@@ -7,6 +7,8 @@ export interface CashMovement {
   type: CashMovementType;
   amount: number;
   reason: string;
+  referenceType?: string;
+  referenceId?: string;
   createdByUserId: string;
   createdAt: ISODateString;
 }

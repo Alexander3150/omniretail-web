@@ -16,6 +16,17 @@ export class MockCashShiftRepository extends BaseMockRepository implements CashS
         ) ?? null,
     );
   }
+  async getOpenByUserAndBranch(userId: string, branchId: string) {
+    return this.read(
+      (db) =>
+        db.cashShifts.find(
+          (item) =>
+            item.userId === userId &&
+            item.branchId === branchId &&
+            item.status === CashShiftStatus.open,
+        ) ?? null,
+    );
+  }
   async open(input: Parameters<CashShiftRepository["open"]>[0]) {
     const item = this.store.mutate((db) => {
       const now = this.now();

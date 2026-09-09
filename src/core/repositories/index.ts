@@ -2,6 +2,7 @@ export type * from "./TenantRepository";
 export type * from "./BusinessConfigRepository";
 export type * from "./AuthRepository";
 export type * from "./UserRepository";
+export type * from "./RoleRepository";
 export type * from "./BranchRepository";
 export type * from "./ProductRepository";
 export type * from "./ProductPriceHistoryRepository";

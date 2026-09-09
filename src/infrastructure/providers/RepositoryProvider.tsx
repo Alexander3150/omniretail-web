@@ -28,6 +28,7 @@ import type {
   PromotionRepository,
   PurchaseOrderRepository,
   ReceiptRepository,
+  RoleRepository,
   SalesRepository,
   SavedPaymentMethodRepository,
   SupplierProductRepository,
@@ -65,6 +66,7 @@ import {
   MockPromotionRepository,
   MockPurchaseOrderRepository,
   MockReceiptRepository,
+  MockRoleRepository,
   MockSalesRepository,
   MockSupplierProductRepository,
   MockSupplierRepository,
@@ -79,6 +81,7 @@ export interface RepositoryRegistry {
   businessConfig: BusinessConfigRepository;
   auth: AuthRepository;
   users: UserRepository;
+  roles: RoleRepository;
   branches: BranchRepository;
   products: ProductRepository;
   productPriceHistory: ProductPriceHistoryRepository;
@@ -129,6 +132,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       businessConfig: new MockBusinessConfigRepository(store, eventBus),
       auth: new MockAuthRepository(store, eventBus),
       users: new MockUserRepository(store, eventBus),
+      roles: new MockRoleRepository(store, eventBus),
       branches: new MockBranchRepository(store, eventBus),
       products: new MockProductRepository(store, eventBus),
       productPriceHistory: new MockProductPriceHistoryRepository(store, eventBus),
