@@ -1,0 +1,421 @@
+import type {
+  CashMovement,
+  InventoryMovement,
+  Payment,
+  Sale,
+  SaleItem,
+} from "@/core/entities";
+import {
+  CashMovementType,
+  CashShiftStatus,
+  InventoryMovementType,
+  PaymentMethod,
+  PaymentStatus,
+  ProductType,
+  SaleStatus,
+} from "@/core/enums";
+import type {
+  ConfirmSaleInput,
+  ConfirmSaleResult,
+  SaleConfirmationRepository,
+} from "@/core/repositories";
+import type { DataEventName, DataEventPayload } from "@/core/types/events.types";
+import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
+import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
+
+export class MockSaleConfirmationRepository
+  extends BaseMockRepository
+  implements SaleConfirmationRepository
+{
+  async confirm(input: ConfirmSaleInput): Promise<ConfirmSaleResult> {
+    this.assertBasicInput(input);
+
+    const fingerprint = getConfirmationFingerprint(input);
+    const existing = this.findExistingConfirmation(
+      input.tenantId,
+      input.confirmationId,
+      fingerprint,
+    );
+    if (existing) return existing;
+
+    const result = this.store.transact((db) => {
+      this.assertReferences(input, db);
+      this.assertPaymentMethods(input, db);
+      this.assertPayments(input, db);
+
+      const now = this.now();
+      const saleId = this.id("sale");
+      const saleItems: SaleItem[] = input.items.map((item) => ({
+        ...item,
+        id: this.id("sale-item"),
+        saleId,
+      }));
+      const sale: Sale = {
+        id: saleId,
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        customerId: input.customerId,
+        sourceOrderId: input.sourceOrderId,
+        confirmationId: input.confirmationId,
+        confirmationFingerprint: fingerprint,
+        cashShiftId: input.cashShiftId,
+        items: saleItems,
+        number: nextSaleNumber(db.sales, input.tenantId),
+        status: SaleStatus.completed,
+        document: input.document,
+        subtotal: input.subtotal,
+        discountTotal: input.discountTotal,
+        taxTotal: input.taxTotal,
+        total: input.total,
+        createdByUserId: input.cashierUserId,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      const inventoryMovements = this.registerInventoryMovements(input, sale, saleItems, db);
+      const payments = input.payments.map<Payment>((paymentInput) => ({
+        id: this.id("payments"),
+        tenantId: input.tenantId,
+        saleId,
+        orderId: input.sourceOrderId,
+        method: paymentInput.method,
+        status: paymentInput.status ?? PaymentStatus.approved,
+        amount: paymentInput.amount,
+        currency: paymentInput.currency,
+        bankAccountId: paymentInput.bankAccountId,
+        reference: paymentInput.reference,
+        manualVerification: paymentInput.manualVerification
+          ? {
+              ...paymentInput.manualVerification,
+              verifiedAt: now,
+            }
+          : undefined,
+        createdAt: now,
+      }));
+      const cashTotal = payments
+        .filter((payment) => payment.method === PaymentMethod.cash)
+        .reduce((sum, payment) => sum + payment.amount, 0);
+      const cashMovement =
+        cashTotal > 0
+          ? ({
+              id: this.id("cash-movement"),
+              cashShiftId: input.cashShiftId,
+              type: CashMovementType.in,
+              amount: cashTotal,
+              reason: `Venta ${sale.number}`,
+              referenceType: "sale",
+              referenceId: sale.id,
+              createdByUserId: input.cashierUserId,
+              createdAt: now,
+            } satisfies CashMovement)
+          : undefined;
+
+      db.sales.push(sale);
+      db.saleItems.push(...saleItems);
+      db.payments.push(...payments);
+      if (cashMovement) db.cashMovements.push(cashMovement);
+
+      return {
+        sale,
+        payments,
+        inventoryMovements,
+        cashMovement,
+        idempotent: false,
+      };
+    });
+
+    this.emitAfterCommit(result);
+    return result;
+  }
+
+  private findExistingConfirmation(
+    tenantId: string,
+    confirmationId: string,
+    fingerprint: string,
+  ): ConfirmSaleResult | null {
+    return this.read((db) => {
+      const sale = db.sales.find(
+        (item) => item.tenantId === tenantId && item.confirmationId === confirmationId,
+      );
+      if (!sale) return null;
+      if (sale.confirmationFingerprint !== fingerprint) {
+        throw new Error(`La confirmacion ${confirmationId} ya fue usada con un payload distinto.`);
+      }
+      const payments = db.payments.filter((payment) => payment.saleId === sale.id);
+      const inventoryMovements = db.inventoryMovements.filter(
+        (movement) => movement.referenceType === "sale" && movement.referenceId === sale.id,
+      );
+      const cashMovement = db.cashMovements.find(
+        (movement) => movement.referenceType === "sale" && movement.referenceId === sale.id,
+      );
+      if (payments.length === 0) {
+        throw new Error(`La confirmacion ${confirmationId} existe en estado incompleto.`);
+      }
+      return {
+        sale,
+        payments,
+        inventoryMovements,
+        cashMovement,
+        idempotent: true,
+      };
+    });
+  }
+
+  private assertBasicInput(input: ConfirmSaleInput): void {
+    if (!input.confirmationId.trim()) throw new Error("confirmationId es requerido.");
+    if (!input.tenantId) throw new Error("tenantId es requerido.");
+    if (!input.branchId) throw new Error("branchId es requerido.");
+    if (!input.cashierUserId) throw new Error("cashierUserId es requerido.");
+    if (!input.cashShiftId) throw new Error("cashShiftId es requerido.");
+    if (input.items.length === 0) throw new Error("La venta debe tener al menos un item.");
+    if (input.payments.length === 0) throw new Error("La venta debe tener al menos un pago.");
+    input.items.forEach((item) => {
+      if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
+        throw new Error(`Cantidad invalida para ${item.productId}.`);
+      }
+    });
+    input.payments.forEach((payment) => {
+      if (!Number.isFinite(payment.amount) || payment.amount <= 0) {
+        throw new Error("Cada pago debe tener amount mayor a cero.");
+      }
+    });
+  }
+
+  private assertReferences(input: ConfirmSaleInput, db: MockDatabase): void {
+    const branch = db.branches.find((item) => item.id === input.branchId);
+    if (!branch || branch.tenantId !== input.tenantId) {
+      throw new Error(`Branch not found for tenant: ${input.branchId}`);
+    }
+    const user = db.users.find((item) => item.id === input.cashierUserId);
+    if (!user || user.tenantId !== input.tenantId) {
+      throw new Error(`User not found for tenant: ${input.cashierUserId}`);
+    }
+    const shift = db.cashShifts.find((item) => item.id === input.cashShiftId);
+    if (
+      !shift ||
+      shift.tenantId !== input.tenantId ||
+      shift.branchId !== input.branchId ||
+      shift.userId !== input.cashierUserId ||
+      shift.status !== CashShiftStatus.open
+    ) {
+      throw new Error("No existe un turno abierto para usuario y sucursal.");
+    }
+    if (input.customerId) {
+      const customer = db.customers.find((item) => item.id === input.customerId);
+      if (!customer || customer.tenantId !== input.tenantId) {
+        throw new Error(`Customer not found for tenant: ${input.customerId}`);
+      }
+    }
+    if (input.sourceOrderId) {
+      const order = db.orders.find((item) => item.id === input.sourceOrderId);
+      if (!order || order.tenantId !== input.tenantId || order.branchId !== input.branchId) {
+        throw new Error(`Order not found for tenant/branch: ${input.sourceOrderId}`);
+      }
+    }
+  }
+
+  private assertPaymentMethods(input: ConfirmSaleInput, db: MockDatabase): void {
+    const config = db.businessCapabilities.find((item) => item.tenantId === input.tenantId);
+    if (!config?.allowedPosPaymentMethods?.length) {
+      throw new Error("No existe configuracion POS de metodos de pago.");
+    }
+    input.payments.forEach((payment) => {
+      if (!config.allowedPosPaymentMethods?.includes(payment.method)) {
+        throw new Error(`Metodo de pago no habilitado: ${payment.method}`);
+      }
+    });
+  }
+
+  private assertPayments(input: ConfirmSaleInput, db: MockDatabase): void {
+    const paidTotal = input.payments.reduce((sum, payment) => sum + payment.amount, 0);
+    if (roundMoney(paidTotal) !== roundMoney(input.total)) {
+      throw new Error("La suma de pagos debe coincidir con el total de la venta.");
+    }
+
+    input.payments.forEach((payment) => {
+      if (payment.method !== PaymentMethod.transfer) return;
+      if (!payment.bankAccountId) throw new Error("La transferencia requiere cuenta bancaria.");
+      if (!payment.reference?.trim()) throw new Error("La transferencia requiere referencia.");
+      if (!payment.manualVerification?.externallyVerified) {
+        throw new Error("La transferencia requiere verificacion externa manual del cajero.");
+      }
+      if (payment.manualVerification.verifiedByUserId !== input.cashierUserId) {
+        throw new Error("La verificacion manual debe corresponder al cajero actual.");
+      }
+      const bankAccount = db.bankAccounts.find((item) => item.id === payment.bankAccountId);
+      if (
+        !bankAccount ||
+        bankAccount.tenantId !== input.tenantId ||
+        bankAccount.status !== "active" ||
+        !bankAccount.branchIds.includes(input.branchId)
+      ) {
+        throw new Error("La cuenta bancaria seleccionada no esta activa para esta sucursal.");
+      }
+    });
+  }
+
+  private registerInventoryMovements(
+    input: ConfirmSaleInput,
+    sale: Sale,
+    saleItems: SaleItem[],
+    db: MockDatabase,
+  ): InventoryMovement[] {
+    const now = this.now();
+    const movements: InventoryMovement[] = [];
+    const plannedQuantities = new Map<string, number>();
+
+    saleItems.forEach((saleItem) => {
+      const product = db.products.find((item) => item.id === saleItem.productId);
+      if (!product || product.tenantId !== input.tenantId) {
+        throw new Error(`Producto no encontrado para venta: ${saleItem.productId}`);
+      }
+      if (product.productType !== ProductType.physical || !product.tracking.stock) return;
+      if (product.tracking.lot || product.tracking.serial) {
+        throw new Error(
+          `La venta ${sale.number} contiene ${product.name} con trazabilidad pendiente de lote/serie.`,
+        );
+      }
+
+      const balances = db.inventoryBalances.filter(
+        (balance) =>
+          balance.tenantId === input.tenantId &&
+          balance.branchId === input.branchId &&
+          balance.productId === saleItem.productId,
+      );
+      const sourceBalance = balances.find((balance) => balance.quantity > 0) ?? balances[0];
+      const balanceKey = `${saleItem.productId}:${sourceBalance?.locationId ?? ""}`;
+      const quantityBefore = plannedQuantities.get(balanceKey) ?? sourceBalance?.quantity ?? 0;
+      const quantityAfter = quantityBefore - saleItem.quantity;
+      if (quantityAfter < 0) throw new Error(`Stock insuficiente para ${product.name}.`);
+
+      plannedQuantities.set(balanceKey, quantityAfter);
+      if (!sourceBalance) {
+        throw new Error(`Stock insuficiente para ${product.name}.`);
+      }
+      sourceBalance.quantity = quantityAfter;
+      sourceBalance.updatedAt = now;
+
+      const movement: InventoryMovement = {
+        id: this.id("movement"),
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        productId: saleItem.productId,
+        type: InventoryMovementType.out,
+        reason: `Venta ${sale.number}`,
+        quantity: saleItem.quantity,
+        quantityBefore,
+        quantityAfter,
+        fromLocationId: sourceBalance.locationId,
+        referenceType: "sale",
+        referenceId: sale.id,
+        performedByUserId: input.cashierUserId,
+        createdAt: now,
+      };
+      db.inventoryMovements.push(movement);
+      movements.push(movement);
+    });
+
+    return movements;
+  }
+
+  private emitAfterCommit(result: ConfirmSaleResult): void {
+    this.emitSafely("sale.changed", {
+      entityId: result.sale.id,
+      tenantId: result.sale.tenantId,
+      branchId: result.sale.branchId,
+      action: "created",
+    });
+    result.payments.forEach((payment) => {
+      this.emitSafely("payment.changed", {
+        entityId: payment.id,
+        tenantId: payment.tenantId,
+        action: "created",
+      });
+    });
+    result.inventoryMovements.forEach((movement) => {
+      this.emitSafely("inventory.changed", {
+        entityId: movement.id,
+        tenantId: movement.tenantId,
+        branchId: movement.branchId,
+        productId: movement.productId,
+        action: "created",
+      });
+      this.emitSafely("stock.changed", {
+        tenantId: movement.tenantId,
+        branchId: movement.branchId,
+        productId: movement.productId,
+        action: "updated",
+      });
+    });
+    if (result.cashMovement) {
+      this.emitSafely("cash-shift.changed", {
+        entityId: result.cashMovement.cashShiftId,
+        action: "updated",
+      });
+    }
+  }
+
+  private emitSafely(event: DataEventName, payload: DataEventPayload): void {
+    try {
+      this.emit(event, payload);
+    } catch {
+      // Persistence is already committed; refresh/listener failures must not fail confirmation.
+    }
+  }
+}
+
+function nextSaleNumber(sales: Sale[], tenantId: string): string {
+  const prefix = "POS-";
+  const next =
+    sales
+      .filter((sale) => sale.tenantId === tenantId && sale.number.startsWith(prefix))
+      .map((sale) => Number(sale.number.slice(prefix.length)))
+      .filter((value) => Number.isInteger(value))
+      .reduce((max, value) => Math.max(max, value), 0) + 1;
+  return `${prefix}${String(next).padStart(3, "0")}`;
+}
+
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function getConfirmationFingerprint(input: ConfirmSaleInput): string {
+  return JSON.stringify({
+    tenantId: input.tenantId,
+    branchId: input.branchId,
+    cashierUserId: input.cashierUserId,
+    cashShiftId: input.cashShiftId,
+    customerId: input.customerId ?? null,
+    sourceOrderId: input.sourceOrderId ?? null,
+    document: input.document ?? null,
+    subtotal: roundMoney(input.subtotal),
+    discountTotal: roundMoney(input.discountTotal),
+    taxTotal: roundMoney(input.taxTotal),
+    total: roundMoney(input.total),
+    items: input.items
+      .map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice: roundMoney(item.unitPrice),
+        discount: roundMoney(item.discount),
+        subtotal: roundMoney(item.subtotal),
+      }))
+      .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
+    payments: input.payments
+      .map((payment) => ({
+        method: payment.method,
+        amount: roundMoney(payment.amount),
+        currency: payment.currency,
+        status: payment.status ?? PaymentStatus.approved,
+        bankAccountId: payment.bankAccountId ?? null,
+        reference: payment.reference ?? null,
+        manualVerification: payment.manualVerification
+          ? {
+              externallyVerified: payment.manualVerification.externallyVerified,
+              verifiedByUserId: payment.manualVerification.verifiedByUserId,
+            }
+          : null,
+      }))
+      .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
+  });
+}

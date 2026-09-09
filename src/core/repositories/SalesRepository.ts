@@ -8,6 +8,7 @@ export interface CreateSaleInput {
   branchId: string;
   customerId?: string;
   sourceOrderId?: string;
+  confirmationId?: string;
   cashShiftId: string;
   items: CreateSaleItemInput[];
   document?: SaleDocumentSnapshot;
