@@ -1,0 +1,815 @@
+"use client";
+
+import { useMemo, useState, type SVGProps } from "react";
+import { Button } from "@/shared/components/Button";
+import { Input } from "@/shared/components/Input";
+import { Modal } from "@/shared/components/Modal";
+import { PageHeader } from "@/shared/components/PageHeader";
+import { useToast } from "@/shared/components/Toast";
+import { cn } from "@/shared/utils/cn";
+import type {
+  IncidentTypeReadModel,
+  ReceivingDocumentRow,
+  ReceivingIncidentRow,
+  ReceivingStatus,
+  ReceivingTab,
+} from "@/modules/receiving/application/dto/ReceivingDocumentsDto";
+import { useReceivingDocuments } from "@/modules/receiving/hooks/useReceivingDocuments";
+
+const PAGE_SIZE = 10;
+const STATUS_FILTERS: Array<{ value: ReceivingStatus; label: string }> = [
+  { value: "pending", label: "Pendientes" },
+  { value: "in_process", label: "En proceso" },
+  { value: "partial", label: "Parciales" },
+  { value: "received", label: "Recibidas" },
+];
+
+export function ReceivingPage() {
+  const { showToast } = useToast();
+  const {
+    data,
+    filters,
+    filteredDocuments,
+    loading,
+    error,
+    updateFilters,
+    createIncidentType,
+    archiveIncidentType,
+    deleteIncidentType,
+  } = useReceivingDocuments();
+  const [page, setPage] = useState(1);
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
+  const [incidentTypeModalOpen, setIncidentTypeModalOpen] = useState(false);
+  const totalPages = Math.max(1, Math.ceil(filteredDocuments.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedDocuments = useMemo(
+    () => filteredDocuments.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+    [currentPage, filteredDocuments],
+  );
+  const selectedDocument = useMemo(
+    () => data.documents.find((document) => document.id === selectedDocumentId) ?? null,
+    [data.documents, selectedDocumentId],
+  );
+  const firstVisible = filteredDocuments.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const lastVisible = Math.min(currentPage * PAGE_SIZE, filteredDocuments.length);
+
+  function handleTabChange(tab: ReceivingTab) {
+    updateFilters({ tab });
+    setSelectedDocumentId(null);
+  }
+
+  function handleSearchChange(search: string) {
+    updateFilters({ search });
+    setPage(1);
+    setSelectedDocumentId(null);
+  }
+
+  function handleStatusChange(status: ReceivingStatus) {
+    updateFilters({ status: filters.status === status ? "all" : status });
+    setPage(1);
+    setSelectedDocumentId(null);
+  }
+
+  function changePage(nextPage: number) {
+    setPage(Math.min(Math.max(nextPage, 1), totalPages));
+    setSelectedDocumentId(null);
+  }
+
+  function handlePreparedAction(document: ReceivingDocumentRow) {
+    showToast({
+      title: getPreparedActionLabel(document.status),
+      description: "La pantalla de recepcion por documento aun no esta disponible.",
+      tone: "info",
+    });
+  }
+
+  return (
+    <div className="min-w-0 space-y-5">
+      <div>
+        <p className="mb-1 text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+          Recepciones
+        </p>
+        <PageHeader
+          title="Recepciones"
+          description="Consulta ordenes, avances de recepcion e incidencias operativas."
+          actions={
+            <Button onClick={() => setIncidentTypeModalOpen(true)} type="button" variant="secondary">
+              <AlertIcon />
+              Tipos de incidencia
+            </Button>
+          }
+        />
+      </div>
+
+      {error ? (
+        <p className="rounded-md border border-[var(--color-danger)] bg-white px-4 py-3 text-sm font-medium text-[var(--color-danger)]">
+          {error}
+        </p>
+      ) : null}
+
+      <section className="rounded-lg border border-[var(--color-border)] bg-white p-2.5 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="inline-flex rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] p-1">
+            <TabButton
+              active={filters.tab === "orders"}
+              label="Ordenes"
+              onClick={() => handleTabChange("orders")}
+            />
+            <TabButton
+              active={filters.tab === "incidents"}
+              label="Incidencias"
+              onClick={() => handleTabChange("incidents")}
+            />
+          </div>
+          {filters.tab === "orders" ? (
+            <div className="grid min-w-0 flex-1 gap-3 lg:grid-cols-[minmax(260px,1fr)_auto]">
+              <Input
+                aria-label="Buscar recepciones"
+                className="h-10"
+                onChange={(event) => handleSearchChange(event.target.value)}
+                placeholder="Buscar por orden, proveedor o producto..."
+                type="search"
+                value={filters.search}
+              />
+              <div className="flex flex-wrap gap-2">
+                {STATUS_FILTERS.map((status) => (
+                  <button
+                    className={cn(
+                      "min-h-10 rounded-md border px-3 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
+                      filters.status === status.value
+                        ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
+                        : "border-[var(--color-border)] bg-white text-[var(--color-title)] hover:bg-[var(--color-app-background)]",
+                    )}
+                    key={status.value}
+                    onClick={() => handleStatusChange(status.value)}
+                    type="button"
+                  >
+                    {status.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      {filters.tab === "orders" ? (
+        <section className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-white shadow-sm">
+          {loading ? (
+            <p className="p-5 text-sm text-[var(--color-text-muted)]">Cargando recepciones...</p>
+          ) : (
+            <>
+              <ReceivingDocumentsTable
+                documents={paginatedDocuments}
+                selectedDocumentId={selectedDocumentId}
+                onSelect={setSelectedDocumentId}
+              />
+              {filteredDocuments.length > 0 ? (
+                <TableFooter
+                  currentPage={currentPage}
+                  firstVisible={firstVisible}
+                  lastVisible={lastVisible}
+                  totalItems={filteredDocuments.length}
+                  totalPages={totalPages}
+                  onPageChange={changePage}
+                />
+              ) : null}
+            </>
+          )}
+        </section>
+      ) : (
+        <IncidentsPanel incidents={data.incidents} loading={loading} />
+      )}
+
+      {selectedDocument ? (
+        <SelectedDocumentPanel
+          document={selectedDocument}
+          onAction={handlePreparedAction}
+          onClose={() => setSelectedDocumentId(null)}
+        />
+      ) : null}
+
+      <IncidentTypesModal
+        incidentTypes={data.incidentTypes}
+        open={incidentTypeModalOpen}
+        onArchive={archiveIncidentType}
+        onClose={() => setIncidentTypeModalOpen(false)}
+        onCreate={createIncidentType}
+        onDelete={deleteIncidentType}
+      />
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={cn(
+        "min-h-9 rounded-md px-4 text-sm font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
+        active
+          ? "bg-white text-[var(--color-title)] shadow-sm"
+          : "text-[var(--color-text-muted)] hover:text-[var(--color-title)]",
+      )}
+      onClick={onClick}
+      type="button"
+    >
+      {label}
+    </button>
+  );
+}
+
+function ReceivingDocumentsTable({
+  documents,
+  selectedDocumentId,
+  onSelect,
+}: {
+  documents: ReceivingDocumentRow[];
+  selectedDocumentId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[980px] table-fixed border-collapse text-left text-sm">
+        <colgroup>
+          <col className="w-[18%]" />
+          <col className="w-[22%]" />
+          <col className="w-[14%]" />
+          <col className="w-[12%]" />
+          <col className="w-[20%]" />
+          <col className="w-[14%]" />
+        </colgroup>
+        <thead className="bg-[var(--color-structure)] text-xs uppercase text-white">
+          <tr>
+            <th className="px-4 py-2.5 font-semibold">Numero de documento</th>
+            <th className="px-4 py-2.5 font-semibold">Proveedor</th>
+            <th className="px-4 py-2.5 font-semibold">Fecha esperada</th>
+            <th className="px-4 py-2.5 text-right font-semibold">Productos</th>
+            <th className="px-4 py-2.5 font-semibold">Progreso de recepcion</th>
+            <th className="px-4 py-2.5 font-semibold">Ultima actualizacion</th>
+          </tr>
+        </thead>
+        <tbody>
+          {documents.length === 0 ? (
+            <tr>
+              <td className="px-4 py-10 text-center text-[var(--color-text-muted)]" colSpan={6}>
+                <div className="mx-auto flex max-w-sm flex-col items-center gap-2">
+                  <PackageIcon className="h-6 w-6 text-[var(--color-structure)]" />
+                  <p className="font-bold text-[var(--color-title)]">
+                    No se encontraron documentos para recepcion.
+                  </p>
+                </div>
+              </td>
+            </tr>
+          ) : (
+            documents.map((document) => (
+              <tr
+                className={cn(
+                  "cursor-pointer border-l-4 border-t border-[var(--color-border)] transition hover:bg-[var(--color-primary)]/5 focus-visible:bg-[var(--color-primary)]/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[var(--color-structure)]",
+                  getRowStatusClassName(document.status),
+                  selectedDocumentId === document.id &&
+                    "border-l-4 border-l-[var(--color-structure)] bg-[var(--color-primary)]/10",
+                )}
+                key={document.id}
+                onClick={() => onSelect(document.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") onSelect(document.id);
+                }}
+                tabIndex={0}
+              >
+                <td className="px-4 py-2.5">
+                  <p className="font-bold text-[var(--color-title)]">{document.documentNumber}</p>
+                  <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
+                    {document.documentTypeLabel}
+                  </p>
+                </td>
+                <td className="px-4 py-2.5">
+                  <p className="truncate font-semibold text-[var(--color-title)]">
+                    {document.supplierOrSource}
+                  </p>
+                  <div className="mt-1">
+                    <ReceivingStatusBadge status={document.status} />
+                  </div>
+                </td>
+                <td className="px-4 py-2.5 font-medium text-[var(--color-text)]">
+                  {document.expectedDate ? formatDate(document.expectedDate) : "-"}
+                </td>
+                <td className="px-4 py-2.5 text-right font-bold text-[var(--color-title)]">
+                  {formatNumber(document.productCount)}
+                </td>
+                <td className="px-4 py-2.5">
+                  <ReceivingProgress document={document} />
+                </td>
+                <td className="px-4 py-2.5 font-medium text-[var(--color-text)]">
+                  {formatDate(document.lastUpdatedAt)}
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SelectedDocumentPanel({
+  document,
+  onAction,
+  onClose,
+}: {
+  document: ReceivingDocumentRow;
+  onAction: (document: ReceivingDocumentRow) => void;
+  onClose: () => void;
+}) {
+  return (
+    <section className="rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+              {document.documentType === "purchase_order" ? "Orden" : "Traslado"}
+            </p>
+            <ReceivingStatusBadge status={document.status} />
+          </div>
+          <h2 className="mt-1 text-xl font-bold text-[var(--color-title)]">
+            {document.documentNumber}
+          </h2>
+          <p className="mt-1 text-sm font-semibold text-[var(--color-text)]">
+            {document.supplierOrSource}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            className="min-h-9 px-3 py-1.5"
+            onClick={() => onAction(document)}
+            type="button"
+            variant="secondary"
+          >
+            {document.status === "received" ? <EyeIcon /> : <PackageIcon />}
+            {getPreparedActionLabel(document.status)}
+          </Button>
+          <Button className="min-h-9 px-3 py-1.5" onClick={onClose} type="button" variant="ghost">
+            <XIcon />
+            Cerrar
+          </Button>
+        </div>
+      </div>
+      <dl className="mt-4 grid gap-3 border-t border-[var(--color-border)] pt-4 sm:grid-cols-4">
+        <DetailItem label="Estado" value={document.statusLabel} />
+        <DetailItem
+          label="Progreso"
+          value={`${formatNumber(document.receivedQuantity)} / ${formatNumber(
+            document.requestedQuantity,
+          )}`}
+        />
+        <DetailItem label="Productos" value={formatNumber(document.productCount)} />
+        <DetailItem
+          label="Fecha esperada"
+          value={document.expectedDate ? formatDate(document.expectedDate) : "-"}
+        />
+      </dl>
+    </section>
+  );
+}
+
+function IncidentsPanel({
+  incidents,
+  loading,
+}: {
+  incidents: ReceivingIncidentRow[];
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <section className="rounded-lg border border-[var(--color-border)] bg-white p-5 shadow-sm">
+        <p className="text-sm text-[var(--color-text-muted)]">Cargando incidencias...</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm">
+      {incidents.length === 0 ? (
+        <p className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-4 py-6 text-center text-sm font-medium text-[var(--color-text-muted)]">
+          Todavia no hay incidencias registradas.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {incidents.map((incident) => (
+            <article
+              className="grid gap-2 rounded-md border border-[var(--color-border)] p-3 md:grid-cols-[160px_minmax(0,1fr)_140px]"
+              key={incident.id}
+            >
+              <div>
+                <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">
+                  Recibo
+                </p>
+                <p className="font-bold text-[var(--color-title)]">{incident.receiptNumber}</p>
+              </div>
+              <div className="min-w-0">
+                <p className="font-semibold text-[var(--color-title)]">
+                  {incident.incidentTypeName}
+                </p>
+                <p className="mt-1 break-words text-sm text-[var(--color-text)]">
+                  {incident.description}
+                </p>
+              </div>
+              <div className="text-sm text-[var(--color-text)]">
+                <p>{formatDate(incident.createdAt)}</p>
+                {typeof incident.quantityAffected === "number" ? (
+                  <p className="mt-1 font-semibold">
+                    {formatNumber(incident.quantityAffected)} afectadas
+                  </p>
+                ) : null}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function IncidentTypesModal({
+  open,
+  incidentTypes,
+  onClose,
+  onCreate,
+  onArchive,
+  onDelete,
+}: {
+  open: boolean;
+  incidentTypes: IncidentTypeReadModel[];
+  onClose: () => void;
+  onCreate: (name: string) => Promise<void>;
+  onArchive: (id: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const { showToast } = useToast();
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleCreate() {
+    setSaving(true);
+    try {
+      await onCreate(name);
+      setName("");
+      showToast({ title: "Tipo de incidencia agregado", tone: "success" });
+    } catch (caughtError) {
+      showToast({
+        title: "No se pudo agregar",
+        description: caughtError instanceof Error ? caughtError.message : undefined,
+        tone: "danger",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleArchive(incidentType: IncidentTypeReadModel) {
+    if (!window.confirm(`Archivar ${incidentType.name}?`)) return;
+    setSaving(true);
+    try {
+      await onArchive(incidentType.id);
+      showToast({ title: "Tipo archivado", tone: "success" });
+    } catch (caughtError) {
+      showToast({
+        title: "No se pudo archivar",
+        description: caughtError instanceof Error ? caughtError.message : undefined,
+        tone: "danger",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(incidentType: IncidentTypeReadModel) {
+    if (!window.confirm(`Eliminar ${incidentType.name}?`)) return;
+    setSaving(true);
+    try {
+      await onDelete(incidentType.id);
+      showToast({ title: "Tipo eliminado", tone: "success" });
+    } catch (caughtError) {
+      showToast({
+        title: "No se pudo eliminar",
+        description: caughtError instanceof Error ? caughtError.message : undefined,
+        tone: "danger",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      size="lg"
+      subtitle="Administra la lista operativa para clasificar incidencias de recepcion."
+      title="Tipos de incidencia"
+      onClose={onClose}
+    >
+      <div className="space-y-4">
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+          <Input
+            aria-label="Nombre del tipo de incidencia"
+            disabled={saving}
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void handleCreate();
+            }}
+            placeholder="Nombre del tipo de incidencia"
+            value={name}
+          />
+          <Button disabled={saving || !name.trim()} onClick={handleCreate} type="button">
+            <PlusIcon />
+            Agregar
+          </Button>
+        </div>
+
+        <div className="space-y-2">
+          {incidentTypes.length === 0 ? (
+            <p className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-4 py-6 text-center text-sm font-medium text-[var(--color-text-muted)]">
+              No hay tipos configurados.
+            </p>
+          ) : (
+            incidentTypes.map((incidentType) => (
+              <article
+                className="flex flex-col gap-3 rounded-md border border-[var(--color-border)] p-3 sm:flex-row sm:items-center sm:justify-between"
+                key={incidentType.id}
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-bold text-[var(--color-title)]">
+                    {incidentType.name}
+                  </p>
+                  <p className="mt-1 text-xs font-semibold uppercase text-[var(--color-text-muted)]">
+                    {formatNumber(incidentType.usageCount)} usos -{" "}
+                    {incidentType.active ? "Activo" : "Archivado"}
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  {incidentType.canDelete ? (
+                    <Button
+                      className="min-h-9 px-3 py-1.5"
+                      disabled={saving}
+                      onClick={() => void handleDelete(incidentType)}
+                      type="button"
+                      variant="danger"
+                    >
+                      <TrashIcon />
+                      Eliminar
+                    </Button>
+                  ) : null}
+                  {incidentType.canArchive ? (
+                    <Button
+                      className="min-h-9 px-3 py-1.5"
+                      disabled={saving}
+                      onClick={() => void handleArchive(incidentType)}
+                      type="button"
+                      variant="secondary"
+                    >
+                      <ArchiveIcon />
+                      Archivar
+                    </Button>
+                  ) : null}
+                </div>
+              </article>
+            ))
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ReceivingProgress({ document }: { document: ReceivingDocumentRow }) {
+  const percentage =
+    document.requestedQuantity <= 0
+      ? 0
+      : Math.min(100, Math.round((document.receivedQuantity / document.requestedQuantity) * 100));
+  return (
+    <div>
+      <p className="text-xs font-semibold text-[var(--color-text)]">
+        {formatNumber(document.receivedQuantity)} / {formatNumber(document.requestedQuantity)}
+      </p>
+      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[var(--color-app-background)]">
+        <div
+          className={cn(
+            "h-full rounded-full",
+            document.status === "received" && "bg-emerald-500",
+            document.status === "partial" && "bg-orange-500",
+            document.status === "in_process" && "bg-amber-500",
+            document.status === "pending" && "bg-rose-400",
+          )}
+          style={{ width: `${percentage}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function TableFooter({
+  currentPage,
+  firstVisible,
+  lastVisible,
+  totalItems,
+  totalPages,
+  onPageChange,
+}: {
+  currentPage: number;
+  firstVisible: number;
+  lastVisible: number;
+  totalItems: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 border-t border-[var(--color-border)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-sm text-[var(--color-text-muted)]">
+        Mostrando {firstVisible}-{lastVisible} de {totalItems} documentos
+      </p>
+      <nav
+        aria-label="Paginacion de recepciones"
+        className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-start"
+      >
+        <Button
+          aria-label="Pagina anterior"
+          className="min-h-9 px-3 py-1.5"
+          disabled={currentPage === 1}
+          onClick={() => onPageChange(currentPage - 1)}
+          type="button"
+          variant="secondary"
+        >
+          {"<"}
+        </Button>
+        <span className="min-w-12 text-center text-sm font-semibold text-[var(--color-text)]">
+          {currentPage} / {totalPages}
+        </span>
+        <Button
+          aria-label="Pagina siguiente"
+          className="min-h-9 px-3 py-1.5"
+          disabled={currentPage === totalPages}
+          onClick={() => onPageChange(currentPage + 1)}
+          type="button"
+          variant="secondary"
+        >
+          {">"}
+        </Button>
+      </nav>
+    </div>
+  );
+}
+
+function ReceivingStatusBadge({ status }: { status: ReceivingStatus }) {
+  const classes: Record<ReceivingStatus, string> = {
+    pending: "bg-rose-50 text-rose-700 ring-1 ring-rose-100",
+    in_process: "bg-amber-100 text-amber-800",
+    partial: "bg-orange-100 text-orange-800",
+    received: "bg-emerald-100 text-emerald-800",
+  };
+  return (
+    <span className={cn("inline-flex rounded-md px-2 py-1 text-xs font-bold", classes[status])}>
+      {getStatusLabel(status)}
+    </span>
+  );
+}
+
+function getRowStatusClassName(status: ReceivingStatus) {
+  const classes: Record<ReceivingStatus, string> = {
+    pending: "border-l-rose-300",
+    in_process: "border-l-amber-300",
+    partial: "border-l-orange-300",
+    received: "border-l-emerald-300",
+  };
+  return classes[status];
+}
+
+function DetailItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[11px] font-bold uppercase text-[var(--color-text-muted)]">{label}</dt>
+      <dd className="mt-1 break-words text-sm font-semibold text-[var(--color-title)]">{value}</dd>
+    </div>
+  );
+}
+
+function getStatusLabel(status: ReceivingStatus) {
+  const labels: Record<ReceivingStatus, string> = {
+    pending: "Pendiente",
+    in_process: "En proceso",
+    partial: "Parcial",
+    received: "Recibida",
+  };
+  return labels[status];
+}
+
+function getPreparedActionLabel(status: ReceivingStatus) {
+  if (status === "received") return "Ver detalle";
+  if (status === "pending") return "Iniciar recepcion";
+  return "Continuar recepcion";
+}
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("es-GT").format(value);
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("es-GT", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function Icon({ children, className, ...props }: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={cn("h-4 w-4 shrink-0", className)}
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      {...props}
+    >
+      {children}
+    </svg>
+  );
+}
+
+function AlertIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </Icon>
+  );
+}
+
+function ArchiveIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M21 8v13H3V8" />
+      <path d="M1 3h22v5H1z" />
+      <path d="M10 12h4" />
+    </Icon>
+  );
+}
+
+function EyeIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </Icon>
+  );
+}
+
+function PackageIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="m3 7 9 5 9-5" />
+      <path d="M12 22V12" />
+      <path d="M21 7v10l-9 5-9-5V7l9-5 9 5Z" />
+    </Icon>
+  );
+}
+
+function PlusIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </Icon>
+  );
+}
+
+function TrashIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M19 6l-1 14H6L5 6" />
+      <path d="M10 11v5" />
+      <path d="M14 11v5" />
+    </Icon>
+  );
+}
+
+function XIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </Icon>
+  );
+}

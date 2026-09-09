@@ -12,6 +12,9 @@ export class MockReceiptRepository extends BaseMockRepository implements Receipt
   async getLinesByReceipt(receiptId: string) {
     return this.read((db) => db.receiptLines.filter((item) => item.receiptId === receiptId));
   }
+  async getIncidents() {
+    return this.read((db) => db.receiptIncidents);
+  }
   async create(input: Parameters<ReceiptRepository["create"]>[0]) {
     const item = this.store.mutate((db) => {
       const now = this.now();

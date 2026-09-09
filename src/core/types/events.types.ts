@@ -18,6 +18,7 @@ export type DataEventName =
   | "supplier-product.changed"
   | "purchase-order.changed"
   | "receipt.changed"
+  | "incident-type.changed"
   | "customer.changed"
   | "customer-payment-method.changed"
   | "order.changed"

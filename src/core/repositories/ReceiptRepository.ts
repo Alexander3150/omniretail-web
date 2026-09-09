@@ -4,6 +4,7 @@ export interface ReceiptRepository {
   getAll(): Promise<Receipt[]>;
   getById(id: string): Promise<Receipt | null>;
   getLinesByReceipt(receiptId: string): Promise<ReceiptLine[]>;
+  getIncidents(): Promise<ReceiptIncident[]>;
   create(input: Omit<Receipt, "id" | "createdAt" | "updatedAt">): Promise<Receipt>;
   update(
     id: string,
