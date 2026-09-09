@@ -1,5 +1,6 @@
 import {
   CustomerPaymentMethodStatus,
+  InventoryAdjustmentType,
   InventoryTransferReason,
   InventoryTransferStatus,
   InventoryTransferRequestStatus,
@@ -12,6 +13,7 @@ import {
 } from "@/core/enums";
 import type {
   CustomerPaymentMethod,
+  InventoryAdjustment,
   InventoryTransferRequest,
   InventoryTransfer,
   InventoryTransferItem,
@@ -30,6 +32,7 @@ type PersistedCustomerPaymentMethod = Partial<CustomerPaymentMethod> & {
 };
 
 type PersistedProductInventorySettings = Partial<ProductInventorySettings>;
+type PersistedInventoryAdjustment = Partial<InventoryAdjustment>;
 type PersistedInventoryTransferRequest = Partial<InventoryTransferRequest>;
 type PersistedInventoryTransfer = Partial<InventoryTransfer>;
 type PersistedInventoryTransferItem = Partial<InventoryTransferItem>;
@@ -39,6 +42,7 @@ type PersistedMockDatabase = Partial<
   Omit<
     MockDatabase,
     | "customerPaymentMethods"
+    | "inventoryAdjustments"
     | "inventoryTransferItems"
     | "inventoryTransferRequests"
     | "inventoryTransfers"
@@ -47,6 +51,7 @@ type PersistedMockDatabase = Partial<
   >
 > & {
   customerPaymentMethods?: PersistedCustomerPaymentMethod[];
+  inventoryAdjustments?: PersistedInventoryAdjustment[];
   inventoryTransferItems?: PersistedInventoryTransferItem[];
   inventoryTransferRequests?: PersistedInventoryTransferRequest[];
   inventoryTransfers?: PersistedInventoryTransfer[];
@@ -72,6 +77,7 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   }));
   normalized.productSalesPriceTiers = database.productSalesPriceTiers ?? [];
   normalized.productInventorySettings = normalizeProductInventorySettings(database, normalized);
+  normalized.inventoryAdjustments = normalizeInventoryAdjustments(database, normalized);
   normalized.inventoryTransferRequests = normalizeInventoryTransferRequests(database, normalized);
   normalized.inventoryTransfers = normalizeInventoryTransfers(database, normalized);
   normalized.inventoryTransferItems = normalizeInventoryTransferItems(database, normalized);
@@ -125,6 +131,62 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   }));
 
   return normalized;
+}
+
+function normalizeInventoryAdjustments(
+  database: PersistedMockDatabase,
+  normalized: MockDatabase,
+): InventoryAdjustment[] {
+  const adjustments: InventoryAdjustment[] = [];
+  (database.inventoryAdjustments ?? []).forEach((adjustment) => {
+    adjustments.push(
+      normalizePersistedInventoryAdjustment(adjustment, {
+        ...normalized,
+        inventoryAdjustments: adjustments,
+      }),
+    );
+  });
+  return adjustments;
+}
+
+function normalizePersistedInventoryAdjustment(
+  adjustment: PersistedInventoryAdjustment,
+  normalized: MockDatabase,
+): InventoryAdjustment {
+  const branch = normalized.branches.find((item) => item.id === adjustment.branchId);
+  const product = normalized.products.find((item) => item.id === adjustment.productId);
+  const location = adjustment.locationId
+    ? normalized.storageLocations.find((item) => item.id === adjustment.locationId)
+    : null;
+  const createdAt = adjustment.createdAt ?? new Date().toISOString();
+  const tenantId =
+    adjustment.tenantId ??
+    product?.tenantId ??
+    branch?.tenantId ??
+    location?.tenantId ??
+    "tenant-demo";
+  const quantityBefore = Math.max(0, adjustment.quantityBefore ?? 0);
+  const quantityAfter = Math.max(0, adjustment.quantityAfter ?? quantityBefore);
+  const delta = adjustment.delta ?? quantityAfter - quantityBefore;
+
+  return {
+    id: adjustment.id ?? `inventory-adjustment-${crypto.randomUUID()}`,
+    tenantId,
+    number: adjustment.number ?? getInventoryAdjustmentNumber(tenantId, createdAt, normalized),
+    branchId: adjustment.branchId ?? "",
+    productId: adjustment.productId ?? "",
+    locationId: adjustment.locationId,
+    type: isInventoryAdjustmentType(adjustment.type)
+      ? adjustment.type
+      : getInventoryAdjustmentTypeFromDelta(delta),
+    reason: adjustment.reason ?? "",
+    notes: adjustment.notes,
+    quantityBefore,
+    quantityAfter,
+    delta,
+    performedByUserId: adjustment.performedByUserId,
+    createdAt,
+  };
 }
 
 function normalizeInventoryTransfers(
@@ -417,7 +479,9 @@ function normalizeUnitCategory(unit: PersistedUnit): UnitCategory {
 
   const code = unit.code?.trim().toUpperCase();
   const symbol = unit.symbol?.trim().toUpperCase();
-  const name = stripAccents(unit.name ?? "").trim().toUpperCase();
+  const name = stripAccents(unit.name ?? "")
+    .trim()
+    .toUpperCase();
 
   if (code === "UND" || code === "CAJA" || code === "PAQ") return UnitCategory.unit;
   if (code === "PAR" || code === "DOC" || code === "DOCENA" || code === "DZ") {
@@ -453,6 +517,21 @@ function isUnitCategory(value: unknown): value is UnitCategory {
     value === UnitCategory.volume ||
     value === UnitCategory.other
   );
+}
+
+function isInventoryAdjustmentType(value: unknown): value is InventoryAdjustmentType {
+  return (
+    value === InventoryAdjustmentType.manualIncrease ||
+    value === InventoryAdjustmentType.manualDecrease ||
+    value === InventoryAdjustmentType.waste ||
+    value === InventoryAdjustmentType.countCorrection
+  );
+}
+
+function getInventoryAdjustmentTypeFromDelta(delta: number): InventoryAdjustmentType {
+  if (delta > 0) return InventoryAdjustmentType.manualIncrease;
+  if (delta < 0) return InventoryAdjustmentType.manualDecrease;
+  return InventoryAdjustmentType.countCorrection;
 }
 
 function isInventoryTransferRequestStatus(value: unknown): value is InventoryTransferRequestStatus {
@@ -496,10 +575,29 @@ function getInventoryTransferNumber(
 ): string {
   const year = new Date(createdAt).getFullYear();
   const prefix = `TR-${year}-`;
-  const next = normalized.inventoryTransfers
-    .filter((transfer) => transfer.tenantId === tenantId && transfer.number.startsWith(prefix))
-    .map((transfer) => Number(transfer.number.slice(prefix.length)))
-    .filter((value) => Number.isInteger(value))
-    .reduce((max, value) => Math.max(max, value), 0) + 1;
+  const next =
+    normalized.inventoryTransfers
+      .filter((transfer) => transfer.tenantId === tenantId && transfer.number.startsWith(prefix))
+      .map((transfer) => Number(transfer.number.slice(prefix.length)))
+      .filter((value) => Number.isInteger(value))
+      .reduce((max, value) => Math.max(max, value), 0) + 1;
+  return `${prefix}${String(next).padStart(5, "0")}`;
+}
+
+function getInventoryAdjustmentNumber(
+  tenantId: string,
+  createdAt: string,
+  normalized: MockDatabase,
+): string {
+  const year = new Date(createdAt).getFullYear();
+  const prefix = `AJ-${year}-`;
+  const next =
+    normalized.inventoryAdjustments
+      .filter(
+        (adjustment) => adjustment.tenantId === tenantId && adjustment.number.startsWith(prefix),
+      )
+      .map((adjustment) => Number(adjustment.number.slice(prefix.length)))
+      .filter((value) => Number.isInteger(value))
+      .reduce((max, value) => Math.max(max, value), 0) + 1;
   return `${prefix}${String(next).padStart(5, "0")}`;
 }

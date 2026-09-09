@@ -66,6 +66,12 @@ export enum InventoryMovementType {
   adjustment = "adjustment",
   transfer = "transfer",
 }
+export enum InventoryAdjustmentType {
+  manualIncrease = "manualIncrease",
+  manualDecrease = "manualDecrease",
+  waste = "waste",
+  countCorrection = "countCorrection",
+}
 export enum InventoryHealthStatus {
   healthy = "healthy",
   low_stock = "low_stock",
