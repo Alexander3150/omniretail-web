@@ -29,20 +29,8 @@ export interface IncidentTypeReadModel {
   canArchive: boolean;
 }
 
-export interface ReceivingIncidentRow {
-  id: string;
-  productName: string;
-  sku: string;
-  receiptNumber: string;
-  documentNumber: string;
-  supplierOrSource: string;
-  responsibleName: string;
-  incidentTypeName: string;
-  description: string;
-  quantityAffected?: number;
-  evidence: import("@/core/entities").ReceiptIncidentEvidence[];
-  createdAt: string;
-}
+export type ReceivingIncidentRow =
+  import("@/modules/receiving/application/dto/IncidentListItemViewModel").IncidentListItemViewModel;
 
 export interface ReceivingReadModel {
   documents: ReceivingDocumentRow[];

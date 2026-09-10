@@ -8,6 +8,7 @@ import type {
 import { GetSuppliersReadModelService } from "@/modules/purchasing/application/services/GetSuppliersReadModelService";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
+import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 
 interface SupplierFilters {
   search: string;
@@ -21,6 +22,9 @@ const DEFAULT_FILTERS: SupplierFilters = {
 
 export function useSuppliers() {
   const repositories = useRepositories();
+  const { currentBranch, loading: branchLoading } = useActiveBranch();
+  const activeBranchId = currentBranch?.id;
+  const tenantId = currentBranch?.tenantId;
   const service = useMemo(() => new GetSuppliersReadModelService(repositories), [repositories]);
   const [suppliers, setSuppliers] = useState<SupplierListItemReadModel[]>([]);
   const [filters, setFilters] = useState<SupplierFilters>(DEFAULT_FILTERS);
@@ -31,14 +35,14 @@ export function useSuppliers() {
     setLoading(true);
     setError(null);
     try {
-      const data = await service.execute();
+      const data = await service.execute(activeBranchId, tenantId);
       setSuppliers(data.suppliers);
     } catch {
       setError("No se pudieron cargar los proveedores.");
     } finally {
       setLoading(false);
     }
-  }, [service]);
+  }, [activeBranchId, service, tenantId]);
 
   useEffect(() => {
     let active = true;
@@ -70,20 +74,16 @@ export function useSuppliers() {
     suppliers,
     filteredSuppliers,
     filters,
-    loading,
+    loading: branchLoading || loading,
     error,
     updateFilters,
   };
 }
 
-function filterSuppliers(
-  suppliers: SupplierListItemReadModel[],
-  filters: SupplierFilters,
-) {
+function filterSuppliers(suppliers: SupplierListItemReadModel[], filters: SupplierFilters) {
   const search = normalize(filters.search);
   return suppliers.filter((supplier) => {
-    const matchesStatus =
-      filters.status === "archived" ? supplier.archived : !supplier.archived;
+    const matchesStatus = filters.status === "archived" ? supplier.archived : !supplier.archived;
     const matchesSearch = !search || supplier.searchText.includes(search);
     return matchesStatus && matchesSearch;
   });

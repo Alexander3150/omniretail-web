@@ -16,6 +16,7 @@ import type {
   ReceivingStatus,
   ReceivingTab,
 } from "@/modules/receiving/application/dto/ReceivingDocumentsDto";
+import { IncidentDetailDrawer } from "@/modules/receiving/components/IncidentDetail";
 import { useReceivingDocuments } from "@/modules/receiving/hooks/useReceivingDocuments";
 
 const DEFAULT_PAGE_SIZE: TablePageSize = 10;
@@ -193,7 +194,7 @@ export function ReceivingPage() {
       />
 
       {selectedIncident ? (
-        <SelectedIncidentPanel
+        <IncidentDetailDrawer
           incident={selectedIncident}
           onClose={() => setSelectedIncidentId(null)}
           onPreview={setPreviewEvidence}
@@ -466,116 +467,83 @@ function IncidentsPanel({
   return (
     <section className="rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm">
       {incidents.length === 0 ? (
-        <p className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-4 py-6 text-center text-sm font-medium text-[var(--color-text-muted)]">
-          Todavia no hay incidencias registradas.
-        </p>
+        <div className="flex flex-col items-center rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-4 py-6 text-center">
+          <AlertIcon className="h-6 w-6 text-amber-600" />
+          <p className="mt-2 text-sm font-bold text-[var(--color-title)]">
+            No hay incidencias registradas.
+          </p>
+        </div>
       ) : (
         <div className="space-y-2">
           {incidents.map((incident) => (
             <button
+              aria-label={`Ver incidencia ${incident.typeName} de ${incident.productName}`}
               className={cn(
-                "grid w-full gap-2 rounded-md border p-3 text-left transition md:grid-cols-[160px_minmax(0,1fr)_140px]",
+                "grid w-full min-w-0 gap-3 rounded-lg border p-3 text-left transition sm:p-4 md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(160px,0.8fr)] lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)_minmax(180px,0.85fr)_auto] lg:items-center",
                 selectedIncidentId === incident.id
                   ? "border-[var(--color-primary)] bg-blue-50 ring-2 ring-[var(--color-primary)]/20"
-                  : "border-[var(--color-border)] hover:border-[var(--color-primary)]",
+                  : "border-[var(--color-border)] bg-white hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/[0.03]",
               )}
               key={incident.id}
               onClick={() => onSelect(incident.id)}
               type="button"
             >
-              <div>
-                <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">Recibo</p>
-                <p className="font-bold text-[var(--color-title)]">{incident.receiptNumber}</p>
+              <div className="min-w-0">
+                <p
+                  className="truncate font-bold text-[var(--color-title)]"
+                  title={incident.productName}
+                >
+                  {incident.productName}
+                </p>
+                <p
+                  className="mt-1 truncate text-xs font-semibold text-[var(--color-text-muted)]"
+                  title={incident.sku}
+                >
+                  SKU {incident.sku}
+                </p>
+                <p className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-xs font-bold text-[var(--color-text)]">
+                  <span>{incident.receiptNumber}</span>
+                  {incident.purchaseOrderNumber ? (
+                    <span>{incident.purchaseOrderNumber}</span>
+                  ) : null}
+                </p>
               </div>
               <div className="min-w-0">
-                <p className="font-semibold text-[var(--color-title)]">
-                  {incident.incidentTypeName}
-                </p>
-                <p className="mt-1 break-words text-sm text-[var(--color-text)]">
-                  {incident.description}
+                <p className="font-bold text-amber-800">{incident.typeName}</p>
+                <p
+                  className="mt-1 line-clamp-2 break-words text-sm text-[var(--color-text)]"
+                  title={incident.observation}
+                >
+                  {incident.observation}
                 </p>
               </div>
-              <div className="text-sm text-[var(--color-text)]">
-                <p>{formatDate(incident.createdAt)}</p>
+              <div className="min-w-0 text-sm text-[var(--color-text)]">
+                {incident.supplierName ? (
+                  <p
+                    className="truncate font-semibold text-[var(--color-title)]"
+                    title={incident.supplierName}
+                  >
+                    {incident.supplierName}
+                  </p>
+                ) : null}
+                <p className="mt-1">{formatDate(incident.date)}</p>
                 {typeof incident.quantityAffected === "number" ? (
-                  <p className="mt-1 font-semibold">
+                  <p className="mt-1 font-bold text-[var(--color-title)]">
                     {formatNumber(incident.quantityAffected)} afectadas
                   </p>
                 ) : null}
               </div>
+              {incident.evidence.length > 0 ? (
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text-muted)] md:col-start-3 lg:col-start-auto lg:justify-self-end">
+                  <CameraIcon className="h-4 w-4" />
+                  <span>{incident.evidence.length}</span>
+                  <span className="sr-only">evidencias</span>
+                </div>
+              ) : null}
             </button>
           ))}
         </div>
       )}
-    </section>
-  );
-}
-
-function SelectedIncidentPanel({
-  incident,
-  onClose,
-  onPreview,
-}: {
-  incident: ReceivingIncidentRow;
-  onClose: () => void;
-  onPreview: (evidence: ReceiptIncidentEvidence) => void;
-}) {
-  return (
-    <section className="rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">
-            Detalle de incidencia
-          </p>
-          <h2 className="mt-1 text-lg font-bold text-[var(--color-title)]">
-            {incident.productName}
-          </h2>
-          <p className="text-sm font-semibold text-[var(--color-text-muted)]">{incident.sku}</p>
-        </div>
-        <Button className="min-h-9 px-3 py-1.5" onClick={onClose} type="button" variant="ghost">
-          <XIcon />
-          Cerrar
-        </Button>
-      </div>
-      <dl className="mt-4 grid gap-3 border-t border-[var(--color-border)] pt-4 sm:grid-cols-2 lg:grid-cols-4">
-        <DetailItem label="Tipo de incidencia" value={incident.incidentTypeName} />
-        <DetailItem
-          label="Cantidad afectada"
-          value={formatNumber(incident.quantityAffected ?? 0)}
-        />
-        <DetailItem label="Fecha" value={formatDate(incident.createdAt)} />
-        <DetailItem label="Proveedor o sucursal" value={incident.supplierOrSource} />
-        <DetailItem label="Orden de compra" value={incident.documentNumber} />
-        <DetailItem label="Recepcion" value={incident.receiptNumber} />
-        <DetailItem label="Responsable" value={incident.responsibleName} />
-      </dl>
-      <div className="mt-4">
-        <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">Observacion</p>
-        <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--color-text)]">
-          {incident.description}
-        </p>
-      </div>
-      <div className="mt-4">
-        <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">Evidencias</p>
-        {incident.evidence.length === 0 ? (
-          <p className="mt-2 text-sm text-[var(--color-text-muted)]">Sin evidencias.</p>
-        ) : (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {incident.evidence.map((item) =>
-              item.previewUrl ? (
-                <button key={item.id} onClick={() => onPreview(item)} type="button">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    alt={item.name}
-                    className="h-24 w-28 rounded-md border border-[var(--color-border)] object-cover"
-                    src={item.previewUrl}
-                  />
-                </button>
-              ) : null,
-            )}
-          </div>
-        )}
-      </div>
     </section>
   );
 }
@@ -846,6 +814,15 @@ function AlertIcon(props: SVGProps<SVGSVGElement>) {
       <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
       <path d="M12 9v4" />
       <path d="M12 17h.01" />
+    </Icon>
+  );
+}
+
+function CameraIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M8 7 9.5 5h5L16 7h3a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h3Z" />
+      <circle cx="12" cy="13" r="3" />
     </Icon>
   );
 }

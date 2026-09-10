@@ -12,10 +12,10 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import type {
   IncidentTypeReadModel,
   ReceivingDocumentRow,
-  ReceivingIncidentRow,
   ReceivingReadModel,
   ReceivingStatus,
 } from "@/modules/receiving/application/dto/ReceivingDocumentsDto";
+import { buildIncidentListItems } from "@/modules/receiving/application/services/buildIncidentListItems";
 
 export class ReceivingDocumentsService {
   constructor(private readonly repositories: RepositoryRegistry) {}
@@ -50,8 +50,6 @@ export class ReceivingDocumentsService {
 
     const productById = new Map(products.map((product) => [product.id, product]));
     const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier]));
-    const purchaseOrderById = new Map(purchaseOrders.map((order) => [order.id, order]));
-    const userNameById = new Map(users.map((user) => [user.id, user.name]));
     const branchById = new Map(branches.map((branch) => [branch.id, branch]));
     const receiptsByOrderId = groupReceiptsByOrderId(activeReceipts);
     const receiptLinesByReceiptId = groupReceiptLinesByReceiptId(receiptLines);
@@ -99,16 +97,17 @@ export class ReceivingDocumentsService {
         (left, right) =>
           new Date(right.lastUpdatedAt).getTime() - new Date(left.lastUpdatedAt).getTime(),
       ),
-      incidents: buildIncidentRows(
-        receiptIncidents,
-        activeReceipts,
+      incidents: buildIncidentListItems({
+        incidents: receiptIncidents,
+        receipts: activeReceipts,
         receiptLines,
         incidentTypes,
-        productById,
-        purchaseOrderById,
-        supplierById,
-        userNameById,
-      ),
+        products,
+        purchaseOrders,
+        suppliers,
+        branches,
+        users,
+      }),
       incidentTypes: buildIncidentTypeRows(
         tenantId
           ? incidentTypes.filter((incidentType) => incidentType.tenantId === tenantId)
@@ -316,51 +315,6 @@ function groupReceiptLinesByReceiptId(receiptLines: ReceiptLine[]) {
     map.set(line.receiptId, [...(map.get(line.receiptId) ?? []), line]);
     return map;
   }, new Map<string, ReceiptLine[]>());
-}
-
-function buildIncidentRows(
-  incidents: ReceiptIncident[],
-  receipts: Receipt[],
-  receiptLines: ReceiptLine[],
-  incidentTypes: IncidentType[],
-  productById: Map<string, { name: string; sku: string }>,
-  purchaseOrderById: Map<string, PurchaseOrder>,
-  supplierById: Map<string, { name: string }>,
-  userNameById: Map<string, string>,
-): ReceivingIncidentRow[] {
-  const receiptById = new Map(receipts.map((receipt) => [receipt.id, receipt]));
-  const receiptLineById = new Map(receiptLines.map((line) => [line.id, line]));
-  const incidentTypeById = new Map(
-    incidentTypes.map((incidentType) => [incidentType.id, incidentType]),
-  );
-  return incidents
-    .map((incident) => {
-      const quantityAffected = incident.quantityAffected;
-      const receipt = receiptById.get(incident.receiptId);
-      const line = incident.receiptLineId ? receiptLineById.get(incident.receiptLineId) : undefined;
-      const product = line ? productById.get(line.productId) : undefined;
-      const order = receipt?.purchaseOrderId
-        ? purchaseOrderById.get(receipt.purchaseOrderId)
-        : undefined;
-      return {
-        id: incident.id,
-        productName: product?.name ?? "Producto no disponible",
-        sku: product?.sku ?? "-",
-        receiptNumber: receipt?.number ?? incident.receiptId,
-        documentNumber: order?.number ?? "Documento no disponible",
-        supplierOrSource:
-          (order && supplierById.get(order.supplierId)?.name) ?? "Origen no disponible",
-        responsibleName: userNameById.get(incident.createdByUserId) ?? incident.createdByUserId,
-        incidentTypeName: incidentTypeById.get(incident.incidentTypeId)?.name ?? "Tipo archivado",
-        description: incident.description,
-        ...(typeof quantityAffected === "number" ? { quantityAffected } : {}),
-        evidence: incident.evidence ?? [],
-        createdAt: incident.createdAt,
-      };
-    })
-    .sort(
-      (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
-    );
 }
 
 function buildIncidentTypeRows(

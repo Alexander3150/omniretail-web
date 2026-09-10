@@ -1,20 +1,21 @@
 "use client";
 
 import { useMemo, useState, type ComponentType, type SVGProps } from "react";
+import type { ReceiptIncidentEvidence } from "@/core/entities";
 import { Button } from "@/shared/components/Button";
 import { Input } from "@/shared/components/Input";
+import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
-import {
-  TablePagination,
-  type TablePageSize,
-} from "@/shared/components/TablePagination";
+import { TablePagination, type TablePageSize } from "@/shared/components/TablePagination";
 import { cn } from "@/shared/utils/cn";
 import type {
+  SupplierIncidentReadModel,
   SupplierListItemReadModel,
   SupplierStatusFilter,
 } from "@/modules/purchasing/application/dto/SupplierReadModel";
 import { useSuppliers } from "@/modules/purchasing/hooks/useSuppliers";
+import { IncidentDetailContent } from "@/modules/receiving/components/IncidentDetail";
 
 type SupplierDetailTab = "general" | "contacts" | "products" | "purchases" | "incidents";
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
@@ -32,13 +33,13 @@ const DEFAULT_PAGE_SIZE: TablePageSize = 10;
 export function SuppliersPage() {
   const { suppliers, filteredSuppliers, filters, loading, error, updateFilters } = useSuppliers();
   const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
+  const [previewEvidence, setPreviewEvidence] = useState<ReceiptIncidentEvidence | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<TablePageSize>(DEFAULT_PAGE_SIZE);
   const totalPages = Math.max(1, Math.ceil(filteredSuppliers.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paginatedSuppliers = useMemo(
-    () =>
-      filteredSuppliers.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    () => filteredSuppliers.slice((currentPage - 1) * pageSize, currentPage * pageSize),
     [currentPage, filteredSuppliers, pageSize],
   );
   const selectedSupplier = useMemo(
@@ -46,9 +47,7 @@ export function SuppliersPage() {
     [paginatedSuppliers, selectedSupplierId],
   );
   const emptyMessage =
-    suppliers.length === 0
-      ? "No hay proveedores registrados."
-      : "No se encontraron proveedores.";
+    suppliers.length === 0 ? "No hay proveedores registrados." : "No se encontraron proveedores.";
   function handleSearchChange(search: string) {
     setPage(1);
     setSelectedSupplierId(null);
@@ -140,9 +139,25 @@ export function SuppliersPage() {
             key={selectedSupplier.id}
             supplier={selectedSupplier}
             onClose={() => setSelectedSupplierId(null)}
+            onPreview={setPreviewEvidence}
           />
         ) : null}
       </section>
+      <Modal
+        open={Boolean(previewEvidence)}
+        title={previewEvidence?.name ?? "Evidencia"}
+        onClose={() => setPreviewEvidence(null)}
+        size="xl"
+      >
+        {previewEvidence?.previewUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            alt={previewEvidence.name}
+            className="mx-auto max-h-[72dvh] max-w-full object-contain"
+            src={previewEvidence.previewUrl}
+          />
+        ) : null}
+      </Modal>
     </div>
   );
 }
@@ -231,9 +246,7 @@ function SuppliersTable({
                   <td className="px-4 py-3 text-[var(--color-text)]">
                     {supplier.paymentConditionLabel}
                   </td>
-                  <td className="px-4 py-3 text-[var(--color-text)]">
-                    {supplier.deliveryLabel}
-                  </td>
+                  <td className="px-4 py-3 text-[var(--color-text)]">{supplier.deliveryLabel}</td>
                 </tr>
               );
             })
@@ -257,11 +270,7 @@ function StatusSegmentedFilter({
   ];
 
   return (
-    <div
-      aria-label="Estado de proveedor"
-      className="flex h-10 items-center gap-2"
-      role="group"
-    >
+    <div aria-label="Estado de proveedor" className="flex h-10 items-center gap-2" role="group">
       {options.map((option) => (
         <button
           className={cn(
@@ -284,11 +293,16 @@ function StatusSegmentedFilter({
 function SupplierDetailPanel({
   supplier,
   onClose,
+  onPreview,
 }: {
   supplier: SupplierListItemReadModel;
   onClose: () => void;
+  onPreview: (evidence: ReceiptIncidentEvidence) => void;
 }) {
   const [activeTab, setActiveTab] = useState<SupplierDetailTab>("general");
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
+  const selectedIncident =
+    supplier.incidents.find((incident) => incident.id === selectedIncidentId) ?? null;
   const counts: Record<SupplierDetailTab, number | null> = {
     general: null,
     contacts: supplier.contacts.length,
@@ -302,11 +316,19 @@ function SupplierDetailPanel({
       <header className="flex min-h-[3.75rem] items-center justify-between gap-3 bg-[var(--color-structure)] px-4 py-3 text-white">
         <div className="flex min-w-0 items-center gap-3">
           <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-white/12">
-            <BuildingIcon className="h-5 w-5" />
+            {selectedIncident ? (
+              <AlertIcon className="h-5 w-5" />
+            ) : (
+              <BuildingIcon className="h-5 w-5" />
+            )}
           </span>
           <div className="min-w-0">
-            <p className="text-sm font-bold">Detalle de proveedor</p>
-            <p className="truncate text-xs font-medium text-blue-50/85">{supplier.name}</p>
+            <p className="text-sm font-bold">
+              {selectedIncident ? "Detalle de incidencia" : "Detalle de proveedor"}
+            </p>
+            <p className="truncate text-xs font-medium text-blue-50/85">
+              {selectedIncident ? selectedIncident.productName : supplier.name}
+            </p>
           </div>
         </div>
         <button
@@ -319,36 +341,66 @@ function SupplierDetailPanel({
         </button>
       </header>
 
-      <div className="flex gap-1 overflow-x-auto border-b border-[var(--color-border)] bg-white p-2 xl:grid xl:grid-cols-5 xl:overflow-visible">
-        {DETAIL_TABS.map((tab) => (
+      {selectedIncident ? (
+        <div className="border-b border-[var(--color-border)] bg-white p-2">
           <button
-            className={cn(
-              "min-h-9 shrink-0 rounded-md border px-2 py-1.5 text-xs font-semibold transition xl:min-w-0",
-              activeTab === tab.id
-                ? "border-blue-200 bg-blue-100 text-[var(--color-title)]"
-                : "border-[var(--color-border)] bg-white text-[var(--color-title)] hover:bg-[var(--color-app-background)]",
-            )}
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            className="inline-flex min-h-9 items-center gap-2 rounded-md px-3 text-sm font-bold text-[var(--color-title)] transition hover:bg-[var(--color-app-background)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]"
+            onClick={() => setSelectedIncidentId(null)}
             type="button"
           >
-            {tab.label}
-            {counts[tab.id] === null ? null : ` (${counts[tab.id]})`}
+            <BackIcon /> Volver a incidencias
           </button>
-        ))}
-      </div>
+        </div>
+      ) : (
+        <div
+          className="flex gap-1 overflow-x-auto border-b border-[var(--color-border)] bg-white p-2 xl:grid xl:grid-cols-5 xl:overflow-visible"
+          role="tablist"
+        >
+          {DETAIL_TABS.map((tab) => (
+            <button
+              aria-selected={activeTab === tab.id}
+              className={cn(
+                "min-h-9 shrink-0 rounded-md border px-2 py-1.5 text-xs font-semibold transition xl:min-w-0",
+                activeTab === tab.id
+                  ? "border-blue-200 bg-blue-100 text-[var(--color-title)]"
+                  : "border-[var(--color-border)] bg-white text-[var(--color-title)] hover:bg-[var(--color-app-background)]",
+              )}
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              role="tab"
+              type="button"
+            >
+              {tab.label}
+              {counts[tab.id] === null ? null : ` (${counts[tab.id]})`}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="max-h-[70vh] overflow-y-auto p-4 xl:max-h-[calc(100vh-18rem)]">
-        {activeTab === "general" ? <GeneralTab supplier={supplier} /> : null}
-        {activeTab === "contacts" ? <ContactsTab supplier={supplier} /> : null}
-        {activeTab === "products" ? <ProductsTab supplier={supplier} /> : null}
-        {activeTab === "purchases" ? <PurchasesTab supplier={supplier} /> : null}
-        {activeTab === "incidents" ? <IncidentsTab supplier={supplier} /> : null}
+        {selectedIncident ? (
+          <IncidentDetailContent incident={selectedIncident} onPreview={onPreview} />
+        ) : (
+          <>
+            {activeTab === "general" ? <GeneralTab supplier={supplier} /> : null}
+            {activeTab === "contacts" ? <ContactsTab supplier={supplier} /> : null}
+            {activeTab === "products" ? <ProductsTab supplier={supplier} /> : null}
+            {activeTab === "purchases" ? <PurchasesTab supplier={supplier} /> : null}
+            {activeTab === "incidents" ? (
+              <IncidentsTab supplier={supplier} onSelect={setSelectedIncidentId} />
+            ) : null}
+          </>
+        )}
       </div>
 
       <footer className="border-t border-[var(--color-border)] p-4">
-        <Button className="w-full" onClick={onClose} type="button" variant="secondary">
-          Cerrar
+        <Button
+          className="w-full"
+          onClick={selectedIncident ? () => setSelectedIncidentId(null) : onClose}
+          type="button"
+          variant="secondary"
+        >
+          {selectedIncident ? "Volver a incidencias" : "Cerrar"}
         </Button>
       </footer>
     </aside>
@@ -499,23 +551,90 @@ function PurchasesTab({ supplier }: { supplier: SupplierListItemReadModel }) {
   );
 }
 
-function IncidentsTab({ supplier }: { supplier: SupplierListItemReadModel }) {
+function IncidentsTab({
+  supplier,
+  onSelect,
+}: {
+  supplier: SupplierListItemReadModel;
+  onSelect: (incidentId: string) => void;
+}) {
   if (supplier.incidents.length === 0) {
     return <EmptyPanel icon={AlertIcon} message="No hay incidencias registradas." />;
   }
 
-  return null;
+  const affectedUnits = supplier.incidents.reduce(
+    (total, incident) => total + (incident.quantityAffected ?? 0),
+    0,
+  );
+
+  return (
+    <div className="space-y-3">
+      <dl className="grid grid-cols-2 gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] p-3">
+        <InlineMetric
+          label="Incidencias registradas"
+          value={formatNumber(supplier.incidents.length)}
+        />
+        <InlineMetric label="Unidades afectadas" value={formatNumber(affectedUnits)} />
+      </dl>
+      <div className="space-y-2">
+        {supplier.incidents.map((incident) => (
+          <SupplierIncidentCard incident={incident} key={incident.id} onSelect={onSelect} />
+        ))}
+      </div>
+    </div>
+  );
 }
 
-function DetailItem({
-  label,
-  value,
-  wide,
+function SupplierIncidentCard({
+  incident,
+  onSelect,
 }: {
-  label: string;
-  value: string;
-  wide?: boolean;
+  incident: SupplierIncidentReadModel;
+  onSelect: (incidentId: string) => void;
 }) {
+  return (
+    <button
+      aria-label={`Ver incidencia ${incident.typeName} de ${incident.productName}`}
+      className="w-full rounded-md border border-[var(--color-border)] bg-white p-3 text-left transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/[0.03] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]"
+      onClick={() => onSelect(incident.id)}
+      type="button"
+    >
+      <p className="truncate font-bold text-[var(--color-title)]" title={incident.productName}>
+        {incident.productName}
+      </p>
+      <p className="mt-0.5 font-semibold text-amber-800">{incident.typeName}</p>
+      <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
+        {incident.receiptNumber}
+        {incident.purchaseOrderNumber ? ` · ${incident.purchaseOrderNumber}` : ""}
+      </p>
+      <p className="mt-1 text-xs text-[var(--color-text)]">
+        {typeof incident.quantityAffected === "number"
+          ? `${formatNumber(incident.quantityAffected)} afectadas · `
+          : ""}
+        {formatDate(incident.date)}
+      </p>
+      {incident.observation ? (
+        <p
+          className="mt-2 line-clamp-2 text-sm text-[var(--color-text)]"
+          title={incident.observation}
+        >
+          {incident.observation}
+        </p>
+      ) : null}
+    </button>
+  );
+}
+
+function InlineMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-[11px] font-bold uppercase text-[var(--color-text-muted)]">{label}</dt>
+      <dd className="mt-1 text-xl font-bold text-[var(--color-title)]">{value}</dd>
+    </div>
+  );
+}
+
+function DetailItem({ label, value, wide }: { label: string; value: string; wide?: boolean }) {
   return (
     <div
       className={cn(
@@ -632,6 +751,15 @@ function ClipboardIcon(props: SVGProps<SVGSVGElement>) {
       <path d="M17 5h2v16H5V5" />
       <path d="M8 13h8" />
       <path d="M8 17h5" />
+    </Icon>
+  );
+}
+
+function BackIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="m15 18-6-6 6-6" />
+      <path d="M9 12h10" />
     </Icon>
   );
 }
