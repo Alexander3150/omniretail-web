@@ -8,6 +8,12 @@ export const administrationNavigation = [
     permission: BUSINESS_CONFIG_MANAGE_PERMISSION,
     children: [
       {
+        id: "administration-branches",
+        label: "Sucursales",
+        href: "/administracion/sucursales",
+        permission: "admin.branches.read",
+      },
+      {
         id: "administration-business-config",
         label: "Configuración del negocio",
         href: "/administracion/configuracion-negocio",
