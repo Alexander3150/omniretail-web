@@ -1,3 +1,17 @@
 import type { NavigationItem } from "@/shared/types/navigation.types";
 
-export const posNavigation = [] satisfies NavigationItem[];
+export const posNavigation = [
+  {
+    id: "pos",
+    label: "Punto de venta",
+    permission: "pos.sales.create",
+    children: [
+      {
+        id: "pos-terminal",
+        label: "Terminal de Cobro",
+        href: "/pos/terminal",
+        permission: "pos.sales.create",
+      },
+    ],
+  },
+] satisfies NavigationItem[];

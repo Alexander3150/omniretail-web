@@ -27,6 +27,13 @@ Implementado en esta rama:
 - Imagen principal mediante `ProductMediaRepository`, con fallback visual.
 - Opciones de categoria, unidad y capacidades de negocio desde repositories.
 - Tracking adaptable por `BusinessCapabilitiesConfig`; productos `service` fuerzan tracking inactivo.
+- Capacidades del negocio aplicadas de verdad, no solo mostradas: sin `supportsServices` o
+  `supportsKits` no se puede crear ni convertir un producto a esos tipos; sin
+  `supportsUnitsAndPackaging` la unidad de venta es siempre la de inventario y no se persisten
+  equivalencias; sin `supportsProductAttributes` los atributos se ocultan y se descartan.
+  `applyCapabilityRulesToEditor` es el unico lugar donde se proyectan esas reglas sobre el borrador,
+  y los services la aplican antes de validar y persistir para que la regla valga aunque el borrador
+  llegue desde otro consumidor.
 - Rutas privadas `/catalogo/productos`, `/catalogo/productos/nuevo`, `/catalogo/productos/[id]` y `/catalogo/productos/[id]/editar`.
 
 ## Gestion de categorias

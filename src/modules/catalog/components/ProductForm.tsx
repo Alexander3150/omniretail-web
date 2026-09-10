@@ -48,9 +48,12 @@ import { productTypeLabels } from "@/modules/catalog/components/productLabels";
 import { useProductPromotions } from "@/modules/catalog/hooks/useProductPromotions";
 import type { ProductFormOptions } from "@/modules/catalog/types/catalog.types";
 import {
+  applyCapabilityRulesToEditor,
   applyTrackingRules,
+  getAllowedProductTypes,
   getDefaultTracking,
   hasValidationErrors,
+  resolveSaleUnitId,
   validateProductDto,
   type ProductValidationErrors,
 } from "@/modules/catalog/validation/product.validation";
@@ -123,6 +126,14 @@ export function ProductForm({
     "Sin categoria";
   const baseUnit = options.units.find((unit) => unit.id === value.baseUnitId);
   const saleUnit = options.units.find((unit) => unit.id === value.saleUnitId);
+  // Snapshot de lo YA PERSISTIDO, solo para un producto existente. Con la capacidad apagada, es lo
+  // que se conserva en vez de recortarse: ver applyCapabilityRulesToEditor/resolveSaleUnitId.
+  const existingCapabilityContext = detail
+    ? {
+        saleUnitId: detail.product.saleUnitId ?? detail.product.baseUnitId,
+        tracking: detail.product.tracking,
+      }
+    : undefined;
   const preferredSupplier = value.supplierProducts.find((item) => item.preferred);
   const preferredSupplierName = preferredSupplier
     ? editorData.suppliers.find((supplier) => supplier.id === preferredSupplier.supplierId)?.name
@@ -143,7 +154,9 @@ export function ProductForm({
     { id: "general", label: "Informacion general", icon: "I" },
     { id: "units", label: "Unidades", icon: "U" },
     { id: "tracking", label: "Inventario y trazabilidad", icon: "T" },
-    { id: "attributes", label: "Atributos", icon: "A", count: value.attributes.length },
+    options.businessCapabilities.supportsProductAttributes || value.attributes.length > 0
+      ? { id: "attributes", label: "Atributos", icon: "A", count: value.attributes.length }
+      : null,
     { id: "prices", label: "Precios", icon: "Q", count: value.salesPriceTiers.length },
     showPromotionTab
       ? { id: "promotion", label: "Promocion", icon: "%", count: editorData.promotionCount }
@@ -176,6 +189,12 @@ export function ProductForm({
             ? getDefaultTracking(options.businessCapabilities, patch.productType)
             : applyTrackingRules(patch.productType, next.tracking, options.businessCapabilities);
       }
+      next.saleUnitId = resolveSaleUnitId(
+        next.baseUnitId,
+        next.saleUnitId,
+        options.businessCapabilities,
+        existingCapabilityContext?.saleUnitId,
+      );
       if (next.baseUnitId === next.saleUnitId) {
         next.inventoryQuantity = 1;
         next.saleQuantity = 1;
@@ -187,10 +206,11 @@ export function ProductForm({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setEditorError(null);
-    const nextValue = {
-      ...value,
-      tracking: applyTrackingRules(value.productType, value.tracking, options.businessCapabilities),
-    };
+    const nextValue = applyCapabilityRulesToEditor(
+      value,
+      options.businessCapabilities,
+      existingCapabilityContext,
+    );
     const nextErrors = validateProductDto({
       ...nextValue,
       salePrice: toFiniteNumber(nextValue.salePrice),
@@ -276,6 +296,7 @@ export function ProductForm({
         <div className="min-w-0">
           {activeTab === "general" ? (
             <GeneralTab
+              capabilities={options.businessCapabilities}
               categories={options.categories}
               errors={errors}
               onChange={updateValue}
@@ -284,7 +305,9 @@ export function ProductForm({
           ) : null}
           {activeTab === "units" ? (
             <UnitsTab
+              capabilities={options.businessCapabilities}
               errors={errors}
+              isExistingProduct={Boolean(existingCapabilityContext)}
               onChange={updateValue}
               units={options.units}
               value={value}
@@ -300,7 +323,11 @@ export function ProductForm({
             />
           ) : null}
           {activeTab === "attributes" ? (
-            <AttributesTab onChange={(attributes) => updateValue({ attributes })} value={value.attributes} />
+            <AttributesTab
+              onChange={(attributes) => updateValue({ attributes })}
+              readOnly={!options.businessCapabilities.supportsProductAttributes}
+              value={value.attributes}
+            />
           ) : null}
           {activeTab === "prices" ? (
             <PricesTab errors={errors} onChange={updateValue} value={value} />
@@ -408,15 +435,25 @@ export function ProductForm({
 
 function GeneralTab({
   value,
+  capabilities,
   categories,
   errors,
   onChange,
 }: {
   value: ProductEditorDto;
+  capabilities: ProductFormOptions["businessCapabilities"];
   categories: ProductFormOptions["categories"];
   errors: ProductValidationErrors;
   onChange: (value: Partial<ProductEditorDto>) => void;
 }) {
+  const allowedProductTypes = getAllowedProductTypes(capabilities);
+  // Un producto guardado con un tipo que despues se deshabilito conserva su opcion: sin ella la
+  // pantalla lo cambiaria de tipo en silencio al primer guardado.
+  const productTypes = allowedProductTypes.includes(value.productType)
+    ? allowedProductTypes
+    : [...allowedProductTypes, value.productType];
+  const hiddenProductTypes = Object.values(ProductType).length - productTypes.length;
+
   return (
     <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
       <SectionTitle
@@ -426,7 +463,7 @@ function GeneralTab({
       <div className="space-y-2">
         <p className="text-sm font-bold text-[var(--color-title)]">Tipo de producto</p>
         <div className="grid gap-2 sm:grid-cols-3">
-          {Object.values(ProductType).map((type) => (
+          {productTypes.map((type) => (
             <button
               aria-pressed={value.productType === type}
               className={cn(
@@ -443,6 +480,11 @@ function GeneralTab({
             </button>
           ))}
         </div>
+        {hiddenProductTypes > 0 ? (
+          <p className="text-sm text-[var(--color-text-muted)]">
+            La configuracion del negocio limita los tipos de producto disponibles.
+          </p>
+        ) : null}
         {errors.productType ? <FieldError>{errors.productType}</FieldError> : null}
       </div>
       <FormField id="name" label="Nombre *" error={errors.name}>
@@ -549,28 +591,61 @@ function ChannelsControl({
 
 function UnitsTab({
   value,
+  capabilities,
+  isExistingProduct,
   units,
   errors,
   onChange,
 }: {
   value: ProductEditorDto;
+  capabilities: ProductFormOptions["businessCapabilities"];
+  isExistingProduct: boolean;
   units: ProductFormOptions["units"];
   errors: ProductValidationErrors;
   onChange: (value: Partial<ProductEditorDto>) => void;
 }) {
   const baseUnit = units.find((item) => item.id === value.baseUnitId);
   const saleUnit = units.find((item) => item.id === value.saleUnitId);
-  const needsConversion = value.baseUnitId !== value.saleUnitId;
+  // Sin "Unidades y empaques" un producto NUEVO trabaja con una sola unidad (baseUnitId libre,
+  // saleUnitId siempre igual). Uno EXISTENTE protege TODA su configuracion de unidades — tambien
+  // baseUnitId, no solo la unidad de venta — porque cambiar la unidad de inventario dejaria una
+  // equivalencia historica (ej. "1 Caja = 12 Unidades") atada a una base distinta sin que exista
+  // una migracion explicita que la redefina. Se muestra, no se oculta: ver principio general del
+  // blocker, capacidad OFF no es una migracion destructiva de datos historicos.
+  const usesSingleUnit = !capabilities.supportsUnitsAndPackaging;
+  const unitsProtected = isExistingProduct && usesSingleUnit;
+  const hasDivergentSaleUnit = value.baseUnitId !== value.saleUnitId;
+  const showConversion = hasDivergentSaleUnit;
+  const needsConversion = showConversion;
 
   return (
     <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
       <SectionTitle
-        description="Unidad base para inventario y presentacion normal de venta."
+        description={
+          unitsProtected
+            ? "El negocio opera con una unica unidad para productos nuevos; la configuracion de unidades de este producto quedo protegida mientras la capacidad este desactivada."
+            : usesSingleUnit
+              ? "El negocio opera con una unica unidad por producto."
+              : "Unidad base para inventario y presentacion normal de venta."
+        }
         title="Unidades"
       />
+      {unitsProtected ? (
+        <p className="rounded-md border border-[var(--color-warning)] bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-text)]">
+          La configuracion de unidades de este producto (unidad de inventario, unidad de venta y
+          equivalencia) quedo de solo lectura porque el negocio desactivo &ldquo;Unidades y
+          empaques&rdquo;. No se borra ni se modifica al guardar otros campos.
+        </p>
+      ) : null}
       <div className="grid gap-4 md:grid-cols-2">
-        <FormField id="baseUnitId" label="Unidad de inventario *" error={errors.baseUnitId}>
+        <FormField
+          id="baseUnitId"
+          label="Unidad de inventario *"
+          error={errors.baseUnitId}
+          hint={unitsProtected ? "Protegida mientras la capacidad este desactivada." : undefined}
+        >
           <Select
+            disabled={unitsProtected}
             id="baseUnitId"
             onChange={(event) =>
               onChange({
@@ -589,8 +664,20 @@ function UnitsTab({
             ))}
           </Select>
         </FormField>
-        <FormField id="saleUnitId" label="Unidad de venta *" error={errors.saleUnitId}>
+        <FormField
+          id="saleUnitId"
+          label="Unidad de venta *"
+          error={errors.saleUnitId}
+          hint={
+            unitsProtected
+              ? "Se conserva la configuracion previa; el negocio ya no permite editarla."
+              : usesSingleUnit
+                ? "Sigue a la unidad de inventario porque el negocio no maneja unidades y empaques."
+                : undefined
+          }
+        >
           <Select
+            disabled={usesSingleUnit}
             id="saleUnitId"
             onChange={(event) =>
               onChange({
@@ -616,6 +703,7 @@ function UnitsTab({
             <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
               <div className="grid gap-2 sm:grid-cols-[120px_1fr]">
                 <Input
+                  disabled={unitsProtected}
                   id="inventoryQuantity"
                   min="0.0001"
                   onChange={(event) => onChange({ inventoryQuantity: parseDecimalInput(event.target.value) })}
@@ -632,6 +720,7 @@ function UnitsTab({
               </div>
               <div className="grid gap-2 sm:grid-cols-[120px_1fr]">
                 <Input
+                  disabled={unitsProtected}
                   id="saleQuantity"
                   min="0.0001"
                   onChange={(event) =>
@@ -653,12 +742,16 @@ function UnitsTab({
         </div>
       ) : (
         <p className="rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text)]">
-          Venta e inventario usan la misma unidad; no se requiere conversion adicional.
+          {usesSingleUnit
+            ? "El negocio no maneja unidades y empaques: la venta usa la unidad de inventario y no se habilitan equivalencias ni presentaciones distintas."
+            : "Venta e inventario usan la misma unidad; no se requiere conversion adicional."}
         </p>
       )}
     </section>
   );
 }
+
+
 
 function TrackingTab({
   value,
@@ -850,9 +943,11 @@ function TrackingTab({
 
 function AttributesTab({
   value,
+  readOnly,
   onChange,
 }: {
   value: ProductAttributeEditorValue[];
+  readOnly?: boolean;
   onChange: (value: ProductAttributeEditorValue[]) => void;
 }) {
   function update(index: number, patch: Partial<ProductAttributeEditorValue>) {
@@ -862,42 +957,56 @@ function AttributesTab({
   return (
     <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
       <SectionTitle
-        description="Atributos descriptivos key/value persistidos por producto."
+        description={
+          readOnly
+            ? "El negocio desactivo los atributos de producto; los existentes se conservan de solo lectura."
+            : "Atributos descriptivos key/value persistidos por producto."
+        }
         title="Atributos"
       />
-      <div className="flex justify-end">
-        <Button
-          onClick={() => onChange([...value, { name: "", value: "" }])}
-          type="button"
-          variant="secondary"
-        >
-          <PlusIcon />
-          Agregar
-        </Button>
-      </div>
+      {readOnly ? (
+        <p className="rounded-md border border-[var(--color-warning)] bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-text)]">
+          Estos atributos no se borran ni se modifican al guardar otros campos del producto.
+        </p>
+      ) : (
+        <div className="flex justify-end">
+          <Button
+            onClick={() => onChange([...value, { name: "", value: "" }])}
+            type="button"
+            variant="secondary"
+          >
+            <PlusIcon />
+            Agregar
+          </Button>
+        </div>
+      )}
       {value.length ? (
         <div className="space-y-3">
           {value.map((attribute, index) => (
             <div className="grid gap-3 rounded-md border border-[var(--color-border)] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" key={index}>
               <Input
                 aria-label="Nombre del atributo"
+                disabled={readOnly}
                 onChange={(event) => update(index, { name: event.target.value })}
                 placeholder="Nombre"
                 value={attribute.name}
               />
               <Input
                 aria-label="Valor del atributo"
+                disabled={readOnly}
                 onChange={(event) => update(index, { value: event.target.value })}
                 placeholder="Valor"
                 value={attribute.value}
               />
-              <Button
-                onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}
-                type="button"
-                variant="danger"
-              >
-                Eliminar
-              </Button>
+              {readOnly ? null : (
+                <Button
+                  onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}
+                  type="button"
+                  variant="danger"
+                >
+                  Eliminar
+                </Button>
+              )}
             </div>
           ))}
         </div>
@@ -2020,7 +2129,7 @@ function buildInitialValue(options: ProductFormOptions, editorData: ProductEdito
             conversion.toUnitId === saleUnitId
           ? { inventoryQuantity: 1, saleQuantity: conversion.factor }
           : { inventoryQuantity: conversion.factor, saleQuantity: 1 };
-    return {
+    const editedDraft: ProductEditorDto = {
       sku: detail.product.sku,
       barcode: detail.product.barcode,
       name: detail.product.name,
@@ -2034,11 +2143,9 @@ function buildInitialValue(options: ProductFormOptions, editorData: ProductEdito
       saleQuantity: conversionQuantities.saleQuantity,
       salePrice: detail.product.salePrice,
       status: detail.product.status,
-      tracking: applyTrackingRules(
-        detail.product.productType,
-        detail.product.tracking,
-        options.businessCapabilities,
-      ),
+      // Se carga el tracking TAL CUAL esta persistido, sin recortar: applyCapabilityRulesToEditor
+      // (abajo) recibe el snapshot de lo existente y decide que conservar, no esta funcion.
+      tracking: detail.product.tracking,
       inventorySettings,
       channels: detail.product.channels,
       attributes: editorData.attributes,
@@ -2046,10 +2153,14 @@ function buildInitialValue(options: ProductFormOptions, editorData: ProductEdito
       supplierProducts: editorData.supplierProducts,
       media: editorData.media,
     };
+    return applyCapabilityRulesToEditor(editedDraft, options.businessCapabilities, {
+      saleUnitId,
+      tracking: detail.product.tracking,
+    });
   }
 
   const unitId = options.units[0]?.id ?? "";
-  return {
+  const newDraft: ProductEditorDto = {
     sku: "",
     barcode: "",
     name: "",
@@ -2071,6 +2182,7 @@ function buildInitialValue(options: ProductFormOptions, editorData: ProductEdito
     supplierProducts: [],
     media: [],
   };
+  return applyCapabilityRulesToEditor(newDraft, options.businessCapabilities);
 }
 
 const inputClassName =
