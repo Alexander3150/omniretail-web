@@ -6,12 +6,14 @@ import { ProductMapper } from "@/modules/catalog/application/mappers/ProductMapp
 import {
   applyTrackingRules,
   hasValidationErrors,
+  resolveSaleUnitId,
   validateProductDto,
 } from "@/modules/catalog/validation/product.validation";
 import {
   CatalogServiceError,
   ensureActiveCategory,
   ensureActiveUnit,
+  ensureProductTypeAllowed,
   requireCapabilities,
   resolveTenantId,
 } from "@/modules/catalog/application/services/serviceHelpers";
@@ -52,9 +54,11 @@ export class CreateProductService {
       throw new CatalogServiceError("No hay un negocio disponible para crear productos.");
 
     const capabilities = await requireCapabilities(this.repositories, tenantId);
+    ensureProductTypeAllowed(dto.productType, capabilities);
+    const saleUnitId = resolveSaleUnitId(dto.baseUnitId, dto.saleUnitId, capabilities);
     const tracking = applyTrackingRules(dto.productType, dto.tracking, capabilities);
     const product = await this.repositories.products.create(
-      ProductMapper.toCreateInput({ ...dto, sku: normalizedSku, tracking }, tenantId),
+      ProductMapper.toCreateInput({ ...dto, sku: normalizedSku, saleUnitId, tracking }, tenantId),
     );
 
     if (dto.primaryImageUrl?.trim()) {

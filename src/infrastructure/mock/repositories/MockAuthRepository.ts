@@ -56,7 +56,18 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       }
 
       const expectedHash = buildPasswordHashMock(input.passwordMock);
-      if (account.passwordHashMock !== expectedHash) {
+      const passwordMatches = account.passwordHashMock === expectedHash;
+      // Doc rule R-A13 (never reveal which credential/check failed) extends
+      // to the account-kind check: a wrong password and a "right password,
+      // wrong tab" attempt (e.g. a customer's credentials used on the
+      // employee tab) must be completely indistinguishable from the
+      // outside — same generic error, same failed-attempt/lockout
+      // accounting. Do NOT split this into a separate branch or message
+      // later, even if it seems like better UX.
+      const accountKindMatches =
+        !input.expectedUserType || user?.type === input.expectedUserType;
+
+      if (!passwordMatches || !accountKindMatches) {
         // A successful login always cuts the failure streak, regardless of
         // how recent it was: only login_failed/account_locked events that
         // happened *after* the most recent login_success — and still within

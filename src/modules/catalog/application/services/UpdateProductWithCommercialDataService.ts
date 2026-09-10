@@ -14,12 +14,20 @@ export class UpdateProductWithCommercialDataService {
 
   async execute(productId: string, dto: ProductEditorDto): Promise<Product> {
     const current = ensureProduct(await this.repositories.products.getById(productId));
-    await validateEditorProduct(this.repositories, dto, current.tenantId, current.id);
+    const { normalizedDto, capabilities, isNewProduct } = await validateEditorProduct(
+      this.repositories,
+      dto,
+      current.tenantId,
+      current,
+    );
     const updated = await this.repositories.products.update(
       current.id,
-      ProductMapper.toUpdateInput(toProductDto(dto), current),
+      ProductMapper.toUpdateInput(toProductDto(normalizedDto), current),
     );
-    await syncEditorRelatedData(this.repositories, updated, dto);
+    await syncEditorRelatedData(this.repositories, updated, normalizedDto, {
+      capabilities,
+      isNewProduct,
+    });
     return updated;
   }
 }

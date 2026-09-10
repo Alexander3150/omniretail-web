@@ -6,6 +6,7 @@ import { ProductMapper } from "@/modules/catalog/application/mappers/ProductMapp
 import {
   applyTrackingRules,
   hasValidationErrors,
+  resolveSaleUnitId,
   validateProductDto,
 } from "@/modules/catalog/validation/product.validation";
 import {
@@ -13,6 +14,8 @@ import {
   ensureActiveCategory,
   ensureActiveUnit,
   ensureProduct,
+  ensureProductTypeAllowed,
+  ensureUnitConfigUnchanged,
   requireCapabilities,
 } from "@/modules/catalog/application/services/serviceHelpers";
 
@@ -52,10 +55,20 @@ export class UpdateProductService {
     ensureActiveUnit(unit);
 
     const capabilities = await requireCapabilities(this.repositories, current.tenantId);
-    const tracking = applyTrackingRules(dto.productType, dto.tracking, capabilities);
+    ensureProductTypeAllowed(dto.productType, capabilities, current.productType);
+    ensureUnitConfigUnchanged(dto, capabilities, current);
+    // Producto existente: se conserva lo ya persistido (unidad de venta y tracking) en vez de
+    // recortarlo si la capacidad correspondiente esta apagada. Ver product.validation.ts.
+    const saleUnitId = resolveSaleUnitId(
+      dto.baseUnitId,
+      dto.saleUnitId,
+      capabilities,
+      current.saleUnitId ?? current.baseUnitId,
+    );
+    const tracking = applyTrackingRules(dto.productType, dto.tracking, capabilities, current.tracking);
     const updated = await this.repositories.products.update(
       current.id,
-      ProductMapper.toUpdateInput({ ...dto, sku: normalizedSku, tracking }, current),
+      ProductMapper.toUpdateInput({ ...dto, sku: normalizedSku, saleUnitId, tracking }, current),
     );
 
     await this.syncPrimaryImage(updated, dto.primaryImageUrl?.trim() ?? "");
