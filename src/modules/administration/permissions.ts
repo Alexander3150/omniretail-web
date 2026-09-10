@@ -61,4 +61,16 @@ export const administrationPermissions = [
     name: "Gestionar cuentas bancarias",
     description: "Permite administrar cuentas bancarias simuladas.",
   },
+  {
+    key: "admin.customers.read",
+    module: "administration",
+    name: "Leer clientes",
+    description: "Permite consultar el directorio de clientes.",
+  },
+  {
+    key: "admin.customers.manage",
+    module: "administration",
+    name: "Gestionar clientes",
+    description: "Permite crear, editar y archivar registros comerciales de clientes.",
+  },
 ] satisfies PermissionDefinition[];
