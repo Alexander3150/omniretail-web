@@ -3,12 +3,10 @@ import type {
   InventoryBalance,
   InventoryMovement,
   InventoryReservation,
-  InventoryReservationAllocation,
   InventoryReservationConsumeOperation,
   ProductInventorySettings,
   StorageLocation,
 } from "@/core/entities";
-import { planInventoryAllocation } from "@/core/inventory/stockAvailability";
 import type {
   ConsumeInventoryReservationInput,
   ConsumeInventoryReservationResult,
@@ -18,8 +16,14 @@ import type {
   ReserveOrderItemInput,
 } from "@/core/repositories";
 import type { DataEventName, DataEventPayload } from "@/core/types/events.types";
-import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
+import {
+  findInventoryReservationBalance,
+  findReservationForMutation,
+  getInventoryReservationAllocationRemaining,
+  releaseInventoryReservationInDatabase,
+  reserveOrderItemInDatabase,
+} from "@/infrastructure/mock/repositories/inventoryReservationMutations";
 
 export class MockInventoryRepository extends BaseMockRepository implements InventoryRepository {
   async getBalances() {
@@ -42,104 +46,20 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
     );
   }
   async reserveForOrderItem(input: ReserveOrderItemInput) {
-    assertPositiveQuantity(input.quantity, "Reservation quantity");
-
-    const result = this.store.transact((db) => {
-      this.assertReservationReferences(input, db);
-      const existing = db.inventoryReservations.find(
-        (item) => item.tenantId === input.tenantId && item.orderItemId === input.orderItemId,
-      );
-      if (existing) {
-        this.assertMatchingReservation(existing, input);
-        return { reservation: existing, changed: false };
-      }
-
-      const settings = db.productInventorySettings.find(
-        (item) =>
-          item.tenantId === input.tenantId &&
-          item.branchId === input.branchId &&
-          item.productId === input.productId,
-      );
-      const plannedAllocations = planInventoryAllocation({
-        tenantId: input.tenantId,
-        branchId: input.branchId,
-        productId: input.productId,
-        quantity: input.quantity,
-        balances: db.inventoryBalances,
-        locations: db.storageLocations,
-        preferredLocationId: settings?.defaultLocationId,
-      });
-      const now = this.now();
-      const allocations: InventoryReservationAllocation[] = plannedAllocations.map(
-        (allocation) => ({
-          id: this.id("reservation-allocation"),
-          balanceId: allocation.balanceId,
-          locationId: allocation.locationId,
-          reservedQuantity: allocation.quantity,
-          consumedQuantity: 0,
-        }),
-      );
-      const reservation: InventoryReservation = {
-        id: this.id("inventory-reservation"),
-        tenantId: input.tenantId,
-        branchId: input.branchId,
-        orderId: input.orderId,
-        orderItemId: input.orderItemId,
-        productId: input.productId,
-        status: InventoryReservationStatus.active,
-        allocations,
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      allocations.forEach((allocation) => {
-        const balance = db.inventoryBalances.find((item) => item.id === allocation.balanceId);
-        if (!balance) throw this.missing("InventoryBalance", allocation.balanceId);
-        balance.reservedQuantity += allocation.reservedQuantity;
-        balance.updatedAt = now;
-      });
-      db.inventoryReservations.push(reservation);
-      return { reservation, changed: true };
-    });
+    const result = this.store.transact((db) =>
+      reserveOrderItemInDatabase(db, input, {
+        id: (prefix) => this.id(prefix),
+        now: () => this.now(),
+      }),
+    );
 
     if (result.changed) this.emitStockChanged(result.reservation);
     return result.reservation;
   }
   async releaseReservation(input: ReleaseInventoryReservationInput) {
-    assertRequiredText(input.tenantId, "Reservation tenantId");
-    assertRequiredText(input.branchId, "Reservation branchId");
-    assertRequiredText(input.reservationId, "Reservation id");
-
-    const result = this.store.transact((db) => {
-      const reservation = this.findReservationForMutation(input, db);
-      if (
-        reservation.status === InventoryReservationStatus.released ||
-        reservation.status === InventoryReservationStatus.consumed
-      ) {
-        return { reservation, changed: false };
-      }
-
-      const releases = reservation.allocations.map((allocation) => {
-        const remaining = getAllocationRemaining(allocation);
-        const balance = this.findReservationBalance(reservation, allocation, db);
-        if (balance.reservedQuantity < remaining) {
-          throw new Error(`Insufficient reserved stock in balance: ${balance.id}`);
-        }
-        return { balance, remaining };
-      });
-      if (releases.reduce((total, item) => total + item.remaining, 0) <= 0) {
-        throw new Error(`Active reservation has no remaining quantity: ${reservation.id}`);
-      }
-
-      const now = this.now();
-      releases.forEach(({ balance, remaining }) => {
-        balance.reservedQuantity -= remaining;
-        balance.updatedAt = now;
-      });
-      reservation.status = InventoryReservationStatus.released;
-      reservation.updatedAt = now;
-      return { reservation, changed: true };
-    });
+    const result = this.store.transact((db) =>
+      releaseInventoryReservationInDatabase(db, input, { now: () => this.now() }),
+    );
 
     if (result.changed) this.emitStockChanged(result.reservation);
     return result.reservation;
@@ -172,7 +92,7 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
         };
       }
 
-      const reservation = this.findReservationForMutation(input, db);
+      const reservation = findReservationForMutation(input, db);
       if (reservation.status === InventoryReservationStatus.released) {
         throw new Error(`Released reservation cannot be consumed: ${reservation.id}`);
       }
@@ -187,13 +107,13 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
         if (!allocation) {
           throw new Error(`Balance does not belong to reservation: ${consumed.balanceId}`);
         }
-        const remaining = getAllocationRemaining(allocation);
+        const remaining = getInventoryReservationAllocationRemaining(allocation);
         if (consumed.quantity > remaining) {
           throw new Error(
             `Consumed quantity exceeds reservation allocation: ${consumed.balanceId}`,
           );
         }
-        const balance = this.findReservationBalance(reservation, allocation, db);
+        const balance = findInventoryReservationBalance(reservation, allocation, db);
         if (balance.quantity < consumed.quantity) {
           throw new Error(`Insufficient stock in balance: ${balance.id}`);
         }
@@ -232,7 +152,7 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
       });
 
       reservation.status = reservation.allocations.some(
-        (allocation) => getAllocationRemaining(allocation) > 0,
+        (allocation) => getInventoryReservationAllocationRemaining(allocation) > 0,
       )
         ? InventoryReservationStatus.active
         : InventoryReservationStatus.consumed;
@@ -441,94 +361,6 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
   ) {
     return this.registerMovement({ ...input, type: InventoryMovementType.transfer });
   }
-  private assertReservationReferences(input: ReserveOrderItemInput, db: MockDatabase): void {
-    assertRequiredText(input.tenantId, "Reservation tenantId");
-    assertRequiredText(input.branchId, "Reservation branchId");
-    assertRequiredText(input.orderId, "Reservation orderId");
-    assertRequiredText(input.orderItemId, "Reservation orderItemId");
-    assertRequiredText(input.productId, "Reservation productId");
-
-    const tenant = db.tenants.find((item) => item.id === input.tenantId);
-    if (!tenant) throw this.missing("Tenant", input.tenantId);
-    const branch = db.branches.find((item) => item.id === input.branchId);
-    if (!branch || branch.tenantId !== input.tenantId) {
-      throw new Error(`Branch not found for tenant: ${input.branchId}`);
-    }
-    const product = db.products.find((item) => item.id === input.productId);
-    if (!product || product.tenantId !== input.tenantId) {
-      throw new Error(`Product not found for tenant: ${input.productId}`);
-    }
-    const order = db.orders.find(
-      (item) =>
-        item.id === input.orderId &&
-        item.tenantId === input.tenantId &&
-        item.branchId === input.branchId,
-    );
-    if (!order) throw new Error(`Order not found for tenant/branch: ${input.orderId}`);
-    const orderItem = order.items.find(
-      (item) => item.id === input.orderItemId && item.orderId === input.orderId,
-    );
-    if (!orderItem) throw new Error(`OrderItem not found in order: ${input.orderItemId}`);
-    if (orderItem.productId !== input.productId) {
-      throw new Error(`OrderItem product conflict: ${input.orderItemId}`);
-    }
-    if (input.quantity > orderItem.quantity) {
-      throw new Error(`Reservation quantity exceeds OrderItem quantity: ${input.orderItemId}`);
-    }
-  }
-
-  private assertMatchingReservation(
-    reservation: InventoryReservation,
-    input: ReserveOrderItemInput,
-  ): void {
-    const reservedQuantity = reservation.allocations.reduce(
-      (total, allocation) => total + allocation.reservedQuantity,
-      0,
-    );
-    if (
-      reservation.branchId !== input.branchId ||
-      reservation.orderId !== input.orderId ||
-      reservation.productId !== input.productId ||
-      reservedQuantity !== input.quantity
-    ) {
-      throw new Error(`Inventory reservation conflict for OrderItem: ${input.orderItemId}`);
-    }
-  }
-
-  private findReservationForMutation(
-    input: ReleaseInventoryReservationInput,
-    db: MockDatabase,
-  ): InventoryReservation {
-    const reservation = db.inventoryReservations.find(
-      (item) => item.id === input.reservationId && item.tenantId === input.tenantId,
-    );
-    if (!reservation) {
-      throw new Error(`InventoryReservation not found for tenant: ${input.reservationId}`);
-    }
-    if (reservation.branchId !== input.branchId) {
-      throw new Error(`InventoryReservation branch conflict: ${input.reservationId}`);
-    }
-    return reservation;
-  }
-
-  private findReservationBalance(
-    reservation: InventoryReservation,
-    allocation: InventoryReservationAllocation,
-    db: MockDatabase,
-  ): InventoryBalance {
-    const balance = db.inventoryBalances.find((item) => item.id === allocation.balanceId);
-    if (!balance) throw this.missing("InventoryBalance", allocation.balanceId);
-    if (
-      balance.tenantId !== reservation.tenantId ||
-      balance.branchId !== reservation.branchId ||
-      balance.productId !== reservation.productId ||
-      (balance.locationId ?? null) !== (allocation.locationId ?? null)
-    ) {
-      throw new Error(`InventoryBalance context conflict: ${allocation.balanceId}`);
-    }
-    return balance;
-  }
-
   private assertConsumeInput(input: ConsumeInventoryReservationInput): void {
     assertRequiredText(input.tenantId, "Reservation tenantId");
     assertRequiredText(input.branchId, "Reservation branchId");
@@ -642,19 +474,6 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
       throw new Error("Product inventory settings reorderPoint must be greater than or equal to 0");
     }
   }
-}
-
-function getAllocationRemaining(allocation: InventoryReservationAllocation): number {
-  if (
-    !Number.isFinite(allocation.reservedQuantity) ||
-    !Number.isFinite(allocation.consumedQuantity) ||
-    allocation.reservedQuantity < 0 ||
-    allocation.consumedQuantity < 0 ||
-    allocation.consumedQuantity > allocation.reservedQuantity
-  ) {
-    throw new Error(`Invalid inventory reservation allocation: ${allocation.id}`);
-  }
-  return allocation.reservedQuantity - allocation.consumedQuantity;
 }
 
 function assertPositiveQuantity(quantity: number, label: string): void {
