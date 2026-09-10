@@ -67,6 +67,8 @@ Promociones V1 soporta descuento porcentual (`percentage`), descuento fijo (`fix
 
 `InventoryMovement` es append-only. No modificar historia. Todo ajuste, entrada, salida o transferencia debe generar movimiento. Evitar doble registro de stock entre POS, Receiving, Picking y Dispatch. `quantityBefore` y `quantityAfter` son opcionales para registrar auditoria de stock cuando la operacion conoce esos valores en el momento de persistir el movimiento; no deben reconstruirse para movimientos historicos desde el balance actual.
 
+`InventoryReservation` pertenece a un `OrderItem` y conserva allocations por `InventoryBalance`, incluyendo su `balanceId` y ubicacion. La reserva puede abarcar multiples ubicaciones y es agnostica al canal de origen. Reservar o liberar solo modifica `InventoryBalance.reservedQuantity` y no crea movimientos; consumir reduce `quantity` y `reservedQuantity` en el mismo balance y genera un `InventoryMovement` de salida por allocation consumida. Reserve es idempotente por tenant y linea de pedido, mientras consume exige un `operationId` idempotente persistido. En el seed demo, cada `reservedQuantity` esta respaldado por el remanente de reservas activas del balance.
+
 En recepcion de mercaderia, la cantidad rechazada se deriva de la suma de incidencias activas de la linea. `Recibido ahora` representa la cantidad fisicamente recibida, `Aceptado ahora = Recibido ahora - Rechazado`, y solo lo aceptado genera entrada de inventario. Las incidencias justifican por tipo, observacion y evidencia el rechazo; no existe un ingreso manual paralelo de cantidad rechazada.
 
 `InventoryAdjustment` representa el documento auditable de un ajuste de inventario con numero operativo `AJ-YYYY-#####` unico por tenant y anio. El documento conserva `quantityBefore`, `quantityAfter` y `delta` como snapshot de auditoria; `delta` es `quantityAfter - quantityBefore`. `InventoryAdjustmentRepository` solo persiste el documento y emite `inventory-adjustment.changed`; no modifica `InventoryBalance` ni crea `InventoryMovement`. La aplicacion futura que aplique stock debe registrar el movimiento una sola vez y relacionarlo con `referenceType = "inventoryAdjustment"` y `referenceId = adjustment.id`.
@@ -98,6 +100,10 @@ Guest checkout permitido por defecto. `requireAccountForCheckout` permite al ten
 ## Order
 
 `Order` representa pedido, preparacion y entrega. Puede provenir de ecommerce o POS. Puede ser de cliente registrado o invitado. Es compartido por Storefront, POS cuando aplica, Logistics y Customer Tracking.
+
+`OrderStatus.pending` representa el estado previo a confirmacion. Una Order confirmada o en un estado posterior no puede regresar a `pending`. Crear una Order directamente como `confirmed`, o transicionar una Order `pending` a `confirmed`, reserva atomica e idempotentemente cada item cuyo Product sea `physical` y tenga `tracking.stock = true`. Servicios, productos sin stock y kits sin resolucion de componentes no crean reservas. Cancelar libera solamente el remanente de las reservas existentes, sin modificar stock fisico ni crear movimientos. Esta regla es identica para `ecommerce`, `mobileApp` y `pos`; el canal no decide la semantica de inventario.
+
+La creacion de Order admite `idempotencyKey` opcional. Cuando se proporciona, la key es unica por tenant y se persiste junto con un fingerprint determinista del payload; un retry identico devuelve la misma Order y un payload diferente produce conflicto. El fingerprint incluye tenant, branch, source, identidad customer/guest, estado, entrega/transporte/direccion, snapshots de items, cantidades, importes, numero operativo y tracking token; excluye IDs y timestamps generados por el repositorio.
 
 ## Sale
 

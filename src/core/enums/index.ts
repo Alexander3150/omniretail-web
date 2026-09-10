@@ -66,6 +66,11 @@ export enum InventoryMovementType {
   adjustment = "adjustment",
   transfer = "transfer",
 }
+export enum InventoryReservationStatus {
+  active = "active",
+  consumed = "consumed",
+  released = "released",
+}
 export enum InventoryAdjustmentType {
   manualIncrease = "manualIncrease",
   manualDecrease = "manualDecrease",
@@ -146,8 +151,10 @@ export enum CustomerStatus {
 export enum OrderSource {
   ecommerce = "ecommerce",
   pos = "pos",
+  mobileApp = "mobileApp",
 }
 export enum OrderStatus {
+  pending = "pending",
   confirmed = "confirmed",
   preparing = "preparing",
   picking = "picking",

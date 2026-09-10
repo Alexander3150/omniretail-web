@@ -19,6 +19,8 @@ import type {
   InventoryBalance,
   InventoryAdjustment,
   InventoryMovement,
+  InventoryReservation,
+  InventoryReservationConsumeOperation,
   InventoryTransfer,
   InventoryTransferItem,
   InventoryTransferRequest,
@@ -91,6 +93,8 @@ export interface MockDatabase {
   productInventorySettings: ProductInventorySettings[];
   inventoryBalances: InventoryBalance[];
   inventoryMovements: InventoryMovement[];
+  inventoryReservations: InventoryReservation[];
+  inventoryReservationConsumeOperations: InventoryReservationConsumeOperation[];
   inventoryAdjustments: InventoryAdjustment[];
   inventoryTransfers: InventoryTransfer[];
   inventoryTransferItems: InventoryTransferItem[];

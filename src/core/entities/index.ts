@@ -25,6 +25,7 @@ export type * from "./Promotion";
 export type * from "./PriceTier";
 export type * from "./InventoryBalance";
 export type * from "./InventoryMovement";
+export type * from "./InventoryReservation";
 export type * from "./InventoryAdjustment";
 export type * from "./InventoryTransferRequest";
 export type * from "./InventoryTransfer";

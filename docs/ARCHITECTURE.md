@@ -21,6 +21,17 @@ UI
 -> Backend
 ```
 
+## Order Reservation Lifecycle
+
+`MockOrderRepository` crea o confirma una Order y todas sus reservas dentro de una sola llamada a `MockDatabaseStore.transact`. Las mutaciones de reserva sobre el draft viven en un helper interno de infraestructura compartido con `MockInventoryRepository`; asi ambos repositorios usan el mismo algoritmo sin abrir transacciones anidadas ni duplicar la logica de allocations.
+
+```text
+OrderRepository.create / updateStatus
+-> MockOrderRepository
+-> MockDatabaseStore.transact
+-> Order + InventoryReservation + InventoryBalance
+```
+
 ## Navegacion Privada
 
 Los modulos declaran sus entradas en `src/modules/*/navigation.ts`.

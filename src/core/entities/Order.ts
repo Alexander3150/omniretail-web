@@ -26,6 +26,8 @@ export interface Order {
   shippingTotal: number;
   total: number;
   trackingToken: string;
+  idempotencyKey?: string;
+  idempotencyFingerprint?: string;
   createdAt: ISODateString;
   updatedAt: ISODateString;
 }
