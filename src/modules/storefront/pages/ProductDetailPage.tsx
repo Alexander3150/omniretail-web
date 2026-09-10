@@ -58,7 +58,7 @@ export function ProductDetailPage({ productId }: { productId: string }) {
         </p>
         <button
           className="mt-6 rounded-md bg-[var(--color-primary)] px-4 py-2 font-semibold text-[var(--color-topbar)]"
-          onClick={() => addProduct(product)}
+          onClick={() => void addProduct(product.id)}
           type="button"
         >
           Agregar al carrito

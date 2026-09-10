@@ -8,18 +8,19 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Product } from "@/core/entities";
+import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import {
   createStorefrontCartItem,
   type StorefrontCartItemDto,
 } from "@/modules/storefront/application/dto/StorefrontCartDto";
+import { GetStorefrontPublishedProductService } from "@/modules/storefront/application/services/GetStorefrontPublishedProductService";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
 interface StorefrontCartContextValue {
   items: StorefrontCartItemDto[];
   itemCount: number;
   subtotal: number;
-  addProduct: (product: Product) => void;
+  addProduct: (productId: string) => Promise<void>;
   updateQuantity: (productId: string, quantity: number) => void;
   removeProduct: (productId: string) => void;
   clearCart: () => void;
@@ -28,7 +29,12 @@ interface StorefrontCartContextValue {
 const StorefrontCartContext = createContext<StorefrontCartContextValue | null>(null);
 
 export function StorefrontCartProvider({ children }: { children: ReactNode }) {
+  const repositories = useRepositories();
   const { tenantId } = usePublicTenant();
+  const publishedProductService = useMemo(
+    () => new GetStorefrontPublishedProductService(repositories),
+    [repositories],
+  );
   const [allItems, setAllItems] = useState<StorefrontCartItemDto[]>([]);
   const items = useMemo(
     () => allItems.filter((item) => item.tenantId === tenantId),
@@ -44,8 +50,10 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
   );
 
   const addProduct = useCallback(
-    (product: Product) => {
-      if (!tenantId || product.tenantId !== tenantId) return;
+    async (productId: string) => {
+      if (!tenantId) return;
+      const product = await publishedProductService.execute(tenantId, productId);
+      if (!product) return;
 
       setAllItems((current) => {
         const existing = current.find(
@@ -54,16 +62,25 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
         if (!existing) return [...current, createStorefrontCartItem(product)];
 
         return current.map((item) =>
-          item === existing ? { ...item, quantity: item.quantity + 1 } : item,
+          item === existing
+            ? {
+                ...item,
+                sku: product.sku,
+                name: product.name,
+                unitPrice: product.salePrice,
+                quantity: item.quantity + 1,
+              }
+            : item,
         );
       });
     },
-    [tenantId],
+    [publishedProductService, tenantId],
   );
 
   const updateQuantity = useCallback(
     (productId: string, quantity: number) => {
       if (!tenantId) return;
+      if (!Number.isFinite(quantity)) return;
       const nextQuantity = Math.floor(quantity);
       setAllItems((current) =>
         nextQuantity <= 0

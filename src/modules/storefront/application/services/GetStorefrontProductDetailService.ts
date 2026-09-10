@@ -5,13 +5,18 @@ import {
 } from "@/core/inventory/canonicalAvailability";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { StorefrontProductDetailDto } from "@/modules/storefront/application/dto/StorefrontProductDetailDto";
+import { GetStorefrontPublishedProductService } from "@/modules/storefront/application/services/GetStorefrontPublishedProductService";
 
 export class GetStorefrontProductDetailService {
-  constructor(private readonly repositories: RepositoryRegistry) {}
+  private readonly publishedProductService: GetStorefrontPublishedProductService;
+
+  constructor(private readonly repositories: RepositoryRegistry) {
+    this.publishedProductService = new GetStorefrontPublishedProductService(repositories);
+  }
 
   async execute(tenantId: string, productId: string): Promise<StorefrontProductDetailDto | null> {
-    const [products, allProducts, branches, balances, locations, lots, serials] = await Promise.all([
-      this.repositories.products.getPublishedForEcommerce(tenantId),
+    const [product, allProducts, branches, balances, locations, lots, serials] = await Promise.all([
+      this.publishedProductService.execute(tenantId, productId),
       this.repositories.products.getAll(),
       this.repositories.branches.getActive(),
       this.repositories.inventory.getBalances(),
@@ -19,7 +24,6 @@ export class GetStorefrontProductDetailService {
       this.repositories.inventory.getLots(),
       this.repositories.inventory.getSerialNumbers(),
     ]);
-    const product = products.find((item) => item.id === productId);
     if (!product) return null;
 
     if (product.productType === ProductType.service) return { product };
