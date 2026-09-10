@@ -23,6 +23,12 @@ export const administrationNavigation = [
         href: "/administracion/configuracion-negocio",
         permission: BUSINESS_CONFIG_MANAGE_PERMISSION,
       },
+      {
+        id: "administration-bank-accounts",
+        label: "Cuentas bancarias",
+        href: "/administracion/cuentas-bancarias",
+        permission: "admin.bank_accounts.manage",
+      },
     ],
   },
 ] satisfies NavigationItem[];

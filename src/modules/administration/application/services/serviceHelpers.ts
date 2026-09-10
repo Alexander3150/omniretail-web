@@ -1,4 +1,4 @@
-import type { Branch } from "@/core/entities";
+import type { BankAccount, Branch } from "@/core/entities";
 import { BranchStatus, BranchType } from "@/core/enums";
 import type { BranchInputDto } from "@/modules/administration/application/dto/BranchDto";
 import { BUSINESS_CONFIG_MANAGE_PERMISSION } from "@/modules/administration/permissions";
@@ -99,6 +99,39 @@ export function normalizeBranchInput(dto: BranchInputDto): BranchInputDto {
 function normalizeOptionalText(value?: string) {
   const normalized = value?.trim();
   return normalized || undefined;
+}
+
+/**
+ * La autorización de cuentas bancarias pertenece a la capa de aplicación. El repositorio expone
+ * un único permiso `admin.bank_accounts.manage`: sin él no se consulta ni se modifica el maestro.
+ */
+export function ensureCanManageBankAccounts(permissions: readonly string[]) {
+  if (permissions.includes("admin.bank_accounts.manage")) return;
+
+  throw new AdministrationServiceError("No tenés permiso para gestionar cuentas bancarias.");
+}
+
+export function ensureBankAccountTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
+}
+
+export function ensureBankAccountActor(actorUserId: string) {
+  if (actorUserId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
+}
+
+export function ensureBankAccountBelongsToTenant(
+  account: BankAccount | null,
+  tenantId: string,
+): BankAccount {
+  if (account?.tenantId === tenantId) return account;
+
+  throw new AdministrationServiceError(
+    "La cuenta bancaria no está disponible para el negocio activo.",
+  );
 }
 
 export function cleanError(error: unknown): string {
