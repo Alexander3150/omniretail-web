@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useStorefrontCatalog } from "@/modules/storefront/hooks/useStorefrontCatalog";
 
 export function CatalogPage() {
@@ -64,9 +65,12 @@ export function CatalogPage() {
               Q{product.salePrice.toFixed(2)}
             </p>
 
-            <p className="mt-5 text-sm font-medium text-[var(--color-text-muted)]">
-              Detalle del producto próximamente.
-            </p>
+            <Link
+              className="mt-5 inline-block rounded-md bg-[var(--color-primary)] px-4 py-2 font-semibold text-[var(--color-topbar)]"
+              href={`/catalogo/${product.id}`}
+            >
+              Ver producto
+            </Link>
           </article>
         ))}
       </div>
