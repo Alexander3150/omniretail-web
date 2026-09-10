@@ -79,7 +79,7 @@ export function getLotAwareBalances(
   });
 }
 
-function getEligibleStockLots(db: MockDatabase, scope: StockLotScope): StockLot[] {
+export function getEligibleStockLots(db: MockDatabase, scope: StockLotScope): StockLot[] {
   return db.stockLots
     .filter((lot) => {
       if (

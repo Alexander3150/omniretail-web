@@ -37,6 +37,13 @@ import {
   planStockLotConsumption,
   type StockLotAllocation,
 } from "@/infrastructure/mock/repositories/stockLotMutations";
+import {
+  consumePlannedSerials,
+  getLotSerialAwareBalances,
+  getSerialAwareBalances,
+  planLotSerialConsumption,
+  planSerialConsumption,
+} from "@/infrastructure/mock/repositories/serialNumberMutations";
 
 export class MockSaleConfirmationRepository
   extends BaseMockRepository
@@ -269,7 +276,7 @@ export class MockSaleConfirmationRepository
         throw new Error(`Product not found for OrderItem: ${orderItem.id}`);
       }
       if (product.productType !== ProductType.physical || !product.tracking.stock) return;
-      if (product.tracking.serial || (product.tracking.expiration && !product.tracking.lot)) {
+      if (product.tracking.expiration && !product.tracking.lot) {
         throw new Error(
           `La Order ${order.id} contiene ${product.name} con trazabilidad pendiente de lote/serie.`,
         );
@@ -384,7 +391,7 @@ export class MockSaleConfirmationRepository
         throw new Error(`Producto no encontrado para venta: ${saleItem.productId}`);
       }
       if (product.productType !== ProductType.physical || !product.tracking.stock) return;
-      if (product.tracking.serial || (product.tracking.expiration && !product.tracking.lot)) {
+      if (product.tracking.expiration && !product.tracking.lot) {
         throw new Error(
           `La venta ${sale.number} contiene ${product.name} con trazabilidad pendiente de lote/serie.`,
         );
@@ -403,15 +410,29 @@ export class MockSaleConfirmationRepository
           branchId: input.branchId,
           productId: saleItem.productId,
           quantity: saleItem.quantity,
-          balances: (product.tracking.lot
-            ? getLotAwareBalances(db, {
+          balances: (product.tracking.lot && product.tracking.serial
+            ? getLotSerialAwareBalances(db, {
                 tenantId: input.tenantId,
                 branchId: input.branchId,
                 productId: saleItem.productId,
                 expirationTracked: product.tracking.expiration,
                 at: this.now(),
               })
-            : db.inventoryBalances
+            : product.tracking.lot
+              ? getLotAwareBalances(db, {
+                  tenantId: input.tenantId,
+                  branchId: input.branchId,
+                  productId: saleItem.productId,
+                  expirationTracked: product.tracking.expiration,
+                  at: this.now(),
+                })
+              : product.tracking.serial
+                ? getSerialAwareBalances(db, {
+                    tenantId: input.tenantId,
+                    branchId: input.branchId,
+                    productId: saleItem.productId,
+                  })
+                : db.inventoryBalances
           ).map((balance) => {
             const plannedQuantity = plannedQuantities.get(balance.id);
             return plannedQuantity === undefined
@@ -434,20 +455,49 @@ export class MockSaleConfirmationRepository
           quantityBefore: allocation.quantityBefore,
           quantityAfter: allocation.quantityAfter,
           fromLocationId: allocation.locationId,
-          lotAllocations: product.tracking.lot
-            ? planStockLotConsumption(
-                db,
-                {
-                  tenantId: input.tenantId,
-                  branchId: input.branchId,
-                  productId: saleItem.productId,
-                  locationId: allocation.locationId,
-                  expirationTracked: product.tracking.expiration,
-                  at: this.now(),
-                },
-                allocation.quantity,
-              )
-            : [],
+          lotAllocations:
+            product.tracking.lot && !product.tracking.serial
+              ? planStockLotConsumption(
+                  db,
+                  {
+                    tenantId: input.tenantId,
+                    branchId: input.branchId,
+                    productId: saleItem.productId,
+                    locationId: allocation.locationId,
+                    expirationTracked: product.tracking.expiration,
+                    at: this.now(),
+                  },
+                  allocation.quantity,
+                )
+              : [],
+          serialNumbers:
+            product.tracking.serial && !product.tracking.lot
+              ? planSerialConsumption(
+                  db,
+                  {
+                    tenantId: input.tenantId,
+                    branchId: input.branchId,
+                    productId: saleItem.productId,
+                    locationId: allocation.locationId,
+                  },
+                  allocation.quantity,
+                )
+              : [],
+          lotSerialAllocations:
+            product.tracking.lot && product.tracking.serial
+              ? planLotSerialConsumption(
+                  db,
+                  {
+                    tenantId: input.tenantId,
+                    branchId: input.branchId,
+                    productId: saleItem.productId,
+                    locationId: allocation.locationId,
+                    expirationTracked: product.tracking.expiration,
+                    at: this.now(),
+                  },
+                  allocation.quantity,
+                )
+              : [],
         });
       });
     });
@@ -478,12 +528,14 @@ export class MockSaleConfirmationRepository
         quantityBefore: number,
         quantityAfter: number,
         lotId?: string,
+        serialNumberId?: string,
       ): InventoryMovement => ({
         id: this.id("movement"),
         tenantId: input.tenantId,
         branchId: input.branchId,
         productId: planned.productId,
         lotId,
+        serialNumberId,
         type: InventoryMovementType.out,
         reason: `Venta ${sale.number}`,
         quantity,
@@ -495,7 +547,33 @@ export class MockSaleConfirmationRepository
         performedByUserId: input.cashierUserId,
         createdAt: now,
       });
-      if (planned.lotAllocations.length === 0) {
+      if (planned.lotSerialAllocations.length > 0) {
+        consumePlannedStockLots(planned.lotSerialAllocations.map((item) => item.lotAllocation));
+        consumePlannedSerials(
+          planned.lotSerialAllocations.flatMap((item) => item.serialNumbers),
+          now,
+        );
+        let before = planned.quantityBefore;
+        planned.lotSerialAllocations.forEach(({ lotAllocation, serialNumbers }) => {
+          serialNumbers.forEach((serial) => {
+            const after = before - 1;
+            const movement = createMovement(1, before, after, lotAllocation.lot.id, serial.id);
+            before = after;
+            db.inventoryMovements.push(movement);
+            movements.push(movement);
+          });
+        });
+      } else if (planned.serialNumbers.length > 0) {
+        consumePlannedSerials(planned.serialNumbers, now);
+        let before = planned.quantityBefore;
+        planned.serialNumbers.forEach((serial) => {
+          const after = before - 1;
+          const movement = createMovement(1, before, after, undefined, serial.id);
+          before = after;
+          db.inventoryMovements.push(movement);
+          movements.push(movement);
+        });
+      } else if (planned.lotAllocations.length === 0) {
         const movement = createMovement(
           planned.quantity,
           planned.quantityBefore,
@@ -588,6 +666,8 @@ interface PlannedInventoryMovement {
   quantityAfter: number;
   fromLocationId?: string;
   lotAllocations: StockLotAllocation[];
+  serialNumbers: import("@/core/entities").SerialNumber[];
+  lotSerialAllocations: import("@/infrastructure/mock/repositories/serialNumberMutations").LotSerialAllocation[];
 }
 
 function assertSaleMatchesOrder(

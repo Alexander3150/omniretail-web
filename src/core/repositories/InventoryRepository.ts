@@ -43,6 +43,7 @@ export interface ReleaseInventoryReservationInput {
 
 export interface ConsumeInventoryReservationInput extends ReleaseInventoryReservationInput {
   allocationsConsumed: InventoryReservationConsumedAllocation[];
+  serialNumbers?: string[];
   operationId: string;
   performedByUserId: string;
 }

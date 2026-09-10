@@ -8,6 +8,7 @@ export interface InventoryMovement {
   productId: string;
   /** Present for movements whose physical stock was consumed or received by lot. */
   lotId?: string;
+  serialNumberId?: string;
   type: InventoryMovementType;
   reason: string;
   quantity: number;
