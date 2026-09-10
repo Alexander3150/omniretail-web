@@ -12,10 +12,21 @@ import {
   getLockoutMinutesForOccurrence,
 } from "@/config/auth-policy";
 import { sessionPolicy } from "@/config/session-policy";
+import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
+import type { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import { buildPasswordHashMock } from "@/infrastructure/mock/shared/passwordHashMock";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
+import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
+import { MOCK_SESSION_STORAGE_KEY } from "@/infrastructure/storage/storageKeys";
 export class MockAuthRepository extends BaseMockRepository implements AuthRepository {
+  private readonly sessionStorage: LocalStorageAdapter;
+
+  constructor(store: MockDatabaseStore, eventBus: DataEventBus, sessionStorage: LocalStorageAdapter) {
+    super(store, eventBus);
+    this.sessionStorage = sessionStorage;
+  }
+
   async login(input: Parameters<AuthRepository["login"]>[0]) {
     const normalizedEmail = input.email.trim().toLowerCase();
     const now = new Date();
@@ -212,6 +223,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     }
 
     this.emit("auth.changed", { entityId: outcome.session.id, action: "created" });
+    this.sessionStorage.set(MOCK_SESSION_STORAGE_KEY, outcome.session.id);
     return outcome.session;
   }
   async logout(sessionId: string) {
@@ -220,12 +232,22 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       if (session) session.revokedAt = this.now();
       return undefined;
     });
+    if (this.sessionStorage.get<string>(MOCK_SESSION_STORAGE_KEY) === sessionId) {
+      this.sessionStorage.remove(MOCK_SESSION_STORAGE_KEY);
+    }
     this.emit("auth.changed", { entityId: sessionId, action: "updated" });
   }
   async getSession(sessionId: string) {
-    return this.read(
-      (db) => db.sessions.find((item) => item.id === sessionId && !item.revokedAt) ?? null,
-    );
+    return this.read((db) => {
+      const session = db.sessions.find((item) => item.id === sessionId) ?? null;
+      if (!session) return null;
+      if (session.revokedAt) return null;
+      if (new Date() >= new Date(session.expiresAt)) return null;
+      return session;
+    });
+  }
+  async getCurrentSessionId(): Promise<string | null> {
+    return this.sessionStorage.get<string>(MOCK_SESSION_STORAGE_KEY);
   }
   async registerCustomer(input: Parameters<AuthRepository["registerCustomer"]>[0]) {
     const user = this.store.mutate((db) => {

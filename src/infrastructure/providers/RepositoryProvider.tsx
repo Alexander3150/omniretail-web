@@ -139,7 +139,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     const repositories: RepositoryRegistry = {
       tenants: new MockTenantRepository(store, eventBus),
       businessConfig: new MockBusinessConfigRepository(store, eventBus),
-      auth: new MockAuthRepository(store, eventBus),
+      auth: new MockAuthRepository(store, eventBus, storage),
       users: new MockUserRepository(store, eventBus),
       roles: new MockRoleRepository(store, eventBus),
       branches: new MockBranchRepository(store, eventBus),
