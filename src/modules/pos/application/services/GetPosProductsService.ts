@@ -22,7 +22,7 @@ export class GetPosProductsService {
 
     const items = await Promise.all(
       products.map(async (product): Promise<PosProductDto> => {
-        const [promotion, balances, lots] = await Promise.all([
+        const [promotion, balances, lots, serials] = await Promise.all([
           this.repositories.promotions.getApplicable({
             tenantId: input.tenantId,
             productId: product.id,
@@ -35,6 +35,9 @@ export class GetPosProductsService {
             : Promise.resolve([]),
           product.tracking.lot
             ? this.repositories.inventory.getLots(product.id)
+            : Promise.resolve([]),
+          product.tracking.serial
+            ? this.repositories.inventory.getSerialNumbers(product.id)
             : Promise.resolve([]),
         ]);
         const price = calculateEffectivePrice(product.salePrice, promotion);
@@ -57,10 +60,37 @@ export class GetPosProductsService {
                         new Date().toISOString(),
                       ),
                   )
-                  .reduce((sum, lot) => sum + lot.quantity, 0),
+                  .reduce(
+                    (sum, lot) =>
+                      sum +
+                      (product.tracking.serial
+                        ? Math.min(
+                            lot.quantity,
+                            serials.filter(
+                              (serial) => serial.lotId === lot.id && serial.status === "available",
+                            ).length,
+                          )
+                        : lot.quantity),
+                    0,
+                  ),
               ),
             }))
-          : balances;
+          : product.tracking.serial
+            ? balances.map((balance) => ({
+                ...balance,
+                quantity: Math.min(
+                  balance.quantity,
+                  serials.filter(
+                    (serial) =>
+                      serial.tenantId === input.tenantId &&
+                      serial.branchId === input.branchId &&
+                      serial.productId === product.id &&
+                      serial.locationId === balance.locationId &&
+                      serial.status === "available",
+                  ).length,
+                ),
+              }))
+            : balances;
         const availableQuantity = tracksStock
           ? getBranchAvailableQuantity({
               tenantId: input.tenantId,
@@ -73,9 +103,7 @@ export class GetPosProductsService {
         const requiresLot = product.tracking.lot;
         const requiresSerial = product.tracking.serial;
         const requiresUnsupportedTraceability =
-          requiresSerial ||
-          product.productType === ProductType.kit ||
-          (product.tracking.expiration && !requiresLot);
+          product.productType === ProductType.kit || (product.tracking.expiration && !requiresLot);
 
         return {
           productId: product.id,

@@ -7,6 +7,7 @@ export interface SerialNumber {
   branchId: string;
   productId: string;
   locationId?: string;
+  lotId?: string;
   serialNumber: string;
   status: SerialStatus;
   createdAt: ISODateString;
