@@ -344,11 +344,23 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       }
 
       // R-A24: revoke every existing (non-revoked) session for this user.
-      db.sessions
-        .filter((session) => session.userId === account.userId && !session.revokedAt)
-        .forEach((session) => {
-          session.revokedAt = now;
+      const revokedSessions = db.sessions.filter(
+        (session) => session.userId === account.userId && !session.revokedAt,
+      );
+      revokedSessions.forEach((session) => {
+        session.revokedAt = now;
+      });
+
+      // R-A30: audit the session revocation as its own event, separate
+      // from password_reset_completed — the doc lists them separately.
+      if (revokedSessions.length > 0) {
+        this.logAuthAudit(db, {
+          tenantId,
+          actorUserId: account.userId,
+          accountId: account.id,
+          action: "session_revoked",
         });
+      }
 
       // R-A30: audit the completed reset.
       // NOTE for review: R-A24 also mentions a "notificación de cambio de
