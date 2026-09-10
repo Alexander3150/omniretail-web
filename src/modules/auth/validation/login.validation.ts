@@ -18,7 +18,10 @@ export function validateLoginForm(dto: LoginFormDto): LoginFormValidationErrors 
     errors.email = "Ingresa un correo con formato válido.";
   }
 
-  if (!dto.password) {
+  // .trim() aqui es SOLO para la comprobacion de vacio -- no muta dto.password.
+  // El valor original (con los espacios que tenga) sigue intacto y es el que
+  // se envia despues a AuthRepository.login(), sin modificar.
+  if (!dto.password.trim()) {
     errors.password = "La contraseña es obligatoria.";
   }
 

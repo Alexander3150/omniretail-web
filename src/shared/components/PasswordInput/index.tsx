@@ -37,9 +37,10 @@ function EyeOffIcon(props: SVGProps<SVGSVGElement>) {
  * Envuelve el `Input` compartido (no lo modifica) agregando un toggle para
  * mostrar/ocultar la contraseña. El boton SI es alcanzable con teclado
  * (regla 5.14: foco visible en todos los controles) — no se le quita del
- * tab order.
+ * tab order. Si el input esta disabled, el toggle tambien queda disabled
+ * (visual y funcionalmente, via el atributo nativo disabled del boton).
  */
-export function PasswordInput({ className, id, ...props }: PasswordInputProps) {
+export function PasswordInput({ className, id, disabled, ...props }: PasswordInputProps) {
   const [visible, setVisible] = useState(false);
   const generatedId = useId();
   const inputId = id ?? generatedId;
@@ -49,12 +50,17 @@ export function PasswordInput({ className, id, ...props }: PasswordInputProps) {
       <Input
         {...props}
         className={cn("pr-11", className)}
+        disabled={disabled}
         id={inputId}
         type={visible ? "text" : "password"}
       />
       <button
         aria-label={visible ? "Ocultar contraseña" : "Mostrar contraseña"}
-        className="absolute inset-y-0 right-0 flex h-10 w-10 items-center justify-center text-[var(--color-text-muted)] transition hover:text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]"
+        className={cn(
+          "absolute inset-y-0 right-0 flex h-10 w-10 items-center justify-center text-[var(--color-text-muted)] transition hover:text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
+          disabled && "cursor-not-allowed opacity-60 hover:text-[var(--color-text-muted)]",
+        )}
+        disabled={disabled}
         onClick={() => setVisible((current) => !current)}
         type="button"
       >
