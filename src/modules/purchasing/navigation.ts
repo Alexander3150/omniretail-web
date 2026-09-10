@@ -18,12 +18,6 @@ export const purchasingNavigation = [
         href: "/compras/ordenes",
         permission: "purchasing.orders.read",
       },
-      {
-        id: "purchasing-receipts",
-        label: "Recepciones",
-        href: "/compras/recepciones",
-        permission: "receiving.receipts.confirm",
-      },
     ],
   },
 ] satisfies NavigationItem[];

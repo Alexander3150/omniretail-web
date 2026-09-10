@@ -38,14 +38,8 @@ export interface SupplierContactReadModel {
   primary: boolean;
 }
 
-export interface SupplierIncidentReadModel {
-  id: string;
-  reference: string;
-  productName?: string;
-  type: string;
-  quantity?: number;
-  createdAt: string;
-}
+export type SupplierIncidentReadModel =
+  import("@/modules/receiving/application/dto/IncidentListItemViewModel").IncidentListItemViewModel;
 
 export interface SupplierListItemReadModel {
   id: string;
