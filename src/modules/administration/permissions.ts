@@ -1,5 +1,11 @@
 import type { PermissionDefinition } from "@/shared/types/permissions.types";
 
+/**
+ * La configuracion del negocio es tenant-wide: quien no tenga este permiso no puede modificarla,
+ * ni desde la pantalla ni desde ningun otro consumidor del service.
+ */
+export const BUSINESS_CONFIG_MANAGE_PERMISSION = "admin.business_config.manage";
+
 export const administrationPermissions = [
   {
     key: "admin.users.read",
@@ -38,7 +44,7 @@ export const administrationPermissions = [
     description: "Permite administrar sucursales.",
   },
   {
-    key: "admin.business_config.manage",
+    key: BUSINESS_CONFIG_MANAGE_PERMISSION,
     module: "administration",
     name: "Gestionar configuracion",
     description: "Permite modificar configuracion del negocio.",

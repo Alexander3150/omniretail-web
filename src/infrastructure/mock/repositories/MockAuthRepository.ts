@@ -3,6 +3,7 @@ import type { Customer } from "@/core/entities";
 import type { AuthRepository } from "@/core/repositories";
 import {
   authPolicy,
+  EMAIL_VERIFICATION_TOKEN_MINUTES,
   GENERIC_AUTH_ERROR_MESSAGE,
   LOGIN_ATTEMPT_RULES,
   FAILED_ATTEMPTS_WINDOW_MINUTES,
@@ -255,6 +256,12 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       customer.userId = createdUser.id;
       db.customers.push(customer);
       db.users.push(createdUser);
+      // NOTE for review: this method does not yet enforce email uniqueness
+      // within the tenant (rule R-A03). This is a preexisting gap, not
+      // introduced here — email uniqueness is an invariant that will
+      // eventually need authoritative enforcement (not just UI-level
+      // validation). Called out so it isn't mistaken for an oversight; not
+      // resolved in this PR.
       db.authAccounts.push({
         id: this.id("auth"),
         userId: createdUser.id,
@@ -264,6 +271,18 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         failedLoginAttempts: 0,
         createdAt: now,
         updatedAt: now,
+      });
+      // Doc 4.10: without this record, verifyEmail() (which reads
+      // db.emailVerifications) has nothing to ever match, so a new
+      // customer could never leave pending_verification.
+      db.emailVerifications.push({
+        id: this.id("email-verification"),
+        userId: createdUser.id,
+        token: this.id("token"),
+        createdAt: now,
+        expiresAt: new Date(
+          Date.now() + EMAIL_VERIFICATION_TOKEN_MINUTES * 60 * 1000,
+        ).toISOString(),
       });
       return createdUser;
     });
@@ -298,17 +317,78 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
   }
   async resetPassword(token: string, newPasswordMock: string) {
     this.store.mutate((db) => {
+      const now = new Date();
+
       const challenge = db.passwordResetChallenges.find(
         (item) => item.token === token && !item.usedAt,
       );
       if (!challenge) throw new Error("Invalid reset token");
+      // Reject before any mutation: an expired challenge must not change the
+      // password, touch account status/lockout, revoke sessions, consume the
+      // challenge, or emit any audit event. expiresAt itself counts as
+      // already expired (now >= expiresAt), same boundary as verifyEmail.
+      if (now >= new Date(challenge.expiresAt)) {
+        throw new Error("Invalid reset token");
+      }
+
       const account = db.authAccounts.find((item) => item.userId === challenge.userId);
       if (!account) throw new Error("Account not found");
-      const now = this.now();
+      const user = db.users.find((item) => item.id === account.userId);
+      const tenantId = user?.tenantId ?? "tenant-demo";
+      const nowIso = now.toISOString();
+
       account.passwordHashMock = buildPasswordHashMock(newPasswordMock);
-      account.passwordChangedAt = now;
-      account.updatedAt = now;
-      challenge.usedAt = now;
+      account.passwordChangedAt = nowIso;
+      account.updatedAt = nowIso;
+
+      // R-A24: completing a reset always lifts a temporary lockout or a
+      // forced password_reset_required state back to active, resetting the
+      // failed-attempt counters — but a disabled/archived account is never
+      // re-enabled this way (R-A25): the password changes, access doesn't.
+      if (
+        account.status === AccountStatus.temporarily_locked ||
+        account.status === AccountStatus.password_reset_required
+      ) {
+        account.status = AccountStatus.active;
+        account.failedLoginAttempts = 0;
+        account.lockedUntil = undefined;
+      }
+
+      // R-A24: revoke every existing (non-revoked) session for this user.
+      const revokedSessions = db.sessions.filter(
+        (session) => session.userId === account.userId && !session.revokedAt,
+      );
+      revokedSessions.forEach((session) => {
+        session.revokedAt = nowIso;
+      });
+
+      challenge.usedAt = nowIso;
+
+      // R-A30: session_revoked is an aggregate event emitted on every
+      // successful reset, count included (0 when there was nothing to
+      // revoke) — a missing log entry should never be the signal that no
+      // sessions existed.
+      this.logAuthAudit(db, {
+        tenantId,
+        actorUserId: account.userId,
+        accountId: account.id,
+        action: "session_revoked",
+        metadata: { count: revokedSessions.length },
+      });
+
+      // R-A30: audit the completed reset.
+      // NOTE for review: R-A24 also mentions a "notificación de cambio de
+      // contraseña". This PR keeps that at the audit-log level only
+      // (password_reset_completed) — persisting a Notification/toast is left
+      // for when the corresponding screen exists (later UI PR), since this
+      // PR is repository/contract-only and doesn't touch any screen yet.
+      this.logAuthAudit(db, {
+        tenantId,
+        actorUserId: account.userId,
+        accountId: account.id,
+        action: "password_reset_completed",
+      });
+
       return undefined;
     });
     this.emit("auth.changed", { action: "updated" });
@@ -319,6 +399,13 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         (item) => item.token === token && !item.verifiedAt,
       );
       if (!verification) throw new Error("Invalid verification token");
+      // Reject before any mutation: an expired token must not activate the
+      // account, must not set verifiedAt, and must leave the account exactly
+      // as it was (still pending_verification). expiresAt itself counts as
+      // already expired (now >= expiresAt), not "valid until and including".
+      if (new Date() >= new Date(verification.expiresAt)) {
+        throw new Error("Invalid verification token");
+      }
       verification.verifiedAt = this.now();
       const account = db.authAccounts.find((item) => item.userId === verification.userId);
       if (account) account.status = AccountStatus.active;
@@ -328,7 +415,13 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
   }
   private logAuthAudit(
     db: MockDatabase,
-    entry: { tenantId: string; actorUserId?: string; accountId?: string; action: string },
+    entry: {
+      tenantId: string;
+      actorUserId?: string;
+      accountId?: string;
+      action: string;
+      metadata?: Record<string, unknown>;
+    },
   ) {
     db.auditLogs.push({
       id: this.id("audit"),
@@ -337,6 +430,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       action: entry.action,
       entityType: "AuthAccount",
       entityId: entry.accountId,
+      metadata: entry.metadata,
       createdAt: this.now(),
     });
   }
