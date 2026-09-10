@@ -307,6 +307,7 @@ export function ProductForm({
             <UnitsTab
               capabilities={options.businessCapabilities}
               errors={errors}
+              isExistingProduct={Boolean(existingCapabilityContext)}
               onChange={updateValue}
               units={options.units}
               value={value}
@@ -591,50 +592,60 @@ function ChannelsControl({
 function UnitsTab({
   value,
   capabilities,
+  isExistingProduct,
   units,
   errors,
   onChange,
 }: {
   value: ProductEditorDto;
   capabilities: ProductFormOptions["businessCapabilities"];
+  isExistingProduct: boolean;
   units: ProductFormOptions["units"];
   errors: ProductValidationErrors;
   onChange: (value: Partial<ProductEditorDto>) => void;
 }) {
   const baseUnit = units.find((item) => item.id === value.baseUnitId);
   const saleUnit = units.find((item) => item.id === value.saleUnitId);
-  // Sin "Unidades y empaques" un producto NUEVO trabaja con una sola unidad. Uno EXISTENTE puede
-  // conservar una unidad de venta distinta de antes de apagar la capacidad: no se oculta, se
-  // muestra de solo lectura (ver principio general del blocker: capacidad OFF no es una migracion
-  // destructiva de datos historicos).
+  // Sin "Unidades y empaques" un producto NUEVO trabaja con una sola unidad (baseUnitId libre,
+  // saleUnitId siempre igual). Uno EXISTENTE protege TODA su configuracion de unidades — tambien
+  // baseUnitId, no solo la unidad de venta — porque cambiar la unidad de inventario dejaria una
+  // equivalencia historica (ej. "1 Caja = 12 Unidades") atada a una base distinta sin que exista
+  // una migracion explicita que la redefina. Se muestra, no se oculta: ver principio general del
+  // blocker, capacidad OFF no es una migracion destructiva de datos historicos.
   const usesSingleUnit = !capabilities.supportsUnitsAndPackaging;
+  const unitsProtected = isExistingProduct && usesSingleUnit;
   const hasDivergentSaleUnit = value.baseUnitId !== value.saleUnitId;
   const showConversion = hasDivergentSaleUnit;
-  const conversionReadOnly = usesSingleUnit && hasDivergentSaleUnit;
   const needsConversion = showConversion;
 
   return (
     <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
       <SectionTitle
         description={
-          conversionReadOnly
-            ? "El negocio opera con una unica unidad para productos nuevos; este producto conserva su configuracion previa de unidades y empaques."
+          unitsProtected
+            ? "El negocio opera con una unica unidad para productos nuevos; la configuracion de unidades de este producto quedo protegida mientras la capacidad este desactivada."
             : usesSingleUnit
               ? "El negocio opera con una unica unidad por producto."
               : "Unidad base para inventario y presentacion normal de venta."
         }
         title="Unidades"
       />
-      {conversionReadOnly ? (
+      {unitsProtected ? (
         <p className="rounded-md border border-[var(--color-warning)] bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-text)]">
-          La equivalencia de unidades de este producto quedo de solo lectura porque el negocio
-          desactivo &ldquo;Unidades y empaques&rdquo;. No se borra ni se modifica al guardar otros
-          campos.
+          La configuracion de unidades de este producto (unidad de inventario, unidad de venta y
+          equivalencia) quedo de solo lectura porque el negocio desactivo &ldquo;Unidades y
+          empaques&rdquo;. No se borra ni se modifica al guardar otros campos.
         </p>
       ) : null}
       <div className="grid gap-4 md:grid-cols-2">
-        <FormField id="baseUnitId" label="Unidad de inventario *" error={errors.baseUnitId}>
+        <FormField
+          id="baseUnitId"
+          label="Unidad de inventario *"
+          error={errors.baseUnitId}
+          hint={unitsProtected ? "Protegida mientras la capacidad este desactivada." : undefined}
+        >
           <Select
+            disabled={unitsProtected}
             id="baseUnitId"
             onChange={(event) =>
               onChange({
@@ -658,7 +669,7 @@ function UnitsTab({
           label="Unidad de venta *"
           error={errors.saleUnitId}
           hint={
-            conversionReadOnly
+            unitsProtected
               ? "Se conserva la configuracion previa; el negocio ya no permite editarla."
               : usesSingleUnit
                 ? "Sigue a la unidad de inventario porque el negocio no maneja unidades y empaques."
@@ -692,7 +703,7 @@ function UnitsTab({
             <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
               <div className="grid gap-2 sm:grid-cols-[120px_1fr]">
                 <Input
-                  disabled={conversionReadOnly}
+                  disabled={unitsProtected}
                   id="inventoryQuantity"
                   min="0.0001"
                   onChange={(event) => onChange({ inventoryQuantity: parseDecimalInput(event.target.value) })}
@@ -709,7 +720,7 @@ function UnitsTab({
               </div>
               <div className="grid gap-2 sm:grid-cols-[120px_1fr]">
                 <Input
-                  disabled={conversionReadOnly}
+                  disabled={unitsProtected}
                   id="saleQuantity"
                   min="0.0001"
                   onChange={(event) =>

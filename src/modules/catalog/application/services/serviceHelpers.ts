@@ -60,6 +60,28 @@ export function ensureProductTypeAllowed(
   throw new CatalogServiceError(getDisabledProductTypeMessage(productType));
 }
 
+/**
+ * Sin "Unidades y empaques", un producto EXISTENTE protege TODA su configuracion de unidades, no
+ * solo `saleUnitId`/la equivalencia (que ya se preservan en silencio). `baseUnitId` se edita con un
+ * control que, a diferencia del selector de venta, nunca estuvo deshabilitado por esta capacidad:
+ * si se permitiera cambiarlo, una equivalencia historica (ej. "1 Caja = 12 Unidades") quedaria
+ * atada a una base distinta sin que exista una migracion explicita que la redefina. Por eso esto
+ * SE RECHAZA en vez de corregirse en silencio como tracking/atributos/saleUnitId: es un cambio que
+ * el usuario pidio activamente, no un efecto colateral de guardar otro campo.
+ */
+export function ensureUnitConfigUnchanged(
+  dto: { baseUnitId: string },
+  capabilities: BusinessCapabilitiesConfig,
+  current?: { baseUnitId: string },
+) {
+  if (capabilities.supportsUnitsAndPackaging) return;
+  if (!current) return; // producto nuevo: no hay configuracion previa que proteger
+  if (dto.baseUnitId === current.baseUnitId) return;
+  throw new CatalogServiceError(
+    'No podes cambiar la unidad de inventario de este producto mientras "Unidades y empaques" este desactivado en la configuracion del negocio.',
+  );
+}
+
 export function ensureProduct(product: Product | null) {
   if (!product) throw new CatalogServiceError("El producto solicitado no existe.");
   return product;

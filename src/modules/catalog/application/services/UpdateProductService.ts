@@ -15,6 +15,7 @@ import {
   ensureActiveUnit,
   ensureProduct,
   ensureProductTypeAllowed,
+  ensureUnitConfigUnchanged,
   requireCapabilities,
 } from "@/modules/catalog/application/services/serviceHelpers";
 
@@ -55,6 +56,7 @@ export class UpdateProductService {
 
     const capabilities = await requireCapabilities(this.repositories, current.tenantId);
     ensureProductTypeAllowed(dto.productType, capabilities, current.productType);
+    ensureUnitConfigUnchanged(dto, capabilities, current);
     // Producto existente: se conserva lo ya persistido (unidad de venta y tracking) en vez de
     // recortarlo si la capacidad correspondiente esta apagada. Ver product.validation.ts.
     const saleUnitId = resolveSaleUnitId(

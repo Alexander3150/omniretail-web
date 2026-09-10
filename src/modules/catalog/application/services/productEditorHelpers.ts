@@ -22,6 +22,7 @@ import {
   ensureActiveCategory,
   ensureActiveUnit,
   ensureProductTypeAllowed,
+  ensureUnitConfigUnchanged,
   requireCapabilities,
 } from "@/modules/catalog/application/services/serviceHelpers";
 
@@ -33,6 +34,7 @@ export async function validateEditorProduct(
 ) {
   const capabilities = await requireCapabilities(repositories, tenantId);
   ensureProductTypeAllowed(dto.productType, capabilities, current?.productType);
+  ensureUnitConfigUnchanged(dto, capabilities, current);
 
   // El borrador se normaliza ANTES de validar y de persistir: lo que la configuracion deshabilita
   // no llega ni al producto ni a sus datos relacionados, venga de la pantalla o de otro consumidor.
