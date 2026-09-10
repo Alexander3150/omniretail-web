@@ -796,6 +796,8 @@ export const demoSeedDatabase: MockDatabase = {
     },
   ],
   inventoryMovements: [],
+  inventoryReservations: [],
+  inventoryReservationConsumeOperations: [],
   inventoryAdjustments: [],
   inventoryTransferRequests: [
     {

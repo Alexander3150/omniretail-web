@@ -80,6 +80,9 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
     }),
   );
   normalized.productPriceHistory = database.productPriceHistory ?? [];
+  normalized.inventoryReservations = database.inventoryReservations ?? [];
+  normalized.inventoryReservationConsumeOperations =
+    database.inventoryReservationConsumeOperations ?? [];
   normalized.products = (database.products ?? base.products).map((product) => ({
     ...product,
     saleUnitId: product.saleUnitId ?? product.baseUnitId,
