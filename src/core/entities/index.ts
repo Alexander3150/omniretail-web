@@ -12,6 +12,7 @@ export type * from "./EmailVerification";
 export type * from "./MfaEnrollment";
 export type * from "./RecoveryCode";
 export type * from "./Product";
+export type * from "./ProductKitComponent";
 export type * from "./ProductPriceHistory";
 export type * from "./ProductMedia";
 export type * from "./ProductSalesPriceTier";

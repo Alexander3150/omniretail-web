@@ -1,9 +1,10 @@
-import { InventoryTransferRequestStatus, ProductStatus } from "@/core/enums";
+import { InventoryTransferRequestStatus, ProductStatus, ProductType } from "@/core/enums";
 import type { InventoryBalance, InventoryTransferRequest, Product, StockLot } from "@/core/entities";
 import {
   getAvailableQuantity,
   getBranchAvailableQuantity,
 } from "@/core/inventory/stockAvailability";
+import { getCanonicalProductAvailability } from "@/core/inventory/canonicalAvailability";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   InventoryAlert,
@@ -33,6 +34,7 @@ export class GetInventoryAlertsService {
       receivedTransferRequests,
       approvedTransferResponses,
       rejectedTransferResponses,
+      serials,
     ] = await Promise.all([
       this.repositories.products.getAll(),
       this.repositories.branches.getActive(),
@@ -52,12 +54,14 @@ export class GetInventoryAlertsService {
         requestingBranchId: branchId,
         status: InventoryTransferRequestStatus.rejected,
       }),
+      this.repositories.inventory.getSerialNumbers(),
     ]);
     const activeBranch = branches.find((branch) => branch.id === branchId);
     const tenantProducts = activeBranch
       ? products.filter((product) => product.tenantId === activeBranch.tenantId)
       : products;
     const branchProducts = tenantProducts.filter(isOperationalStockProduct);
+    const kits = tenantProducts.filter((product) => product.status === ProductStatus.published && product.productType === ProductType.kit);
     const capabilities = activeBranch
       ? await this.repositories.businessConfig.getCapabilities(activeBranch.tenantId)
       : null;
@@ -65,6 +69,7 @@ export class GetInventoryAlertsService {
     const lots = visibility.showExpirationFeatures
       ? await this.repositories.inventory.getLots()
       : [];
+    const kitComponents = await Promise.all(kits.map((kit) => this.repositories.productKitComponents.getByKitProduct(kit.id)));
     const settingsEntries = await Promise.all(
       branchProducts.map(async (product) => [
         product.id,
@@ -80,9 +85,11 @@ export class GetInventoryAlertsService {
       lotsByProduct: groupLotsByProduct(lots.filter((lot) => lot.branchId === branchId)),
     };
 
-    const rows = branchProducts
+    const physicalRows = branchProducts
       .map((product) => buildRow(product, branchId, maps, balances))
-      .sort((left, right) => left.productName.localeCompare(right.productName));
+    const availabilityByProduct = new Map(branchProducts.map((product) => [product.id, getCanonicalProductAvailability({ product, tenantId: product.tenantId, branchId, balances, lots, serials, locations, at: new Date().toISOString() })]));
+    const kitRows = kits.map((kit, index) => buildKitRow(kit, kitComponents[index], availabilityByProduct, branchId, maps));
+    const rows = [...physicalRows, ...kitRows].sort((left, right) => left.productName.localeCompare(right.productName));
     const alerts = rows.flatMap((row) => [
       ...row.activeAlerts,
       ...buildAvailableElsewhereAlerts(row, balances, maps),
@@ -277,6 +284,27 @@ function buildRow(
   };
   row.activeAlerts = buildRowAlerts(row);
   return row;
+}
+
+function buildKitRow(
+  product: Product,
+  components: Array<{ componentProductId: string; quantityPerKit: number }> | undefined,
+  availability: Map<string, number>,
+  branchId: string,
+  maps: InventoryLookupMaps,
+): InventoryProductRow {
+  const quantity = components?.length
+    ? Math.min(...components.map((component) => Math.floor((availability.get(component.componentProductId) ?? 0) / component.quantityPerKit)))
+    : 0;
+  const status: InventoryStatus = quantity === 0 ? "out_of_stock" : "normal";
+  return {
+    productId: product.id, tenantId: product.tenantId, sku: product.sku, productName: product.name,
+    categoryId: product.categoryId, categoryName: maps.categories.get(product.categoryId)?.name ?? "Sin categoria",
+    unitId: product.baseUnitId, unitName: "Kit", branchId, branchName: maps.branches.get(branchId)?.name ?? "Sucursal",
+    defaultLocationName: "Calculado por componentes", locationQuantities: {}, quantity, reservedQuantity: 0,
+    availableQuantity: quantity, minStock: 0, status, statusLabel: getInventoryStatusLabel(status),
+    tracksExpiration: false, nextExpirationLabel: "-", activeAlerts: [], otherBranchStocks: [], isDerivedKit: true,
+  };
 }
 
 function buildOtherBranchStocks(

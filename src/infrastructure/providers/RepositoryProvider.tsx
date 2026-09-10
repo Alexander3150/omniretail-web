@@ -23,6 +23,7 @@ import type {
   PaymentRepository,
   PickingRepository,
   ProductMediaRepository,
+  ProductKitComponentRepository,
   ProductPriceHistoryRepository,
   ProductRepository,
   ProductSalesPriceTierRepository,
@@ -63,6 +64,7 @@ import {
   MockPaymentRepository,
   MockPickingRepository,
   MockProductMediaRepository,
+  MockProductKitComponentRepository,
   MockProductPriceHistoryRepository,
   MockProductRepository,
   MockProductSalesPriceTierRepository,
@@ -88,6 +90,7 @@ export interface RepositoryRegistry {
   roles: RoleRepository;
   branches: BranchRepository;
   products: ProductRepository;
+  productKitComponents: ProductKitComponentRepository;
   productPriceHistory: ProductPriceHistoryRepository;
   productSalesPriceTiers: ProductSalesPriceTierRepository;
   categories: CategoryRepository;
@@ -141,6 +144,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       roles: new MockRoleRepository(store, eventBus),
       branches: new MockBranchRepository(store, eventBus),
       products: new MockProductRepository(store, eventBus),
+      productKitComponents: new MockProductKitComponentRepository(store, eventBus),
       productPriceHistory: new MockProductPriceHistoryRepository(store, eventBus),
       productSalesPriceTiers: new MockProductSalesPriceTierRepository(store, eventBus),
       categories: new MockCategoryRepository(store, eventBus),

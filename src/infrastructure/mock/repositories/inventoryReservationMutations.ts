@@ -50,7 +50,10 @@ export function reserveOrderItemInDatabase(
   assertReservationReferences(input, db);
 
   const existing = db.inventoryReservations.find(
-    (item) => item.tenantId === input.tenantId && item.orderItemId === input.orderItemId,
+    (item) =>
+      item.tenantId === input.tenantId &&
+      item.orderItemId === input.orderItemId &&
+      item.productId === input.productId,
   );
   if (existing) {
     assertMatchingReservation(existing, input);
@@ -511,10 +514,13 @@ function assertReservationReferences(input: ReserveOrderItemInput, db: MockDatab
     (item) => item.id === input.orderItemId && item.orderId === input.orderId,
   );
   if (!orderItem) throw new Error(`OrderItem not found in order: ${input.orderItemId}`);
-  if (orderItem.productId !== input.productId) {
+  const fulfillment = orderItem.fulfillmentComponents?.find(
+    (component) => component.productId === input.productId,
+  );
+  if (orderItem.productId !== input.productId && !fulfillment) {
     throw new Error(`OrderItem product conflict: ${input.orderItemId}`);
   }
-  if (input.quantity > orderItem.quantity) {
+  if (input.quantity > (fulfillment?.quantity ?? orderItem.quantity)) {
     throw new Error(`Reservation quantity exceeds OrderItem quantity: ${input.orderItemId}`);
   }
 }
