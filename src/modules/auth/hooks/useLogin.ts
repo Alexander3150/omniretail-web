@@ -18,20 +18,14 @@ export function useLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
-  const [accountType, setAccountTypeState] = useState<UserType>(UserType.customer);
   const [fieldErrors, setFieldErrors] = useState<LoginFormValidationErrors>({});
   const [formError, setFormError] = useState<string | undefined>();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const setAccountType = useCallback((next: UserType) => {
-    setAccountTypeState(next);
-    setFormError(undefined);
-  }, []);
-
   const submit = useCallback(async () => {
     setFormError(undefined);
 
-    const dto: LoginFormDto = { email, password, rememberMe, expectedUserType: accountType };
+    const dto: LoginFormDto = { email, password, rememberMe };
     const errors = validateLoginForm(dto);
     setFieldErrors(errors);
 
@@ -45,19 +39,29 @@ export function useLogin() {
         email: dto.email.trim(),
         passwordMock: dto.password,
         rememberMe: dto.rememberMe,
-        expectedUserType: dto.expectedUserType,
       });
-      // El destino se decide por el User real autenticado, no por la tab
-      // elegida en el form -- la tab solo alimenta expectedUserType para el
-      // chequeo de login() (R-A13), nunca determina privilegios ni destino.
+      // El sistema identifica el tipo de cuenta despues de autenticar
+      // (Session.userId -> User.type) -- nunca se le pide al usuario que
+      // lo declare (eso era inseguro y redundante: el propio login ya
+      // puede distinguir credenciales de cliente vs. empleado).
       const authenticatedUser = await repositories.users.getById(session.userId);
-      router.replace(authenticatedUser?.type === UserType.customer ? "/cuenta" : "/inicio");
+      if (!authenticatedUser) {
+        // Estado inconsistente: login() creo una sesion valida para un
+        // userId que ya no resuelve a un User real. Nunca se inventa un
+        // User ni se otorga un destino de empleado por defecto -- se
+        // revoca la sesion recien creada y se falla igual que cualquier
+        // otro error generico de login (R-A13: no revelar la causa).
+        await repositories.auth.logout(session.id);
+        setFormError("No se pudo iniciar sesion.");
+        return;
+      }
+      router.replace(authenticatedUser.type === UserType.customer ? "/cuenta" : "/inicio");
     } catch (caughtError) {
       setFormError(caughtError instanceof Error ? caughtError.message : "No se pudo iniciar sesion.");
     } finally {
       setIsSubmitting(false);
     }
-  }, [accountType, email, password, rememberMe, repositories, router]);
+  }, [email, password, rememberMe, repositories, router]);
 
   return {
     email,
@@ -66,8 +70,6 @@ export function useLogin() {
     setPassword,
     rememberMe,
     setRememberMe,
-    accountType,
-    setAccountType,
     fieldErrors,
     formError,
     isSubmitting,

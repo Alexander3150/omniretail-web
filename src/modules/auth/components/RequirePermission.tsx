@@ -4,8 +4,24 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { navigationConfig } from "@/config/navigation";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
+import { EMPLOYEE_HOME_ACCESS_PERMISSION, hasEmployeeHomeAccess } from "@/modules/auth/permissions";
 import { isNavigationItemActive } from "@/shared/navigation/Sidebar";
 import type { NavigationItem } from "@/shared/types/navigation.types";
+
+/**
+ * Rutas privadas que solo exigen sesion valida, sin permiso operacional.
+ * Lista explicita y minima -- NUNCA "cualquier ruta sin permission
+ * declarado se permite". Todo lo demas que no resuelva un permiso real
+ * en navigationConfig queda denegado por defecto (fail-closed), incluidas
+ * rutas nuevas/dinamicas que accidentalmente no se hayan registrado.
+ */
+const SESSION_ONLY_ROUTES = ["/cuenta"];
+
+function isSessionOnlyRoute(pathname: string): boolean {
+  return SESSION_ONLY_ROUTES.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`),
+  );
+}
 
 function findRequiredPermission(items: NavigationItem[], pathname: string): string | undefined {
   for (const item of items) {
@@ -20,27 +36,44 @@ function findRequiredPermission(items: NavigationItem[], pathname: string): stri
   return undefined;
 }
 
+function Denied() {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center">
+      <p className="text-sm text-[var(--color-text-muted)]">
+        No tienes permiso para acceder a esta seccion.
+      </p>
+    </div>
+  );
+}
+
 /**
- * Boundary de autorizacion por ruta: reutiliza la MISMA fuente de permisos
- * que Sidebar (navigationConfig + isNavigationItemActive) en vez de mantener
- * un segundo mapeo ruta->permiso. Una ruta sin item de navegacion asociado
- * (p.ej. /inicio, /cuenta) no exige permiso -- solo sesion valida, ya
- * garantizada por RequireSession mas arriba en el arbol.
+ * Boundary de autorizacion por ruta, fail-closed por defecto: una ruta
+ * privada sin item de navegacion asociado, o cuyo item no resuelve un
+ * permiso concedido, se deniega -- nunca se permite por "no encontre
+ * permission". Reutiliza la MISMA fuente que Sidebar (navigationConfig +
+ * isNavigationItemActive), asi que un item nuevo agregado ahi queda
+ * protegido automaticamente sin tocar este archivo.
+ *
+ * /cuenta es la unica excepcion "solo sesion" (area privada del Cliente).
+ * /inicio usa el permission sintetico EMPLOYEE_HOME_ACCESS_PERMISSION
+ * (ver modules/auth/permissions.ts) -- mismo mecanismo, sin caso especial
+ * duplicado entre sidebar y guard de rutas.
  */
 export function RequirePermission({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { hasPermission } = useCurrentSession();
-  const requiredPermission = findRequiredPermission(navigationConfig, pathname);
+  const { hasPermission, permissions, user } = useCurrentSession();
 
-  if (requiredPermission && !hasPermission(requiredPermission)) {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <p className="text-sm text-[var(--color-text-muted)]">
-          No tienes permiso para acceder a esta seccion.
-        </p>
-      </div>
-    );
+  if (isSessionOnlyRoute(pathname)) {
+    return <>{children}</>;
   }
 
-  return <>{children}</>;
+  const requiredPermission = findRequiredPermission(navigationConfig, pathname);
+  const isAllowed =
+    requiredPermission === EMPLOYEE_HOME_ACCESS_PERMISSION
+      ? hasEmployeeHomeAccess(user, permissions)
+      : requiredPermission
+        ? hasPermission(requiredPermission)
+        : false;
+
+  return isAllowed ? <>{children}</> : <Denied />;
 }
