@@ -195,7 +195,12 @@ export const demoSeedDatabase: MockDatabase = {
       tenantId: "tenant-demo",
       name: "Administrador",
       isSystem: true,
-      permissions: ["admin.users.manage", "admin.roles.manage", "admin.business_config.manage"],
+      permissions: [
+        "admin.users.manage",
+        "admin.roles.manage",
+        "admin.business_config.manage",
+        "admin.audit.read",
+      ],
       branchScope: "all",
       createdAt: now,
       updatedAt: now,

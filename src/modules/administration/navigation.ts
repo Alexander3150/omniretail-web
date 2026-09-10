@@ -13,6 +13,12 @@ export const administrationNavigation = [
         href: "/administracion/configuracion-negocio",
         permission: BUSINESS_CONFIG_MANAGE_PERMISSION,
       },
+      {
+        id: "administration-audit",
+        label: "Auditoría",
+        href: "/administracion/auditoria",
+        permission: "admin.audit.read",
+      },
     ],
   },
 ] satisfies NavigationItem[];
