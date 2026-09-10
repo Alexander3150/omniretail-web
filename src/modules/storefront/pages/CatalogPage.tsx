@@ -1,15 +1,30 @@
 "use client";
 
-import Link from "next/link";
 import { useStorefrontCatalog } from "@/modules/storefront/hooks/useStorefrontCatalog";
 
 export function CatalogPage() {
-  const { items, loading } = useStorefrontCatalog();
+  const { items, loading, error, reload } = useStorefrontCatalog();
 
   if (loading) {
     return (
       <main className="mx-auto max-w-7xl px-5 py-10">
         <p>Cargando catálogo...</p>
+      </main>
+    );
+  }
+
+  if (error) {
+    return (
+      <main className="mx-auto max-w-7xl px-5 py-10">
+        <h1 className="text-3xl font-bold text-[var(--color-text)]">Catálogo</h1>
+        <p className="mt-4 text-[var(--color-text-muted)]">{error}</p>
+        <button
+          className="mt-5 rounded-md bg-[var(--color-primary)] px-4 py-2 font-semibold text-[var(--color-topbar)]"
+          onClick={reload}
+          type="button"
+        >
+          Reintentar
+        </button>
       </main>
     );
   }
@@ -22,6 +37,11 @@ export function CatalogPage() {
         Catálogo
       </h1>
 
+      {items.length === 0 ? (
+        <p className="mt-7 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 text-[var(--color-text-muted)]">
+          No hay productos disponibles en este momento.
+        </p>
+      ) : (
       <div className="mt-7 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((product) => (
           <article
@@ -44,15 +64,13 @@ export function CatalogPage() {
               Q{product.salePrice.toFixed(2)}
             </p>
 
-            <Link
-              className="mt-5 inline-block rounded-md bg-[var(--color-primary)] px-4 py-2 font-semibold text-[var(--color-topbar)]"
-              href={`/catalogo/${product.id}`}
-            >
-              Ver detalle
-            </Link>
+            <p className="mt-5 text-sm font-medium text-[var(--color-text-muted)]">
+              Detalle del producto próximamente.
+            </p>
           </article>
         ))}
       </div>
+      )}
     </main>
   );
 }

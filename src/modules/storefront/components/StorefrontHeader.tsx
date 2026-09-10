@@ -10,9 +10,6 @@ export function StorefrontHeader() {
 
         <nav className="flex gap-4 text-sm font-medium text-[var(--color-text)]">
           <Link href="/catalogo">Catálogo</Link>
-          <Link href="/ofertas">Ofertas</Link>
-          <Link href="/ayuda">Ayuda</Link>
-          <Link href="/carrito">Carrito</Link>
         </nav>
       </div>
     </header>

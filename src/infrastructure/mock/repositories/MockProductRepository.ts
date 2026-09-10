@@ -14,8 +14,9 @@ export class MockProductRepository extends BaseMockRepository implements Product
     const normalizedSku = normalizeSku(sku);
     return this.read((db) => db.products.find((item) => item.sku === normalizedSku) ?? null);
   }
-  async getPublishedForEcommerce() {
-    return this.getPublishedForChannel(SalesChannel.ecommerce);
+  async getPublishedForEcommerce(tenantId: string) {
+    const products = await this.getPublishedForChannel(SalesChannel.ecommerce);
+    return products.filter((product) => product.tenantId === tenantId);
   }
   async getAvailableForPos() {
     return this.getPublishedForChannel(SalesChannel.pos);
