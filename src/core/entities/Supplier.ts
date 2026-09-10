@@ -11,6 +11,7 @@ export interface Supplier {
   phone?: string;
   address?: string;
   notes?: string;
+  leadTimeDays?: number;
   status: SupplierStatus;
   createdAt: ISODateString;
   updatedAt: ISODateString;

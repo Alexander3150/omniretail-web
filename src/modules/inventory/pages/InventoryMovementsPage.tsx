@@ -135,6 +135,7 @@ export function InventoryMovementsPage() {
     period,
     type,
     branchId,
+    productId,
     filtersOpen,
     page,
     pageSize,
@@ -143,6 +144,7 @@ export function InventoryMovementsPage() {
     setPeriod,
     setType,
     setBranchId,
+    setProductId,
     setFiltersOpen,
     setPage,
     setPageSize,
@@ -160,6 +162,9 @@ export function InventoryMovementsPage() {
     "Periodo seleccionado";
   const selectedTypeLabel =
     MOVEMENT_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? "Tipo seleccionado";
+  const productFilterLabel = productId
+    ? (data.rows.find((row) => row.productId === productId)?.productName ?? productId)
+    : "";
 
   async function handleExport() {
     setExporting(true);
@@ -216,9 +221,11 @@ export function InventoryMovementsPage() {
           period={period}
           search={search}
           type={type}
+          productFilterLabel={productFilterLabel}
           onBranchChange={setBranchId}
           onPeriodChange={setPeriod}
           onSearchChange={setSearch}
+          onProductFilterClear={() => setProductId("")}
           onToggleFilters={() => setFiltersOpen((current) => !current)}
           onTypeChange={setType}
         />
@@ -335,8 +342,10 @@ function MovementFilters({
   period,
   search,
   type,
+  productFilterLabel,
   onBranchChange,
   onPeriodChange,
+  onProductFilterClear,
   onSearchChange,
   onToggleFilters,
   onTypeChange,
@@ -347,8 +356,10 @@ function MovementFilters({
   period: MovementPeriodFilter;
   search: string;
   type: MovementTypeFilter;
+  productFilterLabel: string;
   onBranchChange: (value: string) => void;
   onPeriodChange: (value: MovementPeriodFilter) => void;
+  onProductFilterClear: () => void;
   onSearchChange: (value: string) => void;
   onToggleFilters: () => void;
   onTypeChange: (value: MovementTypeFilter) => void;
@@ -412,6 +423,20 @@ function MovementFilters({
               </option>
             ))}
           </Select>
+          {productFilterLabel ? (
+            <div className="flex min-h-10 items-center justify-between gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] px-3">
+              <span className="truncate text-sm font-semibold text-[var(--color-title)]">
+                {productFilterLabel}
+              </span>
+              <button
+                className="shrink-0 text-xs font-bold text-[var(--color-structure)] hover:underline"
+                onClick={onProductFilterClear}
+                type="button"
+              >
+                Quitar producto
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

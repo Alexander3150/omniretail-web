@@ -18,6 +18,8 @@ export interface Sale {
   number: string;
   customerId?: string;
   sourceOrderId?: string;
+  confirmationId?: string;
+  confirmationFingerprint?: string;
   cashShiftId: string;
   items: SaleItem[];
   status: SaleStatus;
