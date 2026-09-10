@@ -154,6 +154,7 @@ export enum OrderSource {
   mobileApp = "mobileApp",
 }
 export enum OrderStatus {
+  pending = "pending",
   confirmed = "confirmed",
   preparing = "preparing",
   picking = "picking",
