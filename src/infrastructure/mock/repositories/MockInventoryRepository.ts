@@ -220,6 +220,12 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
   }
   async registerMovement(input: RegisterInventoryMovementInput) {
     const movement = this.store.mutate((db) => {
+      const product = db.products.find(
+        (item) => item.id === input.productId && item.tenantId === input.tenantId,
+      );
+      if (product?.tracking.lot) {
+        throw new Error("Lot-tracked stock must be mutated through a lot-aware workflow.");
+      }
       const created: InventoryMovement = {
         ...input,
         id: this.id("movement"),

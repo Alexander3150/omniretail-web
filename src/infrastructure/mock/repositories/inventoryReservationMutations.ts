@@ -14,6 +14,11 @@ import type {
   ReserveOrderItemInput,
 } from "@/core/repositories";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
+import {
+  consumePlannedStockLots,
+  getLotAwareBalances,
+  planStockLotConsumption,
+} from "@/infrastructure/mock/repositories/stockLotMutations";
 
 interface InventoryReservationMutationDependencies {
   id(prefix: string): string;
@@ -25,8 +30,7 @@ export interface InventoryReservationMutationResult {
   changed: boolean;
 }
 
-export interface InventoryReservationConsumeMutationResult
-  extends ConsumeInventoryReservationResult {
+export interface InventoryReservationConsumeMutationResult extends ConsumeInventoryReservationResult {
   changed: boolean;
 }
 
@@ -52,12 +56,22 @@ export function reserveOrderItemInDatabase(
       item.branchId === input.branchId &&
       item.productId === input.productId,
   );
+  const product = db.products.find(
+    (item) => item.id === input.productId && item.tenantId === input.tenantId,
+  );
+  if (!product) throw new Error(`Product not found for tenant: ${input.productId}`);
   const plannedAllocations = planInventoryAllocation({
     tenantId: input.tenantId,
     branchId: input.branchId,
     productId: input.productId,
     quantity: input.quantity,
-    balances: db.inventoryBalances,
+    balances: product.tracking.lot
+      ? getLotAwareBalances(db, {
+          ...input,
+          expirationTracked: product.tracking.expiration,
+          at: dependencies.now(),
+        })
+      : db.inventoryBalances,
     locations: db.storageLocations,
     preferredLocationId: settings?.defaultLocationId,
   });
@@ -167,6 +181,10 @@ export function consumeInventoryReservationInDatabase(
     throw new Error(`Consumed reservation has no remaining quantity: ${reservation.id}`);
   }
 
+  const product = db.products.find(
+    (item) => item.id === reservation.productId && item.tenantId === reservation.tenantId,
+  );
+  if (!product) throw new Error(`Product not found for reservation: ${reservation.id}`);
   const planned = input.allocationsConsumed.map((consumed) => {
     const allocation = reservation.allocations.find(
       (item) => item.balanceId === consumed.balanceId,
@@ -185,36 +203,78 @@ export function consumeInventoryReservationInDatabase(
     if (balance.reservedQuantity < consumed.quantity) {
       throw new Error(`Insufficient reserved stock in balance: ${balance.id}`);
     }
-    return { allocation, balance, quantity: consumed.quantity };
+    const lotAllocations = product.tracking.lot
+      ? planStockLotConsumption(
+          db,
+          {
+            tenantId: reservation.tenantId,
+            branchId: reservation.branchId,
+            productId: reservation.productId,
+            locationId: allocation.locationId,
+            expirationTracked: product.tracking.expiration,
+            at: dependencies.now(),
+          },
+          consumed.quantity,
+        )
+      : [];
+    return { allocation, balance, quantity: consumed.quantity, lotAllocations };
   });
 
   const now = dependencies.now();
-  const inventoryMovements = planned.map(({ allocation, balance, quantity }) => {
-    const quantityBefore = balance.quantity;
-    balance.quantity -= quantity;
-    balance.reservedQuantity -= quantity;
-    balance.updatedAt = now;
-    allocation.consumedQuantity += quantity;
+  const inventoryMovements = planned.flatMap(
+    ({ allocation, balance, quantity, lotAllocations }) => {
+      const quantityBefore = balance.quantity;
+      balance.quantity -= quantity;
+      balance.reservedQuantity -= quantity;
+      balance.updatedAt = now;
+      allocation.consumedQuantity += quantity;
 
-    const movement: InventoryMovement = {
-      id: dependencies.id("movement"),
-      tenantId: reservation.tenantId,
-      branchId: reservation.branchId,
-      productId: reservation.productId,
-      type: InventoryMovementType.out,
-      reason: `Consumo de reserva ${reservation.id}`,
-      quantity,
-      quantityBefore,
-      quantityAfter: balance.quantity,
-      fromLocationId: allocation.locationId,
-      referenceType: "inventoryReservation",
-      referenceId: reservation.id,
-      performedByUserId: input.performedByUserId,
-      createdAt: now,
-    };
-    db.inventoryMovements.push(movement);
-    return movement;
-  });
+      if (lotAllocations.length === 0) {
+        const movement = createReservationMovement(quantity, quantityBefore, balance.quantity);
+        db.inventoryMovements.push(movement);
+        return [movement];
+      }
+      consumePlannedStockLots(lotAllocations);
+      let movementBefore = quantityBefore;
+      return lotAllocations.map(({ lot, quantity: lotQuantity }) => {
+        const movementAfter = movementBefore - lotQuantity;
+        const movement = createReservationMovement(
+          lotQuantity,
+          movementBefore,
+          movementAfter,
+          lot.id,
+        );
+        movementBefore = movementAfter;
+        db.inventoryMovements.push(movement);
+        return movement;
+      });
+
+      function createReservationMovement(
+        movementQuantity: number,
+        movementQuantityBefore: number,
+        movementQuantityAfter: number,
+        lotId?: string,
+      ): InventoryMovement {
+        return {
+          id: dependencies.id("movement"),
+          tenantId: reservation.tenantId,
+          branchId: reservation.branchId,
+          productId: reservation.productId,
+          lotId,
+          type: InventoryMovementType.out,
+          reason: `Consumo de reserva ${reservation.id}`,
+          quantity: movementQuantity,
+          quantityBefore: movementQuantityBefore,
+          quantityAfter: movementQuantityAfter,
+          fromLocationId: allocation.locationId,
+          referenceType: "inventoryReservation",
+          referenceId: reservation.id,
+          performedByUserId: input.performedByUserId,
+          createdAt: now,
+        };
+      }
+    },
+  );
 
   reservation.status = reservation.allocations.some(
     (allocation) => getInventoryReservationAllocationRemaining(allocation) > 0,

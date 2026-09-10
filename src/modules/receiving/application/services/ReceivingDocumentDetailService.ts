@@ -12,7 +12,6 @@ import type {
   Unit,
 } from "@/core/entities";
 import {
-  InventoryMovementType,
   InventoryTransferStatus,
   LocationStatus,
   PurchaseOrderStatus,
@@ -64,15 +63,28 @@ export class ReceivingDocumentDetailService {
     if (input.documentType !== "purchase_order") {
       throw new Error("La recepcion de traslados aun no esta soportada por el contrato Receipt.");
     }
+    const order = await this.requirePurchaseOrder(input.documentId);
+    const confirmationId = input.confirmationId.trim();
+    if (!confirmationId) throw new Error("La confirmacion de recepcion requiere una identidad.");
+    const confirmationFingerprint = getReceivingConfirmationFingerprint(input, order);
+    const existingConfirmation = await this.repositories.receipts.getByConfirmationId(
+      order.tenantId,
+      confirmationId,
+    );
+    if (existingConfirmation) {
+      if (existingConfirmation.confirmationFingerprint !== confirmationFingerprint) {
+        throw new Error(`La confirmacion ${confirmationId} ya fue usada con datos distintos.`);
+      }
+      return existingConfirmation;
+    }
     const detail = await this.getPurchaseOrderDocument(input.documentId);
     const validationErrors = validateLines(input.lines, input.incidents, detail);
     if (validationErrors.length > 0) {
       throw new Error(validationErrors[0]);
     }
-
-    const order = await this.requirePurchaseOrder(input.documentId);
     const receipt = await this.ensureInProgressReceipt(order, input.userId);
-    const savedLines = await this.persistDraft(receipt, input, detail);
+    const receiptLines = input.lines.map((line) => toReceiptLineInput(line, input.incidents));
+    const receiptIncidents = toReceiptIncidentInputs(input, detail);
     const now = new Date().toISOString();
     const totalOrdered = detail.lines.reduce((sum, line) => sum + line.orderedQuantity, 0);
     const acceptedNow = input.lines.reduce((sum, line) => sum + getAcceptedNow(line), 0);
@@ -83,37 +95,17 @@ export class ReceivingDocumentDetailService {
         ? ReceiptStatus.received
         : ReceiptStatus.partial;
 
-    await Promise.all(
-      input.lines
-        .filter((line) => line.tracking.stock && getAcceptedNow(line) > 0)
-        .map((line) =>
-          this.repositories.inventory.registerMovement({
-            tenantId: order.tenantId,
-            branchId: order.branchId,
-            productId: line.productId,
-            type: InventoryMovementType.in,
-            reason: `Recepcion ${order.number}`,
-            quantity: toBaseQuantity(line, getAcceptedNow(line)),
-            toLocationId: line.locationId || undefined,
-            referenceType: "receipt",
-            referenceId: receipt.id,
-            performedByUserId: input.userId ?? SYSTEM_USER_ID,
-          }),
-        ),
-    );
-
-    await this.repositories.purchaseOrders.updateStatus(
-      order.id,
-      finalStatus === ReceiptStatus.received
-        ? PurchaseOrderStatus.received
-        : PurchaseOrderStatus.partially_received,
-    );
-
-    return this.repositories.receipts.update(receipt.id, {
-      status: finalStatus,
+    void finalStatus;
+    return this.repositories.receipts.confirmReceiptInventory({
+      receiptId: receipt.id,
+      tenantId: order.tenantId,
+      confirmationId,
+      confirmationFingerprint,
       receivedByUserId: input.userId ?? SYSTEM_USER_ID,
       receivedAt: now,
-      notes: buildReceiptNotes(savedLines),
+      notes: buildReceiptNotes(receiptLines),
+      lines: receiptLines,
+      incidents: receiptIncidents,
     });
   }
 
@@ -500,6 +492,62 @@ export class ReceivingDocumentDetailService {
   }
 }
 
+function getReceivingConfirmationFingerprint(
+  input: ConfirmReceivingInput,
+  order: Pick<PurchaseOrder, "tenantId" | "branchId" | "id">,
+): string {
+  const lines = input.lines
+    .map((line) => ({
+      productId: line.productId,
+      acceptedQuantity: getAcceptedNow(line),
+      incidentQuantity: getRejectedNow(line, input.incidents),
+      locationId: line.locationId || null,
+      lotNumber: line.lotNumber.trim() || null,
+      expirationDate: line.expirationDate || null,
+      purchaseToBaseFactor: line.purchaseToBaseFactor,
+    }))
+    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+  const incidents = input.incidents
+    .filter((incident) => incident.editable)
+    .map((incident) => ({
+      productId: incident.productId ?? null,
+      incidentTypeId: incident.incidentTypeId,
+      quantityAffected: incident.quantityAffected ?? 0,
+      description: incident.description.trim(),
+      evidence: incident.evidence,
+    }))
+    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+  return JSON.stringify({
+    tenantId: order.tenantId,
+    branchId: order.branchId,
+    purchaseOrderId: order.id,
+    lines,
+    incidents,
+  });
+}
+
+function toReceiptIncidentInputs(
+  input: SaveReceivingProgressInput,
+  detail: ReceivingDocumentDetail,
+) {
+  const validProductIds = new Set(detail.lines.map((line) => line.productId));
+  return input.incidents
+    .filter(
+      (incident) =>
+        incident.editable && incident.productId && validProductIds.has(incident.productId),
+    )
+    .map((incident) => ({
+      ...(!incident.id.startsWith("draft-") ? { id: incident.id } : {}),
+      ...(incident.createdAt ? { createdAt: incident.createdAt } : {}),
+      productId: incident.productId,
+      incidentTypeId: incident.incidentTypeId,
+      description: incident.description.trim(),
+      quantityAffected: incident.quantityAffected,
+      evidence: incident.evidence,
+      createdByUserId: incident.createdByUserId || input.userId || SYSTEM_USER_ID,
+    }));
+}
+
 export function validateLines(
   lines: ReceivingDocumentLine[],
   incidents: ReceivingDocumentIncident[],
@@ -626,6 +674,7 @@ function toReceiptLineInput(line: ReceivingDocumentLine, incidents: ReceivingDoc
     productId: line.productId,
     orderedQuantity: line.orderedQuantity,
     receivedQuantity,
+    inventoryQuantity: toBaseQuantity(line, receivedQuantity),
     rejectedQuantity,
     status: getLineStatus(receivedQuantity, rejectedQuantity, pending),
     locationId: line.locationId || undefined,
@@ -817,7 +866,7 @@ function toCapabilityFlags(capabilities: BusinessCapabilitiesConfig): ReceivingC
   };
 }
 
-function buildReceiptNotes(lines: ReceiptLine[]) {
+function buildReceiptNotes(lines: Array<Pick<ReceiptLine, "rejectedQuantity">>) {
   const rejected = lines.reduce((sum, line) => sum + (line.rejectedQuantity ?? 0), 0);
   return rejected > 0 ? `Recepcion confirmada con ${rejected} unidades rechazadas.` : undefined;
 }

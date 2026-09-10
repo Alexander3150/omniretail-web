@@ -6,6 +6,8 @@ export interface InventoryMovement {
   tenantId: string;
   branchId: string;
   productId: string;
+  /** Present for movements whose physical stock was consumed or received by lot. */
+  lotId?: string;
   type: InventoryMovementType;
   reason: string;
   quantity: number;

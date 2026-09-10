@@ -13,6 +13,7 @@ export interface RegisterInventoryMovementInput {
   tenantId: string;
   branchId: string;
   productId: string;
+  lotId?: string;
   type: InventoryMovementType;
   reason: string;
   quantity: number;
