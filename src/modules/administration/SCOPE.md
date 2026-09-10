@@ -34,7 +34,7 @@
 | 1 | Configuración del negocio | `/administracion/configuracion-negocio` | `BusinessCapabilitiesConfig` | ✅ **Implementada** |
 | 2 | Sucursales | `/administracion/sucursales` | `Branch` | ✅ **Implementada** |
 | 3 | Proveedores | `/administracion/proveedores` | `Supplier` | ✅ Desbloqueada |
-| 4 | Cuentas bancarias | `/administracion/cuentas-bancarias` | `BankAccount` | ✅ Desbloqueada |
+| 4 | Cuentas bancarias | `/administracion/cuentas-bancarias` | `BankAccount` | ✅ **Implementada** |
 | 5 | Diseño E-commerce | `/administracion/diseno-ecommerce` | `EcommerceConfig` | ⚠️ Parcial — sin branding |
 | 6 | Clientes | `/administracion/clientes` | `Customer`, `CustomerSegment` | ⚠️ Parcial — sin update ni segmentos |
 | 7 | Auditoría | `/administracion/auditoria` | `AuditLog` | ⚠️ Parcial — filtrado en cliente |
@@ -481,7 +481,7 @@ Tabla: `name`, `taxId`, `email`, `phone`, `status`. Formulario: `name`, `legalNa
 Un proveedor con historial se **archiva** (R-I06) — `SupplierRepository.archive` ya existe.
 Compras (Melbyn) tiene vista de solo consulta sobre la **misma** entity. No duplicar el CRUD.
 
-### 12.4 Cuentas bancarias
+### 12.4 Cuentas bancarias ✅ implementada
 
 ⚠️ El diseño viejo (código/país/contacto de banco) quedó descartado. Modelo vigente: sección 5.1.
 Tabla: `bankName`, `holderName`, `alias`, `accountType`, `currency`, `status`.

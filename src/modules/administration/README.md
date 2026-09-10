@@ -107,6 +107,62 @@ Decisiones abiertas para la integracion con los demas modulos:
 - La sesion demo esta fijada a un cajero; recorrer la pantalla en la demo requiere un switcher de
   rol o de usuario, que es responsabilidad del shell/plataforma.
 
+## Cuentas bancarias
+
+Implementado en esta rama:
+
+- Maestro de cuentas bancarias aislado por el `tenantId` de la sesion y mapeado a un DTO propio
+  del modulo.
+- Alta, edicion y archivado mediante services separados; archivar cambia el estado a `archived`
+  y conserva el registro y sus referencias historicas.
+- Enforcement en la capa de aplicacion: `admin.bank_accounts.manage` es el unico permiso que
+  expone el repositorio, asi que lectura y mutaciones lo exigen dentro del service. La pantalla
+  ademas no renderiza el maestro sin ese permiso.
+- Auditoria obligatoria en alta, edicion y archivado mediante `AuditLogRepository`
+  (`bank_account.created` / `bank_account.updated` / `bank_account.archived`).
+- Validacion del dato recibido antes de normalizar banco, titular, alias, numero enmascarado,
+  tipo, moneda, estado y `branchIds`.
+- `branchIds` se elige contra las sucursales activas del tenant (`BranchRepository.getActive`).
+  Al editar, las sucursales asignadas que ya no estan activas se conservan y se informan; no se
+  descartan en silencio.
+- Sincronizacion de la lista mediante los eventos `payment.changed` (que emite
+  `MockBankAccountRepository`) y `branch.changed` (para refrescar las opciones de sucursal).
+- Tabla con `DataTable`, formulario en `Modal` y estados resueltos mediante `StatusBadge`.
+- Ruta privada `/administracion/cuentas-bancarias` y entrada de navegacion con
+  `admin.bank_accounts.manage`.
+
+La confirmacion de cada transferencia la hace el cajero en POS (Riquelme). Aca solo se administra
+el maestro; no se duplica esa logica.
+
+### Contrato de integracion
+
+Lo que esta pantalla expone al resto del sistema:
+
+- Ruta privada `/administracion/cuentas-bancarias` y un item de navegacion bajo "Administracion"
+  protegido por `admin.bank_accounts.manage`.
+- El permiso `admin.bank_accounts.manage`, ya declarado en `permissions.ts`, ahora asignado a
+  `role-admin` en el seed demo.
+- Escrituras de auditoria con las acciones `bank_account.created`, `bank_account.updated` y
+  `bank_account.archived` sobre `entityType: "BankAccount"`.
+
+Lo que esta pantalla asume de la plataforma:
+
+- Sesion resuelta con `tenantId` y `user.id`; sin eso la pantalla queda en estado de error.
+- `RepositoryRegistry` provee `bankAccounts`, `branches` y `auditLogs`.
+- `config/statuses.ts` define los estados `active`, `inactive` y `archived`.
+- No existe un evento `bank-account.changed` dedicado: `MockBankAccountRepository` emite
+  `payment.changed`, un evento compartido con otros repositorios de pago.
+
+Decisiones abiertas para la integracion con los demas modulos:
+
+- Si `branchIds` debe exigir al menos una sucursal: el contrato no lo define y hoy se permite
+  vacio. POS lo necesita para asociar transferencias, asi que conviene acordarlo.
+- Orden definitivo del item dentro del grupo "Administracion" cuando aterricen las demas
+  pantallas del modulo (colision esperable en `navigation.ts` y en el array de permisos de
+  `role-admin` con las otras ramas de administration).
+- La sesion demo esta fijada a un cajero; recorrer la pantalla en la demo requiere un switcher
+  de rol o de usuario, que es responsabilidad del modulo auth / shell.
+
 ## Reglas
 
 - No duplicar entities de `core/`.
