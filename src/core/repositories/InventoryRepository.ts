@@ -1,6 +1,8 @@
 import type {
   InventoryBalance,
   InventoryMovement,
+  InventoryReservation,
+  InventoryReservationConsumedAllocation,
   ProductInventorySettings,
   SerialNumber,
   StockLot,
@@ -23,6 +25,33 @@ export interface RegisterInventoryMovementInput {
   performedByUserId?: string;
 }
 
+export interface ReserveOrderItemInput {
+  tenantId: string;
+  branchId: string;
+  orderId: string;
+  orderItemId: string;
+  productId: string;
+  quantity: number;
+}
+
+export interface ReleaseInventoryReservationInput {
+  tenantId: string;
+  branchId: string;
+  reservationId: string;
+}
+
+export interface ConsumeInventoryReservationInput extends ReleaseInventoryReservationInput {
+  allocationsConsumed: InventoryReservationConsumedAllocation[];
+  operationId: string;
+  performedByUserId: string;
+}
+
+export interface ConsumeInventoryReservationResult {
+  reservation: InventoryReservation;
+  inventoryMovements: InventoryMovement[];
+  idempotent: boolean;
+}
+
 export type UpsertProductInventorySettingsInput = Omit<
   ProductInventorySettings,
   "id" | "createdAt" | "updatedAt"
@@ -30,6 +59,16 @@ export type UpsertProductInventorySettingsInput = Omit<
 
 export interface InventoryRepository {
   getBalances(): Promise<InventoryBalance[]>;
+  getReservationById(tenantId: string, reservationId: string): Promise<InventoryReservation | null>;
+  getReservationByOrderItem(
+    tenantId: string,
+    orderItemId: string,
+  ): Promise<InventoryReservation | null>;
+  reserveForOrderItem(input: ReserveOrderItemInput): Promise<InventoryReservation>;
+  releaseReservation(input: ReleaseInventoryReservationInput): Promise<InventoryReservation>;
+  consumeReservation(
+    input: ConsumeInventoryReservationInput,
+  ): Promise<ConsumeInventoryReservationResult>;
   getBalanceByProduct(productId: string, branchId?: string): Promise<InventoryBalance[]>;
   getMovements(productId?: string): Promise<InventoryMovement[]>;
   getLots(productId?: string): Promise<StockLot[]>;
