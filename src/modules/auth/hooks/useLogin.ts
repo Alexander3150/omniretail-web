@@ -11,11 +11,6 @@ import {
   type LoginFormValidationErrors,
 } from "@/modules/auth/validation/login.validation";
 
-const REDIRECT_BY_USER_TYPE: Record<UserType, string> = {
-  [UserType.customer]: "/cuenta",
-  [UserType.employee]: "/inicio",
-};
-
 export function useLogin() {
   const repositories = useRepositories();
   const router = useRouter();
@@ -46,13 +41,17 @@ export function useLogin() {
 
     setIsSubmitting(true);
     try {
-      await repositories.auth.login({
+      const session = await repositories.auth.login({
         email: dto.email.trim(),
         passwordMock: dto.password,
         rememberMe: dto.rememberMe,
         expectedUserType: dto.expectedUserType,
       });
-      router.replace(REDIRECT_BY_USER_TYPE[dto.expectedUserType]);
+      // El destino se decide por el User real autenticado, no por la tab
+      // elegida en el form -- la tab solo alimenta expectedUserType para el
+      // chequeo de login() (R-A13), nunca determina privilegios ni destino.
+      const authenticatedUser = await repositories.users.getById(session.userId);
+      router.replace(authenticatedUser?.type === UserType.customer ? "/cuenta" : "/inicio");
     } catch (caughtError) {
       setFormError(caughtError instanceof Error ? caughtError.message : "No se pudo iniciar sesion.");
     } finally {

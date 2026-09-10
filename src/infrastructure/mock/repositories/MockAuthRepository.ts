@@ -238,13 +238,18 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     this.emit("auth.changed", { entityId: sessionId, action: "updated" });
   }
   async getSession(sessionId: string) {
-    return this.read((db) => {
-      const session = db.sessions.find((item) => item.id === sessionId) ?? null;
-      if (!session) return null;
-      if (session.revokedAt) return null;
-      if (new Date() >= new Date(session.expiresAt)) return null;
-      return session;
-    });
+    const session = this.read(
+      (db) => db.sessions.find((item) => item.id === sessionId) ?? null,
+    );
+    const isStale =
+      !session || Boolean(session.revokedAt) || new Date() >= new Date(session.expiresAt);
+    if (isStale) {
+      if (this.sessionStorage.get<string>(MOCK_SESSION_STORAGE_KEY) === sessionId) {
+        this.sessionStorage.remove(MOCK_SESSION_STORAGE_KEY);
+      }
+      return null;
+    }
+    return session;
   }
   async getCurrentSessionId(): Promise<string | null> {
     return this.sessionStorage.get<string>(MOCK_SESSION_STORAGE_KEY);
