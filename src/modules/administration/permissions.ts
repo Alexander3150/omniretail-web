@@ -5,6 +5,7 @@ import type { PermissionDefinition } from "@/shared/types/permissions.types";
  * ni desde la pantalla ni desde ningun otro consumidor del service.
  */
 export const BUSINESS_CONFIG_MANAGE_PERMISSION = "admin.business_config.manage";
+export const CASH_READ_PERMISSION = "admin.cash.read";
 
 export const administrationPermissions = [
   {
@@ -60,5 +61,11 @@ export const administrationPermissions = [
     module: "administration",
     name: "Gestionar cuentas bancarias",
     description: "Permite administrar cuentas bancarias simuladas.",
+  },
+  {
+    key: CASH_READ_PERMISSION,
+    module: "administration",
+    name: "Leer caja",
+    description: "Permite consultar los turnos de caja y su conciliación.",
   },
 ] satisfies PermissionDefinition[];
