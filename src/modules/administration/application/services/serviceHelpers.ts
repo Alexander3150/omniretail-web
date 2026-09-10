@@ -1,4 +1,8 @@
-import { BUSINESS_CONFIG_MANAGE_PERMISSION } from "@/modules/administration/permissions";
+import {
+  BUSINESS_CONFIG_MANAGE_PERMISSION,
+  REPORTS_EXPORT_PERMISSION,
+  REPORTS_READ_PERMISSION,
+} from "@/modules/administration/permissions";
 
 export class AdministrationServiceError extends Error {
   constructor(message: string) {
@@ -17,6 +21,24 @@ export function ensureCanManageBusinessConfig(permissions: readonly string[]) {
   throw new AdministrationServiceError(
     "No tenés permiso para modificar la configuración del negocio.",
   );
+}
+
+export function ensureCanReadReports(permissions: readonly string[]) {
+  if (permissions.includes(REPORTS_READ_PERMISSION)) return;
+
+  throw new AdministrationServiceError("No tenés permiso para consultar los reportes.");
+}
+
+export function ensureCanExportReports(permissions: readonly string[]) {
+  if (permissions.includes(REPORTS_EXPORT_PERMISSION)) return;
+
+  throw new AdministrationServiceError("No tenés permiso para exportar reportes.");
+}
+
+export function ensureReportsTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
 }
 
 export function cleanError(error: unknown): string {

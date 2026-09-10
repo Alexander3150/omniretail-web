@@ -5,6 +5,8 @@ import type { PermissionDefinition } from "@/shared/types/permissions.types";
  * ni desde la pantalla ni desde ningun otro consumidor del service.
  */
 export const BUSINESS_CONFIG_MANAGE_PERMISSION = "admin.business_config.manage";
+export const REPORTS_READ_PERMISSION = "admin.reports.read";
+export const REPORTS_EXPORT_PERMISSION = "admin.reports.export";
 
 export const administrationPermissions = [
   {
@@ -60,5 +62,17 @@ export const administrationPermissions = [
     module: "administration",
     name: "Gestionar cuentas bancarias",
     description: "Permite administrar cuentas bancarias simuladas.",
+  },
+  {
+    key: REPORTS_READ_PERMISSION,
+    module: "administration",
+    name: "Ver reportes",
+    description: "Permite consultar los reportes agregados del negocio.",
+  },
+  {
+    key: REPORTS_EXPORT_PERMISSION,
+    module: "administration",
+    name: "Exportar reportes",
+    description: "Permite exportar reportes a CSV.",
   },
 ] satisfies PermissionDefinition[];
