@@ -1,13 +1,13 @@
 import { StorefrontFooter } from "@/modules/storefront/components/StorefrontFooter";
 import { StorefrontHeader } from "@/modules/storefront/components/StorefrontHeader";
-import { ActiveBranchProvider } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
+import { PublicTenantProvider } from "@/modules/storefront/providers/PublicTenantProvider";
 
 export default function PublicLayout({ children }: LayoutProps<"/">) {
   return (
-    <ActiveBranchProvider>
+    <PublicTenantProvider>
       <StorefrontHeader />
       {children}
       <StorefrontFooter />
-    </ActiveBranchProvider>
+    </PublicTenantProvider>
   );
 }

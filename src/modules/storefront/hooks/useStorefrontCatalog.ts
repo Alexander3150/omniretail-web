@@ -6,18 +6,17 @@ import {
   useDataEventBus,
   useRepositories,
 } from "@/infrastructure/providers/RepositoryProvider";
-import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
+import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
 export function useStorefrontCatalog() {
   const { products } = useRepositories();
   const eventBus = useDataEventBus();
-  const { currentBranch, loading: branchLoading } = useActiveBranch();
+  const { tenantId, loading: tenantLoading, error: tenantError } = usePublicTenant();
 
   const [items, setItems] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const tenantId = currentBranch?.tenantId;
 
   const reload = useCallback(() => setReloadKey((current) => current + 1), []);
 
@@ -28,7 +27,7 @@ export function useStorefrontCatalog() {
       if (!tenantId) {
         if (active) {
           setItems([]);
-          setError("No se pudo determinar el negocio del catálogo.");
+          setError(tenantError ?? "No se pudo determinar la tienda pública.");
           setLoading(false);
         }
         return;
@@ -48,22 +47,22 @@ export function useStorefrontCatalog() {
     };
 
     window.queueMicrotask(() => {
-      if (active && !branchLoading) void load();
+      if (active && !tenantLoading) void load();
     });
 
     const unsubscribe = eventBus.subscribe("product.changed", (event) => {
-      if (active && !branchLoading && event.tenantId === tenantId) void load();
+      if (active && !tenantLoading && event.tenantId === tenantId) void load();
     });
 
     return () => {
       active = false;
       unsubscribe();
     };
-  }, [branchLoading, eventBus, products, reloadKey, tenantId]);
+  }, [eventBus, products, reloadKey, tenantError, tenantId, tenantLoading]);
 
   return {
     items,
-    loading: branchLoading || loading,
+    loading: tenantLoading || loading,
     error,
     reload,
   };

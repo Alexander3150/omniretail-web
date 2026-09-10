@@ -8,8 +8,6 @@ export function StorefrontFooter() {
 
         <div className="flex gap-4">
           <Link href="/catalogo">Catálogo</Link>
-          <Link href="/ofertas">Ofertas</Link>
-          <Link href="/ayuda">Ayuda</Link>
         </div>
       </div>
     </footer>

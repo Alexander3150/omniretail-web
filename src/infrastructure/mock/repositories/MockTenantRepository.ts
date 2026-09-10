@@ -7,4 +7,7 @@ export class MockTenantRepository extends BaseMockRepository implements TenantRe
   async getById(id: string) {
     return this.read((db) => db.tenants.find((item) => item.id === id) ?? null);
   }
+  async getBySlug(slug: string) {
+    return this.read((db) => db.tenants.find((item) => item.slug === slug) ?? null);
+  }
 }
