@@ -1,3 +1,4 @@
+import type { Supplier } from "@/core/entities";
 import { BUSINESS_CONFIG_MANAGE_PERMISSION } from "@/modules/administration/permissions";
 
 export class AdministrationServiceError extends Error {
@@ -17,6 +18,33 @@ export function ensureCanManageBusinessConfig(permissions: readonly string[]) {
   throw new AdministrationServiceError(
     "No tenés permiso para modificar la configuración del negocio.",
   );
+}
+
+export function ensureCanManageSuppliers(permissions: readonly string[]) {
+  if (permissions.includes("admin.suppliers.manage")) return;
+
+  throw new AdministrationServiceError("No tenés permiso para gestionar proveedores.");
+}
+
+export function ensureSupplierTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
+}
+
+export function ensureSupplierActor(actorUserId: string) {
+  if (actorUserId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
+}
+
+export function ensureSupplierBelongsToTenant(
+  supplier: Supplier | null,
+  tenantId: string,
+): Supplier {
+  if (supplier?.tenantId === tenantId) return supplier;
+
+  throw new AdministrationServiceError("El proveedor no está disponible para el negocio activo.");
 }
 
 export function cleanError(error: unknown): string {
