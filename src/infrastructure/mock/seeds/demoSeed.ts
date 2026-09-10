@@ -1417,6 +1417,7 @@ export const demoSeedDatabase: MockDatabase = {
       status: PickingItemStatus.pending,
     },
   ],
+  pickingItemUpdateOperations: [],
   dispatches: [
     {
       id: "dispatch-001",

@@ -121,6 +121,8 @@ Metodos: cash, card, transfer, mixed. Transferencia simula validacion manual de 
 
 Flujo: Order -> Picking -> Packing -> Dispatch -> Tracking. Productos service no pasan por Picking. Trazabilidad debe respetar `Product.tracking`.
 
+Cada incremento confirmado de `PickingItem.pickedQuantity` consume solamente el delta desde las allocations persistidas de su `InventoryReservation`, respetando su orden original. El consumo es atomico con la actualizacion del item e idempotente por `operationId`; una reserva multi-ubicacion genera un movimiento OUT por balance/ubicacion consumida. Completar el `PickingOrder` solo valida que los items fisicos y sus reservas esten completos y no vuelve a descontar inventario. Disminuir cantidades ya recogidas, reasignar ubicaciones, resolver kits y conectar lotes o seriales quedan pendientes.
+
 ## Auth
 
 Frontend simula auth; no es seguridad real. Diferenciar `temporarily_locked` de bloqueo/deshabilitacion administrativa. Nunca mostrar o almacenar password en texto plano. No usar preguntas de seguridad tradicionales.

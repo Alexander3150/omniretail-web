@@ -33,6 +33,7 @@ import type {
   Payment,
   Permission,
   PickingItem,
+  PickingItemUpdateOperation,
   PickingOrder,
   PriceTier,
   Product,
@@ -126,6 +127,7 @@ export interface MockDatabase {
   returnRequests: ReturnRequest[];
   pickingOrders: PickingOrder[];
   pickingItems: PickingItem[];
+  pickingItemUpdateOperations: PickingItemUpdateOperation[];
   dispatches: Dispatch[];
   packages: Package[];
   notifications: Notification[];
