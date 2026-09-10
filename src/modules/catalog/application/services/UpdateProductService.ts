@@ -55,8 +55,15 @@ export class UpdateProductService {
 
     const capabilities = await requireCapabilities(this.repositories, current.tenantId);
     ensureProductTypeAllowed(dto.productType, capabilities, current.productType);
-    const saleUnitId = resolveSaleUnitId(dto.baseUnitId, dto.saleUnitId, capabilities);
-    const tracking = applyTrackingRules(dto.productType, dto.tracking, capabilities);
+    // Producto existente: se conserva lo ya persistido (unidad de venta y tracking) en vez de
+    // recortarlo si la capacidad correspondiente esta apagada. Ver product.validation.ts.
+    const saleUnitId = resolveSaleUnitId(
+      dto.baseUnitId,
+      dto.saleUnitId,
+      capabilities,
+      current.saleUnitId ?? current.baseUnitId,
+    );
+    const tracking = applyTrackingRules(dto.productType, dto.tracking, capabilities, current.tracking);
     const updated = await this.repositories.products.update(
       current.id,
       ProductMapper.toUpdateInput({ ...dto, sku: normalizedSku, saleUnitId, tracking }, current),

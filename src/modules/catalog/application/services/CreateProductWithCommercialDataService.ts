@@ -14,13 +14,16 @@ export class CreateProductWithCommercialDataService {
       throw new CatalogServiceError("No hay un negocio disponible para crear productos.");
     }
 
-    const { normalizedDto, productInput } = await validateEditorProduct(
+    const { normalizedDto, productInput, capabilities, isNewProduct } = await validateEditorProduct(
       this.repositories,
       dto,
       tenantId,
     );
     const product = await this.repositories.products.create(productInput);
-    await syncEditorRelatedData(this.repositories, product, normalizedDto);
+    await syncEditorRelatedData(this.repositories, product, normalizedDto, {
+      capabilities,
+      isNewProduct,
+    });
     return product;
   }
 }

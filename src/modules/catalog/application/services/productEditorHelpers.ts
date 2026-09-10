@@ -1,4 +1,4 @@
-import type { Product, ProductMedia } from "@/core/entities";
+import type { BusinessCapabilitiesConfig, Product, ProductMedia } from "@/core/entities";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { normalizeSku } from "@/shared/utils/normalizeSku";
 import type {
@@ -29,14 +29,19 @@ export async function validateEditorProduct(
   repositories: RepositoryRegistry,
   dto: ProductEditorDto,
   tenantId: string,
-  current?: Pick<Product, "id" | "productType">,
+  current?: Pick<Product, "id" | "productType" | "baseUnitId" | "saleUnitId" | "tracking">,
 ) {
   const capabilities = await requireCapabilities(repositories, tenantId);
   ensureProductTypeAllowed(dto.productType, capabilities, current?.productType);
 
   // El borrador se normaliza ANTES de validar y de persistir: lo que la configuracion deshabilita
   // no llega ni al producto ni a sus datos relacionados, venga de la pantalla o de otro consumidor.
-  const normalizedDto = applyCapabilityRulesToEditor(dto, capabilities);
+  // Con `current` (producto existente) se conserva lo ya persistido en vez de recortarlo: la
+  // capacidad apagada bloquea crear configuracion nueva, nunca borra la que ya habia.
+  const capabilityContext = current
+    ? { saleUnitId: current.saleUnitId ?? current.baseUnitId, tracking: current.tracking }
+    : undefined;
+  const normalizedDto = applyCapabilityRulesToEditor(dto, capabilities, capabilityContext);
   const currentProductId = current?.id;
   const baseErrors = validateProductDto(toProductDto(normalizedDto));
   if (hasValidationErrors(baseErrors)) {
@@ -89,6 +94,8 @@ export async function validateEditorProduct(
 
   return {
     normalizedDto,
+    capabilities,
+    isNewProduct: !current,
     productInput: ProductMapper.toCreateInput(
       { ...toProductDto(normalizedDto), sku: normalizedSku },
       tenantId,
@@ -120,11 +127,12 @@ export async function syncEditorRelatedData(
   repositories: RepositoryRegistry,
   product: Product,
   dto: ProductEditorDto,
+  context: { capabilities: BusinessCapabilitiesConfig; isNewProduct: boolean },
 ) {
   await Promise.all([
     syncInventorySettings(repositories, product, dto),
-    syncUnitConversion(repositories, product, dto),
-    syncAttributes(repositories, product, dto),
+    syncUnitConversion(repositories, product, dto, context),
+    syncAttributes(repositories, product, dto, context),
     repositories.productSalesPriceTiers.replaceForProduct(
       product.id,
       dto.salesPriceTiers
@@ -173,7 +181,14 @@ async function syncUnitConversion(
   repositories: RepositoryRegistry,
   product: Product,
   dto: ProductEditorDto,
+  context: { capabilities: BusinessCapabilitiesConfig; isNewProduct: boolean },
 ) {
+  // Producto existente + capacidad apagada: no se toca la tabla de conversiones en absoluto. La UI
+  // no puede producir un valor nuevo legitimo (el selector de unidad de venta queda deshabilitado),
+  // asi que la unica escritura segura es NO escribir, dejando la conversion historica intacta pase
+  // lo que pase con `dto.inventoryQuantity`/`dto.saleQuantity` (evita confiar en esos numeros).
+  if (!context.capabilities.supportsUnitsAndPackaging && !context.isNewProduct) return;
+
   await repositories.units.replaceConversionsForProduct(
     product.id,
     dto.baseUnitId === dto.saleUnitId
@@ -193,7 +208,13 @@ async function syncAttributes(
   repositories: RepositoryRegistry,
   product: Product,
   dto: ProductEditorDto,
+  context: { capabilities: BusinessCapabilitiesConfig; isNewProduct: boolean },
 ) {
+  // Producto existente + capacidad apagada: la pestana de atributos queda oculta o de solo lectura
+  // en la UI, asi que no hay una edicion legitima que sincronizar. No tocar la tabla de valores en
+  // absoluto es mas seguro que confiar en `dto.attributes` para reconstruirla.
+  if (!context.capabilities.supportsProductAttributes && !context.isNewProduct) return;
+
   const definitions = await repositories.attributes.getDefinitions();
   const values = [];
 

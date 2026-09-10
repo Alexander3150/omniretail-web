@@ -14,7 +14,7 @@ export class UpdateProductWithCommercialDataService {
 
   async execute(productId: string, dto: ProductEditorDto): Promise<Product> {
     const current = ensureProduct(await this.repositories.products.getById(productId));
-    const { normalizedDto } = await validateEditorProduct(
+    const { normalizedDto, capabilities, isNewProduct } = await validateEditorProduct(
       this.repositories,
       dto,
       current.tenantId,
@@ -24,7 +24,10 @@ export class UpdateProductWithCommercialDataService {
       current.id,
       ProductMapper.toUpdateInput(toProductDto(normalizedDto), current),
     );
-    await syncEditorRelatedData(this.repositories, updated, normalizedDto);
+    await syncEditorRelatedData(this.repositories, updated, normalizedDto, {
+      capabilities,
+      isNewProduct,
+    });
     return updated;
   }
 }
