@@ -19,6 +19,26 @@ export function ensureCanManageBusinessConfig(permissions: readonly string[]) {
   );
 }
 
+export function ensureCanManageEcommerceConfig(permissions: readonly string[]) {
+  if (permissions.includes("admin.ecommerce_config.manage")) return;
+
+  throw new AdministrationServiceError(
+    "No tenés permiso para gestionar la configuración de e-commerce.",
+  );
+}
+
+export function ensureEcommerceConfigTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
+}
+
+export function ensureEcommerceConfigActor(actorUserId: string) {
+  if (actorUserId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
+}
+
 export function cleanError(error: unknown): string {
   if (error instanceof AdministrationServiceError) return error.message;
   return "No se pudo completar la operación. Inténtalo de nuevo.";

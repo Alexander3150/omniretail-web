@@ -13,6 +13,12 @@ export const administrationNavigation = [
         href: "/administracion/configuracion-negocio",
         permission: BUSINESS_CONFIG_MANAGE_PERMISSION,
       },
+      {
+        id: "administration-ecommerce-config",
+        label: "Diseño E-commerce",
+        href: "/administracion/diseno-ecommerce",
+        permission: "admin.ecommerce_config.manage",
+      },
     ],
   },
 ] satisfies NavigationItem[];

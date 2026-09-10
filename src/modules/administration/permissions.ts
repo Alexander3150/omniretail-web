@@ -61,4 +61,10 @@ export const administrationPermissions = [
     name: "Gestionar cuentas bancarias",
     description: "Permite administrar cuentas bancarias simuladas.",
   },
+  {
+    key: "admin.ecommerce_config.manage",
+    module: "administration",
+    name: "Gestionar diseño e-commerce",
+    description: "Permite configurar la tienda en línea del negocio.",
+  },
 ] satisfies PermissionDefinition[];
