@@ -11,7 +11,7 @@ estan en `SCOPE.md`.
 
 ## Contracts que consume
 
-UserRepository, RoleRepository, BranchRepository, BusinessConfigRepository, TenantRepository, SupplierRepository, BankAccountRepository, CustomerRepository, AuditLogRepository
+UserRepository, RoleRepository, BranchRepository, BusinessConfigRepository, TenantRepository, SupplierRepository, BankAccountRepository, CustomerRepository, AuditLogRepository, SalesRepository, PurchaseOrderRepository, InventoryRepository, PaymentRepository, ProductRepository
 
 ## Configuracion del negocio
 
@@ -40,6 +40,39 @@ La configuracion no describe al negocio: lo restringe. Los modulos consumidores 
 
 Un producto ya guardado con un tipo que despues se deshabilito conserva su tipo y puede editarse;
 lo que se bloquea es crear uno nuevo o cambiar un producto hacia un tipo deshabilitado.
+
+## Reportes
+
+La ruta `/administracion/reportes` expone reportes agregados de ventas, compras, movimientos de
+inventario y pagos. Se integra en la navegación como `administration-reports`, exige
+`admin.reports.read` para consultar y `admin.reports.export` para descargar el resultado visible
+como CSV. Se refresca ante `sale.changed`, `purchase-order.changed`, `inventory.changed` y
+`payment.changed`.
+
+La pantalla solo consulta contratos compartidos y agrega sus resultados en memoria. No persiste
+reportes, no modifica las fuentes y no escribe auditoría. El helper CSV vive dentro de
+`administration`; no se promovió a `shared` porque esta entrega no establece una API transversal.
+
+### Contrato de integracion
+
+La feature asume:
+
+- `useCurrentSession()` para resolver `tenantId`, permisos y estado de sesión.
+- `RepositoryRegistry.sales`, `purchaseOrders`, `inventory`, `payments`, `branches`, `suppliers`
+  y `products` con sus contratos vigentes.
+- `formatCurrency` y `formatDate` de `shared/utils` para presentar montos y fechas.
+
+Decisiones y coordinación:
+
+- Lee contratos de Riquelme (`sales`, `payments`) y Melbyn (`purchaseOrders`, `inventory`,
+  `suppliers`, `products`). Si cambian, esta agregación debe revisarse.
+- La generación y descarga de CSV permanecen como helpers module-local.
+- La mayoría de fechas del seed son `2026-01-01`; hay que ajustar el rango de fechas para ver esos
+  datos en la demo.
+- `admin.reports.read` y `admin.reports.export` son permisos nuevos. Se esperan colisiones en
+  `permissions.ts`, `demoSeed.ts`, `navigation.ts`, `serviceHelpers.ts`, `README.md` y `SCOPE.md`
+  con las ocho ramas previas de administration; al integrarlas deben conservarse todas las
+  entradas.
 
 ## Reglas
 
