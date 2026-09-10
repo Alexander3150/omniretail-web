@@ -7,6 +7,7 @@ import type {
 import {
   CashShiftStatus,
   PaymentMethod,
+  PaymentStatus,
   ProductType,
   SalesChannel,
 } from "@/core/enums";
@@ -29,7 +30,10 @@ import type {
   SaleTicketDto,
   SaleTicketItemDto,
 } from "@/modules/pos/application/dto/SaleTicketDto";
-import { validateCheckout } from "@/modules/pos/validation/checkout.validation";
+import {
+  getApprovedCardTerminalReference,
+  validateCheckout,
+} from "@/modules/pos/validation/checkout.validation";
 
 export interface ConfirmPosSaleInput {
   confirmationId: string;
@@ -376,10 +380,7 @@ function createPaymentInputs(
   currency: CurrencyCode,
   cashierUserId: string,
 ): SaleConfirmationPaymentInput[] {
-  const components: SaleConfirmationPaymentMethod[] =
-    checkout.paymentMode === "mixed"
-      ? [PaymentMethod.cash, PaymentMethod.card, PaymentMethod.transfer]
-      : [checkout.paymentMode as SaleConfirmationPaymentMethod];
+  const components = getPaymentComponents(checkout.paymentMode);
 
   return components.flatMap<SaleConfirmationPaymentInput>((method) => {
     const amount = getPaymentAmount(checkout, method);
@@ -389,12 +390,17 @@ function createPaymentInputs(
       return [{ method, amount: normalizedAmount, currency }];
     }
     if (method === PaymentMethod.card) {
+      const reference = getApprovedCardTerminalReference(
+        checkout.cardTerminalResult,
+        normalizedAmount,
+      );
       return [
         {
           method,
           amount: normalizedAmount,
           currency,
-          reference: checkout.cardReference.trim(),
+          status: PaymentStatus.approved,
+          reference,
         },
       ];
     }
@@ -415,6 +421,27 @@ function createPaymentInputs(
       },
     ];
   });
+}
+
+function getPaymentComponents(
+  paymentMode: CheckoutDto["paymentMode"],
+): SaleConfirmationPaymentMethod[] {
+  switch (paymentMode) {
+    case "cash":
+      return [PaymentMethod.cash];
+    case "card":
+      return [PaymentMethod.card];
+    case "transfer":
+      return [PaymentMethod.transfer];
+    case "mixed":
+      return [PaymentMethod.cash, PaymentMethod.card, PaymentMethod.transfer];
+    default:
+      return assertNeverCheckoutPaymentMode(paymentMode);
+  }
+}
+
+function assertNeverCheckoutPaymentMode(paymentMode: never): never {
+  throw new Error(`Modalidad de pago POS no soportada: ${String(paymentMode)}`);
 }
 
 function getPaymentAmount(

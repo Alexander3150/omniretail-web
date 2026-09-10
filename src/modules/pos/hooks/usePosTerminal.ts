@@ -11,6 +11,7 @@ import { isBranchScopedResourceAvailable } from "@/core/scopes/branchScope";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import type {
+  CardTerminalOutcome,
   CheckoutBankAccountDto,
   CheckoutDto,
   CheckoutInvoiceDataDto,
@@ -51,6 +52,8 @@ interface ConfirmationAttempt {
   confirmationId: string;
   contextKey: string;
 }
+
+type EditableCheckoutPatch = Partial<Omit<CheckoutDto, "cardTerminalResult">>;
 
 export function usePosTerminal() {
   const repositories = useRepositories();
@@ -95,6 +98,8 @@ export function usePosTerminal() {
   const [confirmationError, setConfirmationError] = useState<string | null>(null);
   const [confirmationResult, setConfirmationResult] = useState<ConfirmSaleResult | null>(null);
   const confirmationLoadingRef = useRef(false);
+  const cardTerminalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cardTerminalReferenceSequenceRef = useRef(482931);
   const currentConfirmationContextKey =
     user && currentBranch && cashShift
       ? `${user.id}:${currentBranch.id}:${cashShift.id}`
@@ -305,6 +310,13 @@ export function usePosTerminal() {
     };
   }, [reload, reloadBankAccounts, reloadCashShift, reloadPaymentMethods]);
 
+  useEffect(
+    () => () => {
+      if (cardTerminalTimerRef.current) clearTimeout(cardTerminalTimerRef.current);
+    },
+    [],
+  );
+
   useDataEvent("product.changed", reload);
   useDataEvent("promotion.changed", reload);
   useDataEvent("inventory.changed", reload);
@@ -326,6 +338,12 @@ export function usePosTerminal() {
     setConfirmationAttempt(null);
     setConfirmationError(null);
     setConfirmationResult(null);
+  }, []);
+
+  const cancelCardTerminalProcessing = useCallback(() => {
+    if (!cardTerminalTimerRef.current) return;
+    clearTimeout(cardTerminalTimerRef.current);
+    cardTerminalTimerRef.current = null;
   }, []);
 
   const invalidateCheckoutValidation = useCallback(() => {
@@ -419,10 +437,11 @@ export function usePosTerminal() {
   }, [invalidateCheckoutValidation]);
 
   const clearTicket = useCallback(() => {
+    cancelCardTerminalProcessing();
     invalidateConfirmationAttempt();
     setTicketState({ items: [], error: null });
     setCheckoutState(createCheckoutState(0));
-  }, [invalidateConfirmationAttempt]);
+  }, [cancelCardTerminalProcessing, invalidateConfirmationAttempt]);
 
   const ticket = useMemo<SaleTicketDto>(
     () => calculateTicket(ticketState.items),
@@ -478,6 +497,7 @@ export function usePosTerminal() {
     }
 
     setTicketState((current) => ({ ...current, error: null }));
+    if (!confirmationId) cancelCardTerminalProcessing();
     setCheckoutState((current) =>
       confirmationId
         ? { ...current, open: true }
@@ -491,6 +511,7 @@ export function usePosTerminal() {
     );
   }, [
     availablePaymentModes,
+    cancelCardTerminalProcessing,
     confirmationId,
     ticket.items.length,
     ticket.total,
@@ -502,6 +523,7 @@ export function usePosTerminal() {
   }, []);
 
   const resetCheckout = useCallback(() => {
+    cancelCardTerminalProcessing();
     invalidateConfirmationAttempt();
     setCheckoutState((current) => ({
       ...createCheckoutState(
@@ -510,7 +532,12 @@ export function usePosTerminal() {
       ),
       open: current.open,
     }));
-  }, [availablePaymentModes, invalidateConfirmationAttempt, ticket.total]);
+  }, [
+    availablePaymentModes,
+    cancelCardTerminalProcessing,
+    invalidateConfirmationAttempt,
+    ticket.total,
+  ]);
 
   const setDocumentType = useCallback((documentType: CheckoutDto["documentType"]) => {
     invalidateConfirmationAttempt();
@@ -528,6 +555,7 @@ export function usePosTerminal() {
   const setPaymentMode = useCallback(
     (paymentMode: CheckoutPaymentMode) => {
       if (!availablePaymentModes.includes(paymentMode)) return;
+      cancelCardTerminalProcessing();
       invalidateConfirmationAttempt();
       setCheckoutState((current) => ({
         ...current,
@@ -539,14 +567,29 @@ export function usePosTerminal() {
         message: null,
       }));
     },
-    [availablePaymentModes, invalidateConfirmationAttempt, ticket.total],
+    [
+      availablePaymentModes,
+      cancelCardTerminalProcessing,
+      invalidateConfirmationAttempt,
+      ticket.total,
+    ],
   );
 
   const updateCheckout = useCallback(
-    (patch: Partial<CheckoutDto>) => {
+    (patch: EditableCheckoutPatch) => {
+      if (patch.cardAmount !== undefined) cancelCardTerminalProcessing();
       invalidateConfirmationAttempt();
       setCheckoutState((current) => {
-        const nextValue = { ...current.value, ...patch };
+        const cardAmountChanged =
+          patch.cardAmount !== undefined &&
+          toCents(patch.cardAmount) !== toCents(current.value.cardAmount);
+        const nextValue = {
+          ...current.value,
+          ...patch,
+          cardTerminalResult: cardAmountChanged
+            ? createIdleCardTerminalResult()
+            : current.value.cardTerminalResult,
+        };
         const amounts = calculateCheckoutAmounts(nextValue, ticket.total);
         return {
           ...current,
@@ -559,7 +602,89 @@ export function usePosTerminal() {
         };
       });
     },
-    [invalidateConfirmationAttempt, ticket.total],
+    [cancelCardTerminalProcessing, invalidateConfirmationAttempt, ticket.total],
+  );
+
+  const processCardPayment = useCallback(
+    (outcome: CardTerminalOutcome = "approved") => {
+      cancelCardTerminalProcessing();
+      invalidateConfirmationAttempt();
+
+      const authorizedAmount = fromCents(toCents(checkoutState.value.cardAmount));
+      if (toCents(authorizedAmount) <= 0) {
+        setCheckoutState((current) => ({
+          ...current,
+          errors: {
+            ...current.errors,
+            cardAmount: "Ingresa un monto de tarjeta mayor que cero.",
+          },
+          validated: false,
+          readyToConfirm: false,
+          hasOperationalBlock: false,
+          message: null,
+        }));
+        return;
+      }
+
+      setCheckoutState((current) => ({
+        ...current,
+        value: {
+          ...current.value,
+          cardTerminalResult: {
+            status: "processing",
+            authorizedAmount,
+          },
+        },
+        errors: { ...current.errors, cardTerminal: undefined },
+        validated: false,
+        readyToConfirm: false,
+        hasOperationalBlock: false,
+        message: null,
+      }));
+
+      cardTerminalTimerRef.current = setTimeout(() => {
+        cardTerminalTimerRef.current = null;
+        const reference =
+          outcome === "approved"
+            ? createCardTerminalReference(cardTerminalReferenceSequenceRef.current++)
+            : undefined;
+
+        setCheckoutState((current) => {
+          const terminalResult = current.value.cardTerminalResult;
+          const isCurrentAttempt =
+            terminalResult.status === "processing" &&
+            toCents(terminalResult.authorizedAmount ?? 0) === toCents(authorizedAmount) &&
+            toCents(current.value.cardAmount) === toCents(authorizedAmount);
+          if (!isCurrentAttempt) return current;
+
+          return {
+            ...current,
+            value: {
+              ...current.value,
+              cardTerminalResult: {
+                status: outcome,
+                authorizedAmount,
+                reference,
+              },
+            },
+            errors: {
+              ...current.errors,
+              cardTerminal:
+                outcome === "rejected" ? "Pago rechazado por terminal." : undefined,
+            },
+            validated: false,
+            readyToConfirm: false,
+            hasOperationalBlock: false,
+            message: null,
+          };
+        });
+      }, CARD_TERMINAL_PROCESSING_DELAY_MS);
+    },
+    [
+      cancelCardTerminalProcessing,
+      checkoutState.value.cardAmount,
+      invalidateConfirmationAttempt,
+    ],
   );
 
   const updateInvoiceData = useCallback((patch: Partial<CheckoutInvoiceDataDto>) => {
@@ -775,6 +900,7 @@ export function usePosTerminal() {
     setDocumentType,
     setPaymentMode,
     updateCheckout,
+    processCardPayment,
     updateInvoiceData,
     validateCheckout,
     confirmSale,
@@ -925,7 +1051,7 @@ function createCheckoutValue(
     cashReceived: 0,
     changeAmount: 0,
     cardAmount: paymentMode === PaymentMethod.card ? totalAmount : 0,
-    cardReference: "",
+    cardTerminalResult: createIdleCardTerminalResult(),
     transferAmount: paymentMode === PaymentMethod.transfer ? totalAmount : 0,
     bankAccountId: "",
     transferReference: "",
@@ -984,7 +1110,7 @@ function createPaymentModeValue(
     cashReceived: 0,
     changeAmount: 0,
     cardAmount: paymentMode === "card" ? totalAmount : 0,
-    cardReference: "",
+    cardTerminalResult: createIdleCardTerminalResult(),
     transferAmount: paymentMode === "transfer" ? totalAmount : 0,
     bankAccountId: "",
     transferReference: "",
@@ -999,3 +1125,13 @@ function toCents(value: number): number {
 function fromCents(value: number): number {
   return value / 100;
 }
+
+function createIdleCardTerminalResult(): CheckoutDto["cardTerminalResult"] {
+  return { status: "idle" };
+}
+
+function createCardTerminalReference(sequence: number) {
+  return `AUTH-${String(sequence).padStart(6, "0")}`;
+}
+
+const CARD_TERMINAL_PROCESSING_DELAY_MS = 650;

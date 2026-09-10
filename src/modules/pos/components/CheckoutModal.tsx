@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import type {
+  CardTerminalOutcome,
+  CardTerminalResultDto,
   CheckoutBankAccountDto,
   CheckoutDto,
   CheckoutInvoiceDataDto,
@@ -47,7 +49,10 @@ interface CheckoutModalProps {
   onReset: () => void;
   onDocumentTypeChange: (documentType: CheckoutDto["documentType"]) => void;
   onPaymentModeChange: (paymentMode: CheckoutPaymentMode) => void;
-  onCheckoutChange: (patch: Partial<CheckoutDto>) => void;
+  onCheckoutChange: (
+    patch: Partial<Omit<CheckoutDto, "cardTerminalResult">>,
+  ) => void;
+  onProcessCardPayment: (outcome: CardTerminalOutcome) => void;
   onInvoiceDataChange: (patch: Partial<CheckoutInvoiceDataDto>) => void;
   onValidate: () => void;
   onConfirm: () => void;
@@ -87,6 +92,7 @@ export function CheckoutModal({
   onDocumentTypeChange,
   onPaymentModeChange,
   onCheckoutChange,
+  onProcessCardPayment,
   onInvoiceDataChange,
   onValidate,
   onConfirm,
@@ -315,22 +321,12 @@ export function CheckoutModal({
                   value={checkout.cardAmount}
                   onChange={(cardAmount) => onCheckoutChange({ cardAmount })}
                 />
-                <FormField
-                  id="checkout-card-reference"
-                  label="Referencia/autorización del POS externo"
-                  error={errors.cardReference}
-                  hint="No ingrese número de tarjeta ni CVV."
-                >
-                  <Input
-                    autoComplete="off"
-                    id="checkout-card-reference"
-                    maxLength={100}
-                    onChange={(event) =>
-                      onCheckoutChange({ cardReference: event.target.value })
-                    }
-                    value={checkout.cardReference}
-                  />
-                </FormField>
+                <CardTerminalPanel
+                  amount={checkout.cardAmount}
+                  error={errors.cardTerminal}
+                  result={checkout.cardTerminalResult}
+                  onProcess={onProcessCardPayment}
+                />
               </PaymentSection>
             ) : null}
 
@@ -576,6 +572,91 @@ function PaymentSection({ title, children }: { title: string; children: ReactNod
     <div className="space-y-3 rounded-lg border border-[var(--color-border)] p-4">
       <h4 className="font-semibold text-[var(--color-title)]">{title}</h4>
       {children}
+    </div>
+  );
+}
+
+function CardTerminalPanel({
+  amount,
+  error,
+  result,
+  onProcess,
+}: {
+  amount: number;
+  error?: string;
+  result: CardTerminalResultDto;
+  onProcess: (outcome: CardTerminalOutcome) => void;
+}) {
+  const processing = result.status === "processing";
+  const approved = result.status === "approved";
+  const rejected = result.status === "rejected";
+  const statusLabel = processing
+    ? "Procesando"
+    : approved
+      ? "Pago aprobado"
+      : rejected
+        ? "Pago rechazado"
+        : "Pendiente de procesamiento";
+  const statusTone = approved ? "success" : rejected ? "danger" : processing ? "info" : "neutral";
+
+  return (
+    <div className="space-y-3 rounded-lg border border-[var(--color-border)] p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-[var(--color-text)]">Terminal externa</p>
+        <StatusBadge status={statusLabel} tone={statusTone} />
+      </div>
+
+      {processing ? (
+        <p className="text-sm text-[var(--color-text-muted)]">Procesando pago...</p>
+      ) : null}
+      {approved ? (
+        <div className="space-y-1 text-sm text-[var(--color-text)]">
+          <p className="font-semibold">✓ Pago aprobado</p>
+          <p>{formatCurrency(result.authorizedAmount ?? 0)}</p>
+          <p>Autorización: {result.reference}</p>
+        </div>
+      ) : null}
+      {rejected ? (
+        <p className="text-sm font-semibold text-[var(--color-danger)]">
+          ✕ Pago rechazado por terminal.
+        </p>
+      ) : null}
+      {!processing && !approved && !rejected ? (
+        <p className="text-sm text-[var(--color-text-muted)]">
+          Pendiente de procesamiento.
+        </p>
+      ) : null}
+
+      {error ? (
+        <p className="text-xs font-medium text-[var(--color-danger)]">{error}</p>
+      ) : null}
+
+      <div className="flex flex-col gap-2">
+        <Button
+          disabled={processing || amount <= 0}
+          onClick={() => onProcess("approved")}
+          type="button"
+          variant="secondary"
+        >
+          {approved
+            ? "Procesar nuevamente"
+            : rejected
+              ? "Reintentar"
+              : "Procesar con terminal"}
+        </Button>
+        <Button
+          disabled={processing || amount <= 0}
+          onClick={() => onProcess("rejected")}
+          type="button"
+          variant="ghost"
+        >
+          Simular rechazo
+        </Button>
+      </div>
+
+      <p className="text-xs text-[var(--color-text-muted)]">
+        OmniRetail registra únicamente el resultado y la autorización de la terminal externa.
+      </p>
     </div>
   );
 }

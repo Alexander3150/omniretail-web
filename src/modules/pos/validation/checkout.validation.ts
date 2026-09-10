@@ -1,4 +1,7 @@
-import type { CheckoutDto } from "@/modules/pos/application/dto/CheckoutDto";
+import type {
+  CardTerminalResultDto,
+  CheckoutDto,
+} from "@/modules/pos/application/dto/CheckoutDto";
 
 export type CheckoutValidationErrors = Partial<
   Record<
@@ -9,7 +12,7 @@ export type CheckoutValidationErrors = Partial<
     | "cashReceived"
     | "changeAmount"
     | "cardAmount"
-    | "cardReference"
+    | "cardTerminal"
     | "transferAmount"
     | "bankAccountId"
     | "transferReference"
@@ -72,7 +75,7 @@ export function validateCheckout(checkout: CheckoutDto, total: number): Checkout
     if (cardCents !== totalCents) {
       errors.cardAmount = "El monto de tarjeta debe cubrir exactamente el total.";
     }
-    validateCard(cardCents, checkout.cardReference, errors);
+    validateCard(cardCents, checkout.cardTerminalResult, errors);
   }
 
   if (checkout.paymentMode === "transfer") {
@@ -98,7 +101,7 @@ export function validateCheckout(checkout: CheckoutDto, total: number): Checkout
     if (cashCents > 0) {
       validateCash(cashCents, cashReceivedCents, checkout.changeAmount, errors);
     }
-    validateCard(cardCents, checkout.cardReference, errors);
+    validateCard(cardCents, checkout.cardTerminalResult, errors);
     validateTransfer(
       transferCents,
       checkout.bankAccountId,
@@ -163,35 +166,41 @@ function validateCash(
 
 function validateCard(
   cardCents: number,
-  cardReference: string,
+  terminalResult: CardTerminalResultDto,
   errors: CheckoutValidationErrors,
 ) {
   if (cardCents <= 0) return;
 
-  const reference = cardReference.trim();
-  if (!reference) {
-    errors.cardReference = "La referencia o autorización es obligatoria.";
-    return;
-  }
-
-  if (looksLikeSensitiveCardData(reference)) {
-    errors.cardReference =
-      "Ingresa solo la referencia o autorización del POS externo; no ingreses número de tarjeta, CVV ni fecha de expiración.";
+  try {
+    getApprovedCardTerminalReference(terminalResult, fromCents(cardCents));
+  } catch (error) {
+    errors.cardTerminal =
+      error instanceof Error ? error.message : "El pago con tarjeta debe procesarse nuevamente.";
   }
 }
 
-function looksLikeSensitiveCardData(value: string) {
-  const isCvvOnly = /^\d{3,4}$/.test(value);
-  const containsLabeledSecurityCode =
-    /\b(?:cvv|cvc|pin)\s*(?:[:=/#-]\s*)?\d{3,4}\b/i.test(value);
-  const containsPotentialPan = /(^|\D)(?:\d[ -]?){12,18}\d(?!\d)/.test(value);
-  const isExpirationDateOnly = /^(0[1-9]|1[0-2])\s*[\/.\-]\s*\d{2,4}$/.test(value);
-  return (
-    isCvvOnly ||
-    containsLabeledSecurityCode ||
-    containsPotentialPan ||
-    isExpirationDateOnly
-  );
+export function getApprovedCardTerminalReference(
+  terminalResult: CardTerminalResultDto,
+  cardAmount: number,
+) {
+  if (terminalResult.status === "processing") {
+    throw new Error("Espera a que la terminal termine de procesar el pago.");
+  }
+  if (terminalResult.status === "rejected") {
+    throw new Error("Pago rechazado por terminal.");
+  }
+  if (terminalResult.status !== "approved") {
+    throw new Error("Procesa el pago con la terminal antes de confirmar.");
+  }
+  if (toCents(terminalResult.authorizedAmount ?? Number.NaN) !== toCents(cardAmount)) {
+    throw new Error("El monto cambió; procesa nuevamente el pago con tarjeta.");
+  }
+
+  const reference = terminalResult.reference?.trim() ?? "";
+  if (!/^AUTH-\d{6,}$/.test(reference)) {
+    throw new Error("La terminal no devolvió una autorización externa válida.");
+  }
+  return reference;
 }
 
 function validateTransfer(

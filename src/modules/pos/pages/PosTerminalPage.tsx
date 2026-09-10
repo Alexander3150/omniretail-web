@@ -119,6 +119,7 @@ export function PosTerminalPage() {
         onDocumentTypeChange={terminal.setDocumentType}
         onInvoiceDataChange={terminal.updateInvoiceData}
         onPaymentModeChange={terminal.setPaymentMode}
+        onProcessCardPayment={terminal.processCardPayment}
         onReset={terminal.resetCheckout}
         onValidate={terminal.validateCheckout}
       />

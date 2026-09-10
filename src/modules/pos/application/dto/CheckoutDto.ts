@@ -1,6 +1,14 @@
 import type { SaleDocumentType } from "@/core/entities";
 
 export type CheckoutPaymentMode = "cash" | "card" | "transfer" | "mixed";
+export type CardTerminalStatus = "idle" | "processing" | "approved" | "rejected";
+export type CardTerminalOutcome = Extract<CardTerminalStatus, "approved" | "rejected">;
+
+export interface CardTerminalResultDto {
+  status: CardTerminalStatus;
+  reference?: string;
+  authorizedAmount?: number;
+}
 
 export interface CheckoutInvoiceDataDto {
   taxId: string;
@@ -16,7 +24,7 @@ export interface CheckoutDto {
   cashReceived: number;
   changeAmount: number;
   cardAmount: number;
-  cardReference: string;
+  cardTerminalResult: CardTerminalResultDto;
   transferAmount: number;
   bankAccountId: string;
   transferReference: string;
