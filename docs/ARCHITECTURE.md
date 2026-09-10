@@ -32,6 +32,15 @@ OrderRepository.create / updateStatus
 -> Order + InventoryReservation + InventoryBalance
 ```
 
+`MockPickingRepository.updateItem` usa el mismo patron transaccional para persistir el incremento de `PickingItem.pickedQuantity`, consumir las allocations originales de la reserva y crear los movimientos OUT por ubicacion. La mutacion de consumo se comparte con `MockInventoryRepository` y no abre una transaccion anidada.
+
+```text
+PickingRepository.updateItem
+-> MockPickingRepository
+-> MockDatabaseStore.transact
+-> PickingItem + InventoryReservation + InventoryBalance + InventoryMovement
+```
+
 ## Navegacion Privada
 
 Los modulos declaran sus entradas en `src/modules/*/navigation.ts`.
