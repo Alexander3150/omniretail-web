@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { StorefrontAvailability } from "@/modules/storefront/components/StorefrontAvailability";
 import { useStorefrontProductDetail } from "@/modules/storefront/hooks/useStorefrontProductDetail";
+import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
 
 export function ProductDetailPage({ productId }: { productId: string }) {
   const { data, loading, error, reload } = useStorefrontProductDetail(productId);
+  const { addProduct } = useStorefrontCart();
 
   if (loading) {
     return <main className="mx-auto max-w-4xl px-5 py-10">Cargando producto...</main>;
@@ -54,6 +56,13 @@ export function ProductDetailPage({ productId }: { productId: string }) {
         <p className="mt-6 text-2xl font-bold text-[var(--color-title)]">
           Q{product.salePrice.toFixed(2)}
         </p>
+        <button
+          className="mt-6 rounded-md bg-[var(--color-primary)] px-4 py-2 font-semibold text-[var(--color-topbar)]"
+          onClick={() => addProduct(product)}
+          type="button"
+        >
+          Agregar al carrito
+        </button>
       </section>
 
       {availability ? <StorefrontAvailability branches={availability} /> : null}
