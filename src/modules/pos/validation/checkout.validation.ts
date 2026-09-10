@@ -166,9 +166,25 @@ function validateCard(
   cardReference: string,
   errors: CheckoutValidationErrors,
 ) {
-  if (cardCents > 0 && !cardReference.trim()) {
+  if (cardCents <= 0) return;
+
+  const reference = cardReference.trim();
+  if (!reference) {
     errors.cardReference = "La referencia o autorización es obligatoria.";
+    return;
   }
+
+  if (looksLikeSensitiveCardData(reference)) {
+    errors.cardReference =
+      "Ingresa solo la referencia o autorización del POS externo; no ingreses número de tarjeta, CVV ni fecha de expiración.";
+  }
+}
+
+function looksLikeSensitiveCardData(value: string) {
+  const isCvvOnly = /^\d{3,4}$/.test(value);
+  const containsPotentialPan = /(^|\D)(?:\d[ -]?){12,18}\d(?!\d)/.test(value);
+  const isExpirationDateOnly = /^(0[1-9]|1[0-2])\s*[\/.\-]\s*\d{2,4}$/.test(value);
+  return isCvvOnly || containsPotentialPan || isExpirationDateOnly;
 }
 
 function validateTransfer(

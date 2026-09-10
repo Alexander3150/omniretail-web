@@ -1,4 +1,5 @@
 import { ProductType, SalesChannel } from "@/core/enums";
+import { getBranchAvailableQuantity } from "@/core/inventory/stockAvailability";
 import { calculateEffectivePrice } from "@/core/pricing";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { PosProductDto } from "@/modules/pos/application/dto/PosProductDto";
@@ -16,6 +17,7 @@ export class GetPosProductsService {
       (product) => product.tenantId === input.tenantId,
     );
     const at = new Date().toISOString();
+    const locations = await this.repositories.inventory.getLocations(input.branchId);
 
     const items = await Promise.all(
       products.map(async (product): Promise<PosProductDto> => {
@@ -34,13 +36,13 @@ export class GetPosProductsService {
         const price = calculateEffectivePrice(product.salePrice, promotion);
         const tracksStock = product.tracking.stock;
         const availableQuantity = tracksStock
-          ? Math.max(
-              0,
-              balances.reduce(
-                (total, balance) => total + balance.quantity - balance.reservedQuantity,
-                0,
-              ),
-            )
+          ? getBranchAvailableQuantity({
+              tenantId: input.tenantId,
+              branchId: input.branchId,
+              productId: product.id,
+              balances,
+              locations,
+            })
           : null;
         const requiresLot = product.tracking.lot;
         const requiresSerial = product.tracking.serial;

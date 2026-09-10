@@ -85,6 +85,7 @@ export function PosTerminalPage() {
 
       <CheckoutModal
         appliedAmount={terminal.checkoutAppliedAmount}
+        availablePaymentModes={terminal.availablePaymentModes}
         bankAccounts={terminal.bankAccounts}
         bankAccountsError={terminal.bankAccountsError}
         bankAccountsLoading={terminal.bankAccountsLoading}
@@ -105,6 +106,8 @@ export function PosTerminalPage() {
         hasUnsupportedTraceability={terminal.hasUnsupportedTraceability}
         message={terminal.checkoutMessage}
         open={terminal.checkoutOpen}
+        paymentMethodsError={terminal.paymentMethodsError}
+        paymentMethodsLoading={terminal.paymentMethodsLoading}
         readyToConfirm={terminal.checkoutReadyToConfirm}
         subtotal={terminal.subtotal}
         total={terminal.total}

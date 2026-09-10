@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CashShift } from "@/core/entities";
-import { CashShiftStatus } from "@/core/enums";
-import type { ConfirmSaleResult } from "@/core/repositories";
+import { CashShiftStatus, PaymentMethod } from "@/core/enums";
+import type {
+  ConfirmSaleResult,
+  SaleConfirmationPaymentMethod,
+} from "@/core/repositories";
 import { isBranchScopedResourceAvailable } from "@/core/scopes/branchScope";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
@@ -78,6 +81,11 @@ export function usePosTerminal() {
   const [bankAccounts, setBankAccounts] = useState<CheckoutBankAccountDto[]>([]);
   const [bankAccountsLoading, setBankAccountsLoading] = useState(true);
   const [bankAccountsError, setBankAccountsError] = useState<string | null>(null);
+  const [allowedPosPaymentMethods, setAllowedPosPaymentMethods] = useState<
+    SaleConfirmationPaymentMethod[]
+  >([]);
+  const [paymentMethodsLoading, setPaymentMethodsLoading] = useState(true);
+  const [paymentMethodsError, setPaymentMethodsError] = useState<string | null>(null);
   const [cashShift, setCashShift] = useState<CashShift | null>(null);
   const [cashShiftLoading, setCashShiftLoading] = useState(true);
   const [cashShiftError, setCashShiftError] = useState<string | null>(null);
@@ -234,6 +242,49 @@ export function usePosTerminal() {
     user,
   ]);
 
+  const reloadPaymentMethods = useCallback(async () => {
+    if (branchLoading || sessionLoading) return;
+
+    if (
+      !currentBranch ||
+      !user ||
+      user.tenantId !== currentBranch.tenantId ||
+      !canAccessBranch(currentBranch.id)
+    ) {
+      setAllowedPosPaymentMethods([]);
+      setPaymentMethodsError(null);
+      setPaymentMethodsLoading(false);
+      return;
+    }
+
+    setPaymentMethodsLoading(true);
+    setPaymentMethodsError(null);
+    try {
+      const capabilities = await repositories.businessConfig.getCapabilities(
+        currentBranch.tenantId,
+      );
+      const allowedMethods = getAllowedPosPaymentMethods(
+        capabilities?.allowedPosPaymentMethods,
+      );
+      setAllowedPosPaymentMethods(allowedMethods);
+      if (allowedMethods.length === 0) {
+        setPaymentMethodsError("No hay métodos de pago habilitados para POS.");
+      }
+    } catch {
+      setAllowedPosPaymentMethods([]);
+      setPaymentMethodsError("No se pudo cargar la configuración de métodos de pago.");
+    } finally {
+      setPaymentMethodsLoading(false);
+    }
+  }, [
+    branchLoading,
+    canAccessBranch,
+    currentBranch,
+    repositories.businessConfig,
+    sessionLoading,
+    user,
+  ]);
+
   useEffect(() => {
     let active = true;
     window.queueMicrotask(() => {
@@ -241,12 +292,13 @@ export function usePosTerminal() {
       void reload();
       void reloadBankAccounts();
       void reloadCashShift();
+      void reloadPaymentMethods();
     });
 
     return () => {
       active = false;
     };
-  }, [reload, reloadBankAccounts, reloadCashShift]);
+  }, [reload, reloadBankAccounts, reloadCashShift, reloadPaymentMethods]);
 
   useDataEvent("product.changed", reload);
   useDataEvent("promotion.changed", reload);
@@ -254,10 +306,15 @@ export function usePosTerminal() {
   useDataEvent("stock.changed", reload);
   useDataEvent("payment.changed", reloadBankAccounts);
   useDataEvent("cash-shift.changed", reloadCashShift);
+  useDataEvent("business-config.changed", reloadPaymentMethods);
 
   const filteredProducts = useMemo(
     () => filterPosProducts(products, search),
     [products, search],
+  );
+  const availablePaymentModes = useMemo(
+    () => getAvailableCheckoutPaymentModes(allowedPosPaymentMethods),
+    [allowedPosPaymentMethods],
   );
 
   const invalidateConfirmationAttempt = useCallback(() => {
@@ -419,9 +476,21 @@ export function usePosTerminal() {
     setCheckoutState((current) =>
       confirmationId
         ? { ...current, open: true }
-        : { ...createCheckoutState(ticket.total), open: true },
+        : {
+            ...createCheckoutState(
+              ticket.total,
+              availablePaymentModes[0] ?? PaymentMethod.cash,
+            ),
+            open: true,
+          },
     );
-  }, [confirmationId, ticket.items.length, ticket.total, ticketBlockingError]);
+  }, [
+    availablePaymentModes,
+    confirmationId,
+    ticket.items.length,
+    ticket.total,
+    ticketBlockingError,
+  ]);
 
   const closeCheckout = useCallback(() => {
     setCheckoutState((current) => ({ ...current, open: false }));
@@ -429,8 +498,14 @@ export function usePosTerminal() {
 
   const resetCheckout = useCallback(() => {
     invalidateConfirmationAttempt();
-    setCheckoutState((current) => ({ ...createCheckoutState(ticket.total), open: current.open }));
-  }, [invalidateConfirmationAttempt, ticket.total]);
+    setCheckoutState((current) => ({
+      ...createCheckoutState(
+        ticket.total,
+        availablePaymentModes[0] ?? PaymentMethod.cash,
+      ),
+      open: current.open,
+    }));
+  }, [availablePaymentModes, invalidateConfirmationAttempt, ticket.total]);
 
   const setDocumentType = useCallback((documentType: CheckoutDto["documentType"]) => {
     invalidateConfirmationAttempt();
@@ -447,6 +522,7 @@ export function usePosTerminal() {
 
   const setPaymentMode = useCallback(
     (paymentMode: CheckoutPaymentMode) => {
+      if (!availablePaymentModes.includes(paymentMode)) return;
       invalidateConfirmationAttempt();
       setCheckoutState((current) => ({
         ...current,
@@ -458,7 +534,7 @@ export function usePosTerminal() {
         message: null,
       }));
     },
-    [invalidateConfirmationAttempt, ticket.total],
+    [availablePaymentModes, invalidateConfirmationAttempt, ticket.total],
   );
 
   const updateCheckout = useCallback(
@@ -502,11 +578,15 @@ export function usePosTerminal() {
       const amounts = calculateCheckoutAmounts(current.value, ticket.total);
       const value = { ...current.value, changeAmount: amounts.changeAmount };
       const result = validateCheckoutDto(value, ticket.total);
+      const hasAllowedPaymentMode = availablePaymentModes.includes(value.paymentMode);
       const hasOperationalBlock =
         ticket.hasUnsupportedTraceability ||
         !hasOpenCashShift ||
         !hasPosSalesPermission ||
-        !hasCurrentBranchAccess;
+        !hasCurrentBranchAccess ||
+        paymentMethodsLoading ||
+        Boolean(paymentMethodsError) ||
+        !hasAllowedPaymentMode;
 
       return {
         ...current,
@@ -523,16 +603,22 @@ export function usePosTerminal() {
               hasOpenCashShift,
               hasPosSalesPermission,
               hasUnsupportedTraceability: ticket.hasUnsupportedTraceability,
+              hasAllowedPaymentMode,
+              paymentMethodsError,
+              paymentMethodsLoading,
             })
           : null,
       };
     });
   }, [
+    availablePaymentModes,
     cashShiftError,
     cashShiftLoading,
     hasCurrentBranchAccess,
     hasOpenCashShift,
     hasPosSalesPermission,
+    paymentMethodsError,
+    paymentMethodsLoading,
     ticket.hasUnsupportedTraceability,
     ticket.total,
   ]);
@@ -545,7 +631,10 @@ export function usePosTerminal() {
     ticket.hasUnsupportedTraceability ||
     !hasOpenCashShift ||
     !hasPosSalesPermission ||
-    !hasCurrentBranchAccess;
+    !hasCurrentBranchAccess ||
+    paymentMethodsLoading ||
+    Boolean(paymentMethodsError) ||
+    !availablePaymentModes.includes(checkoutState.value.paymentMode);
   const checkoutReadyToConfirm =
     checkoutState.validated &&
     checkoutState.readyToConfirm &&
@@ -558,6 +647,11 @@ export function usePosTerminal() {
         hasOpenCashShift,
         hasPosSalesPermission,
         hasUnsupportedTraceability: ticket.hasUnsupportedTraceability,
+        hasAllowedPaymentMode: availablePaymentModes.includes(
+          checkoutState.value.paymentMode,
+        ),
+        paymentMethodsError,
+        paymentMethodsLoading,
       })
     : checkoutState.message;
 
@@ -656,6 +750,9 @@ export function usePosTerminal() {
     bankAccounts,
     bankAccountsLoading,
     bankAccountsError,
+    availablePaymentModes,
+    paymentMethodsLoading,
+    paymentMethodsError,
     cashShift,
     cashShiftLoading,
     cashShiftError,
@@ -749,6 +846,9 @@ function getCheckoutValidationMessage({
   hasOpenCashShift,
   hasPosSalesPermission,
   hasUnsupportedTraceability,
+  hasAllowedPaymentMode,
+  paymentMethodsError,
+  paymentMethodsLoading,
 }: {
   cashShiftError: string | null;
   cashShiftLoading: boolean;
@@ -756,12 +856,24 @@ function getCheckoutValidationMessage({
   hasOpenCashShift: boolean;
   hasPosSalesPermission: boolean;
   hasUnsupportedTraceability: boolean;
+  hasAllowedPaymentMode: boolean;
+  paymentMethodsError: string | null;
+  paymentMethodsLoading: boolean;
 }) {
   if (!hasCurrentBranchAccess) {
     return "Cobro validado, pero no tienes acceso a la sucursal activa.";
   }
   if (!hasPosSalesPermission) {
     return "Cobro validado, pero no tienes permiso para crear ventas POS.";
+  }
+  if (paymentMethodsLoading) {
+    return "Cobro validado, pero los métodos de pago todavía se están verificando.";
+  }
+  if (paymentMethodsError) {
+    return `Cobro validado, pero ${paymentMethodsError.toLocaleLowerCase("es")}`;
+  }
+  if (!hasAllowedPaymentMode) {
+    return "Cobro validado, pero el método de pago no está habilitado para POS.";
   }
   if (cashShiftLoading) {
     return "Cobro validado, pero el turno de caja todavía se está verificando.";
@@ -776,10 +888,13 @@ function getCheckoutValidationMessage({
   return "Cobro validado. Pendiente de confirmación de venta.";
 }
 
-function createCheckoutState(total: number): CheckoutState {
+function createCheckoutState(
+  total: number,
+  paymentMode: CheckoutPaymentMode = PaymentMethod.cash,
+): CheckoutState {
   return {
     open: false,
-    value: createCheckoutValue(total),
+    value: createCheckoutValue(total, paymentMode),
     errors: {},
     validated: false,
     readyToConfirm: false,
@@ -788,7 +903,11 @@ function createCheckoutState(total: number): CheckoutState {
   };
 }
 
-function createCheckoutValue(total: number): CheckoutDto {
+function createCheckoutValue(
+  total: number,
+  paymentMode: CheckoutPaymentMode,
+): CheckoutDto {
+  const totalAmount = fromCents(toCents(total));
   return {
     documentType: "ticket",
     invoiceData: {
@@ -796,17 +915,34 @@ function createCheckoutValue(total: number): CheckoutDto {
       legalName: "",
       fiscalAddress: "",
     },
-    paymentMode: "cash",
-    cashAmount: fromCents(toCents(total)),
+    paymentMode,
+    cashAmount: paymentMode === PaymentMethod.cash ? totalAmount : 0,
     cashReceived: 0,
     changeAmount: 0,
-    cardAmount: 0,
+    cardAmount: paymentMode === PaymentMethod.card ? totalAmount : 0,
     cardReference: "",
-    transferAmount: 0,
+    transferAmount: paymentMode === PaymentMethod.transfer ? totalAmount : 0,
     bankAccountId: "",
     transferReference: "",
     transferExternallyVerified: false,
   };
+}
+
+function getAllowedPosPaymentMethods(
+  methods: PaymentMethod[] | undefined,
+): SaleConfirmationPaymentMethod[] {
+  const configuredMethods = new Set(methods ?? []);
+  return [PaymentMethod.cash, PaymentMethod.card, PaymentMethod.transfer].filter(
+    (method) => configuredMethods.has(method),
+  );
+}
+
+function getAvailableCheckoutPaymentModes(
+  methods: SaleConfirmationPaymentMethod[],
+): CheckoutPaymentMode[] {
+  const modes: CheckoutPaymentMode[] = [...methods];
+  if (methods.length >= 2) modes.push("mixed");
+  return modes;
 }
 
 function createPaymentModeValue(

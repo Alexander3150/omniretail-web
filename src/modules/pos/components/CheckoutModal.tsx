@@ -26,6 +26,9 @@ interface CheckoutModalProps {
   bankAccounts: CheckoutBankAccountDto[];
   bankAccountsLoading: boolean;
   bankAccountsError: string | null;
+  availablePaymentModes: CheckoutPaymentMode[];
+  paymentMethodsLoading: boolean;
+  paymentMethodsError: string | null;
   cashShiftLoading: boolean;
   cashShiftError: string | null;
   cashShiftRegisterCode: string | null;
@@ -62,6 +65,9 @@ export function CheckoutModal({
   bankAccounts,
   bankAccountsLoading,
   bankAccountsError,
+  availablePaymentModes,
+  paymentMethodsLoading,
+  paymentMethodsError,
   cashShiftLoading,
   cashShiftError,
   cashShiftRegisterCode,
@@ -85,10 +91,15 @@ export function CheckoutModal({
   onValidate,
   onConfirm,
 }: CheckoutModalProps) {
-  const showCash = checkout.paymentMode === "cash" || checkout.paymentMode === "mixed";
-  const showCard = checkout.paymentMode === "card" || checkout.paymentMode === "mixed";
+  const showCash =
+    availablePaymentModes.includes("cash") &&
+    (checkout.paymentMode === "cash" || checkout.paymentMode === "mixed");
+  const showCard =
+    availablePaymentModes.includes("card") &&
+    (checkout.paymentMode === "card" || checkout.paymentMode === "mixed");
   const showTransfer =
-    checkout.paymentMode === "transfer" || checkout.paymentMode === "mixed";
+    availablePaymentModes.includes("transfer") &&
+    (checkout.paymentMode === "transfer" || checkout.paymentMode === "mixed");
 
   return (
     <Modal
@@ -238,18 +249,31 @@ export function CheckoutModal({
 
         <section className="space-y-4 rounded-lg border border-[var(--color-border)] p-4">
           <h3 className="font-bold text-[var(--color-title)]">Método de pago</h3>
-          <FormField id="checkout-payment-mode" label="Modalidad">
+          <FormField
+            id="checkout-payment-mode"
+            label="Modalidad"
+            error={paymentMethodsError ?? undefined}
+          >
             <Select
+              disabled={paymentMethodsLoading || availablePaymentModes.length === 0}
               id="checkout-payment-mode"
               onChange={(event) =>
                 onPaymentModeChange(event.target.value as CheckoutPaymentMode)
               }
               value={checkout.paymentMode}
             >
-              <option value="cash">Efectivo</option>
-              <option value="card">Tarjeta</option>
-              <option value="transfer">Transferencia</option>
-              <option value="mixed">Mixto</option>
+              {!availablePaymentModes.includes(checkout.paymentMode) ? (
+                <option disabled value={checkout.paymentMode}>
+                  {paymentMethodsLoading
+                    ? "Cargando métodos..."
+                    : "Método no disponible"}
+                </option>
+              ) : null}
+              {availablePaymentModes.map((paymentMode) => (
+                <option key={paymentMode} value={paymentMode}>
+                  {getPaymentModeLabel(paymentMode)}
+                </option>
+              ))}
             </Select>
           </FormField>
 
@@ -293,9 +317,9 @@ export function CheckoutModal({
                 />
                 <FormField
                   id="checkout-card-reference"
-                  label="Referencia / autorización"
+                  label="Referencia/autorización del POS externo"
                   error={errors.cardReference}
-                  hint="No ingreses número completo, CVV, PIN ni fecha de expiración."
+                  hint="No ingrese número de tarjeta ni CVV."
                 >
                   <Input
                     autoComplete="off"
@@ -608,4 +632,11 @@ function readMoneyInput(value: string): number {
   if (!value) return 0;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getPaymentModeLabel(paymentMode: CheckoutPaymentMode) {
+  if (paymentMode === "cash") return "Efectivo";
+  if (paymentMode === "card") return "Tarjeta";
+  if (paymentMode === "transfer") return "Transferencia";
+  return "Mixto";
 }
