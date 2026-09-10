@@ -6,11 +6,12 @@ import { Sidebar } from "@/shared/navigation/Sidebar";
 import type { NavigationItem } from "@/shared/types/navigation.types";
 
 type PrivateShellProps = {
+  allowedPermissions?: ReadonlySet<string>;
   children: ReactNode;
   navigationItems: NavigationItem[];
 };
 
-export function PrivateShell({ children, navigationItems }: PrivateShellProps) {
+export function PrivateShell({ allowedPermissions, children, navigationItems }: PrivateShellProps) {
   const generatedSidebarId = useId();
   const sidebarId = `private-sidebar-${generatedSidebarId}`;
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -71,6 +72,7 @@ export function PrivateShell({ children, navigationItems }: PrivateShellProps) {
           }
         >
           <Sidebar
+            allowedPermissions={allowedPermissions}
             id={sidebarId}
             isOpen={sidebarOpen}
             items={navigationItems}

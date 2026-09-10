@@ -28,6 +28,7 @@ export interface AuthRepository {
   login(input: LoginInput): Promise<Session>;
   logout(sessionId: string): Promise<void>;
   getSession(sessionId: string): Promise<Session | null>;
+  getCurrentSessionId(): Promise<string | null>;
   registerCustomer(input: RegisterCustomerInput): Promise<User>;
   requestPasswordReset(email: string): Promise<void>;
   resetPassword(token: string, newPasswordMock: string): Promise<void>;
