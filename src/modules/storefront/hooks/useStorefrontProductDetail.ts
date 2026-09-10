@@ -54,11 +54,8 @@ export function useStorefrontProductDetail(productId: string) {
       if (active && !tenantLoading) void load();
     });
 
-    const shouldReload = (event: { tenantId?: string; productId?: string }) =>
-      active &&
-      !tenantLoading &&
-      event.tenantId === tenantId &&
-      (!event.productId || event.productId === productId);
+    const shouldReload = (event: { tenantId?: string }) =>
+      active && !tenantLoading && event.tenantId === tenantId;
     const unsubscribeProduct = eventBus.subscribe("product.changed", (event) => {
       if (shouldReload(event)) void load();
     });

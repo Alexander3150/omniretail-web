@@ -9,5 +9,5 @@ export interface StorefrontBranchAvailabilityDto {
 
 export interface StorefrontProductDetailDto {
   product: Product;
-  availability: StorefrontBranchAvailabilityDto[];
+  availability?: StorefrontBranchAvailabilityDto[];
 }

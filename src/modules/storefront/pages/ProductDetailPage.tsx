@@ -56,7 +56,7 @@ export function ProductDetailPage({ productId }: { productId: string }) {
         </p>
       </section>
 
-      <StorefrontAvailability branches={availability} />
+      {availability ? <StorefrontAvailability branches={availability} /> : null}
     </main>
   );
 }
