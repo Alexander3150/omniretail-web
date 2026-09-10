@@ -82,6 +82,10 @@ Si existe `sourceOrderId`, la confirmacion valida que la Order pertenezca al mis
 
 En el alcance actual, una Order puede respaldar como maximo una Sale confirmada. La comprobacion ocurre dentro de la transaccion de confirmacion, junto con la persistencia de Sale, pagos y caja. No cambia `Order.status` ni emite `order.changed`.
 
+## Entrega POS
+
+`immediate` confirma una Sale directa y registra su OUT. `store_pickup` y `home_delivery` crean primero una Order confirmada con `source = pos` e idempotencia propia; esa Order reserva stock mediante su boundary y la Sale se confirma con `sourceOrderId`, sin un segundo OUT. La clave de Order es distinta de `confirmationId` y ambas permanecen estables al reintentar el mismo cobro.
+
 ## Idempotencia
 
 `confirmationId` evita dobles confirmaciones por doble click o retry. Si ya existe una venta del mismo tenant con ese `confirmationId` y el mismo payload logico, el repository devuelve el resultado persistido con `idempotent: true` y no duplica ventas, pagos, inventario ni caja.

@@ -15,6 +15,7 @@ import { Modal } from "@/shared/components/Modal";
 import { Select } from "@/shared/components/Select";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
+import { DeliveryMethod, TransportMode } from "@/core/enums";
 
 interface CheckoutModalProps {
   open: boolean;
@@ -54,6 +55,7 @@ interface CheckoutModalProps {
   ) => void;
   onProcessCardPayment: (outcome: CardTerminalOutcome) => void;
   onInvoiceDataChange: (patch: Partial<CheckoutInvoiceDataDto>) => void;
+  onDeliveryAddressChange: (patch: Partial<NonNullable<CheckoutDto["deliveryAddress"]>>) => void;
   onValidate: () => void;
   onConfirm: () => void;
 }
@@ -94,6 +96,7 @@ export function CheckoutModal({
   onCheckoutChange,
   onProcessCardPayment,
   onInvoiceDataChange,
+  onDeliveryAddressChange,
   onValidate,
   onConfirm,
 }: CheckoutModalProps) {
@@ -239,18 +242,41 @@ export function CheckoutModal({
 
         <section className="space-y-4 rounded-lg border border-[var(--color-border)] p-4">
           <h3 className="font-bold text-[var(--color-title)]">Entrega</h3>
-          <div className="rounded-lg border border-[var(--color-success)] p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="font-semibold text-[var(--color-text)]">Entrega inmediata</p>
-              <StatusBadge status="Modalidad activa" tone="success" />
+          <FormField id="checkout-delivery-method" label="Modalidad">
+            <Select
+              id="checkout-delivery-method"
+              onChange={(event) => {
+                const deliveryMethod = event.target.value as CheckoutDto["deliveryMethod"];
+                onCheckoutChange({
+                  deliveryMethod,
+                  transportMode:
+                    deliveryMethod === DeliveryMethod.home_delivery
+                      ? TransportMode.own_fleet
+                      : deliveryMethod === DeliveryMethod.store_pickup
+                        ? TransportMode.customer
+                        : TransportMode.none,
+                });
+              }}
+              value={checkout.deliveryMethod}
+            >
+              <option value={DeliveryMethod.immediate}>Entrega inmediata</option>
+              <option value={DeliveryMethod.store_pickup}>Retiro en tienda</option>
+              <option value={DeliveryMethod.home_delivery}>Entrega a domicilio</option>
+            </Select>
+          </FormField>
+          {checkout.deliveryMethod === DeliveryMethod.home_delivery ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <FormField id="delivery-recipient" label="Recibe *">
+                <Input id="delivery-recipient" onChange={(event) => onDeliveryAddressChange({ recipientName: event.target.value })} value={checkout.deliveryAddress?.recipientName ?? ""} />
+              </FormField>
+              <FormField id="delivery-city" label="Ciudad *">
+                <Input id="delivery-city" onChange={(event) => onDeliveryAddressChange({ city: event.target.value })} value={checkout.deliveryAddress?.city ?? ""} />
+              </FormField>
+              <div className="md:col-span-2"><FormField id="delivery-line1" label="DirecciÃ³n *">
+                <Input id="delivery-line1" onChange={(event) => onDeliveryAddressChange({ line1: event.target.value })} value={checkout.deliveryAddress?.line1 ?? ""} />
+              </FormField></div>
             </div>
-            <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-              El cliente se lleva los productos ahora.
-            </p>
-          </div>
-          <p className="text-xs text-[var(--color-text-muted)]">
-            Actualmente el Terminal de Cobro procesa ventas de entrega inmediata.
-          </p>
+          ) : null}
         </section>
 
         <section className="space-y-4 rounded-lg border border-[var(--color-border)] p-4">
