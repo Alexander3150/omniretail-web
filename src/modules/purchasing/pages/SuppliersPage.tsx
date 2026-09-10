@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState, type ComponentType, type SVGProps } from "react";
 import type { ReceiptIncidentEvidence } from "@/core/entities";
 import { Button } from "@/shared/components/Button";
@@ -528,13 +529,18 @@ function PurchasesTab({ supplier }: { supplier: SupplierListItemReadModel }) {
   return (
     <div className="space-y-2">
       {supplier.purchaseOrders.map((order) => (
-        <article
-          className="rounded-md border border-[var(--color-border)] bg-white px-3 py-2.5"
+        <Link
+          aria-label={`Ver orden de compra ${order.number} en ordenes`}
+          className="group block min-h-11 rounded-md border border-[var(--color-border)] bg-white px-3 py-2.5 transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/[0.03] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]"
+          href={`/compras/ordenes?orderId=${encodeURIComponent(order.id)}`}
           key={order.id}
         >
           <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="font-bold text-[var(--color-title)]">{order.number}</p>
+            <div className="min-w-0">
+              <p className="flex items-center gap-1.5 font-bold text-[var(--color-title)]">
+                <span className="truncate">{order.number}</span>
+                <OpenIcon className="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)] transition group-hover:translate-x-0.5 group-hover:text-[var(--color-structure)]" />
+              </p>
               <p className="text-xs text-[var(--color-text-muted)]">
                 {formatDate(order.createdAt)}
                 {order.expectedDate ? ` | Esperada ${formatDate(order.expectedDate)}` : ""}
@@ -545,7 +551,7 @@ function PurchasesTab({ supplier }: { supplier: SupplierListItemReadModel }) {
           <p className="mt-2 text-sm font-bold text-[var(--color-text)]">
             {formatCurrency(order.total)}
           </p>
-        </article>
+        </Link>
       ))}
     </div>
   );
@@ -559,22 +565,38 @@ function IncidentsTab({
   onSelect: (incidentId: string) => void;
 }) {
   if (supplier.incidents.length === 0) {
-    return <EmptyPanel icon={AlertIcon} message="No hay incidencias registradas." />;
+    return (
+      <div className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] p-4 text-center">
+        <AlertIcon className="mx-auto h-5 w-5 text-[var(--color-structure)]" />
+        <p className="mt-2 text-sm font-semibold text-[var(--color-text-muted)]">
+          No hay incidencias registradas.
+        </p>
+      </div>
+    );
   }
 
-  const affectedUnits = supplier.incidents.reduce(
-    (total, incident) => total + (incident.quantityAffected ?? 0),
-    0,
+  const canTotalAffectedUnits = supplier.incidents.every(
+    (incident) => typeof incident.quantityAffected === "number",
   );
+  const affectedUnits = canTotalAffectedUnits
+    ? supplier.incidents.reduce((total, incident) => total + (incident.quantityAffected ?? 0), 0)
+    : null;
 
   return (
     <div className="space-y-3">
-      <dl className="grid grid-cols-2 gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] p-3">
+      <dl
+        className={cn(
+          "grid gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] p-3",
+          affectedUnits === null ? "grid-cols-1" : "grid-cols-2",
+        )}
+      >
         <InlineMetric
           label="Incidencias registradas"
           value={formatNumber(supplier.incidents.length)}
         />
-        <InlineMetric label="Unidades afectadas" value={formatNumber(affectedUnits)} />
+        {affectedUnits === null ? null : (
+          <InlineMetric label="Unidades afectadas" value={formatNumber(affectedUnits)} />
+        )}
       </dl>
       <div className="space-y-2">
         {supplier.incidents.map((incident) => (
@@ -602,17 +624,32 @@ function SupplierIncidentCard({
       <p className="truncate font-bold text-[var(--color-title)]" title={incident.productName}>
         {incident.productName}
       </p>
-      <p className="mt-0.5 font-semibold text-amber-800">{incident.typeName}</p>
-      <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
-        {incident.receiptNumber}
-        {incident.purchaseOrderNumber ? ` · ${incident.purchaseOrderNumber}` : ""}
+      <p
+        className="mt-0.5 truncate text-xs font-semibold text-[var(--color-text-muted)]"
+        title={incident.sku}
+      >
+        SKU {incident.sku}
       </p>
-      <p className="mt-1 text-xs text-[var(--color-text)]">
-        {typeof incident.quantityAffected === "number"
-          ? `${formatNumber(incident.quantityAffected)} afectadas · `
-          : ""}
-        {formatDate(incident.date)}
-      </p>
+      <p className="mt-2 font-semibold text-amber-800">{incident.typeName}</p>
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-[var(--color-text-muted)]">
+        <span>
+          {incident.receiptNumber}
+          {incident.purchaseOrderNumber ? ` · ${incident.purchaseOrderNumber}` : ""}
+        </span>
+        <span aria-hidden="true">·</span>
+        <span>
+          {typeof incident.quantityAffected === "number"
+            ? `${formatNumber(incident.quantityAffected)} afectadas · `
+            : ""}
+          {formatDate(incident.date)}
+        </span>
+        {incident.evidence.length > 0 ? (
+          <span>
+            · {formatNumber(incident.evidence.length)}{" "}
+            {incident.evidence.length === 1 ? "evidencia" : "evidencias"}
+          </span>
+        ) : null}
+      </div>
       {incident.observation ? (
         <p
           className="mt-2 line-clamp-2 text-sm text-[var(--color-text)]"
@@ -760,6 +797,15 @@ function BackIcon(props: SVGProps<SVGSVGElement>) {
     <Icon {...props}>
       <path d="m15 18-6-6 6-6" />
       <path d="M9 12h10" />
+    </Icon>
+  );
+}
+
+function OpenIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M7 17 17 7" />
+      <path d="M7 7h10v10" />
     </Icon>
   );
 }

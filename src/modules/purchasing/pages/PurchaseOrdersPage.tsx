@@ -34,12 +34,20 @@ import {
 
 const DEFAULT_PAGE_SIZE: TablePageSize = 10;
 
-export function PurchaseOrdersPage() {
+export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string }) {
   const router = useRouter();
   const repositories = useRepositories();
   const { showToast } = useToast();
-  const { data, filters, filteredOrders, loading, error, updateFilters, updateStatus } =
-    usePurchaseOrders();
+  const {
+    data,
+    filters,
+    filteredOrders,
+    currentBranch,
+    loading,
+    error,
+    updateFilters,
+    updateStatus,
+  } = usePurchaseOrders();
   const pdfService = useMemo(() => new PurchaseOrderPdfService(repositories), [repositories]);
   const emailSimulationService = useMemo(() => new PurchaseOrderEmailSimulationService(), []);
   const [page, setPage] = useState(1);
@@ -51,11 +59,28 @@ export function PurchaseOrdersPage() {
   } | null>(null);
   const [suggestionsExpanded, setSuggestionsExpanded] = useState(false);
   const [pageSize, setPageSize] = useState<TablePageSize>(DEFAULT_PAGE_SIZE);
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
+  const appliedOrderIdRef = useRef<string | null>(null);
+  const directlyLocatedOrder = useMemo(() => {
+    const orderId = initialOrderId?.trim();
+    if (!orderId) return null;
+    return (
+      data.orders.find(
+        (candidate) =>
+          candidate.id === orderId &&
+          candidate.branchId === currentBranch?.id &&
+          candidate.tenantId === currentBranch?.tenantId,
+      ) ?? null
+    );
+  }, [currentBranch?.id, currentBranch?.tenantId, data.orders, initialOrderId]);
+  const visibleOrders = useMemo(
+    () => (directlyLocatedOrder ? [directlyLocatedOrder] : filteredOrders),
+    [directlyLocatedOrder, filteredOrders],
+  );
+  const totalPages = Math.max(1, Math.ceil(visibleOrders.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paginatedOrders = useMemo(
-    () => filteredOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize),
-    [currentPage, filteredOrders, pageSize],
+    () => visibleOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [currentPage, pageSize, visibleOrders],
   );
   const selectedOrder = useMemo(
     () => paginatedOrders.find((order) => order.id === selectedOrderId) ?? null,
@@ -66,7 +91,46 @@ export function PurchaseOrdersPage() {
       ? "No hay ordenes de compra registradas."
       : "No se encontraron ordenes.";
 
+  useEffect(() => {
+    const orderId = initialOrderId?.trim();
+    if (!orderId) {
+      appliedOrderIdRef.current = null;
+      return;
+    }
+    if (loading || appliedOrderIdRef.current === orderId) return;
+
+    if (!directlyLocatedOrder) {
+      appliedOrderIdRef.current = orderId;
+      router.replace("/compras/ordenes", { scroll: false });
+      return;
+    }
+
+    let active = true;
+    window.queueMicrotask(() => {
+      if (!active) return;
+      appliedOrderIdRef.current = orderId;
+      setPage(1);
+      setSelectedOrderId(null);
+      setOpenActionsOrderId(null);
+      updateFilters({
+        search: directlyLocatedOrder.number,
+        status: "all",
+        supplierId: "all",
+      });
+    });
+    return () => {
+      active = false;
+    };
+  }, [directlyLocatedOrder, initialOrderId, loading, router, updateFilters]);
+
+  function clearOrderLocator() {
+    if (!initialOrderId) return;
+    appliedOrderIdRef.current = null;
+    router.replace("/compras/ordenes", { scroll: false });
+  }
+
   function handleSearchChange(search: string) {
+    clearOrderLocator();
     setPage(1);
     setSelectedOrderId(null);
     setOpenActionsOrderId(null);
@@ -74,6 +138,7 @@ export function PurchaseOrdersPage() {
   }
 
   function handleStatusChange(status: PurchaseOrderStatusFilter) {
+    clearOrderLocator();
     setPage(1);
     setSelectedOrderId(null);
     setOpenActionsOrderId(null);
@@ -81,6 +146,7 @@ export function PurchaseOrdersPage() {
   }
 
   function handleSupplierChange(supplierId: string) {
+    clearOrderLocator();
     setPage(1);
     setSelectedOrderId(null);
     setOpenActionsOrderId(null);
@@ -318,7 +384,7 @@ export function PurchaseOrdersPage() {
               itemLabel="ordenes"
               page={currentPage}
               pageSize={pageSize}
-              totalItems={filteredOrders.length}
+              totalItems={visibleOrders.length}
               onPageChange={changePage}
               onPageSizeChange={handlePageSizeChange}
             />

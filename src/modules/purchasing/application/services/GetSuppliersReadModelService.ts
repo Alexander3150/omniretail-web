@@ -103,7 +103,7 @@ export class GetSuppliersReadModelService {
         return this.toSupplierReadModel(
           supplier,
           productsWithCosts,
-          purchaseOrders.filter((order) => order.supplierId === supplier.id),
+          branchPurchaseOrders.filter((order) => order.supplierId === supplier.id),
           incidents.filter((incident) => incident.supplierId === supplier.id),
         );
       }),
