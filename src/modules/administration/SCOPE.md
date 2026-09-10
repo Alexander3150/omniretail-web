@@ -37,7 +37,7 @@
 | 4 | Cuentas bancarias | `/administracion/cuentas-bancarias` | `BankAccount` | ✅ Desbloqueada |
 | 5 | Diseño E-commerce | `/administracion/diseno-ecommerce` | `EcommerceConfig` | ⚠️ Parcial — sin branding |
 | 6 | Clientes | `/administracion/clientes` | `Customer`, `CustomerSegment` | ⚠️ Parcial — sin update ni segmentos |
-| 7 | Auditoría | `/administracion/auditoria` | `AuditLog` | ⚠️ Parcial — filtrado en cliente |
+| 7 | Auditoría | `/administracion/auditoria` | `AuditLog` | ✅ **Implementada** |
 | 8 | Caja | `/administracion/caja` | `CashShift`, `CashMovement` | ⚠️ Parcial — solo lectura |
 | 9 | Dashboard | `/administracion/dashboard` | Agregación | ⚠️ Necesita `KPICard` |
 | 10 | Reportes | `/administracion/reportes` | Agregación | ⚠️ Necesita datos de otros módulos |
@@ -505,7 +505,7 @@ El self-service del cliente (registro, login, direcciones, pedidos propios) vive
 `customer` de Andy. No duplicar.
 Segmentos bloqueados hasta que exista `CustomerSegmentRepository`.
 
-### 12.7 Auditoría
+### 12.7 Auditoría ✅ implementada
 
 Tabla filtrable: `createdAt`, actor, `action`, `entityType`, `entityId`, `metadata`.
 Sin campo `module`: si se necesita agrupar por módulo, se deriva de `action` o `entityType`.
