@@ -8,13 +8,15 @@ import type { BusinessConfigDto } from "@/modules/administration/application/dto
 import { GetBusinessConfigService } from "@/modules/administration/application/services/GetBusinessConfigService";
 import { SaveBusinessConfigService } from "@/modules/administration/application/services/SaveBusinessConfigService";
 import { cleanError } from "@/modules/administration/application/services/serviceHelpers";
+import { BUSINESS_CONFIG_MANAGE_PERMISSION } from "@/modules/administration/permissions";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 
 export function useBusinessConfig() {
   const repositories = useRepositories();
-  const { user, loading: sessionLoading } = useCurrentSession();
+  const { user, permissions, hasPermission, loading: sessionLoading } = useCurrentSession();
   const tenantId = user?.tenantId ?? null;
+  const canManage = hasPermission(BUSINESS_CONFIG_MANAGE_PERMISSION);
   const getService = useMemo(() => new GetBusinessConfigService(repositories), [repositories]);
   const saveService = useMemo(() => new SaveBusinessConfigService(repositories), [repositories]);
   const [config, setConfig] = useState<BusinessConfigDto | null>(null);
@@ -92,7 +94,7 @@ export function useBusinessConfig() {
       setBusy(true);
       setError(null);
       try {
-        const savedConfig = await saveService.execute(tenantId, dto);
+        const savedConfig = await saveService.execute(tenantId, dto, permissions);
         setConfig(savedConfig);
         return savedConfig;
       } catch (caughtError) {
@@ -103,7 +105,7 @@ export function useBusinessConfig() {
         setBusy(false);
       }
     },
-    [saveService, tenantId],
+    [permissions, saveService, tenantId],
   );
 
   /**
@@ -123,6 +125,7 @@ export function useBusinessConfig() {
 
   return {
     loading: loading || sessionLoading,
+    canManage,
     busy,
     error,
     config,

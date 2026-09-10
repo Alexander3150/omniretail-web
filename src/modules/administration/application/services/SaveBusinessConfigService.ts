@@ -3,7 +3,10 @@ import { businessDefaultsConfig } from "@/config/business-defaults";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { BusinessConfigDto } from "@/modules/administration/application/dto/BusinessConfigDto";
 import { toBusinessConfigDto } from "@/modules/administration/application/mappers/BusinessConfigMapper";
-import { AdministrationServiceError } from "@/modules/administration/application/services/serviceHelpers";
+import {
+  AdministrationServiceError,
+  ensureCanManageBusinessConfig,
+} from "@/modules/administration/application/services/serviceHelpers";
 import {
   hasBusinessConfigValidationErrors,
   validateBusinessConfigDto,
@@ -12,7 +15,12 @@ import {
 export class SaveBusinessConfigService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async execute(tenantId: string, dto: BusinessConfigDto): Promise<BusinessConfigDto> {
+  async execute(
+    tenantId: string,
+    dto: BusinessConfigDto,
+    permissions: readonly string[],
+  ): Promise<BusinessConfigDto> {
+    ensureCanManageBusinessConfig(permissions);
     ensureCoherentDto(dto);
 
     const config = await this.repositories.businessConfig.updateCapabilities(tenantId, {

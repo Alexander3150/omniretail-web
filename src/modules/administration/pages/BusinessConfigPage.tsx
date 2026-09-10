@@ -15,7 +15,8 @@ import { PageHeader } from "@/shared/components/PageHeader";
 import { useToast } from "@/shared/components/Toast";
 
 export function BusinessConfigPage() {
-  const { applyPreset, busy, config, error, loading, reload, save } = useBusinessConfig();
+  const { applyPreset, busy, canManage, config, error, loading, reload, save } =
+    useBusinessConfig();
   const { showToast } = useToast();
   const [value, setValue] = useState<BusinessConfigDto | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -98,6 +99,34 @@ export function BusinessConfigPage() {
   }
 
   const showInitialLoading = loading && !value;
+
+  // La sesion puede seguir resolviendo el rol: recien cuando termina de cargar se sabe si el
+  // usuario puede gestionar la configuracion.
+  if (!loading && !canManage) {
+    return (
+      <div className="min-w-0 space-y-5">
+        <PageHeader
+          description="Definí las capacidades operativas y la trazabilidad que utilizarán los productos del tenant."
+          title="Configuración del negocio"
+        />
+        <div
+          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
+          role="alert"
+        >
+          <h2 className="text-base font-semibold text-[var(--color-title)]">
+            No tenés acceso a esta configuración
+          </h2>
+          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+            La configuración del negocio aplica a todo el tenant y requiere el permiso{" "}
+            <span className="font-medium text-[var(--color-text)]">
+              admin.business_config.manage
+            </span>
+            . Pedí acceso a un administrador.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-w-0 space-y-5">
