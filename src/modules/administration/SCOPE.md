@@ -36,7 +36,7 @@
 | 3 | Proveedores | `/administracion/proveedores` | `Supplier` | ✅ Desbloqueada |
 | 4 | Cuentas bancarias | `/administracion/cuentas-bancarias` | `BankAccount` | ✅ Desbloqueada |
 | 5 | Diseño E-commerce | `/administracion/diseno-ecommerce` | `EcommerceConfig` | ⚠️ Parcial — sin branding |
-| 6 | Clientes | `/administracion/clientes` | `Customer`, `CustomerSegment` | ⚠️ Parcial — sin update ni segmentos |
+| 6 | Clientes | `/administracion/clientes` | `Customer`, `CustomerSegment` | ✅ **Implementada** — sin segmentos |
 | 7 | Auditoría | `/administracion/auditoria` | `AuditLog` | ⚠️ Parcial — filtrado en cliente |
 | 8 | Caja | `/administracion/caja` | `CashShift`, `CashMovement` | ⚠️ Parcial — solo lectura |
 | 9 | Dashboard | `/administracion/dashboard` | Agregación | ⚠️ Necesita `KPICard` |
@@ -112,7 +112,7 @@ Firmas reales leídas de `src/core/repositories/`.
 | `UserRepository` | `getAll` · `getById` · `getByEmail` · `create` · `update` · `updateStatus` | ✅ Completo |
 | `AuditLogRepository` | `getAll` · `append` | Sin filtros server-side |
 | `TenantRepository` | `getAll` · `getById` | Sin `create` ni `update` |
-| `CustomerRepository` | `getAll` · `getById` · `getByUserId` · `getByEmail` · `create` | Sin `update` |
+| `CustomerRepository` | `getAll` · `getById` · `getByUserId` · `getByEmail` · `create` · `update` | Sin segmentos |
 | `RoleRepository` | `getById` | ⛔ **Bloqueante** |
 | `CustomerSegmentRepository` | — | ⛔ **No existe** |
 
@@ -313,7 +313,7 @@ override `demoMode`) y `src/config/session-policy.ts` (`normalSessionHours: 8`,
 5. **Sin contrato para `AuthAccount` ni `MfaEnrollment`.** Invitación, activación asistida y MFA
    quedan bloqueadas. Esto **sí** es dominio de Andy.
 6. **`TenantRepository` sin `update`.** Bloquea escritura de datos del negocio.
-7. **`CustomerRepository` sin `update` y sin `CustomerSegmentRepository`.**
+7. **Sin `CustomerSegmentRepository`.**
 8. **`AuditLogRepository` sin filtros.** Solo `getAll` y `append`: el filtrado es en cliente.
 9. **Planes y facturación / Sincronización sin entity.** No inventar; definir en equipo.
 10. **El filtro de permisos del Sidebar no está conectado.** `filterNavigationItemsByPermissions`
@@ -498,7 +498,7 @@ Campos reales: `enabled`, `storeName`, `requireAccountForCheckout`, `guestTracki
 Sin branding hasta que se agregue `theme`.
 No se configura acá la trazabilidad (eso es 12.1) ni el diseño visual del storefront (María).
 
-### 12.6 Clientes
+### 12.6 Clientes ✅ implementada
 
 Vista comercial. Tabla: `code`, `name`, `email`, segmento, `status`.
 El self-service del cliente (registro, login, direcciones, pedidos propios) vive en el módulo
