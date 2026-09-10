@@ -80,6 +80,7 @@ export function PosTerminalPage() {
           onCheckout={terminal.openCheckout}
           onDecrease={terminal.decreaseQuantity}
           onIncrease={terminal.increaseQuantity}
+          onRemove={terminal.removeItem}
         />
       </section>
 

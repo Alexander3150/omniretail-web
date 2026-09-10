@@ -11,6 +11,7 @@ interface SaleTicketProps {
   canCheckout: boolean;
   onIncrease: (productId: string) => void;
   onDecrease: (productId: string) => void;
+  onRemove: (productId: string) => void;
   onCheckout: () => void;
 }
 
@@ -23,6 +24,7 @@ export function SaleTicket({
   canCheckout,
   onIncrease,
   onDecrease,
+  onRemove,
   onCheckout,
 }: SaleTicketProps) {
   return (
@@ -89,6 +91,13 @@ export function SaleTicket({
                       +
                     </button>
                   </div>
+                  <button
+                    className="text-sm font-semibold text-[var(--color-danger)] underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]"
+                    onClick={() => onRemove(item.productId)}
+                    type="button"
+                  >
+                    Quitar
+                  </button>
                 </div>
 
                 <div className="mt-3 text-xs text-[var(--color-text-muted)]">

@@ -164,12 +164,17 @@ export function usePosTerminal() {
     setBankAccountsLoading(true);
     setBankAccountsError(null);
     try {
-      const accounts = await repositories.bankAccounts.getActive();
+      const [accounts, tenant] = await Promise.all([
+        repositories.bankAccounts.getActive(),
+        repositories.tenants.getById(currentBranch.tenantId),
+      ]);
+      if (!tenant) throw new Error("No se pudo resolver la moneda del negocio actual.");
       setBankAccounts(
         accounts
           .filter(
             (account) =>
               account.tenantId === currentBranch.tenantId &&
+              account.currency === tenant.defaultCurrency &&
               isBranchScopedResourceAvailable(account.branchIds, currentBranch.id),
           )
           .map((account) => ({
@@ -931,10 +936,31 @@ function createCheckoutValue(
 function getAllowedPosPaymentMethods(
   methods: PaymentMethod[] | undefined,
 ): SaleConfirmationPaymentMethod[] {
-  const configuredMethods = new Set(methods ?? []);
-  return [PaymentMethod.cash, PaymentMethod.card, PaymentMethod.transfer].filter(
-    (method) => configuredMethods.has(method),
-  );
+  const supportedMethods = new Set<SaleConfirmationPaymentMethod>();
+
+  for (const method of methods ?? []) {
+    switch (method) {
+      case PaymentMethod.cash:
+        supportedMethods.add(PaymentMethod.cash);
+        break;
+      case PaymentMethod.card:
+        supportedMethods.add(PaymentMethod.card);
+        break;
+      case PaymentMethod.transfer:
+        supportedMethods.add(PaymentMethod.transfer);
+        break;
+      case PaymentMethod.mixed:
+        break;
+      default:
+        assertNeverPaymentMethod(method);
+    }
+  }
+
+  return [...supportedMethods];
+}
+
+function assertNeverPaymentMethod(method: never): never {
+  throw new Error(`Método de pago POS no soportado: ${String(method)}`);
 }
 
 function getAvailableCheckoutPaymentModes(

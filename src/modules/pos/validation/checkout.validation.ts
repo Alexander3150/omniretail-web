@@ -182,9 +182,16 @@ function validateCard(
 
 function looksLikeSensitiveCardData(value: string) {
   const isCvvOnly = /^\d{3,4}$/.test(value);
+  const containsLabeledSecurityCode =
+    /\b(?:cvv|cvc|pin)\s*(?:[:=/#-]\s*)?\d{3,4}\b/i.test(value);
   const containsPotentialPan = /(^|\D)(?:\d[ -]?){12,18}\d(?!\d)/.test(value);
   const isExpirationDateOnly = /^(0[1-9]|1[0-2])\s*[\/.\-]\s*\d{2,4}$/.test(value);
-  return isCvvOnly || containsPotentialPan || isExpirationDateOnly;
+  return (
+    isCvvOnly ||
+    containsLabeledSecurityCode ||
+    containsPotentialPan ||
+    isExpirationDateOnly
+  );
 }
 
 function validateTransfer(
