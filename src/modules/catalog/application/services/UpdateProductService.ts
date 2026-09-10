@@ -6,6 +6,7 @@ import { ProductMapper } from "@/modules/catalog/application/mappers/ProductMapp
 import {
   applyTrackingRules,
   hasValidationErrors,
+  resolveSaleUnitId,
   validateProductDto,
 } from "@/modules/catalog/validation/product.validation";
 import {
@@ -13,6 +14,7 @@ import {
   ensureActiveCategory,
   ensureActiveUnit,
   ensureProduct,
+  ensureProductTypeAllowed,
   requireCapabilities,
 } from "@/modules/catalog/application/services/serviceHelpers";
 
@@ -52,10 +54,12 @@ export class UpdateProductService {
     ensureActiveUnit(unit);
 
     const capabilities = await requireCapabilities(this.repositories, current.tenantId);
+    ensureProductTypeAllowed(dto.productType, capabilities, current.productType);
+    const saleUnitId = resolveSaleUnitId(dto.baseUnitId, dto.saleUnitId, capabilities);
     const tracking = applyTrackingRules(dto.productType, dto.tracking, capabilities);
     const updated = await this.repositories.products.update(
       current.id,
-      ProductMapper.toUpdateInput({ ...dto, sku: normalizedSku, tracking }, current),
+      ProductMapper.toUpdateInput({ ...dto, sku: normalizedSku, saleUnitId, tracking }, current),
     );
 
     await this.syncPrimaryImage(updated, dto.primaryImageUrl?.trim() ?? "");

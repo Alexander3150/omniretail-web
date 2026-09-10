@@ -1,6 +1,10 @@
-import { CategoryStatus, UnitStatus } from "@/core/enums";
+import { CategoryStatus, ProductType, UnitStatus } from "@/core/enums";
 import type { BusinessCapabilitiesConfig, Category, Product, Unit } from "@/core/entities";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import {
+  getDisabledProductTypeMessage,
+  isProductTypeAllowed,
+} from "@/modules/catalog/validation/product.validation";
 
 export class CatalogServiceError extends Error {
   constructor(message: string) {
@@ -39,6 +43,21 @@ export function ensureActiveUnit(unit: Unit | null) {
   if (!unit || unit.status !== UnitStatus.active) {
     throw new CatalogServiceError("La unidad seleccionada ya no esta disponible.");
   }
+}
+
+/**
+ * Un producto ya guardado con un tipo que despues se deshabilito puede seguir editandose y
+ * archivandose: bloquear su edicion dejaria datos existentes sin forma de corregirse. Lo que se
+ * prohibe es crear uno nuevo o cambiar un producto hacia un tipo deshabilitado.
+ */
+export function ensureProductTypeAllowed(
+  productType: ProductType,
+  capabilities: BusinessCapabilitiesConfig,
+  currentProductType?: ProductType,
+) {
+  if (isProductTypeAllowed(productType, capabilities)) return;
+  if (currentProductType === productType) return;
+  throw new CatalogServiceError(getDisabledProductTypeMessage(productType));
 }
 
 export function ensureProduct(product: Product | null) {

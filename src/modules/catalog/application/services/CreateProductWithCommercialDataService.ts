@@ -14,9 +14,13 @@ export class CreateProductWithCommercialDataService {
       throw new CatalogServiceError("No hay un negocio disponible para crear productos.");
     }
 
-    const { productInput } = await validateEditorProduct(this.repositories, dto, tenantId);
+    const { normalizedDto, productInput } = await validateEditorProduct(
+      this.repositories,
+      dto,
+      tenantId,
+    );
     const product = await this.repositories.products.create(productInput);
-    await syncEditorRelatedData(this.repositories, product, dto);
+    await syncEditorRelatedData(this.repositories, product, normalizedDto);
     return product;
   }
 }

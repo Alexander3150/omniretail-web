@@ -48,9 +48,12 @@ import { productTypeLabels } from "@/modules/catalog/components/productLabels";
 import { useProductPromotions } from "@/modules/catalog/hooks/useProductPromotions";
 import type { ProductFormOptions } from "@/modules/catalog/types/catalog.types";
 import {
+  applyCapabilityRulesToEditor,
   applyTrackingRules,
+  getAllowedProductTypes,
   getDefaultTracking,
   hasValidationErrors,
+  resolveSaleUnitId,
   validateProductDto,
   type ProductValidationErrors,
 } from "@/modules/catalog/validation/product.validation";
@@ -143,7 +146,9 @@ export function ProductForm({
     { id: "general", label: "Informacion general", icon: "I" },
     { id: "units", label: "Unidades", icon: "U" },
     { id: "tracking", label: "Inventario y trazabilidad", icon: "T" },
-    { id: "attributes", label: "Atributos", icon: "A", count: value.attributes.length },
+    options.businessCapabilities.supportsProductAttributes
+      ? { id: "attributes", label: "Atributos", icon: "A", count: value.attributes.length }
+      : null,
     { id: "prices", label: "Precios", icon: "Q", count: value.salesPriceTiers.length },
     showPromotionTab
       ? { id: "promotion", label: "Promocion", icon: "%", count: editorData.promotionCount }
@@ -176,6 +181,11 @@ export function ProductForm({
             ? getDefaultTracking(options.businessCapabilities, patch.productType)
             : applyTrackingRules(patch.productType, next.tracking, options.businessCapabilities);
       }
+      next.saleUnitId = resolveSaleUnitId(
+        next.baseUnitId,
+        next.saleUnitId,
+        options.businessCapabilities,
+      );
       if (next.baseUnitId === next.saleUnitId) {
         next.inventoryQuantity = 1;
         next.saleQuantity = 1;
@@ -187,10 +197,7 @@ export function ProductForm({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setEditorError(null);
-    const nextValue = {
-      ...value,
-      tracking: applyTrackingRules(value.productType, value.tracking, options.businessCapabilities),
-    };
+    const nextValue = applyCapabilityRulesToEditor(value, options.businessCapabilities);
     const nextErrors = validateProductDto({
       ...nextValue,
       salePrice: toFiniteNumber(nextValue.salePrice),
@@ -276,6 +283,7 @@ export function ProductForm({
         <div className="min-w-0">
           {activeTab === "general" ? (
             <GeneralTab
+              capabilities={options.businessCapabilities}
               categories={options.categories}
               errors={errors}
               onChange={updateValue}
@@ -284,6 +292,7 @@ export function ProductForm({
           ) : null}
           {activeTab === "units" ? (
             <UnitsTab
+              capabilities={options.businessCapabilities}
               errors={errors}
               onChange={updateValue}
               units={options.units}
@@ -408,15 +417,25 @@ export function ProductForm({
 
 function GeneralTab({
   value,
+  capabilities,
   categories,
   errors,
   onChange,
 }: {
   value: ProductEditorDto;
+  capabilities: ProductFormOptions["businessCapabilities"];
   categories: ProductFormOptions["categories"];
   errors: ProductValidationErrors;
   onChange: (value: Partial<ProductEditorDto>) => void;
 }) {
+  const allowedProductTypes = getAllowedProductTypes(capabilities);
+  // Un producto guardado con un tipo que despues se deshabilito conserva su opcion: sin ella la
+  // pantalla lo cambiaria de tipo en silencio al primer guardado.
+  const productTypes = allowedProductTypes.includes(value.productType)
+    ? allowedProductTypes
+    : [...allowedProductTypes, value.productType];
+  const hiddenProductTypes = Object.values(ProductType).length - productTypes.length;
+
   return (
     <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
       <SectionTitle
@@ -426,7 +445,7 @@ function GeneralTab({
       <div className="space-y-2">
         <p className="text-sm font-bold text-[var(--color-title)]">Tipo de producto</p>
         <div className="grid gap-2 sm:grid-cols-3">
-          {Object.values(ProductType).map((type) => (
+          {productTypes.map((type) => (
             <button
               aria-pressed={value.productType === type}
               className={cn(
@@ -443,6 +462,11 @@ function GeneralTab({
             </button>
           ))}
         </div>
+        {hiddenProductTypes > 0 ? (
+          <p className="text-sm text-[var(--color-text-muted)]">
+            La configuracion del negocio limita los tipos de producto disponibles.
+          </p>
+        ) : null}
         {errors.productType ? <FieldError>{errors.productType}</FieldError> : null}
       </div>
       <FormField id="name" label="Nombre *" error={errors.name}>
@@ -549,23 +573,32 @@ function ChannelsControl({
 
 function UnitsTab({
   value,
+  capabilities,
   units,
   errors,
   onChange,
 }: {
   value: ProductEditorDto;
+  capabilities: ProductFormOptions["businessCapabilities"];
   units: ProductFormOptions["units"];
   errors: ProductValidationErrors;
   onChange: (value: Partial<ProductEditorDto>) => void;
 }) {
   const baseUnit = units.find((item) => item.id === value.baseUnitId);
   const saleUnit = units.find((item) => item.id === value.saleUnitId);
-  const needsConversion = value.baseUnitId !== value.saleUnitId;
+  // Sin "Unidades y empaques" el producto trabaja con una sola unidad: no hay unidad de venta
+  // distinta que elegir ni equivalencia que declarar.
+  const usesSingleUnit = !capabilities.supportsUnitsAndPackaging;
+  const needsConversion = !usesSingleUnit && value.baseUnitId !== value.saleUnitId;
 
   return (
     <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
       <SectionTitle
-        description="Unidad base para inventario y presentacion normal de venta."
+        description={
+          usesSingleUnit
+            ? "El negocio opera con una unica unidad por producto."
+            : "Unidad base para inventario y presentacion normal de venta."
+        }
         title="Unidades"
       />
       <div className="grid gap-4 md:grid-cols-2">
@@ -589,8 +622,18 @@ function UnitsTab({
             ))}
           </Select>
         </FormField>
-        <FormField id="saleUnitId" label="Unidad de venta *" error={errors.saleUnitId}>
+        <FormField
+          id="saleUnitId"
+          label="Unidad de venta *"
+          error={errors.saleUnitId}
+          hint={
+            usesSingleUnit
+              ? "Sigue a la unidad de inventario porque el negocio no maneja unidades y empaques."
+              : undefined
+          }
+        >
           <Select
+            disabled={usesSingleUnit}
             id="saleUnitId"
             onChange={(event) =>
               onChange({
@@ -653,7 +696,9 @@ function UnitsTab({
         </div>
       ) : (
         <p className="rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text)]">
-          Venta e inventario usan la misma unidad; no se requiere conversion adicional.
+          {usesSingleUnit
+            ? "El negocio no maneja unidades y empaques: la venta usa la unidad de inventario y no se habilitan equivalencias ni presentaciones distintas."
+            : "Venta e inventario usan la misma unidad; no se requiere conversion adicional."}
         </p>
       )}
     </section>
@@ -2020,7 +2065,7 @@ function buildInitialValue(options: ProductFormOptions, editorData: ProductEdito
             conversion.toUnitId === saleUnitId
           ? { inventoryQuantity: 1, saleQuantity: conversion.factor }
           : { inventoryQuantity: conversion.factor, saleQuantity: 1 };
-    return {
+    const editedDraft: ProductEditorDto = {
       sku: detail.product.sku,
       barcode: detail.product.barcode,
       name: detail.product.name,
@@ -2046,10 +2091,11 @@ function buildInitialValue(options: ProductFormOptions, editorData: ProductEdito
       supplierProducts: editorData.supplierProducts,
       media: editorData.media,
     };
+    return applyCapabilityRulesToEditor(editedDraft, options.businessCapabilities);
   }
 
   const unitId = options.units[0]?.id ?? "";
-  return {
+  const newDraft: ProductEditorDto = {
     sku: "",
     barcode: "",
     name: "",
@@ -2071,6 +2117,7 @@ function buildInitialValue(options: ProductFormOptions, editorData: ProductEdito
     supplierProducts: [],
     media: [],
   };
+  return applyCapabilityRulesToEditor(newDraft, options.businessCapabilities);
 }
 
 const inputClassName =
