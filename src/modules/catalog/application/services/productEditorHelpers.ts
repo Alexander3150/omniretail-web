@@ -1,4 +1,4 @@
-import type { Product, ProductMedia } from "@/core/entities";
+import type { BusinessCapabilitiesConfig, Product, ProductMedia } from "@/core/entities";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { normalizeSku } from "@/shared/utils/normalizeSku";
 import type {
@@ -12,7 +12,7 @@ import {
 } from "@/shared/utils/numberInput";
 import { ProductMapper } from "@/modules/catalog/application/mappers/ProductMapper";
 import {
-  applyTrackingRules,
+  applyCapabilityRulesToEditor,
   hasValidationErrors,
   isValidProductImageUrl,
   validateProductDto,
@@ -21,6 +21,8 @@ import {
   CatalogServiceError,
   ensureActiveCategory,
   ensureActiveUnit,
+  ensureProductTypeAllowed,
+  ensureUnitConfigUnchanged,
   requireCapabilities,
 } from "@/modules/catalog/application/services/serviceHelpers";
 
@@ -28,40 +30,55 @@ export async function validateEditorProduct(
   repositories: RepositoryRegistry,
   dto: ProductEditorDto,
   tenantId: string,
-  currentProductId?: string,
+  current?: Pick<Product, "id" | "productType" | "baseUnitId" | "saleUnitId" | "tracking">,
 ) {
-  const baseErrors = validateProductDto(toProductDto(dto));
+  const capabilities = await requireCapabilities(repositories, tenantId);
+  ensureProductTypeAllowed(dto.productType, capabilities, current?.productType);
+  ensureUnitConfigUnchanged(dto, capabilities, current);
+
+  // El borrador se normaliza ANTES de validar y de persistir: lo que la configuracion deshabilita
+  // no llega ni al producto ni a sus datos relacionados, venga de la pantalla o de otro consumidor.
+  // Con `current` (producto existente) se conserva lo ya persistido en vez de recortarlo: la
+  // capacidad apagada bloquea crear configuracion nueva, nunca borra la que ya habia.
+  const capabilityContext = current
+    ? { saleUnitId: current.saleUnitId ?? current.baseUnitId, tracking: current.tracking }
+    : undefined;
+  const normalizedDto = applyCapabilityRulesToEditor(dto, capabilities, capabilityContext);
+  const currentProductId = current?.id;
+  const baseErrors = validateProductDto(toProductDto(normalizedDto));
   if (hasValidationErrors(baseErrors)) {
     throw new CatalogServiceError(Object.values(baseErrors)[0] ?? "Revisa los datos del producto.");
   }
 
   if (
-    dto.baseUnitId !== dto.saleUnitId &&
-    (!isPositiveNumber(dto.inventoryQuantity) || !isPositiveNumber(dto.saleQuantity))
+    normalizedDto.baseUnitId !== normalizedDto.saleUnitId &&
+    (!isPositiveNumber(normalizedDto.inventoryQuantity) ||
+      !isPositiveNumber(normalizedDto.saleQuantity))
   ) {
     throw new CatalogServiceError("La equivalencia de venta debe tener cantidades mayores a 0.");
   }
-  const invalidMedia = dto.media.find(
+  const invalidMedia = normalizedDto.media.find(
     (media) => media.url.trim() && !isValidProductImageUrl(media.url.trim()),
   );
   if (invalidMedia) {
     throw new CatalogServiceError("Cada imagen debe iniciar con / o una URL http(s).");
   }
 
-  assertUniquePositiveSalesTiers(dto.salesPriceTiers);
-  assertSupplierProducts(dto.supplierProducts);
-  assertInventorySettings(dto);
+  assertUniquePositiveSalesTiers(normalizedDto.salesPriceTiers);
+  assertSupplierProducts(normalizedDto.supplierProducts);
+  assertInventorySettings(normalizedDto);
 
-  const normalizedSku = normalizeSku(dto.sku);
+  const normalizedSku = normalizeSku(normalizedDto.sku);
   const duplicateSku = await repositories.products.getBySku(normalizedSku);
   if (duplicateSku && duplicateSku.id !== currentProductId) {
     throw new CatalogServiceError("Ya existe un producto con este Codigo / SKU.");
   }
 
-  if (dto.barcode?.trim()) {
+  if (normalizedDto.barcode?.trim()) {
     const products = await repositories.products.getAll();
     const duplicateBarcode = products.find(
-      (product) => product.barcode === dto.barcode?.trim() && product.id !== currentProductId,
+      (product) =>
+        product.barcode === normalizedDto.barcode?.trim() && product.id !== currentProductId,
     );
     if (duplicateBarcode) {
       throw new CatalogServiceError("Ya existe un producto con este codigo de barras.");
@@ -69,22 +86,20 @@ export async function validateEditorProduct(
   }
 
   const [category, baseUnit, saleUnit] = await Promise.all([
-    repositories.categories.getById(dto.categoryId),
-    repositories.units.getById(dto.baseUnitId),
-    repositories.units.getById(dto.saleUnitId),
+    repositories.categories.getById(normalizedDto.categoryId),
+    repositories.units.getById(normalizedDto.baseUnitId),
+    repositories.units.getById(normalizedDto.saleUnitId),
   ]);
   ensureActiveCategory(category);
   ensureActiveUnit(baseUnit);
   ensureActiveUnit(saleUnit);
 
-  const capabilities = await requireCapabilities(repositories, tenantId);
   return {
+    normalizedDto,
+    capabilities,
+    isNewProduct: !current,
     productInput: ProductMapper.toCreateInput(
-      {
-        ...toProductDto(dto),
-        sku: normalizedSku,
-        tracking: applyTrackingRules(dto.productType, dto.tracking, capabilities),
-      },
+      { ...toProductDto(normalizedDto), sku: normalizedSku },
       tenantId,
     ),
   };
@@ -114,11 +129,12 @@ export async function syncEditorRelatedData(
   repositories: RepositoryRegistry,
   product: Product,
   dto: ProductEditorDto,
+  context: { capabilities: BusinessCapabilitiesConfig; isNewProduct: boolean },
 ) {
   await Promise.all([
     syncInventorySettings(repositories, product, dto),
-    syncUnitConversion(repositories, product, dto),
-    syncAttributes(repositories, product, dto),
+    syncUnitConversion(repositories, product, dto, context),
+    syncAttributes(repositories, product, dto, context),
     repositories.productSalesPriceTiers.replaceForProduct(
       product.id,
       dto.salesPriceTiers
@@ -167,7 +183,14 @@ async function syncUnitConversion(
   repositories: RepositoryRegistry,
   product: Product,
   dto: ProductEditorDto,
+  context: { capabilities: BusinessCapabilitiesConfig; isNewProduct: boolean },
 ) {
+  // Producto existente + capacidad apagada: no se toca la tabla de conversiones en absoluto. La UI
+  // no puede producir un valor nuevo legitimo (el selector de unidad de venta queda deshabilitado),
+  // asi que la unica escritura segura es NO escribir, dejando la conversion historica intacta pase
+  // lo que pase con `dto.inventoryQuantity`/`dto.saleQuantity` (evita confiar en esos numeros).
+  if (!context.capabilities.supportsUnitsAndPackaging && !context.isNewProduct) return;
+
   await repositories.units.replaceConversionsForProduct(
     product.id,
     dto.baseUnitId === dto.saleUnitId
@@ -187,7 +210,13 @@ async function syncAttributes(
   repositories: RepositoryRegistry,
   product: Product,
   dto: ProductEditorDto,
+  context: { capabilities: BusinessCapabilitiesConfig; isNewProduct: boolean },
 ) {
+  // Producto existente + capacidad apagada: la pestana de atributos queda oculta o de solo lectura
+  // en la UI, asi que no hay una edicion legitima que sincronizar. No tocar la tabla de valores en
+  // absoluto es mas seguro que confiar en `dto.attributes` para reconstruirla.
+  if (!context.capabilities.supportsProductAttributes && !context.isNewProduct) return;
+
   const definitions = await repositories.attributes.getDefinitions();
   const values = [];
 
