@@ -257,9 +257,11 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       db.customers.push(customer);
       db.users.push(createdUser);
       // NOTE for review: this method does not yet enforce email uniqueness
-      // within the tenant (rule R-A03). That check belongs to the
-      // registration validation/UI (form-level), not this repository call —
-      // intentionally deferred, not an oversight.
+      // within the tenant (rule R-A03). This is a preexisting gap, not
+      // introduced here — email uniqueness is an invariant that will
+      // eventually need authoritative enforcement (not just UI-level
+      // validation). Called out so it isn't mistaken for an oversight; not
+      // resolved in this PR.
       db.authAccounts.push({
         id: this.id("auth"),
         userId: createdUser.id,
@@ -315,20 +317,29 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
   }
   async resetPassword(token: string, newPasswordMock: string) {
     this.store.mutate((db) => {
+      const now = new Date();
+
       const challenge = db.passwordResetChallenges.find(
         (item) => item.token === token && !item.usedAt,
       );
       if (!challenge) throw new Error("Invalid reset token");
+      // Reject before any mutation: an expired challenge must not change the
+      // password, touch account status/lockout, revoke sessions, consume the
+      // challenge, or emit any audit event. expiresAt itself counts as
+      // already expired (now >= expiresAt), same boundary as verifyEmail.
+      if (now >= new Date(challenge.expiresAt)) {
+        throw new Error("Invalid reset token");
+      }
+
       const account = db.authAccounts.find((item) => item.userId === challenge.userId);
       if (!account) throw new Error("Account not found");
       const user = db.users.find((item) => item.id === account.userId);
       const tenantId = user?.tenantId ?? "tenant-demo";
-      const now = this.now();
+      const nowIso = now.toISOString();
 
       account.passwordHashMock = buildPasswordHashMock(newPasswordMock);
-      account.passwordChangedAt = now;
-      account.updatedAt = now;
-      challenge.usedAt = now;
+      account.passwordChangedAt = nowIso;
+      account.updatedAt = nowIso;
 
       // R-A24: completing a reset always lifts a temporary lockout or a
       // forced password_reset_required state back to active, resetting the
@@ -348,19 +359,22 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         (session) => session.userId === account.userId && !session.revokedAt,
       );
       revokedSessions.forEach((session) => {
-        session.revokedAt = now;
+        session.revokedAt = nowIso;
       });
 
-      // R-A30: audit the session revocation as its own event, separate
-      // from password_reset_completed — the doc lists them separately.
-      if (revokedSessions.length > 0) {
-        this.logAuthAudit(db, {
-          tenantId,
-          actorUserId: account.userId,
-          accountId: account.id,
-          action: "session_revoked",
-        });
-      }
+      challenge.usedAt = nowIso;
+
+      // R-A30: session_revoked is an aggregate event emitted on every
+      // successful reset, count included (0 when there was nothing to
+      // revoke) — a missing log entry should never be the signal that no
+      // sessions existed.
+      this.logAuthAudit(db, {
+        tenantId,
+        actorUserId: account.userId,
+        accountId: account.id,
+        action: "session_revoked",
+        metadata: { count: revokedSessions.length },
+      });
 
       // R-A30: audit the completed reset.
       // NOTE for review: R-A24 also mentions a "notificación de cambio de
@@ -385,6 +399,13 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         (item) => item.token === token && !item.verifiedAt,
       );
       if (!verification) throw new Error("Invalid verification token");
+      // Reject before any mutation: an expired token must not activate the
+      // account, must not set verifiedAt, and must leave the account exactly
+      // as it was (still pending_verification). expiresAt itself counts as
+      // already expired (now >= expiresAt), not "valid until and including".
+      if (new Date() >= new Date(verification.expiresAt)) {
+        throw new Error("Invalid verification token");
+      }
       verification.verifiedAt = this.now();
       const account = db.authAccounts.find((item) => item.userId === verification.userId);
       if (account) account.status = AccountStatus.active;
@@ -394,7 +415,13 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
   }
   private logAuthAudit(
     db: MockDatabase,
-    entry: { tenantId: string; actorUserId?: string; accountId?: string; action: string },
+    entry: {
+      tenantId: string;
+      actorUserId?: string;
+      accountId?: string;
+      action: string;
+      metadata?: Record<string, unknown>;
+    },
   ) {
     db.auditLogs.push({
       id: this.id("audit"),
@@ -403,6 +430,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       action: entry.action,
       entityType: "AuthAccount",
       entityId: entry.accountId,
+      metadata: entry.metadata,
       createdAt: this.now(),
     });
   }
