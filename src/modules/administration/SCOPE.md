@@ -32,7 +32,7 @@
 | # | Pantalla | Ruta | Entidad principal | Estado |
 |---|---|---|---|---|
 | 1 | Configuración del negocio | `/administracion/configuracion-negocio` | `BusinessCapabilitiesConfig` | ✅ **Implementada** |
-| 2 | Sucursales | `/administracion/sucursales` | `Branch` | ✅ Desbloqueada |
+| 2 | Sucursales | `/administracion/sucursales` | `Branch` | ✅ **Implementada** |
 | 3 | Proveedores | `/administracion/proveedores` | `Supplier` | ✅ Desbloqueada |
 | 4 | Cuentas bancarias | `/administracion/cuentas-bancarias` | `BankAccount` | ✅ Desbloqueada |
 | 5 | Diseño E-commerce | `/administracion/diseno-ecommerce` | `EcommerceConfig` | ⚠️ Parcial — sin branding |
@@ -467,7 +467,7 @@ deshabilitan, y toda la trazabilidad queda en `false`. La invariante se valida e
 Fuera de alcance: `AttributeDefinition` / `ProductAttributeValue` se gestionan en
 `/inventario/atributos` (Melbyn). Acá solo se prende o apaga `supportsProductAttributes`.
 
-### 12.2 Sucursales
+### 12.2 Sucursales ✅ implementada
 
 Tabla: `code`, `name`, `type`, `address`, `status`, acciones. Formulario: `code`, `name`, `type`
 (`main`/`store`/`warehouse`), `address`, `phone`, `email`, `status`.
