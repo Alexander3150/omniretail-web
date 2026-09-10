@@ -35,7 +35,10 @@ export function usePurchaseOrders() {
   const repositories = useRepositories();
   const { currentBranch, loading: branchLoading } = useActiveBranch();
   const activeBranchId = currentBranch?.id;
-  const service = useMemo(() => new GetPurchaseOrdersReadModelService(repositories), [repositories]);
+  const service = useMemo(
+    () => new GetPurchaseOrdersReadModelService(repositories),
+    [repositories],
+  );
   const [data, setData] = useState<PurchaseOrdersReadModel>(EMPTY_DATA);
   const [filters, setFilters] = useState<PurchaseOrderFilters>(DEFAULT_FILTERS);
   const [loading, setLoading] = useState(true);
@@ -88,6 +91,7 @@ export function usePurchaseOrders() {
     data,
     filters,
     filteredOrders,
+    currentBranch,
     loading: branchLoading || loading,
     error,
     updateFilters,

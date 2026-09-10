@@ -1,8 +1,6 @@
 import { PurchaseOrderStatus } from "@/core/enums";
 import type { PurchaseOrderAction } from "@/modules/purchasing/application/dto/PurchaseOrderReadModel";
 
-const RECEIVING_ROUTE_GAP = "La ruta de recepcion por orden aun no esta disponible.";
-
 export function getPurchaseOrderActions(status: PurchaseOrderStatus): PurchaseOrderAction[] {
   if (status === PurchaseOrderStatus.draft) {
     return [
@@ -48,8 +46,7 @@ export function getPurchaseOrderActions(status: PurchaseOrderStatus): PurchaseOr
       {
         id: "continue-receiving",
         label: "Continuar recepcion",
-        enabled: false,
-        unavailableReason: RECEIVING_ROUTE_GAP,
+        enabled: true,
       },
       {
         id: "download-receiving-pdf",
@@ -79,9 +76,8 @@ export function getPurchaseOrderActions(status: PurchaseOrderStatus): PurchaseOr
     return [
       {
         id: "continue-receiving",
-        label: "Registrar recepcion",
-        enabled: false,
-        unavailableReason: RECEIVING_ROUTE_GAP,
+        label: "Iniciar recepcion",
+        enabled: true,
       },
       {
         id: "cancel",

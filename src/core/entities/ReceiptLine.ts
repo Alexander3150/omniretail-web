@@ -6,8 +6,12 @@ export interface ReceiptLine {
   productId: string;
   orderedQuantity?: number;
   receivedQuantity: number;
+  rejectedQuantity?: number;
   status: ReceiptLineStatus;
   locationId?: string;
   lotId?: string;
+  lotNumber?: string;
+  expirationDate?: string;
+  serialNumbers?: string[];
   notes?: string;
 }

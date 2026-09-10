@@ -35,6 +35,9 @@ const NAVIGATION_ICON_MAP: Record<string, IconComponent> = {
   "catalog-units": RulerIcon,
   "inventory-movements": HistoryIcon,
   purchasing: ShoppingCartIcon,
+  "purchasing-suppliers": BuildingIcon,
+  "purchasing-orders": ClipboardListIcon,
+  receiving: PackageCheckIcon,
   logistics: TruckIcon,
 };
 
@@ -332,6 +335,37 @@ function ShoppingCartIcon(props: SVGProps<SVGSVGElement>) {
       <circle cx="9" cy="20" r="1" />
       <circle cx="18" cy="20" r="1" />
       <path d="M2 3h3l3 13h10l3-9H6" />
+    </Icon>
+  );
+}
+
+function BuildingIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M3 21h18" />
+      <path d="M5 21V7l8-4v18" />
+      <path d="M19 21V11l-6-4" />
+      <path d="M9 9h1M9 13h1M9 17h1" />
+    </Icon>
+  );
+}
+
+function ClipboardListIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M9 5h6M9 3h6v4H9z" />
+      <path d="M7 5H5v16h14V5h-2" />
+      <path d="M8 12h8M8 16h8" />
+    </Icon>
+  );
+}
+
+function PackageCheckIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="m3 7 9 5 9-5M12 22V12" />
+      <path d="M21 7v5M3 7v10l9 5 2.5-1.4" />
+      <path d="m16 17 2 2 4-5" />
     </Icon>
   );
 }

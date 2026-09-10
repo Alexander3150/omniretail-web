@@ -197,7 +197,7 @@ export function InventoryMovementsPage() {
         </div>
         <Button
           className="w-full sm:w-auto"
-          disabled={rows.length === 0 || exporting}
+          disabled={exporting}
           onClick={handleExport}
           type="button"
           variant="primary"
