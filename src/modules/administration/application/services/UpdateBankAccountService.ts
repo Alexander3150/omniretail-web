@@ -7,6 +7,7 @@ import { toBankAccountDto } from "@/modules/administration/application/mappers/B
 import {
   ensureBankAccountActor,
   ensureBankAccountBelongsToTenant,
+  ensureBankAccountBranchIds,
   ensureBankAccountTenant,
   ensureCanManageBankAccounts,
 } from "@/modules/administration/application/services/serviceHelpers";
@@ -35,6 +36,11 @@ export class UpdateBankAccountService {
     validateBankAccountInput(dto);
 
     const input = normalizeBankAccountInput(dto);
+    const tenantBranches = (await this.repositories.branches.getAll()).filter(
+      (branch) => branch.tenantId === tenantId,
+    );
+    ensureBankAccountBranchIds(input.branchIds, tenantBranches, current.branchIds);
+
     const account = ensureBankAccountBelongsToTenant(
       await this.repositories.bankAccounts.update(current.id, input),
       tenantId,

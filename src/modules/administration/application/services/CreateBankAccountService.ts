@@ -6,6 +6,7 @@ import type {
 import { toBankAccountDto } from "@/modules/administration/application/mappers/BankAccountMapper";
 import {
   ensureBankAccountActor,
+  ensureBankAccountBranchIds,
   ensureBankAccountTenant,
   ensureCanManageBankAccounts,
 } from "@/modules/administration/application/services/serviceHelpers";
@@ -29,6 +30,11 @@ export class CreateBankAccountService {
     validateBankAccountInput(dto);
 
     const input = normalizeBankAccountInput(dto);
+    const tenantBranches = (await this.repositories.branches.getAll()).filter(
+      (branch) => branch.tenantId === tenantId,
+    );
+    ensureBankAccountBranchIds(input.branchIds, tenantBranches);
+
     const account = await this.repositories.bankAccounts.create({ tenantId, ...input });
     await this.repositories.auditLogs.append({
       tenantId,

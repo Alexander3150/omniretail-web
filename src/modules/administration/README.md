@@ -122,9 +122,13 @@ Implementado en esta rama:
   (`bank_account.created` / `bank_account.updated` / `bank_account.archived`).
 - Validacion del dato recibido antes de normalizar banco, titular, alias, numero enmascarado,
   tipo, moneda, estado y `branchIds`.
-- `branchIds` se elige contra las sucursales activas del tenant (`BranchRepository.getActive`).
-  Al editar, las sucursales asignadas que ya no estan activas se conservan y se informan; no se
-  descartan en silencio.
+- `accountNumberMasked` debe guardarse enmascarado: el service rechaza una cadena de digitos larga
+  (numero completo) y exige un caracter de enmascarado (`*`, `x`, `•`), p. ej. `****-****-1234`.
+  Un almacenamiento seguro del numero completo, si se necesitara, es otro contrato.
+- `branchIds` se valida en `CreateBankAccountService` y `UpdateBankAccountService` contra el
+  maestro real, no solo en la UI: cada sucursal debe existir y pertenecer al tenant; las nuevas
+  ademas deben estar activas. Las sucursales que la cuenta ya tenia asignadas se conservan aunque
+  hoy esten inactivas, pero no se puede agregar una sucursal inactiva o de otro tenant.
 - Sincronizacion de la lista mediante los eventos `payment.changed` (que emite
   `MockBankAccountRepository`) y `branch.changed` (para refrescar las opciones de sucursal).
 - Tabla con `DataTable`, formulario en `Modal` y estados resueltos mediante `StatusBadge`.

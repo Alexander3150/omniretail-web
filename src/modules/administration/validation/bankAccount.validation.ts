@@ -6,6 +6,20 @@ const ACCOUNT_TYPES: readonly BankAccountType[] = ["monetary", "savings"];
 const CURRENCIES: readonly string[] = ["GTQ", "USD"];
 const STATUSES: readonly BankAccountStatus[] = ["active", "inactive", "archived"];
 
+const MASK_CHARACTERS = /[*x•]/i;
+const FULL_ACCOUNT_NUMBER = /^\d{7,}$/;
+
+/**
+ * `accountNumberMasked` guarda una representación enmascarada, no el número completo. Se acepta si
+ * incluye algún carácter de enmascarado (`*`, `x`, `•`); se rechaza cuando el valor es una cadena
+ * de dígitos lo bastante larga como para ser un número de cuenta real (p. ej. `1234567890123456`).
+ * Guardar el número completo, si algún día se necesita, debe resolverse con otro contrato.
+ */
+function isMaskedAccountNumber(value: string): boolean {
+  if (MASK_CHARACTERS.test(value)) return true;
+  return !FULL_ACCOUNT_NUMBER.test(value.replace(/[\s-]/g, ""));
+}
+
 /**
  * Valida el DTO recibido antes de normalizarlo. Las reglas observan exactamente lo que envió el
  * consumidor: una UI oculta no impide que otro consumidor invoque el service con datos inválidos.
@@ -17,8 +31,14 @@ export function validateBankAccountInput(dto: BankAccountInputDto) {
   if (!dto.holderName.trim()) {
     throw new AdministrationServiceError("El titular de la cuenta es obligatorio.");
   }
-  if (!dto.accountNumberMasked.trim()) {
+  const accountNumberMasked = dto.accountNumberMasked.trim();
+  if (!accountNumberMasked) {
     throw new AdministrationServiceError("El número de cuenta es obligatorio.");
+  }
+  if (!isMaskedAccountNumber(accountNumberMasked)) {
+    throw new AdministrationServiceError(
+      "El número de cuenta debe almacenarse enmascarado, por ejemplo ****-****-1234.",
+    );
   }
   if (!dto.alias.trim()) {
     throw new AdministrationServiceError("El alias de la cuenta es obligatorio.");
