@@ -14,6 +14,9 @@ export class RegisterInventoryAdjustmentService {
   async execute(dto: AdjustStockDto): Promise<RegisterInventoryAdjustmentResult> {
     const product = await this.repositories.products.getById(dto.productId);
     if (!product) throw new Error("Producto no encontrado.");
+    if (product.tracking.lot) {
+      throw new Error("Los ajustes de productos por lote requieren un flujo de lote dedicado.");
+    }
 
     const reason = dto.reason.trim();
     if (!reason) throw new Error("El motivo es requerido.");

@@ -9,6 +9,9 @@ export interface Receipt {
   purchaseOrderId?: string;
   supplierId: string;
   status: ReceiptStatus;
+  /** Stable idempotency identity for a completed receiving confirmation. */
+  confirmationId?: string;
+  confirmationFingerprint?: string;
   receivedByUserId?: string;
   receivedAt?: ISODateString;
   notes?: string;

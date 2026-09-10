@@ -6,6 +6,8 @@ export interface ReceiptLine {
   productId: string;
   orderedQuantity?: number;
   receivedQuantity: number;
+  /** Base-unit quantity applied to inventory; receipt quantities remain in purchase units. */
+  inventoryQuantity?: number;
   rejectedQuantity?: number;
   status: ReceiptLineStatus;
   locationId?: string;
