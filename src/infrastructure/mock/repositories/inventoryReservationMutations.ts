@@ -1,11 +1,15 @@
-import { InventoryReservationStatus } from "@/core/enums";
+import { InventoryMovementType, InventoryReservationStatus } from "@/core/enums";
 import type {
   InventoryBalance,
+  InventoryMovement,
   InventoryReservation,
   InventoryReservationAllocation,
+  InventoryReservationConsumeOperation,
 } from "@/core/entities";
 import { planInventoryAllocation } from "@/core/inventory/stockAvailability";
 import type {
+  ConsumeInventoryReservationInput,
+  ConsumeInventoryReservationResult,
   ReleaseInventoryReservationInput,
   ReserveOrderItemInput,
 } from "@/core/repositories";
@@ -18,6 +22,11 @@ interface InventoryReservationMutationDependencies {
 
 export interface InventoryReservationMutationResult {
   reservation: InventoryReservation;
+  changed: boolean;
+}
+
+export interface InventoryReservationConsumeMutationResult
+  extends ConsumeInventoryReservationResult {
   changed: boolean;
 }
 
@@ -120,6 +129,116 @@ export function releaseInventoryReservationInDatabase(
   reservation.status = InventoryReservationStatus.released;
   reservation.updatedAt = now;
   return { reservation, changed: true };
+}
+
+export function consumeInventoryReservationInDatabase(
+  db: MockDatabase,
+  input: ConsumeInventoryReservationInput,
+  dependencies: InventoryReservationMutationDependencies,
+): InventoryReservationConsumeMutationResult {
+  assertConsumeInput(input);
+  const fingerprint = getConsumeFingerprint(input);
+  const existingOperation = db.inventoryReservationConsumeOperations.find(
+    (operation) =>
+      operation.tenantId === input.tenantId && operation.operationId === input.operationId,
+  );
+  if (existingOperation) {
+    if (existingOperation.fingerprint !== fingerprint) {
+      throw new Error(`Inventory reservation operation conflict: ${input.operationId}`);
+    }
+    const inventoryMovements = existingOperation.inventoryMovementIds.map((movementId) => {
+      const movement = db.inventoryMovements.find((item) => item.id === movementId);
+      if (!movement) throw new Error(`InventoryMovement not found: ${movementId}`);
+      return movement;
+    });
+    return {
+      reservation: existingOperation.resultReservation,
+      inventoryMovements,
+      idempotent: true,
+      changed: false,
+    };
+  }
+
+  const reservation = findReservationForMutation(input, db);
+  if (reservation.status === InventoryReservationStatus.released) {
+    throw new Error(`Released reservation cannot be consumed: ${reservation.id}`);
+  }
+  if (reservation.status === InventoryReservationStatus.consumed) {
+    throw new Error(`Consumed reservation has no remaining quantity: ${reservation.id}`);
+  }
+
+  const planned = input.allocationsConsumed.map((consumed) => {
+    const allocation = reservation.allocations.find(
+      (item) => item.balanceId === consumed.balanceId,
+    );
+    if (!allocation) {
+      throw new Error(`Balance does not belong to reservation: ${consumed.balanceId}`);
+    }
+    const remaining = getInventoryReservationAllocationRemaining(allocation);
+    if (consumed.quantity > remaining) {
+      throw new Error(`Consumed quantity exceeds reservation allocation: ${consumed.balanceId}`);
+    }
+    const balance = findInventoryReservationBalance(reservation, allocation, db);
+    if (balance.quantity < consumed.quantity) {
+      throw new Error(`Insufficient stock in balance: ${balance.id}`);
+    }
+    if (balance.reservedQuantity < consumed.quantity) {
+      throw new Error(`Insufficient reserved stock in balance: ${balance.id}`);
+    }
+    return { allocation, balance, quantity: consumed.quantity };
+  });
+
+  const now = dependencies.now();
+  const inventoryMovements = planned.map(({ allocation, balance, quantity }) => {
+    const quantityBefore = balance.quantity;
+    balance.quantity -= quantity;
+    balance.reservedQuantity -= quantity;
+    balance.updatedAt = now;
+    allocation.consumedQuantity += quantity;
+
+    const movement: InventoryMovement = {
+      id: dependencies.id("movement"),
+      tenantId: reservation.tenantId,
+      branchId: reservation.branchId,
+      productId: reservation.productId,
+      type: InventoryMovementType.out,
+      reason: `Consumo de reserva ${reservation.id}`,
+      quantity,
+      quantityBefore,
+      quantityAfter: balance.quantity,
+      fromLocationId: allocation.locationId,
+      referenceType: "inventoryReservation",
+      referenceId: reservation.id,
+      performedByUserId: input.performedByUserId,
+      createdAt: now,
+    };
+    db.inventoryMovements.push(movement);
+    return movement;
+  });
+
+  reservation.status = reservation.allocations.some(
+    (allocation) => getInventoryReservationAllocationRemaining(allocation) > 0,
+  )
+    ? InventoryReservationStatus.active
+    : InventoryReservationStatus.consumed;
+  reservation.updatedAt = now;
+
+  const operation: InventoryReservationConsumeOperation = {
+    id: dependencies.id("reservation-consume-operation"),
+    tenantId: input.tenantId,
+    branchId: input.branchId,
+    reservationId: input.reservationId,
+    operationId: input.operationId,
+    fingerprint,
+    allocationsConsumed: input.allocationsConsumed.map((item) => ({ ...item })),
+    inventoryMovementIds: inventoryMovements.map((movement) => movement.id),
+    resultReservation: structuredClone(reservation),
+    performedByUserId: input.performedByUserId,
+    createdAt: now,
+  };
+  db.inventoryReservationConsumeOperations.push(operation);
+
+  return { reservation, inventoryMovements, idempotent: false, changed: true };
 }
 
 export function findReservationForMutation(
@@ -233,4 +352,39 @@ function assertPositiveQuantity(quantity: number, label: string): void {
 
 function assertRequiredText(value: string, label: string): void {
   if (!value.trim()) throw new Error(`${label} is required`);
+}
+
+function assertConsumeInput(input: ConsumeInventoryReservationInput): void {
+  assertRequiredText(input.tenantId, "Reservation tenantId");
+  assertRequiredText(input.branchId, "Reservation branchId");
+  assertRequiredText(input.reservationId, "Reservation id");
+  assertRequiredText(input.operationId, "Reservation operationId");
+  assertRequiredText(input.performedByUserId, "Reservation performedByUserId");
+  if (input.allocationsConsumed.length === 0) {
+    throw new Error("Reservation consumption requires at least one allocation");
+  }
+  const balanceIds = new Set<string>();
+  input.allocationsConsumed.forEach((allocation) => {
+    assertRequiredText(allocation.balanceId, "Consumed allocation balanceId");
+    assertPositiveQuantity(allocation.quantity, "Consumed allocation quantity");
+    if (balanceIds.has(allocation.balanceId)) {
+      throw new Error(`Duplicate consumed balance: ${allocation.balanceId}`);
+    }
+    balanceIds.add(allocation.balanceId);
+  });
+}
+
+function getConsumeFingerprint(input: ConsumeInventoryReservationInput): string {
+  return JSON.stringify({
+    tenantId: input.tenantId,
+    branchId: input.branchId,
+    reservationId: input.reservationId,
+    performedByUserId: input.performedByUserId,
+    allocationsConsumed: input.allocationsConsumed
+      .map((allocation) => ({
+        balanceId: allocation.balanceId,
+        quantity: allocation.quantity,
+      }))
+      .sort((left, right) => left.balanceId.localeCompare(right.balanceId)),
+  });
 }
