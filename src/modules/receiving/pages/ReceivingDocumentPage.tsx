@@ -171,7 +171,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
         />
       ) : null}
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start 2xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_400px] 2xl:items-start">
         <main className="min-w-0 space-y-5">
           <section className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-white shadow-sm">
             <div className="flex flex-col gap-3 border-b border-[var(--color-border)] p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -221,7 +221,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
           />
         </main>
 
-        <aside className="min-w-0 xl:sticky xl:top-20">
+        <aside className="min-w-0 2xl:sticky 2xl:top-20">
           {!incidentEditorOpen || readOnly ? (
             <section className="rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm">
               <h2 className="text-base font-bold text-[var(--color-title)]">Resumen</h2>
@@ -335,43 +335,50 @@ function ReceivingLinesTable({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[1180px] table-fixed border-collapse text-left text-sm">
+      <table className="w-full min-w-[970px] table-fixed border-collapse text-left text-sm">
         <colgroup>
-          <col className="w-[210px]" />
-          <col className="w-[110px]" />
-          <col className="w-[90px]" />
-          <col className="w-[130px]" />
-          <col className="w-[110px]" />
-          <col className="w-[95px]" />
-          <col className="w-[170px]" />
-          <col className="w-[275px]" />
+          <col className="w-[180px]" />
+          <col className="w-[78px]" />
+          <col className="w-[68px]" />
+          <col className="w-[96px]" />
+          <col className="w-[88px]" />
+          <col className="w-[72px]" />
+          <col className="w-[155px]" />
+          <col className="w-[233px]" />
         </colgroup>
-        <thead className="bg-[var(--color-structure)] text-xs uppercase text-white">
+        <thead className="bg-[var(--color-structure)] text-[11px] uppercase text-white">
           <tr>
-            <th className="px-3 py-2.5 font-semibold">Producto</th>
-            <th className="px-3 py-2.5 font-semibold">Unidad</th>
-            <th className="px-3 py-2.5 text-right font-semibold">Pedido</th>
-            <th className="px-3 py-2.5 text-right font-semibold">Aceptado ahora</th>
-            <th className="px-3 py-2.5 text-right font-semibold">Con incidencia</th>
-            <th className="px-3 py-2.5 text-right font-semibold">Pendiente</th>
-            <th className="px-3 py-2.5 font-semibold">Ubicacion</th>
-            <th className="px-3 py-2.5 font-semibold">Trazabilidad</th>
+            <th className="px-2 py-2.5 font-semibold">Producto</th>
+            <th className="px-2 py-2.5 font-semibold">Unidad</th>
+            <th className="px-2 py-2.5 text-right font-semibold">Pedido</th>
+            <th className="px-2 py-2.5 text-right font-semibold">Aceptado ahora</th>
+            <th className="px-2 py-2.5 text-right font-semibold">Con incidencia</th>
+            <th className="px-2 py-2.5 text-right font-semibold">Pendiente</th>
+            <th className="px-2 py-2.5 font-semibold">Ubicacion</th>
+            <th className="px-2 py-2.5 font-semibold">Trazabilidad</th>
           </tr>
         </thead>
         <tbody>
           {lines.map((line) => (
             <tr className="border-t border-[var(--color-border)] align-top" key={line.id}>
-              <td className="px-3 py-3">
-                <p className="font-bold text-[var(--color-title)]">{line.productName}</p>
+              <td className="px-2 py-2.5">
+                <p
+                  className="line-clamp-2 font-bold leading-5 text-[var(--color-title)]"
+                  title={line.productName}
+                >
+                  {line.productName}
+                </p>
                 <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
                   {line.sku}
                 </p>
               </td>
-              <td className="px-3 py-3 font-semibold text-[var(--color-text)]">{line.unitName}</td>
-              <td className="px-3 py-3 text-right font-bold text-[var(--color-title)]">
+              <td className="px-2 py-2.5 font-semibold text-[var(--color-text)]">
+                {line.unitName}
+              </td>
+              <td className="px-2 py-2.5 text-right font-bold text-[var(--color-title)]">
                 {formatNumber(line.orderedQuantity)}
               </td>
-              <td className="px-3 py-3">
+              <td className="px-2 py-2.5">
                 <QuantityInput
                   disabled={readOnly}
                   line={line}
@@ -385,20 +392,25 @@ function ReceivingLinesTable({
                   onChange={(value) => onQuantityChange(line.id, value)}
                 />
               </td>
-              <td className="px-3 py-3 text-right">
-                <span className="inline-flex min-h-10 min-w-16 items-center justify-end rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 font-bold text-[var(--color-title)]">
+              <td className="px-2 py-2.5 text-right">
+                <span className="inline-flex min-h-9 min-w-12 items-center justify-end rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] px-2 font-bold text-[var(--color-title)]">
                   {formatNumber(getRejectedNow(line, incidents))}
                 </span>
               </td>
-              <td className="px-3 py-3 text-right font-bold text-[var(--color-title)]">
+              <td className="px-2 py-2.5 text-right font-bold text-[var(--color-title)]">
                 {formatNumber(line.pendingQuantity)}
               </td>
-              <td className="px-3 py-3">
+              <td className="px-2 py-2.5">
                 {detail.capabilities.supportsMultipleLocations && line.tracking.stock ? (
                   <Select
+                    className="max-w-full truncate px-2 text-xs"
                     disabled={readOnly}
                     onChange={(event) => onUpdateLine(line.id, { locationId: event.target.value })}
                     value={line.locationId}
+                    title={
+                      detail.locations.find((location) => location.id === line.locationId)?.name ??
+                      "Seleccionar ubicacion"
+                    }
                   >
                     <option value="">Seleccionar</option>
                     {detail.locations.map((location) => (
@@ -411,7 +423,7 @@ function ReceivingLinesTable({
                   <MutedText>No requerido</MutedText>
                 )}
               </td>
-              <td className="px-3 py-3">
+              <td className="px-2 py-2.5">
                 <TrackingFields
                   capabilities={detail.capabilities}
                   line={line}
@@ -442,7 +454,7 @@ function QuantityInput({
 }) {
   return (
     <Input
-      className="text-right font-semibold"
+      className="min-w-0 px-2 text-right font-semibold"
       disabled={disabled}
       min={0}
       max={maximum}
@@ -479,6 +491,7 @@ function TrackingFields({
       <Input
         disabled={readOnly}
         key="lot"
+        className="h-9 px-2 text-xs"
         onChange={(event) => onUpdateLine(line.id, { lotNumber: event.target.value })}
         placeholder="Lote"
         value={line.lotNumber}
@@ -490,6 +503,7 @@ function TrackingFields({
       <Input
         disabled={readOnly}
         key="expiration"
+        className="h-9 px-2 text-xs"
         onChange={(event) => onUpdateLine(line.id, { expirationDate: event.target.value })}
         type="date"
         value={line.expirationDate}
@@ -499,7 +513,7 @@ function TrackingFields({
   if (line.tracking.serial && capabilities.supportsSerials) {
     fields.push(
       <textarea
-        className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
+        className="min-h-16 w-full resize-y rounded-md border border-[var(--color-border)] bg-white px-2 py-1.5 text-xs text-[var(--color-text)] outline-none transition focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
         disabled={readOnly}
         key="serial"
         onChange={(event) => onUpdateLine(line.id, { serialNumbersText: event.target.value })}
@@ -719,21 +733,33 @@ function IncidentForm({
             </div>
           ) : null}
         </Field>
-        <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--color-border)] pt-3">
+        <div className="flex flex-col gap-2 border-t border-[var(--color-border)] pt-3 sm:flex-row sm:items-center sm:justify-between">
           {onDelete ? (
-            <Button className="mr-auto px-3" onClick={onDelete} type="button" variant="danger">
+            <Button
+              className="w-full justify-center px-3 sm:w-auto"
+              onClick={onDelete}
+              type="button"
+              variant="danger"
+            >
               <TrashIcon />
               Quitar
             </Button>
           ) : null}
-          <Button className="px-3" onClick={onCancel} type="button" variant="ghost">
-            <XIcon />
-            Cancelar
-          </Button>
-          <Button className="px-3" onClick={handleSave} type="button">
-            <SaveIcon />
-            {incident ? "Guardar cambios" : "Guardar incidencia"}
-          </Button>
+          <div className="grid grid-cols-2 gap-2 sm:ml-auto sm:flex sm:justify-end">
+            <Button
+              className="justify-center px-3"
+              onClick={onCancel}
+              type="button"
+              variant="ghost"
+            >
+              <XIcon />
+              Cancelar
+            </Button>
+            <Button className="justify-center px-3" onClick={handleSave} type="button">
+              <SaveIcon />
+              {incident ? "Guardar cambios" : "Guardar incidencia"}
+            </Button>
+          </div>
         </div>
       </div>
     </section>
@@ -903,6 +929,8 @@ function PreviousReceiptModal({
 }) {
   return (
     <Modal
+      density="compact"
+      maxWidth="min(1080px, 94vw)"
       open={Boolean(receipt)}
       title={
         receipt
@@ -914,8 +942,8 @@ function PreviousReceiptModal({
       size="xl"
     >
       {receipt ? (
-        <div className="space-y-5">
-          <dl className="grid gap-3 sm:grid-cols-4">
+        <div className="space-y-4">
+          <dl className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
             <DetailItem label="Documento origen" value={documentNumber} />
             <DetailItem label="Fecha" value={formatDateTime(receipt.receivedAt)} />
             <DetailItem label="Responsable" value={receipt.responsibleName} />
@@ -926,7 +954,7 @@ function PreviousReceiptModal({
           {receipt.incidents.length > 0 ? (
             <section>
               <h3 className="font-bold text-[var(--color-title)]">Incidencias de esta recepcion</h3>
-              <div className="mt-2 space-y-2">
+              <div className="mt-2 grid gap-2 md:grid-cols-2">
                 {receipt.incidents.map((incident) => (
                   <button
                     className="w-full rounded-md border border-[var(--color-border)] p-3 text-left hover:border-[var(--color-primary)]"
@@ -963,41 +991,60 @@ function HistoricalReceiptLinesTable({ lines }: { lines: ReceivingPreviousReceip
     <section>
       <h3 className="font-bold text-[var(--color-title)]">Productos de esta recepcion</h3>
       <div className="mt-2 overflow-x-auto rounded-md border border-[var(--color-border)]">
-        <table className="w-full min-w-[1180px] table-fixed border-collapse text-left text-sm">
-          <thead className="bg-[var(--color-structure)] text-xs uppercase text-white">
+        <table className="w-full min-w-[940px] table-fixed border-collapse text-left text-sm">
+          <colgroup>
+            <col className="w-[170px]" />
+            <col className="w-[70px]" />
+            <col className="w-[85px]" />
+            <col className="w-[95px]" />
+            <col className="w-[95px]" />
+            <col className="w-[85px]" />
+            <col className="w-[130px]" />
+            <col className="w-[210px]" />
+          </colgroup>
+          <thead className="bg-[var(--color-structure)] text-[11px] uppercase text-white">
             <tr>
-              <th className="w-[190px] px-3 py-2.5">Producto</th>
-              <th className="w-[110px] px-3 py-2.5">Unidad</th>
-              <th className="w-[110px] px-3 py-2.5 text-right">Pedido original</th>
-              <th className="w-[130px] px-3 py-2.5 text-right">Aceptado en esta recepcion</th>
-              <th className="w-[130px] px-3 py-2.5 text-right">Incidencia en esta recepcion</th>
-              <th className="w-[120px] px-3 py-2.5 text-right">Pendiente despues</th>
-              <th className="w-[150px] px-3 py-2.5">Ubicacion</th>
-              <th className="w-[240px] px-3 py-2.5">Trazabilidad</th>
+              <th className="px-2 py-2.5">Producto</th>
+              <th className="px-2 py-2.5">Unidad</th>
+              <th className="px-2 py-2.5 text-right">Pedido original</th>
+              <th className="px-2 py-2.5 text-right">Aceptado</th>
+              <th className="px-2 py-2.5 text-right">Incidencia</th>
+              <th className="px-2 py-2.5 text-right">Pendiente</th>
+              <th className="px-2 py-2.5">Ubicacion</th>
+              <th className="px-2 py-2.5">Trazabilidad</th>
             </tr>
           </thead>
           <tbody>
             {lines.map((line) => (
               <tr className="border-t border-[var(--color-border)] align-top" key={line.id}>
-                <td className="px-3 py-3">
-                  <p className="font-bold text-[var(--color-title)]">{line.productName}</p>
+                <td className="px-2 py-2.5">
+                  <p
+                    className="line-clamp-2 font-bold leading-5 text-[var(--color-title)]"
+                    title={line.productName}
+                  >
+                    {line.productName}
+                  </p>
                   <p className="text-xs text-[var(--color-text-muted)]">{line.sku}</p>
                 </td>
-                <td className="px-3 py-3">{line.unitName}</td>
-                <td className="px-3 py-3 text-right font-semibold">
+                <td className="px-2 py-2.5">{line.unitName}</td>
+                <td className="px-2 py-2.5 text-right font-semibold">
                   {formatNumber(line.orderedQuantity)}
                 </td>
-                <td className="px-3 py-3 text-right font-bold text-emerald-700">
+                <td className="px-2 py-2.5 text-right font-bold text-emerald-700">
                   {formatNumber(line.acceptedQuantity)}
                 </td>
-                <td className="px-3 py-3 text-right font-bold text-amber-700">
+                <td className="px-2 py-2.5 text-right font-bold text-amber-700">
                   {formatNumber(line.incidentQuantity)}
                 </td>
-                <td className="px-3 py-3 text-right font-bold text-[var(--color-title)]">
+                <td className="px-2 py-2.5 text-right font-bold text-[var(--color-title)]">
                   {formatNumber(line.pendingAfter)}
                 </td>
-                <td className="px-3 py-3">{line.locationName}</td>
-                <td className="px-3 py-3 text-xs leading-5 text-[var(--color-text)]">
+                <td className="px-2 py-2.5">
+                  <p className="truncate" title={line.locationName}>
+                    {line.locationName}
+                  </p>
+                </td>
+                <td className="px-2 py-2.5 text-xs leading-5 text-[var(--color-text)]">
                   {line.lotNumber ? <p>Lote: {line.lotNumber}</p> : null}
                   {line.expirationDate ? <p>Vence: {formatDate(line.expirationDate)}</p> : null}
                   {line.serialNumbers.length > 0 ? (

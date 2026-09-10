@@ -9,6 +9,7 @@ import {
   type CSSProperties,
   type FormEvent,
   type ReactNode,
+  type SVGProps,
 } from "react";
 import { useRouter } from "next/navigation";
 import type { StorageLocation } from "@/core/entities";
@@ -19,7 +20,11 @@ import { Modal } from "@/shared/components/Modal";
 import { Select } from "@/shared/components/Select";
 import { useToast } from "@/shared/components/Toast";
 import { cn } from "@/shared/utils/cn";
-import { parseDecimalInput, toFiniteNumber, type NumericInputValue } from "@/shared/utils/numberInput";
+import {
+  parseDecimalInput,
+  toFiniteNumber,
+  type NumericInputValue,
+} from "@/shared/utils/numberInput";
 import type {
   AdjustStockDto,
   AlertPanelMode,
@@ -956,9 +961,13 @@ function RowActionsMenu({
           role="menu"
           style={menuStyle}
         >
-          <MenuItem onClick={() => select(onAdjust)}>Ajustar existencias</MenuItem>
-          <MenuItem onClick={() => select(onTransfer)}>Solicitar traslado</MenuItem>
-          <MenuItem onClick={() => select(onViewHistory)}>
+          <MenuItem icon={<AdjustIcon />} onClick={() => select(onAdjust)}>
+            Ajustar existencias
+          </MenuItem>
+          <MenuItem icon={<TransferIcon />} onClick={() => select(onTransfer)}>
+            Solicitar traslado
+          </MenuItem>
+          <MenuItem icon={<HistoryIcon />} onClick={() => select(onViewHistory)}>
             Historial de movimientos
           </MenuItem>
         </div>
@@ -970,22 +979,70 @@ function RowActionsMenu({
 function MenuItem({
   children,
   disabled,
+  icon,
   onClick,
 }: {
   children: string;
   disabled?: boolean;
+  icon: ReactNode;
   onClick: () => void;
 }) {
   return (
     <button
-      className="flex w-full items-center px-4 py-2.5 text-left text-sm font-semibold text-[var(--color-text)] transition hover:bg-[var(--color-app-background)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[var(--color-structure)] disabled:cursor-not-allowed disabled:opacity-50"
+      className="flex min-h-10 w-full items-center gap-3 px-3 py-2 text-left text-sm font-semibold text-[var(--color-text)] transition hover:bg-[var(--color-app-background)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[var(--color-structure)] disabled:cursor-not-allowed disabled:opacity-50"
       disabled={disabled}
       onClick={onClick}
       role="menuitem"
       type="button"
     >
+      <span className="shrink-0 text-[var(--color-structure)]">{icon}</span>
       {children}
     </button>
+  );
+}
+
+function ActionMenuIcon({ children, ...props }: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      {...props}
+    >
+      {children}
+    </svg>
+  );
+}
+
+function AdjustIcon() {
+  return (
+    <ActionMenuIcon>
+      <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />
+      <circle cx="16" cy="7" r="2" />
+      <circle cx="8" cy="17" r="2" />
+    </ActionMenuIcon>
+  );
+}
+
+function TransferIcon() {
+  return (
+    <ActionMenuIcon>
+      <path d="M7 7h13M17 4l3 3-3 3M17 17H4M7 14l-3 3 3 3" />
+    </ActionMenuIcon>
+  );
+}
+
+function HistoryIcon() {
+  return (
+    <ActionMenuIcon>
+      <path d="M3 12a9 9 0 1 0 3-6.7M3 3v6h6" />
+      <path d="M12 7v5l3 2" />
+    </ActionMenuIcon>
   );
 }
 
