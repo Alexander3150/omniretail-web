@@ -38,7 +38,7 @@
 | 5 | Diseño E-commerce | `/administracion/diseno-ecommerce` | `EcommerceConfig` | ⚠️ Parcial — sin branding |
 | 6 | Clientes | `/administracion/clientes` | `Customer`, `CustomerSegment` | ⚠️ Parcial — sin update ni segmentos |
 | 7 | Auditoría | `/administracion/auditoria` | `AuditLog` | ⚠️ Parcial — filtrado en cliente |
-| 8 | Caja | `/administracion/caja` | `CashShift`, `CashMovement` | ⚠️ Parcial — solo lectura |
+| 8 | Caja | `/administracion/caja` | `CashShift`, `CashMovement` | ✅ **Implementada** — solo lectura |
 | 9 | Dashboard | `/administracion/dashboard` | Agregación | ⚠️ Necesita `KPICard` |
 | 10 | Reportes | `/administracion/reportes` | Agregación | ⚠️ Necesita datos de otros módulos |
 | 11 | Roles y permisos | `/administracion/roles-permisos` | `Role`, `Permission` | ⛔ **Bloqueada** — contrato |
@@ -511,13 +511,14 @@ Tabla filtrable: `createdAt`, actor, `action`, `entityType`, `entityId`, `metada
 Sin campo `module`: si se necesita agrupar por módulo, se deriva de `action` o `entityType`.
 Filtrado en cliente (`getAll`). Nunca se escribe desde acá: lo emiten los demás módulos (R-P04).
 
-### 12.8 Caja
+### 12.8 Caja ✅ implementada
 
 Solo consulta y conciliación sobre `CashShift` / `CashMovement` (dueño: POS).
 Estados reales: `open`, `closed`, `closed_with_difference`.
 Reglas a reflejar, no reimplementar: conteo ciego y comparación contra lo esperado (R-PS06); toda
 diferencia requiere motivo y queda auditada (R-PS07).
-**GAP:** ¿permite ajuste con permiso superior o es 100% solo lectura? Preguntar antes de diseñar.
+**Definido:** 100% solo lectura; el ajuste queda bloqueado hasta acordar un método de contrato con
+POS (Riquelme).
 
 ### 12.9 Dashboard
 
@@ -657,7 +658,8 @@ Estado actual del seed (`src/infrastructure/mock/seeds/demoSeed.ts`): tenant `te
    solo lectura?
 7. `CustomerSegmentRepository`: ¿se define o se pospone la gestión de segmentos? Delimitar por
    escrito con Andy qué es "vista comercial" (tuya) y qué es "cuenta propia del cliente" (suya).
-8. Caja: ¿admite ajuste con permiso superior o es 100% solo lectura?
+8. **Caja resuelta:** 100% solo lectura; cualquier ajuste futuro requiere coordinación contractual
+   con POS (Riquelme).
 9. Planes y facturación: ¿se define `SaasPlan`/`Subscription` o se pospone la pantalla?
 10. Sincronización: ¿mock estático o estructura mínima de nodo/integración?
 11. Filtro de permisos del Sidebar: ¿quién conecta `allowedPermissions` en `PrivateShell`?

@@ -11,7 +11,7 @@ estan en `SCOPE.md`.
 
 ## Contracts que consume
 
-UserRepository, RoleRepository, BranchRepository, BusinessConfigRepository, TenantRepository, SupplierRepository, BankAccountRepository, CustomerRepository, AuditLogRepository
+UserRepository, RoleRepository, BranchRepository, BusinessConfigRepository, TenantRepository, SupplierRepository, BankAccountRepository, CustomerRepository, AuditLogRepository, CashShiftRepository
 
 ## Configuracion del negocio
 
@@ -40,6 +40,37 @@ La configuracion no describe al negocio: lo restringe. Los modulos consumidores 
 
 Un producto ya guardado con un tipo que despues se deshabilito conserva su tipo y puede editarse;
 lo que se bloquea es crear uno nuevo o cambiar un producto hacia un tipo deshabilitado.
+
+## Caja
+
+La pantalla `/administracion/caja` expone un visor de conciliación de turnos de caja. Se integra
+en la navegación como `administration-cash`, exige el permiso nuevo `admin.cash.read` y se
+actualiza cuando recibe el evento `cash-shift.changed`.
+
+La consulta muestra apertura, monto esperado, conteo, diferencia y estado. No abre ni cierra
+turnos, no registra movimientos, no ajusta conciliaciones y no escribe auditoría. El desglose de
+movimientos tampoco está disponible porque el contrato actual no expone lectura de
+`CashMovement`.
+
+### Contrato de integracion
+
+La feature asume:
+
+- `useCurrentSession()` para resolver `tenantId`, permisos y estado de sesión.
+- `RepositoryRegistry.cashShifts` como fuente principal, más `branches` y `users` únicamente
+  para resolver nombres dentro del mismo tenant.
+- `formatCurrency` y `formatDate` de `shared/utils` para presentar montos y fechas.
+
+Decisiones y coordinación:
+
+- Caja es 100% solo lectura por decisión de producto. Un eventual ajuste necesita un método nuevo
+  en `CashShiftRepository`, acordado con Riquelme como dueño del dominio de caja.
+- El contrato actual no permite consultar el desglose de movimientos.
+- `admin.cash.read` es un permiso nuevo. Se esperan colisiones en `permissions.ts`,
+  `demoSeed.ts`, `navigation.ts`, `serviceHelpers.ts`, `README.md` y `SCOPE.md` con las ramas
+  `feature/admin-branches`, `feature/admin-bank-accounts`, `feature/admin-suppliers`,
+  `feature/admin-audit-log`, `feature/admin-ecommerce-config` y `feature/admin-customers`; al
+  integrarlas deben conservarse todas las entradas.
 
 ## Reglas
 
