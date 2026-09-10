@@ -10,6 +10,7 @@ export type ReceiptIncidentInput = Omit<ReceiptIncident, "id" | "receiptId" | "c
 export interface ReceiptRepository {
   getAll(): Promise<Receipt[]>;
   getById(id: string): Promise<Receipt | null>;
+  getByConfirmationId(tenantId: string, confirmationId: string): Promise<Receipt | null>;
   getLinesByReceipt(receiptId: string): Promise<ReceiptLine[]>;
   getIncidents(): Promise<ReceiptIncident[]>;
   create(input: Omit<Receipt, "id" | "createdAt" | "updatedAt">): Promise<Receipt>;
@@ -18,10 +19,27 @@ export interface ReceiptRepository {
     input: Partial<Omit<Receipt, "id" | "createdAt" | "updatedAt">>,
   ): Promise<Receipt>;
   updateStatus(id: string, status: ReceiptStatus): Promise<Receipt>;
+  confirmReceiptInventory(input: ConfirmReceiptInventoryInput): Promise<Receipt>;
   replaceLines(receiptId: string, lines: ReceiptLineInput[]): Promise<ReceiptLine[]>;
   replaceIncidents(
     receiptId: string,
     incidents: ReceiptIncidentInput[],
   ): Promise<ReceiptIncident[]>;
   addIncident(input: Omit<ReceiptIncident, "id" | "createdAt">): Promise<ReceiptIncident>;
+}
+
+export interface ConfirmReceiptInventoryInput {
+  receiptId: string;
+  tenantId: string;
+  confirmationId: string;
+  confirmationFingerprint: string;
+  receivedByUserId: string;
+  receivedAt: NonNullable<Receipt["receivedAt"]>;
+  notes?: string;
+  lines: ReceiptLineInput[];
+  incidents: ConfirmReceiptIncidentInput[];
+}
+
+export interface ConfirmReceiptIncidentInput extends ReceiptIncidentInput {
+  productId?: string;
 }

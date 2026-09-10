@@ -1,6 +1,7 @@
 import { ProductType, SalesChannel } from "@/core/enums";
 import { getBranchAvailableQuantity } from "@/core/inventory/stockAvailability";
 import { calculateEffectivePrice } from "@/core/pricing";
+import { isStockLotEligible } from "@/infrastructure/mock/repositories/stockLotMutations";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { PosProductDto } from "@/modules/pos/application/dto/PosProductDto";
 
@@ -21,7 +22,7 @@ export class GetPosProductsService {
 
     const items = await Promise.all(
       products.map(async (product): Promise<PosProductDto> => {
-        const [promotion, balances] = await Promise.all([
+        const [promotion, balances, lots] = await Promise.all([
           this.repositories.promotions.getApplicable({
             tenantId: input.tenantId,
             productId: product.id,
@@ -32,22 +33,49 @@ export class GetPosProductsService {
           product.tracking.stock
             ? this.repositories.inventory.getBalanceByProduct(product.id, input.branchId)
             : Promise.resolve([]),
+          product.tracking.lot
+            ? this.repositories.inventory.getLots(product.id)
+            : Promise.resolve([]),
         ]);
         const price = calculateEffectivePrice(product.salePrice, promotion);
         const tracksStock = product.tracking.stock;
+        const sellableBalances = product.tracking.lot
+          ? balances.map((balance) => ({
+              ...balance,
+              quantity: Math.min(
+                balance.quantity,
+                lots
+                  .filter(
+                    (lot) =>
+                      lot.tenantId === input.tenantId &&
+                      lot.branchId === input.branchId &&
+                      lot.productId === product.id &&
+                      lot.locationId === balance.locationId &&
+                      isStockLotEligible(
+                        lot,
+                        product.tracking.expiration,
+                        new Date().toISOString(),
+                      ),
+                  )
+                  .reduce((sum, lot) => sum + lot.quantity, 0),
+              ),
+            }))
+          : balances;
         const availableQuantity = tracksStock
           ? getBranchAvailableQuantity({
               tenantId: input.tenantId,
               branchId: input.branchId,
               productId: product.id,
-              balances,
+              balances: sellableBalances,
               locations,
             })
           : null;
         const requiresLot = product.tracking.lot;
         const requiresSerial = product.tracking.serial;
         const requiresUnsupportedTraceability =
-          requiresLot || requiresSerial || product.productType === ProductType.kit;
+          requiresSerial ||
+          product.productType === ProductType.kit ||
+          (product.tracking.expiration && !requiresLot);
 
         return {
           productId: product.id,
