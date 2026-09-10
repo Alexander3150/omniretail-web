@@ -6,6 +6,9 @@ import type {
 } from "@/core/entities";
 import {
   CashShiftStatus,
+  DeliveryMethod,
+  OrderSource,
+  OrderStatus,
   PaymentMethod,
   PaymentStatus,
   ProductType,
@@ -47,6 +50,7 @@ export interface ConfirmPosSaleInput {
   currency: CurrencyCode;
   customerId?: string;
   sourceOrderId?: string;
+  orderIdempotencyKey?: string;
 }
 
 interface ValidatedSaleItem {
@@ -97,6 +101,9 @@ export class ConfirmSaleService {
 
     const document = createDocumentSnapshot(input.checkout);
     const currentShift = await this.requireCurrentCashShift(input);
+    const sourceOrderId =
+      input.sourceOrderId ??
+      (await this.createDeferredOrder(input, items, totals));
 
     return this.repositories.saleConfirmations.confirm({
       confirmationId,
@@ -105,7 +112,7 @@ export class ConfirmSaleService {
       cashierUserId: input.user.id,
       cashShiftId: currentShift.id,
       customerId: input.customerId,
-      sourceOrderId: input.sourceOrderId,
+      sourceOrderId,
       items: items.map((item) => ({
         productId: item.productId,
         skuSnapshot: item.skuSnapshot,
@@ -122,6 +129,50 @@ export class ConfirmSaleService {
       total: fromCents(totals.totalCents),
       payments,
     });
+  }
+
+  private async createDeferredOrder(
+    input: ConfirmPosSaleInput,
+    items: ValidatedSaleItem[],
+    totals: ReturnType<typeof calculateValidatedTotals>,
+  ): Promise<string | undefined> {
+    if (input.checkout.deliveryMethod === DeliveryMethod.immediate) return undefined;
+    const idempotencyKey = input.orderIdempotencyKey?.trim();
+    if (!idempotencyKey) throw new Error("No se pudo identificar el intento de pedido diferido.");
+    if (input.checkout.deliveryMethod === DeliveryMethod.home_delivery) {
+      const address = input.checkout.deliveryAddress;
+      if (!address?.recipientName.trim() || !address.line1.trim() || !address.city.trim()) {
+        throw new Error("La entrega a domicilio requiere destinatario, direccion y ciudad.");
+      }
+    }
+    const order = await this.repositories.orders.create({
+      tenantId: input.currentBranch.tenantId,
+      branchId: input.currentBranch.id,
+      orderNumber: `POS-${idempotencyKey}`,
+      source: OrderSource.pos,
+      customerId: input.customerId,
+      items: items.map((item) => ({
+        id: `order-item-${idempotencyKey}-${item.productId}`,
+        productId: item.productId,
+        skuSnapshot: item.skuSnapshot,
+        nameSnapshot: item.nameSnapshot,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        discount: item.discount,
+        subtotal: item.subtotal,
+      })),
+      status: OrderStatus.confirmed,
+      deliveryMethod: input.checkout.deliveryMethod,
+      transportMode: input.checkout.transportMode,
+      deliveryAddress: input.checkout.deliveryAddress,
+      subtotal: fromCents(totals.subtotalCents),
+      discountTotal: fromCents(totals.discountTotalCents),
+      shippingTotal: 0,
+      total: fromCents(totals.totalCents),
+      trackingToken: `pos-${idempotencyKey}`,
+      idempotencyKey,
+    });
+    return order.id;
   }
 
   private validateOperationalContext(input: ConfirmPosSaleInput) {
@@ -231,7 +282,8 @@ export class ConfirmSaleService {
         if (
           product.productType === ProductType.physical &&
           product.tracking.stock &&
-          !input.sourceOrderId
+          !input.sourceOrderId &&
+          input.checkout.deliveryMethod === DeliveryMethod.immediate
         ) {
           const [balances, settings] = await Promise.all([
             this.repositories.inventory.getBalanceByProduct(
