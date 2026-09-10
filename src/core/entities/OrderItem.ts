@@ -1,3 +1,8 @@
+export interface OrderItemFulfillmentComponent {
+  productId: string;
+  quantity: number;
+}
+
 export interface OrderItem {
   id: string;
   orderId: string;
@@ -8,4 +13,5 @@ export interface OrderItem {
   unitPrice: number;
   discount: number;
   subtotal: number;
+  fulfillmentComponents?: OrderItemFulfillmentComponent[];
 }

@@ -37,6 +37,7 @@ import type {
   PickingOrder,
   PriceTier,
   Product,
+  ProductKitComponent,
   ProductInventorySettings,
   ProductPriceHistory,
   ProductSalesPriceTier,
@@ -81,6 +82,7 @@ export interface MockDatabase {
   mfaEnrollments: MfaEnrollment[];
   recoveryCodes: RecoveryCode[];
   products: Product[];
+  productKitComponents: ProductKitComponent[];
   productPriceHistory: ProductPriceHistory[];
   productMedia: ProductMedia[];
   productSalesPriceTiers: ProductSalesPriceTier[];

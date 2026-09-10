@@ -5,6 +5,7 @@ export type * from "./UserRepository";
 export type * from "./RoleRepository";
 export type * from "./BranchRepository";
 export type * from "./ProductRepository";
+export type * from "./ProductKitComponentRepository";
 export type * from "./ProductPriceHistoryRepository";
 export type * from "./ProductMediaRepository";
 export type * from "./ProductSalesPriceTierRepository";
