@@ -33,7 +33,7 @@
 |---|---|---|---|---|
 | 1 | Configuración del negocio | `/administracion/configuracion-negocio` | `BusinessCapabilitiesConfig` | ✅ **Implementada** |
 | 2 | Sucursales | `/administracion/sucursales` | `Branch` | ✅ Desbloqueada |
-| 3 | Proveedores | `/administracion/proveedores` | `Supplier` | ✅ Desbloqueada |
+| 3 | Proveedores | `/administracion/proveedores` | `Supplier` | ✅ **Implementada** |
 | 4 | Cuentas bancarias | `/administracion/cuentas-bancarias` | `BankAccount` | ✅ Desbloqueada |
 | 5 | Diseño E-commerce | `/administracion/diseno-ecommerce` | `EcommerceConfig` | ⚠️ Parcial — sin branding |
 | 6 | Clientes | `/administracion/clientes` | `Customer`, `CustomerSegment` | ⚠️ Parcial — sin update ni segmentos |
@@ -474,7 +474,7 @@ Tabla: `code`, `name`, `type`, `address`, `status`, acciones. Formulario: `code`
 Sin `schedule` hasta que se extienda la entity.
 Impacto: toda sucursal creada debe aparecer en `BranchSelector` y en el alcance de Usuarios.
 
-### 12.3 Proveedores
+### 12.3 Proveedores ✅ implementada
 
 Tabla: `name`, `taxId`, `email`, `phone`, `status`. Formulario: `name`, `legalName`, `taxId`,
 `email`, `phone`, `address`, `notes`, `status`.
