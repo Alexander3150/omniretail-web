@@ -1,4 +1,7 @@
-import { BUSINESS_CONFIG_MANAGE_PERMISSION } from "@/modules/administration/permissions";
+import {
+  BUSINESS_CONFIG_MANAGE_PERMISSION,
+  DASHBOARD_READ_PERMISSION,
+} from "@/modules/administration/permissions";
 
 export class AdministrationServiceError extends Error {
   constructor(message: string) {
@@ -17,6 +20,18 @@ export function ensureCanManageBusinessConfig(permissions: readonly string[]) {
   throw new AdministrationServiceError(
     "No tenés permiso para modificar la configuración del negocio.",
   );
+}
+
+export function ensureCanReadDashboard(permissions: readonly string[]) {
+  if (permissions.includes(DASHBOARD_READ_PERMISSION)) return;
+
+  throw new AdministrationServiceError("No tenés permiso para consultar el dashboard.");
+}
+
+export function ensureDashboardTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
 }
 
 export function cleanError(error: unknown): string {
