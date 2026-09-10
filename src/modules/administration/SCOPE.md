@@ -39,7 +39,7 @@
 | 6 | Clientes | `/administracion/clientes` | `Customer`, `CustomerSegment` | ⚠️ Parcial — sin update ni segmentos |
 | 7 | Auditoría | `/administracion/auditoria` | `AuditLog` | ⚠️ Parcial — filtrado en cliente |
 | 8 | Caja | `/administracion/caja` | `CashShift`, `CashMovement` | ⚠️ Parcial — solo lectura |
-| 9 | Dashboard | `/administracion/dashboard` | Agregación | ⚠️ Necesita `KPICard` |
+| 9 | Dashboard | `/administracion/dashboard` | Agregación | ✅ **Implementada** |
 | 10 | Reportes | `/administracion/reportes` | Agregación | ⚠️ Necesita datos de otros módulos |
 | 11 | Roles y permisos | `/administracion/roles-permisos` | `Role`, `Permission` | ⛔ **Bloqueada** — contrato |
 | 12 | Usuarios | `/administracion/usuarios` | `User` (+ `AuthAccount`) | ⛔ Bloqueada — depende de #11 |
@@ -377,17 +377,17 @@ El rol es una agrupación de permisos, nada más.
 
 **Disponibles** (tienen `index.tsx`):
 `Button` · `Input` · `Select` · `SearchInput` · `FormField` · `DataTable` · `Pagination` ·
-`StatusBadge` · `Modal` · `ConfirmDialog` · `PageHeader` · `Toast`
+`StatusBadge` · `Modal` · `ConfirmDialog` · `PageHeader` · `Toast` · `KPICard`
 
 **Carpeta vacía — hay que construirlos:**
 `Accordion` · `Checkbox` · `ContextPanel` · `CurrencyInput` · `DatePicker` · `Drawer` ·
-`EmptyState` · `FileUpload` · `IconButton` · `KPICard` · `LoadingState` · `NumberInput` ·
+`EmptyState` · `FileUpload` · `IconButton` · `LoadingState` · `NumberInput` ·
 `RadioGroup` · `Tabs` · `Textarea`
 
 **No existen ni como carpeta:** `SectionCard` · `FilterChip` · `Breadcrumbs`
 
-Impacto: Dashboard necesita `KPICard`; los formularios complejos necesitan `Tabs` y `Textarea`;
-los paneles de detalle necesitan `ContextPanel` o `Drawer`. Ninguno existe.
+Impacto: Dashboard agrega `KPICard` en esta rama; los formularios complejos todavía necesitan
+`Tabs` y `Textarea`, y los paneles de detalle necesitan `ContextPanel` o `Drawer`.
 
 **Decisión tomada:** un componente que solo usa este módulo se construye en
 `administration/components/`. Promoverlo a `shared/` es área común: requiere
@@ -519,10 +519,10 @@ Reglas a reflejar, no reimplementar: conteo ciego y comparación contra lo esper
 diferencia requiere motivo y queda auditada (R-PS07).
 **GAP:** ¿permite ajuste con permiso superior o es 100% solo lectura? Preguntar antes de diseñar.
 
-### 12.9 Dashboard
+### 12.9 Dashboard ✅ implementada
 
 KPIs agregados: ventas del día/mes, alertas de stock, pedidos pendientes, últimas incidencias.
-Sin reglas propias: 100% agregación vía repositorios ajenos. Necesita `KPICard`, que no existe.
+Sin reglas propias: 100% agregación vía repositorios ajenos. `KPICard` se agrega en esta rama.
 
 ### 12.10 Reportes
 
