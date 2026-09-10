@@ -27,6 +27,7 @@ import type {
 import type { DataEventName, DataEventPayload } from "@/core/types/events.types";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
+import { expandKitDemand } from "@/core/kits/kitDemand";
 import {
   findInventoryReservationBalance,
   getInventoryReservationAllocationRemaining,
@@ -275,6 +276,35 @@ export class MockSaleConfirmationRepository
       if (!product) {
         throw new Error(`Product not found for OrderItem: ${orderItem.id}`);
       }
+      if (product.productType === ProductType.kit) {
+        const demands = orderItem.fulfillmentComponents;
+        if (!demands?.length) throw new Error(`Kit fulfillment snapshot missing: ${orderItem.id}`);
+        demands.forEach((demand) => {
+          const reservation = db.inventoryReservations.find(
+            (item) =>
+              item.tenantId === input.tenantId &&
+              item.orderItemId === orderItem.id &&
+              item.productId === demand.productId,
+          );
+          if (!reservation || reservation.branchId !== input.branchId || reservation.orderId !== order.id) {
+            throw new Error(`Kit component reservation missing: ${orderItem.id}`);
+          }
+          if (
+            reservation.status !== InventoryReservationStatus.active &&
+            reservation.status !== InventoryReservationStatus.consumed
+          ) {
+            throw new Error(`Kit component reservation does not own fulfillment: ${reservation.id}`);
+          }
+          const committed = reservation.allocations.reduce(
+            (sum, allocation) => sum + allocation.reservedQuantity,
+            0,
+          );
+          if (committed !== demand.quantity) {
+            throw new Error(`Kit component reservation quantity conflict: ${reservation.id}`);
+          }
+        });
+        return;
+      }
       if (product.productType !== ProductType.physical || !product.tracking.stock) return;
       if (product.tracking.expiration && !product.tracking.lot) {
         throw new Error(
@@ -385,7 +415,19 @@ export class MockSaleConfirmationRepository
     const plannedMovements: PlannedInventoryMovement[] = [];
     const plannedQuantities = new Map<string, number>();
 
-    saleItems.forEach((saleItem) => {
+    const fulfillmentItems = saleItems.flatMap((saleItem) => {
+      const commercialProduct = db.products.find((item) => item.id === saleItem.productId);
+      if (commercialProduct?.productType !== ProductType.kit) return [saleItem];
+      return expandKitDemand(
+        db.productKitComponents.filter(
+          (component) =>
+            component.tenantId === input.tenantId && component.kitProductId === commercialProduct.id,
+        ),
+        saleItem.quantity,
+      ).map((demand) => ({ ...saleItem, productId: demand.productId, quantity: demand.quantity }));
+    });
+
+    fulfillmentItems.forEach((saleItem) => {
       const product = db.products.find((item) => item.id === saleItem.productId);
       if (!product || product.tenantId !== input.tenantId) {
         throw new Error(`Producto no encontrado para venta: ${saleItem.productId}`);

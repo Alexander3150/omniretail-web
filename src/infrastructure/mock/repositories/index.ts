@@ -20,6 +20,7 @@ export * from "./MockPaymentRepository";
 export * from "./MockPickingRepository";
 export * from "./MockProductMediaRepository";
 export * from "./MockProductRepository";
+export * from "./MockProductKitComponentRepository";
 export * from "./MockProductPriceHistoryRepository";
 export * from "./MockProductSalesPriceTierRepository";
 export * from "./MockPromotionRepository";

@@ -4,6 +4,7 @@ import type { CreateOrderInput, OrderRepository } from "@/core/repositories";
 import type { DataEventName, DataEventPayload } from "@/core/types/events.types";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
+import { expandKitDemand } from "@/core/kits/kitDemand";
 import {
   type InventoryReservationMutationResult,
   releaseInventoryReservationInDatabase,
@@ -72,7 +73,11 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
       const order: Order = {
         ...input,
         id: orderId,
-        items: input.items.map((item) => ({ ...item, orderId })),
+        items: input.items.map((item) => ({
+          ...item,
+          orderId,
+          fulfillmentComponents: this.resolveFulfillmentComponents(input.tenantId, item.productId, item.quantity, db),
+        })),
         idempotencyKey,
         idempotencyFingerprint: idempotencyKey ? fingerprint : undefined,
         createdAt: now,
@@ -154,9 +159,11 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
       if (!product) {
         throw new Error(`Product not found for tenant: ${orderItem.productId}`);
       }
-      if (product.productType !== ProductType.physical || !product.tracking.stock) return [];
-
-      return [
+      const demands = orderItem.fulfillmentComponents ??
+        (product.productType === ProductType.physical && product.tracking.stock
+          ? [{ productId: orderItem.productId, quantity: orderItem.quantity }]
+          : []);
+      return demands.map((demand) =>
         reserveOrderItemInDatabase(
           db,
           {
@@ -164,13 +171,24 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
             branchId: order.branchId,
             orderId: order.id,
             orderItemId: orderItem.id,
-            productId: orderItem.productId,
-            quantity: orderItem.quantity,
+            productId: demand.productId,
+            quantity: demand.quantity,
           },
           { id: (prefix) => this.id(prefix), now: () => this.now() },
         ),
-      ];
+      );
     });
+  }
+
+  private resolveFulfillmentComponents(tenantId: string, productId: string, quantity: number, db: MockDatabase) {
+    const product = db.products.find((item) => item.id === productId && item.tenantId === tenantId);
+    if (!product) throw new Error(`Product not found for tenant: ${productId}`);
+    if (product.productType === ProductType.physical && product.tracking.stock) return [{ productId, quantity }];
+    if (product.productType !== ProductType.kit) return undefined;
+    return expandKitDemand(
+      db.productKitComponents.filter((item) => item.tenantId === tenantId && item.kitProductId === productId),
+      quantity,
+    );
   }
 
   private releaseOrderReservations(

@@ -152,7 +152,7 @@ export function ProductForm({
   const showPromotionTab = Boolean(isEdit && editorData.promotionCount > 0 && promotionProduct);
   const tabs = [
     { id: "general", label: "Informacion general", icon: "I" },
-    { id: "units", label: "Unidades", icon: "U" },
+    value.productType !== ProductType.kit ? { id: "units", label: "Unidades", icon: "U" } : null,
     { id: "tracking", label: "Inventario y trazabilidad", icon: "T" },
     options.businessCapabilities.supportsProductAttributes || value.attributes.length > 0
       ? { id: "attributes", label: "Atributos", icon: "A", count: value.attributes.length }
@@ -161,7 +161,9 @@ export function ProductForm({
     showPromotionTab
       ? { id: "promotion", label: "Promocion", icon: "%", count: editorData.promotionCount }
       : null,
-    { id: "suppliers", label: "Proveedores", icon: "P", count: value.supplierProducts.length },
+    value.productType !== ProductType.kit
+      ? { id: "suppliers", label: "Proveedores", icon: "P", count: value.supplierProducts.length }
+      : null,
     { id: "media", label: "Multimedia", icon: "M", count: value.media.length },
   ].filter((tab): tab is { id: ProductFormTab; label: string; icon: string; count?: number } =>
     Boolean(tab),
@@ -188,6 +190,16 @@ export function ProductForm({
           patch.productType === ProductType.physical
             ? getDefaultTracking(options.businessCapabilities, patch.productType)
             : applyTrackingRules(patch.productType, next.tracking, options.businessCapabilities);
+        if (patch.productType === ProductType.kit) {
+          const unitId = options.units.find((unit) => unit.category === "unit")?.id;
+          if (unitId) {
+            next.baseUnitId = unitId;
+            next.saleUnitId = unitId;
+            next.inventoryQuantity = 1;
+            next.saleQuantity = 1;
+          }
+          next.supplierProducts = [];
+        }
       }
       next.saleUnitId = resolveSaleUnitId(
         next.baseUnitId,
@@ -767,7 +779,8 @@ function TrackingTab({
   onChange: (value: Partial<ProductEditorDto>) => void;
 }) {
   const isService = value.productType === ProductType.service;
-  const usesStock = !isService && value.tracking.stock;
+  const isKit = value.productType === ProductType.kit;
+  const usesStock = !isService && !isKit && value.tracking.stock;
   const currentDefaultLocation = editorData.currentDefaultLocation;
   const assignedArchivedDefaultLocation =
     currentDefaultLocation &&
@@ -824,6 +837,13 @@ function TrackingTab({
         <p className="rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text)]">
           Los servicios no utilizan control de inventario.
         </p>
+      ) : null}
+      {isKit ? (
+        <KitComponentsEditor
+          eligibleProducts={editorData.kitEligibleProducts}
+          value={value.kitComponents}
+          onChange={(kitComponents) => onChange({ kitComponents })}
+        />
       ) : null}
       {usesStock ? (
         <div className="grid gap-4 md:grid-cols-2">
@@ -891,7 +911,7 @@ function TrackingTab({
       ) : null}
       <div className="grid gap-3 md:grid-cols-2">
         {options.map((option) => {
-          const disabled = isService || !option.enabled;
+          const disabled = isService || isKit || !option.enabled;
           if (!option.enabled && !value.tracking[option.key]) return null;
           const active = value.tracking[option.key];
           return (
@@ -938,6 +958,48 @@ function TrackingTab({
         })}
       </div>
     </section>
+  );
+}
+
+function KitComponentsEditor({
+  eligibleProducts,
+  value,
+  onChange,
+}: {
+  eligibleProducts: ProductEditorData["kitEligibleProducts"];
+  value: ProductEditorDto["kitComponents"];
+  onChange: (value: ProductEditorDto["kitComponents"]) => void;
+}) {
+  const available = eligibleProducts.filter(
+    (product) => !value.some((component) => component.componentProductId === product.id),
+  );
+  return (
+    <div className="space-y-3 rounded-md bg-[var(--color-app-background)] p-3">
+      <p className="text-sm text-[var(--color-text)]">
+        El inventario de este kit se calcula a partir de sus componentes. El kit no tiene stock ni trazabilidad propios.
+      </p>
+      {value.map((component, index) => {
+        const product = eligibleProducts.find((item) => item.id === component.componentProductId);
+        return (
+          <div className="grid gap-2 sm:grid-cols-[1fr_110px_auto]" key={component.componentProductId}>
+            <div className="rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-title)]">
+              {product ? `${product.sku} — ${product.name}` : "Componente no disponible"}
+            </div>
+            <Input min="0.0001" step="0.0001" type="number" value={component.quantityPerKit}
+              onChange={(event) => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, quantityPerKit: parseDecimalInput(event.target.value) } : item))} />
+            <button className="rounded-md border border-[var(--color-danger)] px-3 text-sm font-semibold text-[var(--color-danger)]" type="button"
+              onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}>Eliminar</button>
+          </div>
+        );
+      })}
+      <Select value="" onChange={(event) => {
+        const componentProductId = event.target.value;
+        if (componentProductId) onChange([...value, { componentProductId, quantityPerKit: 1 }]);
+      }}>
+        <option value="">Agregar componente físico…</option>
+        {available.map((product) => <option key={product.id} value={product.id}>{product.sku} — {product.name}</option>)}
+      </Select>
+    </div>
   );
 }
 
@@ -2152,6 +2214,7 @@ function buildInitialValue(options: ProductFormOptions, editorData: ProductEdito
       salesPriceTiers: editorData.salesPriceTiers,
       supplierProducts: editorData.supplierProducts,
       media: editorData.media,
+      kitComponents: editorData.kitComponents,
     };
     return applyCapabilityRulesToEditor(editedDraft, options.businessCapabilities, {
       saleUnitId,
@@ -2180,7 +2243,8 @@ function buildInitialValue(options: ProductFormOptions, editorData: ProductEdito
     attributes: [],
     salesPriceTiers: [],
     supplierProducts: [],
-    media: [],
+      media: [],
+      kitComponents: [],
   };
   return applyCapabilityRulesToEditor(newDraft, options.businessCapabilities);
 }

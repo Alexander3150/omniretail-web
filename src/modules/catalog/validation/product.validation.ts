@@ -34,7 +34,7 @@ export function applyTrackingRules(
   capabilities: BusinessCapabilitiesConfig,
   currentTracking?: ProductTrackingConfig,
 ): ProductTrackingConfig {
-  if (productType === ProductType.service) {
+  if (productType === ProductType.service || productType === ProductType.kit) {
     return { stock: false, lot: false, expiration: false, serial: false };
   }
 
