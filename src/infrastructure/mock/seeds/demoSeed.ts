@@ -39,6 +39,7 @@ import {
   UserType,
 } from "@/core/enums";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
+import { buildPasswordHashMock } from "@/infrastructure/mock/shared/passwordHashMock";
 
 const now = "2026-01-01T12:00:00.000Z";
 
@@ -249,7 +250,8 @@ export const demoSeedDatabase: MockDatabase = {
       id: "auth-admin",
       userId: "user-admin",
       email: "admin@ferrepharma.demo",
-      passwordHashMock: "mock-hash-admin",
+      // demo password: "AdminDemo123" (mock only, not a real credential)
+      passwordHashMock: buildPasswordHashMock("AdminDemo123"),
       status: AccountStatus.active,
       failedLoginAttempts: 0,
       createdAt: now,
@@ -259,7 +261,8 @@ export const demoSeedDatabase: MockDatabase = {
       id: "auth-customer",
       userId: "user-customer",
       email: "ana@example.com",
-      passwordHashMock: "mock-hash-customer",
+      // demo password: "ClienteDemo1" (mock only, not a real credential)
+      passwordHashMock: buildPasswordHashMock("ClienteDemo1"),
       status: AccountStatus.active,
       failedLoginAttempts: 0,
       createdAt: now,
@@ -960,6 +963,7 @@ export const demoSeedDatabase: MockDatabase = {
       tenantId: "tenant-demo",
       name: "Atlas Herramientas",
       email: "ventas@atlas.demo",
+      leadTimeDays: 7,
       status: SupplierStatus.active,
       createdAt: now,
       updatedAt: now,
@@ -969,6 +973,7 @@ export const demoSeedDatabase: MockDatabase = {
       tenantId: "tenant-demo",
       name: "Industrial Mayorista Demo",
       email: "ventas@industrial.demo",
+      leadTimeDays: 10,
       status: SupplierStatus.active,
       createdAt: now,
       updatedAt: now,
@@ -978,6 +983,7 @@ export const demoSeedDatabase: MockDatabase = {
       tenantId: "tenant-demo",
       name: "Farmaceutica Demo",
       email: "pedidos@farmaceutica.demo",
+      leadTimeDays: 5,
       status: SupplierStatus.active,
       createdAt: now,
       updatedAt: now,

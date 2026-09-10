@@ -286,8 +286,8 @@ function QuickViewSuppliers({ detail }: { detail: ProductQuickViewModel }) {
             <DetailItem
               label="Entrega"
               value={
-                typeof item.supplierProduct.leadTimeDays === "number"
-                  ? `${item.supplierProduct.leadTimeDays} días`
+                typeof item.supplier.leadTimeDays === "number"
+                  ? `${item.supplier.leadTimeDays} días`
                   : "-"
               }
             />

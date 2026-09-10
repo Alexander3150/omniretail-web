@@ -95,26 +95,33 @@ export class GetProductEditorDataService {
       ) ??
       null;
 
+    const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier]));
     const supplierProductsWithCosts: SupplierProductEditorValue[] = await Promise.all(
-      supplierProducts.map(async (supplierProduct) => ({
-        id: supplierProduct.id,
-        supplierId: supplierProduct.supplierId,
-        supplierSku: supplierProduct.supplierSku,
-        purchaseUnitId: supplierProduct.purchaseUnitId,
-        purchaseToBaseFactor: supplierProduct.purchaseToBaseFactor,
-        lastCost: supplierProduct.lastCost,
-        leadTimeDays: supplierProduct.leadTimeDays,
-        minimumOrderQuantity: supplierProduct.minimumOrderQuantity,
-        preferred: supplierProduct.preferred,
-        active: supplierProduct.active,
-        costTiers: (await this.repositories.supplierProducts.getCostTiers(supplierProduct.id)).map(
-          (tier) => ({
-            id: tier.id,
-            minQuantity: tier.minQuantity,
-            unitCost: tier.unitCost,
-          }),
-        ),
-      })),
+      supplierProducts.map(async (supplierProduct) => {
+        const supplierLeadTimeDays =
+          supplierById.get(supplierProduct.supplierId)?.leadTimeDays ??
+          supplierProduct.leadTimeDays;
+
+        return {
+          id: supplierProduct.id,
+          supplierId: supplierProduct.supplierId,
+          supplierSku: supplierProduct.supplierSku,
+          purchaseUnitId: supplierProduct.purchaseUnitId,
+          purchaseToBaseFactor: supplierProduct.purchaseToBaseFactor,
+          lastCost: supplierProduct.lastCost,
+          leadTimeDays: supplierLeadTimeDays,
+          minimumOrderQuantity: supplierProduct.minimumOrderQuantity,
+          preferred: supplierProduct.preferred,
+          active: supplierProduct.active,
+          costTiers: (await this.repositories.supplierProducts.getCostTiers(supplierProduct.id)).map(
+            (tier) => ({
+              id: tier.id,
+              minQuantity: tier.minQuantity,
+              unitCost: tier.unitCost,
+            }),
+          ),
+        };
+      }),
     );
 
     const editableAttributes: ProductAttributeEditorValue[] = attributeValues.map((value) => {

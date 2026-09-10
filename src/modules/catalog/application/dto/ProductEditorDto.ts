@@ -11,6 +11,7 @@ import type {
 } from "@/core/entities";
 import type { CreateProductDto } from "@/modules/catalog/application/dto/CreateProductDto";
 import type { ProductDetailViewModel } from "@/modules/catalog/types/catalog.types";
+import type { NumericInputValue } from "@/shared/utils/numberInput";
 
 export interface ProductAttributeEditorValue {
   attributeDefinitionId?: string;
@@ -18,30 +19,42 @@ export interface ProductAttributeEditorValue {
   value: string;
 }
 
-export type ProductSalesPriceTierEditorValue = Pick<
-  ProductSalesPriceTier,
-  "minQuantity" | "unitPrice" | "active"
+export type ProductSalesPriceTierEditorValue = Omit<
+  Pick<ProductSalesPriceTier, "minQuantity" | "unitPrice" | "active">,
+  "minQuantity" | "unitPrice"
 > & {
   id?: string;
+  minQuantity: NumericInputValue;
+  unitPrice: NumericInputValue;
 };
 
-export type SupplierCostTierEditorValue = Pick<SupplierCostTier, "minQuantity" | "unitCost"> & {
-  id?: string;
-};
-
-export type SupplierProductEditorValue = Pick<
-  SupplierProduct,
-  | "supplierId"
-  | "supplierSku"
-  | "purchaseUnitId"
-  | "lastCost"
-  | "leadTimeDays"
-  | "minimumOrderQuantity"
-  | "preferred"
-  | "active"
+export type SupplierCostTierEditorValue = Omit<
+  Pick<SupplierCostTier, "minQuantity" | "unitCost">,
+  "minQuantity" | "unitCost"
 > & {
   id?: string;
-  purchaseToBaseFactor: number | "";
+  minQuantity: NumericInputValue;
+  unitCost: NumericInputValue;
+};
+
+export type SupplierProductEditorValue = Omit<
+  Pick<
+    SupplierProduct,
+    | "supplierId"
+    | "supplierSku"
+    | "purchaseUnitId"
+    | "lastCost"
+    | "leadTimeDays"
+    | "minimumOrderQuantity"
+    | "preferred"
+    | "active"
+  >,
+  "lastCost" | "minimumOrderQuantity"
+> & {
+  id?: string;
+  purchaseToBaseFactor: NumericInputValue;
+  lastCost: NumericInputValue;
+  minimumOrderQuantity: NumericInputValue;
   costTiers: SupplierCostTierEditorValue[];
 };
 
@@ -54,13 +67,14 @@ export type ProductMediaEditorValue = Pick<
 
 export interface ProductInventorySettingsEditorValue {
   branchId: string;
-  minStock: number;
+  minStock: NumericInputValue;
   defaultLocationId: string;
 }
 
-export interface ProductEditorDto extends Omit<CreateProductDto, "primaryImageUrl"> {
-  inventoryQuantity: number;
-  saleQuantity: number | "";
+export interface ProductEditorDto extends Omit<CreateProductDto, "primaryImageUrl" | "salePrice"> {
+  salePrice: NumericInputValue;
+  inventoryQuantity: NumericInputValue;
+  saleQuantity: NumericInputValue;
   inventorySettings: ProductInventorySettingsEditorValue;
   attributes: ProductAttributeEditorValue[];
   salesPriceTiers: ProductSalesPriceTierEditorValue[];
