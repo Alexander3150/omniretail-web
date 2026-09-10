@@ -6,16 +6,19 @@ import {
   GENERIC_AUTH_ERROR_MESSAGE,
   LOGIN_ATTEMPT_RULES,
   FAILED_ATTEMPTS_WINDOW_MINUTES,
+  LOCKOUT_ESCALATION_LOOKBACK_HOURS,
   getLockoutMinutesForOccurrence,
 } from "@/config/auth-policy";
 import { sessionPolicy } from "@/config/session-policy";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
+import { buildPasswordHashMock } from "@/infrastructure/mock/shared/passwordHashMock";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
 export class MockAuthRepository extends BaseMockRepository implements AuthRepository {
   async login(input: Parameters<AuthRepository["login"]>[0]) {
     const normalizedEmail = input.email.trim().toLowerCase();
     const now = new Date();
     const windowMs = FAILED_ATTEMPTS_WINDOW_MINUTES * 60 * 1000;
+    const lockoutLookbackMs = LOCKOUT_ESCALATION_LOOKBACK_HOURS * 60 * 60 * 1000;
 
     const outcome = this.store.mutate((db) => {
       const account = db.authAccounts.find(
@@ -50,7 +53,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         return { ok: false as const };
       }
 
-      const expectedHash = `mock-hash-${input.passwordMock.length}`;
+      const expectedHash = buildPasswordHashMock(input.passwordMock);
       if (account.passwordHashMock !== expectedHash) {
         // Only count failures within the active window (doc 4.7) — older
         // ones don't carry over. Derived from auditLogs instead of a
@@ -59,6 +62,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
           (log) =>
             log.entityType === "AuthAccount" &&
             log.entityId === account.id &&
+            log.tenantId === tenantId &&
             (log.action === "login_failed" || log.action === "account_locked") &&
             now.getTime() - new Date(log.createdAt).getTime() < windowMs,
         ).length;
@@ -77,8 +81,9 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
             (log) =>
               log.entityType === "AuthAccount" &&
               log.entityId === account.id &&
+              log.tenantId === tenantId &&
               log.action === "account_locked" &&
-              now.getTime() - new Date(log.createdAt).getTime() < 24 * 60 * 60 * 1000,
+              now.getTime() - new Date(log.createdAt).getTime() < lockoutLookbackMs,
           ).length;
           account.status = AccountStatus.temporarily_locked;
           account.lockedUntil = new Date(
@@ -188,7 +193,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         id: this.id("auth"),
         userId: createdUser.id,
         email: input.email,
-        passwordHashMock: `mock-hash-${input.passwordMock.length}`,
+        passwordHashMock: buildPasswordHashMock(input.passwordMock),
         status: AccountStatus.pending_verification,
         failedLoginAttempts: 0,
         createdAt: now,
@@ -234,7 +239,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       const account = db.authAccounts.find((item) => item.userId === challenge.userId);
       if (!account) throw new Error("Account not found");
       const now = this.now();
-      account.passwordHashMock = `mock-hash-${newPasswordMock.length}`;
+      account.passwordHashMock = buildPasswordHashMock(newPasswordMock);
       account.passwordChangedAt = now;
       account.updatedAt = now;
       challenge.usedAt = now;

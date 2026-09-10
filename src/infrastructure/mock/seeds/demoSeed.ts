@@ -39,6 +39,7 @@ import {
   UserType,
 } from "@/core/enums";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
+import { buildPasswordHashMock } from "@/infrastructure/mock/shared/passwordHashMock";
 
 const now = "2026-01-01T12:00:00.000Z";
 
@@ -250,7 +251,7 @@ export const demoSeedDatabase: MockDatabase = {
       userId: "user-admin",
       email: "admin@ferrepharma.demo",
       // demo password: "AdminDemo123" (mock only, not a real credential)
-      passwordHashMock: "mock-hash-12",
+      passwordHashMock: buildPasswordHashMock("AdminDemo123"),
       status: AccountStatus.active,
       failedLoginAttempts: 0,
       createdAt: now,
@@ -261,7 +262,7 @@ export const demoSeedDatabase: MockDatabase = {
       userId: "user-customer",
       email: "ana@example.com",
       // demo password: "ClienteDemo1" (mock only, not a real credential)
-      passwordHashMock: "mock-hash-12",
+      passwordHashMock: buildPasswordHashMock("ClienteDemo1"),
       status: AccountStatus.active,
       failedLoginAttempts: 0,
       createdAt: now,

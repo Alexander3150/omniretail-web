@@ -109,3 +109,9 @@ export function getLockoutMinutesForOccurrence(occurrenceNumberIn24h: number): n
   if (occurrenceNumberIn24h === 2) return LOCKOUT_ESCALATION_MINUTES.SECOND_LOCKOUT_IN_24H;
   return LOCKOUT_ESCALATION_MINUTES.THIRD_LOCKOUT_IN_24H;
 }
+
+/**
+ * How far back to look when counting prior account_locked events for
+ * escalation purposes (doc section 4.7 — 15/30/60 min escalation).
+ */
+export const LOCKOUT_ESCALATION_LOOKBACK_HOURS = 24;
