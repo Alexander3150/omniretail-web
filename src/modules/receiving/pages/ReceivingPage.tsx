@@ -5,12 +5,10 @@ import { Button } from "@/shared/components/Button";
 import { Input } from "@/shared/components/Input";
 import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
-import {
-  TablePagination,
-  type TablePageSize,
-} from "@/shared/components/TablePagination";
+import { TablePagination, type TablePageSize } from "@/shared/components/TablePagination";
 import { useToast } from "@/shared/components/Toast";
 import { cn } from "@/shared/utils/cn";
+import type { ReceiptIncidentEvidence } from "@/core/entities";
 import type {
   IncidentTypeReadModel,
   ReceivingDocumentRow,
@@ -29,7 +27,6 @@ const STATUS_FILTERS: Array<{ value: ReceivingStatus; label: string }> = [
 ];
 
 export function ReceivingPage() {
-  const { showToast } = useToast();
   const {
     data,
     filters,
@@ -45,6 +42,8 @@ export function ReceivingPage() {
   const [pageSize, setPageSize] = useState<TablePageSize>(DEFAULT_PAGE_SIZE);
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [incidentTypeModalOpen, setIncidentTypeModalOpen] = useState(false);
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
+  const [previewEvidence, setPreviewEvidence] = useState<ReceiptIncidentEvidence | null>(null);
   const totalPages = Math.max(1, Math.ceil(filteredDocuments.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paginatedDocuments = useMemo(
@@ -55,10 +54,15 @@ export function ReceivingPage() {
     () => data.documents.find((document) => document.id === selectedDocumentId) ?? null,
     [data.documents, selectedDocumentId],
   );
+  const selectedIncident = useMemo(
+    () => data.incidents.find((incident) => incident.id === selectedIncidentId) ?? null,
+    [data.incidents, selectedIncidentId],
+  );
 
   function handleTabChange(tab: ReceivingTab) {
     updateFilters({ tab });
     setSelectedDocumentId(null);
+    setSelectedIncidentId(null);
   }
 
   function handleSearchChange(search: string) {
@@ -84,14 +88,6 @@ export function ReceivingPage() {
     setSelectedDocumentId(null);
   }
 
-  function handlePreparedAction(document: ReceivingDocumentRow) {
-    showToast({
-      title: getPreparedActionLabel(document.status),
-      description: "La pantalla de recepcion por documento aun no esta disponible.",
-      tone: "info",
-    });
-  }
-
   return (
     <div className="min-w-0 space-y-5">
       <div>
@@ -102,7 +98,11 @@ export function ReceivingPage() {
           title="Recepciones"
           description="Consulta ordenes, avances de recepcion e incidencias operativas."
           actions={
-            <Button onClick={() => setIncidentTypeModalOpen(true)} type="button" variant="secondary">
+            <Button
+              onClick={() => setIncidentTypeModalOpen(true)}
+              type="button"
+              variant="secondary"
+            >
               <AlertIcon />
               Tipos de incidencia
             </Button>
@@ -179,14 +179,26 @@ export function ReceivingPage() {
           )}
         </section>
       ) : (
-        <IncidentsPanel incidents={data.incidents} loading={loading} />
+        <IncidentsPanel
+          incidents={data.incidents}
+          loading={loading}
+          selectedIncidentId={selectedIncidentId}
+          onSelect={setSelectedIncidentId}
+        />
       )}
 
       {selectedDocument ? (
         <SelectedDocumentPanel
           document={selectedDocument}
-          onAction={handlePreparedAction}
           onClose={() => setSelectedDocumentId(null)}
+        />
+      ) : null}
+
+      {selectedIncident ? (
+        <SelectedIncidentPanel
+          incident={selectedIncident}
+          onClose={() => setSelectedIncidentId(null)}
+          onPreview={setPreviewEvidence}
         />
       ) : null}
 
@@ -198,6 +210,21 @@ export function ReceivingPage() {
         onCreate={createIncidentType}
         onDelete={deleteIncidentType}
       />
+      <Modal
+        open={Boolean(previewEvidence)}
+        title={previewEvidence?.name ?? "Evidencia"}
+        onClose={() => setPreviewEvidence(null)}
+        size="xl"
+      >
+        {previewEvidence?.previewUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            alt={previewEvidence.name}
+            className="mx-auto max-h-[72dvh] max-w-full object-contain"
+            src={previewEvidence.previewUrl}
+          />
+        ) : null}
+      </Modal>
     </div>
   );
 }
@@ -347,11 +374,9 @@ function ReceivingDocumentsTable({
 
 function SelectedDocumentPanel({
   document,
-  onAction,
   onClose,
 }: {
   document: ReceivingDocumentRow;
-  onAction: (document: ReceivingDocumentRow) => void;
   onClose: () => void;
 }) {
   return (
@@ -374,7 +399,7 @@ function SelectedDocumentPanel({
         <div className="flex flex-wrap gap-2">
           <Button
             className="min-h-9 px-3 py-1.5"
-            onClick={() => onAction(document)}
+            href={getReceivingDocumentHref(document)}
             type="button"
             variant="secondary"
           >
@@ -408,9 +433,13 @@ function SelectedDocumentPanel({
 function IncidentsPanel({
   incidents,
   loading,
+  selectedIncidentId,
+  onSelect,
 }: {
   incidents: ReceivingIncidentRow[];
   loading: boolean;
+  selectedIncidentId: string | null;
+  onSelect: (id: string) => void;
 }) {
   if (loading) {
     return (
@@ -429,14 +458,19 @@ function IncidentsPanel({
       ) : (
         <div className="space-y-2">
           {incidents.map((incident) => (
-            <article
-              className="grid gap-2 rounded-md border border-[var(--color-border)] p-3 md:grid-cols-[160px_minmax(0,1fr)_140px]"
+            <button
+              className={cn(
+                "grid w-full gap-2 rounded-md border p-3 text-left transition md:grid-cols-[160px_minmax(0,1fr)_140px]",
+                selectedIncidentId === incident.id
+                  ? "border-[var(--color-primary)] bg-blue-50 ring-2 ring-[var(--color-primary)]/20"
+                  : "border-[var(--color-border)] hover:border-[var(--color-primary)]",
+              )}
               key={incident.id}
+              onClick={() => onSelect(incident.id)}
+              type="button"
             >
               <div>
-                <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">
-                  Recibo
-                </p>
+                <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">Recibo</p>
                 <p className="font-bold text-[var(--color-title)]">{incident.receiptNumber}</p>
               </div>
               <div className="min-w-0">
@@ -455,10 +489,79 @@ function IncidentsPanel({
                   </p>
                 ) : null}
               </div>
-            </article>
+            </button>
           ))}
         </div>
       )}
+    </section>
+  );
+}
+
+function SelectedIncidentPanel({
+  incident,
+  onClose,
+  onPreview,
+}: {
+  incident: ReceivingIncidentRow;
+  onClose: () => void;
+  onPreview: (evidence: ReceiptIncidentEvidence) => void;
+}) {
+  return (
+    <section className="rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">
+            Detalle de incidencia
+          </p>
+          <h2 className="mt-1 text-lg font-bold text-[var(--color-title)]">
+            {incident.productName}
+          </h2>
+          <p className="text-sm font-semibold text-[var(--color-text-muted)]">{incident.sku}</p>
+        </div>
+        <Button className="min-h-9 px-3 py-1.5" onClick={onClose} type="button" variant="ghost">
+          <XIcon />
+          Cerrar
+        </Button>
+      </div>
+      <dl className="mt-4 grid gap-3 border-t border-[var(--color-border)] pt-4 sm:grid-cols-2 lg:grid-cols-4">
+        <DetailItem label="Tipo de incidencia" value={incident.incidentTypeName} />
+        <DetailItem
+          label="Cantidad afectada"
+          value={formatNumber(incident.quantityAffected ?? 0)}
+        />
+        <DetailItem label="Fecha" value={formatDate(incident.createdAt)} />
+        <DetailItem label="Proveedor o sucursal" value={incident.supplierOrSource} />
+        <DetailItem label="Orden de compra" value={incident.documentNumber} />
+        <DetailItem label="Recepcion" value={incident.receiptNumber} />
+        <DetailItem label="Responsable" value={incident.responsibleName} />
+      </dl>
+      <div className="mt-4">
+        <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">Observacion</p>
+        <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--color-text)]">
+          {incident.description}
+        </p>
+      </div>
+      <div className="mt-4">
+        <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">Evidencias</p>
+        {incident.evidence.length === 0 ? (
+          <p className="mt-2 text-sm text-[var(--color-text-muted)]">Sin evidencias.</p>
+        ) : (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {incident.evidence.map((item) =>
+              item.previewUrl ? (
+                <button key={item.id} onClick={() => onPreview(item)} type="button">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    alt={item.name}
+                    className="h-24 w-28 rounded-md border border-[var(--color-border)] object-cover"
+                    src={item.previewUrl}
+                  />
+                </button>
+              ) : null,
+            )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }
@@ -687,6 +790,10 @@ function getPreparedActionLabel(status: ReceivingStatus) {
   if (status === "received") return "Ver detalle";
   if (status === "pending") return "Iniciar recepcion";
   return "Continuar recepcion";
+}
+
+function getReceivingDocumentHref(document: ReceivingDocumentRow) {
+  return `/compras/recepciones/${document.documentType}/${document.documentId}`;
 }
 
 function formatNumber(value: number) {

@@ -23,7 +23,7 @@ export class ReceivingDocumentsService {
   async execute(activeBranchId?: string): Promise<ReceivingReadModel> {
     if (!activeBranchId) return { documents: [], incidents: [], incidentTypes: [] };
 
-    const [purchaseOrders, suppliers, branches, transfers, receipts, incidentTypes] =
+    const [purchaseOrders, suppliers, branches, transfers, receipts, incidentTypes, users] =
       await Promise.all([
         this.repositories.purchaseOrders.getAll(),
         this.repositories.suppliers.getAll(),
@@ -31,6 +31,7 @@ export class ReceivingDocumentsService {
         this.repositories.inventoryTransfers.query({ destinationBranchId: activeBranchId }),
         this.repositories.receipts.getAll(),
         this.repositories.incidentTypes.getAll(),
+        this.repositories.users.getAll(),
       ]);
     const tenantId = branches.find((branch) => branch.id === activeBranchId)?.tenantId;
     const activeReceipts = receipts.filter(
@@ -49,6 +50,8 @@ export class ReceivingDocumentsService {
 
     const productById = new Map(products.map((product) => [product.id, product]));
     const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier]));
+    const purchaseOrderById = new Map(purchaseOrders.map((order) => [order.id, order]));
+    const userNameById = new Map(users.map((user) => [user.id, user.name]));
     const branchById = new Map(branches.map((branch) => [branch.id, branch]));
     const receiptsByOrderId = groupReceiptsByOrderId(activeReceipts);
     const receiptLinesByReceiptId = groupReceiptLinesByReceiptId(receiptLines);
@@ -58,9 +61,18 @@ export class ReceivingDocumentsService {
       .filter((order) => isPurchaseOrderRelevantForReceiving(order.status))
       .map((order) => {
         const orderReceipts = receiptsByOrderId.get(order.id) ?? [];
-        const orderReceiptLines = orderReceipts.flatMap(
-          (receipt) => receiptLinesByReceiptId.get(receipt.id) ?? [],
+        const confirmedReceiptIds = new Set(
+          orderReceipts
+            .filter(
+              (receipt) =>
+                receipt.status === ReceiptStatus.partial ||
+                receipt.status === ReceiptStatus.received,
+            )
+            .map((receipt) => receipt.id),
         );
+        const orderReceiptLines = orderReceipts
+          .flatMap((receipt) => receiptLinesByReceiptId.get(receipt.id) ?? [])
+          .filter((line) => confirmedReceiptIds.has(line.receiptId));
         const supplier = supplierById.get(order.supplierId);
         return toPurchaseOrderRow(
           order,
@@ -87,7 +99,16 @@ export class ReceivingDocumentsService {
         (left, right) =>
           new Date(right.lastUpdatedAt).getTime() - new Date(left.lastUpdatedAt).getTime(),
       ),
-      incidents: buildIncidentRows(receiptIncidents, activeReceipts, incidentTypes),
+      incidents: buildIncidentRows(
+        receiptIncidents,
+        activeReceipts,
+        receiptLines,
+        incidentTypes,
+        productById,
+        purchaseOrderById,
+        supplierById,
+        userNameById,
+      ),
       incidentTypes: buildIncidentTypeRows(
         tenantId
           ? incidentTypes.filter((incidentType) => incidentType.tenantId === tenantId)
@@ -273,7 +294,9 @@ function isPurchaseOrderRelevantForReceiving(status: PurchaseOrderStatus) {
 }
 
 function isTransferRelevantForReceiving(status: InventoryTransferStatus) {
-  return status === InventoryTransferStatus.inTransit || status === InventoryTransferStatus.received;
+  return (
+    status === InventoryTransferStatus.inTransit || status === InventoryTransferStatus.received
+  );
 }
 
 function getTransferRequestedQuantity(item: InventoryTransferItem) {
@@ -298,25 +321,46 @@ function groupReceiptLinesByReceiptId(receiptLines: ReceiptLine[]) {
 function buildIncidentRows(
   incidents: ReceiptIncident[],
   receipts: Receipt[],
+  receiptLines: ReceiptLine[],
   incidentTypes: IncidentType[],
+  productById: Map<string, { name: string; sku: string }>,
+  purchaseOrderById: Map<string, PurchaseOrder>,
+  supplierById: Map<string, { name: string }>,
+  userNameById: Map<string, string>,
 ): ReceivingIncidentRow[] {
   const receiptById = new Map(receipts.map((receipt) => [receipt.id, receipt]));
+  const receiptLineById = new Map(receiptLines.map((line) => [line.id, line]));
   const incidentTypeById = new Map(
     incidentTypes.map((incidentType) => [incidentType.id, incidentType]),
   );
   return incidents
     .map((incident) => {
       const quantityAffected = incident.quantityAffected;
+      const receipt = receiptById.get(incident.receiptId);
+      const line = incident.receiptLineId ? receiptLineById.get(incident.receiptLineId) : undefined;
+      const product = line ? productById.get(line.productId) : undefined;
+      const order = receipt?.purchaseOrderId
+        ? purchaseOrderById.get(receipt.purchaseOrderId)
+        : undefined;
       return {
         id: incident.id,
-        receiptNumber: receiptById.get(incident.receiptId)?.number ?? incident.receiptId,
+        productName: product?.name ?? "Producto no disponible",
+        sku: product?.sku ?? "-",
+        receiptNumber: receipt?.number ?? incident.receiptId,
+        documentNumber: order?.number ?? "Documento no disponible",
+        supplierOrSource:
+          (order && supplierById.get(order.supplierId)?.name) ?? "Origen no disponible",
+        responsibleName: userNameById.get(incident.createdByUserId) ?? incident.createdByUserId,
         incidentTypeName: incidentTypeById.get(incident.incidentTypeId)?.name ?? "Tipo archivado",
         description: incident.description,
         ...(typeof quantityAffected === "number" ? { quantityAffected } : {}),
+        evidence: incident.evidence ?? [],
         createdAt: incident.createdAt,
       };
     })
-    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+    .sort(
+      (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+    );
 }
 
 function buildIncidentTypeRows(
@@ -344,7 +388,10 @@ function buildIncidentTypeRows(
 }
 
 function toCode(value: string) {
-  return normalize(value).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").toUpperCase();
+  return normalize(value)
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toUpperCase();
 }
 
 function normalize(value: string) {
