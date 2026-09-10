@@ -7,6 +7,7 @@ import {
   LOGIN_ATTEMPT_RULES,
   FAILED_ATTEMPTS_WINDOW_MINUTES,
   LOCKOUT_ESCALATION_LOOKBACK_HOURS,
+  LOCKOUT_RESET_AFTER_MINUTES,
   getLockoutMinutesForOccurrence,
 } from "@/config/auth-policy";
 import { sessionPolicy } from "@/config/session-policy";
@@ -19,6 +20,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     const now = new Date();
     const windowMs = FAILED_ATTEMPTS_WINDOW_MINUTES * 60 * 1000;
     const lockoutLookbackMs = LOCKOUT_ESCALATION_LOOKBACK_HOURS * 60 * 60 * 1000;
+    const escalationResetMs = LOCKOUT_RESET_AFTER_MINUTES * 60 * 1000;
 
     const outcome = this.store.mutate((db) => {
       const account = db.authAccounts.find(
@@ -55,18 +57,41 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
 
       const expectedHash = buildPasswordHashMock(input.passwordMock);
       if (account.passwordHashMock !== expectedHash) {
-        // Only count failures within the active window (doc 4.7) — older
-        // ones don't carry over. Derived from auditLogs instead of a
+        // A successful login always cuts the failure streak, regardless of
+        // how recent it was: only login_failed/account_locked events that
+        // happened *after* the most recent login_success — and still within
+        // the active window (doc 4.7) — count toward the current attempt
+        // number. Older ones (before the window, or before the last
+        // success) don't carry over. Derived from auditLogs instead of a
         // stored counter, so it self-resets with time automatically.
-        const recentFailures = db.auditLogs.filter(
+        const lastSuccessAt = db.auditLogs
+          .filter(
+            (log) =>
+              log.entityType === "AuthAccount" &&
+              log.entityId === account.id &&
+              log.tenantId === tenantId &&
+              log.action === "login_success",
+          )
+          .reduce((latest, log) => Math.max(latest, new Date(log.createdAt).getTime()), 0);
+
+        const recentFailureLogs = db.auditLogs.filter(
           (log) =>
             log.entityType === "AuthAccount" &&
             log.entityId === account.id &&
             log.tenantId === tenantId &&
             (log.action === "login_failed" || log.action === "account_locked") &&
+            new Date(log.createdAt).getTime() > lastSuccessAt &&
             now.getTime() - new Date(log.createdAt).getTime() < windowMs,
-        ).length;
-        const currentAttemptNumber = recentFailures + 1;
+        );
+        const currentAttemptNumber = recentFailureLogs.length + 1;
+        // When this current streak started (the earliest failure still inside
+        // the window), or "now" if this is the first failure of a new streak.
+        // Used below to tell the escalation-reset gap apart from the normal
+        // few-seconds-to-minutes spacing between attempts within one streak.
+        const streakStartAt =
+          recentFailureLogs.length > 0
+            ? Math.min(...recentFailureLogs.map((log) => new Date(log.createdAt).getTime()))
+            : now.getTime();
 
         const rule =
           LOGIN_ATTEMPT_RULES.find((item) => item.attemptNumber === currentAttemptNumber) ??
@@ -77,14 +102,44 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         account.failedLoginAttempts = currentAttemptNumber;
 
         if (rule.triggersLockout) {
-          const recentLockouts = db.auditLogs.filter(
-            (log) =>
-              log.entityType === "AuthAccount" &&
-              log.entityId === account.id &&
-              log.tenantId === tenantId &&
-              log.action === "account_locked" &&
-              now.getTime() - new Date(log.createdAt).getTime() < lockoutLookbackMs,
-          ).length;
+          // Escalation (15/30/60 min) resets once LOCKOUT_RESET_AFTER_MINUTES
+          // pass without a new failure/lockout on this account — the next
+          // lockout after such a quiet period counts as a first occurrence
+          // again, independent of the login_success-based streak reset above.
+          //
+          // The gap is measured from the start of the CURRENT streak
+          // (streakStartAt), not from "now" — attempts within the same
+          // streak are only seconds/minutes apart by design (that's the
+          // failed-attempts window), so comparing against the most recent
+          // one would never detect a quiet period once a new streak is
+          // already a few attempts in.
+          const priorFailureOrLockoutTimestamps = db.auditLogs
+            .filter(
+              (log) =>
+                log.entityType === "AuthAccount" &&
+                log.entityId === account.id &&
+                log.tenantId === tenantId &&
+                (log.action === "login_failed" || log.action === "account_locked") &&
+                new Date(log.createdAt).getTime() < streakStartAt,
+            )
+            .map((log) => new Date(log.createdAt).getTime());
+          const lastFailureOrLockoutAt =
+            priorFailureOrLockoutTimestamps.length > 0
+              ? Math.max(...priorFailureOrLockoutTimestamps)
+              : null;
+          const escalationHasReset =
+            lastFailureOrLockoutAt !== null && streakStartAt - lastFailureOrLockoutAt > escalationResetMs;
+
+          const recentLockouts = escalationHasReset
+            ? 0
+            : db.auditLogs.filter(
+                (log) =>
+                  log.entityType === "AuthAccount" &&
+                  log.entityId === account.id &&
+                  log.tenantId === tenantId &&
+                  log.action === "account_locked" &&
+                  now.getTime() - new Date(log.createdAt).getTime() < lockoutLookbackMs,
+              ).length;
           account.status = AccountStatus.temporarily_locked;
           account.lockedUntil = new Date(
             now.getTime() + getLockoutMinutesForOccurrence(recentLockouts + 1) * 60 * 1000,
