@@ -3,6 +3,7 @@ import type { Customer } from "@/core/entities";
 import type { AuthRepository } from "@/core/repositories";
 import {
   authPolicy,
+  EMAIL_VERIFICATION_TOKEN_MINUTES,
   GENERIC_AUTH_ERROR_MESSAGE,
   LOGIN_ATTEMPT_RULES,
   FAILED_ATTEMPTS_WINDOW_MINUTES,
@@ -255,6 +256,10 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       customer.userId = createdUser.id;
       db.customers.push(customer);
       db.users.push(createdUser);
+      // NOTE for review: this method does not yet enforce email uniqueness
+      // within the tenant (rule R-A03). That check belongs to the
+      // registration validation/UI (form-level), not this repository call —
+      // intentionally deferred, not an oversight.
       db.authAccounts.push({
         id: this.id("auth"),
         userId: createdUser.id,
@@ -264,6 +269,18 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         failedLoginAttempts: 0,
         createdAt: now,
         updatedAt: now,
+      });
+      // Doc 4.10: without this record, verifyEmail() (which reads
+      // db.emailVerifications) has nothing to ever match, so a new
+      // customer could never leave pending_verification.
+      db.emailVerifications.push({
+        id: this.id("email-verification"),
+        userId: createdUser.id,
+        token: this.id("token"),
+        createdAt: now,
+        expiresAt: new Date(
+          Date.now() + EMAIL_VERIFICATION_TOKEN_MINUTES * 60 * 1000,
+        ).toISOString(),
       });
       return createdUser;
     });
@@ -304,11 +321,48 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       if (!challenge) throw new Error("Invalid reset token");
       const account = db.authAccounts.find((item) => item.userId === challenge.userId);
       if (!account) throw new Error("Account not found");
+      const user = db.users.find((item) => item.id === account.userId);
+      const tenantId = user?.tenantId ?? "tenant-demo";
       const now = this.now();
+
       account.passwordHashMock = buildPasswordHashMock(newPasswordMock);
       account.passwordChangedAt = now;
       account.updatedAt = now;
       challenge.usedAt = now;
+
+      // R-A24: completing a reset always lifts a temporary lockout or a
+      // forced password_reset_required state back to active, resetting the
+      // failed-attempt counters — but a disabled/archived account is never
+      // re-enabled this way (R-A25): the password changes, access doesn't.
+      if (
+        account.status === AccountStatus.temporarily_locked ||
+        account.status === AccountStatus.password_reset_required
+      ) {
+        account.status = AccountStatus.active;
+        account.failedLoginAttempts = 0;
+        account.lockedUntil = undefined;
+      }
+
+      // R-A24: revoke every existing (non-revoked) session for this user.
+      db.sessions
+        .filter((session) => session.userId === account.userId && !session.revokedAt)
+        .forEach((session) => {
+          session.revokedAt = now;
+        });
+
+      // R-A30: audit the completed reset.
+      // NOTE for review: R-A24 also mentions a "notificación de cambio de
+      // contraseña". This PR keeps that at the audit-log level only
+      // (password_reset_completed) — persisting a Notification/toast is left
+      // for when the corresponding screen exists (later UI PR), since this
+      // PR is repository/contract-only and doesn't touch any screen yet.
+      this.logAuthAudit(db, {
+        tenantId,
+        actorUserId: account.userId,
+        accountId: account.id,
+        action: "password_reset_completed",
+      });
+
       return undefined;
     });
     this.emit("auth.changed", { action: "updated" });
