@@ -228,7 +228,11 @@ export class ConfirmSaleService {
         const price = calculateEffectivePrice(product.salePrice, promotion);
         assertPriceSnapshot(ticketItem, price);
 
-        if (product.productType === ProductType.physical && product.tracking.stock) {
+        if (
+          product.productType === ProductType.physical &&
+          product.tracking.stock &&
+          !input.sourceOrderId
+        ) {
           const [balances, settings] = await Promise.all([
             this.repositories.inventory.getBalanceByProduct(
               product.id,

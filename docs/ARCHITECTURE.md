@@ -41,6 +41,8 @@ PickingRepository.updateItem
 -> PickingItem + InventoryReservation + InventoryBalance + InventoryMovement
 ```
 
+`MockSaleConfirmationRepository.confirm` valida dentro de su transaccion si `sourceOrderId` acredita ownership mediante la Order y sus reservas. Las ventas directas conservan el OUT propio; las vinculadas validas persisten Sale, Payment y CashMovement sin modificar reservas, balances ni movimientos de inventario.
+
 ## Navegacion Privada
 
 Los modulos declaran sus entradas en `src/modules/*/navigation.ts`.
