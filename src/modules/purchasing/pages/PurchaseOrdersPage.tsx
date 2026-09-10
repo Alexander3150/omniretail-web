@@ -17,10 +17,7 @@ import { Button } from "@/shared/components/Button";
 import { Input } from "@/shared/components/Input";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { Select } from "@/shared/components/Select";
-import {
-  TablePagination,
-  type TablePageSize,
-} from "@/shared/components/TablePagination";
+import { TablePagination, type TablePageSize } from "@/shared/components/TablePagination";
 import { useToast } from "@/shared/components/Toast";
 import { cn } from "@/shared/utils/cn";
 import type {
@@ -65,7 +62,9 @@ export function PurchaseOrdersPage() {
     [paginatedOrders, selectedOrderId],
   );
   const emptyMessage =
-    data.orders.length === 0 ? "No hay ordenes de compra registradas." : "No se encontraron ordenes.";
+    data.orders.length === 0
+      ? "No hay ordenes de compra registradas."
+      : "No se encontraron ordenes.";
 
   function handleSearchChange(search: string) {
     setPage(1);
@@ -122,6 +121,10 @@ export function PurchaseOrdersPage() {
     setOpenActionsOrderId(null);
     if (action.id === "edit-draft") {
       router.push(`/compras/ordenes/${order.id}/editar`);
+      return;
+    }
+    if (action.id === "continue-receiving" && action.enabled) {
+      router.push(`/compras/recepciones/purchase_order/${order.id}`);
       return;
     }
     if (action.id === "download-purchase-order-pdf" || action.id === "download-receiving-pdf") {
@@ -206,9 +209,7 @@ export function PurchaseOrdersPage() {
         supplierEmail,
       });
       showToast({
-        title: result.sent
-          ? `Orden de compra enviada a ${result.to}`
-          : "Orden aprobada",
+        title: result.sent ? `Orden de compra enviada a ${result.to}` : "Orden aprobada",
         description: result.sent
           ? `Envio simulado al proveedor. Adjunto: ${document.filename}`
           : result.message,
@@ -236,10 +237,7 @@ export function PurchaseOrdersPage() {
           title="Ordenes de compra"
           description="Consulta ordenes, recepcion, proveedores y necesidades de reposicion."
           actions={
-            <Button
-              onClick={() => router.push("/compras/ordenes/nueva")}
-              type="button"
-            >
+            <Button onClick={() => router.push("/compras/ordenes/nueva")} type="button">
               <PlusIcon />
               Nueva orden
             </Button>
@@ -371,9 +369,8 @@ function ReorderSuggestions({
             Reposicion sugerida
           </h2>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-            {formatNumber(requiringPurchase)} requieren compra ·{" "}
-            {formatNumber(requiringCompletion)} requieren completar compra · {formatNumber(inProgress)} en
-            curso
+            {formatNumber(requiringPurchase)} requieren compra · {formatNumber(requiringCompletion)}{" "}
+            requieren completar compra · {formatNumber(inProgress)} en curso
           </p>
         </div>
         <Button
@@ -388,57 +385,54 @@ function ReorderSuggestions({
 
       {expanded ? (
         <div className="space-y-2 border-t border-[var(--color-border)] px-4 py-3">
-        {suggestions.length === 0 ? (
-          <p className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-4 py-3 text-sm font-medium text-[var(--color-text-muted)]">
-            Sin sugerencias de reposicion por ahora.
-          </p>
-        ) : (
-          suggestions.map((suggestion) => (
-            <article
-              className="grid gap-2 rounded-md border border-[var(--color-border)] px-3 py-2 sm:grid-cols-[minmax(0,1.6fr)_80px_80px_90px_90px_minmax(120px,0.9fr)_auto] sm:items-center"
-              key={suggestion.id}
-            >
-              <div className="min-w-0">
-                <p className="truncate font-bold text-[var(--color-title)]">
-                  {suggestion.productName}
-                </p>
-                <p className="text-xs text-[var(--color-text-muted)]">{suggestion.sku}</p>
-              </div>
-              <SmallMetric label="Stock" value={formatNumber(suggestion.currentStock)} />
-              <SmallMetric label="Minimo" value={formatNumber(suggestion.minStock)} />
-              <SmallMetric
-                label="Sugerido"
-                value={formatNumber(suggestion.suggestedQuantity)}
-              />
-              <SmallMetric label="Faltante" value={formatNumber(suggestion.shortage)} />
-              <div className="min-w-0">
-                <p className="text-[11px] font-bold uppercase text-[var(--color-text-muted)]">
-                  Proveedor
-                </p>
-                <p
-                  className={cn(
-                    "truncate text-sm font-semibold",
-                    suggestion.preferredSupplierName.startsWith("Sin ")
-                      ? "text-[var(--color-text-muted)]"
-                      : "text-[var(--color-title)]",
-                  )}
-                >
-                  {suggestion.preferredSupplierName}
-                </p>
-              </div>
-              <div className="flex justify-start sm:justify-end">
-                <Button
-                  className="min-h-9 px-3 py-1.5"
-                  onClick={() => onCreateOrder(suggestion)}
-                  type="button"
-                  variant="secondary"
-                >
-                  Crear orden
-                </Button>
-              </div>
-            </article>
-          ))
-        )}
+          {suggestions.length === 0 ? (
+            <p className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-4 py-3 text-sm font-medium text-[var(--color-text-muted)]">
+              Sin sugerencias de reposicion por ahora.
+            </p>
+          ) : (
+            suggestions.map((suggestion) => (
+              <article
+                className="grid gap-2 rounded-md border border-[var(--color-border)] px-3 py-2 sm:grid-cols-[minmax(0,1.6fr)_80px_80px_90px_90px_minmax(120px,0.9fr)_auto] sm:items-center"
+                key={suggestion.id}
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-bold text-[var(--color-title)]">
+                    {suggestion.productName}
+                  </p>
+                  <p className="text-xs text-[var(--color-text-muted)]">{suggestion.sku}</p>
+                </div>
+                <SmallMetric label="Stock" value={formatNumber(suggestion.currentStock)} />
+                <SmallMetric label="Minimo" value={formatNumber(suggestion.minStock)} />
+                <SmallMetric label="Sugerido" value={formatNumber(suggestion.suggestedQuantity)} />
+                <SmallMetric label="Faltante" value={formatNumber(suggestion.shortage)} />
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold uppercase text-[var(--color-text-muted)]">
+                    Proveedor
+                  </p>
+                  <p
+                    className={cn(
+                      "truncate text-sm font-semibold",
+                      suggestion.preferredSupplierName.startsWith("Sin ")
+                        ? "text-[var(--color-text-muted)]"
+                        : "text-[var(--color-title)]",
+                    )}
+                  >
+                    {suggestion.preferredSupplierName}
+                  </p>
+                </div>
+                <div className="flex justify-start sm:justify-end">
+                  <Button
+                    className="min-h-9 px-3 py-1.5"
+                    onClick={() => onCreateOrder(suggestion)}
+                    type="button"
+                    variant="secondary"
+                  >
+                    Crear orden
+                  </Button>
+                </div>
+              </article>
+            ))
+          )}
         </div>
       ) : null}
     </section>
@@ -564,7 +558,9 @@ function PurchaseOrdersTable({
 
 function ReceptionProgress({ reception }: { reception: PurchaseOrderRowReadModel["reception"] }) {
   if (reception.percentage <= 0) {
-    return <p className="text-xs font-semibold text-[var(--color-text-muted)]">{reception.label}</p>;
+    return (
+      <p className="text-xs font-semibold text-[var(--color-text-muted)]">{reception.label}</p>
+    );
   }
 
   return (
@@ -683,35 +679,37 @@ function RowActions({
       </button>
       {open && typeof document !== "undefined"
         ? createPortal(
-        <div
-          ref={menuRef}
-          className="fixed z-50 overflow-hidden rounded-md border border-[var(--color-border)] bg-white py-1 text-left shadow-lg"
-          role="menu"
-          style={menuStyle}
-        >
-          {order.actions.map((action) => (
-            <button
-              className={cn(
-                "flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold transition hover:bg-[var(--color-app-background)]",
-                action.id === "cancel" ? "text-[var(--color-danger)]" : "text-[var(--color-title)]",
-                !action.enabled && "text-[var(--color-text-muted)]",
-              )}
-              key={action.id}
-              onClick={(event) => {
-                event.stopPropagation();
-                onOpenChange(false);
-                onAction(order, action);
-              }}
-              role="menuitem"
-              type="button"
+            <div
+              ref={menuRef}
+              className="fixed z-50 overflow-hidden rounded-md border border-[var(--color-border)] bg-white py-1 text-left shadow-lg"
+              role="menu"
+              style={menuStyle}
             >
-              {getActionIcon(action.id)}
-              {action.label}
-            </button>
-          ))}
-        </div>,
-          document.body,
-        )
+              {order.actions.map((action) => (
+                <button
+                  className={cn(
+                    "flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold transition hover:bg-[var(--color-app-background)]",
+                    action.id === "cancel"
+                      ? "text-[var(--color-danger)]"
+                      : "text-[var(--color-title)]",
+                    !action.enabled && "text-[var(--color-text-muted)]",
+                  )}
+                  key={action.id}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpenChange(false);
+                    onAction(order, action);
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  {getActionIcon(action.id)}
+                  {action.label}
+                </button>
+              ))}
+            </div>,
+            document.body,
+          )
         : null}
     </div>
   );
@@ -820,7 +818,12 @@ function PurchaseOrderDrawer({
         </div>
         <footer className="flex flex-col gap-2 border-t border-[var(--color-border)] bg-white p-4 sm:flex-row sm:flex-wrap">
           {order.actions.length === 0 ? (
-            <Button className="w-full sm:w-auto" onClick={onClose} type="button" variant="secondary">
+            <Button
+              className="w-full sm:w-auto"
+              onClick={onClose}
+              type="button"
+              variant="secondary"
+            >
               Cerrar
             </Button>
           ) : (

@@ -187,12 +187,10 @@ export function ReceivingPage() {
         />
       )}
 
-      {selectedDocument ? (
-        <SelectedDocumentPanel
-          document={selectedDocument}
-          onClose={() => setSelectedDocumentId(null)}
-        />
-      ) : null}
+      <SelectedDocumentModal
+        document={selectedDocument}
+        onClose={() => setSelectedDocumentId(null)}
+      />
 
       {selectedIncident ? (
         <SelectedIncidentPanel
@@ -372,61 +370,77 @@ function ReceivingDocumentsTable({
   );
 }
 
-function SelectedDocumentPanel({
+function SelectedDocumentModal({
   document,
   onClose,
 }: {
-  document: ReceivingDocumentRow;
+  document: ReceivingDocumentRow | null;
   onClose: () => void;
 }) {
   return (
-    <section className="rounded-lg border border-[var(--color-border)] bg-white p-3 shadow-sm sm:p-4">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
-              {document.documentType === "purchase_order" ? "Orden" : "Traslado"}
-            </p>
-            <ReceivingStatusBadge status={document.status} />
+    <Modal
+      open={Boolean(document)}
+      title={document?.documentNumber ?? "Detalle de recepcion"}
+      subtitle={
+        document ? `${document.documentTypeLabel} · ${document.supplierOrSource}` : undefined
+      }
+      onClose={onClose}
+      footer={
+        document ? (
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button className="w-full sm:w-auto" onClick={onClose} type="button" variant="ghost">
+              <XIcon />
+              Cerrar
+            </Button>
+            <Button
+              className="w-full sm:w-auto"
+              href={getReceivingDocumentHref(document)}
+              type="button"
+            >
+              {document.status === "received" ? <EyeIcon /> : <PackageIcon />}
+              {getPreparedActionLabel(document.status)}
+            </Button>
           </div>
-          <h2 className="mt-1 text-lg font-bold text-[var(--color-title)]">
-            {document.documentNumber}
-          </h2>
-          <p className="mt-1 text-sm font-semibold text-[var(--color-text)]">
-            {document.supplierOrSource}
-          </p>
+        ) : undefined
+      }
+      size="lg"
+    >
+      {document ? (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <ReceivingStatusBadge status={document.status} />
+            <span className="text-sm font-semibold text-[var(--color-text-muted)]">
+              {document.documentTypeLabel}
+            </span>
+          </div>
+          <dl className="grid gap-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-4 sm:grid-cols-2 lg:grid-cols-3">
+            <DetailItem
+              label={document.documentType === "purchase_order" ? "Proveedor" : "Sucursal origen"}
+              value={document.supplierOrSource}
+            />
+            <DetailItem label="Estado" value={document.statusLabel} />
+            <DetailItem label="Productos" value={formatNumber(document.productCount)} />
+            <DetailItem label="Solicitado" value={formatNumber(document.requestedQuantity)} />
+            <DetailItem label="Aceptado" value={formatNumber(document.receivedQuantity)} />
+            <DetailItem
+              label="Pendiente"
+              value={formatNumber(
+                Math.max(0, document.requestedQuantity - document.receivedQuantity),
+              )}
+            />
+            <DetailItem
+              label="Progreso"
+              value={`${formatNumber(document.receivedQuantity)} / ${formatNumber(document.requestedQuantity)}`}
+            />
+            <DetailItem
+              label="Fecha esperada"
+              value={document.expectedDate ? formatDate(document.expectedDate) : "-"}
+            />
+            <DetailItem label="Ultima actualizacion" value={formatDate(document.lastUpdatedAt)} />
+          </dl>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            className="min-h-9 px-3 py-1.5"
-            href={getReceivingDocumentHref(document)}
-            type="button"
-            variant="secondary"
-          >
-            {document.status === "received" ? <EyeIcon /> : <PackageIcon />}
-            {getPreparedActionLabel(document.status)}
-          </Button>
-          <Button className="min-h-9 px-3 py-1.5" onClick={onClose} type="button" variant="ghost">
-            <XIcon />
-            Cerrar
-          </Button>
-        </div>
-      </div>
-      <dl className="mt-4 grid gap-3 border-t border-[var(--color-border)] pt-4 sm:grid-cols-4">
-        <DetailItem label="Estado" value={document.statusLabel} />
-        <DetailItem
-          label="Progreso"
-          value={`${formatNumber(document.receivedQuantity)} / ${formatNumber(
-            document.requestedQuantity,
-          )}`}
-        />
-        <DetailItem label="Productos" value={formatNumber(document.productCount)} />
-        <DetailItem
-          label="Fecha esperada"
-          value={document.expectedDate ? formatDate(document.expectedDate) : "-"}
-        />
-      </dl>
-    </section>
+      ) : null}
+    </Modal>
   );
 }
 

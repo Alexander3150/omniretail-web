@@ -54,6 +54,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
     null,
   );
   const [previewEvidence, setPreviewEvidence] = useState<ReceiptIncidentEvidence | null>(null);
+  const [historyExpanded, setHistoryExpanded] = useState(true);
   const selectedIncident = incidents.find((incident) => incident.id === selectedIncidentId);
   const selectedPreviousReceipt = detail?.previousReceipts.find(
     (receipt) => receipt.id === selectedPreviousReceiptId,
@@ -163,12 +164,14 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
       {detail.previousReceipts.length > 0 ? (
         <PreviousReceiptsSection
           documentNumber={detail.document.number}
+          expanded={historyExpanded}
           receipts={detail.previousReceipts}
           onSelect={(receipt) => setSelectedPreviousReceiptId(receipt.id)}
+          onToggle={() => setHistoryExpanded((current) => !current)}
         />
       ) : null}
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start 2xl:grid-cols-[minmax(0,1fr)_420px]">
         <main className="min-w-0 space-y-5">
           <section className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-white shadow-sm">
             <div className="flex flex-col gap-3 border-b border-[var(--color-border)] p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -218,34 +221,40 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
           />
         </main>
 
-        <aside className="space-y-4 xl:sticky xl:top-4">
-          <section className="rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm">
-            <h2 className="text-base font-bold text-[var(--color-title)]">Resumen</h2>
-            <div className="mt-4 space-y-3">
-              <SummaryItem label="Pedido total" value={formatNumber(summary.ordered)} />
-              <SummaryItem
-                label="Aceptado previamente"
-                value={formatNumber(summary.acceptedPreviously)}
-              />
-              <SummaryItem label="Aceptado ahora" value={formatNumber(summary.acceptedNow)} />
-              <SummaryItem label="Con incidencia ahora" value={formatNumber(summary.incidentNow)} />
-              <SummaryItem
-                label="Aceptado acumulado"
-                value={formatNumber(summary.acceptedAccumulated)}
-              />
-              <SummaryItem label="Pendiente despues" value={formatNumber(summary.pendingAfter)} />
-            </div>
-            <div className="mt-4 rounded-md border border-blue-100 bg-blue-50 p-3">
-              <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">
-                Entrada inventario
-              </p>
-              <p className="mt-1 text-xl font-bold text-[var(--color-title)]">
-                {formatNumber(summary.inventoryEntry)}
-              </p>
-              <p className="text-xs font-semibold text-[var(--color-text-muted)]">unidades base</p>
-            </div>
-          </section>
-          {incidentEditorOpen && !readOnly ? (
+        <aside className="min-w-0 xl:sticky xl:top-20">
+          {!incidentEditorOpen || readOnly ? (
+            <section className="rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm">
+              <h2 className="text-base font-bold text-[var(--color-title)]">Resumen</h2>
+              <div className="mt-4 space-y-3">
+                <SummaryItem label="Pedido total" value={formatNumber(summary.ordered)} />
+                <SummaryItem
+                  label="Aceptado previamente"
+                  value={formatNumber(summary.acceptedPreviously)}
+                />
+                <SummaryItem label="Aceptado ahora" value={formatNumber(summary.acceptedNow)} />
+                <SummaryItem
+                  label="Con incidencia ahora"
+                  value={formatNumber(summary.incidentNow)}
+                />
+                <SummaryItem
+                  label="Aceptado acumulado"
+                  value={formatNumber(summary.acceptedAccumulated)}
+                />
+                <SummaryItem label="Pendiente despues" value={formatNumber(summary.pendingAfter)} />
+              </div>
+              <div className="mt-4 rounded-md border border-blue-100 bg-blue-50 p-3">
+                <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">
+                  Entrada inventario
+                </p>
+                <p className="mt-1 text-xl font-bold text-[var(--color-title)]">
+                  {formatNumber(summary.inventoryEntry)}
+                </p>
+                <p className="text-xs font-semibold text-[var(--color-text-muted)]">
+                  unidades base
+                </p>
+              </div>
+            </section>
+          ) : (
             <IncidentForm
               key={selectedIncident?.id ?? "new-incident"}
               detail={detail}
@@ -270,7 +279,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
                 setSelectedIncidentId(null);
               }}
             />
-          ) : null}
+          )}
         </aside>
       </div>
 
@@ -598,12 +607,13 @@ function IncidentForm({
           <p className="text-xs font-semibold opacity-80">{detail.document.number}</p>
         </div>
         <button
-          aria-label="Cerrar formulario de incidencia"
-          className="rounded-md p-2 hover:bg-white/10"
+          aria-label="Volver al resumen"
+          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-bold hover:bg-white/10"
           onClick={onCancel}
           type="button"
         >
-          <XIcon />
+          <ArrowLeftIcon />
+          Resumen
         </button>
       </div>
       <div className="space-y-3 p-4">
@@ -670,24 +680,24 @@ function IncidentForm({
             {evidence.length} {evidence.length === 1 ? "evidencia" : "evidencias"}
           </p>
           {evidence.length > 0 ? (
-            <div className="mt-2 space-y-2">
+            <div className="mt-2 grid grid-cols-2 gap-2">
               {evidence.map((item) => (
                 <div
-                  className="flex items-center gap-3 rounded-md border border-[var(--color-border)] p-2"
+                  className="relative min-w-0 overflow-hidden rounded-md border border-[var(--color-border)] bg-white"
                   key={item.id}
                 >
                   {item.previewUrl ? (
-                    <button onClick={() => onPreview(item)} type="button">
+                    <button className="block w-full" onClick={() => onPreview(item)} type="button">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         alt={item.name}
-                        className="h-12 w-12 rounded-md object-cover"
+                        className="aspect-[4/3] w-full object-cover"
                         src={item.previewUrl}
                       />
                     </button>
                   ) : null}
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-[var(--color-title)]">
+                  <div className="min-w-0 p-2 pr-9">
+                    <p className="truncate text-xs font-semibold text-[var(--color-title)]">
                       {item.name}
                     </p>
                     <p className="text-xs text-[var(--color-text-muted)]">
@@ -696,7 +706,7 @@ function IncidentForm({
                   </div>
                   <button
                     aria-label={`Quitar ${item.name}`}
-                    className="rounded-md p-2 text-[var(--color-danger)] hover:bg-red-50"
+                    className="absolute bottom-1 right-1 rounded-md bg-white p-1.5 text-[var(--color-danger)] shadow-sm hover:bg-red-50"
                     onClick={() =>
                       setEvidence((current) => current.filter((file) => file.id !== item.id))
                     }
@@ -749,12 +759,18 @@ function IncidentsSection({
           Todavia no hay incidencias registradas.
         </p>
       ) : (
-        <div className="mt-3 space-y-2">
+        <div
+          className={cn(
+            "mt-3 grid gap-3",
+            incidents.length >= 2 && "md:grid-cols-2",
+            incidents.length >= 3 && "xl:grid-cols-3",
+          )}
+        >
           {incidents.map((incident) => (
             <button
               aria-pressed={incident.id === selectedIncidentId}
               className={cn(
-                "w-full rounded-md border p-3 text-left transition",
+                "h-full w-full rounded-md border p-3 text-left transition",
                 incident.id === selectedIncidentId
                   ? "border-[var(--color-primary)] bg-blue-50 ring-2 ring-[var(--color-primary)]/20"
                   : "border-[var(--color-border)] bg-white",
@@ -766,14 +782,14 @@ function IncidentsSection({
               onClick={() => onSelect(incident)}
               type="button"
             >
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="font-bold text-[var(--color-title)]">{incident.productName}</p>
                   <p className="text-sm font-semibold text-[var(--color-text)]">
                     {incident.incidentTypeName}
                   </p>
                 </div>
-                <span className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-muted)]">
+                <span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-[var(--color-text-muted)]">
                   {incident.editable ? <PencilIcon /> : null}
                   {formatDate(incident.createdAt)}
                 </span>
@@ -794,58 +810,80 @@ function IncidentsSection({
 
 function PreviousReceiptsSection({
   documentNumber,
+  expanded,
   receipts,
   onSelect,
+  onToggle,
 }: {
   documentNumber: string;
+  expanded: boolean;
   receipts: ReceivingPreviousReceipt[];
   onSelect: (receipt: ReceivingPreviousReceipt) => void;
+  onToggle: () => void;
 }) {
   return (
     <section className="rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm">
-      <h2 className="text-base font-bold text-[var(--color-title)]">
-        Historial de recepcion de {documentNumber}
-      </h2>
-      <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-        Confirmaciones anteriores asociadas a esta orden de compra.
-      </p>
-      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {receipts.map((receipt) => (
-          <article className="rounded-md border border-[var(--color-border)] p-3" key={receipt.id}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">
-                  {getReceiptSequenceLabel(receipt.sequenceNumber)}
-                </p>
-                <p className="font-bold text-[var(--color-title)]">{receipt.orderNumber}</p>
-                <p className="text-xs font-semibold text-[var(--color-text-muted)]">
-                  {receipt.number} · {formatDateTime(receipt.receivedAt)}
-                </p>
+      <button
+        aria-expanded={expanded}
+        className="flex w-full items-center justify-between gap-4 rounded-md text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-structure)]"
+        onClick={onToggle}
+        type="button"
+      >
+        <span>
+          <span className="block text-base font-bold text-[var(--color-title)]">
+            Historial de recepcion de {documentNumber}
+          </span>
+          <span className="mt-1 block text-sm text-[var(--color-text-muted)]">
+            Confirmaciones anteriores asociadas a esta orden de compra.
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2 text-sm font-bold text-[var(--color-title)]">
+          {receipts.length} {receipts.length === 1 ? "recepcion" : "recepciones"}
+          <ChevronIcon className={cn("transition-transform", expanded && "rotate-180")} />
+        </span>
+      </button>
+      {expanded ? (
+        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {receipts.map((receipt) => (
+            <article
+              className="rounded-md border border-[var(--color-border)] p-3"
+              key={receipt.id}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">
+                    {getReceiptSequenceLabel(receipt.sequenceNumber)}
+                  </p>
+                  <p className="font-bold text-[var(--color-title)]">{receipt.orderNumber}</p>
+                  <p className="text-xs font-semibold text-[var(--color-text-muted)]">
+                    {receipt.number} · {formatDateTime(receipt.receivedAt)}
+                  </p>
+                </div>
+                <Button
+                  className="min-h-8 px-2 py-1"
+                  onClick={() => onSelect(receipt)}
+                  type="button"
+                  variant="ghost"
+                >
+                  <EyeIcon />
+                  Ver detalle
+                </Button>
               </div>
-              <Button
-                className="min-h-8 px-2 py-1"
-                onClick={() => onSelect(receipt)}
-                type="button"
-                variant="ghost"
-              >
-                <EyeIcon />
-                Ver detalle
-              </Button>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[var(--color-text)]">
-              <span>{receipt.responsibleName}</span>
-              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-[var(--color-title)]">
-                {receipt.statusLabel}
-              </span>
-            </div>
-            <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
-              <DetailItem label="Aceptadas" value={formatNumber(receipt.acceptedQuantity)} />
-              <DetailItem label="Incidencias" value={formatNumber(receipt.incidentQuantity)} />
-              <DetailItem label="Pendiente despues" value={formatNumber(receipt.pendingAfter)} />
-            </dl>
-          </article>
-        ))}
-      </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[var(--color-text)]">
+                <span>{receipt.responsibleName}</span>
+                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-[var(--color-title)]">
+                  {receipt.statusLabel}
+                </span>
+              </div>
+              <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
+                <DetailItem label="Aceptadas" value={formatNumber(receipt.acceptedQuantity)} />
+                <DetailItem label="Incidencias" value={formatNumber(receipt.incidentQuantity)} />
+                <DetailItem label="Pendiente despues" value={formatNumber(receipt.pendingAfter)} />
+              </dl>
+            </article>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -1298,6 +1336,14 @@ function EyeIcon(props: SVGProps<SVGSVGElement>) {
     <Icon {...props}>
       <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
       <circle cx="12" cy="12" r="3" />
+    </Icon>
+  );
+}
+
+function ChevronIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="m6 9 6 6 6-6" />
     </Icon>
   );
 }
