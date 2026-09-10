@@ -73,6 +73,18 @@ export const GENERIC_RECOVERY_MESSAGE =
   "Si existe una cuenta asociada, recibirás instrucciones.";
 
 /**
+ * Doc section 4.10: customer email verification token expires in 30
+ * minutes. This is intentionally a separate constant from
+ * `authPolicy.emailVerificationTokenHours` below (24h) — that one matches
+ * the doc's *employee invitation* token (section 4.4/4.10), a different
+ * flow not implemented yet (planned for the employee-activation PR). Do
+ * not reuse `emailVerificationTokenHours` for customer email verification;
+ * when the employee invitation flow is built, that PR should decide
+ * whether to rename/reuse it for clarity.
+ */
+export const EMAIL_VERIFICATION_TOKEN_MINUTES = 30;
+
+/**
  * Legacy flat policy, consumed today by MockAuthRepository.
  *
  * maxLoginAttempts and lockDurationMinutes are NOT independent values
