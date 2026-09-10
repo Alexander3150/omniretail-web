@@ -51,13 +51,17 @@ Implementado en esta rama:
 - Enforcement de lectura en `GetBranchesService`: acepta `admin.branches.read` o
   `admin.branches.manage`. Las mutaciones exigen `admin.branches.manage` dentro del service.
 - La UI distingue sin acceso, solo lectura y gestion completa según esos permisos.
+- Navegacion y services comparten semantica: como `NavigationItem.permission` es un unico string y
+  no hay mecanismo de "cualquiera de estos permisos", la entrada del menu se protege con
+  `admin.branches.manage` (el permiso que tiene la audiencia real). El camino de solo lectura del
+  service queda como capa defensiva para un futuro rol read-only.
 - Auditoria obligatoria en alta, edicion y archivado mediante `AuditLogRepository`.
 - Validacion del dato recibido antes de normalizar codigo, nombre y campos opcionales.
 - Sincronizacion de la lista y del selector activo mediante el evento `branch.changed` que ya
   emite `MockBranchRepository`.
 - Tabla con `DataTable`, formulario en `Modal` y estados resueltos mediante `StatusBadge`.
 - Ruta privada `/administracion/sucursales` y entrada de navegacion con
-  `admin.branches.read`.
+  `admin.branches.manage`.
 
 El tipo de una sucursal existente permanece editable porque el contrato actual no define una
 restriccion adicional. Si inventario o usuarios asignados requieren bloquear ese cambio, debe
@@ -73,9 +77,10 @@ era `archived`.
 Lo que esta pantalla expone al resto del sistema:
 
 - Ruta privada `/administracion/sucursales` y un item de navegacion bajo "Administracion"
-  protegido por `admin.branches.read`.
+  protegido por `admin.branches.manage`.
 - Permisos `admin.branches.read` y `admin.branches.manage`, declarados en `permissions.ts` y
-  asignados a `role-admin` en el seed demo.
+  asignados a `role-admin` en el seed demo. Los services aceptan cualquiera de los dos para
+  lectura; la navegacion se protege con `manage` (ver "Sucursales" arriba).
 - Escrituras de auditoria con las acciones `branch.created`, `branch.updated` y `branch.archived`
   sobre `entityType: "Branch"`.
 - Reutiliza el evento `branch.changed` que ya emite `MockBranchRepository`; cualquier consumidor
@@ -91,6 +96,10 @@ Decisiones abiertas para la integracion con los demas modulos:
 
 - Alcance de `admin.branches.read` en otros roles: por ahora solo `role-admin`; depende de la
   matriz de roles que consensue el equipo.
+- Mecanismo canonico de navegacion multi-permiso: hoy `NavigationItem.permission` es un unico
+  string. Soportar "cualquiera de estos permisos" (para que un rol read-only vea el item con solo
+  `admin.branches.read`) es un cambio transversal en `src/shared` (tipo + `filterNavigationItemsByPermissions`)
+  que afecta a todos los modulos; queda fuera de esta pantalla.
 - Orden definitivo del item "Sucursales" dentro del grupo "Administracion" cuando aterricen las
   demas pantallas del modulo.
 - Bloquear el cambio de `type` de una sucursal con inventario o usuarios asignados: es una regla

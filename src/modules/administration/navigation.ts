@@ -11,7 +11,11 @@ export const administrationNavigation = [
         id: "administration-branches",
         label: "Sucursales",
         href: "/administracion/sucursales",
-        permission: "admin.branches.read",
+        // Navegacion y services comparten semantica: `NavigationItem.permission` es un unico
+        // string y no existe un mecanismo de "cualquiera de estos permisos", asi que la entrada
+        // se protege con `admin.branches.manage`, el permiso que tiene la audiencia real de la
+        // pantalla. Los services siguen aceptando ademas `admin.branches.read` de forma defensiva.
+        permission: "admin.branches.manage",
       },
       {
         id: "administration-business-config",
