@@ -22,6 +22,7 @@ import {
   PASSWORD_RESET_REQUEST_LIMIT,
   PASSWORD_RESET_TOKEN_MINUTES,
   getLockoutMinutesForOccurrence,
+  isPasswordRecoveryEligible,
   validatePasswordAgainstPolicy,
 } from "@/config/auth-policy";
 import { publicStorefrontSlug } from "@/config/publicStorefront";
@@ -451,6 +452,19 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       const candidates = [...customerCandidates, ...operationalCandidates];
 
       for (const { account, owner } of candidates) {
+        // Recovery y activation/verification son máquinas de estado
+        // SEPARADAS (ver PASSWORD_RECOVERY_ELIGIBLE_STATUSES) -- una
+        // cuenta password_reset_required (invitación de empleado sin
+        // activar, PR9) o pending_verification (registro de cliente sin
+        // verificar, PR8) NUNCA debe poder salir de ese estado via
+        // recovery, o recovery se convierte en un atajo que se salta
+        // activateEmployeeAccount()/verifyEmail() por completo. Se omite
+        // en silencio, igual que el rate limiting -- no hay señal
+        // distinguible hacia afuera (R-A19).
+        if (!isPasswordRecoveryEligible(account.status)) {
+          continue;
+        }
+
         const existingForAccount = db.passwordResetChallenges.filter(
           (c) => c.userId === account.userId,
         );
@@ -486,9 +500,16 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
           ).toISOString(),
         });
 
+        // password_reset_requested es una solicitud publica NO
+        // autenticada -- a diferencia de login_success/session_revoked
+        // (donde el propio dueño de la cuenta es, de hecho, el actor),
+        // acá quien envia el formulario no probo ser el dueño de nada
+        // todavia. Sin actorUserId a proposito (mismo criterio que
+        // employee_invited desde PR9): la cuenta objetivo ya queda
+        // identificada via accountId, sin inventar una identidad de
+        // actor que no existe.
         this.logAuthAudit(db, {
           tenantId: owner.tenantId,
-          actorUserId: account.userId,
           accountId: account.id,
           action: "password_reset_requested",
         });
@@ -517,6 +538,20 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       const account = db.authAccounts.find((item) => item.userId === challenge.userId);
       if (!account) throw new Error("Account not found");
 
+      // Recovery y activation/verification son máquinas de estado
+      // SEPARADAS (ver PASSWORD_RECOVERY_ELIGIBLE_STATUSES en
+      // auth-policy.ts). Aunque requestPasswordReset() ya filtra esto al
+      // emitir el challenge, se revalida aquí también -- mismo principio
+      // de "revalidar en cada paso, no solo al principio" que
+      // activateEmployeeAccount desde PR9 (el estado pudo cambiar entre
+      // la solicitud y el reset). Sin esto, resetPassword() podría
+      // completar la activación de un empleado invitado sin que pase
+      // por activateEmployeeAccount()/[/activar-cuenta/[token]] -- exactamente
+      // el bypass que este ajuste cierra.
+      if (!isPasswordRecoveryEligible(account.status)) {
+        throw new Error("Invalid reset token");
+      }
+
       // Mismo criterio que activateEmployeeAccount desde PR9: nunca un
       // fallback como "tenant-demo" si el User ya no existe -- se
       // rechaza, sin consumir el challenge ni tocar la cuenta. El caso
@@ -543,14 +578,15 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       account.passwordChangedAt = nowIso;
       account.updatedAt = nowIso;
 
-      // R-A24: completing a reset always lifts a temporary lockout or a
-      // forced password_reset_required state back to active, resetting the
-      // failed-attempt counters — but a disabled/archived account is never
-      // re-enabled this way (R-A25): the password changes, access doesn't.
-      if (
-        account.status === AccountStatus.temporarily_locked ||
-        account.status === AccountStatus.password_reset_required
-      ) {
+      // R-A24: completing a reset always lifts a temporary lockout back
+      // to active, resetting the failed-attempt counters. password_reset_required
+      // is deliberately NOT handled here anymore -- isPasswordRecoveryEligible
+      // above already rejected it before this point, so if we got here the
+      // only non-active eligible status left is temporarily_locked.
+      // disabled/archived were never eligible either way (R-A25: the
+      // password changes, access doesn't -- and now recovery can't even
+      // reach a disabled/archived account to begin with).
+      if (account.status === AccountStatus.temporarily_locked) {
         account.status = AccountStatus.active;
         account.failedLoginAttempts = 0;
         account.lockedUntil = undefined;

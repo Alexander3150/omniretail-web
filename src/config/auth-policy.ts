@@ -14,6 +14,8 @@
  * MIN 8 / MAX 24.
  */
 
+import { AccountStatus } from "@/core/enums";
+
 export const PASSWORD_POLICY = {
   MIN_LENGTH: 8,
   MAX_LENGTH: 24,
@@ -155,6 +157,45 @@ export const PASSWORD_RESET_TOKEN_MINUTES = 15;
  */
 export const PASSWORD_RESET_REQUEST_LIMIT = 3;
 export const PASSWORD_RESET_COOLDOWN_MINUTES = 30;
+
+/**
+ * Qué AccountStatus puede pasar por password recovery. Recovery y
+ * activation/verification son máquinas de estado SEPARADAS -- recovery
+ * nunca debe ser una puerta trasera para completar la otra:
+ *
+ * - active: el caso normal, "olvidé mi contraseña".
+ * - temporarily_locked: doc 4.9 lo dice explícitamente ("puede usar el
+ *   flujo de recuperación durante el bloqueo") y R-A24 ("al completar el
+ *   reset se desbloquea una cuenta temporarily_locked") -- restablecer
+ *   la contraseña es precisamente cómo se sale de este estado.
+ *
+ * Deliberadamente NO elegibles:
+ * - password_reset_required: es el estado de una invitación de empleado
+ *   sin activar (PR9) -- la única puerta de salida es
+ *   activateEmployeeAccount()/[/activar-cuenta/[token]]. Si recovery
+ *   también sacara de este estado, un empleado invitado podría saltarse
+ *   por completo la activación (nunca "acepta" la invitación) con el
+ *   mismo resultado final (cuenta active) -- dos máquinas de estado
+ *   colapsando en una sin que ninguna lo decida explícitamente.
+ * - pending_verification: análogo para el cliente que registró una
+ *   cuenta pero no verificó su correo (PR8) -- la salida es
+ *   verifyEmail()/[/verificar-correo/[token]], no recovery.
+ * - disabled/archived: doc R-A18 ("cuentas disabled o archived no se
+ *   reactivan con un login o reset; requieren una acción
+ *   administrativa"). resetPassword() ya respeta esto para el status
+ *   final de la cuenta (R-A25), pero antes de PR10-ronda2 SÍ generaba
+ *   challenge y cambiaba la contraseña para estas cuentas -- ahora ni
+ *   siquiera eso: si no está en este set, no hay challenge ni cambio de
+ *   password posible via recovery.
+ */
+export const PASSWORD_RECOVERY_ELIGIBLE_STATUSES: readonly AccountStatus[] = [
+  AccountStatus.active,
+  AccountStatus.temporarily_locked,
+];
+
+export function isPasswordRecoveryEligible(status: AccountStatus): boolean {
+  return PASSWORD_RECOVERY_ELIGIBLE_STATUSES.includes(status);
+}
 
 /**
  * Legacy flat policy, consumed today by MockAuthRepository.
