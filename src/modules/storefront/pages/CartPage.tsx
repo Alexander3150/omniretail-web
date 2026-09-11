@@ -86,9 +86,13 @@ export function CartPage() {
           <h2 className="text-xl font-bold text-[var(--color-text)]">Subtotal</h2>
           <p className="text-2xl font-bold text-[var(--color-title)]">Q{subtotal.toFixed(2)}</p>
         </div>
-        <p className="mt-3 text-sm text-[var(--color-text-muted)]">
-          El checkout estará disponible en el siguiente módulo.
-        </p>
+        <p className="mt-3 text-sm text-[var(--color-text-muted)]">Envío a domicilio gratis.</p>
+        <Link
+          className="mt-5 inline-block rounded-md bg-[var(--color-primary)] px-4 py-2 font-semibold text-[var(--color-topbar)]"
+          href="/checkout"
+        >
+          Continuar al checkout
+        </Link>
       </section>
     </main>
   );
