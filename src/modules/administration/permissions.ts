@@ -61,4 +61,10 @@ export const administrationPermissions = [
     name: "Gestionar cuentas bancarias",
     description: "Permite administrar cuentas bancarias simuladas.",
   },
+  {
+    key: "admin.audit.read",
+    module: "administration",
+    name: "Leer auditoría",
+    description: "Permite consultar el registro de auditoría.",
+  },
 ] satisfies PermissionDefinition[];

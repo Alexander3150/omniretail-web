@@ -198,9 +198,10 @@ export const demoSeedDatabase: MockDatabase = {
       permissions: [
         "admin.users.manage",
         "admin.roles.manage",
+        "admin.business_config.manage",
+        "admin.audit.read",
         "admin.branches.read",
         "admin.branches.manage",
-        "admin.business_config.manage",
         "admin.bank_accounts.manage",
         "admin.suppliers.manage",
       ],

@@ -24,6 +24,12 @@ export const administrationNavigation = [
         permission: BUSINESS_CONFIG_MANAGE_PERMISSION,
       },
       {
+        id: "administration-audit",
+        label: "Auditoría",
+        href: "/administracion/auditoria",
+        permission: "admin.audit.read",
+      },
+      {
         id: "administration-bank-accounts",
         label: "Cuentas bancarias",
         href: "/administracion/cuentas-bancarias",
