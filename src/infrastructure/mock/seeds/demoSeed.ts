@@ -202,6 +202,7 @@ export const demoSeedDatabase: MockDatabase = {
         "admin.branches.manage",
         "admin.business_config.manage",
         "admin.bank_accounts.manage",
+        "admin.suppliers.manage",
       ],
       branchScope: "all",
       createdAt: now,

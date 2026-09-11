@@ -51,6 +51,9 @@ export function useProductQuickView(productId: string | null) {
     if (productId && (!payload.productId || payload.productId === productId)) reload();
   });
   useDataEvent("supplier.changed", reload);
+  useDataEvent("supplier-product.changed", (payload) => {
+    if (productId && (!payload.productId || payload.productId === productId)) reload();
+  });
   useDataEvent("promotion.changed", reload);
 
   const currentData = data?.product.id === productId ? data : null;
