@@ -1,5 +1,5 @@
 import { AccountStatus, CustomerStatus, TenantStatus, UserStatus, UserType } from "@/core/enums";
-import type { Customer } from "@/core/entities";
+import type { AuthAccount, Customer } from "@/core/entities";
 import type { AuthRepository } from "@/core/repositories";
 import {
   authPolicy,
@@ -35,37 +35,66 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     const windowMs = FAILED_ATTEMPTS_WINDOW_MINUTES * 60 * 1000;
     const lockoutLookbackMs = LOCKOUT_ESCALATION_LOOKBACK_HOURS * 60 * 60 * 1000;
     const escalationResetMs = LOCKOUT_RESET_AFTER_MINUTES * 60 * 1000;
+    const expectedHash = buildPasswordHashMock(input.passwordMock);
 
     const outcome = this.store.mutate((db) => {
-      // Resolucion en dos pasos (ver doc completo en AuthRepository.
-      // LoginInput.tenantId) -- el UNICO formulario de login, compartido
-      // por Customer y Employee/Admin, no puede atar el acceso
-      // operacional a cual storefront publico este cargado:
-      //
-      // 1. Tenant-scoped: email unico POR TENANT desde R-A03 (AuthAccount
-      //    no guarda tenantId, se cruza via User). Resuelve Customer
-      //    correctamente y de paso cubre al empleado del mismo tenant.
-      // 2. Fallback SOLO Employee, sin restriccion de tenant: el login
-      //    operacional no depende del storefront publico actual. Nunca
-      //    matchea cuentas Customer -- un Customer jamas puede terminar
-      //    autenticado como la cuenta Employee de otro tenant salvo que
-      //    el sea, de hecho, esa cuenta (misma contraseña incluida).
-      const findAccount = (predicate: (owner: (typeof db.users)[number]) => boolean) =>
-        db.authAccounts.find((item) => {
-          if (item.email.toLowerCase() !== normalizedEmail) return false;
-          const owner = db.users.find((user) => user.id === item.userId);
-          return Boolean(owner) && predicate(owner!);
-        });
+      const ownerOf = (account: AuthAccount) => db.users.find((user) => user.id === account.userId);
+      const matchesEmail = (account: AuthAccount) => account.email.toLowerCase() === normalizedEmail;
 
-      const account =
-        (input.tenantId ? findAccount((owner) => owner.tenantId === input.tenantId) : undefined) ??
-        findAccount((owner) => owner.type === UserType.employee);
+      // Candidatos CUSTOMER: tenant-scoped al storefront actual (R-A03: email
+      // unico POR TENANT). Sin tenantId resuelto (storefront no disponible)
+      // no hay candidato Customer -- a diferencia de Employee/Admin, el
+      // login de Customer SI depende genuinamente de que el storefront
+      // publico se haya podido resolver.
+      const customerCandidates = input.tenantId
+        ? db.authAccounts.filter((account) => {
+            if (!matchesEmail(account)) return false;
+            const owner = ownerOf(account);
+            return owner?.type === UserType.customer && owner.tenantId === input.tenantId;
+          })
+        : [];
+
+      // Candidatos OPERATIONAL: Employee/Admin, SIN restriccion de tenant --
+      // el login operacional no depende de cual storefront publico este
+      // cargado en el navegador (ver doc completo en AuthRepository.
+      // LoginInput.tenantId).
+      const operationalCandidates = db.authAccounts.filter(
+        (account) => matchesEmail(account) && ownerOf(account)?.type === UserType.employee,
+      );
+
+      // expectedUserType NO se aplica aca: filtrar candidatos antes de
+      // resolver identidad cambiaria silenciosamente el resultado de una
+      // colision de email (una cuenta ya descartada por tipo no deberia
+      // poder "desambiguar" a las demas). Se valida mas abajo, junto al
+      // password, con la misma contabilidad de intento fallido/lockout.
+      const candidates = [...customerCandidates, ...operationalCandidates];
+
+      // Identidad resuelta por CONTEXTO + CREDENCIALES, nunca por "primer
+      // match": una cuenta encontrada primero (p.ej. un Customer del tenant
+      // actual) jamas debe opacar a otra cuenta valida (p.ej. un Employee de
+      // otro tenant) que comparta el mismo email. Con un unico candidato se
+      // evalua ese directamente (mismo comportamiento de siempre). Con
+      // varios (colision real de email entre cuentas independientes), solo
+      // se resuelve identidad si la contraseña identifica a UNA sola cuenta
+      // de forma inequivoca -- si ninguna coincide, o si dos cuentas
+      // independientes ademas comparten password mock, no hay forma segura
+      // de saber cual se intentaba autenticar: fallo generico, sin tocar el
+      // estado de ninguna candidata (no se puede castigar/premiar
+      // selectivamente a una cuenta cuando ni siquiera se sabe cual era el
+      // objetivo real del intento).
+      let account: AuthAccount | undefined;
+      if (candidates.length === 1) {
+        account = candidates[0];
+      } else if (candidates.length > 1) {
+        const passwordMatches = candidates.filter((item) => item.passwordHashMock === expectedHash);
+        account = passwordMatches.length === 1 ? passwordMatches[0] : undefined;
+      }
 
       if (!account) {
         return { ok: false as const };
       }
 
-      const user = db.users.find((item) => item.id === account.userId);
+      const user = ownerOf(account);
       const tenantId = user?.tenantId ?? "tenant-demo";
 
       // Auto-unlock if the lockout window already elapsed.
@@ -89,17 +118,14 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         return { ok: false as const };
       }
 
-      const expectedHash = buildPasswordHashMock(input.passwordMock);
       const passwordMatches = account.passwordHashMock === expectedHash;
       // Doc rule R-A13 (never reveal which credential/check failed) extends
       // to the account-kind check: a wrong password and a "right password,
-      // wrong tab" attempt (e.g. a customer's credentials used on the
-      // employee tab) must be completely indistinguishable from the
-      // outside — same generic error, same failed-attempt/lockout
+      // wrong expected kind" attempt must be completely indistinguishable
+      // from the outside — same generic error, same failed-attempt/lockout
       // accounting. Do NOT split this into a separate branch or message
       // later, even if it seems like better UX.
-      const accountKindMatches =
-        !input.expectedUserType || user?.type === input.expectedUserType;
+      const accountKindMatches = !input.expectedUserType || user?.type === input.expectedUserType;
 
       if (!passwordMatches || !accountKindMatches) {
         // A successful login always cuts the failure streak, regardless of

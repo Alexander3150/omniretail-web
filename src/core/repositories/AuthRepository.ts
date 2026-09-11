@@ -3,39 +3,40 @@ import type { UserType } from "@/core/enums";
 
 export interface LoginInput {
   /**
-   * Tenant "preferido" para resolver la cuenta -- el caller lo obtiene
-   * del mecanismo de tenant publico ya existente (usePublicTenant()),
-   * nunca de un campo que el usuario pueda declarar. Opcional porque
-   * NO todo login depende de el: ver la nota de resolucion en dos pasos
-   * mas abajo.
+   * Tenant "preferido" para resolver cuentas CUSTOMER -- el caller lo
+   * obtiene del mecanismo de tenant publico ya existente
+   * (usePublicTenant()), nunca de un campo que el usuario pueda declarar.
+   * Opcional porque el login operacional (Employee/Admin) no depende de
+   * el: ver la nota de resolucion por contexto+credenciales mas abajo.
    *
-   * RESOLUCION EN DOS PASOS (login() en MockAuthRepository), pensada
-   * para que el UNICO formulario de login compartido por Customer y
-   * Employee/Admin (desde que se unifico, sin tabs) no ate el acceso
-   * operacional al storefront publico que este abierto:
+   * RESOLUCION POR CONTEXTO + CREDENCIALES (login() en MockAuthRepository),
+   * pensada para que el UNICO formulario de login compartido por Customer
+   * y Employee/Admin (desde que se unifico, sin tabs) no ate el acceso
+   * operacional al storefront publico que este abierto, y para que una
+   * cuenta encontrada primero jamas oculte a otra cuenta valida que
+   * comparta el mismo email:
    *
-   * 1. Si se provee tenantId, se busca primero una AuthAccount con ese
-   *    email cuyo User.tenantId coincida exactamente. Esto es lo que
-   *    resuelve correctamente el caso Customer (email unico POR tenant
-   *    desde R-A03: el mismo email puede tener cuentas distintas en
-   *    tenants distintos) y tambien cubre gratis al empleado que
-   *    resulta pertenecer al MISMO tenant que el storefront actual.
-   * 2. Si el paso 1 no encuentra nada (tenantId ausente, storefront no
-   *    disponible, o el email no tiene cuenta en ESE tenant), se cae a
-   *    buscar el email entre cuentas cuyo User.type sea Employee,
-   *    SIN restriccion de tenant -- el login operacional no depende de
-   *    cual storefront publico este cargado en el navegador.
+   * 1. Se arma la lista de candidatos: cuentas CUSTOMER cuyo email
+   *    coincide Y cuyo User.tenantId sea exactamente este tenantId (email
+   *    unico POR tenant desde R-A03: el mismo email puede tener cuentas
+   *    Customer distintas en tenants distintos, y sin tenantId resuelto
+   *    no hay candidato Customer posible), mas TODAS las cuentas
+   *    Employee/Admin cuyo email coincide, SIN restriccion de tenant --
+   *    el login operacional no depende de cual storefront publico este
+   *    cargado en el navegador.
+   * 2. Con un unico candidato, se evalua ese directamente (caso comun).
+   *    Con varios (colision real de email entre cuentas independientes,
+   *    p.ej. un Customer de este tenant y un Employee de otro), la
+   *    contraseña ingresada identifica cual: solo se autentica si
+   *    exactamente UNA de las candidatas la tiene. Si ninguna coincide, o
+   *    si dos cuentas independientes ademas comparten password mock, no
+   *    hay forma segura de saber cual se intentaba autenticar -- fallo
+   *    generico (R-A13: nunca revela cual cuenta, cual tenant, ni que
+   *    hubo una colision), sin mutar el estado de ninguna candidata.
    *
-   * Tradeoff aceptado y documentado, no un descuido: un email que no
-   * tenga cuenta en el tenant actual pero coincida por casualidad con
-   * el de un Employee de OTRO tenant cae en el paso 2 -- ese intento
-   * solo tiene exito si ademas acierta la contraseña de esa cuenta
-   * (mismo orden de magnitud de riesgo que cualquier coincidencia de
-   * credenciales entre identidades independientes; R-A13 ya cubre esto
-   * con el mensaje generico, sin revelar cual cuenta -- o cual tenant --
-   * se evaluo). El paso 2 nunca matchea cuentas Customer, asi que un
-   * Customer jamas puede terminar autenticado como la cuenta Employee
-   * de otro tenant salvo que EL MISMO sea, de hecho, esa cuenta.
+   * Un Customer jamas puede terminar autenticado como la cuenta Employee
+   * de otro tenant (ni viceversa) salvo que acierte exactamente SU
+   * password, y sigue siendo su propia cuenta la que se autentica.
    */
   tenantId?: string;
   email: string;
