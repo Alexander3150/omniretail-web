@@ -15,9 +15,27 @@ export class MockSupplierProductRepository
     );
   }
 
+  async getByProductForTenant(tenantId: string, productId: string) {
+    return this.read((db) =>
+      db.supplierProducts
+        .filter(
+          (item) => item.productId === productId && item.tenantId === tenantId && item.active,
+        )
+        .sort((a, b) => Number(b.preferred) - Number(a.preferred)),
+    );
+  }
+
   async getBySupplier(supplierId: string) {
     return this.read((db) =>
       db.supplierProducts.filter((item) => item.supplierId === supplierId && item.active),
+    );
+  }
+
+  async getBySupplierForTenant(tenantId: string, supplierId: string) {
+    return this.read((db) =>
+      db.supplierProducts.filter(
+        (item) => item.supplierId === supplierId && item.tenantId === tenantId && item.active,
+      ),
     );
   }
 

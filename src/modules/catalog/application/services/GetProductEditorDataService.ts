@@ -12,10 +12,14 @@ import type {
 export class GetProductEditorDataService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async execute(productId?: string, branchId?: string): Promise<ProductEditorData> {
+  async execute(
+    tenantId: string,
+    productId?: string,
+    branchId?: string,
+  ): Promise<ProductEditorData> {
     const [attributeDefinitions, suppliers, branchLocations, allProducts] = await Promise.all([
       this.repositories.attributes.getDefinitions(),
-      this.repositories.suppliers.getActive(),
+      this.repositories.suppliers.getActiveByTenant(tenantId),
       branchId ? this.repositories.inventory.getLocations(branchId) : Promise.resolve([]),
       this.repositories.products.getAll(),
     ]);
@@ -74,7 +78,7 @@ export class GetProductEditorDataService {
       this.repositories.units.getConversionsByProduct(productId),
       this.repositories.attributes.getValuesByProduct(productId),
       this.repositories.productSalesPriceTiers.getByProduct(productId),
-      this.repositories.supplierProducts.getByProduct(productId),
+      this.repositories.supplierProducts.getByProductForTenant(tenantId, productId),
       this.repositories.productMedia.getByProduct(productId),
       this.repositories.promotions.getByProduct(productId),
       branchId

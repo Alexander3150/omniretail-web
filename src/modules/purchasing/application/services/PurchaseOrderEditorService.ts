@@ -15,8 +15,8 @@ import type {
 export class PurchaseOrderEditorService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async getActiveSuppliers(): Promise<PurchaseOrderEditorSupplier[]> {
-    const suppliers = await this.repositories.suppliers.getActive();
+  async getActiveSuppliers(tenantId: string): Promise<PurchaseOrderEditorSupplier[]> {
+    const suppliers = await this.repositories.suppliers.getActiveByTenant(tenantId);
     return suppliers
       .map((supplier) => ({
         id: supplier.id,
@@ -35,13 +35,17 @@ export class PurchaseOrderEditorService {
       .sort((left, right) => left.name.localeCompare(right.name));
   }
 
-  async getOrderForEdit(id: string, branchId?: string): Promise<PurchaseOrderEditorModel> {
+  async getOrderForEdit(
+    tenantId: string,
+    id: string,
+    branchId?: string,
+  ): Promise<PurchaseOrderEditorModel> {
     const order = await this.repositories.purchaseOrders.getById(id);
     if (!order) throw new Error("Orden de compra no encontrada.");
     if (order.status !== PurchaseOrderStatus.draft) {
       throw new Error("Solo las ordenes en borrador se pueden editar.");
     }
-    const availableProducts = await this.getAvailableProducts(order.supplierId, branchId);
+    const availableProducts = await this.getAvailableProducts(tenantId, order.supplierId, branchId);
     const availableByProductId = new Map(availableProducts.map((item) => [item.productId, item]));
 
     return {
@@ -58,12 +62,17 @@ export class PurchaseOrderEditorService {
   }
 
   async getAvailableProducts(
+    tenantId: string,
     supplierId: string,
     branchId?: string,
   ): Promise<PurchaseOrderAvailableProduct[]> {
     if (!supplierId) return [];
+    // El supplierId llega desde un dropdown en el cliente: no confiar en el valor sin verificar
+    // que el proveedor exista y pertenezca al tenant activo antes de exponer su catálogo.
+    const supplier = await this.repositories.suppliers.getById(supplierId);
+    if (!supplier || supplier.tenantId !== tenantId) return [];
     const [supplierProducts, products, units, categories] = await Promise.all([
-      this.repositories.supplierProducts.getBySupplier(supplierId),
+      this.repositories.supplierProducts.getBySupplierForTenant(tenantId, supplierId),
       this.repositories.products.getAll(),
       this.repositories.units.getAll(),
       this.repositories.categories.getAll(),
@@ -130,11 +139,15 @@ export class PurchaseOrderEditorService {
   }
 
   async resolvePrefillContext(
+    tenantId: string,
     context: PurchaseOrderPrefillContext,
   ): Promise<PurchaseOrderPrefillResolution | null> {
     if (!context.productId) return null;
     const product = await this.repositories.products.getById(context.productId);
-    if (!product) {
+    // El productId puede venir de un enlace externo (alerta de inventario, sugerencia de
+    // reposicion): un producto de otro tenant se trata igual que uno inexistente, nunca se usa
+    // product.tenantId para acotar la consulta siguiente.
+    if (!product || product.tenantId !== tenantId) {
       return {
         productId: context.productId,
         allowedSupplierIds: [],
@@ -145,15 +158,13 @@ export class PurchaseOrderEditorService {
     }
 
     const [supplierProducts, activeSuppliers] = await Promise.all([
-      this.repositories.supplierProducts.getByProduct(product.id),
-      this.repositories.suppliers.getActive(),
+      this.repositories.supplierProducts.getByProductForTenant(tenantId, product.id),
+      this.repositories.suppliers.getActiveByTenant(tenantId),
     ]);
     const activeSupplierById = new Map(activeSuppliers.map((supplier) => [supplier.id, supplier]));
     const associatedSupplierProducts = supplierProducts.filter(
       (supplierProduct) =>
-        supplierProduct.active &&
-        supplierProduct.tenantId === product.tenantId &&
-        activeSupplierById.has(supplierProduct.supplierId),
+        supplierProduct.active && activeSupplierById.has(supplierProduct.supplierId),
     );
     const allowedSupplierIds = associatedSupplierProducts.map(
       (supplierProduct) => supplierProduct.supplierId,
