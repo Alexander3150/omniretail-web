@@ -229,6 +229,10 @@ export const demoSeedDatabase: MockDatabase = {
       isSystem: true,
       permissions: [
         "pos.sales.create",
+        "pos.sales.read",
+        "pos.returns.read",
+        "pos.returns.create",
+        "pos.sales.void",
         "pos.cash.open",
         "pos.cash.close",
         "pos.cash.read",
@@ -1505,6 +1509,9 @@ export const demoSeedDatabase: MockDatabase = {
   ],
   cashMovements: [],
   returnRequests: [],
+  refundTransactions: [],
+  saleVoids: [],
+  creditNotes: [],
   pickingOrders: [
     {
       id: "picking-001",

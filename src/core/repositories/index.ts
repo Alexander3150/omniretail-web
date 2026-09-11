@@ -30,6 +30,7 @@ export type * from "./PaymentRepository";
 export type * from "./BankAccountRepository";
 export type * from "./SalesRepository";
 export type * from "./SaleConfirmationRepository";
+export type * from "./SaleReversalRepository";
 export type * from "./CashShiftRepository";
 export type * from "./CashMovementRepository";
 export type * from "./PickingRepository";

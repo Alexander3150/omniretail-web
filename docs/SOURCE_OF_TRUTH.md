@@ -119,6 +119,19 @@ Una Sale sin `sourceOrderId` conserva la salida directa de inventario. Una Sale 
 
 Metodos: cash, card, transfer, mixed. Transferencia simula validacion manual de comprobante. No existe modulo independiente `bank_validator` ni integracion bancaria real.
 
+Las devoluciones calculan la cantidad retornable como cantidad vendida menos cantidades de
+Return completados. El caller elige lineas y cantidades, pero no el refund ni el estado final.
+Devoluciones sucesivas terminan en `SaleStatus.returned` al agotar todas las lineas; no se
+representan como cancelacion. Una anulacion es una operacion total separada, solo para una Sale
+completada sin devoluciones previas y, en POS normal, dentro de su turno original aun abierto.
+
+Los refunds se distribuyen sobre los Payment concretos persistidos. Solo cash genera
+`CashMovement.out`; card y transfer son refunds mock sin movimiento de efectivo. Payment pasa a
+`refunded` unicamente al agotarse todo su importe. Para inventario se reutiliza la huella OUT de
+la Sale y se crea IN en la ubicacion historica. Servicios/no-stock no mueven inventario. Hasta que
+la venta conserve huella historica suficiente por linea, lote, serial y kit se bloquean de forma
+explicita. Cada operacion exitosa produce una nota de credito mock, no un documento fiscal real.
+
 ## Cash Shift
 
 Solo puede existir un `CashShift` abierto por `tenantId + userId + branchId`; un mismo usuario

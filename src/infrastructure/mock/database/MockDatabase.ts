@@ -51,6 +51,9 @@ import type {
   ReceiptLine,
   RecoveryCode,
   ReturnRequest,
+  RefundTransaction,
+  SaleVoid,
+  CreditNote,
   Role,
   Sale,
   SaleItem,
@@ -127,6 +130,9 @@ export interface MockDatabase {
   cashShifts: CashShift[];
   cashMovements: CashMovement[];
   returnRequests: ReturnRequest[];
+  refundTransactions: RefundTransaction[];
+  saleVoids: SaleVoid[];
+  creditNotes: CreditNote[];
   pickingOrders: PickingOrder[];
   pickingItems: PickingItem[];
   pickingItemUpdateOperations: PickingItemUpdateOperation[];
