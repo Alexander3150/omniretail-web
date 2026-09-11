@@ -15,6 +15,7 @@ import type {
   Dispatch,
   EcommerceConfig,
   EmailVerification,
+  EmployeeInvitation,
   IncidentType,
   InventoryBalance,
   InventoryAdjustment,
@@ -82,6 +83,7 @@ export interface MockDatabase {
   sessions: Session[];
   passwordResetChallenges: PasswordResetChallenge[];
   emailVerifications: EmailVerification[];
+  employeeInvitations: EmployeeInvitation[];
   mfaEnrollments: MfaEnrollment[];
   recoveryCodes: RecoveryCode[];
   products: Product[];
