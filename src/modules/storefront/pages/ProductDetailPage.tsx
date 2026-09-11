@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { StorefrontAvailability } from "@/modules/storefront/components/StorefrontAvailability";
 import { useStorefrontProductDetail } from "@/modules/storefront/hooks/useStorefrontProductDetail";
@@ -8,64 +9,8 @@ import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCart
 export function ProductDetailPage({ productId }: { productId: string }) {
   const { data, loading, error, reload } = useStorefrontProductDetail(productId);
   const { addProduct } = useStorefrontCart();
-
-  if (loading) {
-    return <main className="mx-auto max-w-4xl px-5 py-10">Cargando producto...</main>;
-  }
-
-  if (error || !data) {
-    return (
-      <main className="mx-auto max-w-4xl px-5 py-10">
-        <h1 className="text-3xl font-bold text-[var(--color-text)]">Producto</h1>
-        <p className="mt-4 text-[var(--color-text-muted)]">
-          {error ?? "El producto no está disponible."}
-        </p>
-        <div className="mt-5 flex gap-3">
-          <button
-            className="rounded-md bg-[var(--color-primary)] px-4 py-2 font-semibold text-[var(--color-topbar)]"
-            onClick={reload}
-            type="button"
-          >
-            Reintentar
-          </button>
-          <Link className="rounded-md border border-[var(--color-border)] px-4 py-2 font-semibold" href="/catalogo">
-            Volver al catálogo
-          </Link>
-        </div>
-      </main>
-    );
-  }
-
-  const { product, availability } = data;
-
-  return (
-    <main className="mx-auto max-w-4xl px-5 py-10">
-      <Link className="text-sm font-semibold text-[var(--color-primary)]" href="/catalogo">
-        ← Volver al catálogo
-      </Link>
-
-      <section className="mt-5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6">
-        <p className="text-sm text-[var(--color-text-muted)]">Código: {product.sku}</p>
-        <h1 className="mt-2 text-3xl font-bold text-[var(--color-text)]">{product.name}</h1>
-        {product.brand ? (
-          <p className="mt-2 text-sm text-[var(--color-text-muted)]">Marca: {product.brand}</p>
-        ) : null}
-        <p className="mt-5 text-[var(--color-text-muted)]">
-          {product.description ?? "Sin descripción disponible."}
-        </p>
-        <p className="mt-6 text-2xl font-bold text-[var(--color-title)]">
-          Q{product.salePrice.toFixed(2)}
-        </p>
-        <button
-          className="mt-6 rounded-md bg-[var(--color-primary)] px-4 py-2 font-semibold text-[var(--color-topbar)]"
-          onClick={() => void addProduct(product.id)}
-          type="button"
-        >
-          Agregar al carrito
-        </button>
-      </section>
-
-      {availability ? <StorefrontAvailability branches={availability} /> : null}
-    </main>
-  );
+  if (loading) return <main className="mx-auto max-w-4xl px-5 py-10">Cargando producto...</main>;
+  if (error || !data) return <main className="mx-auto max-w-4xl px-5 py-10"><h1 className="text-3xl font-bold text-[var(--color-text)]">Producto</h1><p className="mt-4 text-[var(--color-text-muted)]">{error ?? "El producto no está disponible."}</p><div className="mt-5 flex gap-3"><button className="rounded-md bg-[var(--color-primary)] px-4 py-2 font-semibold text-[var(--color-topbar)]" onClick={reload} type="button">Reintentar</button><Link className="rounded-md border border-[var(--color-border)] px-4 py-2 font-semibold" href="/catalogo">Volver al catálogo</Link></div></main>;
+  const { product, availability, categoryName, media, attributes } = data;
+  return <main className="mx-auto max-w-4xl px-5 py-10"><Link className="text-sm font-semibold text-[var(--color-primary)]" href="/catalogo">← Volver al catálogo</Link><section className="mt-5 grid gap-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 md:grid-cols-2"><div>{media[0] ? <Image alt={media[0].alt ?? product.name} className="h-72 w-full rounded-lg object-cover" height={288} src={media[0].url} width={512} /> : <div className="flex h-72 items-center justify-center rounded-lg bg-slate-100 text-sm text-[var(--color-text-muted)]">Sin imagen disponible</div>}</div><div>{categoryName ? <p className="text-sm font-semibold text-[var(--color-primary)]">{categoryName}</p> : null}<p className="mt-2 text-sm text-[var(--color-text-muted)]">Código: {product.sku}</p><h1 className="mt-2 text-3xl font-bold text-[var(--color-text)]">{product.name}</h1>{product.brand ? <p className="mt-2 text-sm text-[var(--color-text-muted)]">Marca: {product.brand}</p> : null}<p className="mt-5 text-[var(--color-text-muted)]">{product.description ?? "Sin descripción disponible."}</p><p className="mt-6 text-2xl font-bold text-[var(--color-title)]">Q{product.salePrice.toFixed(2)}</p><button className="mt-6 rounded-md bg-[var(--color-primary)] px-4 py-2 font-semibold text-[var(--color-topbar)]" onClick={() => void addProduct(product.id)} type="button">Agregar al carrito</button></div></section>{attributes.length > 0 ? <section className="mt-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6"><h2 className="text-xl font-bold text-[var(--color-text)]">Características</h2><dl className="mt-4 grid gap-3 sm:grid-cols-2">{attributes.map((attribute) => <div key={attribute.name} className="rounded-md bg-slate-50 p-3"><dt className="text-sm text-[var(--color-text-muted)]">{attribute.name}</dt><dd className="mt-1 font-semibold text-[var(--color-text)]">{attribute.value}</dd></div>)}</dl></section> : null}{availability ? <StorefrontAvailability branches={availability} /> : null}</main>;
 }
