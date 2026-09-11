@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, type FormEvent } from "react";
 import type { StorefrontCheckoutFormDto } from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
 import { useStorefrontCheckout } from "@/modules/storefront/hooks/useStorefrontCheckout";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
@@ -23,37 +24,23 @@ export function CheckoutPage() {
   const { items, subtotal } = useStorefrontCart();
   const { submitting, error, result, submit } = useStorefrontCheckout();
   const [form, setForm] = useState(initialForm);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (result) router.replace("/pedido/confirmacion");
+  }, [result, router]);
 
   if (result) {
-    const confirmationHref = new URLSearchParams({
-      pedido: result.orderNumber,
-      correo: result.confirmationEmailSent ? "simulado" : "",
-      ...(result.guestTrackingEnabled ? { token: result.trackingToken } : {}),
-    });
-
     return (
       <main className="mx-auto max-w-2xl px-5 py-10">
         <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6">
-          <p className="text-sm font-semibold text-[var(--color-success)]">Pedido simulado creado</p>
-          <h1 className="mt-2 text-3xl font-bold text-[var(--color-text)]">Gracias por tu compra</h1>
-          <p className="mt-4 text-[var(--color-text-muted)]">
-            Pedido {result.orderNumber}. El pago con tarjeta quedó pendiente de confirmación simulada.
+          <p className="text-sm font-semibold text-[var(--color-text-muted)]">
+            Redirigiendo a la confirmación de tu pedido...
           </p>
-          {result.confirmationEmailSent ? <p className="mt-2 text-sm text-[var(--color-text-muted)]">Se simuló el envío del correo de confirmación.</p> : null}
-          <p className="mt-5 text-2xl font-bold text-[var(--color-title)]">Q{result.total.toFixed(2)}</p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Link className="rounded-md bg-[var(--color-primary)] px-4 py-2 font-semibold text-[var(--color-topbar)]" href={`/pedido/confirmacion?${confirmationHref.toString()}`}>
-              Ver confirmación
-            </Link>
-            <Link className="rounded-md border border-[var(--color-border)] px-4 py-2 font-semibold" href="/catalogo">
-              Seguir comprando
-            </Link>
-          </div>
         </section>
       </main>
     );
   }
-
   if (items.length === 0) {
     return (
       <main className="mx-auto max-w-2xl px-5 py-10">

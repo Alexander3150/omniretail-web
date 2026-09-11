@@ -1,14 +1,13 @@
-import Link from "next/link";
+"use client";
 
-export function OrderConfirmationPage({
-  orderNumber,
-  trackingToken,
-  emailSent,
-}: {
-  orderNumber?: string;
-  trackingToken?: string;
-  emailSent: boolean;
-}) {
+import Link from "next/link";
+import { useStorefrontCheckoutConfirmation } from "@/modules/storefront/providers/StorefrontCheckoutConfirmationProvider";
+
+export function OrderConfirmationPage() {
+  const { result } = useStorefrontCheckoutConfirmation();
+  const orderNumber = result?.orderNumber;
+  const trackingToken = result?.guestTrackingEnabled ? result.trackingToken : undefined;
+  const emailSent = result?.confirmationEmailSent ?? false;
   if (!orderNumber) {
     return (
       <main className="mx-auto max-w-2xl px-5 py-10">
