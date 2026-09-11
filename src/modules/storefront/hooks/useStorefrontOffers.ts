@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { SalesChannel } from "@/core/enums";
+import type { Promotion } from "@/core/entities";
+import { PromotionStatus, SalesChannel } from "@/core/enums";
 import { calculateEffectivePrice } from "@/core/pricing";
+import { isBranchScopedResourceAvailable } from "@/core/scopes/branchScope";
 import { useDataEventBus, useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
@@ -15,6 +17,25 @@ export interface StorefrontOfferItem {
   effectivePrice: number;
   discount: number;
   promotionName: string;
+}
+
+function isApplicableEcommercePromotion(promotion: Promotion, tenantId: string, productId: string, ecommerceBranchId: string, now: Date): boolean {
+  const startsAt = new Date(promotion.startAt).getTime();
+  const endsAt = promotion.endAt ? new Date(promotion.endAt).getTime() : Number.POSITIVE_INFINITY;
+  return promotion.tenantId === tenantId && promotion.status === PromotionStatus.active && promotion.channels.includes(SalesChannel.ecommerce) && promotion.productIds.includes(productId) && isBranchScopedResourceAvailable(promotion.branchIds, ecommerceBranchId) && startsAt <= now.getTime() && now.getTime() <= endsAt;
+}
+
+function selectPromotion(promotions: Promotion[], basePrice: number): Promotion | undefined {
+  return promotions.reduce<Promotion | undefined>((selected, candidate) => {
+    if (!selected) return candidate;
+    const selectedPrice = calculateEffectivePrice(basePrice, selected).effectivePrice;
+    const candidatePrice = calculateEffectivePrice(basePrice, candidate).effectivePrice;
+    // Entre promociones ya válidas para la misma sucursal, gana el menor precio final.
+    // El ID resuelve empates para no depender del orden del arreglo.
+    if (candidatePrice < selectedPrice) return candidate;
+    if (candidatePrice === selectedPrice && candidate.id.localeCompare(selected.id) < 0) return candidate;
+    return selected;
+  }, undefined);
 }
 
 export function useStorefrontOffers() {
@@ -34,15 +55,16 @@ export function useStorefrontOffers() {
       }
       setLoading(true); setError(null);
       try {
-        const [products, promotions] = await Promise.all([
+        const [ecommerceConfig, products, promotions] = await Promise.all([
+          repositories.businessConfig.getEcommerceConfig(tenantId),
           repositories.products.getPublishedForEcommerce(tenantId),
           repositories.promotions.getActive(),
         ]);
-        const now = new Date().toISOString();
+        if (!ecommerceConfig?.enabled || !ecommerceConfig.defaultBranchId) throw new Error("E-commerce branch is not configured");
+        const ecommerceBranchId = ecommerceConfig.defaultBranchId;
+        const now = new Date();
         const offers = products.flatMap((product) => {
-          const promotion = promotions.find((item) =>
-            item.tenantId === tenantId && item.productIds.includes(product.id) && item.channels.includes(SalesChannel.ecommerce) && new Date(item.startAt).getTime() <= new Date(now).getTime() && (!item.endAt || new Date(now).getTime() <= new Date(item.endAt).getTime()),
-          );
+          const promotion = selectPromotion(promotions.filter((item) => isApplicableEcommercePromotion(item, tenantId, product.id, ecommerceBranchId, now)), product.salePrice);
           if (!promotion) return [];
           const price = calculateEffectivePrice(product.salePrice, promotion);
           return [{ productId: product.id, name: product.name, sku: product.sku, description: product.description, basePrice: price.basePrice, effectivePrice: price.effectivePrice, discount: price.discountAmount, promotionName: promotion.name }];
