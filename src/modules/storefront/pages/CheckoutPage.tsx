@@ -35,9 +35,14 @@ export function CheckoutPage() {
           </p>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">Código de seguimiento: {result.trackingToken}</p>
           <p className="mt-5 text-2xl font-bold text-[var(--color-title)]">Q{result.total.toFixed(2)}</p>
-          <Link className="mt-6 inline-block rounded-md bg-[var(--color-primary)] px-4 py-2 font-semibold text-[var(--color-topbar)]" href="/catalogo">
-            Seguir comprando
-          </Link>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link className="rounded-md bg-[var(--color-primary)] px-4 py-2 font-semibold text-[var(--color-topbar)]" href={`/pedido/${result.trackingToken}`}>
+              Ver seguimiento
+            </Link>
+            <Link className="rounded-md border border-[var(--color-border)] px-4 py-2 font-semibold" href="/catalogo">
+              Seguir comprando
+            </Link>
+          </div>
         </section>
       </main>
     );
