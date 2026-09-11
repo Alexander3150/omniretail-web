@@ -31,6 +31,7 @@ export type * from "./BankAccountRepository";
 export type * from "./SalesRepository";
 export type * from "./SaleConfirmationRepository";
 export type * from "./CashShiftRepository";
+export type * from "./CashMovementRepository";
 export type * from "./PickingRepository";
 export type * from "./DispatchRepository";
 export type * from "./NotificationRepository";

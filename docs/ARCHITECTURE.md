@@ -43,6 +43,24 @@ PickingRepository.updateItem
 
 `MockSaleConfirmationRepository.confirm` valida dentro de su transaccion si `sourceOrderId` acredita ownership mediante la Order y sus reservas. Las ventas directas conservan el OUT propio; las vinculadas validas persisten Sale, Payment y CashMovement sin modificar reservas, balances ni movimientos de inventario.
 
+## Cash Shift Lifecycle
+
+`CashShiftRepository` administra exclusivamente el turno y expone consultas tenant-scoped.
+`CashMovementRepository` administra los movimientos y valida el ownership del turno antes de
+consultar o registrar. Los mocks protegen apertura unica, estado y relaciones dentro de
+`MockDatabaseStore.transact`.
+
+```text
+POS cash application services
+-> CashShiftRepository + CashMovementRepository
+-> MockDatabaseStore.transact
+-> CashShift + CashMovement
+```
+
+`core/cash/cashShiftTotals` es la semantica monetaria compartida por el resumen de aplicacion y el
+cierre de infraestructura. Los movimientos referenciados a Sale ya representan el componente cash
+de la venta, por lo que el resumen no vuelve a sumar Sale ni Payment.
+
 ## Navegacion Privada
 
 Los modulos declaran sus entradas en `src/modules/*/navigation.ts`.

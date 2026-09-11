@@ -26,6 +26,18 @@ export const posPermissions = [
     description: "Permite cerrar turno de caja.",
   },
   {
+    key: "pos.cash.read",
+    module: "pos",
+    name: "Consultar caja",
+    description: "Permite consultar el turno y sus movimientos de caja.",
+  },
+  {
+    key: "pos.cash.movement.create",
+    module: "pos",
+    name: "Registrar movimientos de caja",
+    description: "Permite registrar ingresos y egresos manuales.",
+  },
+  {
     key: "pos.returns.create",
     module: "pos",
     name: "Crear devoluciones",
