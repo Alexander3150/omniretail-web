@@ -9,9 +9,19 @@ type PrivateShellProps = {
   allowedPermissions?: ReadonlySet<string>;
   children: ReactNode;
   navigationItems: NavigationItem[];
+  onLogout?: () => void;
+  userMenuDescription?: string;
+  userMenuLabel?: string;
 };
 
-export function PrivateShell({ allowedPermissions, children, navigationItems }: PrivateShellProps) {
+export function PrivateShell({
+  allowedPermissions,
+  children,
+  navigationItems,
+  onLogout,
+  userMenuDescription,
+  userMenuLabel,
+}: PrivateShellProps) {
   const generatedSidebarId = useId();
   const sidebarId = `private-sidebar-${generatedSidebarId}`;
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -91,9 +101,12 @@ export function PrivateShell({ allowedPermissions, children, navigationItems }: 
         ) : null}
         <div className="flex min-w-0 flex-1 flex-col">
           <PrivateHeader
+            onLogout={onLogout}
             onOpenSidebar={() => setSidebarOpen(true)}
             sidebarId={sidebarId}
             sidebarOpen={sidebarOpen}
+            userMenuDescription={userMenuDescription}
+            userMenuLabel={userMenuLabel}
           />
           <main className="min-w-0 flex-1 p-4 sm:p-5 lg:p-6">{children}</main>
         </div>
