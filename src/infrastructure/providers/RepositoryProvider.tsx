@@ -9,6 +9,7 @@ import type {
   BranchRepository,
   BusinessConfigRepository,
   CashShiftRepository,
+  CashMovementRepository,
   CategoryRepository,
   CustomerPaymentMethodRepository,
   CustomerRepository,
@@ -50,6 +51,7 @@ import {
   MockBranchRepository,
   MockBusinessConfigRepository,
   MockCashShiftRepository,
+  MockCashMovementRepository,
   MockCategoryRepository,
   MockCustomerPaymentMethodRepository,
   MockCustomerRepository,
@@ -115,6 +117,7 @@ export interface RepositoryRegistry {
   sales: SalesRepository;
   saleConfirmations: SaleConfirmationRepository;
   cashShifts: CashShiftRepository;
+  cashMovements: CashMovementRepository;
   picking: PickingRepository;
   productMedia: ProductMediaRepository;
   dispatches: DispatchRepository;
@@ -169,6 +172,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       sales: new MockSalesRepository(store, eventBus),
       saleConfirmations: new MockSaleConfirmationRepository(store, eventBus),
       cashShifts: new MockCashShiftRepository(store, eventBus),
+      cashMovements: new MockCashMovementRepository(store, eventBus),
       picking: new MockPickingRepository(store, eventBus),
       productMedia: new MockProductMediaRepository(store, eventBus),
       dispatches: new MockDispatchRepository(store, eventBus),

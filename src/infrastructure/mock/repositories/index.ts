@@ -5,6 +5,7 @@ export * from "./MockBankAccountRepository";
 export * from "./MockBranchRepository";
 export * from "./MockBusinessConfigRepository";
 export * from "./MockCashShiftRepository";
+export * from "./MockCashMovementRepository";
 export * from "./MockCategoryRepository";
 export * from "./MockCustomerRepository";
 export * from "./MockCustomerPaymentMethodRepository";

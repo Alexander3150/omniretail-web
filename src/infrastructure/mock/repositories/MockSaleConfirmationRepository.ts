@@ -671,6 +671,8 @@ export class MockSaleConfirmationRepository
     if (result.cashMovement) {
       this.emitSafely("cash-shift.changed", {
         entityId: result.cashMovement.cashShiftId,
+        tenantId: result.sale.tenantId,
+        branchId: result.sale.branchId,
         action: "updated",
       });
     }
