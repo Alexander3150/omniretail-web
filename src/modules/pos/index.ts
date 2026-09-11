@@ -1,7 +1,9 @@
 export { PosTerminalPage } from "@/modules/pos/pages/PosTerminalPage";
+export { PosCashShiftPage } from "@/modules/pos/pages/PosCashShiftPage";
 export { CloseCashShiftService } from "@/modules/pos/application/services/CloseCashShiftService";
 export { GetCashShiftMovementsService } from "@/modules/pos/application/services/GetCashShiftMovementsService";
 export { GetCashShiftSummaryService } from "@/modules/pos/application/services/GetCashShiftSummaryService";
+export { GetOpenCashShiftService } from "@/modules/pos/application/services/GetOpenCashShiftService";
 export { OpenCashShiftService } from "@/modules/pos/application/services/OpenCashShiftService";
 export { RegisterCashMovementService } from "@/modules/pos/application/services/RegisterCashMovementService";
 export type { CashMovementDto } from "@/modules/pos/application/dto/CashMovementDto";
