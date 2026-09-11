@@ -2,10 +2,18 @@ import { OrderSource } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { StorefrontOrderTrackingDto } from "@/modules/storefront/application/dto/StorefrontOrderTrackingDto";
 
+interface StorefrontOrderTrackingResult {
+  orderId: string;
+  tracking: StorefrontOrderTrackingDto;
+}
+
 export class GetStorefrontOrderTrackingService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async execute(tenantId: string, trackingToken: string): Promise<StorefrontOrderTrackingDto | null> {
+  async execute(
+    tenantId: string,
+    trackingToken: string,
+  ): Promise<StorefrontOrderTrackingResult | null> {
     const [config, order] = await Promise.all([
       this.repositories.businessConfig.getEcommerceConfig(tenantId),
       this.repositories.orders.getByTrackingToken(tenantId, trackingToken),
@@ -16,16 +24,17 @@ export class GetStorefrontOrderTrackingService {
 
     return {
       orderId: order.id,
-      orderNumber: order.orderNumber,
-      status: order.status,
-      total: order.total,
-      items: order.items.map((item) => ({
-        productId: item.productId,
-        sku: item.skuSnapshot,
-        name: item.nameSnapshot,
-        quantity: item.quantity,
-        subtotal: item.subtotal,
-      })),
+      tracking: {
+        orderNumber: order.orderNumber,
+        status: order.status,
+        total: order.total,
+        items: order.items.map((item) => ({
+          sku: item.skuSnapshot,
+          name: item.nameSnapshot,
+          quantity: item.quantity,
+          subtotal: item.subtotal,
+        })),
+      },
     };
   }
 }

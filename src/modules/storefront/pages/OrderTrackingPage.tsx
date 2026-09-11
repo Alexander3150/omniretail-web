@@ -52,8 +52,8 @@ export function OrderTrackingPage({ trackingToken }: { trackingToken: string }) 
         </p>
 
         <div className="mt-6 space-y-3">
-          {data.items.map((item) => (
-            <article key={item.productId} className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] pb-3 last:border-0">
+          {data.items.map((item, index) => (
+            <article key={`${item.sku}-${index}`} className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] pb-3 last:border-0">
               <div>
                 <p className="text-sm text-[var(--color-text-muted)]">Código: {item.sku}</p>
                 <h2 className="font-semibold text-[var(--color-text)]">{item.name}</h2>

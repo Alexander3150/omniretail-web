@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDataEventBus, useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import type { StorefrontOrderTrackingDto } from "@/modules/storefront/application/dto/StorefrontOrderTrackingDto";
 import { GetStorefrontOrderTrackingService } from "@/modules/storefront/application/services/GetStorefrontOrderTrackingService";
@@ -15,6 +15,7 @@ export function useStorefrontOrderTracking(trackingToken: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const orderIdRef = useRef<string | null>(null);
 
   const reload = useCallback(() => setReloadKey((current) => current + 1), []);
 
@@ -25,6 +26,7 @@ export function useStorefrontOrderTracking(trackingToken: string) {
       if (!tenantId) {
         if (active) {
           setData(null);
+          orderIdRef.current = null;
           setError(tenantError ?? "No se pudo determinar la tienda pública.");
           setLoading(false);
         }
@@ -38,10 +40,12 @@ export function useStorefrontOrderTracking(trackingToken: string) {
         if (!active) return;
         if (!nextData) {
           setData(null);
+          orderIdRef.current = null;
           setError("No se encontró el pedido solicitado.");
           return;
         }
-        setData(nextData);
+        orderIdRef.current = nextData.orderId;
+        setData(nextData.tracking);
       } catch {
         if (active) setError("No se pudo cargar el pedido. Intenta nuevamente.");
       } finally {
@@ -58,7 +62,7 @@ export function useStorefrontOrderTracking(trackingToken: string) {
         active &&
         !tenantLoading &&
         event.tenantId === tenantId &&
-        event.entityId === data?.orderId
+        event.entityId === orderIdRef.current
       ) {
         void load();
       }
@@ -68,7 +72,7 @@ export function useStorefrontOrderTracking(trackingToken: string) {
       active = false;
       unsubscribe();
     };
-  }, [data?.orderId, eventBus, reloadKey, service, tenantError, tenantId, tenantLoading, trackingToken]);
+  }, [eventBus, reloadKey, service, tenantError, tenantId, tenantLoading, trackingToken]);
 
   return { data, loading: tenantLoading || loading, error, reload };
 }
