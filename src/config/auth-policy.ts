@@ -25,6 +25,30 @@ export const PASSWORD_POLICY = {
 } as const;
 
 /**
+ * Validacion canonica de PASSWORD_POLICY, pensada para usarse en AMBAS
+ * capas -- formulario (feedback inmediato) y repositorio/mock (barrera
+ * real). Vive en config/ (no en modules/auth) precisamente para que la
+ * capa funcional pueda importarla sin depender de un modulo de feature
+ * (infra/core no deben importar modules). Una sola regla, un solo lugar
+ * para cambiarla; ninguna llamada directa al repositorio puede saltarse
+ * lo que el formulario ya exige porque ambos llaman a esta misma
+ * funcion. Devuelve el mensaje de error o null si la contraseña es
+ * valida.
+ */
+export function validatePasswordAgainstPolicy(password: string): string | null {
+  if (!password) {
+    return "La contraseña es obligatoria.";
+  }
+  if (password.length < PASSWORD_POLICY.MIN_LENGTH || password.length > PASSWORD_POLICY.MAX_LENGTH) {
+    return `La contraseña debe tener entre ${PASSWORD_POLICY.MIN_LENGTH} y ${PASSWORD_POLICY.MAX_LENGTH} caracteres.`;
+  }
+  if (!PASSWORD_POLICY.ALLOW_SPACES && /\s/.test(password)) {
+    return "La contraseña no puede contener espacios.";
+  }
+  return null;
+}
+
+/**
  * One row per attempt number within the same failure window.
  * `delayMs` is the artificial delay applied before the next attempt is allowed.
  */

@@ -137,15 +137,34 @@ export interface AuthRepository {
    *   activó su cuenta no es este flujo (sería password recovery, PR10).
    * - Con AuthAccount 'disabled'/'archived'/'temporarily_locked': se
    *   rechaza -- ninguno de esos estados se resuelve invitando de nuevo.
+   *
+   * Atribución de auditoría (limitación conocida, no un descuido): el
+   * evento employee_invited que este método genera NO incluye un actor
+   * administrativo -- este método sólo recibe el userId del empleado, no
+   * la identidad de quién invita, porque todavía no existe el service
+   * administrativo (/administracion/usuarios) que la proveería. Cuando
+   * exista, ese caller deberá pasar la identidad del admin autenticado
+   * para que el audit log la registre correctamente; hasta entonces, no
+   * se le atribuye el evento a nadie (ni siquiera al propio empleado
+   * invitado, que sería una atribución falsa).
    */
   inviteEmployee(userId: string): Promise<InviteEmployeeResult>;
   /**
    * Completa una invitación vigente: establece la contraseña elegida por
-   * el empleado y activa la cuenta. Un token inexistente, ya usado,
-   * vencido, o cuya cuenta ya no esté en password_reset_required (porque
-   * otra invitación hermana ya la activó) producen el mismo error
-   * genérico -- /activar-cuenta/[token] no distingue el motivo hacia
-   * afuera, mismo criterio que verifyEmail/resetPassword.
+   * el empleado y activa la cuenta. Antes de mutar nada, revalida que:
+   * el token exista, no esté ya usado y no haya vencido; que la
+   * AuthAccount asociada siga en password_reset_required (una invitación
+   * hermana pudo haber activado la cuenta primero); que el User todavía
+   * exista, siga siendo Employee, y siga perteneciendo al MISMO tenant
+   * que tenía al momento de la invitación (EmployeeInvitation.tenantId,
+   * nunca un fallback como "tenant-demo"); y que la contraseña elegida
+   * cumpla PASSWORD_POLICY (validatePasswordAgainstPolicy) -- la misma
+   * regla que ya aplica el formulario, para que una llamada directa a
+   * este método no pueda saltársela. Cualquiera de esas condiciones que
+   * falle produce el mismo error genérico -- /activar-cuenta/[token] no
+   * distingue el motivo hacia afuera, mismo criterio que
+   * verifyEmail/resetPassword -- y no consume el token ni cambia ningún
+   * estado.
    */
   activateEmployeeAccount(token: string, newPasswordMock: string): Promise<void>;
 }

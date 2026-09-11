@@ -13,6 +13,16 @@ import type { ISODateString } from "@/core/types/common.types";
 export interface EmployeeInvitation {
   id: string;
   userId: string;
+  /**
+   * Tenant del User al momento de invitar -- capturado aca porque
+   * AuthAccount no guarda tenantId (se deriva de User), y User.tenantId
+   * puede cambiar despues de emitida la invitacion (reasignacion a otro
+   * tenant). Es la referencia autoritativa contra la que
+   * activateEmployeeAccount() revalida al momento de activar: si
+   * User.tenantId ya no coincide con este valor, la invitacion se
+   * considera invalida aunque el token siga vigente.
+   */
+  tenantId: string;
   token: string;
   createdAt: ISODateString;
   expiresAt: ISODateString;

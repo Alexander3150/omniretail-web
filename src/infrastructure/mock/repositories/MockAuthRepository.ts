@@ -12,6 +12,7 @@ import {
   LOCKOUT_ESCALATION_LOOKBACK_HOURS,
   LOCKOUT_RESET_AFTER_MINUTES,
   getLockoutMinutesForOccurrence,
+  validatePasswordAgainstPolicy,
 } from "@/config/auth-policy";
 import { publicStorefrontSlug } from "@/config/publicStorefront";
 import { sessionPolicy } from "@/config/session-policy";
@@ -569,6 +570,10 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       const invitation = {
         id: this.id("employee-invitation"),
         userId,
+        // Capturado ahora, no re-derivado despues: es la referencia
+        // autoritativa contra la que activateEmployeeAccount() revalida
+        // el tenant al momento de activar (ver doc en la entidad).
+        tenantId: user.tenantId,
         token: this.id("token"),
         createdAt: now,
         expiresAt: new Date(
@@ -581,9 +586,17 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       // reinvitar) a un empleado crea/reactiva credenciales de acceso --
       // sin esto, /administracion/auditoria no tendria ningun rastro de
       // quien recibio acceso y cuando.
+      //
+      // actorUserId queda SIN asignar a proposito: el llamador real es
+      // un administrador, pero este método no recibe todavía identidad
+      // de quién invita (no existe aún el service administrativo que la
+      // proveería -- ver AuthRepository.inviteEmployee). Atribuir el
+      // evento al propio empleado invitado (como se hacía antes) sería
+      // falso -- el empleado no se invitó a sí mismo. Cuando exista esa
+      // identidad, debe pasarse aquí; hasta entonces, mejor sin actor
+      // que con uno incorrecto.
       this.logAuthAudit(db, {
         tenantId: user.tenantId,
-        actorUserId: account.userId,
         accountId: account.id,
         action: "employee_invited",
       });
@@ -619,8 +632,36 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         throw new Error("Invalid activation token");
       }
 
+      // Revalidacion de identidad al momento de activar -- el token y el
+      // status de AuthAccount por si solos no bastan: entre la
+      // invitacion y la activacion, User puede haber sido eliminado,
+      // reconvertido a Customer, o reasignado a otro tenant. Ninguno de
+      // esos casos se resuelve con un fallback como "tenant-demo": si no
+      // hay una identidad Employee valida y en el MISMO tenant que se
+      // capturo al invitar, la activacion se bloquea sin tocar nada (ni
+      // consumir el token ni activar la cuenta) -- mismo mensaje generico
+      // que un token vencido, sin revelar cual de las tres condiciones
+      // fallo.
       const user = db.users.find((item) => item.id === account.userId);
-      const tenantId = user?.tenantId ?? "tenant-demo";
+      if (
+        !user ||
+        user.type !== UserType.employee ||
+        user.tenantId !== invitation.tenantId
+      ) {
+        throw new Error("Invalid activation token");
+      }
+
+      // Password policy en la capa funcional, no solo en el formulario:
+      // una llamada directa a este metodo (sin pasar por
+      // activateAccount.validation.ts) no debe poder activar una cuenta
+      // con una contraseña que la politica rechazaria. Se valida ANTES
+      // de mutar nada, junto con el resto de las condiciones de arriba.
+      const passwordError = validatePasswordAgainstPolicy(newPasswordMock);
+      if (passwordError) {
+        throw new Error(passwordError);
+      }
+
+      const tenantId = user.tenantId;
       const nowIso = now.toISOString();
 
       account.passwordHashMock = buildPasswordHashMock(newPasswordMock);
