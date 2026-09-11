@@ -15,7 +15,7 @@ export class GetStorefrontProductDetailService {
   }
 
   async execute(tenantId: string, productId: string): Promise<StorefrontProductDetailDto | null> {
-    const [product, allProducts, branches, balances, locations, lots, serials] = await Promise.all([
+    const [product, allProducts, branches, balances, locations, lots, serials, categories, media, definitions, values] = await Promise.all([
       this.publishedProductService.execute(tenantId, productId),
       this.repositories.products.getAll(),
       this.repositories.branches.getActive(),
@@ -23,10 +23,31 @@ export class GetStorefrontProductDetailService {
       this.repositories.inventory.getLocations(),
       this.repositories.inventory.getLots(),
       this.repositories.inventory.getSerialNumbers(),
+      this.repositories.categories.getActive(),
+      this.repositories.productMedia.getByProduct(productId),
+      this.repositories.attributes.getDefinitions(),
+      this.repositories.attributes.getValuesByProduct(productId),
     ]);
     if (!product) return null;
 
-    if (product.productType === ProductType.service) return { product };
+    const detail = {
+      product,
+      categoryName: categories.find(
+        (category) => category.id === product.categoryId && category.tenantId === tenantId,
+      )?.name,
+      media: media
+        .filter((item) => item.tenantId === tenantId && item.type === "image")
+        .map((item) => ({ url: item.url, alt: item.alt })),
+      attributes: values.flatMap((value) => {
+        const definition = definitions.find(
+          (item) =>
+            item.id === value.attributeDefinitionId && item.tenantId === tenantId && item.active,
+        );
+        return definition ? [{ name: definition.name, value: String(value.value) }] : [];
+      }),
+    };
+
+    if (product.productType === ProductType.service) return detail;
 
     const kitComponents =
       product.productType === ProductType.kit
@@ -57,7 +78,7 @@ export class GetStorefrontProductDetailService {
         }) > 0,
       }));
 
-    return { product, availability };
+    return { ...detail, availability };
   }
 }
 
