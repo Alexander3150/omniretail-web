@@ -22,6 +22,8 @@ CashShiftRepository, CashMovementRepository, SaleReversalRepository
 - `CashMovement` es la fuente canonica del efectivo esperado para evitar doble conteo de ventas.
 - Returns/anulaciones consumen el read model y los servicios de aplicacion POS; React no consulta
   repositorios ni deriva elegibilidad, refund, cantidades retornables o estado final.
+- `pos.returns.read` autoriza explicitamente la consulta de ventas para preparar una devolucion;
+  `pos.returns.create` y `pos.sales.void` protegen las operaciones mutables correspondientes.
 
 ## Estructura futura
 

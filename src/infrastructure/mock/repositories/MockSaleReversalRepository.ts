@@ -33,6 +33,7 @@ import type {
 import type { DataEventName, DataEventPayload } from "@/core/types/events.types";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
+import { registerCashMovementInTransaction } from "@/infrastructure/mock/repositories/cashMovementMutations";
 
 type ReversalReference = { referenceType: "return" | "void"; referenceId: string };
 type PlannedInventoryReturn = {
@@ -123,6 +124,7 @@ export class MockSaleReversalRepository
         reference,
         `Devolucion ${sale.number}`,
         now,
+        db,
         () => this.id("cash-movement"),
       );
       const allReturns = [...completedReturns, request];
@@ -143,7 +145,6 @@ export class MockSaleReversalRepository
       db.returnRequests.push(request);
       db.refundTransactions.push(...refunds);
       db.inventoryMovements.push(...inventoryMovements);
-      if (cashMovement) db.cashMovements.push(cashMovement);
       db.creditNotes.push(creditNote);
       return {
         sale,
@@ -234,6 +235,7 @@ export class MockSaleReversalRepository
         reference,
         `Anulacion ${sale.number}`,
         now,
+        db,
         () => this.id("cash-movement"),
       );
       sale.status = SaleStatus.cancelled;
@@ -251,7 +253,6 @@ export class MockSaleReversalRepository
       db.saleVoids.push(voidRecord);
       db.refundTransactions.push(...refunds);
       db.inventoryMovements.push(...inventoryMovements);
-      if (cashMovement) db.cashMovements.push(cashMovement);
       db.creditNotes.push(creditNote);
       return {
         sale,
@@ -896,10 +897,11 @@ function requireCashShiftForRefund(
 function createCashMovement(
   refunds: RefundTransaction[],
   cashShiftId: string | undefined,
-  input: Pick<ProcessSaleReturnInput, "actorUserId">,
+  input: Pick<ProcessSaleReturnInput, "tenantId" | "actorUserId">,
   reference: ReversalReference,
   reason: string,
   now: string,
+  db: MockDatabase,
   id: () => string,
 ): CashMovement | undefined {
   const amountCents = refunds
@@ -907,16 +909,19 @@ function createCashMovement(
     .reduce((sum, refund) => sum + toCents(refund.amount), 0);
   if (amountCents === 0) return undefined;
   if (!cashShiftId) throw new Error("El refund cash requiere turno abierto.");
-  return {
-    id: id(),
-    cashShiftId,
-    type: CashMovementType.out,
-    amount: fromCents(amountCents),
-    reason,
-    ...reference,
-    createdByUserId: input.actorUserId,
-    createdAt: now,
-  };
+  return registerCashMovementInTransaction(
+    db,
+    {
+      tenantId: input.tenantId,
+      cashShiftId,
+      type: CashMovementType.out,
+      amount: fromCents(amountCents),
+      reason,
+      ...reference,
+      createdByUserId: input.actorUserId,
+    },
+    { createId: () => id(), now: () => now },
+  ).movement;
 }
 
 function createCreditNote(
