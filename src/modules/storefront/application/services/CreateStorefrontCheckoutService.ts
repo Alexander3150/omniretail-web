@@ -88,41 +88,41 @@ export class CreateStorefrontCheckoutService {
     const orderNumber = `WEB-${checkoutToken.slice(0, 10).toUpperCase()}`;
     const trackingToken = checkoutToken;
 
-    const order = await this.repositories.orders.create({
-      tenantId,
-      branchId: branch.id,
-      orderNumber,
-      source: OrderSource.ecommerce,
-      guestCustomer: { name: form.fullName.trim(), email: form.email.trim() },
-      items: orderItems,
-      status: OrderStatus.pending,
-      deliveryMethod: DeliveryMethod.home_delivery,
-      transportMode: TransportMode.third_party,
-      deliveryAddress: {
-        recipientName: form.fullName.trim(),
-        line1: form.addressLine1.trim(),
-        line2: form.addressLine2?.trim() || undefined,
-        city: form.city.trim(),
-        stateOrDepartment: form.department?.trim() || undefined,
-        country: "Guatemala",
-        references: buildReferences(form),
+    const { order } = await this.repositories.orders.createWithPayment({
+      order: {
+        tenantId,
+        branchId: branch.id,
+        orderNumber,
+        source: OrderSource.ecommerce,
+        guestCustomer: { name: form.fullName.trim(), email: form.email.trim() },
+        items: orderItems,
+        status: OrderStatus.pending,
+        deliveryMethod: DeliveryMethod.home_delivery,
+        transportMode: TransportMode.third_party,
+        deliveryAddress: {
+          recipientName: form.fullName.trim(),
+          line1: form.addressLine1.trim(),
+          line2: form.addressLine2?.trim() || undefined,
+          city: form.city.trim(),
+          stateOrDepartment: form.department?.trim() || undefined,
+          country: "Guatemala",
+          references: buildReferences(form),
+        },
+        subtotal,
+        discountTotal: 0,
+        shippingTotal: 0,
+        total: subtotal,
+        trackingToken,
+        idempotencyKey,
       },
-      subtotal,
-      discountTotal: 0,
-      shippingTotal: 0,
-      total: subtotal,
-      trackingToken,
-      idempotencyKey,
-    });
-
-    await this.repositories.payments.create({
-      tenantId,
-      orderId: order.id,
-      method: PaymentMethod.card,
-      status: PaymentStatus.pending,
-      amount: order.total,
-      currency: "GTQ",
-      reference: `CARD-SIMULATED-${form.cardLastFour}`,
+      payment: {
+        tenantId,
+        method: PaymentMethod.card,
+        status: PaymentStatus.pending,
+        amount: subtotal,
+        currency: "GTQ",
+        reference: `CARD-SIMULATED-${form.cardLastFour}`,
+      },
     });
 
     return { orderNumber: order.orderNumber, trackingToken: order.trackingToken, total: order.total };
