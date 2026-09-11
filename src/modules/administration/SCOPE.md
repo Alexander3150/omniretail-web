@@ -33,7 +33,7 @@
 |---|---|---|---|---|
 | 1 | Configuración del negocio | `/administracion/configuracion-negocio` | `BusinessCapabilitiesConfig` | ✅ **Implementada** |
 | 2 | Sucursales | `/administracion/sucursales` | `Branch` | ✅ **Implementada** |
-| 3 | Proveedores | `/administracion/proveedores` | `Supplier` | ✅ Desbloqueada |
+| 3 | Proveedores | `/administracion/proveedores` | `Supplier` | ✅ **Implementada** |
 | 4 | Cuentas bancarias | `/administracion/cuentas-bancarias` | `BankAccount` | ✅ **Implementada** |
 | 5 | Diseño E-commerce | `/administracion/diseno-ecommerce` | `EcommerceConfig` | ✅ **Implementada** — sin branding |
 | 6 | Clientes | `/administracion/clientes` | `Customer`, `CustomerSegment` | ⚠️ Parcial — sin update ni segmentos |
@@ -188,11 +188,12 @@ interface Permission { key: string; module: string; name: string; description: s
 interface Supplier {
   id: string; tenantId: string; name: string; legalName?: string; taxId?: string;
   email?: string; phone?: string; address?: string; notes?: string;
+  leadTimeDays?: number;                 // rollup derivado/read-only de SupplierProduct activos
   status: SupplierStatus;
   createdAt: ISODateString; updatedAt: ISODateString;
 }
-// NO existen contacts[], paymentTerms, currency ni leadTimeDays.
-// El lead time y el costo por proveedor viven en SupplierProduct (Compras/Catálogo).
+// NO existen contacts[], paymentTerms ni currency.
+// SupplierProduct.leadTimeDays es el dato específico; Supplier.leadTimeDays es su rollup MAX.
 
 type BankAccountType = "monetary" | "savings";
 type BankAccountStatus = "active" | "inactive" | "archived";
@@ -310,7 +311,7 @@ override `demoMode`) y `src/config/session-policy.ts` (`normalSessionHours: 8`,
    por ser área común. No se espera autorización, se informa impacto.
 2. **`Branch` sin `schedule`.** Sucursales no puede manejar horarios sin extender la entity.
 3. **`EcommerceConfig` sin `theme`.** Diseño E-commerce no incluye branding.
-4. **`Supplier` sin `contacts[]`, `paymentTerms`, `currency`, `leadTimeDays`.**
+4. **`Supplier` sin `contacts[]`, `paymentTerms` ni `currency`; `leadTimeDays` es derivado.**
 5. **Sin contrato para `AuthAccount` ni `MfaEnrollment`.** Invitación, activación asistida y MFA
    quedan bloqueadas. Esto **sí** es dominio de Andy.
 6. **`TenantRepository` sin `update`.** Bloquea escritura de datos del negocio.
@@ -476,7 +477,7 @@ Tabla: `code`, `name`, `type`, `address`, `status`, acciones. Formulario: `code`
 Sin `schedule` hasta que se extienda la entity.
 Impacto: toda sucursal creada debe aparecer en `BranchSelector` y en el alcance de Usuarios.
 
-### 12.3 Proveedores
+### 12.3 Proveedores ✅ implementada
 
 Tabla: `name`, `taxId`, `email`, `phone`, `status`. Formulario: `name`, `legalName`, `taxId`,
 `email`, `phone`, `address`, `notes`, `status`.
