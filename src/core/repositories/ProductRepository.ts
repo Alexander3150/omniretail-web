@@ -5,7 +5,7 @@ export interface ProductRepository {
   getAll(): Promise<Product[]>;
   getById(id: string): Promise<Product | null>;
   getBySku(sku: string): Promise<Product | null>;
-  getPublishedForEcommerce(): Promise<Product[]>;
+  getPublishedForEcommerce(tenantId: string): Promise<Product[]>;
   getAvailableForPos(): Promise<Product[]>;
   getPublishedForChannel(channel: SalesChannel): Promise<Product[]>;
   create(input: Omit<Product, "id" | "createdAt" | "updatedAt">): Promise<Product>;

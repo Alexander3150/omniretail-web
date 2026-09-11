@@ -37,6 +37,7 @@ import type {
   PickingOrder,
   PriceTier,
   Product,
+  ProductKitComponent,
   ProductInventorySettings,
   ProductPriceHistory,
   ProductSalesPriceTier,
@@ -50,6 +51,9 @@ import type {
   ReceiptLine,
   RecoveryCode,
   ReturnRequest,
+  RefundTransaction,
+  SaleVoid,
+  CreditNote,
   Role,
   Sale,
   SaleItem,
@@ -81,6 +85,7 @@ export interface MockDatabase {
   mfaEnrollments: MfaEnrollment[];
   recoveryCodes: RecoveryCode[];
   products: Product[];
+  productKitComponents: ProductKitComponent[];
   productPriceHistory: ProductPriceHistory[];
   productMedia: ProductMedia[];
   productSalesPriceTiers: ProductSalesPriceTier[];
@@ -125,6 +130,9 @@ export interface MockDatabase {
   cashShifts: CashShift[];
   cashMovements: CashMovement[];
   returnRequests: ReturnRequest[];
+  refundTransactions: RefundTransaction[];
+  saleVoids: SaleVoid[];
+  creditNotes: CreditNote[];
   pickingOrders: PickingOrder[];
   pickingItems: PickingItem[];
   pickingItemUpdateOperations: PickingItemUpdateOperation[];

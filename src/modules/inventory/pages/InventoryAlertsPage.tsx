@@ -718,12 +718,14 @@ function InventoryTable({
                     </td>
                   ) : null}
                   <td className="px-4 py-3">
-                    <RowActionsMenu
-                      row={row}
-                      onAdjust={onAdjust}
-                      onTransfer={onTransfer}
-                      onViewHistory={onViewHistory}
-                    />
+                    {!row.isDerivedKit ? (
+                      <RowActionsMenu
+                        row={row}
+                        onAdjust={onAdjust}
+                        onTransfer={onTransfer}
+                        onViewHistory={onViewHistory}
+                      />
+                    ) : null}
                   </td>
                 </tr>
               ))
@@ -1259,6 +1261,17 @@ function ProductPanel({
   onOtherBranches: () => void;
   onViewHistory: () => void;
 }) {
+  if (row.isDerivedKit) {
+    return (
+      <section>
+        <header className="flex items-start justify-between gap-3 border-b border-[var(--color-border)] p-4">
+          <div><p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">Kit</p><h2 className="mt-1 text-xl font-bold text-[var(--color-title)]">{row.productName}</h2><p className="mt-1 text-sm font-semibold uppercase text-[var(--color-text-muted)]">{row.sku}</p></div>
+          <button aria-label="Cerrar detalle de kit" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-[var(--color-border)] text-lg font-bold" onClick={onClose} type="button">x</button>
+        </header>
+        <div className="space-y-4 p-4"><section className="rounded-lg border border-[var(--color-border)] bg-white p-4"><div className="flex justify-between"><p className="text-sm font-bold text-[var(--color-title)]">Disponibilidad derivada</p><InventoryStatusBadge label={row.statusLabel} status={row.status} /></div><dl className="mt-4 grid gap-4 sm:grid-cols-2"><DetailTile label="Disponible" value={`${row.quantity} Kit`} /><DetailTile label="Categoria" value={row.categoryName} /><DetailTile label="Sucursal" value={activeBranchName} /><DetailTile label="Ubicacion" value="Calculado por componentes" /></dl><p className="mt-4 rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text)]">Disponibilidad calculada a partir de sus componentes.</p></section><Button onClick={onClose} type="button" variant="secondary">Cerrar</Button></div>
+      </section>
+    );
+  }
   return (
     <section>
       <header className="flex items-start justify-between gap-3 border-b border-[var(--color-border)] p-4">

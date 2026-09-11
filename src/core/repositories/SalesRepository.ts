@@ -22,6 +22,12 @@ export interface CreateSaleInput {
 export interface SalesRepository {
   getAll(): Promise<Sale[]>;
   getById(id: string): Promise<Sale | null>;
+  getByIdScoped(tenantId: string, branchId: string, id: string): Promise<Sale | null>;
+  getByDocumentNumber(
+    tenantId: string,
+    branchId: string,
+    documentNumber: string,
+  ): Promise<Sale | null>;
   create(input: CreateSaleInput): Promise<Sale>;
   updateStatus(id: string, status: SaleStatus): Promise<Sale>;
 }

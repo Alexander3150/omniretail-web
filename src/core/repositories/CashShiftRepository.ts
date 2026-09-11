@@ -1,12 +1,29 @@
-import type { CashMovement, CashShift } from "@/core/entities";
+import type { CashShift } from "@/core/entities";
+
+export interface OpenCashShiftInput {
+  tenantId: string;
+  branchId: string;
+  userId: string;
+  registerCode: string;
+  openingAmount: number;
+}
+
+export interface CloseCashShiftInput {
+  tenantId: string;
+  cashShiftId: string;
+  countedAmount: number;
+  closedByUserId: string;
+}
+
 export interface CashShiftRepository {
-  getAll(): Promise<CashShift[]>;
-  getById(id: string): Promise<CashShift | null>;
-  getOpenByUser(userId: string): Promise<CashShift | null>;
-  getOpenByUserAndBranch(userId: string, branchId: string): Promise<CashShift | null>;
-  open(
-    input: Omit<CashShift, "id" | "status" | "openedAt" | "createdAt" | "updatedAt">,
-  ): Promise<CashShift>;
-  registerMovement(input: Omit<CashMovement, "id" | "createdAt">): Promise<CashMovement>;
-  close(id: string, countedAmount: number): Promise<CashShift>;
+  listByTenant(tenantId: string): Promise<CashShift[]>;
+  getById(tenantId: string, cashShiftId: string): Promise<CashShift | null>;
+  getOpenByUser(tenantId: string, userId: string): Promise<CashShift | null>;
+  getOpenByUserAndBranch(
+    tenantId: string,
+    userId: string,
+    branchId: string,
+  ): Promise<CashShift | null>;
+  open(input: OpenCashShiftInput): Promise<CashShift>;
+  close(input: CloseCashShiftInput): Promise<CashShift>;
 }

@@ -39,6 +39,7 @@ export interface InventoryProductRow {
   nextExpirationLabel: string;
   activeAlerts: InventoryAlert[];
   otherBranchStocks: BranchStockSummary[];
+  isDerivedKit?: boolean;
 }
 
 export interface BranchStockSummary {

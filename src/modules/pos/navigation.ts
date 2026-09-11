@@ -12,6 +12,12 @@ export const posNavigation = [
         href: "/pos/terminal",
         permission: "pos.sales.create",
       },
+      {
+        id: "pos-cash-shift",
+        label: "Apertura y Arqueo de Caja",
+        href: "/pos/caja",
+        permission: "pos.cash.read",
+      },
     ],
   },
 ] satisfies NavigationItem[];

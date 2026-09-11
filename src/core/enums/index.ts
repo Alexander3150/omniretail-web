@@ -195,6 +195,7 @@ export enum TransportMode {
 export enum SaleStatus {
   completed = "completed",
   partially_returned = "partially_returned",
+  returned = "returned",
   cancelled = "cancelled",
 }
 export enum CashShiftStatus {
