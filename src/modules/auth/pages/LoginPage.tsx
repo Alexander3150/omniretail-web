@@ -130,12 +130,9 @@ export function LoginPage() {
 
         <p className="mt-6 text-center text-sm text-[var(--color-text-muted)]">
           ¿No tienes cuenta?{" "}
-          <span
-            className="cursor-not-allowed font-semibold text-[var(--color-title)]"
-            title="Proximamente"
-          >
+          <Link className="font-semibold text-[var(--color-title)] hover:underline" href="/registro">
             Registrate
-          </span>
+          </Link>
         </p>
         <p className="mt-2 text-center text-sm text-[var(--color-text-muted)]">
           <Link className="font-semibold text-[var(--color-title)] hover:underline" href="/">

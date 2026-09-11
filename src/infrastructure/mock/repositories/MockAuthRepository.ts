@@ -3,6 +3,7 @@ import type { Customer } from "@/core/entities";
 import type { AuthRepository } from "@/core/repositories";
 import {
   authPolicy,
+  EMAIL_ALREADY_REGISTERED_MESSAGE,
   EMAIL_VERIFICATION_TOKEN_MINUTES,
   GENERIC_AUTH_ERROR_MESSAGE,
   LOGIN_ATTEMPT_RULES,
@@ -261,6 +262,25 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
   async registerCustomer(input: Parameters<AuthRepository["registerCustomer"]>[0]) {
     const user = this.store.mutate((db) => {
       const now = this.now();
+      const normalizedEmail = input.email.trim().toLowerCase();
+
+      // R-A03: email unico dentro del tenant. Se resuelve via AuthAccount
+      // (la credencial real) cruzando con User.tenantId, porque
+      // AuthAccount no guarda tenantId directamente. Se comprueba ANTES
+      // de crear cualquier entidad: un intento rechazado no debe dejar un
+      // Customer/User/AuthAccount a medias en el store. Resuelto en PR8:
+      // este metodo nacio en un PR solo de contrato, sin ninguna pantalla
+      // que lo alcanzara -- PR8 expone un formulario real y el gap deja
+      // de ser teorico.
+      const existingAccountInTenant = db.authAccounts.find((account) => {
+        if (account.email.toLowerCase() !== normalizedEmail) return false;
+        const owner = db.users.find((item) => item.id === account.userId);
+        return owner?.tenantId === input.tenantId;
+      });
+      if (existingAccountInTenant) {
+        throw new Error(EMAIL_ALREADY_REGISTERED_MESSAGE);
+      }
+
       const customer: Customer = {
         id: this.id("customer"),
         tenantId: input.tenantId,
@@ -287,12 +307,6 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       customer.userId = createdUser.id;
       db.customers.push(customer);
       db.users.push(createdUser);
-      // NOTE for review: this method does not yet enforce email uniqueness
-      // within the tenant (rule R-A03). This is a preexisting gap, not
-      // introduced here — email uniqueness is an invariant that will
-      // eventually need authoritative enforcement (not just UI-level
-      // validation). Called out so it isn't mistaken for an oversight; not
-      // resolved in this PR.
       db.authAccounts.push({
         id: this.id("auth"),
         userId: createdUser.id,
@@ -443,6 +457,16 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       return undefined;
     });
     this.emit("auth.changed", { action: "updated" });
+  }
+  async getActiveEmailVerificationToken(userId: string): Promise<string | null> {
+    return this.read((db) => {
+      const verification = db.emailVerifications.find(
+        (item) => item.userId === userId && !item.verifiedAt,
+      );
+      if (!verification) return null;
+      if (new Date() >= new Date(verification.expiresAt)) return null;
+      return verification.token;
+    });
   }
   private logAuthAudit(
     db: MockDatabase,

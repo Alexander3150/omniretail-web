@@ -42,4 +42,17 @@ export interface AuthRepository {
   requestPasswordReset(email: string): Promise<void>;
   resetPassword(token: string, newPasswordMock: string): Promise<void>;
   verifyEmail(token: string): Promise<void>;
+  /**
+   * Devuelve el token de verificacion vigente (no usado, no expirado) del
+   * usuario, o null si no tiene uno pendiente (ya verificado, o nunca se
+   * genero uno). Metodo aditivo -- no reemplaza ni cambia verifyEmail().
+   *
+   * Sin backend/envio de correo real, es el unico modo de completar el
+   * ciclo registro -> verificacion en este frontend simulado: alguien
+   * tiene que poder obtener el token para llegar a
+   * /verificar-correo/[token]. Tiene ademas un paralelo legitimo fuera
+   * del mock (es basicamente lo que necesitaria un "reenviar correo de
+   * verificacion"), asi que no es un atajo exclusivo de demo.
+   */
+  getActiveEmailVerificationToken(userId: string): Promise<string | null>;
 }
