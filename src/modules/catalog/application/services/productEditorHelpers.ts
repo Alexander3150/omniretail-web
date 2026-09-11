@@ -310,10 +310,11 @@ async function syncSupplierProducts(
       active: true,
     };
     const saved = supplierProduct.id
-      ? await repositories.supplierProducts.update(supplierProduct.id, input)
+      ? await repositories.supplierProducts.update(product.tenantId, supplierProduct.id, input)
       : await repositories.supplierProducts.create(input);
     nextIds.add(saved.id);
     await repositories.supplierProducts.replaceCostTiers(
+      product.tenantId,
       saved.id,
       supplierProduct.costTiers.map((tier) => ({
         tenantId: product.tenantId,
@@ -326,7 +327,9 @@ async function syncSupplierProducts(
   await Promise.all(
     current
       .filter((supplierProduct) => !nextIds.has(supplierProduct.id))
-      .map((supplierProduct) => repositories.supplierProducts.archive(supplierProduct.id)),
+      .map((supplierProduct) =>
+        repositories.supplierProducts.archive(product.tenantId, supplierProduct.id),
+      ),
   );
 }
 

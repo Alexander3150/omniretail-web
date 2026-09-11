@@ -17,11 +17,11 @@ export class GetProductEditorDataService {
     productId?: string,
     branchId?: string,
   ): Promise<ProductEditorData> {
-    const [allAttributeDefinitions, suppliers, branchLocations, allProducts] = await Promise.all([
+    const [allAttributeDefinitions, suppliers, allProducts, branch] = await Promise.all([
       this.repositories.attributes.getDefinitions(),
       this.repositories.suppliers.getActiveByTenant(tenantId),
-      branchId ? this.repositories.inventory.getLocations(branchId) : Promise.resolve([]),
       this.repositories.products.getAll(),
+      branchId ? this.repositories.branches.getById(branchId) : Promise.resolve(null),
     ]);
     // `getDefinitions()` y `getAll()` no aceptan tenantId: son lecturas globales del repository,
     // así que el boundary de la aplicación filtra antes de que cualquier dato cruce a la DTO.
@@ -29,6 +29,12 @@ export class GetProductEditorDataService {
       (definition) => definition.tenantId === tenantId,
     );
     const tenantProducts = allProducts.filter((product) => product.tenantId === tenantId);
+    // branchId llega del cliente (selector de sucursal): no se usa para leer ubicaciones ni
+    // configuracion de inventario a menos que la sucursal exista y pertenezca al tenant activo.
+    const tenantBranchId = branch && branch.tenantId === tenantId ? branch.id : undefined;
+    const branchLocations = tenantBranchId
+      ? await this.repositories.inventory.getLocations(tenantBranchId)
+      : [];
     const activeStorageLocations = branchLocations.filter(
       (location) => location.status === LocationStatus.active,
     );
@@ -59,10 +65,31 @@ export class GetProductEditorDataService {
       };
     }
 
+    // El productId puede venir de la URL: se valida la pertenencia al tenant ANTES de cargar el
+    // detalle o cualquier colección relacionada -- un producto de otro tenant se trata igual que
+    // uno inexistente y nunca dispara la carga pesada de GetProductDetailService.
+    const product = tenantProducts.find((item) => item.id === productId);
+    if (!product) {
+      return {
+        detail: null,
+        unitConversion: null,
+        inventorySettings: null,
+        storageLocations: activeStorageLocations,
+        currentDefaultLocation: null,
+        attributeDefinitions,
+        attributes: [],
+        salesPriceTiers: [],
+        suppliers,
+        supplierProducts: [],
+        media: [],
+        promotionCount: 0,
+        kitComponents: [],
+        kitEligibleProducts: kitEligibleProducts(),
+      };
+    }
+
     const detail = await new GetProductDetailService(this.repositories).execute(productId);
-    // El productId puede venir de la URL: un producto de otro tenant se trata igual que uno
-    // inexistente, nunca se devuelve su detalle ni las colecciones asociadas.
-    if (!detail || detail.product.tenantId !== tenantId) {
+    if (!detail) {
       return {
         detail: null,
         unitConversion: null,
@@ -96,8 +123,8 @@ export class GetProductEditorDataService {
       this.repositories.supplierProducts.getByProductForTenant(tenantId, productId),
       this.repositories.productMedia.getByProduct(productId),
       this.repositories.promotions.getByProduct(productId),
-      branchId
-        ? this.repositories.inventory.getProductInventorySettings(productId, branchId)
+      tenantBranchId
+        ? this.repositories.inventory.getProductInventorySettings(productId, tenantBranchId)
         : Promise.resolve(null),
       this.repositories.productKitComponents.getByKitProduct(productId),
     ]);
