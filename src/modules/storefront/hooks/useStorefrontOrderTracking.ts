@@ -54,14 +54,21 @@ export function useStorefrontOrderTracking(trackingToken: string) {
     });
 
     const unsubscribe = eventBus.subscribe("order.changed", (event) => {
-      if (active && !tenantLoading && event.tenantId === tenantId) void load();
+      if (
+        active &&
+        !tenantLoading &&
+        event.tenantId === tenantId &&
+        event.entityId === data?.orderId
+      ) {
+        void load();
+      }
     });
 
     return () => {
       active = false;
       unsubscribe();
     };
-  }, [eventBus, reloadKey, service, tenantError, tenantId, tenantLoading, trackingToken]);
+  }, [data?.orderId, eventBus, reloadKey, service, tenantError, tenantId, tenantLoading, trackingToken]);
 
   return { data, loading: tenantLoading || loading, error, reload };
 }

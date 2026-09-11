@@ -22,7 +22,7 @@ export interface CreateOrderWithPaymentResult {
 export interface OrderRepository {
   getAll(): Promise<Order[]>;
   getById(id: string): Promise<Order | null>;
-  getByTrackingToken(trackingToken: string): Promise<Order | null>;
+  getByTrackingToken(tenantId: string, trackingToken: string): Promise<Order | null>;
   getByCustomer(customerId: string): Promise<Order[]>;
   getPendingForLogistics(): Promise<Order[]>;
   create(input: CreateOrderInput): Promise<Order>;

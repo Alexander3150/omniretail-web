@@ -1,6 +1,7 @@
 import type { OrderStatus } from "@/core/enums";
 
 export interface StorefrontOrderTrackingDto {
+  orderId: string;
   orderNumber: string;
   status: OrderStatus;
   total: number;

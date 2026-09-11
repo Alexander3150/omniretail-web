@@ -8,13 +8,14 @@ export class GetStorefrontOrderTrackingService {
   async execute(tenantId: string, trackingToken: string): Promise<StorefrontOrderTrackingDto | null> {
     const [config, order] = await Promise.all([
       this.repositories.businessConfig.getEcommerceConfig(tenantId),
-      this.repositories.orders.getByTrackingToken(trackingToken),
+      this.repositories.orders.getByTrackingToken(tenantId, trackingToken),
     ]);
 
     if (!config?.enabled || !config.guestTrackingEnabled) return null;
-    if (!order || order.tenantId !== tenantId || order.source !== OrderSource.ecommerce) return null;
+    if (!order || order.source !== OrderSource.ecommerce) return null;
 
     return {
+      orderId: order.id,
       orderNumber: order.orderNumber,
       status: order.status,
       total: order.total,

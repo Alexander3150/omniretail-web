@@ -29,7 +29,10 @@ export async function runDemoScenario() {
   const foundProduct = await products.getById(product.id);
   const pendingOrders = await orders.getPendingForLogistics();
   const updatedOrder = await orders.updateStatus("order-002", OrderStatus.dispatched);
-  const trackedOrder = await orders.getByTrackingToken(updatedOrder.trackingToken);
+  const trackedOrder = await orders.getByTrackingToken(
+    updatedOrder.tenantId,
+    updatedOrder.trackingToken,
+  );
   await inventory.registerMovement({
     tenantId: "tenant-demo",
     branchId: "branch-centro",

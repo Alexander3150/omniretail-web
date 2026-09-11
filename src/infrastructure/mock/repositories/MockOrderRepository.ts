@@ -44,9 +44,12 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
     return this.read((db) => db.orders.find((item) => item.id === id) ?? null);
   }
 
-  async getByTrackingToken(trackingToken: string) {
+  async getByTrackingToken(tenantId: string, trackingToken: string) {
     return this.read(
-      (db) => db.orders.find((item) => item.trackingToken === trackingToken) ?? null,
+      (db) =>
+        db.orders.find(
+          (item) => item.tenantId === tenantId && item.trackingToken === trackingToken,
+        ) ?? null,
     );
   }
 
@@ -76,6 +79,7 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
         }
       }
 
+      this.assertTrackingTokenAvailable(input, db);
       this.assertOrderReferences(input, db);
 
       const now = this.now();
@@ -147,6 +151,7 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
         };
       }
 
+      this.assertTrackingTokenAvailable(input.order, db);
       this.assertOrderReferences(input.order, db);
       const now = this.now();
       const orderId = this.id("order");
@@ -364,6 +369,16 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
       );
       if (!product) throw new Error(`Product not found for tenant: ${item.productId}`);
     });
+  }
+
+  private assertTrackingTokenAvailable(input: CreateOrderInput, db: MockDatabase): void {
+    const exists = db.orders.some(
+      (order) =>
+        order.tenantId === input.tenantId && order.trackingToken === input.trackingToken,
+    );
+    if (exists) {
+      throw new Error(`Order tracking token already exists: ${input.trackingToken}`);
+    }
   }
 
   private emitLifecycleChanges(
