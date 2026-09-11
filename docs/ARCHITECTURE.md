@@ -43,6 +43,38 @@ PickingRepository.updateItem
 
 `MockSaleConfirmationRepository.confirm` valida dentro de su transaccion si `sourceOrderId` acredita ownership mediante la Order y sus reservas. Las ventas directas conservan el OUT propio; las vinculadas validas persisten Sale, Payment y CashMovement sin modificar reservas, balances ni movimientos de inventario.
 
+## Cash Shift Lifecycle
+
+`CashShiftRepository` administra exclusivamente el turno y expone consultas tenant-scoped.
+`CashMovementRepository` administra los movimientos y valida el ownership del turno antes de
+consultar o registrar. Los mocks protegen apertura unica, estado y relaciones dentro de
+`MockDatabaseStore.transact`.
+
+```text
+POS cash application services
+-> CashShiftRepository + CashMovementRepository
+-> MockDatabaseStore.transact
+-> CashShift + CashMovement
+```
+
+`core/cash/cashShiftTotals` es la semantica monetaria compartida por el resumen de aplicacion y el
+cierre de infraestructura. Los movimientos referenciados a Sale ya representan el componente cash
+de la venta, por lo que el resumen no vuelve a sumar Sale ni Payment.
+
+## Returns And Voids
+
+`SaleReversalRepository` es el boundary compartido para consultar elegibilidad y procesar una
+devolucion o anulacion. Su implementacion mock usa una sola llamada a
+`MockDatabaseStore.transact`: Return/SaleVoid, refunds, entradas de inventario, salida cash,
+estado de Payment y Sale, y CreditNote mock se confirman juntos. Los eventos se emiten solamente
+despues del commit.
+
+La anulacion POS normal exige que `Sale.cashShiftId` sea el turno original que continua abierto
+para el actor y la sucursal. Una devolucion puede ocurrir en un turno posterior, pero cualquier
+componente cash exige un turno abierto del actor en esa sucursal. La reversion de inventario usa
+la ubicacion de los movimientos OUT historicos referenciados a la Sale. Lote, serial y kit se
+bloquean mientras no exista una huella historica por linea suficiente para reconstruirlos.
+
 ## Navegacion Privada
 
 Los modulos declaran sus entradas en `src/modules/*/navigation.ts`.

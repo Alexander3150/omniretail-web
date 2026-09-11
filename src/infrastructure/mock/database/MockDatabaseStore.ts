@@ -92,6 +92,7 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
       mobileApp: product.channels.mobileApp ?? false,
     },
   }));
+  normalized.productKitComponents = database.productKitComponents ?? base.productKitComponents;
   normalized.suppliers = (database.suppliers ?? base.suppliers).map((supplier) => ({
     ...supplier,
     leadTimeDays:

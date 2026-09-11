@@ -49,6 +49,20 @@ export async function validateEditorProduct(
   if (hasValidationErrors(baseErrors)) {
     throw new CatalogServiceError(Object.values(baseErrors)[0] ?? "Revisa los datos del producto.");
   }
+  if (normalizedDto.productType === "kit" && normalizedDto.status === "published") {
+    if (normalizedDto.kitComponents.length === 0) {
+      throw new CatalogServiceError("Un kit publicado requiere al menos un componente físico.");
+    }
+    if (
+      normalizedDto.kitComponents.some(
+        (component) =>
+          !Number.isFinite(toFiniteNumber(component.quantityPerKit)) ||
+          toFiniteNumber(component.quantityPerKit) <= 0,
+      )
+    ) {
+      throw new CatalogServiceError("Cada componente del kit requiere una cantidad mayor a 0.");
+    }
+  }
 
   if (
     normalizedDto.baseUnitId !== normalizedDto.saleUnitId &&
@@ -132,6 +146,12 @@ export async function syncEditorRelatedData(
   context: { capabilities: BusinessCapabilitiesConfig; isNewProduct: boolean },
 ) {
   await Promise.all([
+    product.productType === "kit"
+      ? repositories.productKitComponents.replaceForKit(product.tenantId, product.id, dto.kitComponents.map((component) => ({
+          componentProductId: component.componentProductId,
+          quantityPerKit: toFiniteNumber(component.quantityPerKit),
+        })))
+      : Promise.resolve([]),
     syncInventorySettings(repositories, product, dto),
     syncUnitConversion(repositories, product, dto, context),
     syncAttributes(repositories, product, dto, context),
@@ -146,7 +166,7 @@ export async function syncEditorRelatedData(
           active: tier.active,
         })),
     ),
-    syncSupplierProducts(repositories, product, dto),
+    product.productType === "kit" ? Promise.resolve([]) : syncSupplierProducts(repositories, product, dto),
     syncMedia(repositories, product, dto.media),
   ]);
 }

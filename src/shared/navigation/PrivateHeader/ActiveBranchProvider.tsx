@@ -20,40 +20,56 @@ interface ActiveBranchContextValue {
   setActiveBranchId: (branchId: string) => void;
 }
 
+interface ActiveBranchProviderProps {
+  /**
+   * Optional scoping predicate: when given, only branches it accepts are
+   * exposed/selectable (e.g. a Customer session with no operational branch
+   * ends up with an empty list, never an arbitrary default). Omitted means
+   * unrestricted, matching the previous behavior.
+   */
+  canAccessBranch?: (branchId: string) => boolean;
+  children: ReactNode;
+}
+
 const ActiveBranchContext = createContext<ActiveBranchContextValue | null>(null);
 
-export function ActiveBranchProvider({ children }: { children: ReactNode }) {
+export function ActiveBranchProvider({ canAccessBranch, children }: ActiveBranchProviderProps) {
   const repositories = useRepositories();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const applyBranches = useCallback(
+    (activeBranches: Branch[]) => {
+      const accessibleBranches = canAccessBranch
+        ? activeBranches.filter((branch) => canAccessBranch(branch.id))
+        : activeBranches;
+      setBranches(accessibleBranches);
+      setActiveBranchId((current) => {
+        if (current && accessibleBranches.some((branch) => branch.id === current)) return current;
+        return accessibleBranches[0]?.id ?? null;
+      });
+      setLoading(false);
+    },
+    [canAccessBranch],
+  );
+
   const reloadBranches = useCallback(async () => {
     const activeBranches = await repositories.branches.getActive();
-    setBranches(activeBranches);
-    setActiveBranchId((current) => {
-      if (current && activeBranches.some((branch) => branch.id === current)) return current;
-      return activeBranches[0]?.id ?? null;
-    });
-    setLoading(false);
-  }, [repositories]);
+    applyBranches(activeBranches);
+  }, [applyBranches, repositories]);
 
   useEffect(() => {
     let active = true;
     repositories.branches.getActive().then((activeBranches) => {
       if (!active) return;
-      setBranches(activeBranches);
-      setActiveBranchId((current) => {
-        if (current && activeBranches.some((branch) => branch.id === current)) return current;
-        return activeBranches[0]?.id ?? null;
-      });
-      setLoading(false);
+      applyBranches(activeBranches);
     });
 
     return () => {
       active = false;
     };
-  }, [repositories]);
+  }, [applyBranches, repositories]);
 
   useDataEvent("branch.changed", reloadBranches);
 

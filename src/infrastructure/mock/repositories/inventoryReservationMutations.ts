@@ -19,6 +19,13 @@ import {
   getLotAwareBalances,
   planStockLotConsumption,
 } from "@/infrastructure/mock/repositories/stockLotMutations";
+import {
+  consumePlannedSerials,
+  getLotSerialAwareBalances,
+  getSerialAwareBalances,
+  planLotSerialConsumption,
+  planSerialConsumption,
+} from "@/infrastructure/mock/repositories/serialNumberMutations";
 
 interface InventoryReservationMutationDependencies {
   id(prefix: string): string;
@@ -43,7 +50,10 @@ export function reserveOrderItemInDatabase(
   assertReservationReferences(input, db);
 
   const existing = db.inventoryReservations.find(
-    (item) => item.tenantId === input.tenantId && item.orderItemId === input.orderItemId,
+    (item) =>
+      item.tenantId === input.tenantId &&
+      item.orderItemId === input.orderItemId &&
+      item.productId === input.productId,
   );
   if (existing) {
     assertMatchingReservation(existing, input);
@@ -65,13 +75,22 @@ export function reserveOrderItemInDatabase(
     branchId: input.branchId,
     productId: input.productId,
     quantity: input.quantity,
-    balances: product.tracking.lot
-      ? getLotAwareBalances(db, {
-          ...input,
-          expirationTracked: product.tracking.expiration,
-          at: dependencies.now(),
-        })
-      : db.inventoryBalances,
+    balances:
+      product.tracking.lot && product.tracking.serial
+        ? getLotSerialAwareBalances(db, {
+            ...input,
+            expirationTracked: product.tracking.expiration,
+            at: dependencies.now(),
+          })
+        : product.tracking.lot
+          ? getLotAwareBalances(db, {
+              ...input,
+              expirationTracked: product.tracking.expiration,
+              at: dependencies.now(),
+            })
+          : product.tracking.serial
+            ? getSerialAwareBalances(db, input)
+            : db.inventoryBalances,
     locations: db.storageLocations,
     preferredLocationId: settings?.defaultLocationId,
   });
@@ -185,6 +204,17 @@ export function consumeInventoryReservationInDatabase(
     (item) => item.id === reservation.productId && item.tenantId === reservation.tenantId,
   );
   if (!product) throw new Error(`Product not found for reservation: ${reservation.id}`);
+  const requestedSerialNumbers = input.serialNumbers
+    ?.map((serial) => serial.trim())
+    .filter(Boolean);
+  const totalConsumed = input.allocationsConsumed.reduce((total, item) => total + item.quantity, 0);
+  if (
+    product.tracking.serial &&
+    requestedSerialNumbers?.length &&
+    requestedSerialNumbers.length !== totalConsumed
+  ) {
+    throw new Error("Requested serial numbers must exactly match the consumed quantity");
+  }
   const planned = input.allocationsConsumed.map((consumed) => {
     const allocation = reservation.allocations.find(
       (item) => item.balanceId === consumed.balanceId,
@@ -203,32 +233,136 @@ export function consumeInventoryReservationInDatabase(
     if (balance.reservedQuantity < consumed.quantity) {
       throw new Error(`Insufficient reserved stock in balance: ${balance.id}`);
     }
-    const lotAllocations = product.tracking.lot
-      ? planStockLotConsumption(
-          db,
-          {
-            tenantId: reservation.tenantId,
-            branchId: reservation.branchId,
-            productId: reservation.productId,
-            locationId: allocation.locationId,
-            expirationTracked: product.tracking.expiration,
-            at: dependencies.now(),
-          },
-          consumed.quantity,
-        )
-      : [];
-    return { allocation, balance, quantity: consumed.quantity, lotAllocations };
+    const lotSerialAllocations =
+      product.tracking.lot && product.tracking.serial
+        ? planLotSerialConsumption(
+            db,
+            {
+              tenantId: reservation.tenantId,
+              branchId: reservation.branchId,
+              productId: reservation.productId,
+              locationId: allocation.locationId,
+              expirationTracked: product.tracking.expiration,
+              at: dependencies.now(),
+            },
+            consumed.quantity,
+            requestedSerialNumbers,
+          )
+        : [];
+    const lotAllocations =
+      product.tracking.lot && !product.tracking.serial
+        ? planStockLotConsumption(
+            db,
+            {
+              tenantId: reservation.tenantId,
+              branchId: reservation.branchId,
+              productId: reservation.productId,
+              locationId: allocation.locationId,
+              expirationTracked: product.tracking.expiration,
+              at: dependencies.now(),
+            },
+            consumed.quantity,
+          )
+        : [];
+    const requestedForLocation = requestedSerialNumbers?.filter((serial) =>
+      db.serialNumbers.some(
+        (item) =>
+          item.serialNumber === serial &&
+          item.tenantId === reservation.tenantId &&
+          item.branchId === reservation.branchId &&
+          item.productId === reservation.productId &&
+          (item.locationId ?? null) === (allocation.locationId ?? null),
+      ),
+    );
+    if (
+      product.tracking.serial &&
+      !product.tracking.lot &&
+      requestedSerialNumbers?.length &&
+      requestedForLocation?.length !== consumed.quantity
+    ) {
+      throw new Error("Requested serial numbers do not match reservation locations");
+    }
+    const serialNumbers =
+      product.tracking.serial && !product.tracking.lot
+        ? planSerialConsumption(
+            db,
+            {
+              tenantId: reservation.tenantId,
+              branchId: reservation.branchId,
+              productId: reservation.productId,
+              locationId: allocation.locationId,
+            },
+            consumed.quantity,
+            requestedForLocation,
+          )
+        : [];
+    return {
+      allocation,
+      balance,
+      quantity: consumed.quantity,
+      lotAllocations,
+      lotSerialAllocations,
+      serialNumbers,
+    };
   });
+  if (product.tracking.serial && !product.tracking.lot && requestedSerialNumbers?.length) {
+    const selected = planned
+      .flatMap((item) => item.serialNumbers)
+      .map((serial) => serial.serialNumber);
+    if (selected.length !== requestedSerialNumbers.length) {
+      throw new Error("Requested serial numbers do not match reservation locations");
+    }
+  }
 
   const now = dependencies.now();
   const inventoryMovements = planned.flatMap(
-    ({ allocation, balance, quantity, lotAllocations }) => {
+    ({ allocation, balance, quantity, lotAllocations, lotSerialAllocations, serialNumbers }) => {
       const quantityBefore = balance.quantity;
       balance.quantity -= quantity;
       balance.reservedQuantity -= quantity;
       balance.updatedAt = now;
       allocation.consumedQuantity += quantity;
 
+      if (lotSerialAllocations.length > 0) {
+        consumePlannedStockLots(lotSerialAllocations.map((item) => item.lotAllocation));
+        consumePlannedSerials(
+          lotSerialAllocations.flatMap((item) => item.serialNumbers),
+          now,
+        );
+        let movementBefore = quantityBefore;
+        return lotSerialAllocations.flatMap(({ lotAllocation, serialNumbers: plannedSerials }) =>
+          plannedSerials.map((serial) => {
+            const movementAfter = movementBefore - 1;
+            const movement = createReservationMovement(
+              1,
+              movementBefore,
+              movementAfter,
+              lotAllocation.lot.id,
+              serial.id,
+            );
+            movementBefore = movementAfter;
+            db.inventoryMovements.push(movement);
+            return movement;
+          }),
+        );
+      }
+      if (serialNumbers.length > 0) {
+        consumePlannedSerials(serialNumbers, now);
+        let movementBefore = quantityBefore;
+        return serialNumbers.map((serial) => {
+          const movementAfter = movementBefore - 1;
+          const movement = createReservationMovement(
+            1,
+            movementBefore,
+            movementAfter,
+            undefined,
+            serial.id,
+          );
+          movementBefore = movementAfter;
+          db.inventoryMovements.push(movement);
+          return movement;
+        });
+      }
       if (lotAllocations.length === 0) {
         const movement = createReservationMovement(quantity, quantityBefore, balance.quantity);
         db.inventoryMovements.push(movement);
@@ -254,6 +388,7 @@ export function consumeInventoryReservationInDatabase(
         movementQuantityBefore: number,
         movementQuantityAfter: number,
         lotId?: string,
+        serialNumberId?: string,
       ): InventoryMovement {
         return {
           id: dependencies.id("movement"),
@@ -261,6 +396,7 @@ export function consumeInventoryReservationInDatabase(
           branchId: reservation.branchId,
           productId: reservation.productId,
           lotId,
+          serialNumberId,
           type: InventoryMovementType.out,
           reason: `Consumo de reserva ${reservation.id}`,
           quantity: movementQuantity,
@@ -378,10 +514,13 @@ function assertReservationReferences(input: ReserveOrderItemInput, db: MockDatab
     (item) => item.id === input.orderItemId && item.orderId === input.orderId,
   );
   if (!orderItem) throw new Error(`OrderItem not found in order: ${input.orderItemId}`);
-  if (orderItem.productId !== input.productId) {
+  const fulfillment = orderItem.fulfillmentComponents?.find(
+    (component) => component.productId === input.productId,
+  );
+  if (orderItem.productId !== input.productId && !fulfillment) {
     throw new Error(`OrderItem product conflict: ${input.orderItemId}`);
   }
-  if (input.quantity > orderItem.quantity) {
+  if (input.quantity > (fulfillment?.quantity ?? orderItem.quantity)) {
     throw new Error(`Reservation quantity exceeds OrderItem quantity: ${input.orderItemId}`);
   }
 }
@@ -446,5 +585,6 @@ function getConsumeFingerprint(input: ConsumeInventoryReservationInput): string 
         quantity: allocation.quantity,
       }))
       .sort((left, right) => left.balanceId.localeCompare(right.balanceId)),
+    serialNumbers: input.serialNumbers?.map((serial) => serial.trim()).sort() ?? null,
   });
 }

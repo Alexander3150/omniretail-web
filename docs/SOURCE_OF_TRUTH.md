@@ -119,6 +119,35 @@ Una Sale sin `sourceOrderId` conserva la salida directa de inventario. Una Sale 
 
 Metodos: cash, card, transfer, mixed. Transferencia simula validacion manual de comprobante. No existe modulo independiente `bank_validator` ni integracion bancaria real.
 
+Las devoluciones calculan la cantidad retornable como cantidad vendida menos cantidades de
+Return completados. El caller elige lineas y cantidades, pero no el refund ni el estado final.
+Devoluciones sucesivas terminan en `SaleStatus.returned` al agotar todas las lineas; no se
+representan como cancelacion. Una anulacion es una operacion total separada, solo para una Sale
+completada sin devoluciones previas y, en POS normal, dentro de su turno original aun abierto.
+
+Los refunds se distribuyen sobre los Payment concretos persistidos. Solo cash genera
+`CashMovement.out`; card y transfer son refunds mock sin movimiento de efectivo. Payment pasa a
+`refunded` unicamente al agotarse todo su importe. Para inventario se reutiliza la huella OUT de
+la Sale y se crea IN en la ubicacion historica. Servicios/no-stock no mueven inventario. Hasta que
+la venta conserve huella historica suficiente por linea, lote, serial y kit se bloquean de forma
+explicita. Cada operacion exitosa produce una nota de credito mock, no un documento fiscal real.
+
+## Cash Shift
+
+Solo puede existir un `CashShift` abierto por `tenantId + userId + branchId`; un mismo usuario
+puede operar otra sucursal accesible mediante un turno independiente. Apertura, movimientos y
+cierre validan tenant, relaciones, actor y estado dentro de la mutacion autoritativa.
+
+`CashMovement` usa montos positivos y `type` (`in`/`out`) define la direccion. Los pagos POS se
+descomponen en metodos concretos incluso cuando el checkout es mixto. La confirmacion de una venta
+crea un unico movimiento `in` por la suma de sus pagos `cash`; card y transfer no crean movimientos
+de caja. Por ello `CashMovement` es la fuente canonica del efectivo posterior a la apertura y no se
+deben sumar `Sale` o `Payment` nuevamente.
+
+El efectivo esperado se calcula en centavos como apertura + movimientos IN - movimientos OUT. El
+resumen y el cierre usan la misma funcion pura; el caller del cierre solo entrega el efectivo
+contado y nunca un expected cash arbitrario.
+
 ## Logistics
 
 Flujo: Order -> Picking -> Packing -> Dispatch -> Tracking. Productos service no pasan por Picking. Trazabilidad debe respetar `Product.tracking`.

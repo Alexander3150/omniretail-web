@@ -1,7 +1,13 @@
-import { InventoryMovementType, PurchaseOrderStatus, ReceiptStatus } from "@/core/enums";
-import type { InventoryBalance, InventoryMovement, StockLot } from "@/core/entities";
+import {
+  InventoryMovementType,
+  PurchaseOrderStatus,
+  ReceiptStatus,
+  SerialStatus,
+} from "@/core/enums";
+import type { InventoryBalance, InventoryMovement, SerialNumber, StockLot } from "@/core/entities";
 import type { ReceiptRepository } from "@/core/repositories";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
+import { assertNewSerials } from "@/infrastructure/mock/repositories/serialNumberMutations";
 
 export class MockReceiptRepository extends BaseMockRepository implements ReceiptRepository {
   async getAll() {
@@ -106,6 +112,19 @@ export class MockReceiptRepository extends BaseMockRepository implements Receipt
         })),
       );
       const movements: InventoryMovement[] = [];
+      const serialsByLine = new Map<string, string[]>();
+      lines.forEach((line) => {
+        const product = db.products.find(
+          (item) => item.id === line.productId && item.tenantId === receipt.tenantId,
+        );
+        const quantity = line.inventoryQuantity ?? line.receivedQuantity;
+        if (!product?.tracking.serial || quantity <= 0) return;
+        const serials = line.serialNumbers ?? [];
+        if (serials.length !== quantity)
+          throw new Error(`Serial count conflicts with receipt line: ${line.id}`);
+        serialsByLine.set(line.id, serials);
+      });
+      assertNewSerials(db, receipt.tenantId, [...serialsByLine.values()].flat());
       lines.forEach((line) => {
         const inventoryQuantity = line.inventoryQuantity ?? line.receivedQuantity;
         if (inventoryQuantity <= 0) return;
@@ -113,6 +132,7 @@ export class MockReceiptRepository extends BaseMockRepository implements Receipt
           (item) => item.id === line.productId && item.tenantId === receipt.tenantId,
         );
         if (!product) throw new Error(`Product not found for ReceiptLine: ${line.id}`);
+        if (product.productType === "kit") throw new Error(`Virtual kits cannot be received: ${line.id}`);
         if (!product.tracking.stock) return;
         const balance = findOrCreateBalance(
           db.inventoryBalances,
@@ -157,6 +177,45 @@ export class MockReceiptRepository extends BaseMockRepository implements Receipt
         }
         balance.quantity += inventoryQuantity;
         balance.updatedAt = now;
+        const serials = serialsByLine.get(line.id) ?? [];
+        const createdSerials = serials.map<SerialNumber>((serialNumber) => ({
+          id: this.id("serial"),
+          tenantId: receipt.tenantId,
+          branchId: receipt.branchId,
+          productId: line.productId,
+          locationId: line.locationId,
+          lotId,
+          serialNumber: serialNumber.trim(),
+          status: SerialStatus.available,
+          createdAt: now,
+          updatedAt: now,
+        }));
+        db.serialNumbers.push(...createdSerials);
+        if (createdSerials.length > 0) {
+          createdSerials.forEach((serial, index) => {
+            const movement: InventoryMovement = {
+              id: this.id("movement"),
+              tenantId: receipt.tenantId,
+              branchId: receipt.branchId,
+              productId: line.productId,
+              lotId,
+              serialNumberId: serial.id,
+              type: InventoryMovementType.in,
+              reason: `Recepcion ${order.number}`,
+              quantity: 1,
+              quantityBefore: before + index,
+              quantityAfter: before + index + 1,
+              toLocationId: line.locationId,
+              referenceType: "receipt",
+              referenceId: receipt.id,
+              performedByUserId: input.receivedByUserId,
+              createdAt: now,
+            };
+            db.inventoryMovements.push(movement);
+            movements.push(movement);
+          });
+          return;
+        }
         const movement: InventoryMovement = {
           id: this.id("movement"),
           tenantId: receipt.tenantId,

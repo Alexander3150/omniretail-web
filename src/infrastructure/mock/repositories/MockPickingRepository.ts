@@ -49,9 +49,55 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
 
   async create(input: Parameters<PickingRepository["create"]>[0]) {
     const item = this.store.mutate((db) => {
+      const existing = db.pickingOrders.find(
+        (entry) =>
+          entry.tenantId === input.tenantId &&
+          entry.branchId === input.branchId &&
+          entry.orderId === input.orderId,
+      );
+      if (existing) return existing;
+      const order = db.orders.find(
+        (entry) =>
+          entry.id === input.orderId &&
+          entry.tenantId === input.tenantId &&
+          entry.branchId === input.branchId,
+      );
+      if (!order) throw new Error(`Order not found for PickingOrder: ${input.orderId}`);
       const now = this.now();
       const created = { ...input, id: this.id("picking"), createdAt: now, updatedAt: now };
       db.pickingOrders.push(created);
+      order.items.forEach((orderItem) => {
+        const demands = orderItem.fulfillmentComponents ?? [];
+        demands.forEach((demand) => {
+          if (
+            db.pickingItems.some(
+              (entry) =>
+                entry.pickingOrderId === created.id &&
+                entry.orderItemId === orderItem.id &&
+                entry.productId === demand.productId,
+            )
+          ) {
+            return;
+          }
+          const reservation = db.inventoryReservations.find(
+            (entry) =>
+              entry.tenantId === input.tenantId &&
+              entry.orderItemId === orderItem.id &&
+              entry.productId === demand.productId,
+          );
+          if (!reservation) throw new Error(`Reservation not found for PickingItem: ${orderItem.id}`);
+          db.pickingItems.push({
+            id: this.id("picking-item"),
+            pickingOrderId: created.id,
+            orderItemId: orderItem.id,
+            productId: demand.productId,
+            requestedQuantity: demand.quantity,
+            pickedQuantity: 0,
+            locationId: reservation.allocations[0]?.locationId,
+            status: PickingItemStatus.pending,
+          });
+        });
+      });
       return created;
     });
     this.emit("picking.changed", { entityId: item.id, tenantId: item.tenantId, action: "created" });
@@ -99,6 +145,9 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
       const context = this.getPickingItemContext(current, db);
 
       if (input.pickedQuantity === undefined) {
+        if (input.serialNumbers !== undefined) {
+          throw new Error("Picking serial numbers can only be set through physical consumption");
+        }
         if (
           context.product.productType === ProductType.physical &&
           context.product.tracking.stock
@@ -153,6 +202,9 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
       const targetQuantity = input.pickedQuantity;
       this.assertPickingQuantityChange(current, targetQuantity);
       const delta = targetQuantity - current.pickedQuantity;
+      if (delta === 0 && input.serialNumbers !== undefined) {
+        throw new Error("Picking serial numbers cannot change without physical consumption");
+      }
       if (delta > 0) this.assertPickingOrderAllowsIncrease(context.pickingOrder.status);
 
       const nextStatus = this.getValidatedPickingItemStatus(
@@ -164,10 +216,7 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
       let inventoryMovements: InventoryMovement[] = [];
       let inventoryChanged = false;
 
-      if (
-        context.product.productType === ProductType.physical &&
-        context.product.tracking.stock
-      ) {
+      if (context.product.productType === ProductType.physical && context.product.tracking.stock) {
         reservation = this.getRequiredReservation(current, context.pickingOrder, db);
         this.assertPickingItemLocationIsUnchanged(current, input);
         if (delta > 0) {
@@ -175,6 +224,9 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
         }
         if (delta > 0) {
           const allocationsConsumed = planPersistedReservationConsumption(reservation, delta);
+          const requestedSerialNumbers = context.product.tracking.serial
+            ? getNewRequestedSerialNumbers(input.serialNumbers, delta)
+            : undefined;
           const consumption = consumeInventoryReservationInDatabase(
             db,
             {
@@ -182,6 +234,7 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
               branchId: context.pickingOrder.branchId,
               reservationId: reservation.id,
               allocationsConsumed,
+              serialNumbers: requestedSerialNumbers,
               operationId: input.operationId,
               performedByUserId: input.performedByUserId,
             },
@@ -198,6 +251,19 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
       const updated: PickingItem = {
         ...current,
         ...itemInput,
+        serialNumbers: context.product.tracking.serial
+          ? delta > 0
+            ? [
+                ...(current.serialNumbers ?? []),
+                ...inventoryMovements.flatMap((movement) => {
+                  const serial = db.serialNumbers.find(
+                    (item) => item.id === movement.serialNumberId,
+                  );
+                  return serial ? [serial.serialNumber] : [];
+                }),
+              ]
+            : current.serialNumbers
+          : itemInput.serialNumbers,
         pickedQuantity: targetQuantity,
         status: nextStatus,
       };
@@ -242,7 +308,13 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
     const orderItem = order.items.find(
       (entry) => entry.id === item.orderItemId && entry.orderId === order.id,
     );
-    if (!orderItem || orderItem.productId !== item.productId) {
+    if (
+      !orderItem ||
+      !(
+        orderItem.productId === item.productId ||
+        orderItem.fulfillmentComponents?.some((component) => component.productId === item.productId)
+      )
+    ) {
       throw new Error(`OrderItem conflict for PickingItem: ${item.id}`);
     }
     const product = db.products.find(
@@ -271,7 +343,9 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
   ): InventoryReservation | undefined {
     const reservation = db.inventoryReservations.find(
       (entry) =>
-        entry.tenantId === pickingOrder.tenantId && entry.orderItemId === item.orderItemId,
+        entry.tenantId === pickingOrder.tenantId &&
+        entry.orderItemId === item.orderItemId &&
+        entry.productId === item.productId,
     );
     if (!reservation) return undefined;
     if (
@@ -367,8 +441,7 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
         if (!context.product.tracking.stock) return;
         const reservation = this.getRequiredReservation(item, pickingOrder, db);
         const remaining = reservation.allocations.reduce(
-          (total, allocation) =>
-            total + getInventoryReservationAllocationRemaining(allocation),
+          (total, allocation) => total + getInventoryReservationAllocationRemaining(allocation),
           0,
         );
         if (reservation.status !== InventoryReservationStatus.consumed || remaining !== 0) {
@@ -425,10 +498,7 @@ function getPickingItemStatus(
   return PickingItemStatus.partial;
 }
 
-function planPersistedReservationConsumption(
-  reservation: InventoryReservation,
-  quantity: number,
-) {
+function planPersistedReservationConsumption(reservation: InventoryReservation, quantity: number) {
   let remainingQuantity = quantity;
   const allocationsConsumed = reservation.allocations.flatMap((allocation) => {
     if (remainingQuantity <= 0) return [];
@@ -442,6 +512,22 @@ function planPersistedReservationConsumption(
     throw new Error(`Insufficient remaining reservation: ${reservation.id}`);
   }
   return allocationsConsumed;
+}
+
+function getNewRequestedSerialNumbers(
+  requested: string[] | undefined,
+  delta: number,
+): string[] | undefined {
+  if (requested === undefined) return undefined;
+  const normalized = requested.map((serial) => serial.trim()).filter(Boolean);
+  if (
+    normalized.length === 0 ||
+    new Set(normalized).size !== normalized.length ||
+    normalized.length !== delta
+  ) {
+    throw new Error("Picking serial numbers must identify exactly the new picked quantity");
+  }
+  return normalized;
 }
 
 function getPickingItemUpdateFingerprint(id: string, input: UpdatePickingItemInput): string {
