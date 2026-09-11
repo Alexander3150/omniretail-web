@@ -220,6 +220,12 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
   }
   async registerMovement(input: RegisterInventoryMovementInput) {
     const movement = this.store.mutate((db) => {
+      const product = db.products.find(
+        (item) => item.id === input.productId && item.tenantId === input.tenantId,
+      );
+      if (product?.tracking.lot || product?.tracking.serial) {
+        throw new Error("Traceable stock must be mutated through a traceability-aware workflow.");
+      }
       const created: InventoryMovement = {
         ...input,
         id: this.id("movement"),

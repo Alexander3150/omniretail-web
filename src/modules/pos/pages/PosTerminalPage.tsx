@@ -118,6 +118,7 @@ export function PosTerminalPage() {
         onConfirm={terminal.confirmSale}
         onDocumentTypeChange={terminal.setDocumentType}
         onInvoiceDataChange={terminal.updateInvoiceData}
+        onDeliveryAddressChange={terminal.updateDeliveryAddress}
         onPaymentModeChange={terminal.setPaymentMode}
         onProcessCardPayment={terminal.processCardPayment}
         onReset={terminal.resetCheckout}

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CashShift } from "@/core/entities";
-import { CashShiftStatus, PaymentMethod } from "@/core/enums";
+import { CashShiftStatus, DeliveryMethod, PaymentMethod, TransportMode } from "@/core/enums";
 import type {
   ConfirmSaleResult,
   SaleConfirmationPaymentMethod,
@@ -50,6 +50,7 @@ interface CheckoutState {
 
 interface ConfirmationAttempt {
   confirmationId: string;
+  orderIdempotencyKey?: string;
   contextKey: string;
 }
 
@@ -703,6 +704,30 @@ export function usePosTerminal() {
     }));
   }, [invalidateConfirmationAttempt]);
 
+  const updateDeliveryAddress = useCallback(
+    (patch: Partial<NonNullable<CheckoutDto["deliveryAddress"]>>) => {
+      invalidateConfirmationAttempt();
+      setCheckoutState((current) => ({
+        ...current,
+        value: {
+          ...current.value,
+          deliveryAddress: {
+            recipientName: "",
+            line1: "",
+            city: "",
+            country: "Guatemala",
+            ...current.value.deliveryAddress,
+            ...patch,
+          },
+        },
+        validated: false,
+        readyToConfirm: false,
+        message: null,
+      }));
+    },
+    [invalidateConfirmationAttempt],
+  );
+
   const validateCheckout = useCallback(() => {
     setCheckoutState((current) => {
       const amounts = calculateCheckoutAmounts(current.value, ticket.total);
@@ -793,10 +818,14 @@ export function usePosTerminal() {
     }
 
     const confirmationContextKey = `${user.id}:${currentBranch.id}:${cashShift.id}`;
+    const isDeferred = checkoutState.value.deliveryMethod !== DeliveryMethod.immediate;
     const attemptId = confirmationId ?? crypto.randomUUID();
+    const orderIdempotencyKey =
+      confirmationAttempt?.orderIdempotencyKey ?? (isDeferred ? crypto.randomUUID() : undefined);
     if (!confirmationId) {
       setConfirmationAttempt({
         confirmationId: attemptId,
+        orderIdempotencyKey,
         contextKey: confirmationContextKey,
       });
     }
@@ -818,6 +847,7 @@ export function usePosTerminal() {
         ticket,
         checkout: checkoutState.value,
         currency: tenant.defaultCurrency,
+        orderIdempotencyKey,
       });
 
       setConfirmationResult(result);
@@ -839,6 +869,7 @@ export function usePosTerminal() {
     checkoutReadyToConfirm,
     checkoutState.value,
     confirmationId,
+    confirmationAttempt?.orderIdempotencyKey,
     confirmationService,
     currentBranch,
     hasCurrentBranchAccess,
@@ -902,6 +933,7 @@ export function usePosTerminal() {
     updateCheckout,
     processCardPayment,
     updateInvoiceData,
+    updateDeliveryAddress,
     validateCheckout,
     confirmSale,
   };
@@ -1056,6 +1088,8 @@ function createCheckoutValue(
     bankAccountId: "",
     transferReference: "",
     transferExternallyVerified: false,
+    deliveryMethod: DeliveryMethod.immediate,
+    transportMode: TransportMode.none,
   };
 }
 

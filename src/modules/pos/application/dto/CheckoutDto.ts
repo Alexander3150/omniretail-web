@@ -1,4 +1,6 @@
 import type { SaleDocumentType } from "@/core/entities";
+import type { DeliveryMethod, TransportMode } from "@/core/enums";
+import type { AddressSnapshot } from "@/core/types/address.types";
 
 export type CheckoutPaymentMode = "cash" | "card" | "transfer" | "mixed";
 export type CardTerminalStatus = "idle" | "processing" | "approved" | "rejected";
@@ -29,6 +31,9 @@ export interface CheckoutDto {
   bankAccountId: string;
   transferReference: string;
   transferExternallyVerified: boolean;
+  deliveryMethod: DeliveryMethod;
+  transportMode: TransportMode;
+  deliveryAddress?: AddressSnapshot;
 }
 
 export interface CheckoutBankAccountDto {

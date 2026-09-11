@@ -1,6 +1,7 @@
 import type {
   CashMovement,
   InventoryMovement,
+  OrderItem,
   Payment,
   Sale,
   SaleItem,
@@ -9,6 +10,8 @@ import {
   CashMovementType,
   CashShiftStatus,
   InventoryMovementType,
+  InventoryReservationStatus,
+  OrderStatus,
   PaymentMethod,
   PaymentStatus,
   ProductType,
@@ -24,6 +27,24 @@ import type {
 import type { DataEventName, DataEventPayload } from "@/core/types/events.types";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
+import { expandKitDemand } from "@/core/kits/kitDemand";
+import {
+  findInventoryReservationBalance,
+  getInventoryReservationAllocationRemaining,
+} from "@/infrastructure/mock/repositories/inventoryReservationMutations";
+import {
+  consumePlannedStockLots,
+  getLotAwareBalances,
+  planStockLotConsumption,
+  type StockLotAllocation,
+} from "@/infrastructure/mock/repositories/stockLotMutations";
+import {
+  consumePlannedSerials,
+  getLotSerialAwareBalances,
+  getSerialAwareBalances,
+  planLotSerialConsumption,
+  planSerialConsumption,
+} from "@/infrastructure/mock/repositories/serialNumberMutations";
 
 export class MockSaleConfirmationRepository
   extends BaseMockRepository
@@ -42,6 +63,7 @@ export class MockSaleConfirmationRepository
 
     const result = this.store.transact((db) => {
       this.assertReferences(input, db);
+      const sourceOrderOwnsInventory = this.assertSourceOrderOwnership(input, db);
       this.assertPaymentMethods(input, db);
       this.assertPayments(input, db);
 
@@ -74,7 +96,9 @@ export class MockSaleConfirmationRepository
         updatedAt: now,
       };
 
-      const plannedInventoryMovements = this.planInventoryMovements(input, sale, saleItems, db);
+      const plannedInventoryMovements = sourceOrderOwnsInventory
+        ? []
+        : this.planInventoryMovements(input, sale, saleItems, db);
       const payments = input.payments.map<Payment>((paymentInput) => ({
         id: this.id("payments"),
         tenantId: input.tenantId,
@@ -215,12 +239,131 @@ export class MockSaleConfirmationRepository
         throw new Error(`Customer not found for tenant: ${input.customerId}`);
       }
     }
-    if (input.sourceOrderId) {
-      const order = db.orders.find((item) => item.id === input.sourceOrderId);
-      if (!order || order.tenantId !== input.tenantId || order.branchId !== input.branchId) {
-        throw new Error(`Order not found for tenant/branch: ${input.sourceOrderId}`);
-      }
+  }
+
+  private assertSourceOrderOwnership(input: ConfirmSaleInput, db: MockDatabase): boolean {
+    if (!input.sourceOrderId) return false;
+
+    const order = db.orders.find(
+      (item) => item.id === input.sourceOrderId && item.tenantId === input.tenantId,
+    );
+    if (!order || order.branchId !== input.branchId) {
+      throw new Error(`Order not found for tenant/branch: ${input.sourceOrderId}`);
     }
+    if (
+      db.sales.some(
+        (sale) => sale.tenantId === input.tenantId && sale.sourceOrderId === input.sourceOrderId,
+      )
+    ) {
+      throw new Error(`Order already has a confirmed Sale: ${order.id}`);
+    }
+    if (order.status === OrderStatus.cancelled) {
+      throw new Error(`Cancelled Order cannot be linked to Sale: ${order.id}`);
+    }
+
+    assertSaleMatchesOrder(input.items, order.items, order.id);
+
+    const orderItemIds = new Set<string>();
+    const ownedRemainingByBalance = new Map<string, number>();
+    order.items.forEach((orderItem) => {
+      if (orderItemIds.has(orderItem.id)) {
+        throw new Error(`Duplicate OrderItem id: ${orderItem.id}`);
+      }
+      orderItemIds.add(orderItem.id);
+      const product = db.products.find(
+        (item) => item.id === orderItem.productId && item.tenantId === input.tenantId,
+      );
+      if (!product) {
+        throw new Error(`Product not found for OrderItem: ${orderItem.id}`);
+      }
+      if (product.productType === ProductType.kit) {
+        const demands = orderItem.fulfillmentComponents;
+        if (!demands?.length) throw new Error(`Kit fulfillment snapshot missing: ${orderItem.id}`);
+        demands.forEach((demand) => {
+          const reservation = db.inventoryReservations.find(
+            (item) =>
+              item.tenantId === input.tenantId &&
+              item.orderItemId === orderItem.id &&
+              item.productId === demand.productId,
+          );
+          if (!reservation || reservation.branchId !== input.branchId || reservation.orderId !== order.id) {
+            throw new Error(`Kit component reservation missing: ${orderItem.id}`);
+          }
+          if (
+            reservation.status !== InventoryReservationStatus.active &&
+            reservation.status !== InventoryReservationStatus.consumed
+          ) {
+            throw new Error(`Kit component reservation does not own fulfillment: ${reservation.id}`);
+          }
+          const committed = reservation.allocations.reduce(
+            (sum, allocation) => sum + allocation.reservedQuantity,
+            0,
+          );
+          if (committed !== demand.quantity) {
+            throw new Error(`Kit component reservation quantity conflict: ${reservation.id}`);
+          }
+        });
+        return;
+      }
+      if (product.productType !== ProductType.physical || !product.tracking.stock) return;
+      if (product.tracking.expiration && !product.tracking.lot) {
+        throw new Error(
+          `La Order ${order.id} contiene ${product.name} con trazabilidad pendiente de lote/serie.`,
+        );
+      }
+
+      const reservations = db.inventoryReservations.filter(
+        (reservation) =>
+          reservation.tenantId === input.tenantId && reservation.orderItemId === orderItem.id,
+      );
+      if (reservations.length !== 1) {
+        throw new Error(`InventoryReservation ownership conflict for OrderItem: ${orderItem.id}`);
+      }
+      const [reservation] = reservations;
+      if (
+        reservation.branchId !== input.branchId ||
+        reservation.orderId !== order.id ||
+        reservation.productId !== orderItem.productId
+      ) {
+        throw new Error(`InventoryReservation context conflict for OrderItem: ${orderItem.id}`);
+      }
+      if (
+        reservation.status !== InventoryReservationStatus.active &&
+        reservation.status !== InventoryReservationStatus.consumed
+      ) {
+        throw new Error(`InventoryReservation does not own fulfillment: ${reservation.id}`);
+      }
+
+      let committedQuantity = 0;
+      let remainingQuantity = 0;
+      reservation.allocations.forEach((allocation) => {
+        const remaining = getInventoryReservationAllocationRemaining(allocation);
+        findInventoryReservationBalance(reservation, allocation, db);
+        committedQuantity += allocation.reservedQuantity;
+        remainingQuantity += remaining;
+        ownedRemainingByBalance.set(
+          allocation.balanceId,
+          (ownedRemainingByBalance.get(allocation.balanceId) ?? 0) + remaining,
+        );
+      });
+      if (committedQuantity !== orderItem.quantity) {
+        throw new Error(`InventoryReservation quantity conflict for OrderItem: ${orderItem.id}`);
+      }
+      if (
+        (reservation.status === InventoryReservationStatus.active && remainingQuantity <= 0) ||
+        (reservation.status === InventoryReservationStatus.consumed && remainingQuantity !== 0)
+      ) {
+        throw new Error(`InventoryReservation status conflict: ${reservation.id}`);
+      }
+    });
+    ownedRemainingByBalance.forEach((remaining, balanceId) => {
+      const balance = db.inventoryBalances.find((item) => item.id === balanceId);
+      if (!balance || balance.reservedQuantity < remaining) {
+        throw new Error(`InventoryReservation balance ownership conflict: ${balanceId}`);
+      }
+    });
+
+    return true;
   }
 
   private assertPaymentMethods(input: ConfirmSaleInput, db: MockDatabase): void {
@@ -272,13 +415,25 @@ export class MockSaleConfirmationRepository
     const plannedMovements: PlannedInventoryMovement[] = [];
     const plannedQuantities = new Map<string, number>();
 
-    saleItems.forEach((saleItem) => {
+    const fulfillmentItems = saleItems.flatMap((saleItem) => {
+      const commercialProduct = db.products.find((item) => item.id === saleItem.productId);
+      if (commercialProduct?.productType !== ProductType.kit) return [saleItem];
+      return expandKitDemand(
+        db.productKitComponents.filter(
+          (component) =>
+            component.tenantId === input.tenantId && component.kitProductId === commercialProduct.id,
+        ),
+        saleItem.quantity,
+      ).map((demand) => ({ ...saleItem, productId: demand.productId, quantity: demand.quantity }));
+    });
+
+    fulfillmentItems.forEach((saleItem) => {
       const product = db.products.find((item) => item.id === saleItem.productId);
       if (!product || product.tenantId !== input.tenantId) {
         throw new Error(`Producto no encontrado para venta: ${saleItem.productId}`);
       }
       if (product.productType !== ProductType.physical || !product.tracking.stock) return;
-      if (product.tracking.lot || product.tracking.serial) {
+      if (product.tracking.expiration && !product.tracking.lot) {
         throw new Error(
           `La venta ${sale.number} contiene ${product.name} con trazabilidad pendiente de lote/serie.`,
         );
@@ -297,7 +452,30 @@ export class MockSaleConfirmationRepository
           branchId: input.branchId,
           productId: saleItem.productId,
           quantity: saleItem.quantity,
-          balances: db.inventoryBalances.map((balance) => {
+          balances: (product.tracking.lot && product.tracking.serial
+            ? getLotSerialAwareBalances(db, {
+                tenantId: input.tenantId,
+                branchId: input.branchId,
+                productId: saleItem.productId,
+                expirationTracked: product.tracking.expiration,
+                at: this.now(),
+              })
+            : product.tracking.lot
+              ? getLotAwareBalances(db, {
+                  tenantId: input.tenantId,
+                  branchId: input.branchId,
+                  productId: saleItem.productId,
+                  expirationTracked: product.tracking.expiration,
+                  at: this.now(),
+                })
+              : product.tracking.serial
+                ? getSerialAwareBalances(db, {
+                    tenantId: input.tenantId,
+                    branchId: input.branchId,
+                    productId: saleItem.productId,
+                  })
+                : db.inventoryBalances
+          ).map((balance) => {
             const plannedQuantity = plannedQuantities.get(balance.id);
             return plannedQuantity === undefined
               ? balance
@@ -319,6 +497,49 @@ export class MockSaleConfirmationRepository
           quantityBefore: allocation.quantityBefore,
           quantityAfter: allocation.quantityAfter,
           fromLocationId: allocation.locationId,
+          lotAllocations:
+            product.tracking.lot && !product.tracking.serial
+              ? planStockLotConsumption(
+                  db,
+                  {
+                    tenantId: input.tenantId,
+                    branchId: input.branchId,
+                    productId: saleItem.productId,
+                    locationId: allocation.locationId,
+                    expirationTracked: product.tracking.expiration,
+                    at: this.now(),
+                  },
+                  allocation.quantity,
+                )
+              : [],
+          serialNumbers:
+            product.tracking.serial && !product.tracking.lot
+              ? planSerialConsumption(
+                  db,
+                  {
+                    tenantId: input.tenantId,
+                    branchId: input.branchId,
+                    productId: saleItem.productId,
+                    locationId: allocation.locationId,
+                  },
+                  allocation.quantity,
+                )
+              : [],
+          lotSerialAllocations:
+            product.tracking.lot && product.tracking.serial
+              ? planLotSerialConsumption(
+                  db,
+                  {
+                    tenantId: input.tenantId,
+                    branchId: input.branchId,
+                    productId: saleItem.productId,
+                    locationId: allocation.locationId,
+                    expirationTracked: product.tracking.expiration,
+                    at: this.now(),
+                  },
+                  allocation.quantity,
+                )
+              : [],
         });
       });
     });
@@ -344,25 +565,75 @@ export class MockSaleConfirmationRepository
 
       balance.quantity = planned.quantityAfter;
       balance.updatedAt = now;
-
-      const movement: InventoryMovement = {
+      const createMovement = (
+        quantity: number,
+        quantityBefore: number,
+        quantityAfter: number,
+        lotId?: string,
+        serialNumberId?: string,
+      ): InventoryMovement => ({
         id: this.id("movement"),
         tenantId: input.tenantId,
         branchId: input.branchId,
         productId: planned.productId,
+        lotId,
+        serialNumberId,
         type: InventoryMovementType.out,
         reason: `Venta ${sale.number}`,
-        quantity: planned.quantity,
-        quantityBefore: planned.quantityBefore,
-        quantityAfter: planned.quantityAfter,
+        quantity,
+        quantityBefore,
+        quantityAfter,
         fromLocationId: planned.fromLocationId,
         referenceType: "sale",
         referenceId: sale.id,
         performedByUserId: input.cashierUserId,
         createdAt: now,
-      };
-      db.inventoryMovements.push(movement);
-      movements.push(movement);
+      });
+      if (planned.lotSerialAllocations.length > 0) {
+        consumePlannedStockLots(planned.lotSerialAllocations.map((item) => item.lotAllocation));
+        consumePlannedSerials(
+          planned.lotSerialAllocations.flatMap((item) => item.serialNumbers),
+          now,
+        );
+        let before = planned.quantityBefore;
+        planned.lotSerialAllocations.forEach(({ lotAllocation, serialNumbers }) => {
+          serialNumbers.forEach((serial) => {
+            const after = before - 1;
+            const movement = createMovement(1, before, after, lotAllocation.lot.id, serial.id);
+            before = after;
+            db.inventoryMovements.push(movement);
+            movements.push(movement);
+          });
+        });
+      } else if (planned.serialNumbers.length > 0) {
+        consumePlannedSerials(planned.serialNumbers, now);
+        let before = planned.quantityBefore;
+        planned.serialNumbers.forEach((serial) => {
+          const after = before - 1;
+          const movement = createMovement(1, before, after, undefined, serial.id);
+          before = after;
+          db.inventoryMovements.push(movement);
+          movements.push(movement);
+        });
+      } else if (planned.lotAllocations.length === 0) {
+        const movement = createMovement(
+          planned.quantity,
+          planned.quantityBefore,
+          planned.quantityAfter,
+        );
+        db.inventoryMovements.push(movement);
+        movements.push(movement);
+      } else {
+        consumePlannedStockLots(planned.lotAllocations);
+        let before = planned.quantityBefore;
+        planned.lotAllocations.forEach(({ lot, quantity }) => {
+          const after = before - quantity;
+          const movement = createMovement(quantity, before, after, lot.id);
+          before = after;
+          db.inventoryMovements.push(movement);
+          movements.push(movement);
+        });
+      }
     });
 
     return movements;
@@ -436,6 +707,36 @@ interface PlannedInventoryMovement {
   quantityBefore: number;
   quantityAfter: number;
   fromLocationId?: string;
+  lotAllocations: StockLotAllocation[];
+  serialNumbers: import("@/core/entities").SerialNumber[];
+  lotSerialAllocations: import("@/infrastructure/mock/repositories/serialNumberMutations").LotSerialAllocation[];
+}
+
+function assertSaleMatchesOrder(
+  saleItems: ConfirmSaleInput["items"],
+  orderItems: OrderItem[],
+  orderId: string,
+): void {
+  const saleQuantities = aggregateProductQuantities(saleItems);
+  const orderQuantities = aggregateProductQuantities(orderItems);
+  if (saleQuantities.size !== orderQuantities.size) {
+    throw new Error(`Sale items do not match Order: ${orderId}`);
+  }
+  orderQuantities.forEach((quantity, productId) => {
+    if (saleQuantities.get(productId) !== quantity) {
+      throw new Error(`Sale quantity does not match Order for product: ${productId}`);
+    }
+  });
+}
+
+function aggregateProductQuantities(
+  items: Array<{ productId: string; quantity: number }>,
+): Map<string, number> {
+  const quantities = new Map<string, number>();
+  items.forEach((item) => {
+    quantities.set(item.productId, (quantities.get(item.productId) ?? 0) + item.quantity);
+  });
+  return quantities;
 }
 
 function getConfirmationFingerprint(input: ConfirmSaleInput): string {

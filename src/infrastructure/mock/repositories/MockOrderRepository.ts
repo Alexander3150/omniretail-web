@@ -1,9 +1,15 @@
-import type { InventoryReservation, Order } from "@/core/entities";
+import type { InventoryReservation, Order, Payment } from "@/core/entities";
 import { OrderStatus, ProductType } from "@/core/enums";
-import type { CreateOrderInput, OrderRepository } from "@/core/repositories";
+import type {
+  CreateOrderInput,
+  CreateOrderWithPaymentInput,
+  CreateOrderWithPaymentResult,
+  OrderRepository,
+} from "@/core/repositories";
 import type { DataEventName, DataEventPayload } from "@/core/types/events.types";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
+import { expandKitDemand } from "@/core/kits/kitDemand";
 import {
   type InventoryReservationMutationResult,
   releaseInventoryReservationInDatabase,
@@ -22,6 +28,11 @@ interface OrderLifecycleMutationResult {
   order: Order;
   orderChanged: boolean;
   reservationChanges: InventoryReservationMutationResult[];
+}
+
+interface OrderWithPaymentMutationResult extends OrderLifecycleMutationResult {
+  payment: Payment;
+  paymentChanged: boolean;
 }
 
 export class MockOrderRepository extends BaseMockRepository implements OrderRepository {
@@ -72,7 +83,11 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
       const order: Order = {
         ...input,
         id: orderId,
-        items: input.items.map((item) => ({ ...item, orderId })),
+        items: input.items.map((item) => ({
+          ...item,
+          orderId,
+          fulfillmentComponents: this.resolveFulfillmentComponents(input.tenantId, item.productId, item.quantity, db),
+        })),
         idempotencyKey,
         idempotencyFingerprint: idempotencyKey ? fingerprint : undefined,
         createdAt: now,
@@ -89,6 +104,91 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
 
     this.emitLifecycleChanges(result, "created");
     return result.order;
+  }
+
+  async createWithPayment(input: CreateOrderWithPaymentInput): Promise<CreateOrderWithPaymentResult> {
+    this.assertCreateInput(input.order);
+
+    const result = this.store.transact<OrderWithPaymentMutationResult>((db) => {
+      const idempotencyKey = input.order.idempotencyKey?.trim();
+      const fingerprint = getOrderCreationFingerprint(input.order);
+      const existing = idempotencyKey
+        ? db.orders.find(
+            (order) =>
+              order.tenantId === input.order.tenantId && order.idempotencyKey === idempotencyKey,
+          )
+        : undefined;
+
+      if (existing) {
+        if (existing.idempotencyFingerprint !== fingerprint) {
+          throw new Error(`Order idempotency conflict: ${idempotencyKey}`);
+        }
+        const payments = db.payments.filter((payment) => payment.orderId === existing.id);
+        if (payments.length > 1) {
+          throw new Error(`Checkout has multiple payments: ${existing.id}`);
+        }
+        if (payments[0]) {
+          return {
+            order: existing,
+            payment: payments[0],
+            orderChanged: false,
+            paymentChanged: false,
+            reservationChanges: [],
+          };
+        }
+
+        const payment = this.createPaymentInDatabase(existing, input.payment, db);
+        return {
+          order: existing,
+          payment,
+          orderChanged: false,
+          paymentChanged: true,
+          reservationChanges: [],
+        };
+      }
+
+      this.assertOrderReferences(input.order, db);
+      const now = this.now();
+      const orderId = this.id("order");
+      const order: Order = {
+        ...input.order,
+        id: orderId,
+        items: input.order.items.map((item) => ({
+          ...item,
+          orderId,
+          fulfillmentComponents: this.resolveFulfillmentComponents(
+            input.order.tenantId,
+            item.productId,
+            item.quantity,
+            db,
+          ),
+        })),
+        idempotencyKey,
+        idempotencyFingerprint: idempotencyKey ? fingerprint : undefined,
+        createdAt: now,
+        updatedAt: now,
+      };
+      db.orders.push(order);
+
+      const payment = this.createPaymentInDatabase(order, input.payment, db);
+      return {
+        order,
+        payment,
+        orderChanged: true,
+        paymentChanged: true,
+        reservationChanges: [],
+      };
+    });
+
+    this.emitLifecycleChanges(result, "created");
+    if (result.paymentChanged) {
+      this.emitSafely("payment.changed", {
+        entityId: result.payment.id,
+        tenantId: result.payment.tenantId,
+        action: "created",
+      });
+    }
+    return { order: result.order, payment: result.payment };
   }
 
   async updateStatus(id: string, status: OrderStatus) {
@@ -154,9 +254,11 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
       if (!product) {
         throw new Error(`Product not found for tenant: ${orderItem.productId}`);
       }
-      if (product.productType !== ProductType.physical || !product.tracking.stock) return [];
-
-      return [
+      const demands = orderItem.fulfillmentComponents ??
+        (product.productType === ProductType.physical && product.tracking.stock
+          ? [{ productId: orderItem.productId, quantity: orderItem.quantity }]
+          : []);
+      return demands.map((demand) =>
         reserveOrderItemInDatabase(
           db,
           {
@@ -164,13 +266,44 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
             branchId: order.branchId,
             orderId: order.id,
             orderItemId: orderItem.id,
-            productId: orderItem.productId,
-            quantity: orderItem.quantity,
+            productId: demand.productId,
+            quantity: demand.quantity,
           },
           { id: (prefix) => this.id(prefix), now: () => this.now() },
         ),
-      ];
+      );
     });
+  }
+
+  private createPaymentInDatabase(
+    order: Order,
+    input: CreateOrderWithPaymentInput["payment"],
+    db: MockDatabase,
+  ): Payment {
+    if (input.tenantId !== order.tenantId) throw new Error("Payment tenant does not match order");
+    if (!Number.isFinite(input.amount) || input.amount < 0 || input.amount !== order.total) {
+      throw new Error("Payment amount does not match order total");
+    }
+
+    const payment: Payment = {
+      ...input,
+      id: this.id("payments"),
+      orderId: order.id,
+      createdAt: this.now(),
+    };
+    db.payments.push(payment);
+    return payment;
+  }
+
+  private resolveFulfillmentComponents(tenantId: string, productId: string, quantity: number, db: MockDatabase) {
+    const product = db.products.find((item) => item.id === productId && item.tenantId === tenantId);
+    if (!product) throw new Error(`Product not found for tenant: ${productId}`);
+    if (product.productType === ProductType.physical && product.tracking.stock) return [{ productId, quantity }];
+    if (product.productType !== ProductType.kit) return undefined;
+    return expandKitDemand(
+      db.productKitComponents.filter((item) => item.tenantId === tenantId && item.kitProductId === productId),
+      quantity,
+    );
   }
 
   private releaseOrderReservations(

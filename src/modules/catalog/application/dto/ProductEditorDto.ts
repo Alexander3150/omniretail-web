@@ -1,6 +1,7 @@
 import type {
   AttributeDefinition,
   ProductMedia,
+  Product,
   ProductInventorySettings,
   ProductSalesPriceTier,
   StorageLocation,
@@ -71,6 +72,11 @@ export interface ProductInventorySettingsEditorValue {
   defaultLocationId: string;
 }
 
+export interface ProductKitComponentEditorValue {
+  componentProductId: string;
+  quantityPerKit: NumericInputValue;
+}
+
 export interface ProductEditorDto extends Omit<CreateProductDto, "primaryImageUrl" | "salePrice"> {
   salePrice: NumericInputValue;
   inventoryQuantity: NumericInputValue;
@@ -80,6 +86,7 @@ export interface ProductEditorDto extends Omit<CreateProductDto, "primaryImageUr
   salesPriceTiers: ProductSalesPriceTierEditorValue[];
   supplierProducts: SupplierProductEditorValue[];
   media: ProductMediaEditorValue[];
+  kitComponents: ProductKitComponentEditorValue[];
 }
 
 export interface ProductEditorData {
@@ -95,4 +102,6 @@ export interface ProductEditorData {
   supplierProducts: SupplierProductEditorValue[];
   media: ProductMediaEditorValue[];
   promotionCount: number;
+  kitComponents: ProductKitComponentEditorValue[];
+  kitEligibleProducts: Product[];
 }

@@ -28,6 +28,7 @@ export function useReceivingDocumentDetail(
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmationId, setConfirmationId] = useState(() => crypto.randomUUID());
 
   const reload = useCallback(async () => {
     if (!activeBranchId) return;
@@ -102,12 +103,14 @@ export function useReceivingDocumentDetail(
         userId: currentBranch ? "user-warehouse" : undefined,
         lines,
         incidents,
+        confirmationId,
       });
       await reload();
+      setConfirmationId(crypto.randomUUID());
     } finally {
       setSaving(false);
     }
-  }, [currentBranch, documentId, documentType, incidents, lines, reload, service]);
+  }, [confirmationId, currentBranch, documentId, documentType, incidents, lines, reload, service]);
 
   const saveIncident = useCallback(
     (input: {

@@ -10,7 +10,6 @@ import {
   type ReactNode,
 } from "react";
 import type { Role, User } from "@/core/entities";
-import { demoSessionConfig } from "@/config/demo-session";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 
@@ -38,12 +37,30 @@ export function CurrentSessionProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(undefined);
     try {
-      const demoUser = await repositories.users.getByEmail(demoSessionConfig.cashierEmail);
-      const demoRole = demoUser?.roleId ? await repositories.roles.getById(demoUser.roleId) : null;
-      setUser(demoUser);
-      setRole(demoRole);
-      if (!demoUser || !demoRole) {
-        setError("No se pudo resolver la sesion demo.");
+      const sessionId = await repositories.auth.getCurrentSessionId();
+      if (!sessionId) {
+        setUser(null);
+        setRole(null);
+        return;
+      }
+
+      const session = await repositories.auth.getSession(sessionId);
+      if (!session) {
+        setUser(null);
+        setRole(null);
+        return;
+      }
+
+      const resolvedUser = await repositories.users.getById(session.userId);
+      const resolvedRole = resolvedUser?.roleId
+        ? await repositories.roles.getById(resolvedUser.roleId)
+        : null;
+
+      setUser(resolvedUser);
+      setRole(resolvedRole);
+
+      if (!resolvedUser) {
+        setError("No se pudo resolver el usuario de la sesion actual.");
       }
     } catch {
       setUser(null);
@@ -79,7 +96,7 @@ export function CurrentSessionProvider({ children }: { children: ReactNode }) {
       hasPermission: (permission) => permissionSet.has(permission),
       canAccessBranch: (branchId) => canAccessBranch(user, role, branchId),
       loading,
-      isDemo: true,
+      isDemo: false,
       error,
     }),
     [error, loading, permissionSet, permissions, role, user],

@@ -109,6 +109,8 @@ La creacion de Order admite `idempotencyKey` opcional. Cuando se proporciona, la
 
 `Sale` representa una venta POS. Order y Sale no son sinonimos. Una venta inmediata puede terminar sin logistica; una venta con retiro/envio puede generar Order.
 
+Una Sale sin `sourceOrderId` conserva la salida directa de inventario. Una Sale con `sourceOrderId` solo omite esa salida cuando la Order coincide en tenant, branch, productos y cantidades, no esta cancelada y sus items fisicos con stock estan respaldados por reservas `active` o `consumed` coherentes. Picking sigue siendo quien consume esas reservas y genera los movimientos OUT; confirmar la Sale no modifica la Order ni duplica la salida.
+
 ## Delivery
 
 `DeliveryMethod`: immediate, store_pickup, home_delivery. `TransportMode`: none, customer, own_fleet, third_party. No mezclar ambos conceptos.

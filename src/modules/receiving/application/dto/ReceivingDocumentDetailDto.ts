@@ -134,4 +134,6 @@ export interface SaveReceivingProgressInput {
   incidents: ReceivingDocumentIncident[];
 }
 
-export type ConfirmReceivingInput = SaveReceivingProgressInput;
+export interface ConfirmReceivingInput extends SaveReceivingProgressInput {
+  confirmationId: string;
+}

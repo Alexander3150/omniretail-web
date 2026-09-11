@@ -78,7 +78,13 @@ Productos con lote o serie bloquean la confirmacion hasta que POS entregue traza
 
 `sourceOrderId` es opcional. Una venta directa de mostrador no requiere `Order`.
 
-Si existe `sourceOrderId`, la confirmacion solo valida que el pedido exista para el mismo tenant/sucursal y guarda el vinculo en `Sale.sourceOrderId`. No cambia `Order.status` ni emite `order.changed` hasta que exista una regla explicita de flujo de orden.
+Si existe `sourceOrderId`, la confirmacion valida que la Order pertenezca al mismo tenant y sucursal, no este cancelada y coincida en productos y cantidades con la Sale. Cada item fisico con stock debe conservar una `InventoryReservation` valida que demuestre que la Order es responsable del fulfillment. En ese caso la Sale no crea un segundo `InventoryMovement.out`: Picking conserva el consumo fisico de la reserva.
+
+En el alcance actual, una Order puede respaldar como maximo una Sale confirmada. La comprobacion ocurre dentro de la transaccion de confirmacion, junto con la persistencia de Sale, pagos y caja. No cambia `Order.status` ni emite `order.changed`.
+
+## Entrega POS
+
+`immediate` confirma una Sale directa y registra su OUT. `store_pickup` y `home_delivery` crean primero una Order confirmada con `source = pos` e idempotencia propia; esa Order reserva stock mediante su boundary y la Sale se confirma con `sourceOrderId`, sin un segundo OUT. La clave de Order es distinta de `confirmationId` y ambas permanecen estables al reintentar el mismo cobro.
 
 ## Idempotencia
 
