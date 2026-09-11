@@ -29,6 +29,12 @@ export const administrationNavigation = [
         href: "/administracion/cuentas-bancarias",
         permission: "admin.bank_accounts.manage",
       },
+      {
+        id: "administration-suppliers",
+        label: "Proveedores",
+        href: "/administracion/proveedores",
+        permission: "admin.suppliers.manage",
+      },
     ],
   },
 ] satisfies NavigationItem[];

@@ -290,17 +290,12 @@ async function syncSupplierProducts(
   dto: ProductEditorDto,
 ) {
   const current = await repositories.supplierProducts.getByProduct(product.id);
-  const suppliers = await repositories.suppliers.getActive();
-  const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier]));
   const nextIds = new Set<string>();
 
   const normalizedSupplierProducts = normalizePreferredSupplier(dto.supplierProducts);
 
   for (const supplierProduct of normalizedSupplierProducts) {
     if (!supplierProduct.supplierId) continue;
-    const supplierLeadTimeDays =
-      supplierById.get(supplierProduct.supplierId)?.leadTimeDays ??
-      supplierProduct.leadTimeDays;
     const input = {
       tenantId: product.tenantId,
       supplierId: supplierProduct.supplierId,
@@ -309,16 +304,17 @@ async function syncSupplierProducts(
       purchaseUnitId: supplierProduct.purchaseUnitId,
       purchaseToBaseFactor: toFiniteNumber(supplierProduct.purchaseToBaseFactor),
       lastCost: toFiniteNumber(supplierProduct.lastCost),
-      leadTimeDays: supplierLeadTimeDays,
+      leadTimeDays: toFiniteNumber(supplierProduct.leadTimeDays),
       minimumOrderQuantity: toFiniteNumber(supplierProduct.minimumOrderQuantity),
       preferred: supplierProduct.preferred,
       active: true,
     };
     const saved = supplierProduct.id
-      ? await repositories.supplierProducts.update(supplierProduct.id, input)
+      ? await repositories.supplierProducts.update(product.tenantId, supplierProduct.id, input)
       : await repositories.supplierProducts.create(input);
     nextIds.add(saved.id);
     await repositories.supplierProducts.replaceCostTiers(
+      product.tenantId,
       saved.id,
       supplierProduct.costTiers.map((tier) => ({
         tenantId: product.tenantId,
@@ -331,7 +327,9 @@ async function syncSupplierProducts(
   await Promise.all(
     current
       .filter((supplierProduct) => !nextIds.has(supplierProduct.id))
-      .map((supplierProduct) => repositories.supplierProducts.archive(supplierProduct.id)),
+      .map((supplierProduct) =>
+        repositories.supplierProducts.archive(product.tenantId, supplierProduct.id),
+      ),
   );
 }
 
@@ -420,6 +418,9 @@ function assertSupplierProducts(supplierProducts: ProductEditorDto["supplierProd
     if (!isPositiveNumericInput(supplierProduct.minimumOrderQuantity)) {
       throw new CatalogServiceError("El pedido minimo debe ser mayor a 0.");
     }
+    if (!isNonNegativeInteger(supplierProduct.leadTimeDays)) {
+      throw new CatalogServiceError("El plazo de entrega debe ser un entero mayor o igual a 0.");
+    }
     const quantities = new Set<number>();
     for (const tier of supplierProduct.costTiers) {
       const minQuantity = toFiniteNumber(tier.minQuantity);
@@ -439,6 +440,10 @@ function assertSupplierProducts(supplierProducts: ProductEditorDto["supplierProd
 
 function isPositiveNumber(value: number | "") {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function isNonNegativeInteger(value: number | "") {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
 function normalizePreferredSupplier(supplierProducts: ProductEditorDto["supplierProducts"]) {

@@ -79,7 +79,7 @@ En recepcion de mercaderia, la cantidad rechazada se deriva de la suma de incide
 
 ## Supplier
 
-`Supplier` es entidad maestra comun. Administracion mantiene el CRUD maestro y Purchasing consume el mismo Supplier. `SupplierProduct` contiene supplierSku, costos, unidad de compra, factor hacia unidad base, lead time, minimos y proveedor preferido por producto. La unidad de compra depende del proveedor. `SupplierCostTier` representa costos por volumen de proveedor y no se mezcla con precios mayoristas de venta. No crear proveedores independientes por modulo.
+`Supplier` es entidad maestra comun. Administracion mantiene el CRUD maestro y Purchasing consume el mismo Supplier. `SupplierProduct.leadTimeDays` es la fuente de verdad del plazo para una relacion proveedor-producto. `Supplier.leadTimeDays` es un rollup derivado, read-only, con el maximo de las relaciones activas; cuando no existen relaciones activas es `undefined`. `SupplierProduct` tambien contiene supplierSku, costos, unidad de compra, factor hacia unidad base, minimos y proveedor preferido por producto. La unidad de compra depende del proveedor. `SupplierCostTier` representa costos por volumen de proveedor y no se mezcla con precios mayoristas de venta. No crear proveedores independientes por modulo.
 
 ## Customer
 
