@@ -1,5 +1,6 @@
 import { administrationNavigation } from "@/modules/administration/navigation";
 import { authNavigation } from "@/modules/auth/navigation";
+import { EMPLOYEE_HOME_ACCESS_PERMISSION } from "@/modules/auth/permissions";
 import { customerNavigation } from "@/modules/customer/navigation";
 import { inventoryNavigation } from "@/modules/inventory/navigation";
 import { logisticsNavigation } from "@/modules/logistics/navigation";
@@ -14,6 +15,7 @@ export const baseNavigation = [
     id: "home",
     label: "Inicio",
     href: "/inicio",
+    permission: EMPLOYEE_HOME_ACCESS_PERMISSION,
   },
 ] satisfies NavigationItem[];
 
