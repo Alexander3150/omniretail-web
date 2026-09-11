@@ -40,7 +40,7 @@ export function useEcommerceConfig() {
 
   const reload = useCallback(async (): Promise<EcommerceConfigDto | null> => {
     if (sessionLoading) return null;
-    if (!tenantId) {
+    if (!tenantId || !actorUserId) {
       setConfig(null);
       setBranchOptions([]);
       setError("No se pudo resolver el negocio activo.");
@@ -52,7 +52,7 @@ export function useEcommerceConfig() {
     setError(null);
     try {
       const [nextConfig, branches] = await Promise.all([
-        getService.execute(tenantId, permissions),
+        getService.execute(tenantId, actorUserId, permissions),
         repositories.branches.getActive(),
       ]);
       setConfig(nextConfig);
@@ -66,14 +66,14 @@ export function useEcommerceConfig() {
     } finally {
       setLoading(false);
     }
-  }, [getService, permissions, repositories, sessionLoading, tenantId]);
+  }, [actorUserId, getService, permissions, repositories, sessionLoading, tenantId]);
 
   useDataEvent("business-config.changed", reload);
 
   useEffect(() => {
     let active = true;
 
-    if (!sessionLoading && !tenantId) {
+    if (!sessionLoading && (!tenantId || !actorUserId)) {
       window.queueMicrotask(() => {
         if (!active) return;
         setConfig(null);
@@ -81,8 +81,11 @@ export function useEcommerceConfig() {
         setError("No se pudo resolver el negocio activo.");
         setLoading(false);
       });
-    } else if (tenantId) {
-      Promise.all([getService.execute(tenantId, permissions), repositories.branches.getActive()])
+    } else if (tenantId && actorUserId) {
+      Promise.all([
+        getService.execute(tenantId, actorUserId, permissions),
+        repositories.branches.getActive(),
+      ])
         .then(([nextConfig, branches]) => {
           if (!active) return;
           setConfig(nextConfig);
@@ -103,7 +106,7 @@ export function useEcommerceConfig() {
     return () => {
       active = false;
     };
-  }, [getService, permissions, repositories, sessionLoading, tenantId]);
+  }, [actorUserId, getService, permissions, repositories, sessionLoading, tenantId]);
 
   const save = useCallback(
     async (dto: EcommerceConfigInputDto): Promise<EcommerceConfigDto> => {
