@@ -1,9 +1,4 @@
-import type {
-  Branch,
-  CashShift,
-  SaleDocumentSnapshot,
-  User,
-} from "@/core/entities";
+import type { Branch, CashShift, SaleDocumentSnapshot, User } from "@/core/entities";
 import {
   CashShiftStatus,
   DeliveryMethod,
@@ -28,11 +23,9 @@ import type {
 import { isBranchScopedResourceAvailable } from "@/core/scopes/branchScope";
 import type { CurrencyCode } from "@/core/types/common.types";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import { isStockLotEligible } from "@/infrastructure/mock/repositories/stockLotMutations";
 import type { CheckoutDto } from "@/modules/pos/application/dto/CheckoutDto";
-import type {
-  SaleTicketDto,
-  SaleTicketItemDto,
-} from "@/modules/pos/application/dto/SaleTicketDto";
+import type { SaleTicketDto, SaleTicketItemDto } from "@/modules/pos/application/dto/SaleTicketDto";
 import {
   getApprovedCardTerminalReference,
   validateCheckout,
@@ -102,8 +95,7 @@ export class ConfirmSaleService {
     const document = createDocumentSnapshot(input.checkout);
     const currentShift = await this.requireCurrentCashShift(input);
     const sourceOrderId =
-      input.sourceOrderId ??
-      (await this.createDeferredOrder(input, items, totals));
+      input.sourceOrderId ?? (await this.createDeferredOrder(input, items, totals));
 
     return this.repositories.saleConfirmations.confirm({
       confirmationId,
@@ -199,6 +191,7 @@ export class ConfirmSaleService {
 
   private async requireCurrentCashShift(input: ConfirmPosSaleInput) {
     const shift = await this.repositories.cashShifts.getOpenByUserAndBranch(
+      input.currentBranch.tenantId,
       input.user.id,
       input.currentBranch.id,
     );
@@ -235,9 +228,7 @@ export class ConfirmSaleService {
     }
   }
 
-  private async validateAndBuildItems(
-    input: ConfirmPosSaleInput,
-  ): Promise<ValidatedSaleItem[]> {
+  private async validateAndBuildItems(input: ConfirmPosSaleInput): Promise<ValidatedSaleItem[]> {
     const availableProducts = await this.repositories.products.getAvailableForPos();
     const productsById = new Map(
       availableProducts
@@ -258,13 +249,13 @@ export class ConfirmSaleService {
         if (product.sku !== ticketItem.sku || product.name !== ticketItem.name) {
           throw new Error(`Los datos de ${ticketItem.name} cambiaron; actualiza el ticket.`);
         }
-        if (product.tracking.stock !== ticketItem.tracksStock) {
-          throw new Error(`El control de inventario de ${product.name} cambió; actualiza el ticket.`);
+        if (product.productType !== ProductType.kit && product.tracking.stock !== ticketItem.tracksStock) {
+          throw new Error(
+            `El control de inventario de ${product.name} cambió; actualiza el ticket.`,
+          );
         }
         if (
-          product.productType === ProductType.kit ||
-          product.tracking.lot ||
-          product.tracking.serial
+          product.tracking.expiration && !product.tracking.lot
         ) {
           throw new Error(`${product.name} requiere trazabilidad no soportada en Terminal.`);
         }
@@ -285,24 +276,77 @@ export class ConfirmSaleService {
           !input.sourceOrderId &&
           input.checkout.deliveryMethod === DeliveryMethod.immediate
         ) {
-          const [balances, settings] = await Promise.all([
-            this.repositories.inventory.getBalanceByProduct(
-              product.id,
-              input.currentBranch.id,
-            ),
+          const [balances, settings, lots, serials] = await Promise.all([
+            this.repositories.inventory.getBalanceByProduct(product.id, input.currentBranch.id),
             this.repositories.inventory.getProductInventorySettings(
               product.id,
               input.currentBranch.id,
             ),
+            product.tracking.lot
+              ? this.repositories.inventory.getLots(product.id)
+              : Promise.resolve([]),
+            product.tracking.serial
+              ? this.repositories.inventory.getSerialNumbers(product.id)
+              : Promise.resolve([]),
           ]);
-          const balancesWithAvailability = balances.filter(
+          const sellableBalances = product.tracking.lot
+            ? balances.map((balance) => ({
+                ...balance,
+                quantity: Math.min(
+                  balance.quantity,
+                  lots
+                    .filter(
+                      (lot) =>
+                        lot.tenantId === input.currentBranch.tenantId &&
+                        lot.branchId === input.currentBranch.id &&
+                        lot.productId === product.id &&
+                        lot.locationId === balance.locationId &&
+                        isStockLotEligible(
+                          lot,
+                          product.tracking.expiration,
+                          new Date().toISOString(),
+                        ),
+                    )
+                    .reduce(
+                      (sum, lot) =>
+                        sum +
+                        (product.tracking.serial
+                          ? Math.min(
+                              lot.quantity,
+                              serials.filter(
+                                (serial) =>
+                                  serial.lotId === lot.id && serial.status === "available",
+                              ).length,
+                            )
+                          : lot.quantity),
+                      0,
+                    ),
+                ),
+              }))
+            : product.tracking.serial
+              ? balances.map((balance) => ({
+                  ...balance,
+                  quantity: Math.min(
+                    balance.quantity,
+                    serials.filter(
+                      (serial) =>
+                        serial.tenantId === input.currentBranch.tenantId &&
+                        serial.branchId === input.currentBranch.id &&
+                        serial.productId === product.id &&
+                        serial.locationId === balance.locationId &&
+                        serial.status === "available",
+                    ).length,
+                  ),
+                }))
+              : balances;
+          const balancesWithAvailability = sellableBalances.filter(
             (balance) => getAvailableQuantity(balance) > 0,
           );
           const availableQuantity = getBranchAvailableQuantity({
             tenantId: input.currentBranch.tenantId,
             branchId: input.currentBranch.id,
             productId: product.id,
-            balances: balancesWithAvailability,
+            balances: product.tracking.lot ? sellableBalances : balancesWithAvailability,
             locations,
           });
           if (availableQuantity < ticketItem.quantity) {
@@ -314,7 +358,7 @@ export class ConfirmSaleService {
               branchId: input.currentBranch.id,
               productId: product.id,
               quantity: ticketItem.quantity,
-              balances,
+              balances: sellableBalances,
               locations,
               preferredLocationId: settings?.defaultLocationId,
             });
@@ -350,9 +394,7 @@ export class ConfirmSaleService {
     const transfer = payments.find((payment) => payment.method === PaymentMethod.transfer);
     if (!transfer) return payments;
 
-    const bankAccount = await this.repositories.bankAccounts.getById(
-      transfer.bankAccountId ?? "",
-    );
+    const bankAccount = await this.repositories.bankAccounts.getById(transfer.bankAccountId ?? "");
     if (
       !bankAccount ||
       bankAccount.tenantId !== input.currentBranch.tenantId ||
@@ -395,10 +437,7 @@ function assertPriceSnapshot(
 
 function calculateValidatedTotals(items: ValidatedSaleItem[]) {
   const subtotalCents = items.reduce((total, item) => total + item.baseSubtotalCents, 0);
-  const discountTotalCents = items.reduce(
-    (total, item) => total + item.discountTotalCents,
-    0,
-  );
+  const discountTotalCents = items.reduce((total, item) => total + item.discountTotalCents, 0);
   const totalCents = items.reduce((total, item) => total + item.totalCents, 0);
   if (subtotalCents - discountTotalCents !== totalCents) {
     throw new Error("Los totales recalculados de la venta no son consistentes.");
@@ -500,10 +539,7 @@ function assertNeverCheckoutPaymentMode(paymentMode: never): never {
   throw new Error(`Modalidad de pago POS no soportada: ${String(paymentMode)}`);
 }
 
-function getPaymentAmount(
-  checkout: CheckoutDto,
-  method: SaleConfirmationPaymentMethod,
-) {
+function getPaymentAmount(checkout: CheckoutDto, method: SaleConfirmationPaymentMethod) {
   if (method === PaymentMethod.cash) return checkout.cashAmount;
   if (method === PaymentMethod.card) return checkout.cardAmount;
   return checkout.transferAmount;
@@ -520,10 +556,7 @@ function assertAllowedPaymentMethods(
   });
 }
 
-function assertPaymentsMatchTotal(
-  payments: SaleConfirmationPaymentInput[],
-  totalCents: number,
-) {
+function assertPaymentsMatchTotal(payments: SaleConfirmationPaymentInput[], totalCents: number) {
   if (payments.length === 0) throw new Error("La venta debe tener al menos un pago.");
   const paidCents = payments.reduce((total, payment) => total + toCents(payment.amount), 0);
   if (paidCents !== totalCents) {

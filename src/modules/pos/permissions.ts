@@ -26,9 +26,33 @@ export const posPermissions = [
     description: "Permite cerrar turno de caja.",
   },
   {
+    key: "pos.cash.read",
+    module: "pos",
+    name: "Consultar caja",
+    description: "Permite consultar el turno y sus movimientos de caja.",
+  },
+  {
+    key: "pos.cash.movement.create",
+    module: "pos",
+    name: "Registrar movimientos de caja",
+    description: "Permite registrar ingresos y egresos manuales.",
+  },
+  {
+    key: "pos.returns.read",
+    module: "pos",
+    name: "Consultar ventas para devoluciones",
+    description: "Permite buscar ventas y consultar su elegibilidad para devolucion o anulacion.",
+  },
+  {
     key: "pos.returns.create",
     module: "pos",
     name: "Crear devoluciones",
     description: "Permite registrar devoluciones.",
+  },
+  {
+    key: "pos.sales.void",
+    module: "pos",
+    name: "Anular ventas",
+    description: "Permite procesar la anulacion total de una venta elegible.",
   },
 ] satisfies PermissionDefinition[];

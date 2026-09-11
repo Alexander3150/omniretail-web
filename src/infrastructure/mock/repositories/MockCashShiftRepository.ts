@@ -1,40 +1,72 @@
-import { CashMovementType, CashShiftStatus } from "@/core/enums";
+import { calculateCashShiftTotals, normalizeMoney, roundMoney } from "@/core/cash/cashShiftTotals";
+import { BranchStatus, CashShiftStatus, TenantStatus, UserStatus, UserType } from "@/core/enums";
 import type { CashShiftRepository } from "@/core/repositories";
+import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
+
 export class MockCashShiftRepository extends BaseMockRepository implements CashShiftRepository {
-  async getAll() {
-    return this.read((db) => db.cashShifts);
+  async listByTenant(tenantId: string) {
+    return this.read((db) => db.cashShifts.filter((item) => item.tenantId === tenantId));
   }
-  async getById(id: string) {
-    return this.read((db) => db.cashShifts.find((item) => item.id === id) ?? null);
-  }
-  async getOpenByUser(userId: string) {
+
+  async getById(tenantId: string, cashShiftId: string) {
     return this.read(
       (db) =>
-        db.cashShifts.find(
-          (item) => item.userId === userId && item.status === CashShiftStatus.open,
-        ) ?? null,
+        db.cashShifts.find((item) => item.id === cashShiftId && item.tenantId === tenantId) ?? null,
     );
   }
-  async getOpenByUserAndBranch(userId: string, branchId: string) {
+
+  async getOpenByUser(tenantId: string, userId: string) {
     return this.read(
       (db) =>
         db.cashShifts.find(
           (item) =>
+            item.tenantId === tenantId &&
+            item.userId === userId &&
+            item.status === CashShiftStatus.open,
+        ) ?? null,
+    );
+  }
+
+  async getOpenByUserAndBranch(tenantId: string, userId: string, branchId: string) {
+    return this.read(
+      (db) =>
+        db.cashShifts.find(
+          (item) =>
+            item.tenantId === tenantId &&
             item.userId === userId &&
             item.branchId === branchId &&
             item.status === CashShiftStatus.open,
         ) ?? null,
     );
   }
+
   async open(input: Parameters<CashShiftRepository["open"]>[0]) {
-    const item = this.store.mutate((db) => {
+    const item = this.store.transact((db) => {
+      assertOpenReferences(input, db);
+      if (!input.registerCode.trim()) throw new Error("registerCode is required.");
+
+      const duplicate = db.cashShifts.some(
+        (shift) =>
+          shift.tenantId === input.tenantId &&
+          shift.userId === input.userId &&
+          shift.branchId === input.branchId &&
+          shift.status === CashShiftStatus.open,
+      );
+      if (duplicate) {
+        throw new Error("An open cash shift already exists for this user and branch.");
+      }
+
       const now = this.now();
       const created = {
-        ...input,
         id: this.id("cash-shift"),
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        userId: input.userId,
+        registerCode: input.registerCode.trim(),
         status: CashShiftStatus.open,
         openedAt: now,
+        openingAmount: normalizeMoney(input.openingAmount),
         createdAt: now,
         updatedAt: now,
       };
@@ -44,37 +76,41 @@ export class MockCashShiftRepository extends BaseMockRepository implements CashS
     this.emit("cash-shift.changed", {
       entityId: item.id,
       tenantId: item.tenantId,
+      branchId: item.branchId,
       action: "created",
     });
     return item;
   }
-  async registerMovement(input: Parameters<CashShiftRepository["registerMovement"]>[0]) {
-    const item = this.store.mutate((db) => {
-      const created = { ...input, id: this.id("cash-movement"), createdAt: this.now() };
-      db.cashMovements.push(created);
-      return created;
-    });
-    this.emit("cash-shift.changed", { entityId: item.cashShiftId, action: "updated" });
-    return item;
-  }
-  async close(id: string, countedAmount: number) {
-    const item = this.store.mutate((db) => {
-      const movements = db.cashMovements.filter((movement) => movement.cashShiftId === id);
-      const shift = db.cashShifts.find((candidate) => candidate.id === id);
-      if (!shift) throw this.missing("CashShift", id);
-      const movementTotal = movements.reduce(
-        (total, movement) =>
-          total + (movement.type === CashMovementType.in ? movement.amount : -movement.amount),
-        0,
+
+  async close(input: Parameters<CashShiftRepository["close"]>[0]) {
+    const item = this.store.transact((db) => {
+      const shift = db.cashShifts.find(
+        (candidate) => candidate.id === input.cashShiftId && candidate.tenantId === input.tenantId,
       );
-      const expectedAmount = shift.openingAmount + movementTotal;
-      const difference = countedAmount - expectedAmount;
+      if (!shift) throw this.missing("CashShift", input.cashShiftId);
+      if (shift.status !== CashShiftStatus.open) {
+        throw new Error("Only an open cash shift can be closed.");
+      }
+      assertCashActor(db, input.tenantId, input.closedByUserId);
+      if (shift.userId !== input.closedByUserId) {
+        throw new Error("The cash shift can only be closed by its assigned user.");
+      }
+      const branch = db.branches.find(
+        (candidate) => candidate.id === shift.branchId && candidate.tenantId === input.tenantId,
+      );
+      if (!branch) throw new Error("CashShift branch is not valid for tenant.");
+
+      const countedAmount = normalizeMoney(input.countedAmount);
+      const movements = db.cashMovements.filter((movement) => movement.cashShiftId === shift.id);
+      const totals = calculateCashShiftTotals(shift.openingAmount, movements);
+      const difference = roundMoney(countedAmount - totals.expectedCash);
+      const now = this.now();
       Object.assign(shift, {
         countedAmount,
-        expectedAmount,
+        expectedAmount: totals.expectedCash,
         difference,
-        closedAt: this.now(),
-        updatedAt: this.now(),
+        closedAt: now,
+        updatedAt: now,
         status: difference === 0 ? CashShiftStatus.closed : CashShiftStatus.closed_with_difference,
       });
       return shift;
@@ -82,8 +118,36 @@ export class MockCashShiftRepository extends BaseMockRepository implements CashS
     this.emit("cash-shift.changed", {
       entityId: item.id,
       tenantId: item.tenantId,
+      branchId: item.branchId,
       action: "status_changed",
     });
     return item;
+  }
+}
+
+function assertOpenReferences(
+  input: Parameters<CashShiftRepository["open"]>[0],
+  db: MockDatabase,
+): void {
+  if (
+    !db.tenants.some(
+      (tenant) => tenant.id === input.tenantId && tenant.status === TenantStatus.active,
+    )
+  ) {
+    throw new Error(`Active tenant not found: ${input.tenantId}`);
+  }
+  const branch = db.branches.find(
+    (item) => item.id === input.branchId && item.tenantId === input.tenantId,
+  );
+  if (!branch || branch.status !== BranchStatus.active) {
+    throw new Error(`Active branch not found for tenant: ${input.branchId}`);
+  }
+  assertCashActor(db, input.tenantId, input.userId);
+}
+
+function assertCashActor(db: MockDatabase, tenantId: string, userId: string): void {
+  const user = db.users.find((item) => item.id === userId && item.tenantId === tenantId);
+  if (!user || user.type !== UserType.employee || user.status !== UserStatus.active) {
+    throw new Error(`Active employee not found for tenant: ${userId}`);
   }
 }

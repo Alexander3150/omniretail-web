@@ -32,9 +32,9 @@
 | # | Pantalla | Ruta | Entidad principal | Estado |
 |---|---|---|---|---|
 | 1 | Configuración del negocio | `/administracion/configuracion-negocio` | `BusinessCapabilitiesConfig` | ✅ **Implementada** |
-| 2 | Sucursales | `/administracion/sucursales` | `Branch` | ✅ Desbloqueada |
+| 2 | Sucursales | `/administracion/sucursales` | `Branch` | ✅ **Implementada** |
 | 3 | Proveedores | `/administracion/proveedores` | `Supplier` | ✅ Desbloqueada |
-| 4 | Cuentas bancarias | `/administracion/cuentas-bancarias` | `BankAccount` | ✅ Desbloqueada |
+| 4 | Cuentas bancarias | `/administracion/cuentas-bancarias` | `BankAccount` | ✅ **Implementada** |
 | 5 | Diseño E-commerce | `/administracion/diseno-ecommerce` | `EcommerceConfig` | ⚠️ Parcial — sin branding |
 | 6 | Clientes | `/administracion/clientes` | `Customer`, `CustomerSegment` | ⚠️ Parcial — sin update ni segmentos |
 | 7 | Auditoría | `/administracion/auditoria` | `AuditLog` | ✅ **Implementada** |
@@ -200,7 +200,8 @@ type BankAccountStatus = "active" | "inactive" | "archived";
 interface BankAccount {
   id: string; tenantId: string; bankName: string;
   holderName: string;                     // NO accountHolder
-  accountNumberMasked: string;            // NO accountNumber
+  accountNumber: string;                  // fuente de verdad; NO input editable en Update, no viaja en DTOs de listado
+  accountNumberMasked: string;            // SIEMPRE derivado de accountNumber (maskAccountNumber), no es input
   accountType: BankAccountType; currency: CurrencyCode;
   alias: string;                          // obligatorio
   branchIds: string[];                    // obligatorio
@@ -340,7 +341,8 @@ Tabla de traducción. **La columna derecha es la que vale.**
 | `Role.preset` / `.status` | no existen; hay `isSystem` |
 | `Permission.action` | `name` |
 | `Supplier.tradeName` / `.nit` | `name` / `taxId` |
-| `BankAccount.accountHolder` / `.accountNumber` | `holderName` / `accountNumberMasked` |
+| `BankAccount.accountHolder` | `holderName` |
+| `BankAccount.accountNumberMasked` como input editable | se deriva SIEMPRE de `accountNumber` (`maskAccountNumber`); el DTO de alta/edición usa `accountNumber` |
 | `Customer.type` / `.taxId` | no existen; hay `code` |
 | `AuditLog.userId` / `.timestamp` / `.module` | `actorUserId` / `createdAt` / no existe |
 | `CashShift.registerId` / `.cashierUserId` | `registerCode` / `userId` |
@@ -467,7 +469,7 @@ deshabilitan, y toda la trazabilidad queda en `false`. La invariante se valida e
 Fuera de alcance: `AttributeDefinition` / `ProductAttributeValue` se gestionan en
 `/inventario/atributos` (Melbyn). Acá solo se prende o apaga `supportsProductAttributes`.
 
-### 12.2 Sucursales
+### 12.2 Sucursales ✅ implementada
 
 Tabla: `code`, `name`, `type`, `address`, `status`, acciones. Formulario: `code`, `name`, `type`
 (`main`/`store`/`warehouse`), `address`, `phone`, `email`, `status`.
@@ -481,13 +483,16 @@ Tabla: `name`, `taxId`, `email`, `phone`, `status`. Formulario: `name`, `legalNa
 Un proveedor con historial se **archiva** (R-I06) — `SupplierRepository.archive` ya existe.
 Compras (Melbyn) tiene vista de solo consulta sobre la **misma** entity. No duplicar el CRUD.
 
-### 12.4 Cuentas bancarias
+### 12.4 Cuentas bancarias ✅ implementada
 
 ⚠️ El diseño viejo (código/país/contacto de banco) quedó descartado. Modelo vigente: sección 5.1.
-Tabla: `bankName`, `holderName`, `alias`, `accountType`, `currency`, `status`.
-Formulario: todos los anteriores + `accountNumberMasked`, `branchIds` (sucursales habilitadas),
-`transferInstructions`.
-Obligatorios: banco, titular, número, tipo, moneda y estado.
+Tabla: `bankName`, `holderName`, `alias`, `accountType`, `accountNumberMasked`, `status`. Nunca
+`accountNumber` completo en el listado.
+Formulario: todos los anteriores + `accountNumber` (número completo, fuente de verdad —
+`accountNumberMasked` se deriva automáticamente, no es un campo editable), `branchIds` (sucursales
+habilitadas), `transferInstructions`.
+Obligatorios: banco, titular, número (solo en alta; en edición vacío = conservar el actual), tipo,
+moneda y estado.
 Límite: acá se administra el maestro. La confirmación de cada transferencia la hace el cajero en
 POS (Riquelme).
 

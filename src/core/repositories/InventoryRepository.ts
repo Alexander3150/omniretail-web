@@ -13,6 +13,7 @@ export interface RegisterInventoryMovementInput {
   tenantId: string;
   branchId: string;
   productId: string;
+  lotId?: string;
   type: InventoryMovementType;
   reason: string;
   quantity: number;
@@ -42,6 +43,7 @@ export interface ReleaseInventoryReservationInput {
 
 export interface ConsumeInventoryReservationInput extends ReleaseInventoryReservationInput {
   allocationsConsumed: InventoryReservationConsumedAllocation[];
+  serialNumbers?: string[];
   operationId: string;
   performedByUserId: string;
 }

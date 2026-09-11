@@ -10,6 +10,27 @@ export class MockSalesRepository extends BaseMockRepository implements SalesRepo
   async getById(id: string) {
     return this.read((db) => db.sales.find((item) => item.id === id) ?? null);
   }
+  async getByIdScoped(tenantId: string, branchId: string, id: string) {
+    return this.read(
+      (db) =>
+        db.sales.find(
+          (item) => item.id === id && item.tenantId === tenantId && item.branchId === branchId,
+        ) ?? null,
+    );
+  }
+  async getByDocumentNumber(tenantId: string, branchId: string, documentNumber: string) {
+    const normalized = documentNumber.trim().toLocaleUpperCase();
+    if (!normalized) return null;
+    return this.read(
+      (db) =>
+        db.sales.find(
+          (item) =>
+            item.tenantId === tenantId &&
+            item.branchId === branchId &&
+            item.number.toLocaleUpperCase() === normalized,
+        ) ?? null,
+    );
+  }
   async create(input: Parameters<SalesRepository["create"]>[0]) {
     const item = this.store.mutate((db) => {
       const now = this.now();
