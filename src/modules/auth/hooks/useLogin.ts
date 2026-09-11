@@ -15,15 +15,15 @@ import {
 export function useLogin() {
   const repositories = useRepositories();
   const router = useRouter();
-  // Asuncion aceptada, no una decision de producto definitiva: este es
-  // el UNICO formulario de login (Customer y Employee lo comparten desde
-  // que se unifico), asi que resolver tenantId aca via usePublicTenant()
-  // ata cualquier login -- incluido el de empleado -- al tenant del
-  // storefront publico actualmente abierto. Correcto mientras exista un
-  // solo tenant sembrado; si el producto necesita que un empleado
-  // autentique contra un tenant distinto al storefront que tiene
-  // abierto, esto hay que revisitarlo (ver nota en AuthRepository.
-  // LoginInput.tenantId).
+  // Este es el UNICO formulario de login, compartido por Customer y
+  // Employee/Admin. tenantId (del storefront publico) solo alimenta la
+  // resolucion Customer dentro de login() -- si el storefront no
+  // resuelve (tenantError/tenantId null), el intento de Customer falla
+  // genericamente (correcto: su cuenta SI depende de ese tenant), pero
+  // el de Employee/Admin sigue funcionando via el fallback
+  // tenant-independiente de login() (ver AuthRepository.LoginInput.
+  // tenantId). Por eso solo se bloquea el submit mientras esta
+  // "loading" -- nunca por "error", eso ataria tambien al empleado.
   const { tenantId, loading: tenantLoading, error: tenantError } = usePublicTenant();
 
   const [email, setEmail] = useState("");
@@ -39,10 +39,6 @@ export function useLogin() {
     if (tenantLoading) {
       return;
     }
-    if (tenantError || !tenantId) {
-      setFormError("La tienda no está disponible en este momento. Intenta más tarde.");
-      return;
-    }
 
     const dto: LoginFormDto = { email, password, rememberMe };
     const errors = validateLoginForm(dto);
@@ -55,7 +51,7 @@ export function useLogin() {
     setIsSubmitting(true);
     try {
       const session = await repositories.auth.login({
-        tenantId,
+        tenantId: tenantId ?? undefined,
         email: dto.email.trim(),
         passwordMock: dto.password,
         rememberMe: dto.rememberMe,
@@ -81,7 +77,7 @@ export function useLogin() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [email, password, rememberMe, repositories, router, tenantError, tenantId, tenantLoading]);
+  }, [email, password, rememberMe, repositories, router, tenantId, tenantLoading]);
 
   return {
     email,

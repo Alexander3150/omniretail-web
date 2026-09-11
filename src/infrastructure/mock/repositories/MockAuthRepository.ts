@@ -12,6 +12,7 @@ import {
   LOCKOUT_RESET_AFTER_MINUTES,
   getLockoutMinutesForOccurrence,
 } from "@/config/auth-policy";
+import { publicStorefrontSlug } from "@/config/publicStorefront";
 import { sessionPolicy } from "@/config/session-policy";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
@@ -36,19 +37,29 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     const escalationResetMs = LOCKOUT_RESET_AFTER_MINUTES * 60 * 1000;
 
     const outcome = this.store.mutate((db) => {
-      // Email es unico POR TENANT (ver registerCustomer), no globalmente
-      // -- el mismo correo puede tener una cuenta en el tenant A y otra
-      // distinta en el tenant B. AuthAccount no guarda tenantId
-      // directamente, asi que se resuelve cruzando con el tenant del
-      // User dueno de la cuenta, igual que hace el chequeo de unicidad
-      // en registerCustomer(). Un tenantId invalido o de otro tenant
-      // simplemente no encuentra cuenta -- mismo camino generico que
-      // "email inexistente", sin necesidad de un chequeo aparte.
-      const account = db.authAccounts.find((item) => {
-        if (item.email.toLowerCase() !== normalizedEmail) return false;
-        const owner = db.users.find((user) => user.id === item.userId);
-        return owner?.tenantId === input.tenantId;
-      });
+      // Resolucion en dos pasos (ver doc completo en AuthRepository.
+      // LoginInput.tenantId) -- el UNICO formulario de login, compartido
+      // por Customer y Employee/Admin, no puede atar el acceso
+      // operacional a cual storefront publico este cargado:
+      //
+      // 1. Tenant-scoped: email unico POR TENANT desde R-A03 (AuthAccount
+      //    no guarda tenantId, se cruza via User). Resuelve Customer
+      //    correctamente y de paso cubre al empleado del mismo tenant.
+      // 2. Fallback SOLO Employee, sin restriccion de tenant: el login
+      //    operacional no depende del storefront publico actual. Nunca
+      //    matchea cuentas Customer -- un Customer jamas puede terminar
+      //    autenticado como la cuenta Employee de otro tenant salvo que
+      //    el sea, de hecho, esa cuenta (misma contraseña incluida).
+      const findAccount = (predicate: (owner: (typeof db.users)[number]) => boolean) =>
+        db.authAccounts.find((item) => {
+          if (item.email.toLowerCase() !== normalizedEmail) return false;
+          const owner = db.users.find((user) => user.id === item.userId);
+          return Boolean(owner) && predicate(owner!);
+        });
+
+      const account =
+        (input.tenantId ? findAccount((owner) => owner.tenantId === input.tenantId) : undefined) ??
+        findAccount((owner) => owner.type === UserType.employee);
 
       if (!account) {
         return { ok: false as const };
@@ -269,22 +280,25 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     this.sessionStorage.remove(MOCK_SESSION_STORAGE_KEY);
     this.emit("auth.changed", { action: "updated" });
   }
-  async registerCustomer(
-    tenantId: string,
-    input: Parameters<AuthRepository["registerCustomer"]>[1],
-  ) {
+  async registerCustomer(input: Parameters<AuthRepository["registerCustomer"]>[0]) {
     const result = this.store.mutate((db) => {
       const now = this.now();
       const normalizedEmail = input.email.trim().toLowerCase();
 
-      // tenantId llega como contexto de confianza (el caller lo resuelve
-      // via usePublicTenant(), nunca de un campo del formulario), pero un
-      // id que llega desde la UI nunca es autoridad por si solo -- se
-      // revalida que exista y este activo antes de crear nada.
-      const tenant = db.tenants.find((item) => item.id === tenantId);
-      if (!tenant || tenant.status !== TenantStatus.active) {
+      // El tenant NO es un parametro que el caller elija -- no existe
+      // forma de pasarlo. Se resuelve aca mismo, con la MISMA fuente de
+      // verdad que usa PublicTenantProvider en el cliente (el slug del
+      // unico storefront publico), para que no exista ninguna via de
+      // "sustituir" el tenant de un registro publico. Revalidar que
+      // ademas este activo es la misma garantia de siempre: un dato que
+      // pueda haber cambiado nunca es autoridad por si solo.
+      const tenant = db.tenants.find(
+        (item) => item.slug === publicStorefrontSlug && item.status === TenantStatus.active,
+      );
+      if (!tenant) {
         throw new Error("No se pudo completar el registro.");
       }
+      const tenantId = tenant.id;
 
       // R-A03: email unico dentro del tenant. Se resuelve via AuthAccount
       // (la credencial real) cruzando con User.tenantId, porque

@@ -3,27 +3,41 @@ import type { UserType } from "@/core/enums";
 
 export interface LoginInput {
   /**
-   * Tenant a autenticar contra -- requerido. El mismo email puede existir
-   * en cuentas de distintos tenants (RegisterCustomerInput ya no es
-   * global-unico, es unico por tenant), asi que login() no puede resolver
-   * la cuenta correcta sin este contexto. El caller lo obtiene del
-   * mecanismo de tenant publico ya existente (usePublicTenant()), nunca
-   * de un campo que el usuario pueda declarar.
+   * Tenant "preferido" para resolver la cuenta -- el caller lo obtiene
+   * del mecanismo de tenant publico ya existente (usePublicTenant()),
+   * nunca de un campo que el usuario pueda declarar. Opcional porque
+   * NO todo login depende de el: ver la nota de resolucion en dos pasos
+   * mas abajo.
    *
-   * ASUNCION ACEPTADA, no un requisito de login() en si: login() solo
-   * exige "algun" tenantId de confianza, no necesariamente el del
-   * storefront publico. Hoy el unico caller (useLogin, compartido por
-   * Customer y Employee desde que se unifico el form) siempre resuelve
-   * este valor via usePublicTenant() -- es decir, un login de empleado
-   * queda atado al tenant del storefront que tiene abierto en el
-   * navegador. Funciona hoy porque solo existe un tenant sembrado y no
-   * hay (todavia) un mecanismo separado de "tenant de empleado" (p.ej.
-   * login por dominio/subdominio interno). Si el producto llega a
-   * necesitar que un empleado autentique contra un tenant distinto al
-   * storefront publico que tiene abierto, este acoplamiento hay que
-   * revisitarlo explicitamente -- no alcanza con sembrar mas tenants.
+   * RESOLUCION EN DOS PASOS (login() en MockAuthRepository), pensada
+   * para que el UNICO formulario de login compartido por Customer y
+   * Employee/Admin (desde que se unifico, sin tabs) no ate el acceso
+   * operacional al storefront publico que este abierto:
+   *
+   * 1. Si se provee tenantId, se busca primero una AuthAccount con ese
+   *    email cuyo User.tenantId coincida exactamente. Esto es lo que
+   *    resuelve correctamente el caso Customer (email unico POR tenant
+   *    desde R-A03: el mismo email puede tener cuentas distintas en
+   *    tenants distintos) y tambien cubre gratis al empleado que
+   *    resulta pertenecer al MISMO tenant que el storefront actual.
+   * 2. Si el paso 1 no encuentra nada (tenantId ausente, storefront no
+   *    disponible, o el email no tiene cuenta en ESE tenant), se cae a
+   *    buscar el email entre cuentas cuyo User.type sea Employee,
+   *    SIN restriccion de tenant -- el login operacional no depende de
+   *    cual storefront publico este cargado en el navegador.
+   *
+   * Tradeoff aceptado y documentado, no un descuido: un email que no
+   * tenga cuenta en el tenant actual pero coincida por casualidad con
+   * el de un Employee de OTRO tenant cae en el paso 2 -- ese intento
+   * solo tiene exito si ademas acierta la contraseña de esa cuenta
+   * (mismo orden de magnitud de riesgo que cualquier coincidencia de
+   * credenciales entre identidades independientes; R-A13 ya cubre esto
+   * con el mensaje generico, sin revelar cual cuenta -- o cual tenant --
+   * se evaluo). El paso 2 nunca matchea cuentas Customer, asi que un
+   * Customer jamas puede terminar autenticado como la cuenta Employee
+   * de otro tenant salvo que EL MISMO sea, de hecho, esa cuenta.
    */
-  tenantId: string;
+  tenantId?: string;
   email: string;
   passwordMock: string;
   rememberMe?: boolean;
@@ -74,13 +88,16 @@ export interface AuthRepository {
    */
   clearLocalSession(): Promise<void>;
   /**
-   * tenantId es contexto de confianza, resuelto por el caller via el
-   * mecanismo de tenant publico ya existente (usePublicTenant()) -- nunca
-   * un campo del formulario. El repositorio revalida ademas que el
-   * tenant exista y este activo antes de crear nada; un id que llega
-   * desde la UI nunca es autoridad por si solo.
+   * El tenant del registro NO es un parametro que el caller elija -- no
+   * existe forma de pasarlo. El repositorio resuelve internamente el
+   * UNICO tenant publico (via el mismo slug que usa PublicTenantProvider,
+   * @/config/publicStorefront) y valida que exista y este activo antes de
+   * crear nada. Asi se cierra por completo la superficie de "sustituir
+   * el tenant A por el tenant B": no hay ningun dato de entrada que
+   * pueda cambiar a que tenant se registra un formulario publico de
+   * registro.
    */
-  registerCustomer(tenantId: string, input: RegisterCustomerInput): Promise<RegisterCustomerResult>;
+  registerCustomer(input: RegisterCustomerInput): Promise<RegisterCustomerResult>;
   requestPasswordReset(email: string): Promise<void>;
   resetPassword(token: string, newPasswordMock: string): Promise<void>;
   verifyEmail(token: string): Promise<void>;
