@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { UserType } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
+import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 import type { LoginFormDto } from "@/modules/auth/application/dto/LoginFormDto";
 import {
   hasLoginValidationErrors,
@@ -14,6 +15,16 @@ import {
 export function useLogin() {
   const repositories = useRepositories();
   const router = useRouter();
+  // Este es el UNICO formulario de login, compartido por Customer y
+  // Employee/Admin. tenantId (del storefront publico) solo alimenta la
+  // resolucion Customer dentro de login() -- si el storefront no
+  // resuelve (tenantError/tenantId null), el intento de Customer falla
+  // genericamente (correcto: su cuenta SI depende de ese tenant), pero
+  // el de Employee/Admin sigue funcionando via el fallback
+  // tenant-independiente de login() (ver AuthRepository.LoginInput.
+  // tenantId). Por eso solo se bloquea el submit mientras esta
+  // "loading" -- nunca por "error", eso ataria tambien al empleado.
+  const { tenantId, loading: tenantLoading, error: tenantError } = usePublicTenant();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -24,6 +35,10 @@ export function useLogin() {
 
   const submit = useCallback(async () => {
     setFormError(undefined);
+
+    if (tenantLoading) {
+      return;
+    }
 
     const dto: LoginFormDto = { email, password, rememberMe };
     const errors = validateLoginForm(dto);
@@ -36,6 +51,7 @@ export function useLogin() {
     setIsSubmitting(true);
     try {
       const session = await repositories.auth.login({
+        tenantId: tenantId ?? undefined,
         email: dto.email.trim(),
         passwordMock: dto.password,
         rememberMe: dto.rememberMe,
@@ -61,7 +77,7 @@ export function useLogin() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [email, password, rememberMe, repositories, router]);
+  }, [email, password, rememberMe, repositories, router, tenantId, tenantLoading]);
 
   return {
     email,
@@ -73,6 +89,8 @@ export function useLogin() {
     fieldErrors,
     formError,
     isSubmitting,
+    tenantLoading,
+    tenantError,
     submit,
   };
 }
