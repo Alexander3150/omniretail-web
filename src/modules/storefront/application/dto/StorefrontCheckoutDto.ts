@@ -15,5 +15,6 @@ export interface StorefrontCheckoutResultDto {
   orderNumber: string;
   trackingToken: string;
   guestTrackingEnabled: boolean;
+  confirmationEmailSent: boolean;
   total: number;
 }

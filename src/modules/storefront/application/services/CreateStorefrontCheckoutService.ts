@@ -14,9 +14,11 @@ import type {
   StorefrontCheckoutResultDto,
 } from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
 import { GetStorefrontPublishedProductService } from "@/modules/storefront/application/services/GetStorefrontPublishedProductService";
+import { StorefrontOrderEmailSimulationService } from "@/modules/storefront/application/services/StorefrontOrderEmailSimulationService";
 
 export class CreateStorefrontCheckoutService {
   private readonly publishedProductService: GetStorefrontPublishedProductService;
+  private readonly emailSimulationService = new StorefrontOrderEmailSimulationService();
 
   constructor(private readonly repositories: RepositoryRegistry) {
     this.publishedProductService = new GetStorefrontPublishedProductService(repositories);
@@ -124,11 +126,13 @@ export class CreateStorefrontCheckoutService {
         reference: `CARD-SIMULATED-${form.cardLastFour}`,
       },
     });
+    const emailSimulation = this.emailSimulationService.simulateConfirmation(form.email);
 
     return {
       orderNumber: order.orderNumber,
       trackingToken: order.trackingToken,
       guestTrackingEnabled: ecommerceConfig.guestTrackingEnabled,
+      confirmationEmailSent: emailSimulation.sent,
       total: order.total,
     };
   }
