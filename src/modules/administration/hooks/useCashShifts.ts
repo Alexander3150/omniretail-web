@@ -22,6 +22,7 @@ export function useCashShifts() {
   const repositories = useRepositories();
   const { user, permissions, hasPermission, loading: sessionLoading } = useCurrentSession();
   const tenantId = user?.tenantId ?? null;
+  const actorUserId = user?.id ?? null;
   const canRead = hasPermission(CASH_READ_PERMISSION);
   const service = useMemo(() => new GetCashShiftsService(repositories), [repositories]);
   const [shifts, setShifts] = useState<CashShiftDto[]>([]);
@@ -32,10 +33,12 @@ export function useCashShifts() {
   const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback((): Promise<CashShiftReferenceData> => {
-    if (!tenantId) return Promise.reject(new Error("No se pudo resolver el negocio activo."));
+    if (!tenantId || !actorUserId) {
+      return Promise.reject(new Error("No se pudo resolver el negocio activo."));
+    }
 
     return Promise.all([
-      service.execute(tenantId, permissions),
+      service.execute(tenantId, actorUserId, permissions),
       repositories.branches.getAll(),
       repositories.users.getAll(),
     ]).then(([nextShifts, branches, users]) => ({
@@ -49,7 +52,7 @@ export function useCashShifts() {
         users.filter((actor) => actor.tenantId === tenantId).map((actor) => [actor.id, actor.name]),
       ),
     }));
-  }, [permissions, repositories.branches, repositories.users, service, tenantId]);
+  }, [actorUserId, permissions, repositories.branches, repositories.users, service, tenantId]);
 
   const reload = useCallback(async () => {
     if (sessionLoading || !canRead) return;

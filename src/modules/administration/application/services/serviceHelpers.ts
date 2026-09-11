@@ -37,6 +37,12 @@ export function ensureCashTenant(tenantId: string) {
   throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
 }
 
+export function ensureCashActor(actorUserId: string) {
+  if (actorUserId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
+}
+
 /**
  * La autorización de sucursales pertenece a la capa de aplicación. Una UI oculta no impide que
  * otro consumidor invoque directamente estos servicios.
