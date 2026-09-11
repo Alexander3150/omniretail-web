@@ -33,6 +33,7 @@ import type {
   ReceiptRepository,
   RoleRepository,
   SaleConfirmationRepository,
+  SaleReversalRepository,
   SalesRepository,
   SavedPaymentMethodRepository,
   SupplierProductRepository,
@@ -75,6 +76,7 @@ import {
   MockReceiptRepository,
   MockRoleRepository,
   MockSaleConfirmationRepository,
+  MockSaleReversalRepository,
   MockSalesRepository,
   MockSupplierProductRepository,
   MockSupplierRepository,
@@ -116,6 +118,7 @@ export interface RepositoryRegistry {
   bankAccounts: BankAccountRepository;
   sales: SalesRepository;
   saleConfirmations: SaleConfirmationRepository;
+  saleReversals: SaleReversalRepository;
   cashShifts: CashShiftRepository;
   cashMovements: CashMovementRepository;
   picking: PickingRepository;
@@ -171,6 +174,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       bankAccounts: new MockBankAccountRepository(store, eventBus),
       sales: new MockSalesRepository(store, eventBus),
       saleConfirmations: new MockSaleConfirmationRepository(store, eventBus),
+      saleReversals: new MockSaleReversalRepository(store, eventBus),
       cashShifts: new MockCashShiftRepository(store, eventBus),
       cashMovements: new MockCashMovementRepository(store, eventBus),
       picking: new MockPickingRepository(store, eventBus),

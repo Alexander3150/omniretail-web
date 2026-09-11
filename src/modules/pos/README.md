@@ -9,7 +9,7 @@ Este modulo desarrolla su funcionalidad propia sin duplicar contratos compartido
 ## Contracts que consume
 
 ProductRepository, InventoryRepository, SalesRepository, PaymentRepository, OrderRepository,
-CashShiftRepository, CashMovementRepository
+CashShiftRepository, CashMovementRepository, SaleReversalRepository
 
 ## Reglas
 
@@ -20,6 +20,8 @@ CashShiftRepository, CashMovementRepository
 - Crear DTO, Mappers y Services propios dentro del modulo cuando empiece cada feature.
 - Los servicios de caja protegen permisos y branch scope; repositories protegen integridad y tenant.
 - `CashMovement` es la fuente canonica del efectivo esperado para evitar doble conteo de ventas.
+- Returns/anulaciones consumen el read model y los servicios de aplicacion POS; React no consulta
+  repositorios ni deriva elegibilidad, refund, cantidades retornables o estado final.
 
 ## Estructura futura
 

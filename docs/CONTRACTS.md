@@ -46,6 +46,17 @@ fuente canonica; no acepta expected cash del caller.
 El registro valida turno abierto, tenant, sucursal, actor, tipo, monto positivo finito y razon no
 vacia. Los montos siguen siendo positivos; `CashMovementType` define ingreso o egreso.
 
+`SalesRepository.getByDocumentNumber` y `getByIdScoped` exigen `tenantId + branchId`; son los
+contratos de consulta para devoluciones y no requieren `getAll()` ni filtrado en React.
+
+`SaleReversalRepository` inspecciona cantidades retornables y elegibilidad y procesa
+`processReturn`/`voidSale` de forma atomica e idempotente por
+`tenantId + operation + idempotencyKey`. Una devolucion completada persiste `ReturnRequest` con
+lineas e importe derivado, uno o varios `RefundTransaction` sobre los Payment originales,
+movimientos IN cuando corresponden, salida de caja solo por el componente cash y una
+`CreditNote` mock. El estado final de Sale se deriva: parcial usa `partially_returned`, agotamiento
+de todas las lineas usa `returned` y solo una anulacion usa `cancelled`.
+
 `ReceiptRepository.replaceLines` y `ReceiptRepository.replaceIncidents` persisten el estado completo de una recepcion en progreso. Las incidencias conservan su identidad al editarse y desaparecen del conjunto al eliminarse; `ReceiptLine.rejectedQuantity` es un snapshot derivado de la suma de `ReceiptIncident.quantityAffected`, no una entrada independiente.
 
 `ReceiptRepository.confirmReceiptInventory` confirma atomicamente receipt, lineas, incidencias, orden de compra e inventario. `Receipt.confirmationId` es idempotente por tenant: la misma identidad y fingerprint devuelve el receipt original sin repetir movimientos; un payload distinto genera conflicto y una recepcion parcial posterior usa otra identidad. `StockLot.expirationDate` es una fecha comercial UTC `YYYY-MM-DD`: el lote se mantiene vendible durante esa fecha y vence el dia siguiente.

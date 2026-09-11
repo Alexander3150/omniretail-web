@@ -62,6 +62,8 @@ export class MockCashMovementRepository
         type: input.type,
         amount,
         reason,
+        referenceType: input.referenceType,
+        referenceId: input.referenceId,
         createdByUserId: actor.id,
         createdAt: this.now(),
       };

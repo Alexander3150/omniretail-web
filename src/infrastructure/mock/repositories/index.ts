@@ -30,6 +30,7 @@ export * from "./MockReceiptRepository";
 export * from "./MockRoleRepository";
 export * from "./MockSalesRepository";
 export * from "./MockSaleConfirmationRepository";
+export * from "./MockSaleReversalRepository";
 export * from "./MockSavedPaymentMethodRepository";
 export * from "./MockSupplierRepository";
 export * from "./MockSupplierProductRepository";
