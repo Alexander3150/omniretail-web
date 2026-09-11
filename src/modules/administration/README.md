@@ -33,8 +33,13 @@ Implementado en esta rama:
 
 - Directorio comercial de clientes aislado por el `tenantId` de la sesion, con busqueda por codigo,
   nombre o correo y filtro por estado.
-- Permisos separados `admin.customers.read` y `admin.customers.manage`: gestionar implica lectura,
-  mientras que las mutaciones exigen `manage` dentro de los services.
+- Enforcement de lectura en `GetCustomersService`: acepta `admin.customers.read` o
+  `admin.customers.manage`. Las mutaciones exigen `admin.customers.manage` dentro del service.
+- Navegacion y services comparten semantica: como `NavigationItem.permission` es un unico string y
+  no hay mecanismo de "cualquiera de estos permisos", la entrada del menu se protege con
+  `admin.customers.manage` (el permiso que tiene la audiencia real) -- mismo caso que Sucursales
+  (ver arriba). El camino de solo lectura del service queda como capa defensiva para un futuro rol
+  read-only, que igual necesitaria el permiso literal asignado para ver el item de navegacion.
 - Alta de registros exclusivamente comerciales mediante `CustomerRepository`; no se crea `User`,
   `AuthAccount` ni ninguna credencial.
 - Edicion completa para clientes sin `userId`. Para clientes vinculados a una cuenta, el service
@@ -44,15 +49,17 @@ Implementado en esta rama:
   registro y cualquier cuenta vinculada.
 - Auditoria de alta, edicion y archivado, y refresco reactivo ante `customer.changed`.
 - Segmentos visibles como bloqueados porque no existe `CustomerSegmentRepository`.
-- Ruta privada `/administracion/clientes` y entrada de navegacion con permiso de lectura.
+- Ruta privada `/administracion/clientes` y entrada de navegacion con `admin.customers.manage`.
 
 ### Contrato de integracion
 
 Lo que esta pantalla expone al resto del sistema:
 
 - Ruta `/administracion/clientes` e item `administration-customers` en la navegacion de
-  Administracion.
-- Permisos nuevos `admin.customers.read` y `admin.customers.manage`.
+  Administracion, protegido por `admin.customers.manage`.
+- Permisos `admin.customers.read` y `admin.customers.manage`, declarados en `permissions.ts` y
+  asignados a `role-admin` en el seed demo. Los services aceptan cualquiera de los dos para
+  lectura; la navegacion se protege con `manage` (ver arriba).
 - Acciones de auditoria `customer.created`, `customer.updated` y `customer.archived`, con
   `entityType: "Customer"`.
 - Refresco reactivo ante el evento `customer.changed`.
