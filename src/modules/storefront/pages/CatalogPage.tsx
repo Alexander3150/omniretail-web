@@ -1,17 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { StorefrontProductCard } from "@/modules/storefront/components/StorefrontProductCard";
 import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
 
 export function CatalogPage() {
   const { categories, products, loading, error, reload } = useStorefrontDiscovery();
   const [search, setSearch] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("");
-
-  useEffect(() => {
-    setSelectedCategory(new URLSearchParams(window.location.search).get("categoria") ?? "");
-  }, []);
+  const selectedCategory = useCatalogCategoryFilter();
   const filteredProducts = useMemo(() => {
     const normalized = search.trim().toLocaleLowerCase();
     return products.filter((product) => {
@@ -29,10 +25,28 @@ export function CatalogPage() {
       <p className="text-sm font-semibold text-[var(--color-title)]">Tienda</p><h1 className="mt-1 text-3xl font-bold text-[var(--color-text)]">Catálogo</h1>
       <div className="mt-6 grid gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 md:grid-cols-[1fr_auto]">
         <label className="grid gap-1 text-sm font-semibold text-[var(--color-text)]">Buscar productos<input className="rounded-md border border-[var(--color-border)] bg-white px-3 py-2 font-normal" onChange={(event) => setSearch(event.target.value)} placeholder="Nombre, marca o código" value={search} /></label>
-        <label className="grid gap-1 text-sm font-semibold text-[var(--color-text)]">Categoría<select className="rounded-md border border-[var(--color-border)] bg-white px-3 py-2 font-normal" onChange={(event) => setSelectedCategory(event.target.value)} value={selectedCategory}><option value="">Todas las categorías</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+        <label className="grid gap-1 text-sm font-semibold text-[var(--color-text)]">Categoría<select className="rounded-md border border-[var(--color-border)] bg-white px-3 py-2 font-normal" onChange={(event) => updateCatalogCategoryFilter(event.target.value)} value={selectedCategory}><option value="">Todas las categorías</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
       </div>
       <p className="mt-5 text-sm text-[var(--color-text-muted)]">{filteredProducts.length} producto(s) encontrado(s)</p>
       {filteredProducts.length === 0 ? <p className="mt-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 text-[var(--color-text-muted)]">No hay productos que coincidan con los filtros seleccionados.</p> : <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{filteredProducts.map((product) => <StorefrontProductCard key={product.id} product={product} />)}</div>}
     </main>
   );
+}
+function useCatalogCategoryFilter() {
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      window.addEventListener("popstate", onStoreChange);
+      return () => window.removeEventListener("popstate", onStoreChange);
+    },
+    () => new URLSearchParams(window.location.search).get("categoria") ?? "",
+    () => "",
+  );
+}
+
+function updateCatalogCategoryFilter(categoryId: string) {
+  const url = new URL(window.location.href);
+  if (categoryId) url.searchParams.set("categoria", categoryId);
+  else url.searchParams.delete("categoria");
+  window.history.replaceState(null, "", url);
+  window.dispatchEvent(new PopStateEvent("popstate"));
 }
