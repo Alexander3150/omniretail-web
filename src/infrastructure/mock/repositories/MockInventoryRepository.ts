@@ -223,8 +223,8 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
       const product = db.products.find(
         (item) => item.id === input.productId && item.tenantId === input.tenantId,
       );
-      if (product?.tracking.lot) {
-        throw new Error("Lot-tracked stock must be mutated through a lot-aware workflow.");
+      if (product?.tracking.lot || product?.tracking.serial) {
+        throw new Error("Traceable stock must be mutated through a traceability-aware workflow.");
       }
       const created: InventoryMovement = {
         ...input,

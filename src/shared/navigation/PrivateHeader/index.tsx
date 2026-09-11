@@ -6,12 +6,22 @@ import { NotificationButton } from "@/shared/navigation/PrivateHeader/Notificati
 import { UserMenu } from "@/shared/navigation/PrivateHeader/UserMenu";
 
 type PrivateHeaderProps = {
+  onLogout?: () => void;
+  onOpenSidebar: () => void;
   sidebarId: string;
   sidebarOpen: boolean;
-  onOpenSidebar: () => void;
+  userMenuDescription?: string;
+  userMenuLabel?: string;
 };
 
-export function PrivateHeader({ sidebarId, sidebarOpen, onOpenSidebar }: PrivateHeaderProps) {
+export function PrivateHeader({
+  onLogout,
+  onOpenSidebar,
+  sidebarId,
+  sidebarOpen,
+  userMenuDescription,
+  userMenuLabel,
+}: PrivateHeaderProps) {
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center border-b border-[var(--color-border)] bg-white px-3 shadow-sm sm:px-4 md:px-6">
       <button
@@ -29,7 +39,7 @@ export function PrivateHeader({ sidebarId, sidebarOpen, onOpenSidebar }: Private
           <BranchSelector />
         </div>
         <NotificationButton />
-        <UserMenu />
+        <UserMenu description={userMenuDescription} label={userMenuLabel} onLogout={onLogout} />
       </div>
     </header>
   );

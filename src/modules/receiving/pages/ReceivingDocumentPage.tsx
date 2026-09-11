@@ -511,15 +511,25 @@ function TrackingFields({
     );
   }
   if (line.tracking.serial && capabilities.supportsSerials) {
+    const serialCount = line.serialNumbersText
+      .split(/\r?\n/)
+      .map((serial) => serial.trim())
+      .filter(Boolean).length;
+    const requiredSerials =
+      Math.max(0, toFiniteNumber(line.receivedNow)) * line.purchaseToBaseFactor;
     fields.push(
-      <textarea
-        className="min-h-16 w-full resize-y rounded-md border border-[var(--color-border)] bg-white px-2 py-1.5 text-xs text-[var(--color-text)] outline-none transition focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
-        disabled={readOnly}
-        key="serial"
-        onChange={(event) => onUpdateLine(line.id, { serialNumbersText: event.target.value })}
-        placeholder="Serie por linea"
-        value={line.serialNumbersText}
-      />,
+      <div key="serial" className="space-y-1">
+        <textarea
+          className="min-h-16 w-full resize-y rounded-md border border-[var(--color-border)] bg-white px-2 py-1.5 text-xs text-[var(--color-text)] outline-none transition focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={readOnly}
+          onChange={(event) => onUpdateLine(line.id, { serialNumbersText: event.target.value })}
+          placeholder="Serie por linea"
+          value={line.serialNumbersText}
+        />
+        <MutedText>
+          {serialCount} / {requiredSerials} seriales
+        </MutedText>
+      </div>,
     );
   }
   if (fields.length === 0) return <MutedText>No requerido</MutedText>;

@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Role, User } from "@/core/entities";
-import { demoSessionConfig } from "@/config/demo-session";
+import { canUserAccessBranch } from "@/core/scopes/userBranchAccess";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 
@@ -38,12 +38,30 @@ export function CurrentSessionProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(undefined);
     try {
-      const demoUser = await repositories.users.getByEmail(demoSessionConfig.cashierEmail);
-      const demoRole = demoUser?.roleId ? await repositories.roles.getById(demoUser.roleId) : null;
-      setUser(demoUser);
-      setRole(demoRole);
-      if (!demoUser || !demoRole) {
-        setError("No se pudo resolver la sesion demo.");
+      const sessionId = await repositories.auth.getCurrentSessionId();
+      if (!sessionId) {
+        setUser(null);
+        setRole(null);
+        return;
+      }
+
+      const session = await repositories.auth.getSession(sessionId);
+      if (!session) {
+        setUser(null);
+        setRole(null);
+        return;
+      }
+
+      const resolvedUser = await repositories.users.getById(session.userId);
+      const resolvedRole = resolvedUser?.roleId
+        ? await repositories.roles.getById(resolvedUser.roleId)
+        : null;
+
+      setUser(resolvedUser);
+      setRole(resolvedRole);
+
+      if (!resolvedUser) {
+        setError("No se pudo resolver el usuario de la sesion actual.");
       }
     } catch {
       setUser(null);
@@ -77,9 +95,10 @@ export function CurrentSessionProvider({ children }: { children: ReactNode }) {
       role,
       permissions,
       hasPermission: (permission) => permissionSet.has(permission),
-      canAccessBranch: (branchId) => canAccessBranch(user, role, branchId),
+      canAccessBranch: (branchId) =>
+        user && role ? canUserAccessBranch(user, role, branchId) : false,
       loading,
-      isDemo: true,
+      isDemo: false,
       error,
     }),
     [error, loading, permissionSet, permissions, role, user],
@@ -92,11 +111,4 @@ export function useCurrentSessionContext() {
   const context = useContext(CurrentSessionContext);
   if (!context) throw new Error("useCurrentSession must be used inside CurrentSessionProvider");
   return context;
-}
-
-function canAccessBranch(user: User | null, role: Role | null, branchId: string) {
-  if (!user || !role) return false;
-  if (role.branchScope === "all") return true;
-  if (role.branchScope === "selected") return user.allowedBranchIds?.includes(branchId) ?? false;
-  return user.branchId === branchId;
 }

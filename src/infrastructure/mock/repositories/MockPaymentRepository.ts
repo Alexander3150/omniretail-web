@@ -15,6 +15,15 @@ export class MockPaymentRepository extends BaseMockRepository implements Payment
   async getBySale(saleId: string) {
     return this.read((db) => db.payments.filter((item) => item.saleId === saleId));
   }
+  async getBySaleScoped(tenantId: string, branchId: string, saleId: string) {
+    return this.read((db) => {
+      const sale = db.sales.find(
+        (item) => item.id === saleId && item.tenantId === tenantId && item.branchId === branchId,
+      );
+      if (!sale) return [];
+      return db.payments.filter((item) => item.tenantId === tenantId && item.saleId === sale.id);
+    });
+  }
   async create(input: Parameters<PaymentRepository["create"]>[0]) {
     const item = this.store.mutate((db) => {
       const now = this.now();

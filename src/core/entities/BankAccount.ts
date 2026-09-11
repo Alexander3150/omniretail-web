@@ -8,6 +8,16 @@ export interface BankAccount {
   tenantId: string;
   bankName: string;
   holderName: string;
+  /**
+   * Número de cuenta completo. Fuente de verdad; necesario para futuros flujos de
+   * transferencia/depósito. En el backend real debe almacenarse protegido/cifrado; en el mock
+   * actual se persiste en texto plano porque el store es ficticio (ver README del módulo).
+   */
+  accountNumber: string;
+  /**
+   * Representación enmascarada, derivada SIEMPRE de `accountNumber` (ver `maskAccountNumber`).
+   * Nunca se acepta como input independiente: evita que quede desincronizada del número real.
+   */
   accountNumberMasked: string;
   accountType: BankAccountType;
   currency: CurrencyCode;

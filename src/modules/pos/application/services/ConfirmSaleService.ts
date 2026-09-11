@@ -191,6 +191,7 @@ export class ConfirmSaleService {
 
   private async requireCurrentCashShift(input: ConfirmPosSaleInput) {
     const shift = await this.repositories.cashShifts.getOpenByUserAndBranch(
+      input.currentBranch.tenantId,
       input.user.id,
       input.currentBranch.id,
     );
@@ -248,15 +249,13 @@ export class ConfirmSaleService {
         if (product.sku !== ticketItem.sku || product.name !== ticketItem.name) {
           throw new Error(`Los datos de ${ticketItem.name} cambiaron; actualiza el ticket.`);
         }
-        if (product.tracking.stock !== ticketItem.tracksStock) {
+        if (product.productType !== ProductType.kit && product.tracking.stock !== ticketItem.tracksStock) {
           throw new Error(
             `El control de inventario de ${product.name} cambió; actualiza el ticket.`,
           );
         }
         if (
-          product.productType === ProductType.kit ||
-          product.tracking.serial ||
-          (product.tracking.expiration && !product.tracking.lot)
+          product.tracking.expiration && !product.tracking.lot
         ) {
           throw new Error(`${product.name} requiere trazabilidad no soportada en Terminal.`);
         }
@@ -277,7 +276,7 @@ export class ConfirmSaleService {
           !input.sourceOrderId &&
           input.checkout.deliveryMethod === DeliveryMethod.immediate
         ) {
-          const [balances, settings, lots] = await Promise.all([
+          const [balances, settings, lots, serials] = await Promise.all([
             this.repositories.inventory.getBalanceByProduct(product.id, input.currentBranch.id),
             this.repositories.inventory.getProductInventorySettings(
               product.id,
@@ -285,6 +284,9 @@ export class ConfirmSaleService {
             ),
             product.tracking.lot
               ? this.repositories.inventory.getLots(product.id)
+              : Promise.resolve([]),
+            product.tracking.serial
+              ? this.repositories.inventory.getSerialNumbers(product.id)
               : Promise.resolve([]),
           ]);
           const sellableBalances = product.tracking.lot
@@ -305,11 +307,39 @@ export class ConfirmSaleService {
                           new Date().toISOString(),
                         ),
                     )
-                    .reduce((sum, lot) => sum + lot.quantity, 0),
+                    .reduce(
+                      (sum, lot) =>
+                        sum +
+                        (product.tracking.serial
+                          ? Math.min(
+                              lot.quantity,
+                              serials.filter(
+                                (serial) =>
+                                  serial.lotId === lot.id && serial.status === "available",
+                              ).length,
+                            )
+                          : lot.quantity),
+                      0,
+                    ),
                 ),
               }))
-            : balances;
-          const balancesWithAvailability = balances.filter(
+            : product.tracking.serial
+              ? balances.map((balance) => ({
+                  ...balance,
+                  quantity: Math.min(
+                    balance.quantity,
+                    serials.filter(
+                      (serial) =>
+                        serial.tenantId === input.currentBranch.tenantId &&
+                        serial.branchId === input.currentBranch.id &&
+                        serial.productId === product.id &&
+                        serial.locationId === balance.locationId &&
+                        serial.status === "available",
+                    ).length,
+                  ),
+                }))
+              : balances;
+          const balancesWithAvailability = sellableBalances.filter(
             (balance) => getAvailableQuantity(balance) > 0,
           );
           const availableQuantity = getBranchAvailableQuantity({

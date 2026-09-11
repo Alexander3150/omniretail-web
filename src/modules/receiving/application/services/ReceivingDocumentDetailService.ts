@@ -504,6 +504,7 @@ function getReceivingConfirmationFingerprint(
       locationId: line.locationId || null,
       lotNumber: line.lotNumber.trim() || null,
       expirationDate: line.expirationDate || null,
+      serialNumbers: parseSerialNumbers(line.serialNumbersText).sort(),
       purchaseToBaseFactor: line.purchaseToBaseFactor,
     }))
     .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
@@ -602,8 +603,9 @@ export function validateLines(
       }
       if (line.tracking.serial && detail.capabilities.supportsSerials && acceptedNow > 0) {
         const serials = parseSerialNumbers(line.serialNumbersText);
-        if (serials.length !== acceptedNow) {
-          errors.push(`${line.productName}: registra ${acceptedNow} numeros de serie.`);
+        const expectedSerials = toBaseQuantity(line, acceptedNow);
+        if (serials.length !== expectedSerials) {
+          errors.push(`${line.productName}: registra ${expectedSerials} numeros de serie.`);
         }
       }
       return errors;
