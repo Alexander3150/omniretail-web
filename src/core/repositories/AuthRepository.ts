@@ -86,6 +86,15 @@ export interface InviteEmployeeResult {
    */
   invitationToken: string | null;
 }
+export interface RequestPasswordResetInput {
+  email: string;
+  /**
+   * Igual que LoginInput.tenantId: alimenta únicamente la resolución de
+   * candidatos CUSTOMER (tenant-scoped). Employee/Admin nunca depende de
+   * esto. Opcional por la misma razón que en login().
+   */
+  tenantId?: string;
+}
 export interface AuthRepository {
   login(input: LoginInput): Promise<Session>;
   logout(sessionId: string): Promise<void>;
@@ -111,7 +120,51 @@ export interface AuthRepository {
    * registro.
    */
   registerCustomer(input: RegisterCustomerInput): Promise<RegisterCustomerResult>;
-  requestPasswordReset(email: string): Promise<void>;
+  /**
+   * Solicita recuperación de contraseña. SIEMPRE resuelve exitosamente
+   * (nunca lanza, nunca revela si el correo tiene o no una cuenta
+   * asociada, ni si hubo rate limiting) -- R-A19: la UI muestra la misma
+   * respuesta genérica pase lo que pase adentro. Por eso este método NO
+   * devuelve ningún token/resultado (a diferencia de registerCustomer/
+   * inviteEmployee, cuyo modo demo sí expone el token porque ahí la
+   * existencia de la cuenta nunca fue un secreto que proteger). Para
+   * pruebas manuales sin correo real, el token se lee directamente del
+   * store (scripts/manual-verify-*.ts), nunca a través de un método del
+   * repositorio -- exponerlo aquí reintroduciría exactamente el tipo de
+   * oráculo que se cerró en PR8 (getActiveEmailVerificationToken).
+   *
+   * Mismo criterio de candidatos que login() (Customer tenant-scoped,
+   * Employee sin restricción de tenant) -- pero SIN desambiguación por
+   * contraseña: no se está autenticando como una única cuenta, así que
+   * si el correo coincide con más de una cuenta independiente, CADA una
+   * recibe su propio challenge (igual que en un sistema real, donde
+   * ambas recibirían un correo separado a la misma bandeja de entrada).
+   *
+   * Por cada cuenta candidata: si ya alcanzó el límite de solicitudes
+   * recientes (R-A21, PASSWORD_RESET_REQUEST_LIMIT dentro de
+   * PASSWORD_RESET_COOLDOWN_MINUTES), esa cuenta se omite en silencio. Si
+   * no, se invalida (supersededAt) cualquier challenge previo sin usar de
+   * esa misma cuenta -- doc 4.10, "una nueva solicitud invalida el
+   * enlace anterior" -- y se crea uno nuevo.
+   */
+  requestPasswordReset(input: RequestPasswordResetInput): Promise<void>;
+  /**
+   * Completa un reset vigente: valida que el token exista, no esté usado
+   * ni superseded, y no haya vencido; que el User asociado siga
+   * existiendo (nunca un fallback como "tenant-demo" para el tenant del
+   * audit log si ya no existe -- mismo criterio que
+   * activateEmployeeAccount desde PR9, aunque acá el AuthAccount ya
+   * identifica inequívocamente a quién se le cambia la contraseña, así
+   * que el riesgo es solo de atribución de auditoría, no de identidad);
+   * valida la contraseña elegida contra PASSWORD_POLICY (para que una
+   * llamada directa a este método no pueda saltarse lo que el formulario
+   * ya exige, mismo patrón que activateEmployeeAccount); actualiza la
+   * contraseña; revoca todas las sesiones existentes (R-A24); registra
+   * una Notification de cambio de contraseña (R-A24, antes pendiente); y
+   * desbloquea temporarily_locked/password_reset_required de vuelta a
+   * active -- PERO NUNCA reactiva una cuenta disabled/archived (R-A25:
+   * la contraseña cambia, el acceso no).
+   */
   resetPassword(token: string, newPasswordMock: string): Promise<void>;
   verifyEmail(token: string): Promise<void>;
   /**

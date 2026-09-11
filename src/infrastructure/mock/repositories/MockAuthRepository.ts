@@ -1,8 +1,15 @@
-import { AccountStatus, CustomerStatus, TenantStatus, UserStatus, UserType } from "@/core/enums";
+import {
+  AccountStatus,
+  CustomerStatus,
+  NotificationChannel,
+  NotificationStatus,
+  TenantStatus,
+  UserStatus,
+  UserType,
+} from "@/core/enums";
 import type { AuthAccount, Customer } from "@/core/entities";
 import type { AuthRepository } from "@/core/repositories";
 import {
-  authPolicy,
   EMAIL_ALREADY_REGISTERED_MESSAGE,
   EMAIL_VERIFICATION_TOKEN_MINUTES,
   EMPLOYEE_INVITATION_TOKEN_HOURS,
@@ -11,7 +18,11 @@ import {
   FAILED_ATTEMPTS_WINDOW_MINUTES,
   LOCKOUT_ESCALATION_LOOKBACK_HOURS,
   LOCKOUT_RESET_AFTER_MINUTES,
+  PASSWORD_RESET_COOLDOWN_MINUTES,
+  PASSWORD_RESET_REQUEST_LIMIT,
+  PASSWORD_RESET_TOKEN_MINUTES,
   getLockoutMinutesForOccurrence,
+  isPasswordRecoveryEligible,
   validatePasswordAgainstPolicy,
 } from "@/config/auth-policy";
 import { publicStorefrontSlug } from "@/config/publicStorefront";
@@ -413,23 +424,97 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     });
     return result;
   }
-  async requestPasswordReset(email: string) {
+  async requestPasswordReset(input: Parameters<AuthRepository["requestPasswordReset"]>[0]) {
     this.store.mutate((db) => {
-      const account = db.authAccounts.find(
-        (item) => item.email.toLowerCase() === email.toLowerCase(),
-      );
-      if (!account) return undefined;
-      const createdAt = this.now();
-      const expiresAt = new Date(
-        Date.now() + authPolicy.passwordResetTokenMinutes * 60 * 1000,
-      ).toISOString();
-      db.passwordResetChallenges.push({
-        id: this.id("password-reset"),
-        userId: account.userId,
-        token: this.id("token"),
-        createdAt,
-        expiresAt,
+      const normalizedEmail = input.email.trim().toLowerCase();
+      const now = new Date();
+      const matchesEmail = (account: AuthAccount) => account.email.toLowerCase() === normalizedEmail;
+      const ownerOf = (account: AuthAccount) => db.users.find((u) => u.id === account.userId);
+
+      // Mismo criterio de candidatos que login(). A diferencia de login(),
+      // aquí NO hay contraseña para desambiguar -- no hace falta: no se
+      // autentica como una sola cuenta, se genera un challenge por CADA
+      // cuenta que coincida.
+      const customerCandidates = input.tenantId
+        ? db.authAccounts.flatMap((account) => {
+            if (!matchesEmail(account)) return [];
+            const owner = ownerOf(account);
+            return owner?.type === UserType.customer && owner.tenantId === input.tenantId
+              ? [{ account, owner }]
+              : [];
+          })
+        : [];
+      const operationalCandidates = db.authAccounts.flatMap((account) => {
+        if (!matchesEmail(account)) return [];
+        const owner = ownerOf(account);
+        return owner?.type === UserType.employee ? [{ account, owner }] : [];
       });
+      const candidates = [...customerCandidates, ...operationalCandidates];
+
+      for (const { account, owner } of candidates) {
+        // Recovery y activation/verification son máquinas de estado
+        // SEPARADAS (ver PASSWORD_RECOVERY_ELIGIBLE_STATUSES) -- una
+        // cuenta password_reset_required (invitación de empleado sin
+        // activar, PR9) o pending_verification (registro de cliente sin
+        // verificar, PR8) NUNCA debe poder salir de ese estado via
+        // recovery, o recovery se convierte en un atajo que se salta
+        // activateEmployeeAccount()/verifyEmail() por completo. Se omite
+        // en silencio, igual que el rate limiting -- no hay señal
+        // distinguible hacia afuera (R-A19).
+        if (!isPasswordRecoveryEligible(account.status)) {
+          continue;
+        }
+
+        const existingForAccount = db.passwordResetChallenges.filter(
+          (c) => c.userId === account.userId,
+        );
+
+        // R-A21 (simplificado, ver auth-policy.ts): máximo
+        // PASSWORD_RESET_REQUEST_LIMIT solicitudes dentro de los últimos
+        // PASSWORD_RESET_COOLDOWN_MINUTES.
+        const recentCount = existingForAccount.filter(
+          (c) =>
+            now.getTime() - new Date(c.createdAt).getTime() <
+            PASSWORD_RESET_COOLDOWN_MINUTES * 60 * 1000,
+        ).length;
+        if (recentCount >= PASSWORD_RESET_REQUEST_LIMIT) {
+          continue; // rate-limited: no se crea challenge para esta cuenta, en silencio (R-A19)
+        }
+
+        // Doc 4.10: "una nueva solicitud invalida el enlace anterior" --
+        // a diferencia de EmployeeInvitation (PR9), que sí permite que
+        // convivan varias vigentes.
+        existingForAccount
+          .filter((c) => !c.usedAt && !c.supersededAt)
+          .forEach((c) => {
+            c.supersededAt = now.toISOString();
+          });
+
+        db.passwordResetChallenges.push({
+          id: this.id("password-reset"),
+          userId: account.userId,
+          token: this.id("token"),
+          createdAt: now.toISOString(),
+          expiresAt: new Date(
+            now.getTime() + PASSWORD_RESET_TOKEN_MINUTES * 60 * 1000,
+          ).toISOString(),
+        });
+
+        // password_reset_requested es una solicitud publica NO
+        // autenticada -- a diferencia de login_success/session_revoked
+        // (donde el propio dueño de la cuenta es, de hecho, el actor),
+        // acá quien envia el formulario no probo ser el dueño de nada
+        // todavia. Sin actorUserId a proposito (mismo criterio que
+        // employee_invited desde PR9): la cuenta objetivo ya queda
+        // identificada via accountId, sin inventar una identidad de
+        // actor que no existe.
+        this.logAuthAudit(db, {
+          tenantId: owner.tenantId,
+          accountId: account.id,
+          action: "password_reset_requested",
+        });
+      }
+
       return undefined;
     });
     this.emit("auth.changed", { action: "created" });
@@ -439,7 +524,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       const now = new Date();
 
       const challenge = db.passwordResetChallenges.find(
-        (item) => item.token === token && !item.usedAt,
+        (item) => item.token === token && !item.usedAt && !item.supersededAt,
       );
       if (!challenge) throw new Error("Invalid reset token");
       // Reject before any mutation: an expired challenge must not change the
@@ -452,22 +537,56 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
 
       const account = db.authAccounts.find((item) => item.userId === challenge.userId);
       if (!account) throw new Error("Account not found");
+
+      // Recovery y activation/verification son máquinas de estado
+      // SEPARADAS (ver PASSWORD_RECOVERY_ELIGIBLE_STATUSES en
+      // auth-policy.ts). Aunque requestPasswordReset() ya filtra esto al
+      // emitir el challenge, se revalida aquí también -- mismo principio
+      // de "revalidar en cada paso, no solo al principio" que
+      // activateEmployeeAccount desde PR9 (el estado pudo cambiar entre
+      // la solicitud y el reset). Sin esto, resetPassword() podría
+      // completar la activación de un empleado invitado sin que pase
+      // por activateEmployeeAccount()/[/activar-cuenta/[token]] -- exactamente
+      // el bypass que este ajuste cierra.
+      if (!isPasswordRecoveryEligible(account.status)) {
+        throw new Error("Invalid reset token");
+      }
+
+      // Mismo criterio que activateEmployeeAccount desde PR9: nunca un
+      // fallback como "tenant-demo" si el User ya no existe -- se
+      // rechaza, sin consumir el challenge ni tocar la cuenta. El caso
+      // real es más acotado que en PR9 (acá no hay riesgo de reactivar
+      // la cuenta equivocada, el AuthAccount ya identifica a quién se le
+      // cambia la contraseña), pero la garantía debe ser la misma: nunca
+      // inventar un tenant para un User que ya no existe.
       const user = db.users.find((item) => item.id === account.userId);
-      const tenantId = user?.tenantId ?? "tenant-demo";
+      if (!user) {
+        throw new Error("Invalid reset token");
+      }
+      const tenantId = user.tenantId;
       const nowIso = now.toISOString();
+
+      // Password policy en la capa funcional (mismo patrón que
+      // activateEmployeeAccount desde PR9): una llamada directa a este
+      // método no debe poder saltarse lo que el formulario ya exige.
+      const passwordError = validatePasswordAgainstPolicy(newPasswordMock);
+      if (passwordError) {
+        throw new Error(passwordError);
+      }
 
       account.passwordHashMock = buildPasswordHashMock(newPasswordMock);
       account.passwordChangedAt = nowIso;
       account.updatedAt = nowIso;
 
-      // R-A24: completing a reset always lifts a temporary lockout or a
-      // forced password_reset_required state back to active, resetting the
-      // failed-attempt counters — but a disabled/archived account is never
-      // re-enabled this way (R-A25): the password changes, access doesn't.
-      if (
-        account.status === AccountStatus.temporarily_locked ||
-        account.status === AccountStatus.password_reset_required
-      ) {
+      // R-A24: completing a reset always lifts a temporary lockout back
+      // to active, resetting the failed-attempt counters. password_reset_required
+      // is deliberately NOT handled here anymore -- isPasswordRecoveryEligible
+      // above already rejected it before this point, so if we got here the
+      // only non-active eligible status left is temporarily_locked.
+      // disabled/archived were never eligible either way (R-A25: the
+      // password changes, access doesn't -- and now recovery can't even
+      // reach a disabled/archived account to begin with).
+      if (account.status === AccountStatus.temporarily_locked) {
         account.status = AccountStatus.active;
         account.failedLoginAttempts = 0;
         account.lockedUntil = undefined;
@@ -496,16 +615,29 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       });
 
       // R-A30: audit the completed reset.
-      // NOTE for review: R-A24 also mentions a "notificación de cambio de
-      // contraseña". This PR keeps that at the audit-log level only
-      // (password_reset_completed) — persisting a Notification/toast is left
-      // for when the corresponding screen exists (later UI PR), since this
-      // PR is repository/contract-only and doesn't touch any screen yet.
       this.logAuthAudit(db, {
         tenantId,
         actorUserId: account.userId,
         accountId: account.id,
         action: "password_reset_completed",
+      });
+
+      // R-A24 ("notificación de cambio de contraseña"), antes pendiente
+      // ("left for when the corresponding screen exists" -- ya existe).
+      // Estrictamente limitado a esto: no hay canal real, preferencias,
+      // ni lectura de notificaciones en este PR.
+      db.notifications.push({
+        id: this.id("notification"),
+        tenantId,
+        userId: account.userId,
+        channel: NotificationChannel.in_app,
+        type: "password_reset_completed",
+        title: "Contraseña actualizada",
+        message: "Tu contraseña fue actualizada correctamente.",
+        status: NotificationStatus.unread,
+        relatedEntityType: "AuthAccount",
+        relatedEntityId: account.id,
+        createdAt: nowIso,
       });
 
       return undefined;

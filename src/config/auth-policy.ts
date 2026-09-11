@@ -14,6 +14,8 @@
  * MIN 8 / MAX 24.
  */
 
+import { AccountStatus } from "@/core/enums";
+
 export const PASSWORD_POLICY = {
   MIN_LENGTH: 8,
   MAX_LENGTH: 24,
@@ -128,6 +130,74 @@ export const EMAIL_VERIFICATION_TOKEN_MINUTES = 30;
 export const EMPLOYEE_INVITATION_TOKEN_HOURS = 24;
 
 /**
+ * Doc R-A20/4.10: el link de restablecimiento de contraseña vence en 15
+ * minutos -- NO 30. La constante legacy `authPolicy.passwordResetTokenMinutes`
+ * decía 30, un valor que nunca coincidió con el documento porque nunca
+ * hubo una pantalla real que lo hiciera observable; PR10 lo corrige al
+ * exponerlo por primera vez.
+ */
+export const PASSWORD_RESET_TOKEN_MINUTES = 15;
+
+/**
+ * Doc R-A21: hasta 3 solicitudes de recuperación por cuenta antes de
+ * entrar en cooldown.
+ *
+ * Simplificación deliberada frente al texto exacto del documento ("3 por
+ * cuenta en una ventana de 15 minutos, luego cooldown de 30 minutos" --
+ * dos relojes independientes): se implementa como un único corte de
+ * PASSWORD_RESET_COOLDOWN_MINUTES (30) -- como máximo 3 solicitudes
+ * pueden existir dentro de esa ventana; la 4ta (y siguientes) quedan
+ * bloqueadas hasta que la más reciente permitida tenga más de 30 minutos
+ * de antigüedad. Produce el mismo comportamiento observable que el
+ * documento describe (3 pasan, la siguiente espera hasta 30 min desde la
+ * última) sin necesitar dos relojes independientes.
+ *
+ * Reemplaza a `authPolicy.maxPasswordResetRequestsPerHour`, cuyo nombre
+ * nunca correspondió a la regla real (no es "por hora").
+ */
+export const PASSWORD_RESET_REQUEST_LIMIT = 3;
+export const PASSWORD_RESET_COOLDOWN_MINUTES = 30;
+
+/**
+ * Qué AccountStatus puede pasar por password recovery. Recovery y
+ * activation/verification son máquinas de estado SEPARADAS -- recovery
+ * nunca debe ser una puerta trasera para completar la otra:
+ *
+ * - active: el caso normal, "olvidé mi contraseña".
+ * - temporarily_locked: doc 4.9 lo dice explícitamente ("puede usar el
+ *   flujo de recuperación durante el bloqueo") y R-A24 ("al completar el
+ *   reset se desbloquea una cuenta temporarily_locked") -- restablecer
+ *   la contraseña es precisamente cómo se sale de este estado.
+ *
+ * Deliberadamente NO elegibles:
+ * - password_reset_required: es el estado de una invitación de empleado
+ *   sin activar (PR9) -- la única puerta de salida es
+ *   activateEmployeeAccount()/[/activar-cuenta/[token]]. Si recovery
+ *   también sacara de este estado, un empleado invitado podría saltarse
+ *   por completo la activación (nunca "acepta" la invitación) con el
+ *   mismo resultado final (cuenta active) -- dos máquinas de estado
+ *   colapsando en una sin que ninguna lo decida explícitamente.
+ * - pending_verification: análogo para el cliente que registró una
+ *   cuenta pero no verificó su correo (PR8) -- la salida es
+ *   verifyEmail()/[/verificar-correo/[token]], no recovery.
+ * - disabled/archived: doc R-A18 ("cuentas disabled o archived no se
+ *   reactivan con un login o reset; requieren una acción
+ *   administrativa"). resetPassword() ya respeta esto para el status
+ *   final de la cuenta (R-A25), pero antes de PR10-ronda2 SÍ generaba
+ *   challenge y cambiaba la contraseña para estas cuentas -- ahora ni
+ *   siquiera eso: si no está en este set, no hay challenge ni cambio de
+ *   password posible via recovery.
+ */
+export const PASSWORD_RECOVERY_ELIGIBLE_STATUSES: readonly AccountStatus[] = [
+  AccountStatus.active,
+  AccountStatus.temporarily_locked,
+];
+
+export function isPasswordRecoveryEligible(status: AccountStatus): boolean {
+  return PASSWORD_RECOVERY_ELIGIBLE_STATUSES.includes(status);
+}
+
+/**
  * Legacy flat policy, consumed today by MockAuthRepository.
  *
  * maxLoginAttempts and lockDurationMinutes are NOT independent values
@@ -136,19 +206,16 @@ export const EMPLOYEE_INVITATION_TOKEN_HOURS = 24;
  * The resulting numbers are unchanged (5 attempts, 15 min), so this does
  * not alter current MockAuthRepository behavior.
  *
- * The remaining fields (password reset request limits, demoMode) don't
- * have an equivalent above yet and stay as literal values; they'll move
- * into a canonical structure when the recovery module is implemented.
- * emailVerificationTokenHours used to live here as a documentation-only
- * placeholder for the employee invitation token — now that PR9
- * implements that flow, it has its own canonical constant,
- * EMPLOYEE_INVITATION_TOKEN_HOURS, above.
+ * maxPasswordResetRequestsPerHour and passwordResetTokenMinutes used to
+ * live here as literal values -- PR10 replaces them with
+ * PASSWORD_RESET_REQUEST_LIMIT/PASSWORD_RESET_COOLDOWN_MINUTES and
+ * PASSWORD_RESET_TOKEN_MINUTES above, now that the recovery flow is
+ * actually implemented and those values are observable. demoMode stays
+ * here (still not consumed by anything).
  */
 export const authPolicy = {
   maxLoginAttempts: LOGIN_ATTEMPT_RULES[LOGIN_ATTEMPT_RULES.length - 1].attemptNumber,
   lockDurationMinutes: LOCKOUT_ESCALATION_MINUTES.FIRST_LOCKOUT_IN_24H,
-  maxPasswordResetRequestsPerHour: 3,
-  passwordResetTokenMinutes: 30,
   demoMode: {
     enabled: false,
     lockDurationMinutes: 1,
