@@ -73,6 +73,17 @@ export const GENERIC_RECOVERY_MESSAGE =
   "Si existe una cuenta asociada, recibirás instrucciones.";
 
 /**
+ * Mensaje para un intento de registro con un correo que ya tiene cuenta
+ * en el mismo tenant (regla R-A03). A diferencia de login/recovery, el
+ * registro SI puede confirmar la existencia de la cuenta -- quien lo
+ * intenta ya conoce el correo, así que ocultarlo no protege nada y solo
+ * deja al usuario real sin salida. Ayuda a encontrar el camino correcto
+ * (iniciar sesión o recuperar contraseña) en vez de un error genérico.
+ */
+export const EMAIL_ALREADY_REGISTERED_MESSAGE =
+  "Ya existe una cuenta con este correo. Inicia sesión o recupera tu contraseña.";
+
+/**
  * Doc section 4.10: customer email verification token expires in 30
  * minutes. This is intentionally a separate constant from
  * `authPolicy.emailVerificationTokenHours` below (24h) — that one matches
