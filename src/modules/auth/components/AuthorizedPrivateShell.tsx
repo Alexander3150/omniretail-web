@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
+import { useCallback, useMemo, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { EMPLOYEE_HOME_ACCESS_PERMISSION, hasEmployeeHomeAccess } from "@/modules/auth/permissions";
 import { PrivateShell } from "@/shared/navigation/PrivateShell";
@@ -17,9 +19,16 @@ interface AuthorizedPrivateShellProps {
  * permissions/hasPermission, mas el permission sintetico de /inicio) que
  * usa RequirePermission para bloquear rutas, para que sidebar y
  * autorizacion de rutas nunca queden desincronizados.
+ *
+ * Tambien provee el contenido real del UserMenu (nombre/correo de la
+ * sesion) y el handler de logout -- UserMenu/PrivateHeader/PrivateShell
+ * siguen siendo puramente presentacionales, reciben todo por props.
  */
 export function AuthorizedPrivateShell({ children, navigationItems }: AuthorizedPrivateShellProps) {
   const { permissions, user } = useCurrentSession();
+  const repositories = useRepositories();
+  const router = useRouter();
+
   const allowedPermissions = useMemo(() => {
     const set = new Set(permissions);
     if (hasEmployeeHomeAccess(user, permissions)) {
@@ -28,8 +37,28 @@ export function AuthorizedPrivateShell({ children, navigationItems }: Authorized
     return set;
   }, [permissions, user]);
 
+  const handleLogout = useCallback(async () => {
+    try {
+      const sessionId = await repositories.auth.getCurrentSessionId();
+      if (sessionId) {
+        await repositories.auth.logout(sessionId);
+      }
+    } finally {
+      // La navegacion ocurre siempre, incluso si logout() falla de forma
+      // inesperada -- nunca dejar al usuario atrapado en una pantalla
+      // privada sin poder salir.
+      router.replace("/iniciar-sesion");
+    }
+  }, [repositories, router]);
+
   return (
-    <PrivateShell allowedPermissions={allowedPermissions} navigationItems={navigationItems}>
+    <PrivateShell
+      allowedPermissions={allowedPermissions}
+      navigationItems={navigationItems}
+      onLogout={handleLogout}
+      userMenuDescription={user?.email}
+      userMenuLabel={user?.name}
+    >
       {children}
     </PrivateShell>
   );
