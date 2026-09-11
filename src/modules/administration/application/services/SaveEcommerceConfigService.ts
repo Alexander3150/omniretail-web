@@ -8,6 +8,7 @@ import {
   ensureCanManageEcommerceConfig,
   ensureEcommerceConfigActor,
   ensureEcommerceConfigTenant,
+  ensureEcommerceDefaultBranch,
 } from "@/modules/administration/application/services/serviceHelpers";
 import {
   normalizeEcommerceConfigInput,
@@ -28,9 +29,15 @@ export class SaveEcommerceConfigService {
     ensureEcommerceConfigActor(actorUserId);
     validateEcommerceConfigInput(dto);
 
+    const normalizedInput = normalizeEcommerceConfigInput(dto);
+    const defaultBranch = normalizedInput.defaultBranchId
+      ? await this.repositories.branches.getById(normalizedInput.defaultBranchId)
+      : null;
+    ensureEcommerceDefaultBranch(normalizedInput.enabled, defaultBranch, tenantId);
+
     const config = await this.repositories.businessConfig.updateEcommerceConfig(
       tenantId,
-      normalizeEcommerceConfigInput(dto),
+      normalizedInput,
     );
     await this.repositories.auditLogs.append({
       tenantId,

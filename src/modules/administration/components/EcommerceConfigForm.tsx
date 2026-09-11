@@ -1,5 +1,4 @@
 import type { FormEvent } from "react";
-import { DeliveryMethod, PaymentMethod } from "@/core/enums";
 import type { EcommerceConfigInputDto } from "@/modules/administration/application/dto/EcommerceConfigDto";
 import { BusinessConfigToggle } from "@/modules/administration/components/BusinessConfigToggle";
 import type { EcommerceBranchOption } from "@/modules/administration/hooks/useEcommerceConfig";
@@ -7,19 +6,6 @@ import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
 import { Select } from "@/shared/components/Select";
-
-const paymentLabels: Record<PaymentMethod, string> = {
-  [PaymentMethod.cash]: "Efectivo",
-  [PaymentMethod.card]: "Tarjeta",
-  [PaymentMethod.transfer]: "Transferencia",
-  [PaymentMethod.mixed]: "Mixto",
-};
-
-const deliveryLabels: Record<DeliveryMethod, string> = {
-  [DeliveryMethod.immediate]: "Inmediata",
-  [DeliveryMethod.store_pickup]: "Retiro en tienda",
-  [DeliveryMethod.home_delivery]: "Envío a domicilio",
-};
 
 interface EcommerceConfigFormProps {
   value: EcommerceConfigInputDto;
@@ -47,20 +33,6 @@ export function EcommerceConfigForm({
     fieldValue: EcommerceConfigInputDto[Key],
   ) {
     onChange({ ...value, [key]: fieldValue });
-  }
-
-  function togglePaymentMethod(method: PaymentMethod, checked: boolean) {
-    const next = new Set(value.allowedPaymentMethods);
-    if (checked) next.add(method);
-    else next.delete(method);
-    setField("allowedPaymentMethods", [...next]);
-  }
-
-  function toggleDeliveryMethod(method: DeliveryMethod, checked: boolean) {
-    const next = new Set(value.allowedDeliveryMethods);
-    if (checked) next.add(method);
-    else next.delete(method);
-    setField("allowedDeliveryMethods", [...next]);
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -111,33 +83,21 @@ export function EcommerceConfigForm({
         </div>
       </section>
 
-      <section className="grid gap-5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm lg:grid-cols-2">
-        <CheckboxGroup
-          disabled={saving}
-          label="Métodos de pago"
-          options={Object.values(PaymentMethod).map((method) => ({
-            checked: value.allowedPaymentMethods.includes(method),
-            label: paymentLabels[method],
-            value: method,
-          }))}
-          onChange={(method, checked) => togglePaymentMethod(method as PaymentMethod, checked)}
-        />
-
-        <CheckboxGroup
-          disabled={saving}
-          label="Métodos de entrega"
-          options={Object.values(DeliveryMethod).map((method) => ({
-            checked: value.allowedDeliveryMethods.includes(method),
-            label: deliveryLabels[method],
-            value: method,
-          }))}
-          onChange={(method, checked) => toggleDeliveryMethod(method as DeliveryMethod, checked)}
-        />
+      <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
+        <h2 className="text-lg font-bold text-[var(--color-title)]">Pago y entrega</h2>
+        <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+          Política fija del canal Web/App: pago con tarjeta y envío a domicilio. No es
+          configurable desde esta pantalla.
+        </p>
       </section>
 
       <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
         <FormField
-          hint="Solo se muestran sucursales activas. Una selección guardada previamente se conserva."
+          hint={
+            value.enabled
+              ? "Obligatoria mientras la tienda está habilitada. Solo se muestran sucursales activas."
+              : "Solo se muestran sucursales activas. Una selección guardada previamente se conserva."
+          }
           id="ecommerce-default-branch"
           label="Sucursal predeterminada"
         >
@@ -145,6 +105,7 @@ export function EcommerceConfigForm({
             disabled={saving}
             id="ecommerce-default-branch"
             onChange={(event) => setField("defaultBranchId", event.target.value || undefined)}
+            required={value.enabled}
             value={value.defaultBranchId ?? ""}
           >
             <option value="">(Ninguna)</option>
@@ -168,36 +129,5 @@ export function EcommerceConfigForm({
         </Button>
       </div>
     </form>
-  );
-}
-
-interface CheckboxGroupProps {
-  label: string;
-  disabled: boolean;
-  options: Array<{ value: string; label: string; checked: boolean }>;
-  onChange: (value: string, checked: boolean) => void;
-}
-
-function CheckboxGroup({ label, disabled, options, onChange }: CheckboxGroupProps) {
-  return (
-    <fieldset>
-      <legend className="text-sm font-semibold text-[var(--color-title)]">{label}</legend>
-      <div className="mt-3 space-y-2">
-        {options.map((option) => (
-          <label
-            className="flex items-center gap-3 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)]"
-            key={option.value}
-          >
-            <input
-              checked={option.checked}
-              disabled={disabled}
-              onChange={(event) => onChange(option.value, event.target.checked)}
-              type="checkbox"
-            />
-            {option.label}
-          </label>
-        ))}
-      </div>
-    </fieldset>
   );
 }

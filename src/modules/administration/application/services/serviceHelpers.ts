@@ -43,6 +43,31 @@ export function ensureEcommerceConfigActor(actorUserId: string) {
 }
 
 /**
+ * La sucursal predeterminada del e-commerce es el punto operacional desde donde se preparan los
+ * pedidos online (Picking/Dispatch). Se valida en el service, no solo en el selector del
+ * formulario: un payload directo no puede persistir una sucursal inexistente, de otro tenant o
+ * inactiva mientras la tienda está habilitada.
+ */
+export function ensureEcommerceDefaultBranch(
+  enabled: boolean,
+  branch: Branch | null,
+  tenantId: string,
+) {
+  if (!enabled) return;
+
+  if (!branch || branch.tenantId !== tenantId) {
+    throw new AdministrationServiceError(
+      "Seleccioná una sucursal predeterminada válida del negocio activo para habilitar el e-commerce.",
+    );
+  }
+  if (branch.status !== BranchStatus.active) {
+    throw new AdministrationServiceError(
+      "La sucursal predeterminada debe estar activa para habilitar el e-commerce.",
+    );
+  }
+}
+
+/**
  * La autorización de sucursales pertenece a la capa de aplicación. Una UI oculta no impide que
  * otro consumidor invoque directamente estos servicios.
  */
