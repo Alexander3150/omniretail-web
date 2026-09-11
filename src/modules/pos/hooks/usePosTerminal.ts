@@ -222,6 +222,7 @@ export function usePosTerminal() {
     setCashShiftLoading(true);
     try {
       const shift = await repositories.cashShifts.getOpenByUserAndBranch(
+        currentBranch.tenantId,
         user.id,
         currentBranch.id,
       );

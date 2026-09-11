@@ -6,16 +6,18 @@ import type {
   ProductEditorData,
   ProductMediaEditorValue,
   SupplierProductEditorValue,
+  ProductKitComponentEditorValue,
 } from "@/modules/catalog/application/dto/ProductEditorDto";
 
 export class GetProductEditorDataService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(productId?: string, branchId?: string): Promise<ProductEditorData> {
-    const [attributeDefinitions, suppliers, branchLocations] = await Promise.all([
+    const [attributeDefinitions, suppliers, branchLocations, allProducts] = await Promise.all([
       this.repositories.attributes.getDefinitions(),
       this.repositories.suppliers.getActive(),
       branchId ? this.repositories.inventory.getLocations(branchId) : Promise.resolve([]),
+      this.repositories.products.getAll(),
     ]);
     const activeStorageLocations = branchLocations.filter(
       (location) => location.status === LocationStatus.active,
@@ -35,6 +37,8 @@ export class GetProductEditorDataService {
         supplierProducts: [],
         media: [],
         promotionCount: 0,
+        kitComponents: [],
+        kitEligibleProducts: allProducts.filter((product) => product.productType === "physical" && product.tracking.stock),
       };
     }
 
@@ -53,6 +57,8 @@ export class GetProductEditorDataService {
         supplierProducts: [],
         media: [],
         promotionCount: 0,
+        kitComponents: [],
+        kitEligibleProducts: allProducts.filter((product) => product.productType === "physical" && product.tracking.stock),
       };
     }
 
@@ -63,7 +69,7 @@ export class GetProductEditorDataService {
       supplierProducts,
       media,
       promotions,
-      inventorySettings,
+      inventorySettings, kitComponents,
     ] = await Promise.all([
       this.repositories.units.getConversionsByProduct(productId),
       this.repositories.attributes.getValuesByProduct(productId),
@@ -74,6 +80,7 @@ export class GetProductEditorDataService {
       branchId
         ? this.repositories.inventory.getProductInventorySettings(productId, branchId)
         : Promise.resolve(null),
+      this.repositories.productKitComponents.getByKitProduct(productId),
     ]);
     const currentDefaultLocation =
       inventorySettings?.defaultLocationId
@@ -166,6 +173,13 @@ export class GetProductEditorDataService {
           promotion.status === PromotionStatus.active ||
           promotion.status === PromotionStatus.scheduled,
       ).length,
+      kitComponents: kitComponents.map((component) => ({
+        componentProductId: component.componentProductId,
+        quantityPerKit: component.quantityPerKit,
+      })),
+      kitEligibleProducts: allProducts.filter(
+        (product) => product.id !== productId && product.productType === "physical" && product.tracking.stock,
+      ),
     };
   }
 }
