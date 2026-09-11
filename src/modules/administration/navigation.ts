@@ -30,6 +30,12 @@ export const administrationNavigation = [
         permission: "admin.ecommerce_config.manage",
       },
       {
+        id: "administration-audit",
+        label: "Auditoría",
+        href: "/administracion/auditoria",
+        permission: "admin.audit.read",
+      },
+      {
         id: "administration-bank-accounts",
         label: "Cuentas bancarias",
         href: "/administracion/cuentas-bancarias",

@@ -73,6 +73,52 @@ Decisiones abiertas y coordinacion:
   `feature/admin-branches`, `feature/admin-bank-accounts`, `feature/admin-suppliers` y
   `feature/admin-audit-log`; deben resolverse conservando las entradas de todas las pantallas.
 
+## Auditoria
+
+Implementado en esta rama:
+
+- Listado de solo lectura sobre `AuditLogRepository.getByTenant(tenantId)`, que garantiza el
+  aislamiento antes de entregar datos al service, y ordenado por `createdAt` descendente.
+- Enforcement de `admin.audit.read` dentro del service; la pantalla tambien presenta un estado sin
+  acceso cuando el permiso no esta disponible.
+- Busqueda libre y filtros por accion, tipo de entidad y rango de fechas, aplicados en memoria por
+  la ausencia de filtros en el contrato actual.
+- Paginacion en cliente con `TablePagination` y detalle en `Modal` con metadata serializada de forma
+  defensiva.
+- Resolucion del actor al nombre del usuario del tenant, con fallback al identificador y a
+  `Sistema` cuando no existe `actorUserId`.
+- Refresco manual y sincronizacion reactiva mediante el evento `audit.changed`, ignorando eventos
+  que no pertenecen al tenant activo.
+- Ruta privada `/administracion/auditoria` y entrada de navegacion con el nuevo permiso
+  `admin.audit.read`.
+- La pantalla no expone ni ejecuta ninguna operacion de escritura sobre auditoria.
+
+### Contrato de integracion
+
+Lo que esta pantalla expone al resto del sistema:
+
+- Ruta `/administracion/auditoria` e item `administration-audit` en la navegacion de
+  Administracion.
+- Permiso de solo lectura `admin.audit.read`.
+- Refresco reactivo ante `audit.changed`; no expone alta, edicion, archivado ni llamadas a
+  `AuditLogRepository.append()`.
+
+Lo que asume de la plataforma:
+
+- `useCurrentSession()` entrega el `tenantId` y los permisos efectivos de la sesion.
+- `RepositoryRegistry` expone `auditLogs` para la lectura y `users` para resolver el nombre del
+  actor.
+- `shared/utils/formatDate` define el formato comun de las fechas mostradas.
+
+Decisiones abiertas y coordinacion:
+
+- `AuditLogRepository` ofrece lectura tenant-scoped, pero no filtros funcionales ni paginacion
+  server-side. El backend futuro debera resolver el volumen real dentro de cada tenant.
+- `admin.audit.read` es un permiso nuevo. Se esperan colisiones de integracion en `permissions.ts`,
+  `demoSeed.ts`, `navigation.ts`, `serviceHelpers.ts`, `README.md` y `SCOPE.md` con
+  `feature/admin-branches`, `feature/admin-bank-accounts` y `feature/admin-suppliers`; deben
+  resolverse conservando las entradas de todas las pantallas.
+
 ## Proveedores
 
 Implementado en esta rama:
