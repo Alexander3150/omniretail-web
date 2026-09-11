@@ -1,10 +1,11 @@
-import { OrderStatus, SaleStatus } from "@/core/enums";
+import { SaleStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { DashboardSummaryDto } from "@/modules/administration/application/dto/DashboardDto";
 import {
   ensureCanReadDashboard,
   ensureDashboardTenant,
 } from "@/modules/administration/application/services/serviceHelpers";
+import { GetInventoryAlertsService } from "@/modules/inventory/application/services/GetInventoryAlertsService";
 
 export class GetDashboardSummaryService {
   constructor(private readonly repositories: RepositoryRegistry) {}
@@ -13,14 +14,15 @@ export class GetDashboardSummaryService {
     ensureCanReadDashboard(permissions);
     ensureDashboardTenant(tenantId);
 
-    const [sales, orders, balances, receipts, incidents, incidentTypes] = await Promise.all([
-      this.repositories.sales.getAll(),
-      this.repositories.orders.getAll(),
-      this.repositories.inventory.getBalances(),
-      this.repositories.receipts.getAll(),
-      this.repositories.receipts.getIncidents(),
-      this.repositories.incidentTypes.getAll(),
-    ]);
+    const [sales, pendingLogisticsOrders, branches, receipts, incidents, incidentTypes] =
+      await Promise.all([
+        this.repositories.sales.getAll(),
+        this.repositories.orders.getPendingForLogistics(),
+        this.repositories.branches.getActive(),
+        this.repositories.receipts.getAll(),
+        this.repositories.receipts.getIncidents(),
+        this.repositories.incidentTypes.getAll(),
+      ]);
     const now = new Date();
     const tenantSales = sales.filter(
       (sale) => sale.tenantId === tenantId && sale.status !== SaleStatus.cancelled,
@@ -29,7 +31,6 @@ export class GetDashboardSummaryService {
     const monthSales = tenantSales.filter((sale) =>
       isSameLocalMonth(new Date(sale.createdAt), now),
     );
-    const tenantBalances = balances.filter((balance) => balance.tenantId === tenantId);
     const tenantReceiptIds = new Set(
       receipts.filter((receipt) => receipt.tenantId === tenantId).map((receipt) => receipt.id),
     );
@@ -39,21 +40,24 @@ export class GetDashboardSummaryService {
         .map((incidentType) => [incidentType.id, incidentType.name]),
     );
 
+    const tenantBranches = branches.filter((branch) => branch.tenantId === tenantId);
+    const inventoryAlertsService = new GetInventoryAlertsService(this.repositories);
+    const branchAlerts = await Promise.all(
+      tenantBranches.map((branch) => inventoryAlertsService.execute(branch.id)),
+    );
+    const stockAlerts = branchAlerts.reduce(
+      (totals, data) => ({
+        outOfStock: totals.outOfStock + data.kpis.outOfStock,
+        lowStock: totals.lowStock + data.kpis.lowStock,
+      }),
+      { outOfStock: 0, lowStock: 0 },
+    );
+
     return {
       salesToday: summarizeSales(todaySales),
       salesMonth: summarizeSales(monthSales),
-      stockAlerts: {
-        outOfStock: tenantBalances.filter((balance) => balance.quantity <= 0).length,
-        lowStock: tenantBalances.filter(
-          (balance) =>
-            balance.minStock != null &&
-            balance.quantity > 0 &&
-            balance.quantity <= balance.minStock,
-        ).length,
-      },
-      pendingOrders: orders.filter(
-        (order) => order.tenantId === tenantId && order.status === OrderStatus.pending,
-      ).length,
+      stockAlerts,
+      pendingOrders: pendingLogisticsOrders.filter((order) => order.tenantId === tenantId).length,
       latestIncidents: incidents
         .filter((incident) => tenantReceiptIds.has(incident.receiptId))
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt))

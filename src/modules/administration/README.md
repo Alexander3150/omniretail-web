@@ -48,8 +48,8 @@ navegación como `administration-dashboard`. Requiere el permiso nuevo
 `admin.dashboard.read` y se refresca ante `sale.changed`, `order.changed`, `stock.changed` y
 `receipt.changed`.
 
-La pantalla agrega ventas del día y del mes calendario local, alertas simplificadas de stock,
-pedidos pendientes y las cinco incidencias de recepción más recientes. No expone operaciones de
+La pantalla agrega ventas del día y del mes calendario local, alertas de stock, pedidos que esperan
+atención operativa y las cinco incidencias de recepción más recientes. No expone operaciones de
 escritura. Esta rama también agrega `KPICard` como componente shared puramente presentacional;
 su API acepta etiqueta, valor, texto secundario, tono y estado de carga.
 
@@ -58,7 +58,7 @@ su API acepta etiqueta, valor, texto secundario, tono y estado de carga.
 La feature asume:
 
 - `useCurrentSession()` para resolver `tenantId`, permisos y estado de sesión.
-- `RepositoryRegistry.sales`, `orders`, `inventory`, `receipts` e `incidentTypes` con sus
+- `RepositoryRegistry.sales`, `orders`, `branches`, `receipts` e `incidentTypes` con sus
   contratos vigentes.
 - `formatCurrency` y `formatDate` de `shared/utils` para presentar montos y fechas.
 
@@ -66,8 +66,14 @@ Decisiones y coordinación:
 
 - Lee contratos compartidos de Riquelme (`sales`), María (`orders`) y Melbyn (`inventory`,
   `receipts`). Si esos contratos cambian, esta agregación debe revisarse.
-- Los umbrales del KPI de stock son un indicador simplificado. La regla autoritativa y la lista
-  oficial de alertas pertenecen al módulo `inventory`.
+- El KPI de stock NO recalcula disponibilidad por su cuenta: instancia
+  `GetInventoryAlertsService` (módulo `inventory`, dueño de la disponibilidad canónica —
+  físico + reservas + lotes + vencimiento + seriales + kits derivados) una vez por sucursal activa
+  del tenant y suma `kpis.outOfStock`/`kpis.lowStock`. Administration no mantiene una segunda regla
+  de bajo stock.
+- El KPI de "pedidos pendientes" reutiliza `OrderRepository.getPendingForLogistics()` (la cola
+  operativa real: `confirmed`, `preparing`, `picking`, `packing`, `ready_for_dispatch`), no
+  `OrderStatus.pending` en solitario — ese estado todavía no entró a operación.
 - `KPICard` es un componente shared nuevo y presentacional; coordinar su evolución si otro equipo
   necesita ampliar la API.
 - Con el seed actual, ventas de hoy y del mes muestran cero porque todos los `createdAt` son
