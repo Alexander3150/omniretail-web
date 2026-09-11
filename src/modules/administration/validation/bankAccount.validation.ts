@@ -9,10 +9,11 @@ const STATUSES: readonly BankAccountStatus[] = ["active", "inactive", "archived"
 
 const ACCOUNT_NUMBER_SEPARATORS = /[\s-]/g;
 /**
- * Longitud general, no atada a un banco puntual: suficiente para distinguir un número real de un
- * valor trivial, sin inventar un formato bancario específico que el proyecto no define.
+ * El proyecto no define un rango de longitud de negocio (ni IBAN, ni reglas por banco/país): el
+ * único requisito real es que sea una cadena de dígitos, preservando ceros iniciales. Imponer un
+ * mínimo/máximo arbitrario rechazaría números válidos sin ninguna regla que lo respalde.
  */
-const ACCOUNT_NUMBER_FORMAT = /^\d{4,34}$/;
+const ACCOUNT_NUMBER_FORMAT = /^\d+$/;
 
 /**
  * Quita separadores visuales ("1234 5678 9012" -> "123456789012") antes de validar o persistir.
