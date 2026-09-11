@@ -1,8 +1,9 @@
-import { AccountStatus, CustomerStatus, UserStatus, UserType } from "@/core/enums";
-import type { Customer } from "@/core/entities";
+import { AccountStatus, CustomerStatus, TenantStatus, UserStatus, UserType } from "@/core/enums";
+import type { AuthAccount, Customer } from "@/core/entities";
 import type { AuthRepository } from "@/core/repositories";
 import {
   authPolicy,
+  EMAIL_ALREADY_REGISTERED_MESSAGE,
   EMAIL_VERIFICATION_TOKEN_MINUTES,
   GENERIC_AUTH_ERROR_MESSAGE,
   LOGIN_ATTEMPT_RULES,
@@ -11,6 +12,7 @@ import {
   LOCKOUT_RESET_AFTER_MINUTES,
   getLockoutMinutesForOccurrence,
 } from "@/config/auth-policy";
+import { publicStorefrontSlug } from "@/config/publicStorefront";
 import { sessionPolicy } from "@/config/session-policy";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
@@ -33,17 +35,66 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     const windowMs = FAILED_ATTEMPTS_WINDOW_MINUTES * 60 * 1000;
     const lockoutLookbackMs = LOCKOUT_ESCALATION_LOOKBACK_HOURS * 60 * 60 * 1000;
     const escalationResetMs = LOCKOUT_RESET_AFTER_MINUTES * 60 * 1000;
+    const expectedHash = buildPasswordHashMock(input.passwordMock);
 
     const outcome = this.store.mutate((db) => {
-      const account = db.authAccounts.find(
-        (item) => item.email.toLowerCase() === normalizedEmail,
+      const ownerOf = (account: AuthAccount) => db.users.find((user) => user.id === account.userId);
+      const matchesEmail = (account: AuthAccount) => account.email.toLowerCase() === normalizedEmail;
+
+      // Candidatos CUSTOMER: tenant-scoped al storefront actual (R-A03: email
+      // unico POR TENANT). Sin tenantId resuelto (storefront no disponible)
+      // no hay candidato Customer -- a diferencia de Employee/Admin, el
+      // login de Customer SI depende genuinamente de que el storefront
+      // publico se haya podido resolver.
+      const customerCandidates = input.tenantId
+        ? db.authAccounts.filter((account) => {
+            if (!matchesEmail(account)) return false;
+            const owner = ownerOf(account);
+            return owner?.type === UserType.customer && owner.tenantId === input.tenantId;
+          })
+        : [];
+
+      // Candidatos OPERATIONAL: Employee/Admin, SIN restriccion de tenant --
+      // el login operacional no depende de cual storefront publico este
+      // cargado en el navegador (ver doc completo en AuthRepository.
+      // LoginInput.tenantId).
+      const operationalCandidates = db.authAccounts.filter(
+        (account) => matchesEmail(account) && ownerOf(account)?.type === UserType.employee,
       );
+
+      // expectedUserType NO se aplica aca: filtrar candidatos antes de
+      // resolver identidad cambiaria silenciosamente el resultado de una
+      // colision de email (una cuenta ya descartada por tipo no deberia
+      // poder "desambiguar" a las demas). Se valida mas abajo, junto al
+      // password, con la misma contabilidad de intento fallido/lockout.
+      const candidates = [...customerCandidates, ...operationalCandidates];
+
+      // Identidad resuelta por CONTEXTO + CREDENCIALES, nunca por "primer
+      // match": una cuenta encontrada primero (p.ej. un Customer del tenant
+      // actual) jamas debe opacar a otra cuenta valida (p.ej. un Employee de
+      // otro tenant) que comparta el mismo email. Con un unico candidato se
+      // evalua ese directamente (mismo comportamiento de siempre). Con
+      // varios (colision real de email entre cuentas independientes), solo
+      // se resuelve identidad si la contraseña identifica a UNA sola cuenta
+      // de forma inequivoca -- si ninguna coincide, o si dos cuentas
+      // independientes ademas comparten password mock, no hay forma segura
+      // de saber cual se intentaba autenticar: fallo generico, sin tocar el
+      // estado de ninguna candidata (no se puede castigar/premiar
+      // selectivamente a una cuenta cuando ni siquiera se sabe cual era el
+      // objetivo real del intento).
+      let account: AuthAccount | undefined;
+      if (candidates.length === 1) {
+        account = candidates[0];
+      } else if (candidates.length > 1) {
+        const passwordMatches = candidates.filter((item) => item.passwordHashMock === expectedHash);
+        account = passwordMatches.length === 1 ? passwordMatches[0] : undefined;
+      }
 
       if (!account) {
         return { ok: false as const };
       }
 
-      const user = db.users.find((item) => item.id === account.userId);
+      const user = ownerOf(account);
       const tenantId = user?.tenantId ?? "tenant-demo";
 
       // Auto-unlock if the lockout window already elapsed.
@@ -67,17 +118,14 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         return { ok: false as const };
       }
 
-      const expectedHash = buildPasswordHashMock(input.passwordMock);
       const passwordMatches = account.passwordHashMock === expectedHash;
       // Doc rule R-A13 (never reveal which credential/check failed) extends
       // to the account-kind check: a wrong password and a "right password,
-      // wrong tab" attempt (e.g. a customer's credentials used on the
-      // employee tab) must be completely indistinguishable from the
-      // outside — same generic error, same failed-attempt/lockout
+      // wrong expected kind" attempt must be completely indistinguishable
+      // from the outside — same generic error, same failed-attempt/lockout
       // accounting. Do NOT split this into a separate branch or message
       // later, even if it seems like better UX.
-      const accountKindMatches =
-        !input.expectedUserType || user?.type === input.expectedUserType;
+      const accountKindMatches = !input.expectedUserType || user?.type === input.expectedUserType;
 
       if (!passwordMatches || !accountKindMatches) {
         // A successful login always cuts the failure streak, regardless of
@@ -259,11 +307,45 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     this.emit("auth.changed", { action: "updated" });
   }
   async registerCustomer(input: Parameters<AuthRepository["registerCustomer"]>[0]) {
-    const user = this.store.mutate((db) => {
+    const result = this.store.mutate((db) => {
       const now = this.now();
+      const normalizedEmail = input.email.trim().toLowerCase();
+
+      // El tenant NO es un parametro que el caller elija -- no existe
+      // forma de pasarlo. Se resuelve aca mismo, con la MISMA fuente de
+      // verdad que usa PublicTenantProvider en el cliente (el slug del
+      // unico storefront publico), para que no exista ninguna via de
+      // "sustituir" el tenant de un registro publico. Revalidar que
+      // ademas este activo es la misma garantia de siempre: un dato que
+      // pueda haber cambiado nunca es autoridad por si solo.
+      const tenant = db.tenants.find(
+        (item) => item.slug === publicStorefrontSlug && item.status === TenantStatus.active,
+      );
+      if (!tenant) {
+        throw new Error("No se pudo completar el registro.");
+      }
+      const tenantId = tenant.id;
+
+      // R-A03: email unico dentro del tenant. Se resuelve via AuthAccount
+      // (la credencial real) cruzando con User.tenantId, porque
+      // AuthAccount no guarda tenantId directamente. Se comprueba ANTES
+      // de crear cualquier entidad: un intento rechazado no debe dejar un
+      // Customer/User/AuthAccount a medias en el store. Resuelto en PR8:
+      // este metodo nacio en un PR solo de contrato, sin ninguna pantalla
+      // que lo alcanzara -- PR8 expone un formulario real y el gap deja
+      // de ser teorico.
+      const existingAccountInTenant = db.authAccounts.find((account) => {
+        if (account.email.toLowerCase() !== normalizedEmail) return false;
+        const owner = db.users.find((item) => item.id === account.userId);
+        return owner?.tenantId === tenantId;
+      });
+      if (existingAccountInTenant) {
+        throw new Error(EMAIL_ALREADY_REGISTERED_MESSAGE);
+      }
+
       const customer: Customer = {
         id: this.id("customer"),
-        tenantId: input.tenantId,
+        tenantId,
         code: `CLI-${db.customers.length + 1}`,
         name: input.name,
         email: input.email,
@@ -274,7 +356,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       };
       const createdUser = {
         id: this.id("user"),
-        tenantId: input.tenantId,
+        tenantId,
         customerId: customer.id,
         name: input.name,
         email: input.email,
@@ -287,12 +369,6 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       customer.userId = createdUser.id;
       db.customers.push(customer);
       db.users.push(createdUser);
-      // NOTE for review: this method does not yet enforce email uniqueness
-      // within the tenant (rule R-A03). This is a preexisting gap, not
-      // introduced here — email uniqueness is an invariant that will
-      // eventually need authoritative enforcement (not just UI-level
-      // validation). Called out so it isn't mistaken for an oversight; not
-      // resolved in this PR.
       db.authAccounts.push({
         id: this.id("auth"),
         userId: createdUser.id,
@@ -306,7 +382,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       // Doc 4.10: without this record, verifyEmail() (which reads
       // db.emailVerifications) has nothing to ever match, so a new
       // customer could never leave pending_verification.
-      db.emailVerifications.push({
+      const verification = {
         id: this.id("email-verification"),
         userId: createdUser.id,
         token: this.id("token"),
@@ -314,16 +390,26 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         expiresAt: new Date(
           Date.now() + EMAIL_VERIFICATION_TOKEN_MINUTES * 60 * 1000,
         ).toISOString(),
-      });
-      return createdUser;
+      };
+      db.emailVerifications.push(verification);
+      // El token demo viaja solo como parte del resultado de ESTE
+      // registro (registration-scoped) -- no queda ningun metodo que
+      // permita pedirlo despues por userId (ver AuthRepository.
+      // RegisterCustomerResult: asi se cierra el oraculo
+      // cross-account/cross-tenant que existia antes).
+      return { user: createdUser, emailVerificationToken: verification.token };
     });
-    this.emit("auth.changed", { entityId: user.id, tenantId: user.tenantId, action: "created" });
-    this.emit("customer.changed", {
-      entityId: user.customerId,
-      tenantId: user.tenantId,
+    this.emit("auth.changed", {
+      entityId: result.user.id,
+      tenantId: result.user.tenantId,
       action: "created",
     });
-    return user;
+    this.emit("customer.changed", {
+      entityId: result.user.customerId,
+      tenantId: result.user.tenantId,
+      action: "created",
+    });
+    return result;
   }
   async requestPasswordReset(email: string) {
     this.store.mutate((db) => {

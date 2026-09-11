@@ -1,4 +1,4 @@
-import type { BankAccount, Branch } from "@/core/entities";
+import type { BankAccount, Branch, Supplier } from "@/core/entities";
 import { BranchStatus, BranchType } from "@/core/enums";
 import type { BranchInputDto } from "@/modules/administration/application/dto/BranchDto";
 import { BUSINESS_CONFIG_MANAGE_PERMISSION } from "@/modules/administration/permissions";
@@ -32,6 +32,33 @@ export function ensureAuditTenant(tenantId: string) {
   if (tenantId.trim()) return;
 
   throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
+}
+
+export function ensureCanManageSuppliers(permissions: readonly string[]) {
+  if (permissions.includes("admin.suppliers.manage")) return;
+
+  throw new AdministrationServiceError("No tenés permiso para gestionar proveedores.");
+}
+
+export function ensureSupplierTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
+}
+
+export function ensureSupplierActor(actorUserId: string) {
+  if (actorUserId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
+}
+
+export function ensureSupplierBelongsToTenant(
+  supplier: Supplier | null,
+  tenantId: string,
+): Supplier {
+  if (supplier?.tenantId === tenantId) return supplier;
+
+  throw new AdministrationServiceError("El proveedor no está disponible para el negocio activo.");
 }
 
 /**

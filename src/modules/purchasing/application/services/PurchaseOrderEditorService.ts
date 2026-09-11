@@ -15,8 +15,8 @@ import type {
 export class PurchaseOrderEditorService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async getActiveSuppliers(): Promise<PurchaseOrderEditorSupplier[]> {
-    const suppliers = await this.repositories.suppliers.getActive();
+  async getActiveSuppliers(tenantId: string): Promise<PurchaseOrderEditorSupplier[]> {
+    const suppliers = await this.repositories.suppliers.getActiveByTenant(tenantId);
     return suppliers
       .map((supplier) => ({
         id: supplier.id,
@@ -35,13 +35,19 @@ export class PurchaseOrderEditorService {
       .sort((left, right) => left.name.localeCompare(right.name));
   }
 
-  async getOrderForEdit(id: string, branchId?: string): Promise<PurchaseOrderEditorModel> {
+  async getOrderForEdit(
+    tenantId: string,
+    id: string,
+    branchId?: string,
+  ): Promise<PurchaseOrderEditorModel> {
     const order = await this.repositories.purchaseOrders.getById(id);
-    if (!order) throw new Error("Orden de compra no encontrada.");
+    // El id llega desde la URL/estado del cliente: una orden de otro tenant se trata igual que
+    // una inexistente, mismo mensaje, para no confirmar su existencia.
+    if (!order || order.tenantId !== tenantId) throw new Error("Orden de compra no encontrada.");
     if (order.status !== PurchaseOrderStatus.draft) {
       throw new Error("Solo las ordenes en borrador se pueden editar.");
     }
-    const availableProducts = await this.getAvailableProducts(order.supplierId, branchId);
+    const availableProducts = await this.getAvailableProducts(tenantId, order.supplierId, branchId);
     const availableByProductId = new Map(availableProducts.map((item) => [item.productId, item]));
 
     return {
@@ -58,18 +64,26 @@ export class PurchaseOrderEditorService {
   }
 
   async getAvailableProducts(
+    tenantId: string,
     supplierId: string,
     branchId?: string,
   ): Promise<PurchaseOrderAvailableProduct[]> {
     if (!supplierId) return [];
-    const [supplier, supplierProducts, products, units, categories] = await Promise.all([
-      this.repositories.suppliers.getById(supplierId),
-      this.repositories.supplierProducts.getBySupplier(supplierId),
+    // El supplierId llega desde un dropdown en el cliente: no confiar en el valor sin verificar
+    // que el proveedor exista y pertenezca al tenant activo antes de exponer su catálogo.
+    const supplier = await this.repositories.suppliers.getById(supplierId);
+    if (!supplier || supplier.tenantId !== tenantId) return [];
+    // branchId llega del contexto de la orden/cliente: no se usa para leer balances ni ajustes de
+    // inventario a menos que la sucursal exista y pertenezca al tenant activo. Cubre tanto la
+    // llamada directa (selector de sucursal) como getOrderForEdit, que enruta por acá.
+    const branch = branchId ? await this.repositories.branches.getById(branchId) : null;
+    const tenantBranchId = branch && branch.tenantId === tenantId ? branch.id : undefined;
+    const [supplierProducts, products, units, categories] = await Promise.all([
+      this.repositories.supplierProducts.getBySupplierForTenant(tenantId, supplierId),
       this.repositories.products.getAll(),
       this.repositories.units.getAll(),
       this.repositories.categories.getAll(),
     ]);
-    const supplierLeadTimeDays = supplier?.leadTimeDays;
     const productById = new Map(products.map((product) => [product.id, product]));
     const unitById = new Map(units.map((unit) => [unit.id, unit]));
     const categoryById = new Map(categories.map((category) => [category.id, category]));
@@ -83,11 +97,11 @@ export class PurchaseOrderEditorService {
           : "Sin categoria";
         const [tiers, balances, settings] = await Promise.all([
           this.repositories.supplierProducts.getCostTiers(supplierProduct.id),
-          branchId
-            ? this.repositories.inventory.getBalanceByProduct(supplierProduct.productId, branchId)
+          tenantBranchId
+            ? this.repositories.inventory.getBalanceByProduct(supplierProduct.productId, tenantBranchId)
             : Promise.resolve([]),
-          branchId
-            ? this.repositories.inventory.getProductInventorySettings(supplierProduct.productId, branchId)
+          tenantBranchId
+            ? this.repositories.inventory.getProductInventorySettings(supplierProduct.productId, tenantBranchId)
             : Promise.resolve(null),
         ]);
         const stockQuantity = balances.reduce((sum, balance) => sum + balance.quantity, 0);
@@ -107,7 +121,7 @@ export class PurchaseOrderEditorService {
           unitLabel: unit?.symbol ?? unit?.name ?? supplierProduct.purchaseUnitId,
           configuredCost: supplierProduct.lastCost,
           minimumOrderQuantity: supplierProduct.minimumOrderQuantity,
-          leadTimeDays: supplierLeadTimeDays,
+          leadTimeDays: supplierProduct.leadTimeDays,
           tiers: tiers.map((tier) => ({ minQuantity: tier.minQuantity, unitCost: tier.unitCost })),
           stockQuantity,
           minStock,
@@ -132,11 +146,15 @@ export class PurchaseOrderEditorService {
   }
 
   async resolvePrefillContext(
+    tenantId: string,
     context: PurchaseOrderPrefillContext,
   ): Promise<PurchaseOrderPrefillResolution | null> {
     if (!context.productId) return null;
     const product = await this.repositories.products.getById(context.productId);
-    if (!product) {
+    // El productId puede venir de un enlace externo (alerta de inventario, sugerencia de
+    // reposicion): un producto de otro tenant se trata igual que uno inexistente, nunca se usa
+    // product.tenantId para acotar la consulta siguiente.
+    if (!product || product.tenantId !== tenantId) {
       return {
         productId: context.productId,
         allowedSupplierIds: [],
@@ -147,15 +165,13 @@ export class PurchaseOrderEditorService {
     }
 
     const [supplierProducts, activeSuppliers] = await Promise.all([
-      this.repositories.supplierProducts.getByProduct(product.id),
-      this.repositories.suppliers.getActive(),
+      this.repositories.supplierProducts.getByProductForTenant(tenantId, product.id),
+      this.repositories.suppliers.getActiveByTenant(tenantId),
     ]);
     const activeSupplierById = new Map(activeSuppliers.map((supplier) => [supplier.id, supplier]));
     const associatedSupplierProducts = supplierProducts.filter(
       (supplierProduct) =>
-        supplierProduct.active &&
-        supplierProduct.tenantId === product.tenantId &&
-        activeSupplierById.has(supplierProduct.supplierId),
+        supplierProduct.active && activeSupplierById.has(supplierProduct.supplierId),
     );
     const allowedSupplierIds = associatedSupplierProducts.map(
       (supplierProduct) => supplierProduct.supplierId,
@@ -186,16 +202,55 @@ export class PurchaseOrderEditorService {
   }
 
   async saveDraft(input: SavePurchaseOrderInput): Promise<PurchaseOrder> {
+    await this.ensureSaveInputTenantSafe(input);
     const payload = toPurchaseOrderPayload(input, PurchaseOrderStatus.draft);
-    if (input.orderId) return this.repositories.purchaseOrders.update(input.orderId, payload);
+    if (input.orderId) {
+      await this.ensureOrderBelongsToTenant(input.tenantId, input.orderId);
+      return this.repositories.purchaseOrders.update(input.orderId, payload);
+    }
     return this.repositories.purchaseOrders.create(payload);
   }
 
   async createOrder(input: SavePurchaseOrderInput): Promise<PurchaseOrder> {
     validateCompleteOrder(input);
+    await this.ensureSaveInputTenantSafe(input);
     const payload = toPurchaseOrderPayload(input, PurchaseOrderStatus.pending_approval);
-    if (input.orderId) return this.repositories.purchaseOrders.update(input.orderId, payload);
+    if (input.orderId) {
+      await this.ensureOrderBelongsToTenant(input.tenantId, input.orderId);
+      return this.repositories.purchaseOrders.update(input.orderId, payload);
+    }
     return this.repositories.purchaseOrders.create(payload);
+  }
+
+  // El orderId llega del cliente (edicion de un borrador existente): una orden de otro tenant se
+  // trata igual que una inexistente, mismo mensaje que getOrderForEdit, y se valida ANTES de
+  // delegar la escritura al repository (que actualiza por id sin conocer tenant).
+  private async ensureOrderBelongsToTenant(tenantId: string, orderId: string): Promise<void> {
+    const order = await this.repositories.purchaseOrders.getById(orderId);
+    if (!order || order.tenantId !== tenantId) {
+      throw new Error("Orden de compra no encontrada.");
+    }
+  }
+
+  // supplierId/branchId/cada productId de las lineas llegan del cliente: la validacion de branch
+  // (arriba, en getAvailableProducts) no sustituye esta -- se revisan de nuevo aca porque el
+  // guardado es un boundary de escritura independiente y no puede confiar en lo que el formulario
+  // dice haber usado para construir las lineas.
+  private async ensureSaveInputTenantSafe(input: SavePurchaseOrderInput): Promise<void> {
+    const [supplier, branch, products] = await Promise.all([
+      this.repositories.suppliers.getById(input.supplierId),
+      this.repositories.branches.getById(input.branchId),
+      Promise.all(input.lines.map((line) => this.repositories.products.getById(line.productId))),
+    ]);
+    if (!supplier || supplier.tenantId !== input.tenantId) {
+      throw new Error("El proveedor seleccionado no está disponible para este negocio.");
+    }
+    if (!branch || branch.tenantId !== input.tenantId) {
+      throw new Error("La sucursal seleccionada no está disponible para este negocio.");
+    }
+    if (products.some((product) => !product || product.tenantId !== input.tenantId)) {
+      throw new Error("Alguno de los productos no está disponible para este negocio.");
+    }
   }
 }
 
