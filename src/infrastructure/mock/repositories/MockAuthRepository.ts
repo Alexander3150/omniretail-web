@@ -254,6 +254,10 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
   async getCurrentSessionId(): Promise<string | null> {
     return this.sessionStorage.get<string>(MOCK_SESSION_STORAGE_KEY);
   }
+  async clearLocalSession(): Promise<void> {
+    this.sessionStorage.remove(MOCK_SESSION_STORAGE_KEY);
+    this.emit("auth.changed", { action: "updated" });
+  }
   async registerCustomer(input: Parameters<AuthRepository["registerCustomer"]>[0]) {
     const user = this.store.mutate((db) => {
       const now = this.now();

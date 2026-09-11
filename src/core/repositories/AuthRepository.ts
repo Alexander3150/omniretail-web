@@ -29,6 +29,15 @@ export interface AuthRepository {
   logout(sessionId: string): Promise<void>;
   getSession(sessionId: string): Promise<Session | null>;
   getCurrentSessionId(): Promise<string | null>;
+  /**
+   * Elimina el puntero de sesion persistido en este navegador,
+   * incondicionalmente -- sin tocar el repositorio ni intentar revocar
+   * nada del lado "servidor" (eso es logout()). Pensado como la garantia
+   * de ultimo recurso: aunque logout() falle antes de completar la
+   * revocacion remota, este metodo por si solo asegura que el navegador
+   * ya no pueda reconstruir la sesion.
+   */
+  clearLocalSession(): Promise<void>;
   registerCustomer(input: RegisterCustomerInput): Promise<User>;
   requestPasswordReset(email: string): Promise<void>;
   resetPassword(token: string, newPasswordMock: string): Promise<void>;

@@ -14,8 +14,17 @@ import type { NavigationItem } from "@/shared/types/navigation.types";
  * declarado se permite". Todo lo demas que no resuelva un permiso real
  * en navigationConfig queda denegado por defecto (fail-closed), incluidas
  * rutas nuevas/dinamicas que accidentalmente no se hayan registrado.
+ *
+ * /cuenta NO esta aca: su item en customerNavigation ya declara
+ * `permission: "customer.account.read"`, asi que el mecanismo generico de
+ * abajo (findRequiredPermission + hasPermission) la protege igual que
+ * cualquier otra ruta -- una excepcion "solo sesion" hubiera sido
+ * redundante con esa permission real y hubiera dejado un segundo camino
+ * de autorizacion mas permisivo para la misma ruta. Vacio hoy, se deja el
+ * mecanismo por si una ruta genuinamente sin permiso operacional lo
+ * necesita a futuro.
  */
-const SESSION_ONLY_ROUTES = ["/cuenta"];
+const SESSION_ONLY_ROUTES: string[] = [];
 
 function isSessionOnlyRoute(pathname: string): boolean {
   return SESSION_ONLY_ROUTES.some(
@@ -54,7 +63,6 @@ function Denied() {
  * isNavigationItemActive), asi que un item nuevo agregado ahi queda
  * protegido automaticamente sin tocar este archivo.
  *
- * /cuenta es la unica excepcion "solo sesion" (area privada del Cliente).
  * /inicio usa el permission sintetico EMPLOYEE_HOME_ACCESS_PERMISSION
  * (ver modules/auth/permissions.ts) -- mismo mecanismo, sin caso especial
  * duplicado entre sidebar y guard de rutas.
