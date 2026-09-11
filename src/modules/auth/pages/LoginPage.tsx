@@ -105,12 +105,12 @@ export function LoginPage() {
               />
               Recordarme
             </label>
-            <span
-              className="cursor-not-allowed font-semibold text-[var(--color-text-muted)]"
-              title="Proximamente"
+            <Link
+              className="font-semibold text-[var(--color-title)] hover:underline"
+              href="/recuperar-contrasena"
             >
               ¿Olvidaste tu contraseña?
-            </span>
+            </Link>
           </div>
 
           <Button
