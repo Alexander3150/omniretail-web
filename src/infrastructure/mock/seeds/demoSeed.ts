@@ -201,6 +201,7 @@ export const demoSeedDatabase: MockDatabase = {
         "admin.branches.read",
         "admin.branches.manage",
         "admin.business_config.manage",
+        "admin.bank_accounts.manage",
       ],
       branchScope: "all",
       createdAt: now,
@@ -1448,7 +1449,9 @@ export const demoSeedDatabase: MockDatabase = {
       tenantId: "tenant-demo",
       bankName: "Banco Demo",
       holderName: "FerrePharma Demo, S.A.",
-      accountNumberMasked: "****-****-1234",
+      // Dato ficticio de demo. accountNumberMasked se deriva de accountNumber con maskAccountNumber.
+      accountNumber: "123456789012",
+      accountNumberMasked: "********9012",
       accountType: "monetary",
       currency: "GTQ",
       alias: "Cuenta principal GTQ",

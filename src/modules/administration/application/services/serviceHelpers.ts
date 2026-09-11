@@ -1,4 +1,4 @@
-import type { Branch } from "@/core/entities";
+import type { BankAccount, Branch } from "@/core/entities";
 import { BranchStatus, BranchType } from "@/core/enums";
 import type { BranchInputDto } from "@/modules/administration/application/dto/BranchDto";
 import { BUSINESS_CONFIG_MANAGE_PERMISSION } from "@/modules/administration/permissions";
@@ -99,6 +99,69 @@ export function normalizeBranchInput(dto: BranchInputDto): BranchInputDto {
 function normalizeOptionalText(value?: string) {
   const normalized = value?.trim();
   return normalized || undefined;
+}
+
+/**
+ * La autorización de cuentas bancarias pertenece a la capa de aplicación. El repositorio expone
+ * un único permiso `admin.bank_accounts.manage`: sin él no se consulta ni se modifica el maestro.
+ */
+export function ensureCanManageBankAccounts(permissions: readonly string[]) {
+  if (permissions.includes("admin.bank_accounts.manage")) return;
+
+  throw new AdministrationServiceError("No tenés permiso para gestionar cuentas bancarias.");
+}
+
+export function ensureBankAccountTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
+}
+
+export function ensureBankAccountActor(actorUserId: string) {
+  if (actorUserId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
+}
+
+export function ensureBankAccountBelongsToTenant(
+  account: BankAccount | null,
+  tenantId: string,
+): BankAccount {
+  if (account?.tenantId === tenantId) return account;
+
+  throw new AdministrationServiceError(
+    "La cuenta bancaria no está disponible para el negocio activo.",
+  );
+}
+
+/**
+ * Valida las sucursales habilitadas contra el maestro real. La UI ofrece solo sucursales activas,
+ * pero otro consumidor podría invocar el service con una sucursal de otro tenant, inactiva o
+ * inexistente. `tenantBranches` ya viene acotado al negocio activo. Las sucursales que la cuenta
+ * ya tenía asignadas (`previousBranchIds`) se conservan aunque hoy estén inactivas; las nuevas
+ * deben existir, pertenecer al tenant y estar activas.
+ */
+export function ensureBankAccountBranchIds(
+  branchIds: readonly string[],
+  tenantBranches: readonly Branch[],
+  previousBranchIds: readonly string[] = [],
+) {
+  const branchById = new Map(tenantBranches.map((branch) => [branch.id, branch]));
+  const alreadyAssigned = new Set(previousBranchIds);
+
+  for (const branchId of branchIds) {
+    const branch = branchById.get(branchId);
+    if (!branch) {
+      throw new AdministrationServiceError(
+        "Alguna de las sucursales habilitadas no existe o no pertenece al negocio.",
+      );
+    }
+    if (!alreadyAssigned.has(branchId) && branch.status !== BranchStatus.active) {
+      throw new AdministrationServiceError(
+        "No se puede habilitar una sucursal inactiva para la cuenta bancaria.",
+      );
+    }
+  }
 }
 
 export function cleanError(error: unknown): string {
