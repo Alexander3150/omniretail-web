@@ -41,7 +41,9 @@ export class PurchaseOrderEditorService {
     branchId?: string,
   ): Promise<PurchaseOrderEditorModel> {
     const order = await this.repositories.purchaseOrders.getById(id);
-    if (!order) throw new Error("Orden de compra no encontrada.");
+    // El id llega desde la URL/estado del cliente: una orden de otro tenant se trata igual que
+    // una inexistente, mismo mensaje, para no confirmar su existencia.
+    if (!order || order.tenantId !== tenantId) throw new Error("Orden de compra no encontrada.");
     if (order.status !== PurchaseOrderStatus.draft) {
       throw new Error("Solo las ordenes en borrador se pueden editar.");
     }

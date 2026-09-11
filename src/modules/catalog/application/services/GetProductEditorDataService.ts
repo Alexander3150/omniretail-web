@@ -17,15 +17,28 @@ export class GetProductEditorDataService {
     productId?: string,
     branchId?: string,
   ): Promise<ProductEditorData> {
-    const [attributeDefinitions, suppliers, branchLocations, allProducts] = await Promise.all([
+    const [allAttributeDefinitions, suppliers, branchLocations, allProducts] = await Promise.all([
       this.repositories.attributes.getDefinitions(),
       this.repositories.suppliers.getActiveByTenant(tenantId),
       branchId ? this.repositories.inventory.getLocations(branchId) : Promise.resolve([]),
       this.repositories.products.getAll(),
     ]);
+    // `getDefinitions()` y `getAll()` no aceptan tenantId: son lecturas globales del repository,
+    // así que el boundary de la aplicación filtra antes de que cualquier dato cruce a la DTO.
+    const attributeDefinitions = allAttributeDefinitions.filter(
+      (definition) => definition.tenantId === tenantId,
+    );
+    const tenantProducts = allProducts.filter((product) => product.tenantId === tenantId);
     const activeStorageLocations = branchLocations.filter(
       (location) => location.status === LocationStatus.active,
     );
+    const kitEligibleProducts = (excludeProductId?: string) =>
+      tenantProducts.filter(
+        (product) =>
+          product.id !== excludeProductId &&
+          product.productType === "physical" &&
+          product.tracking.stock,
+      );
 
     if (!productId) {
       return {
@@ -42,12 +55,14 @@ export class GetProductEditorDataService {
         media: [],
         promotionCount: 0,
         kitComponents: [],
-        kitEligibleProducts: allProducts.filter((product) => product.productType === "physical" && product.tracking.stock),
+        kitEligibleProducts: kitEligibleProducts(),
       };
     }
 
     const detail = await new GetProductDetailService(this.repositories).execute(productId);
-    if (!detail) {
+    // El productId puede venir de la URL: un producto de otro tenant se trata igual que uno
+    // inexistente, nunca se devuelve su detalle ni las colecciones asociadas.
+    if (!detail || detail.product.tenantId !== tenantId) {
       return {
         detail: null,
         unitConversion: null,
@@ -62,7 +77,7 @@ export class GetProductEditorDataService {
         media: [],
         promotionCount: 0,
         kitComponents: [],
-        kitEligibleProducts: allProducts.filter((product) => product.productType === "physical" && product.tracking.stock),
+        kitEligibleProducts: kitEligibleProducts(),
       };
     }
 
@@ -176,9 +191,7 @@ export class GetProductEditorDataService {
         componentProductId: component.componentProductId,
         quantityPerKit: component.quantityPerKit,
       })),
-      kitEligibleProducts: allProducts.filter(
-        (product) => product.id !== productId && product.productType === "physical" && product.tracking.stock,
-      ),
+      kitEligibleProducts: kitEligibleProducts(productId),
     };
   }
 }
