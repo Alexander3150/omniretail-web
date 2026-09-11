@@ -37,6 +37,7 @@ export function BankAccountForm({
   onSubmit,
 }: BankAccountFormProps) {
   const [value, setValue] = useState<BankAccountInputDto>(() => toBankAccountInput(account));
+  const isEdit = Boolean(account);
 
   const visibleBranchIds = new Set(branchOptions.map((option) => option.id));
   const preservedBranchIds = value.branchIds.filter((id) => !visibleBranchIds.has(id));
@@ -95,14 +96,24 @@ export function BankAccountForm({
           />
         </FormField>
 
-        <FormField id="bank-account-number" label="Número de cuenta (enmascarado)">
+        <FormField
+          hint={
+            isEdit
+              ? `Dejar en blanco para conservar el número actual (${account?.accountNumberMasked}).`
+              : "Ingresá el número completo; el listado solo mostrará la versión enmascarada."
+          }
+          id="bank-account-number"
+          label="Número de cuenta"
+        >
           <Input
             autoComplete="off"
             disabled={busy}
             id="bank-account-number"
-            onChange={(event) => setField("accountNumberMasked", event.target.value)}
-            required
-            value={value.accountNumberMasked}
+            inputMode="numeric"
+            onChange={(event) => setField("accountNumber", event.target.value)}
+            placeholder={isEdit ? "Sin cambios" : "Ej. 123456789012"}
+            required={!isEdit}
+            value={value.accountNumber}
           />
         </FormField>
 
@@ -210,7 +221,9 @@ function toBankAccountInput(account?: BankAccountDto): BankAccountInputDto {
     return {
       bankName: account.bankName,
       holderName: account.holderName,
-      accountNumberMasked: account.accountNumberMasked,
+      // Nunca se prefillea con el valor guardado: el enmascarado no sirve como número real y el
+      // completo no se transporta a este DTO. Vacío = "conservar el número actual" al enviar.
+      accountNumber: "",
       accountType: account.accountType,
       currency: account.currency,
       alias: account.alias,
@@ -223,7 +236,7 @@ function toBankAccountInput(account?: BankAccountDto): BankAccountInputDto {
   return {
     bankName: "",
     holderName: "",
-    accountNumberMasked: "",
+    accountNumber: "",
     accountType: "monetary",
     currency: "GTQ",
     alias: "",

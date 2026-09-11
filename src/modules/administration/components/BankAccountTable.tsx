@@ -48,6 +48,13 @@ export function BankAccountTable({
       ),
     },
     {
+      key: "accountNumberMasked",
+      header: "Número",
+      cell: (account) => (
+        <span className="font-mono text-[var(--color-text)]">{account.accountNumberMasked}</span>
+      ),
+    },
+    {
       key: "currency",
       header: "Moneda",
       cell: (account) => <span className="text-[var(--color-text)]">{account.currency}</span>,

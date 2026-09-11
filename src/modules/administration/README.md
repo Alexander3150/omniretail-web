@@ -119,12 +119,24 @@ Implementado en esta rama:
   expone el repositorio, asi que lectura y mutaciones lo exigen dentro del service. La pantalla
   ademas no renderiza el maestro sin ese permiso.
 - Auditoria obligatoria en alta, edicion y archivado mediante `AuditLogRepository`
-  (`bank_account.created` / `bank_account.updated` / `bank_account.archived`).
-- Validacion del dato recibido antes de normalizar banco, titular, alias, numero enmascarado,
+  (`bank_account.created` / `bank_account.updated` / `bank_account.archived`). La metadata solo
+  incluye `accountNumberMasked` (nunca `accountNumber` completo); tampoco viaja en el payload del
+  evento `payment.changed`, que solo lleva `entityId` / `tenantId` / `action`.
+- Validacion del dato recibido antes de normalizar banco, titular, alias, numero de cuenta,
   tipo, moneda, estado y `branchIds`.
-- `accountNumberMasked` debe guardarse enmascarado: el service rechaza una cadena de digitos larga
-  (numero completo) y exige un caracter de enmascarado (`*`, `x`, `•`), p. ej. `****-****-1234`.
-  Un almacenamiento seguro del numero completo, si se necesitara, es otro contrato.
+- `accountNumber` es la fuente de verdad (numero completo, necesario para futuros flujos de
+  transferencia/deposito). `accountNumberMasked` se deriva SIEMPRE de `accountNumber` mediante
+  `maskAccountNumber` (conserva los ultimos 4 caracteres, p. ej. `123456789012` -> `********9012`):
+  no es un input independiente ni se acepta desde el DTO de alta/edicion, para que nunca quede
+  desincronizado del numero real.
+- En alta, `accountNumber` es obligatorio. En edicion, dejarlo vacio conserva el numero actual (y
+  su mascara) sin volver a mostrarlo en el formulario; el listado (`BankAccountTable`) solo
+  renderiza `accountNumberMasked`, nunca el numero completo.
+- El mock persiste `accountNumber` en texto plano porque el store es ficticio y los datos de
+  `demoSeed` son inventados. En un backend real, `accountNumber` debe almacenarse
+  protegido/cifrado, los endpoints de listado deben devolver solo `accountNumberMasked`/last4, y
+  revelar el numero completo debe exigir autorizacion especifica y no registrarse nunca en logs o
+  auditoria (ver punto de auditoria abajo). No se implementa cifrado de cliente en esta rama.
 - `branchIds` se valida en `CreateBankAccountService` y `UpdateBankAccountService` contra el
   maestro real, no solo en la UI: cada sucursal debe existir y pertenecer al tenant; las nuevas
   ademas deben estar activas. Las sucursales que la cuenta ya tenia asignadas se conservan aunque
