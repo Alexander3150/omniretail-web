@@ -50,21 +50,23 @@ export function useRegister() {
 
     setIsSubmitting(true);
     try {
-      const createdUser = await repositories.auth.registerCustomer({
+      // tenantId se pasa aparte del DTO del formulario -- el form nunca
+      // decide en que tenant se registra, ese contexto viene solo de
+      // usePublicTenant(). El token demo viaja en el resultado del propio
+      // registro (registration-scoped): no existe un metodo separado que
+      // permita pedir el token de cualquier cuenta por id.
+      const { user: createdUser, emailVerificationToken } = await repositories.auth.registerCustomer(
         tenantId,
-        name: dto.name.trim(),
-        email: dto.email.trim(),
-        phone: dto.phone.trim() || undefined,
-        passwordMock: dto.password,
-      });
-      // Sin envio de correo real en este entorno, el token se recupera
-      // directamente para mostrar el enlace de verificacion en modo demo
-      // (ver RegisterPage) -- en produccion este paso no existiria del
-      // lado del cliente, el correo lo entregaria el backend.
-      const token = await repositories.auth.getActiveEmailVerificationToken(createdUser.id);
+        {
+          name: dto.name.trim(),
+          email: dto.email.trim(),
+          phone: dto.phone.trim() || undefined,
+          passwordMock: dto.password,
+        },
+      );
       setCompleted({
         email: createdUser.email,
-        verificationLink: token ? `/verificar-correo/${token}` : null,
+        verificationLink: emailVerificationToken ? `/verificar-correo/${emailVerificationToken}` : null,
       });
     } catch (caughtError) {
       setFormError(

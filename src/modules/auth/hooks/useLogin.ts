@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { UserType } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
+import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 import type { LoginFormDto } from "@/modules/auth/application/dto/LoginFormDto";
 import {
   hasLoginValidationErrors,
@@ -14,6 +15,16 @@ import {
 export function useLogin() {
   const repositories = useRepositories();
   const router = useRouter();
+  // Asuncion aceptada, no una decision de producto definitiva: este es
+  // el UNICO formulario de login (Customer y Employee lo comparten desde
+  // que se unifico), asi que resolver tenantId aca via usePublicTenant()
+  // ata cualquier login -- incluido el de empleado -- al tenant del
+  // storefront publico actualmente abierto. Correcto mientras exista un
+  // solo tenant sembrado; si el producto necesita que un empleado
+  // autentique contra un tenant distinto al storefront que tiene
+  // abierto, esto hay que revisitarlo (ver nota en AuthRepository.
+  // LoginInput.tenantId).
+  const { tenantId, loading: tenantLoading, error: tenantError } = usePublicTenant();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -24,6 +35,14 @@ export function useLogin() {
 
   const submit = useCallback(async () => {
     setFormError(undefined);
+
+    if (tenantLoading) {
+      return;
+    }
+    if (tenantError || !tenantId) {
+      setFormError("La tienda no está disponible en este momento. Intenta más tarde.");
+      return;
+    }
 
     const dto: LoginFormDto = { email, password, rememberMe };
     const errors = validateLoginForm(dto);
@@ -36,6 +55,7 @@ export function useLogin() {
     setIsSubmitting(true);
     try {
       const session = await repositories.auth.login({
+        tenantId,
         email: dto.email.trim(),
         passwordMock: dto.password,
         rememberMe: dto.rememberMe,
@@ -61,7 +81,7 @@ export function useLogin() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [email, password, rememberMe, repositories, router]);
+  }, [email, password, rememberMe, repositories, router, tenantError, tenantId, tenantLoading]);
 
   return {
     email,
@@ -73,6 +93,8 @@ export function useLogin() {
     fieldErrors,
     formError,
     isSubmitting,
+    tenantLoading,
+    tenantError,
     submit,
   };
 }

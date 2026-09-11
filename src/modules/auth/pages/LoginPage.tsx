@@ -43,6 +43,8 @@ export function LoginPage() {
     fieldErrors,
     formError,
     isSubmitting,
+    tenantLoading,
+    tenantError,
     submit,
   } = useLogin();
   const { showToast } = useToast();
@@ -112,7 +114,11 @@ export function LoginPage() {
             </span>
           </div>
 
-          <Button className="w-full" disabled={isSubmitting} type="submit">
+          <Button
+            className="w-full"
+            disabled={isSubmitting || tenantLoading || Boolean(tenantError)}
+            type="submit"
+          >
             {isSubmitting ? "Ingresando..." : "Iniciar sesion"}
           </Button>
         </form>

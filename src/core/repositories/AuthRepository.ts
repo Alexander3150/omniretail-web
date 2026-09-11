@@ -2,6 +2,28 @@ import type { Session, User } from "@/core/entities";
 import type { UserType } from "@/core/enums";
 
 export interface LoginInput {
+  /**
+   * Tenant a autenticar contra -- requerido. El mismo email puede existir
+   * en cuentas de distintos tenants (RegisterCustomerInput ya no es
+   * global-unico, es unico por tenant), asi que login() no puede resolver
+   * la cuenta correcta sin este contexto. El caller lo obtiene del
+   * mecanismo de tenant publico ya existente (usePublicTenant()), nunca
+   * de un campo que el usuario pueda declarar.
+   *
+   * ASUNCION ACEPTADA, no un requisito de login() en si: login() solo
+   * exige "algun" tenantId de confianza, no necesariamente el del
+   * storefront publico. Hoy el unico caller (useLogin, compartido por
+   * Customer y Employee desde que se unifico el form) siempre resuelve
+   * este valor via usePublicTenant() -- es decir, un login de empleado
+   * queda atado al tenant del storefront que tiene abierto en el
+   * navegador. Funciona hoy porque solo existe un tenant sembrado y no
+   * hay (todavia) un mecanismo separado de "tenant de empleado" (p.ej.
+   * login por dominio/subdominio interno). Si el producto llega a
+   * necesitar que un empleado autentique contra un tenant distinto al
+   * storefront publico que tiene abierto, este acoplamiento hay que
+   * revisitarlo explicitamente -- no alcanza con sembrar mas tenants.
+   */
+  tenantId: string;
   email: string;
   passwordMock: string;
   rememberMe?: boolean;
@@ -18,11 +40,24 @@ export interface LoginInput {
   expectedUserType?: UserType;
 }
 export interface RegisterCustomerInput {
-  tenantId: string;
   name: string;
   email: string;
   phone?: string;
   passwordMock: string;
+}
+export interface RegisterCustomerResult {
+  user: User;
+  /**
+   * Token de verificacion recien generado para ESTE registro, o null si
+   * por algun motivo no se pudo generar. Existe unicamente porque este
+   * entorno no envia correos reales -- en produccion este campo no
+   * existiria, el token viajaria solo por el correo. Se entrega como
+   * parte del resultado del registro (registration-scoped) en vez de
+   * exponer un metodo separado que permita consultar el token de
+   * cualquier usuario por id (ver historial de AuthRepository: asi
+   * funcionaba antes y era un oraculo cross-account/cross-tenant).
+   */
+  emailVerificationToken: string | null;
 }
 export interface AuthRepository {
   login(input: LoginInput): Promise<Session>;
@@ -38,21 +73,15 @@ export interface AuthRepository {
    * ya no pueda reconstruir la sesion.
    */
   clearLocalSession(): Promise<void>;
-  registerCustomer(input: RegisterCustomerInput): Promise<User>;
+  /**
+   * tenantId es contexto de confianza, resuelto por el caller via el
+   * mecanismo de tenant publico ya existente (usePublicTenant()) -- nunca
+   * un campo del formulario. El repositorio revalida ademas que el
+   * tenant exista y este activo antes de crear nada; un id que llega
+   * desde la UI nunca es autoridad por si solo.
+   */
+  registerCustomer(tenantId: string, input: RegisterCustomerInput): Promise<RegisterCustomerResult>;
   requestPasswordReset(email: string): Promise<void>;
   resetPassword(token: string, newPasswordMock: string): Promise<void>;
   verifyEmail(token: string): Promise<void>;
-  /**
-   * Devuelve el token de verificacion vigente (no usado, no expirado) del
-   * usuario, o null si no tiene uno pendiente (ya verificado, o nunca se
-   * genero uno). Metodo aditivo -- no reemplaza ni cambia verifyEmail().
-   *
-   * Sin backend/envio de correo real, es el unico modo de completar el
-   * ciclo registro -> verificacion en este frontend simulado: alguien
-   * tiene que poder obtener el token para llegar a
-   * /verificar-correo/[token]. Tiene ademas un paralelo legitimo fuera
-   * del mock (es basicamente lo que necesitaria un "reenviar correo de
-   * verificacion"), asi que no es un atajo exclusivo de demo.
-   */
-  getActiveEmailVerificationToken(userId: string): Promise<string | null>;
 }

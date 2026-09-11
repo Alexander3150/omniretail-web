@@ -1,4 +1,4 @@
-import { AccountStatus, CustomerStatus, UserStatus, UserType } from "@/core/enums";
+import { AccountStatus, CustomerStatus, TenantStatus, UserStatus, UserType } from "@/core/enums";
 import type { Customer } from "@/core/entities";
 import type { AuthRepository } from "@/core/repositories";
 import {
@@ -36,9 +36,19 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     const escalationResetMs = LOCKOUT_RESET_AFTER_MINUTES * 60 * 1000;
 
     const outcome = this.store.mutate((db) => {
-      const account = db.authAccounts.find(
-        (item) => item.email.toLowerCase() === normalizedEmail,
-      );
+      // Email es unico POR TENANT (ver registerCustomer), no globalmente
+      // -- el mismo correo puede tener una cuenta en el tenant A y otra
+      // distinta en el tenant B. AuthAccount no guarda tenantId
+      // directamente, asi que se resuelve cruzando con el tenant del
+      // User dueno de la cuenta, igual que hace el chequeo de unicidad
+      // en registerCustomer(). Un tenantId invalido o de otro tenant
+      // simplemente no encuentra cuenta -- mismo camino generico que
+      // "email inexistente", sin necesidad de un chequeo aparte.
+      const account = db.authAccounts.find((item) => {
+        if (item.email.toLowerCase() !== normalizedEmail) return false;
+        const owner = db.users.find((user) => user.id === item.userId);
+        return owner?.tenantId === input.tenantId;
+      });
 
       if (!account) {
         return { ok: false as const };
@@ -259,10 +269,22 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     this.sessionStorage.remove(MOCK_SESSION_STORAGE_KEY);
     this.emit("auth.changed", { action: "updated" });
   }
-  async registerCustomer(input: Parameters<AuthRepository["registerCustomer"]>[0]) {
-    const user = this.store.mutate((db) => {
+  async registerCustomer(
+    tenantId: string,
+    input: Parameters<AuthRepository["registerCustomer"]>[1],
+  ) {
+    const result = this.store.mutate((db) => {
       const now = this.now();
       const normalizedEmail = input.email.trim().toLowerCase();
+
+      // tenantId llega como contexto de confianza (el caller lo resuelve
+      // via usePublicTenant(), nunca de un campo del formulario), pero un
+      // id que llega desde la UI nunca es autoridad por si solo -- se
+      // revalida que exista y este activo antes de crear nada.
+      const tenant = db.tenants.find((item) => item.id === tenantId);
+      if (!tenant || tenant.status !== TenantStatus.active) {
+        throw new Error("No se pudo completar el registro.");
+      }
 
       // R-A03: email unico dentro del tenant. Se resuelve via AuthAccount
       // (la credencial real) cruzando con User.tenantId, porque
@@ -275,7 +297,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       const existingAccountInTenant = db.authAccounts.find((account) => {
         if (account.email.toLowerCase() !== normalizedEmail) return false;
         const owner = db.users.find((item) => item.id === account.userId);
-        return owner?.tenantId === input.tenantId;
+        return owner?.tenantId === tenantId;
       });
       if (existingAccountInTenant) {
         throw new Error(EMAIL_ALREADY_REGISTERED_MESSAGE);
@@ -283,7 +305,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
 
       const customer: Customer = {
         id: this.id("customer"),
-        tenantId: input.tenantId,
+        tenantId,
         code: `CLI-${db.customers.length + 1}`,
         name: input.name,
         email: input.email,
@@ -294,7 +316,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       };
       const createdUser = {
         id: this.id("user"),
-        tenantId: input.tenantId,
+        tenantId,
         customerId: customer.id,
         name: input.name,
         email: input.email,
@@ -320,7 +342,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       // Doc 4.10: without this record, verifyEmail() (which reads
       // db.emailVerifications) has nothing to ever match, so a new
       // customer could never leave pending_verification.
-      db.emailVerifications.push({
+      const verification = {
         id: this.id("email-verification"),
         userId: createdUser.id,
         token: this.id("token"),
@@ -328,16 +350,26 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         expiresAt: new Date(
           Date.now() + EMAIL_VERIFICATION_TOKEN_MINUTES * 60 * 1000,
         ).toISOString(),
-      });
-      return createdUser;
+      };
+      db.emailVerifications.push(verification);
+      // El token demo viaja solo como parte del resultado de ESTE
+      // registro (registration-scoped) -- no queda ningun metodo que
+      // permita pedirlo despues por userId (ver AuthRepository.
+      // RegisterCustomerResult: asi se cierra el oraculo
+      // cross-account/cross-tenant que existia antes).
+      return { user: createdUser, emailVerificationToken: verification.token };
     });
-    this.emit("auth.changed", { entityId: user.id, tenantId: user.tenantId, action: "created" });
-    this.emit("customer.changed", {
-      entityId: user.customerId,
-      tenantId: user.tenantId,
+    this.emit("auth.changed", {
+      entityId: result.user.id,
+      tenantId: result.user.tenantId,
       action: "created",
     });
-    return user;
+    this.emit("customer.changed", {
+      entityId: result.user.customerId,
+      tenantId: result.user.tenantId,
+      action: "created",
+    });
+    return result;
   }
   async requestPasswordReset(email: string) {
     this.store.mutate((db) => {
@@ -457,16 +489,6 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       return undefined;
     });
     this.emit("auth.changed", { action: "updated" });
-  }
-  async getActiveEmailVerificationToken(userId: string): Promise<string | null> {
-    return this.read((db) => {
-      const verification = db.emailVerifications.find(
-        (item) => item.userId === userId && !item.verifiedAt,
-      );
-      if (!verification) return null;
-      if (new Date() >= new Date(verification.expiresAt)) return null;
-      return verification.token;
-    });
   }
   private logAuthAudit(
     db: MockDatabase,
