@@ -31,8 +31,8 @@ Implementado en esta rama:
 
 Implementado en esta rama:
 
-- Listado de solo lectura sobre `AuditLogRepository.getAll()`, aislado por el `tenantId` de la
-  sesion y ordenado por `createdAt` descendente dentro de `GetAuditLogsService`.
+- Listado de solo lectura sobre `AuditLogRepository.getByTenant(tenantId)`, que garantiza el
+  aislamiento antes de entregar datos al service, y ordenado por `createdAt` descendente.
 - Enforcement de `admin.audit.read` dentro del service; la pantalla tambien presenta un estado sin
   acceso cuando el permiso no esta disponible.
 - Busqueda libre y filtros por accion, tipo de entidad y rango de fechas, aplicados en memoria por
@@ -41,7 +41,8 @@ Implementado en esta rama:
   defensiva.
 - Resolucion del actor al nombre del usuario del tenant, con fallback al identificador y a
   `Sistema` cuando no existe `actorUserId`.
-- Refresco manual y sincronizacion reactiva mediante el evento `audit.changed`.
+- Refresco manual y sincronizacion reactiva mediante el evento `audit.changed`, ignorando eventos
+  que no pertenecen al tenant activo.
 - Ruta privada `/administracion/auditoria` y entrada de navegacion con el nuevo permiso
   `admin.audit.read`.
 - La pantalla no expone ni ejecuta ninguna operacion de escritura sobre auditoria.
@@ -65,8 +66,8 @@ Lo que asume de la plataforma:
 
 Decisiones abiertas y coordinacion:
 
-- `AuditLogRepository` no ofrece filtros ni paginacion server-side. La implementacion actual carga
-  los registros y filtra en memoria; el backend futuro debera resolver el volumen real.
+- `AuditLogRepository` ofrece lectura tenant-scoped, pero no filtros funcionales ni paginacion
+  server-side. El backend futuro debera resolver el volumen real dentro de cada tenant.
 - `admin.audit.read` es un permiso nuevo. Se esperan colisiones de integracion en `permissions.ts`,
   `demoSeed.ts`, `navigation.ts`, `serviceHelpers.ts`, `README.md` y `SCOPE.md` con
   `feature/admin-branches`, `feature/admin-bank-accounts` y `feature/admin-suppliers`; deben

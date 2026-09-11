@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
+import type { DataEventPayload } from "@/core/types/events.types";
 import type {
   AuditLogDto,
   AuditLogFilter,
@@ -61,7 +62,15 @@ export function useAuditLogs() {
     }
   }, [getService, permissions, repositories, sessionLoading, tenantId]);
 
-  useDataEvent("audit.changed", reload);
+  const handleAuditChanged = useCallback(
+    (event: DataEventPayload) => {
+      if (!tenantId || event.tenantId !== tenantId) return;
+      void reload();
+    },
+    [reload, tenantId],
+  );
+
+  useDataEvent("audit.changed", handleAuditChanged);
 
   useEffect(() => {
     let active = true;

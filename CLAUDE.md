@@ -38,4 +38,3 @@ Read only the playbook that matches the current task:
 - `.ai/skills/shared-component/SKILL.md`
 - `.ai/skills/contract-change/SKILL.md`
 - `.ai/skills/pr-review/SKILL.md`
-- `.ai/skills/admin-branch-maintenance/SKILL.md`

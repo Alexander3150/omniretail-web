@@ -12,10 +12,9 @@ export class GetAuditLogsService {
   async execute(tenantId: string, permissions: readonly string[]): Promise<AuditLogDto[]> {
     ensureCanReadAuditLogs(permissions);
     ensureAuditTenant(tenantId);
-    const logs = await this.repositories.auditLogs.getAll();
+    const logs = await this.repositories.auditLogs.getByTenant(tenantId);
 
     return logs
-      .filter((log) => log.tenantId === tenantId)
       .sort(
         (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
       )
