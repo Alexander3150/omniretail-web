@@ -35,7 +35,7 @@
 | 2   | Sucursales                | `/administracion/sucursales`            | `Branch`                      | ✅ **Implementada**                  |
 | 3   | Proveedores               | `/administracion/proveedores`           | `Supplier`                    | ✅ **Implementada**                  |
 | 4   | Cuentas bancarias         | `/administracion/cuentas-bancarias`     | `BankAccount`                 | ✅ **Implementada**                  |
-| 5   | Diseño E-commerce         | `/administracion/diseno-ecommerce`      | `EcommerceConfig`             | ⚠️ Parcial — sin branding            |
+| 5   | Diseño E-commerce         | `/administracion/diseno-ecommerce`      | `EcommerceConfig`             | ✅ **Implementada** — sin branding   |
 | 6   | Clientes                  | `/administracion/clientes`              | `Customer`, `CustomerSegment` | ⚠️ Parcial — sin update ni segmentos |
 | 7   | Auditoría                 | `/administracion/auditoria`             | `AuditLog`                    | ✅ **Implementada**                  |
 | 8   | Caja                      | `/administracion/caja`                  | `CashShift`, `CashMovement`   | ⚠️ Parcial — solo lectura            |
@@ -588,7 +588,7 @@ moneda y estado.
 Límite: acá se administra el maestro. La confirmación de cada transferencia la hace el cajero en
 POS (Riquelme).
 
-### 12.5 Diseño E-commerce
+### 12.5 Diseño E-commerce ✅ implementada
 
 Campos reales: `enabled`, `storeName`, `requireAccountForCheckout`, `guestTrackingEnabled`,
 `allowedPaymentMethods[]`, `allowedDeliveryMethods[]`, `defaultBranchId`.

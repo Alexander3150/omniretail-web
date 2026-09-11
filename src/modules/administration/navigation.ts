@@ -24,6 +24,12 @@ export const administrationNavigation = [
         permission: BUSINESS_CONFIG_MANAGE_PERMISSION,
       },
       {
+        id: "administration-ecommerce-config",
+        label: "Diseño E-commerce",
+        href: "/administracion/diseno-ecommerce",
+        permission: "admin.ecommerce_config.manage",
+      },
+      {
         id: "administration-audit",
         label: "Auditoría",
         href: "/administracion/auditoria",
