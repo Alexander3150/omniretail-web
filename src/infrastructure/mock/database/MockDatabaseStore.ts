@@ -22,6 +22,7 @@ import type {
 } from "@/core/entities";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { createMockDatabase } from "@/infrastructure/mock/database/createMockDatabase";
+import { synchronizeSupplierLeadTimeDays } from "@/infrastructure/mock/database/supplierLeadTime";
 import type { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import { MOCK_DATABASE_STORAGE_KEY } from "@/infrastructure/storage/storageKeys";
 
@@ -95,9 +96,6 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   normalized.productKitComponents = database.productKitComponents ?? base.productKitComponents;
   normalized.suppliers = (database.suppliers ?? base.suppliers).map((supplier) => ({
     ...supplier,
-    leadTimeDays:
-      supplier.leadTimeDays ??
-      getLegacySupplierLeadTimeDays(supplier.id, database.supplierProducts ?? base.supplierProducts),
   }));
   normalized.productSalesPriceTiers = database.productSalesPriceTiers ?? [];
   normalized.productInventorySettings = normalizeProductInventorySettings(database, normalized);
@@ -122,6 +120,10 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
         preferred: supplierProduct.preferred ?? false,
       };
     },
+  );
+  synchronizeSupplierLeadTimeDays(
+    normalized,
+    normalized.suppliers.map((supplier) => supplier.id),
   );
   normalized.customerPaymentMethods = (
     database.customerPaymentMethods ??
@@ -447,18 +449,6 @@ function getProductInventorySettingsId(
   return `product-inventory-settings-${tenantId}-${productId}-${branchId}`;
 }
 
-function getLegacySupplierLeadTimeDays(
-  supplierId: string,
-  supplierProducts: Array<{ supplierId?: string; leadTimeDays?: number }>,
-) {
-  const values = supplierProducts
-    .filter((supplierProduct) => supplierProduct.supplierId === supplierId)
-    .map((supplierProduct) => supplierProduct.leadTimeDays)
-    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-  if (values.length === 0) return undefined;
-  return Math.max(...values);
-}
-
 export class MockDatabaseStore {
   private database: MockDatabase;
 
@@ -491,7 +481,7 @@ export class MockDatabaseStore {
   }
 
   resetToSeeds(): MockDatabase {
-    this.database = createMockDatabase();
+    this.database = normalizeMockDatabase(createMockDatabase());
     this.persist();
     return this.getSnapshot();
   }

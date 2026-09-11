@@ -4,10 +4,12 @@ export interface SupplierRepository {
   getById(id: string): Promise<Supplier | null>;
   getActive(): Promise<Supplier[]>;
   getProductsBySupplier(supplierId: string): Promise<SupplierProduct[]>;
-  create(input: Omit<Supplier, "id" | "createdAt" | "updatedAt">): Promise<Supplier>;
+  create(
+    input: Omit<Supplier, "id" | "createdAt" | "updatedAt" | "leadTimeDays">,
+  ): Promise<Supplier>;
   update(
     id: string,
-    input: Partial<Omit<Supplier, "id" | "createdAt" | "updatedAt">>,
+    input: Partial<Omit<Supplier, "id" | "createdAt" | "updatedAt" | "leadTimeDays">>,
   ): Promise<Supplier>;
   archive(id: string): Promise<Supplier>;
 }

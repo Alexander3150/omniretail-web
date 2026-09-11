@@ -62,14 +62,12 @@ export class PurchaseOrderEditorService {
     branchId?: string,
   ): Promise<PurchaseOrderAvailableProduct[]> {
     if (!supplierId) return [];
-    const [supplier, supplierProducts, products, units, categories] = await Promise.all([
-      this.repositories.suppliers.getById(supplierId),
+    const [supplierProducts, products, units, categories] = await Promise.all([
       this.repositories.supplierProducts.getBySupplier(supplierId),
       this.repositories.products.getAll(),
       this.repositories.units.getAll(),
       this.repositories.categories.getAll(),
     ]);
-    const supplierLeadTimeDays = supplier?.leadTimeDays;
     const productById = new Map(products.map((product) => [product.id, product]));
     const unitById = new Map(units.map((unit) => [unit.id, unit]));
     const categoryById = new Map(categories.map((category) => [category.id, category]));
@@ -107,7 +105,7 @@ export class PurchaseOrderEditorService {
           unitLabel: unit?.symbol ?? unit?.name ?? supplierProduct.purchaseUnitId,
           configuredCost: supplierProduct.lastCost,
           minimumOrderQuantity: supplierProduct.minimumOrderQuantity,
-          leadTimeDays: supplierLeadTimeDays,
+          leadTimeDays: supplierProduct.leadTimeDays,
           tiers: tiers.map((tier) => ({ minQuantity: tier.minQuantity, unitCost: tier.unitCost })),
           stockQuantity,
           minStock,

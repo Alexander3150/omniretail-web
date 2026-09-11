@@ -102,13 +102,8 @@ export class GetProductEditorDataService {
       ) ??
       null;
 
-    const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier]));
     const supplierProductsWithCosts: SupplierProductEditorValue[] = await Promise.all(
       supplierProducts.map(async (supplierProduct) => {
-        const supplierLeadTimeDays =
-          supplierById.get(supplierProduct.supplierId)?.leadTimeDays ??
-          supplierProduct.leadTimeDays;
-
         return {
           id: supplierProduct.id,
           supplierId: supplierProduct.supplierId,
@@ -116,7 +111,7 @@ export class GetProductEditorDataService {
           purchaseUnitId: supplierProduct.purchaseUnitId,
           purchaseToBaseFactor: supplierProduct.purchaseToBaseFactor,
           lastCost: supplierProduct.lastCost,
-          leadTimeDays: supplierLeadTimeDays,
+          leadTimeDays: supplierProduct.leadTimeDays,
           minimumOrderQuantity: supplierProduct.minimumOrderQuantity,
           preferred: supplierProduct.preferred,
           active: supplierProduct.active,

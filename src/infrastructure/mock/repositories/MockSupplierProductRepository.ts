@@ -1,5 +1,6 @@
 import type { SupplierProductRepository } from "@/core/repositories";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
+import { synchronizeSupplierLeadTimeDays } from "@/infrastructure/mock/database/supplierLeadTime";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
 
 export class MockSupplierProductRepository
@@ -34,6 +35,7 @@ export class MockSupplierProductRepository
       const now = this.now();
       const created = { ...input, id: this.id("supplier-product"), createdAt: now, updatedAt: now };
       db.supplierProducts.push(created);
+      synchronizeSupplierLeadTimeDays(db, [created.supplierId]);
       return created;
     });
     this.emit("supplier-product.changed", {
@@ -59,7 +61,9 @@ export class MockSupplierProductRepository
           }
         });
       }
-      return this.updateById(db.supplierProducts, id, input, "SupplierProduct");
+      const updated = this.updateById(db.supplierProducts, id, input, "SupplierProduct");
+      synchronizeSupplierLeadTimeDays(db, [current.supplierId, updated.supplierId]);
+      return updated;
     });
     this.emit("supplier-product.changed", {
       entityId: item.id,
@@ -71,9 +75,16 @@ export class MockSupplierProductRepository
   }
 
   async archive(id: string) {
-    const item = this.store.mutate((db) =>
-      this.updateById(db.supplierProducts, id, { active: false }, "SupplierProduct"),
-    );
+    const item = this.store.mutate((db) => {
+      const archived = this.updateById(
+        db.supplierProducts,
+        id,
+        { active: false },
+        "SupplierProduct",
+      );
+      synchronizeSupplierLeadTimeDays(db, [archived.supplierId]);
+      return archived;
+    });
     this.emit("supplier-product.changed", {
       entityId: item.id,
       tenantId: item.tenantId,

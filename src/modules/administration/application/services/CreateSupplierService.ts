@@ -26,11 +26,12 @@ export class CreateSupplierService {
     ensureCanManageSuppliers(permissions);
     ensureSupplierTenant(tenantId);
     ensureSupplierActor(actorUserId);
-    validateSupplierInput(dto);
+    const normalizedInput = normalizeSupplierInput(dto);
+    validateSupplierInput(normalizedInput);
 
     const supplier = await this.repositories.suppliers.create({
       tenantId,
-      ...normalizeSupplierInput(dto),
+      ...normalizedInput,
     });
     await this.repositories.auditLogs.append({
       tenantId,

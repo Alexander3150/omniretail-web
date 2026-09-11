@@ -36,8 +36,10 @@ Implementado en esta rama:
   usa el metodo de contrato `archive(id)` y conserva el historial.
 - Enforcement de `admin.suppliers.manage` dentro de todos los services, tanto para leer como para
   mutar.
-- Validacion del dato recibido antes de normalizarlo: nombre obligatorio, estado valido y formato
-  de correo; los textos opcionales vacios se convierten a `undefined` y el correo a minusculas.
+- Normalizacion antes de validar: los textos opcionales vacios se convierten a `undefined`, el
+  correo se recorta y pasa a minusculas, y luego se validan nombre, estado y formato de correo.
+- `Supplier.leadTimeDays` se expone solo como rollup derivado de las relaciones activas de
+  `SupplierProduct`; no forma parte del formulario ni del DTO de escritura administrativo.
 - Auditoria append-only en alta, edicion y archivado mediante `AuditLogRepository`.
 - Sincronizacion mediante el evento `supplier.changed` que emite `MockSupplierRepository`.
 - Tabla con `DataTable`, formulario en `Modal`, confirmacion de archivado y estados resueltos con

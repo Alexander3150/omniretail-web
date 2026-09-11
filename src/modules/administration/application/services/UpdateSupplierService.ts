@@ -32,10 +32,11 @@ export class UpdateSupplierService {
       await this.repositories.suppliers.getById(supplierId),
       tenantId,
     );
-    validateSupplierInput(dto);
+    const normalizedInput = normalizeSupplierInput(dto);
+    validateSupplierInput(normalizedInput);
 
     const supplier = ensureSupplierBelongsToTenant(
-      await this.repositories.suppliers.update(current.id, normalizeSupplierInput(dto)),
+      await this.repositories.suppliers.update(current.id, normalizedInput),
       tenantId,
     );
     await this.repositories.auditLogs.append({

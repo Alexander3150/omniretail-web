@@ -1565,7 +1565,6 @@ function SuppliersTab({
           disabled={!selectedSupplierId}
           onClick={() => {
             if (!selectedSupplierId) return;
-            const selectedSupplier = suppliers.find((supplier) => supplier.id === selectedSupplierId);
             onChange([
               ...value,
               {
@@ -1575,7 +1574,7 @@ function SuppliersTab({
                 purchaseToBaseFactor: 1,
                 lastCost: 0,
                 minimumOrderQuantity: 1,
-                leadTimeDays: selectedSupplier?.leadTimeDays ?? 0,
+                leadTimeDays: 0,
                 preferred: value.length === 0,
                 active: true,
                 costTiers: [],
@@ -1693,10 +1692,18 @@ function SuppliersTab({
                       value={item.minimumOrderQuantity}
                     />
                   </NativeField>
-                  <NativeField label="Plazo del proveedor">
-                    <div className="flex min-h-10 items-center rounded-md bg-[var(--color-app-background)] px-3 text-sm font-semibold text-[var(--color-title)]">
-                      {formatLeadTime(supplier?.leadTimeDays)}
-                    </div>
+                  <NativeField label="Plazo de entrega (días)">
+                    <input
+                      className={inputClassName}
+                      min="0"
+                      onChange={(event) =>
+                        updateSupplier(index, {
+                          leadTimeDays: parseIntegerInput(event.target.value),
+                        })
+                      }
+                      type="number"
+                      value={item.leadTimeDays}
+                    />
                   </NativeField>
                 </div>
                 <div className="space-y-3 rounded-md bg-[var(--color-app-background)] p-3">
@@ -2167,10 +2174,6 @@ function formatDate(value: string) {
     month: "short",
     year: "numeric",
   }).format(new Date(value));
-}
-
-function formatLeadTime(value?: number) {
-  return typeof value === "number" ? `${value} dias` : "No definido";
 }
 
 function buildInitialValue(options: ProductFormOptions, editorData: ProductEditorData): ProductEditorDto {
