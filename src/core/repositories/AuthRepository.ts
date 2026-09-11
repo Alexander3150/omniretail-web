@@ -74,6 +74,18 @@ export interface RegisterCustomerResult {
    */
   emailVerificationToken: string | null;
 }
+export interface InviteEmployeeResult {
+  user: User;
+  /**
+   * Igual que RegisterCustomerResult.emailVerificationToken: existe solo
+   * porque este entorno no envía correos reales. Viaja exclusivamente
+   * como resultado de ESTA invitación (invitation-scoped) -- nunca queda
+   * un método separado para consultarlo después por userId, para no
+   * repetir el oráculo cross-account que existía antes en el flujo de
+   * cliente (ver historial: getActiveEmailVerificationToken, removido).
+   */
+  invitationToken: string | null;
+}
 export interface AuthRepository {
   login(input: LoginInput): Promise<Session>;
   logout(sessionId: string): Promise<void>;
@@ -102,4 +114,38 @@ export interface AuthRepository {
   requestPasswordReset(email: string): Promise<void>;
   resetPassword(token: string, newPasswordMock: string): Promise<void>;
   verifyEmail(token: string): Promise<void>;
+  /**
+   * Invita (o reinvita) a un empleado YA EXISTENTE a activar su acceso.
+   * Nunca crea el User -- eso es responsabilidad de la pantalla de
+   * administración de usuarios (/administracion/usuarios, módulo de
+   * Jose, fuera de este repositorio). Este método resuelve únicamente la
+   * parte de autenticación:
+   *
+   * - Sin AuthAccount todavía: se crea en AccountStatus.
+   *   password_reset_required, con una contraseña inutilizable que nadie
+   *   conoce y nunca se expone -- el cierre real de acceso es el status,
+   *   no el secreto de esa contraseña: login() ya rechaza cualquier
+   *   cuenta que no esté 'active' antes de comparar password (R-A12).
+   * - Con AuthAccount en password_reset_required (invitación anterior
+   *   vencida o nunca usada): se reutiliza la MISMA cuenta -- nunca se
+   *   duplica un AuthAccount para el mismo userId -- y se emite una
+   *   invitación nueva (doc 4.10: "si expira, Administración genera otra
+   *   invitación"). La invitación anterior queda huérfana pero válida
+   *   hasta su propio vencimiento, mismo criterio ya aceptado en
+   *   requestPasswordReset() (tampoco invalida challenges previos).
+   * - Con AuthAccount 'active': se rechaza -- reinvitar a alguien que ya
+   *   activó su cuenta no es este flujo (sería password recovery, PR10).
+   * - Con AuthAccount 'disabled'/'archived'/'temporarily_locked': se
+   *   rechaza -- ninguno de esos estados se resuelve invitando de nuevo.
+   */
+  inviteEmployee(userId: string): Promise<InviteEmployeeResult>;
+  /**
+   * Completa una invitación vigente: establece la contraseña elegida por
+   * el empleado y activa la cuenta. Un token inexistente, ya usado,
+   * vencido, o cuya cuenta ya no esté en password_reset_required (porque
+   * otra invitación hermana ya la activó) producen el mismo error
+   * genérico -- /activar-cuenta/[token] no distingue el motivo hacia
+   * afuera, mismo criterio que verifyEmail/resetPassword.
+   */
+  activateEmployeeAccount(token: string, newPasswordMock: string): Promise<void>;
 }

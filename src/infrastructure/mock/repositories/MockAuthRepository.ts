@@ -5,6 +5,7 @@ import {
   authPolicy,
   EMAIL_ALREADY_REGISTERED_MESSAGE,
   EMAIL_VERIFICATION_TOKEN_MINUTES,
+  EMPLOYEE_INVITATION_TOKEN_HOURS,
   GENERIC_AUTH_ERROR_MESSAGE,
   LOGIN_ATTEMPT_RULES,
   FAILED_ATTEMPTS_WINDOW_MINUTES,
@@ -526,6 +527,118 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       verification.verifiedAt = this.now();
       const account = db.authAccounts.find((item) => item.userId === verification.userId);
       if (account) account.status = AccountStatus.active;
+      return undefined;
+    });
+    this.emit("auth.changed", { action: "updated" });
+  }
+  async inviteEmployee(userId: string) {
+    const result = this.store.mutate((db) => {
+      const user = db.users.find((item) => item.id === userId);
+      if (!user || user.type !== UserType.employee) {
+        throw new Error("No se encontró un empleado con ese id.");
+      }
+
+      const now = this.now();
+      let account = db.authAccounts.find((item) => item.userId === userId);
+
+      if (!account) {
+        account = {
+          id: this.id("auth"),
+          userId,
+          email: user.email,
+          // Inutilizable a propósito: nadie la conoce ni se expone en
+          // ningún lado. La barrera real es el status de abajo.
+          passwordHashMock: buildPasswordHashMock(this.id("employee-invite-placeholder")),
+          status: AccountStatus.password_reset_required,
+          failedLoginAttempts: 0,
+          createdAt: now,
+          updatedAt: now,
+        };
+        db.authAccounts.push(account);
+      } else if (account.status === AccountStatus.active) {
+        throw new Error("Este empleado ya tiene una cuenta activa.");
+      } else if (account.status !== AccountStatus.password_reset_required) {
+        throw new Error("No se puede invitar a este empleado en su estado actual.");
+      } else {
+        // Reinvitación: misma cuenta, nunca se duplica. La invitación
+        // previa (si sigue vigente) queda huérfana pero válida hasta su
+        // propio vencimiento -- mismo criterio que requestPasswordReset().
+        account.updatedAt = now;
+      }
+
+      const invitation = {
+        id: this.id("employee-invitation"),
+        userId,
+        token: this.id("token"),
+        createdAt: now,
+        expiresAt: new Date(
+          Date.now() + EMPLOYEE_INVITATION_TOKEN_HOURS * 60 * 60 * 1000,
+        ).toISOString(),
+      };
+      db.employeeInvitations.push(invitation);
+
+      // R-P04: toda accion sensible genera AuditLog. Invitar (o
+      // reinvitar) a un empleado crea/reactiva credenciales de acceso --
+      // sin esto, /administracion/auditoria no tendria ningun rastro de
+      // quien recibio acceso y cuando.
+      this.logAuthAudit(db, {
+        tenantId: user.tenantId,
+        actorUserId: account.userId,
+        accountId: account.id,
+        action: "employee_invited",
+      });
+
+      return { user, invitationToken: invitation.token };
+    });
+    this.emit("auth.changed", {
+      entityId: result.user.id,
+      tenantId: result.user.tenantId,
+      action: "updated",
+    });
+    return result;
+  }
+  async activateEmployeeAccount(token: string, newPasswordMock: string) {
+    this.store.mutate((db) => {
+      const now = new Date();
+
+      const invitation = db.employeeInvitations.find(
+        (item) => item.token === token && !item.acceptedAt,
+      );
+      if (!invitation) throw new Error("Invalid activation token");
+      // Mismo criterio que verifyEmail/resetPassword: expiresAt cuenta
+      // como ya vencido, no "válido hasta e incluyendo".
+      if (now >= new Date(invitation.expiresAt)) {
+        throw new Error("Invalid activation token");
+      }
+
+      const account = db.authAccounts.find((item) => item.userId === invitation.userId);
+      // Si otra invitación hermana ya activó esta cuenta, ya no está en
+      // password_reset_required -- se rechaza igual que un token vencido,
+      // sin distinguir el motivo hacia afuera.
+      if (!account || account.status !== AccountStatus.password_reset_required) {
+        throw new Error("Invalid activation token");
+      }
+
+      const user = db.users.find((item) => item.id === account.userId);
+      const tenantId = user?.tenantId ?? "tenant-demo";
+      const nowIso = now.toISOString();
+
+      account.passwordHashMock = buildPasswordHashMock(newPasswordMock);
+      account.passwordChangedAt = nowIso;
+      account.status = AccountStatus.active;
+      account.failedLoginAttempts = 0;
+      account.lockedUntil = undefined;
+      account.updatedAt = nowIso;
+
+      invitation.acceptedAt = nowIso;
+
+      this.logAuthAudit(db, {
+        tenantId,
+        actorUserId: account.userId,
+        accountId: account.id,
+        action: "employee_activated",
+      });
+
       return undefined;
     });
     this.emit("auth.changed", { action: "updated" });

@@ -292,6 +292,7 @@ export const demoSeedDatabase: MockDatabase = {
   sessions: [],
   passwordResetChallenges: [],
   emailVerifications: [],
+  employeeInvitations: [],
   mfaEnrollments: [],
   recoveryCodes: [],
   categories: [

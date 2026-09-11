@@ -86,14 +86,22 @@ export const EMAIL_ALREADY_REGISTERED_MESSAGE =
 /**
  * Doc section 4.10: customer email verification token expires in 30
  * minutes. This is intentionally a separate constant from
- * `authPolicy.emailVerificationTokenHours` below (24h) — that one matches
- * the doc's *employee invitation* token (section 4.4/4.10), a different
- * flow not implemented yet (planned for the employee-activation PR). Do
- * not reuse `emailVerificationTokenHours` for customer email verification;
- * when the employee invitation flow is built, that PR should decide
- * whether to rename/reuse it for clarity.
+ * `EMPLOYEE_INVITATION_TOKEN_HOURS` below (24h) — that one matches the
+ * doc's *employee invitation* token (section 4.4/4.10), a different flow
+ * with its own owner and lifecycle. Do not reuse one for the other.
  */
 export const EMAIL_VERIFICATION_TOKEN_MINUTES = 30;
+
+/**
+ * Doc secciones 4.4/4.10: el token de invitación de empleado vence en 24
+ * horas. Se promueve a constante propia (PR9, mismo patrón que
+ * EMAIL_VERIFICATION_TOKEN_MINUTES) ahora que el flujo de activación de
+ * empleado ya se implementa — antes vivía solo como referencia dentro de
+ * `authPolicy.emailVerificationTokenHours`. No confundir con
+ * EMAIL_VERIFICATION_TOKEN_MINUTES (30 min, verificación de correo de
+ * cliente): son dos flujos independientes con políticas independientes.
+ */
+export const EMPLOYEE_INVITATION_TOKEN_HOURS = 24;
 
 /**
  * Legacy flat policy, consumed today by MockAuthRepository.
@@ -104,17 +112,19 @@ export const EMAIL_VERIFICATION_TOKEN_MINUTES = 30;
  * The resulting numbers are unchanged (5 attempts, 15 min), so this does
  * not alter current MockAuthRepository behavior.
  *
- * The remaining fields (password reset request limits, email verification
- * token duration, demoMode) don't have an equivalent above yet and stay
- * as literal values; they'll move into a canonical structure when the
- * recovery/registration modules are implemented.
+ * The remaining fields (password reset request limits, demoMode) don't
+ * have an equivalent above yet and stay as literal values; they'll move
+ * into a canonical structure when the recovery module is implemented.
+ * emailVerificationTokenHours used to live here as a documentation-only
+ * placeholder for the employee invitation token — now that PR9
+ * implements that flow, it has its own canonical constant,
+ * EMPLOYEE_INVITATION_TOKEN_HOURS, above.
  */
 export const authPolicy = {
   maxLoginAttempts: LOGIN_ATTEMPT_RULES[LOGIN_ATTEMPT_RULES.length - 1].attemptNumber,
   lockDurationMinutes: LOCKOUT_ESCALATION_MINUTES.FIRST_LOCKOUT_IN_24H,
   maxPasswordResetRequestsPerHour: 3,
   passwordResetTokenMinutes: 30,
-  emailVerificationTokenHours: 24,
   demoMode: {
     enabled: false,
     lockDurationMinutes: 1,
