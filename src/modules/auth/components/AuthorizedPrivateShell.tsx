@@ -44,9 +44,13 @@ export function AuthorizedPrivateShell({ children, navigationItems }: Authorized
         await repositories.auth.logout(sessionId);
       }
     } finally {
-      // La navegacion ocurre siempre, incluso si logout() falla de forma
-      // inesperada -- nunca dejar al usuario atrapado en una pantalla
-      // privada sin poder salir.
+      // La revocacion remota (logout(), arriba) puede fallar antes de
+      // llegar a limpiar nada -- pero el navegador nunca debe conservar
+      // una credencial local utilizable pase lo que pase con ese intento.
+      // clearLocalSession() no depende de que logout() haya llegado a
+      // ejecutarse ni de que haya tenido exito: es la garantia de ultimo
+      // recurso, y la navegacion a /iniciar-sesion ocurre siempre despues.
+      await repositories.auth.clearLocalSession();
       router.replace("/iniciar-sesion");
     }
   }, [repositories, router]);
