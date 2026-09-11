@@ -125,7 +125,12 @@ export class CreateStorefrontCheckoutService {
       },
     });
 
-    return { orderNumber: order.orderNumber, trackingToken: order.trackingToken, total: order.total };
+    return {
+      orderNumber: order.orderNumber,
+      trackingToken: order.trackingToken,
+      guestTrackingEnabled: ecommerceConfig.guestTrackingEnabled,
+      total: order.total,
+    };
   }
 }
 
