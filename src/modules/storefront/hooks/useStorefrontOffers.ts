@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Promotion } from "@/core/entities";
-import { PromotionStatus, SalesChannel } from "@/core/enums";
+import { BranchStatus, PromotionStatus, SalesChannel } from "@/core/enums";
 import { calculateEffectivePrice } from "@/core/pricing";
 import { isBranchScopedResourceAvailable } from "@/core/scopes/branchScope";
 import { useDataEventBus, useRepositories } from "@/infrastructure/providers/RepositoryProvider";
@@ -55,13 +55,18 @@ export function useStorefrontOffers() {
       }
       setLoading(true); setError(null);
       try {
-        const [ecommerceConfig, products, promotions] = await Promise.all([
-          repositories.businessConfig.getEcommerceConfig(tenantId),
+        const ecommerceConfig = await repositories.businessConfig.getEcommerceConfig(tenantId);
+        if (!ecommerceConfig?.enabled || !ecommerceConfig.defaultBranchId) throw new Error("E-commerce branch is not configured");
+
+        const ecommerceBranchId = ecommerceConfig.defaultBranchId;
+        const [ecommerceBranch, products, promotions] = await Promise.all([
+          repositories.branches.getById(ecommerceBranchId),
           repositories.products.getPublishedForEcommerce(tenantId),
           repositories.promotions.getActive(),
         ]);
-        if (!ecommerceConfig?.enabled || !ecommerceConfig.defaultBranchId) throw new Error("E-commerce branch is not configured");
-        const ecommerceBranchId = ecommerceConfig.defaultBranchId;
+        if (!ecommerceBranch || ecommerceBranch.tenantId !== tenantId || ecommerceBranch.status !== BranchStatus.active) {
+          throw new Error("E-commerce branch is not available");
+        }
         const now = new Date();
         const offers = products.flatMap((product) => {
           const promotion = selectPromotion(promotions.filter((item) => isApplicableEcommercePromotion(item, tenantId, product.id, ecommerceBranchId, now)), product.salePrice);
