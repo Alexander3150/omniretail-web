@@ -25,6 +25,8 @@ export function validateChangePasswordForm(
   const passwordError = validatePasswordAgainstPolicy(dto.newPassword);
   if (passwordError) {
     errors.newPassword = passwordError;
+  } else if (dto.currentPassword && dto.newPassword === dto.currentPassword) {
+    errors.newPassword = "La nueva contraseña debe ser diferente a la actual.";
   }
 
   if (!dto.confirmNewPassword) {

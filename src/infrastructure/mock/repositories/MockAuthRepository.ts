@@ -841,6 +841,17 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         throw new Error("La contraseña actual no es correcta.");
       }
 
+      // Confirmado por QA manual (Andy, cuenta demo): sin este chequeo, la
+      // pantalla permitía "cambiar" la contraseña por la misma que ya tenía
+      // -- técnicamente no rompe nada del dominio, pero no tiene sentido de
+      // producto dejarlo pasar como si fuera un cambio real. No está en el
+      // documento de arquitectura; es una regla de UX razonable agregada a
+      // pedido, igual que las demás políticas, en la capa funcional (no solo
+      // en el formulario) para que una llamada directa no pueda saltársela.
+      if (input.newPasswordMock === input.currentPasswordMock) {
+        throw new Error("La nueva contraseña debe ser diferente a la actual.");
+      }
+
       const passwordError = validatePasswordAgainstPolicy(input.newPasswordMock);
       if (passwordError) throw new Error(passwordError);
 
