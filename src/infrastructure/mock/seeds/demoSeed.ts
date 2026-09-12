@@ -199,6 +199,8 @@ export const demoSeedDatabase: MockDatabase = {
         "admin.users.manage",
         "admin.roles.manage",
         "admin.business_config.manage",
+        "admin.customers.read",
+        "admin.customers.manage",
         "admin.ecommerce_config.manage",
         "admin.audit.read",
         "admin.branches.read",

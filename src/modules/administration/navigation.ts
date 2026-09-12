@@ -24,6 +24,17 @@ export const administrationNavigation = [
         permission: BUSINESS_CONFIG_MANAGE_PERMISSION,
       },
       {
+        id: "administration-customers",
+        label: "Clientes",
+        href: "/administracion/clientes",
+        // Mismo caso que Sucursales (ver comentario arriba): la entrada se protege con
+        // `admin.customers.manage`, el permiso real de la audiencia. Los services siguen
+        // aceptando ademas `admin.customers.read` de forma defensiva para un futuro rol de
+        // solo lectura -- ese rol necesitaria igual el permiso literal para ver este item, no
+        // hay implicacion automatica manage -> read a nivel de navegacion/rutas.
+        permission: "admin.customers.manage",
+      },
+      {
         id: "administration-ecommerce-config",
         label: "Diseño E-commerce",
         href: "/administracion/diseno-ecommerce",
