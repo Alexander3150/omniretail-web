@@ -104,6 +104,7 @@ export function CheckoutPage() {
                   />
                   <Field
                     label="Teléfono"
+                    type="tel"
                     value={form.phone}
                     onChange={(value) => setForm({ ...form, phone: value })}
                   />
