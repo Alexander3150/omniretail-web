@@ -11,7 +11,7 @@ estan en `SCOPE.md`.
 
 ## Contracts que consume
 
-UserRepository, RoleRepository, BranchRepository, BusinessConfigRepository, TenantRepository, SupplierRepository, BankAccountRepository, CustomerRepository, AuditLogRepository, CashShiftRepository
+UserRepository, RoleRepository, BranchRepository, BusinessConfigRepository, TenantRepository, SupplierRepository, BankAccountRepository, CustomerRepository, AuditLogRepository, CashShiftRepository, SalesRepository, OrderRepository, InventoryRepository, ReceiptRepository, IncidentTypeRepository
 
 ## Configuracion del negocio
 
@@ -214,6 +214,47 @@ Decisiones y coordinación:
   `feature/admin-branches`, `feature/admin-bank-accounts`, `feature/admin-suppliers`,
   `feature/admin-audit-log`, `feature/admin-ecommerce-config` y `feature/admin-customers`; al
   integrarlas deben conservarse todas las entradas.
+
+## Dashboard
+
+La ruta `/administracion/dashboard` expone un resumen ejecutivo de solo lectura y se integra en la
+navegación como `administration-dashboard`. Requiere el permiso nuevo
+`admin.dashboard.read` y se refresca ante `sale.changed`, `order.changed`, `stock.changed` y
+`receipt.changed`.
+
+La pantalla agrega ventas del día y del mes calendario local, alertas de stock, pedidos que esperan
+atención operativa y las cinco incidencias de recepción más recientes. No expone operaciones de
+escritura. Esta rama también agrega `KPICard` como componente shared puramente presentacional;
+su API acepta etiqueta, valor, texto secundario, tono y estado de carga.
+
+### Contrato de integracion
+
+La feature asume:
+
+- `useCurrentSession()` para resolver `tenantId`, permisos y estado de sesión.
+- `RepositoryRegistry.sales`, `orders`, `branches`, `receipts` e `incidentTypes` con sus
+  contratos vigentes.
+- `formatCurrency` y `formatDate` de `shared/utils` para presentar montos y fechas.
+
+Decisiones y coordinación:
+
+- Lee contratos compartidos de Riquelme (`sales`), María (`orders`) y Melbyn (`inventory`,
+  `receipts`). Si esos contratos cambian, esta agregación debe revisarse.
+- El KPI de stock NO recalcula disponibilidad por su cuenta: instancia
+  `GetInventoryAlertsService` (módulo `inventory`, dueño de la disponibilidad canónica —
+  físico + reservas + lotes + vencimiento + seriales + kits derivados) una vez por sucursal activa
+  del tenant y suma `kpis.outOfStock`/`kpis.lowStock`. Administration no mantiene una segunda regla
+  de bajo stock.
+- El KPI de "pedidos pendientes" reutiliza `OrderRepository.getPendingForLogistics()` (la cola
+  operativa real: `confirmed`, `preparing`, `picking`, `packing`, `ready_for_dispatch`), no
+  `OrderStatus.pending` en solitario — ese estado todavía no entró a operación.
+- `KPICard` es un componente shared nuevo y presentacional; coordinar su evolución si otro equipo
+  necesita ampliar la API.
+- Con el seed actual, ventas de hoy y del mes muestran cero porque todos los `createdAt` son
+  `2026-01-01T12:00:00.000Z`. No se reemplaza el calendario real por una ventana móvil.
+- `admin.dashboard.read` es un permiso nuevo. Se esperan colisiones en `permissions.ts`,
+  `demoSeed.ts`, `navigation.ts`, `serviceHelpers.ts`, `README.md` y `SCOPE.md` con las ramas
+  previas de administration; al integrarlas deben conservarse todas las entradas.
 
 ## Sucursales
 

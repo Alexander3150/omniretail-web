@@ -4,6 +4,7 @@ import type { BranchInputDto } from "@/modules/administration/application/dto/Br
 import {
   BUSINESS_CONFIG_MANAGE_PERMISSION,
   CASH_READ_PERMISSION,
+  DASHBOARD_READ_PERMISSION,
 } from "@/modules/administration/permissions";
 
 export class AdministrationServiceError extends Error {
@@ -41,6 +42,18 @@ export function ensureCashActor(actorUserId: string) {
   if (actorUserId.trim()) return;
 
   throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
+}
+
+export function ensureCanReadDashboard(permissions: readonly string[]) {
+  if (permissions.includes(DASHBOARD_READ_PERMISSION)) return;
+
+  throw new AdministrationServiceError("No tenés permiso para consultar el dashboard.");
+}
+
+export function ensureDashboardTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
 }
 
 export function ensureCanManageEcommerceConfig(permissions: readonly string[]) {
