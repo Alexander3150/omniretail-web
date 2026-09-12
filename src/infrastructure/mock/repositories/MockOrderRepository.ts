@@ -10,11 +10,11 @@ import type { DataEventName, DataEventPayload } from "@/core/types/events.types"
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
 import { expandKitDemand } from "@/core/kits/kitDemand";
+import type { InventoryReservationMutationResult } from "@/infrastructure/mock/repositories/inventoryReservationMutations";
 import {
-  type InventoryReservationMutationResult,
-  releaseInventoryReservationInDatabase,
-  reserveOrderItemInDatabase,
-} from "@/infrastructure/mock/repositories/inventoryReservationMutations";
+  releaseOrderReservationsInDatabase,
+  reserveStockTrackedOrderItemsInDatabase,
+} from "@/infrastructure/mock/repositories/orderReservationMutations";
 
 const logisticsStatuses = new Set<OrderStatus>([
   OrderStatus.confirmed,
@@ -75,7 +75,14 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
           if (existing.idempotencyFingerprint !== fingerprint) {
             throw new Error(`Order idempotency conflict: ${idempotencyKey}`);
           }
-          return { order: existing, orderChanged: false, reservationChanges: [] };
+          const reservationChanges =
+            existing.status === OrderStatus.confirmed
+              ? reserveStockTrackedOrderItemsInDatabase(existing, db, {
+                  id: (prefix) => this.id(prefix),
+                  now: () => this.now(),
+                })
+              : [];
+          return { order: existing, orderChanged: false, reservationChanges };
         }
       }
 
@@ -90,7 +97,12 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
         items: input.items.map((item) => ({
           ...item,
           orderId,
-          fulfillmentComponents: this.resolveFulfillmentComponents(input.tenantId, item.productId, item.quantity, db),
+          fulfillmentComponents: this.resolveFulfillmentComponents(
+            input.tenantId,
+            item.productId,
+            item.quantity,
+            db,
+          ),
         })),
         idempotencyKey,
         idempotencyFingerprint: idempotencyKey ? fingerprint : undefined,
@@ -101,7 +113,10 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
 
       const reservationChanges =
         order.status === OrderStatus.confirmed
-          ? this.reserveStockTrackedOrderItems(order, db)
+          ? reserveStockTrackedOrderItemsInDatabase(order, db, {
+              id: (prefix) => this.id(prefix),
+              now: () => this.now(),
+            })
           : [];
       return { order, orderChanged: true, reservationChanges };
     });
@@ -110,7 +125,9 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
     return result.order;
   }
 
-  async createWithPayment(input: CreateOrderWithPaymentInput): Promise<CreateOrderWithPaymentResult> {
+  async createWithPayment(
+    input: CreateOrderWithPaymentInput,
+  ): Promise<CreateOrderWithPaymentResult> {
     this.assertCreateInput(input.order);
 
     const result = this.store.transact<OrderWithPaymentMutationResult>((db) => {
@@ -132,22 +149,36 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
           throw new Error(`Checkout has multiple payments: ${existing.id}`);
         }
         if (payments[0]) {
+          const reservationChanges =
+            existing.status === OrderStatus.confirmed
+              ? reserveStockTrackedOrderItemsInDatabase(existing, db, {
+                  id: (prefix) => this.id(prefix),
+                  now: () => this.now(),
+                })
+              : [];
           return {
             order: existing,
             payment: payments[0],
             orderChanged: false,
             paymentChanged: false,
-            reservationChanges: [],
+            reservationChanges,
           };
         }
 
         const payment = this.createPaymentInDatabase(existing, input.payment, db);
+        const reservationChanges =
+          existing.status === OrderStatus.confirmed
+            ? reserveStockTrackedOrderItemsInDatabase(existing, db, {
+                id: (prefix) => this.id(prefix),
+                now: () => this.now(),
+              })
+            : [];
         return {
           order: existing,
           payment,
           orderChanged: false,
           paymentChanged: true,
-          reservationChanges: [],
+          reservationChanges,
         };
       }
 
@@ -176,12 +207,19 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
       db.orders.push(order);
 
       const payment = this.createPaymentInDatabase(order, input.payment, db);
+      const reservationChanges =
+        order.status === OrderStatus.confirmed
+          ? reserveStockTrackedOrderItemsInDatabase(order, db, {
+              id: (prefix) => this.id(prefix),
+              now: () => this.now(),
+            })
+          : [];
       return {
         order,
         payment,
         orderChanged: true,
         paymentChanged: true,
-        reservationChanges: [],
+        reservationChanges,
       };
     });
 
@@ -204,9 +242,12 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
       if (order.status === status) {
         const reservationChanges =
           status === OrderStatus.confirmed
-            ? this.reserveStockTrackedOrderItems(order, db)
+            ? reserveStockTrackedOrderItemsInDatabase(order, db, {
+                id: (prefix) => this.id(prefix),
+                now: () => this.now(),
+              })
             : status === OrderStatus.cancelled
-              ? this.releaseOrderReservations(order, db)
+              ? releaseOrderReservationsInDatabase(order, db, { now: () => this.now() })
               : [];
         return { order, orderChanged: false, reservationChanges };
       }
@@ -220,12 +261,17 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
         if (order.status !== OrderStatus.pending) {
           throw new Error(`Order cannot transition from ${order.status} to confirmed: ${order.id}`);
         }
-        reservationChanges = this.reserveStockTrackedOrderItems(order, db);
+        reservationChanges = reserveStockTrackedOrderItemsInDatabase(order, db, {
+          id: (prefix) => this.id(prefix),
+          now: () => this.now(),
+        });
       } else if (status === OrderStatus.cancelled) {
         if (order.status === OrderStatus.delivered) {
           throw new Error(`Delivered order cannot be cancelled: ${order.id}`);
         }
-        reservationChanges = this.releaseOrderReservations(order, db);
+        reservationChanges = releaseOrderReservationsInDatabase(order, db, {
+          now: () => this.now(),
+        });
       } else if (order.status === OrderStatus.pending) {
         throw new Error(`Pending order must be confirmed before ${status}: ${order.id}`);
       } else if (order.status === OrderStatus.cancelled || order.status === OrderStatus.delivered) {
@@ -239,45 +285,6 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
 
     this.emitLifecycleChanges(result, "status_changed");
     return result.order;
-  }
-
-  private reserveStockTrackedOrderItems(
-    order: Order,
-    db: MockDatabase,
-  ): InventoryReservationMutationResult[] {
-    const itemIds = new Set<string>();
-
-    return order.items.flatMap((orderItem) => {
-      if (itemIds.has(orderItem.id)) {
-        throw new Error(`Duplicate OrderItem id: ${orderItem.id}`);
-      }
-      itemIds.add(orderItem.id);
-
-      const product = db.products.find(
-        (item) => item.id === orderItem.productId && item.tenantId === order.tenantId,
-      );
-      if (!product) {
-        throw new Error(`Product not found for tenant: ${orderItem.productId}`);
-      }
-      const demands = orderItem.fulfillmentComponents ??
-        (product.productType === ProductType.physical && product.tracking.stock
-          ? [{ productId: orderItem.productId, quantity: orderItem.quantity }]
-          : []);
-      return demands.map((demand) =>
-        reserveOrderItemInDatabase(
-          db,
-          {
-            tenantId: order.tenantId,
-            branchId: order.branchId,
-            orderId: order.id,
-            orderItemId: orderItem.id,
-            productId: demand.productId,
-            quantity: demand.quantity,
-          },
-          { id: (prefix) => this.id(prefix), now: () => this.now() },
-        ),
-      );
-    });
   }
 
   private createPaymentInDatabase(
@@ -300,37 +307,23 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
     return payment;
   }
 
-  private resolveFulfillmentComponents(tenantId: string, productId: string, quantity: number, db: MockDatabase) {
+  private resolveFulfillmentComponents(
+    tenantId: string,
+    productId: string,
+    quantity: number,
+    db: MockDatabase,
+  ) {
     const product = db.products.find((item) => item.id === productId && item.tenantId === tenantId);
     if (!product) throw new Error(`Product not found for tenant: ${productId}`);
-    if (product.productType === ProductType.physical && product.tracking.stock) return [{ productId, quantity }];
+    if (product.productType === ProductType.physical && product.tracking.stock)
+      return [{ productId, quantity }];
     if (product.productType !== ProductType.kit) return undefined;
     return expandKitDemand(
-      db.productKitComponents.filter((item) => item.tenantId === tenantId && item.kitProductId === productId),
+      db.productKitComponents.filter(
+        (item) => item.tenantId === tenantId && item.kitProductId === productId,
+      ),
       quantity,
     );
-  }
-
-  private releaseOrderReservations(
-    order: Order,
-    db: MockDatabase,
-  ): InventoryReservationMutationResult[] {
-    return db.inventoryReservations
-      .filter(
-        (reservation) =>
-          reservation.tenantId === order.tenantId && reservation.orderId === order.id,
-      )
-      .map((reservation) =>
-        releaseInventoryReservationInDatabase(
-          db,
-          {
-            tenantId: order.tenantId,
-            branchId: order.branchId,
-            reservationId: reservation.id,
-          },
-          { now: () => this.now() },
-        ),
-      );
   }
 
   private assertCreateInput(input: CreateOrderInput): void {
@@ -373,8 +366,7 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
 
   private assertTrackingTokenAvailable(input: CreateOrderInput, db: MockDatabase): void {
     const exists = db.orders.some(
-      (order) =>
-        order.tenantId === input.tenantId && order.trackingToken === input.trackingToken,
+      (order) => order.tenantId === input.tenantId && order.trackingToken === input.trackingToken,
     );
     if (exists) {
       throw new Error(`Order tracking token already exists: ${input.trackingToken}`);

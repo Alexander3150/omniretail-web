@@ -34,6 +34,7 @@ import type {
   InventoryTransferRequestRow,
   TransferRequestDto,
 } from "@/modules/inventory/application/dto/InventoryAlertsDto";
+import { getSuggestedReorderQuantity } from "@/modules/inventory/application/services/GetInventoryAlertsService";
 import {
   useInventoryAlerts,
   type InventoryKpiFilter,
@@ -193,7 +194,7 @@ export function InventoryAlertsPage() {
       `/compras/ordenes/nueva?${buildQueryString({
         productId: row.productId,
         branchId: row.branchId,
-        suggestedQuantity: getSuggestedQuantity(row),
+        suggestedQuantity: getSuggestedReorderQuantity(row),
         source,
       })}`,
     );
@@ -651,11 +652,13 @@ function InventoryTable({
   return (
     <div className="border-t border-[var(--color-border)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[900px] border-collapse text-left text-sm">
           <thead className="bg-[var(--color-structure)] text-xs uppercase text-white">
             <tr>
               <th className="px-4 py-3 font-semibold">Producto</th>
               <th className="px-4 py-3 text-right font-semibold">Existencia</th>
+              <th className="px-4 py-3 text-right font-semibold">Reservado</th>
+              <th className="px-4 py-3 text-right font-semibold">Disponible</th>
               <th className="hidden px-4 py-3 text-right font-semibold md:table-cell">
                 Nivel minimo
               </th>
@@ -672,7 +675,7 @@ function InventoryTable({
               <tr>
                 <td
                   className="px-4 py-8 text-center text-[var(--color-text-muted)]"
-                  colSpan={showExpiration ? 7 : 6}
+                  colSpan={showExpiration ? 9 : 8}
                 >
                   No hay productos que coincidan con los filtros.
                 </td>
@@ -702,6 +705,12 @@ function InventoryTable({
                       {row.quantity} {row.unitName}
                     </p>
                     <StockLevelBar row={row} />
+                  </td>
+                  <td className="px-4 py-4 text-right font-semibold text-[var(--color-text)]">
+                    {row.reservedQuantity} {row.unitName}
+                  </td>
+                  <td className="px-4 py-4 text-right font-bold text-[var(--color-title)]">
+                    {row.availableQuantity} {row.unitName}
                   </td>
                   <td className="hidden px-4 py-4 text-right font-semibold text-[var(--color-text)] md:table-cell">
                     {row.minStock}
@@ -821,8 +830,8 @@ function InventoryTableFooter({
 }
 
 function StockLevelBar({ row }: { row: InventoryProductRow }) {
-  const target = Math.max(row.minStock || 0, row.quantity || 0, 1);
-  const percent = Math.min(100, Math.round((row.quantity / target) * 100));
+  const target = Math.max(row.minStock || 0, row.availableQuantity || 0, 1);
+  const percent = Math.min(100, Math.round((row.availableQuantity / target) * 100));
   return (
     <div className="ml-auto mt-2 h-1.5 w-24 overflow-hidden rounded-full bg-slate-100">
       <span
@@ -1265,10 +1274,44 @@ function ProductPanel({
     return (
       <section>
         <header className="flex items-start justify-between gap-3 border-b border-[var(--color-border)] p-4">
-          <div><p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">Kit</p><h2 className="mt-1 text-xl font-bold text-[var(--color-title)]">{row.productName}</h2><p className="mt-1 text-sm font-semibold uppercase text-[var(--color-text-muted)]">{row.sku}</p></div>
-          <button aria-label="Cerrar detalle de kit" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-[var(--color-border)] text-lg font-bold" onClick={onClose} type="button">x</button>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+              Kit
+            </p>
+            <h2 className="mt-1 text-xl font-bold text-[var(--color-title)]">{row.productName}</h2>
+            <p className="mt-1 text-sm font-semibold uppercase text-[var(--color-text-muted)]">
+              {row.sku}
+            </p>
+          </div>
+          <button
+            aria-label="Cerrar detalle de kit"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-[var(--color-border)] text-lg font-bold"
+            onClick={onClose}
+            type="button"
+          >
+            x
+          </button>
         </header>
-        <div className="space-y-4 p-4"><section className="rounded-lg border border-[var(--color-border)] bg-white p-4"><div className="flex justify-between"><p className="text-sm font-bold text-[var(--color-title)]">Disponibilidad derivada</p><InventoryStatusBadge label={row.statusLabel} status={row.status} /></div><dl className="mt-4 grid gap-4 sm:grid-cols-2"><DetailTile label="Disponible" value={`${row.quantity} Kit`} /><DetailTile label="Categoria" value={row.categoryName} /><DetailTile label="Sucursal" value={activeBranchName} /><DetailTile label="Ubicacion" value="Calculado por componentes" /></dl><p className="mt-4 rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text)]">Disponibilidad calculada a partir de sus componentes.</p></section><Button onClick={onClose} type="button" variant="secondary">Cerrar</Button></div>
+        <div className="space-y-4 p-4">
+          <section className="rounded-lg border border-[var(--color-border)] bg-white p-4">
+            <div className="flex justify-between">
+              <p className="text-sm font-bold text-[var(--color-title)]">Disponibilidad derivada</p>
+              <InventoryStatusBadge label={row.statusLabel} status={row.status} />
+            </div>
+            <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+              <DetailTile label="Disponible" value={`${row.quantity} Kit`} />
+              <DetailTile label="Categoria" value={row.categoryName} />
+              <DetailTile label="Sucursal" value={activeBranchName} />
+              <DetailTile label="Ubicacion" value="Calculado por componentes" />
+            </dl>
+            <p className="mt-4 rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text)]">
+              Disponibilidad calculada a partir de sus componentes.
+            </p>
+          </section>
+          <Button onClick={onClose} type="button" variant="secondary">
+            Cerrar
+          </Button>
+        </div>
       </section>
     );
   }
@@ -1303,6 +1346,8 @@ function ProductPanel({
           </div>
           <dl className="mt-4 grid gap-4 sm:grid-cols-2">
             <DetailTile label="Existencia actual" value={`${row.quantity} ${row.unitName}`} />
+            <DetailTile label="Reservado" value={`${row.reservedQuantity} ${row.unitName}`} />
+            <DetailTile label="Disponible" value={`${row.availableQuantity} ${row.unitName}`} />
             <DetailTile label="Nivel minimo" value={String(row.minStock)} />
             <DetailTile label="Ubicacion" value={row.defaultLocationName} />
             <DetailTile label="Categoria" value={row.categoryName} />
@@ -1440,6 +1485,8 @@ function AdjustStockModal({
           <ReadonlyField label="Producto" value={row.productName} />
           <ReadonlyField label="Codigo" value={row.sku} />
           <ReadonlyField label="Existencia actual" value={String(row.quantity)} />
+          <ReadonlyField label="Reservado" value={String(row.reservedQuantity)} />
+          <ReadonlyField label="Disponible" value={String(row.availableQuantity)} />
           <ReadonlyField label="Nivel minimo" value={String(row.minStock)} />
         </div>
         <Field id="adjust-location" label="Ubicacion" error={errors.locationId}>
@@ -1878,14 +1925,8 @@ function formatLastUpdated(value: Date | null) {
 }
 
 function formatSuggestedReorder(row: InventoryProductRow) {
-  const suggestedQuantity = getSuggestedQuantity(row);
+  const suggestedQuantity = getSuggestedReorderQuantity(row);
   return suggestedQuantity ? String(suggestedQuantity) : "Sin reposicion sugerida";
-}
-
-function getSuggestedQuantity(row: InventoryProductRow) {
-  const target = row.reorderPoint ?? row.minStock;
-  if (target <= row.quantity) return undefined;
-  return target - row.quantity;
 }
 
 function buildQueryString(params: Record<string, string | number | undefined>) {
