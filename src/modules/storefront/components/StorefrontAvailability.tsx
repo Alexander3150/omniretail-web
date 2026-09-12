@@ -6,20 +6,34 @@ export function StorefrontAvailability({
   branches: StorefrontBranchAvailabilityDto[];
 }) {
   return (
-    <section className="mt-8 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-      <h2 className="text-xl font-bold text-[var(--color-text)]">Disponibilidad en tiendas</h2>
-      <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-        Consulta si este producto está disponible en las sucursales.
-      </p>
-
-      <ul className="mt-5 space-y-3">
+    <details
+      className="group mt-6 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]"
+      open
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-5">
+        <span>
+          <span className="block text-xl font-bold text-[var(--color-text)]">
+            Disponibilidad en tiendas
+          </span>
+          <span className="mt-1 block text-sm text-[var(--color-text-muted)]">
+            Consulta dónde puedes encontrar este producto.
+          </span>
+        </span>
+        <span className="rounded-full bg-[var(--color-primary)]/15 px-3 py-1 text-sm font-bold text-[var(--color-title)] group-open:hidden">
+          Ver
+        </span>
+        <span className="hidden rounded-full bg-slate-100 px-3 py-1 text-sm font-bold text-[var(--color-text-muted)] group-open:block">
+          Ocultar
+        </span>
+      </summary>
+      <ul className="space-y-3 border-t border-[var(--color-border)] p-5">
         {branches.map((branch) => (
           <li
             key={branch.branchId}
-            className="flex items-center justify-between gap-4 rounded-lg border border-[var(--color-border)] p-4"
+            className="flex items-center justify-between gap-4 rounded-xl bg-slate-50 p-4"
           >
             <div>
-              <p className="font-semibold text-[var(--color-text)]">{branch.branchName}</p>
+              <p className="font-bold text-[var(--color-text)]">{branch.branchName}</p>
               {branch.address ? (
                 <p className="mt-1 text-sm text-[var(--color-text-muted)]">{branch.address}</p>
               ) : null}
@@ -27,8 +41,8 @@ export function StorefrontAvailability({
             <span
               className={
                 branch.available
-                  ? "rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-800"
-                  : "rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-600"
+                  ? "rounded-full bg-emerald-100 px-3 py-1 text-sm font-bold text-emerald-800"
+                  : "rounded-full bg-slate-200 px-3 py-1 text-sm font-bold text-slate-600"
               }
             >
               {branch.available ? "Disponible" : "No disponible"}
@@ -36,6 +50,6 @@ export function StorefrontAvailability({
           </li>
         ))}
       </ul>
-    </section>
+    </details>
   );
 }

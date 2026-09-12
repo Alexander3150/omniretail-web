@@ -1,5 +1,62 @@
 import Link from "next/link";
 
+const helpItems = [
+  [
+    "Compra con confianza",
+    "Explora el catálogo, agrega productos al carrito y confirma tu entrega a domicilio.",
+  ],
+  [
+    "Ofertas activas",
+    "Las promociones disponibles se muestran con su precio final y ahorro calculado.",
+  ],
+  [
+    "Seguimiento de pedido",
+    "Después de comprar podrás consultar el estado de tu pedido cuando el negocio lo habilite.",
+  ],
+];
 export function HelpPage() {
-  return <main className="mx-auto max-w-4xl px-5 py-10"><p className="text-sm font-semibold text-[var(--color-primary)]">Soporte</p><h1 className="mt-1 text-3xl font-bold text-[var(--color-text)]">Ayuda de compra</h1><div className="mt-6 grid gap-4"><section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5"><h2 className="font-bold text-[var(--color-text)]">¿Cómo compro?</h2><p className="mt-2 text-[var(--color-text-muted)]">Explora el catálogo, agrega productos al carrito y completa el checkout con envío a domicilio y tarjeta simulada.</p></section><section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5"><h2 className="font-bold text-[var(--color-text)]">¿Cómo veo mis ofertas?</h2><p className="mt-2 text-[var(--color-text-muted)]">Las ofertas activas para e-commerce aparecen en la sección de ofertas y en el precio de cada producto participante.</p></section><section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5"><h2 className="font-bold text-[var(--color-text)]">¿Cómo doy seguimiento a mi pedido?</h2><p className="mt-2 text-[var(--color-text-muted)]">Después de una compra, podrás usar el enlace de seguimiento cuando el negocio lo tenga habilitado.</p></section></div><Link className="mt-6 inline-block rounded-md bg-[var(--color-primary)] px-4 py-2 font-semibold text-[var(--color-topbar)]" href="/catalogo">Ir al catálogo</Link></main>;
+  return (
+    <main className="mx-auto max-w-5xl px-5 py-12">
+      <section className="rounded-3xl bg-[var(--color-topbar)] px-6 py-10 text-white md:px-10">
+        <p className="text-sm font-bold uppercase tracking-[.2em] text-[var(--color-primary)]">
+          Estamos para ayudarte
+        </p>
+        <h1 className="mt-3 text-4xl font-black">Ayuda de compra</h1>
+        <p className="mt-3 max-w-2xl leading-7 text-slate-300">
+          Encuentra respuestas rápidas y conoce cómo funciona tu experiencia de compra en línea.
+        </p>
+      </section>
+      <div className="mt-8 grid gap-5 md:grid-cols-3">
+        {helpItems.map(([title, description], index) => (
+          <section
+            key={title}
+            className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
+          >
+            <p className="text-sm font-black text-[var(--color-primary-hover)]">0{index + 1}</p>
+            <h2 className="mt-6 text-xl font-black text-[var(--color-text)]">{title}</h2>
+            <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">{description}</p>
+          </section>
+        ))}
+      </div>
+      <section className="mt-8 grid gap-5 rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 md:grid-cols-[1fr_auto] md:items-center">
+        <div>
+          <p className="text-sm font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">
+            Contacto del negocio
+          </p>
+          <h2 className="mt-2 text-2xl font-black text-[var(--color-text)]">
+            ¿Necesitas ayuda con tu pedido?
+          </h2>
+          <p className="mt-2 max-w-xl text-[var(--color-text-muted)]">
+            Nuestro equipo puede orientarte sobre productos, entrega y el estado de una compra.
+          </p>
+        </div>
+        <Link
+          className="rounded-xl bg-[var(--color-primary)] px-5 py-3 text-center font-bold text-[var(--color-topbar)] transition hover:bg-[var(--color-primary-hover)]"
+          href="/catalogo"
+        >
+          Ir al catálogo
+        </Link>
+      </section>
+    </main>
+  );
 }
