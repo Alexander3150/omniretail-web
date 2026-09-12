@@ -1,7 +1,10 @@
 import type { BankAccount, Branch, Supplier } from "@/core/entities";
 import { BranchStatus, BranchType } from "@/core/enums";
 import type { BranchInputDto } from "@/modules/administration/application/dto/BranchDto";
-import { BUSINESS_CONFIG_MANAGE_PERMISSION } from "@/modules/administration/permissions";
+import {
+  BUSINESS_CONFIG_MANAGE_PERMISSION,
+  CASH_READ_PERMISSION,
+} from "@/modules/administration/permissions";
 
 export class AdministrationServiceError extends Error {
   constructor(message: string) {
@@ -20,6 +23,24 @@ export function ensureCanManageBusinessConfig(permissions: readonly string[]) {
   throw new AdministrationServiceError(
     "No tenés permiso para modificar la configuración del negocio.",
   );
+}
+
+export function ensureCanReadCash(permissions: readonly string[]) {
+  if (permissions.includes(CASH_READ_PERMISSION)) return;
+
+  throw new AdministrationServiceError("No tenés permiso para consultar los turnos de caja.");
+}
+
+export function ensureCashTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
+}
+
+export function ensureCashActor(actorUserId: string) {
+  if (actorUserId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
 }
 
 export function ensureCanManageEcommerceConfig(permissions: readonly string[]) {

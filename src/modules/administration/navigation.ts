@@ -1,4 +1,7 @@
-import { BUSINESS_CONFIG_MANAGE_PERMISSION } from "@/modules/administration/permissions";
+import {
+  BUSINESS_CONFIG_MANAGE_PERMISSION,
+  CASH_READ_PERMISSION,
+} from "@/modules/administration/permissions";
 import type { NavigationItem } from "@/shared/types/navigation.types";
 
 export const administrationNavigation = [
@@ -22,6 +25,12 @@ export const administrationNavigation = [
         label: "Configuración del negocio",
         href: "/administracion/configuracion-negocio",
         permission: BUSINESS_CONFIG_MANAGE_PERMISSION,
+      },
+      {
+        id: "administration-cash",
+        label: "Caja",
+        href: "/administracion/caja",
+        permission: CASH_READ_PERMISSION,
       },
       {
         id: "administration-ecommerce-config",
