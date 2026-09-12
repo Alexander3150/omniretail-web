@@ -30,11 +30,34 @@ MOCK REPOSITORY: implementacion temporal frontend que usa `MockDatabaseStore`.
 
 `InventoryRepository` tambien administra `InventoryReservation`, atribuida a `OrderItem` y compuesta por allocations que persisten el `InventoryBalance.balanceId` exacto. `reserveForOrderItem` y `releaseReservation` cambian solamente stock reservado; `consumeReservation` es atomica e idempotente por `operationId`, consume exclusivamente las allocations originales y crea un `InventoryMovement.out` por balance/ubicacion. La reserva no depende de POS, ecommerce, app movil, picking ni dispatch.
 
-`OrderRepository` integra el lifecycle de reservas dentro de la misma transaccion mock de Order. `create` con estado `confirmed` y `updateStatus` desde `pending` hacia `confirmed` reservan todos los items `physical` con `tracking.stock = true`; cancelar libera el remanente de las reservas existentes. `CreateOrderInput.idempotencyKey` es opcional y, cuando existe, se persiste en Order junto con el fingerprint del payload para impedir Orders y reservas duplicadas. Servicios, productos sin stock y kits sin resolucion de componentes no generan reservas.
+`OrderRepository` integra el lifecycle de reservas dentro de la misma transaccion mock de Order. `create` y `createWithPayment` con estado `confirmed`, y `updateStatus` desde `pending` hacia `confirmed`, reservan todos los items `physical` con `tracking.stock = true`; cancelar libera el remanente de las reservas existentes. `CreateOrderInput.idempotencyKey` es opcional y, cuando existe, se persiste en Order junto con el fingerprint del payload para impedir Orders y reservas duplicadas. Servicios, productos sin stock y kits sin resolucion de componentes no generan reservas.
+
+`OrderPaymentConfirmationRepository.confirm` es el boundary de aprobacion mock del pago de una Order e-commerce. Exige Payment y Order relacionados, mismo tenant, branch activa coincidente, importe total equivalente, un metodo persistido permitido por `ecommercePaymentPolicy` y el par de estados `pending/pending` o `approved/confirmed`. La reserva, `Payment.approved` y `Order.confirmed` se persisten en una sola transaccion; un fallo de stock no deja cambios parciales y un retry no duplica reservas. La operacion solo incrementa `reservedQuantity`: el consumo fisico y `InventoryMovement.out` pertenecen a Picking.
 
 `PickingRepository.updateItem` exige `operationId` y actor cuando cambia `pickedQuantity`. Cada incremento consume solamente el delta desde las allocations persistidas de la `InventoryReservation`, en su orden original, dentro de la misma transaccion mock que actualiza el item. Los reintentos identicos no duplican movimientos y reutilizar una operacion con otro payload produce conflicto. El estado `completed` de `PickingOrder` valida que sus items fisicos y reservas requeridas esten completos, pero no vuelve a consumir inventario.
 
 `SaleConfirmationRepository.confirm` mantiene la salida directa de inventario para una Sale sin `sourceOrderId`. Cuando existe `sourceOrderId`, valida dentro de la transaccion que la Order pertenezca al mismo tenant y branch, no este cancelada, coincida en productos y cantidades, y que cada `OrderItem` fisico con stock conserve una `InventoryReservation` coherente en estado `active` o `consumed`; en ese caso la Sale no crea un segundo movimiento OUT porque Picking es responsable de consumir la reserva. Una reserva ausente, liberada o inconsistente rechaza toda la confirmacion sin fallback a inventario directo.
+
+`CashShiftRepository` administra apertura, consulta y cierre de turnos mediante operaciones
+tenant-scoped. La unicidad de turno abierto es `tenantId + userId + branchId` y se protege dentro de
+la transaccion de apertura. El cierre recibe efectivo contado y deriva expected/difference de la
+fuente canonica; no acepta expected cash del caller.
+
+`CashMovementRepository` administra el agregado separado `CashMovement`. Su consulta requiere
+`tenantId + cashShiftId`, valida primero el turno y devuelve solo sus movimientos en orden estable.
+El registro valida turno abierto, tenant, sucursal, actor, tipo, monto positivo finito y razon no
+vacia. Los montos siguen siendo positivos; `CashMovementType` define ingreso o egreso.
+
+`SalesRepository.getByDocumentNumber` y `getByIdScoped` exigen `tenantId + branchId`; son los
+contratos de consulta para devoluciones y no requieren `getAll()` ni filtrado en React.
+
+`SaleReversalRepository` inspecciona cantidades retornables y elegibilidad y procesa
+`processReturn`/`voidSale` de forma atomica e idempotente por
+`tenantId + operation + idempotencyKey`. Una devolucion completada persiste `ReturnRequest` con
+lineas e importe derivado, uno o varios `RefundTransaction` sobre los Payment originales,
+movimientos IN cuando corresponden, salida de caja solo por el componente cash y una
+`CreditNote` mock. El estado final de Sale se deriva: parcial usa `partially_returned`, agotamiento
+de todas las lineas usa `returned` y solo una anulacion usa `cancelled`.
 
 `ReceiptRepository.replaceLines` y `ReceiptRepository.replaceIncidents` persisten el estado completo de una recepcion en progreso. Las incidencias conservan su identidad al editarse y desaparecen del conjunto al eliminarse; `ReceiptLine.rejectedQuantity` es un snapshot derivado de la suma de `ReceiptIncident.quantityAffected`, no una entrada independiente.
 
@@ -46,7 +69,7 @@ MOCK REPOSITORY: implementacion temporal frontend que usa `MockDatabaseStore`.
 
 `InventoryTransferRepository` administra la ejecucion fisica canonica del traslado entre sucursales mediante `InventoryTransfer` e `InventoryTransferItem`. El traslado fisico tiene `number` unico por tenant y anio, `sourceBranchId`, `destinationBranchId`, estado `preparing/inTransit/received/cancelled`, actores operativos opcionales y fechas de despacho/recepcion/cancelacion. `getByNumber` requiere `tenantId` porque el numero no es global. Los items soportan multiples productos y separan `requestedQuantity`, `dispatchedQuantity` y `receivedQuantity`; `requestedQuantity` debe ser mayor que 0, `dispatchedQuantity` no puede superar lo solicitado y `receivedQuantity` no puede superar lo despachado. El repositorio no modifica balances, no crea movimientos y no genera documentos; esas operaciones pertenecen a application services futuros.
 
-`SupplierProductRepository` administra la relacion producto-proveedor, incluyendo unidad de compra por proveedor, factor hacia unidad base, costo, minimo, lead time, preferred y `SupplierCostTier`.
+`SupplierProductRepository` administra la relacion producto-proveedor, incluyendo unidad de compra por proveedor, factor hacia unidad base, costo, minimo, lead time, preferred y `SupplierCostTier`. `SupplierProduct.leadTimeDays` es el dato especifico; el `Supplier.leadTimeDays` expuesto a consumidores agregados es una proyeccion read-only calculada como el maximo de las relaciones activas y queda `undefined` cuando no hay ninguna.
 
 `CustomerPaymentMethodRepository` administra metodos de pago guardados del cliente. El contrato persiste solo datos seguros de referencia (`providerPaymentMethodId`, brand, last4, vencimiento, cardholderName, default y estado). No reemplaza `Payment`, que conserva el pago historico de una compra concreta.
 

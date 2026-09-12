@@ -1,11 +1,4 @@
-import type {
-  CashMovement,
-  InventoryMovement,
-  OrderItem,
-  Payment,
-  Sale,
-  SaleItem,
-} from "@/core/entities";
+import type { InventoryMovement, OrderItem, Payment, Sale, SaleItem } from "@/core/entities";
 import {
   CashMovementType,
   CashShiftStatus,
@@ -27,6 +20,7 @@ import type {
 import type { DataEventName, DataEventPayload } from "@/core/types/events.types";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
+import { registerCashMovementInTransaction } from "@/infrastructure/mock/repositories/cashMovementMutations";
 import { expandKitDemand } from "@/core/kits/kitDemand";
 import {
   findInventoryReservationBalance,
@@ -121,21 +115,6 @@ export class MockSaleConfirmationRepository
       const cashTotal = payments
         .filter((payment) => payment.method === PaymentMethod.cash)
         .reduce((sum, payment) => sum + payment.amount, 0);
-      const cashMovement =
-        cashTotal > 0
-          ? ({
-              id: this.id("cash-movement"),
-              cashShiftId: input.cashShiftId,
-              type: CashMovementType.in,
-              amount: cashTotal,
-              reason: `Venta ${sale.number}`,
-              referenceType: "sale",
-              referenceId: sale.id,
-              createdByUserId: input.cashierUserId,
-              createdAt: now,
-            } satisfies CashMovement)
-          : undefined;
-
       const inventoryMovements = this.applyInventoryMovements(
         plannedInventoryMovements,
         input,
@@ -146,7 +125,23 @@ export class MockSaleConfirmationRepository
       db.sales.push(sale);
       db.saleItems.push(...saleItems);
       db.payments.push(...payments);
-      if (cashMovement) db.cashMovements.push(cashMovement);
+      const cashMovement =
+        cashTotal > 0
+          ? registerCashMovementInTransaction(
+              db,
+              {
+                tenantId: input.tenantId,
+                cashShiftId: input.cashShiftId,
+                type: CashMovementType.in,
+                amount: cashTotal,
+                reason: `Venta ${sale.number}`,
+                referenceType: "sale",
+                referenceId: sale.id,
+                createdByUserId: input.cashierUserId,
+              },
+              { createId: (prefix) => this.id(prefix), now: () => now },
+            ).movement
+          : undefined;
 
       return {
         sale,
@@ -671,6 +666,8 @@ export class MockSaleConfirmationRepository
     if (result.cashMovement) {
       this.emitSafely("cash-shift.changed", {
         entityId: result.cashMovement.cashShiftId,
+        tenantId: result.sale.tenantId,
+        branchId: result.sale.branchId,
         action: "updated",
       });
     }

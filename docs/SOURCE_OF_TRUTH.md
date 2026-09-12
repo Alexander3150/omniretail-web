@@ -79,7 +79,7 @@ En recepcion de mercaderia, la cantidad rechazada se deriva de la suma de incide
 
 ## Supplier
 
-`Supplier` es entidad maestra comun. Administracion mantiene el CRUD maestro y Purchasing consume el mismo Supplier. `SupplierProduct` contiene supplierSku, costos, unidad de compra, factor hacia unidad base, lead time, minimos y proveedor preferido por producto. La unidad de compra depende del proveedor. `SupplierCostTier` representa costos por volumen de proveedor y no se mezcla con precios mayoristas de venta. No crear proveedores independientes por modulo.
+`Supplier` es entidad maestra comun. Administracion mantiene el CRUD maestro y Purchasing consume el mismo Supplier. `SupplierProduct.leadTimeDays` es la fuente de verdad del plazo para una relacion proveedor-producto. `Supplier.leadTimeDays` es un rollup derivado, read-only, con el maximo de las relaciones activas; cuando no existen relaciones activas es `undefined`. `SupplierProduct` tambien contiene supplierSku, costos, unidad de compra, factor hacia unidad base, minimos y proveedor preferido por producto. La unidad de compra depende del proveedor. `SupplierCostTier` representa costos por volumen de proveedor y no se mezcla con precios mayoristas de venta. No crear proveedores independientes por modulo.
 
 ## Customer
 
@@ -97,11 +97,13 @@ Solo simulacion frontend. Nunca guardar full card number, CVV ni PIN. Guardar so
 
 Guest checkout permitido por defecto. `requireAccountForCheckout` permite al tenant decidir si exige cuenta. En compra invitado, email es obligatorio conceptualmente para seguimiento/envios; telefono no necesariamente. Guest tracking usa `trackingToken`. No existe correo real todavia.
 
+El checkout publico actual solo ofrece tarjeta simulada como metodo de aprobacion inmediata. `ecommercePaymentPolicy` es la fuente canonica de metodos inmediatos y el boundary valida el metodo del Payment persistido, no un valor del caller. Primero persiste `Order.pending` y `Payment.pending`; luego confirma atomica e idempotentemente la pareja como `Order.confirmed` y `Payment.approved` junto con sus reservas. Si no hay stock suficiente, la confirmacion completa se revierte y ambos registros permanecen pending. Efectivo, transferencia y mixto no deben aprobarse automaticamente sin un lifecycle explicito.
+
 ## Order
 
 `Order` representa pedido, preparacion y entrega. Puede provenir de ecommerce o POS. Puede ser de cliente registrado o invitado. Es compartido por Storefront, POS cuando aplica, Logistics y Customer Tracking.
 
-`OrderStatus.pending` representa el estado previo a confirmacion. Una Order confirmada o en un estado posterior no puede regresar a `pending`. Crear una Order directamente como `confirmed`, o transicionar una Order `pending` a `confirmed`, reserva atomica e idempotentemente cada item cuyo Product sea `physical` y tenga `tracking.stock = true`. Servicios, productos sin stock y kits sin resolucion de componentes no crean reservas. Cancelar libera solamente el remanente de las reservas existentes, sin modificar stock fisico ni crear movimientos. Esta regla es identica para `ecommerce`, `mobileApp` y `pos`; el canal no decide la semantica de inventario.
+`OrderStatus.pending` representa el estado previo a confirmacion. Una Order confirmada o en un estado posterior no puede regresar a `pending`. Crear una Order directamente como `confirmed` (incluido `createWithPayment`), o transicionar una Order `pending` a `confirmed`, reserva atomica e idempotentemente cada item cuyo Product sea `physical` y tenga `tracking.stock = true`. Servicios, productos sin stock y kits sin resolucion de componentes no crean reservas. Cancelar libera solamente el remanente de las reservas existentes, sin modificar stock fisico ni crear movimientos. Esta regla es identica para `ecommerce`, `mobileApp` y `pos`; el canal no decide la semantica de inventario.
 
 La creacion de Order admite `idempotencyKey` opcional. Cuando se proporciona, la key es unica por tenant y se persiste junto con un fingerprint determinista del payload; un retry identico devuelve la misma Order y un payload diferente produce conflicto. El fingerprint incluye tenant, branch, source, identidad customer/guest, estado, entrega/transporte/direccion, snapshots de items, cantidades, importes, numero operativo y tracking token; excluye IDs y timestamps generados por el repositorio.
 
@@ -118,6 +120,35 @@ Una Sale sin `sourceOrderId` conserva la salida directa de inventario. Una Sale 
 ## POS
 
 Metodos: cash, card, transfer, mixed. Transferencia simula validacion manual de comprobante. No existe modulo independiente `bank_validator` ni integracion bancaria real.
+
+Las devoluciones calculan la cantidad retornable como cantidad vendida menos cantidades de
+Return completados. El caller elige lineas y cantidades, pero no el refund ni el estado final.
+Devoluciones sucesivas terminan en `SaleStatus.returned` al agotar todas las lineas; no se
+representan como cancelacion. Una anulacion es una operacion total separada, solo para una Sale
+completada sin devoluciones previas y, en POS normal, dentro de su turno original aun abierto.
+
+Los refunds se distribuyen sobre los Payment concretos persistidos. Solo cash genera
+`CashMovement.out`; card y transfer son refunds mock sin movimiento de efectivo. Payment pasa a
+`refunded` unicamente al agotarse todo su importe. Para inventario se reutiliza la huella OUT de
+la Sale y se crea IN en la ubicacion historica. Servicios/no-stock no mueven inventario. Hasta que
+la venta conserve huella historica suficiente por linea, lote, serial y kit se bloquean de forma
+explicita. Cada operacion exitosa produce una nota de credito mock, no un documento fiscal real.
+
+## Cash Shift
+
+Solo puede existir un `CashShift` abierto por `tenantId + userId + branchId`; un mismo usuario
+puede operar otra sucursal accesible mediante un turno independiente. Apertura, movimientos y
+cierre validan tenant, relaciones, actor y estado dentro de la mutacion autoritativa.
+
+`CashMovement` usa montos positivos y `type` (`in`/`out`) define la direccion. Los pagos POS se
+descomponen en metodos concretos incluso cuando el checkout es mixto. La confirmacion de una venta
+crea un unico movimiento `in` por la suma de sus pagos `cash`; card y transfer no crean movimientos
+de caja. Por ello `CashMovement` es la fuente canonica del efectivo posterior a la apertura y no se
+deben sumar `Sale` o `Payment` nuevamente.
+
+El efectivo esperado se calcula en centavos como apertura + movimientos IN - movimientos OUT. El
+resumen y el cierre usan la misma funcion pura; el caller del cierre solo entrega el efectivo
+contado y nunca un expected cash arbitrario.
 
 ## Logistics
 

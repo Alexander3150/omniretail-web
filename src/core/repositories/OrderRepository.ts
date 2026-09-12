@@ -1,4 +1,4 @@
-import type { Order, OrderItem } from "@/core/entities";
+import type { Order, OrderItem, Payment } from "@/core/entities";
 import type { OrderStatus } from "@/core/enums";
 
 export type CreateOrderInput = Omit<
@@ -9,12 +9,23 @@ export type CreateOrderInput = Omit<
   idempotencyKey?: string;
 };
 
+export interface CreateOrderWithPaymentInput {
+  order: CreateOrderInput;
+  payment: Omit<Payment, "id" | "orderId" | "createdAt">;
+}
+
+export interface CreateOrderWithPaymentResult {
+  order: Order;
+  payment: Payment;
+}
+
 export interface OrderRepository {
   getAll(): Promise<Order[]>;
   getById(id: string): Promise<Order | null>;
-  getByTrackingToken(trackingToken: string): Promise<Order | null>;
+  getByTrackingToken(tenantId: string, trackingToken: string): Promise<Order | null>;
   getByCustomer(customerId: string): Promise<Order[]>;
   getPendingForLogistics(): Promise<Order[]>;
   create(input: CreateOrderInput): Promise<Order>;
+  createWithPayment(input: CreateOrderWithPaymentInput): Promise<CreateOrderWithPaymentResult>;
   updateStatus(id: string, status: OrderStatus): Promise<Order>;
 }

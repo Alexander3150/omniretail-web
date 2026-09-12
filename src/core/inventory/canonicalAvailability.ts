@@ -1,4 +1,11 @@
-import type { InventoryBalance, Product, SerialNumber, StockLot, StorageLocation } from "@/core/entities";
+import type {
+  InventoryBalance,
+  Product,
+  ProductKitComponent,
+  SerialNumber,
+  StockLot,
+  StorageLocation,
+} from "@/core/entities";
 import { getBranchAvailableQuantity } from "@/core/inventory/stockAvailability";
 
 export function getCanonicalProductAvailability(input: {
@@ -25,6 +32,20 @@ export function getCanonicalProductAvailability(input: {
     return { ...balance, quantity: Math.min(balance.quantity, capacity) };
   });
   return getBranchAvailableQuantity({ tenantId, branchId, productId: product.id, balances: effective, locations });
+}
+
+export function getCanonicalKitAvailability(input: {
+  components: Pick<ProductKitComponent, "componentProductId" | "quantityPerKit">[];
+  componentAvailability: ReadonlyMap<string, number>;
+}): number {
+  const { components, componentAvailability } = input;
+  if (components.length === 0) return 0;
+
+  return Math.min(
+    ...components.map((component) =>
+      Math.floor((componentAvailability.get(component.componentProductId) ?? 0) / component.quantityPerKit),
+    ),
+  );
 }
 
 function isLotEligible(lot: StockLot, expirationTracked: boolean, at: string) {

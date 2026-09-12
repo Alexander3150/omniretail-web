@@ -191,6 +191,7 @@ export class ConfirmSaleService {
 
   private async requireCurrentCashShift(input: ConfirmPosSaleInput) {
     const shift = await this.repositories.cashShifts.getOpenByUserAndBranch(
+      input.currentBranch.tenantId,
       input.user.id,
       input.currentBranch.id,
     );

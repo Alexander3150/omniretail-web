@@ -15,6 +15,7 @@ import type {
   Dispatch,
   EcommerceConfig,
   EmailVerification,
+  EmployeeInvitation,
   IncidentType,
   InventoryBalance,
   InventoryAdjustment,
@@ -51,6 +52,9 @@ import type {
   ReceiptLine,
   RecoveryCode,
   ReturnRequest,
+  RefundTransaction,
+  SaleVoid,
+  CreditNote,
   Role,
   Sale,
   SaleItem,
@@ -79,6 +83,7 @@ export interface MockDatabase {
   sessions: Session[];
   passwordResetChallenges: PasswordResetChallenge[];
   emailVerifications: EmailVerification[];
+  employeeInvitations: EmployeeInvitation[];
   mfaEnrollments: MfaEnrollment[];
   recoveryCodes: RecoveryCode[];
   products: Product[];
@@ -127,6 +132,9 @@ export interface MockDatabase {
   cashShifts: CashShift[];
   cashMovements: CashMovement[];
   returnRequests: ReturnRequest[];
+  refundTransactions: RefundTransaction[];
+  saleVoids: SaleVoid[];
+  creditNotes: CreditNote[];
   pickingOrders: PickingOrder[];
   pickingItems: PickingItem[];
   pickingItemUpdateOperations: PickingItemUpdateOperation[];

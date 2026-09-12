@@ -1,5 +1,7 @@
 import {
   BUSINESS_CONFIG_MANAGE_PERMISSION,
+  CASH_READ_PERMISSION,
+  DASHBOARD_READ_PERMISSION,
   REPORTS_READ_PERMISSION,
 } from "@/modules/administration/permissions";
 import type { NavigationItem } from "@/shared/types/navigation.types";
@@ -11,16 +13,62 @@ export const administrationNavigation = [
     permission: BUSINESS_CONFIG_MANAGE_PERMISSION,
     children: [
       {
+        id: "administration-branches",
+        label: "Sucursales",
+        href: "/administracion/sucursales",
+        // Navegacion y services comparten semantica: `NavigationItem.permission` es un unico
+        // string y no existe un mecanismo de "cualquiera de estos permisos", asi que la entrada
+        // se protege con `admin.branches.manage`, el permiso que tiene la audiencia real de la
+        // pantalla. Los services siguen aceptando ademas `admin.branches.read` de forma defensiva.
+        permission: "admin.branches.manage",
+      },
+      {
         id: "administration-business-config",
         label: "Configuración del negocio",
         href: "/administracion/configuracion-negocio",
         permission: BUSINESS_CONFIG_MANAGE_PERMISSION,
       },
       {
+        id: "administration-cash",
+        label: "Caja",
+        href: "/administracion/caja",
+        permission: CASH_READ_PERMISSION,
+      },
+      {
+        id: "administration-dashboard",
+        label: "Dashboard",
+        href: "/administracion/dashboard",
+        permission: DASHBOARD_READ_PERMISSION,
+      },
+      {
         id: "administration-reports",
         label: "Reportes",
         href: "/administracion/reportes",
         permission: REPORTS_READ_PERMISSION,
+      },
+      {
+        id: "administration-ecommerce-config",
+        label: "Diseño E-commerce",
+        href: "/administracion/diseno-ecommerce",
+        permission: "admin.ecommerce_config.manage",
+      },
+      {
+        id: "administration-audit",
+        label: "Auditoría",
+        href: "/administracion/auditoria",
+        permission: "admin.audit.read",
+      },
+      {
+        id: "administration-bank-accounts",
+        label: "Cuentas bancarias",
+        href: "/administracion/cuentas-bancarias",
+        permission: "admin.bank_accounts.manage",
+      },
+      {
+        id: "administration-suppliers",
+        label: "Proveedores",
+        href: "/administracion/proveedores",
+        permission: "admin.suppliers.manage",
       },
     ],
   },

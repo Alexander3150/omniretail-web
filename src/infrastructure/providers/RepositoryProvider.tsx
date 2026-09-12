@@ -9,6 +9,7 @@ import type {
   BranchRepository,
   BusinessConfigRepository,
   CashShiftRepository,
+  CashMovementRepository,
   CategoryRepository,
   CustomerPaymentMethodRepository,
   CustomerRepository,
@@ -19,6 +20,7 @@ import type {
   InventoryTransferRepository,
   InventoryTransferRequestRepository,
   NotificationRepository,
+  OrderPaymentConfirmationRepository,
   OrderRepository,
   PaymentRepository,
   PickingRepository,
@@ -32,6 +34,7 @@ import type {
   ReceiptRepository,
   RoleRepository,
   SaleConfirmationRepository,
+  SaleReversalRepository,
   SalesRepository,
   SavedPaymentMethodRepository,
   SupplierProductRepository,
@@ -50,6 +53,7 @@ import {
   MockBranchRepository,
   MockBusinessConfigRepository,
   MockCashShiftRepository,
+  MockCashMovementRepository,
   MockCategoryRepository,
   MockCustomerPaymentMethodRepository,
   MockCustomerRepository,
@@ -60,6 +64,7 @@ import {
   MockInventoryTransferRepository,
   MockInventoryTransferRequestRepository,
   MockNotificationRepository,
+  MockOrderPaymentConfirmationRepository,
   MockOrderRepository,
   MockPaymentRepository,
   MockPickingRepository,
@@ -73,6 +78,7 @@ import {
   MockReceiptRepository,
   MockRoleRepository,
   MockSaleConfirmationRepository,
+  MockSaleReversalRepository,
   MockSalesRepository,
   MockSupplierProductRepository,
   MockSupplierRepository,
@@ -110,11 +116,14 @@ export interface RepositoryRegistry {
   customerPaymentMethods: CustomerPaymentMethodRepository;
   savedPaymentMethods: SavedPaymentMethodRepository;
   orders: OrderRepository;
+  orderPaymentConfirmations: OrderPaymentConfirmationRepository;
   payments: PaymentRepository;
   bankAccounts: BankAccountRepository;
   sales: SalesRepository;
   saleConfirmations: SaleConfirmationRepository;
+  saleReversals: SaleReversalRepository;
   cashShifts: CashShiftRepository;
+  cashMovements: CashMovementRepository;
   picking: PickingRepository;
   productMedia: ProductMediaRepository;
   dispatches: DispatchRepository;
@@ -139,7 +148,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     const repositories: RepositoryRegistry = {
       tenants: new MockTenantRepository(store, eventBus),
       businessConfig: new MockBusinessConfigRepository(store, eventBus),
-      auth: new MockAuthRepository(store, eventBus),
+      auth: new MockAuthRepository(store, eventBus, storage),
       users: new MockUserRepository(store, eventBus),
       roles: new MockRoleRepository(store, eventBus),
       branches: new MockBranchRepository(store, eventBus),
@@ -164,11 +173,14 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       customerPaymentMethods,
       savedPaymentMethods: customerPaymentMethods,
       orders: new MockOrderRepository(store, eventBus),
+      orderPaymentConfirmations: new MockOrderPaymentConfirmationRepository(store, eventBus),
       payments: new MockPaymentRepository(store, eventBus),
       bankAccounts: new MockBankAccountRepository(store, eventBus),
       sales: new MockSalesRepository(store, eventBus),
       saleConfirmations: new MockSaleConfirmationRepository(store, eventBus),
+      saleReversals: new MockSaleReversalRepository(store, eventBus),
       cashShifts: new MockCashShiftRepository(store, eventBus),
+      cashMovements: new MockCashMovementRepository(store, eventBus),
       picking: new MockPickingRepository(store, eventBus),
       productMedia: new MockProductMediaRepository(store, eventBus),
       dispatches: new MockDispatchRepository(store, eventBus),

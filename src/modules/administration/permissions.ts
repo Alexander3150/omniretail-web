@@ -5,6 +5,8 @@ import type { PermissionDefinition } from "@/shared/types/permissions.types";
  * ni desde la pantalla ni desde ningun otro consumidor del service.
  */
 export const BUSINESS_CONFIG_MANAGE_PERMISSION = "admin.business_config.manage";
+export const CASH_READ_PERMISSION = "admin.cash.read";
+export const DASHBOARD_READ_PERMISSION = "admin.dashboard.read";
 export const REPORTS_READ_PERMISSION = "admin.reports.read";
 export const REPORTS_EXPORT_PERMISSION = "admin.reports.export";
 
@@ -64,6 +66,18 @@ export const administrationPermissions = [
     description: "Permite administrar cuentas bancarias simuladas.",
   },
   {
+    key: CASH_READ_PERMISSION,
+    module: "administration",
+    name: "Leer caja",
+    description: "Permite consultar los turnos de caja y su conciliación.",
+  },
+  {
+    key: DASHBOARD_READ_PERMISSION,
+    module: "administration",
+    name: "Ver dashboard",
+    description: "Permite ver el resumen ejecutivo del negocio.",
+  },
+  {
     key: REPORTS_READ_PERMISSION,
     module: "administration",
     name: "Ver reportes",
@@ -74,5 +88,17 @@ export const administrationPermissions = [
     module: "administration",
     name: "Exportar reportes",
     description: "Permite exportar reportes a CSV.",
+  },
+  {
+    key: "admin.ecommerce_config.manage",
+    module: "administration",
+    name: "Gestionar diseño e-commerce",
+    description: "Permite configurar la tienda en línea del negocio.",
+  },
+  {
+    key: "admin.audit.read",
+    module: "administration",
+    name: "Leer auditoría",
+    description: "Permite consultar el registro de auditoría.",
   },
 ] satisfies PermissionDefinition[];

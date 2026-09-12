@@ -11,6 +11,7 @@ export interface Supplier {
   phone?: string;
   address?: string;
   notes?: string;
+  /** Read-only rollup: maximum lead time among this supplier's active product relations. */
   leadTimeDays?: number;
   status: SupplierStatus;
   createdAt: ISODateString;

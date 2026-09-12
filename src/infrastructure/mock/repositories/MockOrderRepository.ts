@@ -1,15 +1,20 @@
-import type { InventoryReservation, Order } from "@/core/entities";
+import type { InventoryReservation, Order, Payment } from "@/core/entities";
 import { OrderStatus, ProductType } from "@/core/enums";
-import type { CreateOrderInput, OrderRepository } from "@/core/repositories";
+import type {
+  CreateOrderInput,
+  CreateOrderWithPaymentInput,
+  CreateOrderWithPaymentResult,
+  OrderRepository,
+} from "@/core/repositories";
 import type { DataEventName, DataEventPayload } from "@/core/types/events.types";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
 import { expandKitDemand } from "@/core/kits/kitDemand";
+import type { InventoryReservationMutationResult } from "@/infrastructure/mock/repositories/inventoryReservationMutations";
 import {
-  type InventoryReservationMutationResult,
-  releaseInventoryReservationInDatabase,
-  reserveOrderItemInDatabase,
-} from "@/infrastructure/mock/repositories/inventoryReservationMutations";
+  releaseOrderReservationsInDatabase,
+  reserveStockTrackedOrderItemsInDatabase,
+} from "@/infrastructure/mock/repositories/orderReservationMutations";
 
 const logisticsStatuses = new Set<OrderStatus>([
   OrderStatus.confirmed,
@@ -25,6 +30,11 @@ interface OrderLifecycleMutationResult {
   reservationChanges: InventoryReservationMutationResult[];
 }
 
+interface OrderWithPaymentMutationResult extends OrderLifecycleMutationResult {
+  payment: Payment;
+  paymentChanged: boolean;
+}
+
 export class MockOrderRepository extends BaseMockRepository implements OrderRepository {
   async getAll() {
     return this.read((db) => db.orders);
@@ -34,9 +44,12 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
     return this.read((db) => db.orders.find((item) => item.id === id) ?? null);
   }
 
-  async getByTrackingToken(trackingToken: string) {
+  async getByTrackingToken(tenantId: string, trackingToken: string) {
     return this.read(
-      (db) => db.orders.find((item) => item.trackingToken === trackingToken) ?? null,
+      (db) =>
+        db.orders.find(
+          (item) => item.tenantId === tenantId && item.trackingToken === trackingToken,
+        ) ?? null,
     );
   }
 
@@ -62,10 +75,18 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
           if (existing.idempotencyFingerprint !== fingerprint) {
             throw new Error(`Order idempotency conflict: ${idempotencyKey}`);
           }
-          return { order: existing, orderChanged: false, reservationChanges: [] };
+          const reservationChanges =
+            existing.status === OrderStatus.confirmed
+              ? reserveStockTrackedOrderItemsInDatabase(existing, db, {
+                  id: (prefix) => this.id(prefix),
+                  now: () => this.now(),
+                })
+              : [];
+          return { order: existing, orderChanged: false, reservationChanges };
         }
       }
 
+      this.assertTrackingTokenAvailable(input, db);
       this.assertOrderReferences(input, db);
 
       const now = this.now();
@@ -76,7 +97,12 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
         items: input.items.map((item) => ({
           ...item,
           orderId,
-          fulfillmentComponents: this.resolveFulfillmentComponents(input.tenantId, item.productId, item.quantity, db),
+          fulfillmentComponents: this.resolveFulfillmentComponents(
+            input.tenantId,
+            item.productId,
+            item.quantity,
+            db,
+          ),
         })),
         idempotencyKey,
         idempotencyFingerprint: idempotencyKey ? fingerprint : undefined,
@@ -87,13 +113,125 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
 
       const reservationChanges =
         order.status === OrderStatus.confirmed
-          ? this.reserveStockTrackedOrderItems(order, db)
+          ? reserveStockTrackedOrderItemsInDatabase(order, db, {
+              id: (prefix) => this.id(prefix),
+              now: () => this.now(),
+            })
           : [];
       return { order, orderChanged: true, reservationChanges };
     });
 
     this.emitLifecycleChanges(result, "created");
     return result.order;
+  }
+
+  async createWithPayment(
+    input: CreateOrderWithPaymentInput,
+  ): Promise<CreateOrderWithPaymentResult> {
+    this.assertCreateInput(input.order);
+
+    const result = this.store.transact<OrderWithPaymentMutationResult>((db) => {
+      const idempotencyKey = input.order.idempotencyKey?.trim();
+      const fingerprint = getOrderCreationFingerprint(input.order);
+      const existing = idempotencyKey
+        ? db.orders.find(
+            (order) =>
+              order.tenantId === input.order.tenantId && order.idempotencyKey === idempotencyKey,
+          )
+        : undefined;
+
+      if (existing) {
+        if (existing.idempotencyFingerprint !== fingerprint) {
+          throw new Error(`Order idempotency conflict: ${idempotencyKey}`);
+        }
+        const payments = db.payments.filter((payment) => payment.orderId === existing.id);
+        if (payments.length > 1) {
+          throw new Error(`Checkout has multiple payments: ${existing.id}`);
+        }
+        if (payments[0]) {
+          const reservationChanges =
+            existing.status === OrderStatus.confirmed
+              ? reserveStockTrackedOrderItemsInDatabase(existing, db, {
+                  id: (prefix) => this.id(prefix),
+                  now: () => this.now(),
+                })
+              : [];
+          return {
+            order: existing,
+            payment: payments[0],
+            orderChanged: false,
+            paymentChanged: false,
+            reservationChanges,
+          };
+        }
+
+        const payment = this.createPaymentInDatabase(existing, input.payment, db);
+        const reservationChanges =
+          existing.status === OrderStatus.confirmed
+            ? reserveStockTrackedOrderItemsInDatabase(existing, db, {
+                id: (prefix) => this.id(prefix),
+                now: () => this.now(),
+              })
+            : [];
+        return {
+          order: existing,
+          payment,
+          orderChanged: false,
+          paymentChanged: true,
+          reservationChanges,
+        };
+      }
+
+      this.assertTrackingTokenAvailable(input.order, db);
+      this.assertOrderReferences(input.order, db);
+      const now = this.now();
+      const orderId = this.id("order");
+      const order: Order = {
+        ...input.order,
+        id: orderId,
+        items: input.order.items.map((item) => ({
+          ...item,
+          orderId,
+          fulfillmentComponents: this.resolveFulfillmentComponents(
+            input.order.tenantId,
+            item.productId,
+            item.quantity,
+            db,
+          ),
+        })),
+        idempotencyKey,
+        idempotencyFingerprint: idempotencyKey ? fingerprint : undefined,
+        createdAt: now,
+        updatedAt: now,
+      };
+      db.orders.push(order);
+
+      const payment = this.createPaymentInDatabase(order, input.payment, db);
+      const reservationChanges =
+        order.status === OrderStatus.confirmed
+          ? reserveStockTrackedOrderItemsInDatabase(order, db, {
+              id: (prefix) => this.id(prefix),
+              now: () => this.now(),
+            })
+          : [];
+      return {
+        order,
+        payment,
+        orderChanged: true,
+        paymentChanged: true,
+        reservationChanges,
+      };
+    });
+
+    this.emitLifecycleChanges(result, "created");
+    if (result.paymentChanged) {
+      this.emitSafely("payment.changed", {
+        entityId: result.payment.id,
+        tenantId: result.payment.tenantId,
+        action: "created",
+      });
+    }
+    return { order: result.order, payment: result.payment };
   }
 
   async updateStatus(id: string, status: OrderStatus) {
@@ -104,9 +242,12 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
       if (order.status === status) {
         const reservationChanges =
           status === OrderStatus.confirmed
-            ? this.reserveStockTrackedOrderItems(order, db)
+            ? reserveStockTrackedOrderItemsInDatabase(order, db, {
+                id: (prefix) => this.id(prefix),
+                now: () => this.now(),
+              })
             : status === OrderStatus.cancelled
-              ? this.releaseOrderReservations(order, db)
+              ? releaseOrderReservationsInDatabase(order, db, { now: () => this.now() })
               : [];
         return { order, orderChanged: false, reservationChanges };
       }
@@ -120,12 +261,17 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
         if (order.status !== OrderStatus.pending) {
           throw new Error(`Order cannot transition from ${order.status} to confirmed: ${order.id}`);
         }
-        reservationChanges = this.reserveStockTrackedOrderItems(order, db);
+        reservationChanges = reserveStockTrackedOrderItemsInDatabase(order, db, {
+          id: (prefix) => this.id(prefix),
+          now: () => this.now(),
+        });
       } else if (status === OrderStatus.cancelled) {
         if (order.status === OrderStatus.delivered) {
           throw new Error(`Delivered order cannot be cancelled: ${order.id}`);
         }
-        reservationChanges = this.releaseOrderReservations(order, db);
+        reservationChanges = releaseOrderReservationsInDatabase(order, db, {
+          now: () => this.now(),
+        });
       } else if (order.status === OrderStatus.pending) {
         throw new Error(`Pending order must be confirmed before ${status}: ${order.id}`);
       } else if (order.status === OrderStatus.cancelled || order.status === OrderStatus.delivered) {
@@ -141,76 +287,43 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
     return result.order;
   }
 
-  private reserveStockTrackedOrderItems(
+  private createPaymentInDatabase(
     order: Order,
+    input: CreateOrderWithPaymentInput["payment"],
     db: MockDatabase,
-  ): InventoryReservationMutationResult[] {
-    const itemIds = new Set<string>();
+  ): Payment {
+    if (input.tenantId !== order.tenantId) throw new Error("Payment tenant does not match order");
+    if (!Number.isFinite(input.amount) || input.amount < 0 || input.amount !== order.total) {
+      throw new Error("Payment amount does not match order total");
+    }
 
-    return order.items.flatMap((orderItem) => {
-      if (itemIds.has(orderItem.id)) {
-        throw new Error(`Duplicate OrderItem id: ${orderItem.id}`);
-      }
-      itemIds.add(orderItem.id);
-
-      const product = db.products.find(
-        (item) => item.id === orderItem.productId && item.tenantId === order.tenantId,
-      );
-      if (!product) {
-        throw new Error(`Product not found for tenant: ${orderItem.productId}`);
-      }
-      const demands = orderItem.fulfillmentComponents ??
-        (product.productType === ProductType.physical && product.tracking.stock
-          ? [{ productId: orderItem.productId, quantity: orderItem.quantity }]
-          : []);
-      return demands.map((demand) =>
-        reserveOrderItemInDatabase(
-          db,
-          {
-            tenantId: order.tenantId,
-            branchId: order.branchId,
-            orderId: order.id,
-            orderItemId: orderItem.id,
-            productId: demand.productId,
-            quantity: demand.quantity,
-          },
-          { id: (prefix) => this.id(prefix), now: () => this.now() },
-        ),
-      );
-    });
+    const payment: Payment = {
+      ...input,
+      id: this.id("payments"),
+      orderId: order.id,
+      createdAt: this.now(),
+    };
+    db.payments.push(payment);
+    return payment;
   }
 
-  private resolveFulfillmentComponents(tenantId: string, productId: string, quantity: number, db: MockDatabase) {
+  private resolveFulfillmentComponents(
+    tenantId: string,
+    productId: string,
+    quantity: number,
+    db: MockDatabase,
+  ) {
     const product = db.products.find((item) => item.id === productId && item.tenantId === tenantId);
     if (!product) throw new Error(`Product not found for tenant: ${productId}`);
-    if (product.productType === ProductType.physical && product.tracking.stock) return [{ productId, quantity }];
+    if (product.productType === ProductType.physical && product.tracking.stock)
+      return [{ productId, quantity }];
     if (product.productType !== ProductType.kit) return undefined;
     return expandKitDemand(
-      db.productKitComponents.filter((item) => item.tenantId === tenantId && item.kitProductId === productId),
+      db.productKitComponents.filter(
+        (item) => item.tenantId === tenantId && item.kitProductId === productId,
+      ),
       quantity,
     );
-  }
-
-  private releaseOrderReservations(
-    order: Order,
-    db: MockDatabase,
-  ): InventoryReservationMutationResult[] {
-    return db.inventoryReservations
-      .filter(
-        (reservation) =>
-          reservation.tenantId === order.tenantId && reservation.orderId === order.id,
-      )
-      .map((reservation) =>
-        releaseInventoryReservationInDatabase(
-          db,
-          {
-            tenantId: order.tenantId,
-            branchId: order.branchId,
-            reservationId: reservation.id,
-          },
-          { now: () => this.now() },
-        ),
-      );
   }
 
   private assertCreateInput(input: CreateOrderInput): void {
@@ -249,6 +362,15 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
       );
       if (!product) throw new Error(`Product not found for tenant: ${item.productId}`);
     });
+  }
+
+  private assertTrackingTokenAvailable(input: CreateOrderInput, db: MockDatabase): void {
+    const exists = db.orders.some(
+      (order) => order.tenantId === input.tenantId && order.trackingToken === input.trackingToken,
+    );
+    if (exists) {
+      throw new Error(`Order tracking token already exists: ${input.trackingToken}`);
+    }
   }
 
   private emitLifecycleChanges(

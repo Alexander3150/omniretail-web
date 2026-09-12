@@ -23,7 +23,7 @@ UI
 
 ## Order Reservation Lifecycle
 
-`MockOrderRepository` crea o confirma una Order y todas sus reservas dentro de una sola llamada a `MockDatabaseStore.transact`. Las mutaciones de reserva sobre el draft viven en un helper interno de infraestructura compartido con `MockInventoryRepository`; asi ambos repositorios usan el mismo algoritmo sin abrir transacciones anidadas ni duplicar la logica de allocations.
+`MockOrderRepository` crea o confirma una Order y todas sus reservas dentro de una sola llamada a `MockDatabaseStore.transact`. Las mutaciones de reserva sobre el draft viven en helpers de infraestructura compartidos con `MockInventoryRepository` y `MockOrderPaymentConfirmationRepository`; asi los repositorios usan el mismo algoritmo sin abrir transacciones anidadas ni duplicar la logica de allocations.
 
 ```text
 OrderRepository.create / updateStatus
@@ -31,6 +31,18 @@ OrderRepository.create / updateStatus
 -> MockDatabaseStore.transact
 -> Order + InventoryReservation + InventoryBalance
 ```
+
+El checkout e-commerce crea primero `Order.pending` y `Payment.pending`. Para el pago mock con tarjeta, `OrderPaymentConfirmationRepository.confirm` valida Order, Payment, tenant, branch activa, relacion, importe y estados; en una unica transaccion reserva inventario y cambia ambos estados. Si la reserva falla, Payment y Order permanecen pending. Confirmar otra vez la misma pareja ya confirmada es idempotente.
+
+```text
+CreateStorefrontCheckoutService
+-> OrderRepository.createWithPayment
+-> OrderPaymentConfirmationRepository.confirm
+-> MockDatabaseStore.transact
+-> Payment.approved + Order.confirmed + InventoryReservation + InventoryBalance.reservedQuantity
+```
+
+Esta confirmacion no reduce `InventoryBalance.quantity` ni crea `InventoryMovement`; ese consumo fisico continua perteneciendo a Picking.
 
 `MockPickingRepository.updateItem` usa el mismo patron transaccional para persistir el incremento de `PickingItem.pickedQuantity`, consumir las allocations originales de la reserva y crear los movimientos OUT por ubicacion. La mutacion de consumo se comparte con `MockInventoryRepository` y no abre una transaccion anidada.
 
@@ -42,6 +54,38 @@ PickingRepository.updateItem
 ```
 
 `MockSaleConfirmationRepository.confirm` valida dentro de su transaccion si `sourceOrderId` acredita ownership mediante la Order y sus reservas. Las ventas directas conservan el OUT propio; las vinculadas validas persisten Sale, Payment y CashMovement sin modificar reservas, balances ni movimientos de inventario.
+
+## Cash Shift Lifecycle
+
+`CashShiftRepository` administra exclusivamente el turno y expone consultas tenant-scoped.
+`CashMovementRepository` administra los movimientos y valida el ownership del turno antes de
+consultar o registrar. Los mocks protegen apertura unica, estado y relaciones dentro de
+`MockDatabaseStore.transact`.
+
+```text
+POS cash application services
+-> CashShiftRepository + CashMovementRepository
+-> MockDatabaseStore.transact
+-> CashShift + CashMovement
+```
+
+`core/cash/cashShiftTotals` es la semantica monetaria compartida por el resumen de aplicacion y el
+cierre de infraestructura. Los movimientos referenciados a Sale ya representan el componente cash
+de la venta, por lo que el resumen no vuelve a sumar Sale ni Payment.
+
+## Returns And Voids
+
+`SaleReversalRepository` es el boundary compartido para consultar elegibilidad y procesar una
+devolucion o anulacion. Su implementacion mock usa una sola llamada a
+`MockDatabaseStore.transact`: Return/SaleVoid, refunds, entradas de inventario, salida cash,
+estado de Payment y Sale, y CreditNote mock se confirman juntos. Los eventos se emiten solamente
+despues del commit.
+
+La anulacion POS normal exige que `Sale.cashShiftId` sea el turno original que continua abierto
+para el actor y la sucursal. Una devolucion puede ocurrir en un turno posterior, pero cualquier
+componente cash exige un turno abierto del actor en esa sucursal. La reversion de inventario usa
+la ubicacion de los movimientos OUT historicos referenciados a la Sale. Lote, serial y kit se
+bloquean mientras no exista una huella historica por linea suficiente para reconstruirlos.
 
 ## Navegacion Privada
 

@@ -24,6 +24,8 @@ export type DataEventName =
   | "order.changed"
   | "payment.changed"
   | "sale.changed"
+  | "sale.returned"
+  | "sale.voided"
   | "cash-shift.changed"
   | "picking.changed"
   | "dispatch.changed"

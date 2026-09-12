@@ -1,7 +1,9 @@
 import { navigationConfig } from "@/config/navigation";
+import { AuthorizedPrivateShell } from "@/modules/auth/components/AuthorizedPrivateShell";
+import { RequirePermission } from "@/modules/auth/components/RequirePermission";
+import { RequireSession } from "@/modules/auth/components/RequireSession";
+import { ScopedActiveBranchProvider } from "@/modules/auth/components/ScopedActiveBranchProvider";
 import { CurrentSessionProvider } from "@/modules/auth/providers/CurrentSessionProvider";
-import { ActiveBranchProvider } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
-import { PrivateShell } from "@/shared/navigation/PrivateShell";
 import type { ReactNode } from "react";
 
 type PrivateLayoutProps = {
@@ -11,9 +13,13 @@ type PrivateLayoutProps = {
 export default function PrivateLayout({ children }: PrivateLayoutProps) {
   return (
     <CurrentSessionProvider>
-      <ActiveBranchProvider>
-        <PrivateShell navigationItems={navigationConfig}>{children}</PrivateShell>
-      </ActiveBranchProvider>
+      <RequireSession>
+        <ScopedActiveBranchProvider>
+          <AuthorizedPrivateShell navigationItems={navigationConfig}>
+            <RequirePermission>{children}</RequirePermission>
+          </AuthorizedPrivateShell>
+        </ScopedActiveBranchProvider>
+      </RequireSession>
     </CurrentSessionProvider>
   );
 }
