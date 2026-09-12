@@ -12,16 +12,39 @@ import type {
 export class GetProductEditorDataService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async execute(productId?: string, branchId?: string): Promise<ProductEditorData> {
-    const [attributeDefinitions, suppliers, branchLocations, allProducts] = await Promise.all([
+  async execute(
+    tenantId: string,
+    productId?: string,
+    branchId?: string,
+  ): Promise<ProductEditorData> {
+    const [allAttributeDefinitions, suppliers, allProducts, branch] = await Promise.all([
       this.repositories.attributes.getDefinitions(),
-      this.repositories.suppliers.getActive(),
-      branchId ? this.repositories.inventory.getLocations(branchId) : Promise.resolve([]),
+      this.repositories.suppliers.getActiveByTenant(tenantId),
       this.repositories.products.getAll(),
+      branchId ? this.repositories.branches.getById(branchId) : Promise.resolve(null),
     ]);
+    // `getDefinitions()` y `getAll()` no aceptan tenantId: son lecturas globales del repository,
+    // así que el boundary de la aplicación filtra antes de que cualquier dato cruce a la DTO.
+    const attributeDefinitions = allAttributeDefinitions.filter(
+      (definition) => definition.tenantId === tenantId,
+    );
+    const tenantProducts = allProducts.filter((product) => product.tenantId === tenantId);
+    // branchId llega del cliente (selector de sucursal): no se usa para leer ubicaciones ni
+    // configuracion de inventario a menos que la sucursal exista y pertenezca al tenant activo.
+    const tenantBranchId = branch && branch.tenantId === tenantId ? branch.id : undefined;
+    const branchLocations = tenantBranchId
+      ? await this.repositories.inventory.getLocations(tenantBranchId)
+      : [];
     const activeStorageLocations = branchLocations.filter(
       (location) => location.status === LocationStatus.active,
     );
+    const kitEligibleProducts = (excludeProductId?: string) =>
+      tenantProducts.filter(
+        (product) =>
+          product.id !== excludeProductId &&
+          product.productType === "physical" &&
+          product.tracking.stock,
+      );
 
     if (!productId) {
       return {
@@ -38,7 +61,30 @@ export class GetProductEditorDataService {
         media: [],
         promotionCount: 0,
         kitComponents: [],
-        kitEligibleProducts: allProducts.filter((product) => product.productType === "physical" && product.tracking.stock),
+        kitEligibleProducts: kitEligibleProducts(),
+      };
+    }
+
+    // El productId puede venir de la URL: se valida la pertenencia al tenant ANTES de cargar el
+    // detalle o cualquier colección relacionada -- un producto de otro tenant se trata igual que
+    // uno inexistente y nunca dispara la carga pesada de GetProductDetailService.
+    const product = tenantProducts.find((item) => item.id === productId);
+    if (!product) {
+      return {
+        detail: null,
+        unitConversion: null,
+        inventorySettings: null,
+        storageLocations: activeStorageLocations,
+        currentDefaultLocation: null,
+        attributeDefinitions,
+        attributes: [],
+        salesPriceTiers: [],
+        suppliers,
+        supplierProducts: [],
+        media: [],
+        promotionCount: 0,
+        kitComponents: [],
+        kitEligibleProducts: kitEligibleProducts(),
       };
     }
 
@@ -58,7 +104,7 @@ export class GetProductEditorDataService {
         media: [],
         promotionCount: 0,
         kitComponents: [],
-        kitEligibleProducts: allProducts.filter((product) => product.productType === "physical" && product.tracking.stock),
+        kitEligibleProducts: kitEligibleProducts(),
       };
     }
 
@@ -74,11 +120,11 @@ export class GetProductEditorDataService {
       this.repositories.units.getConversionsByProduct(productId),
       this.repositories.attributes.getValuesByProduct(productId),
       this.repositories.productSalesPriceTiers.getByProduct(productId),
-      this.repositories.supplierProducts.getByProduct(productId),
+      this.repositories.supplierProducts.getByProductForTenant(tenantId, productId),
       this.repositories.productMedia.getByProduct(productId),
       this.repositories.promotions.getByProduct(productId),
-      branchId
-        ? this.repositories.inventory.getProductInventorySettings(productId, branchId)
+      tenantBranchId
+        ? this.repositories.inventory.getProductInventorySettings(productId, tenantBranchId)
         : Promise.resolve(null),
       this.repositories.productKitComponents.getByKitProduct(productId),
     ]);
@@ -102,13 +148,8 @@ export class GetProductEditorDataService {
       ) ??
       null;
 
-    const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier]));
     const supplierProductsWithCosts: SupplierProductEditorValue[] = await Promise.all(
       supplierProducts.map(async (supplierProduct) => {
-        const supplierLeadTimeDays =
-          supplierById.get(supplierProduct.supplierId)?.leadTimeDays ??
-          supplierProduct.leadTimeDays;
-
         return {
           id: supplierProduct.id,
           supplierId: supplierProduct.supplierId,
@@ -116,7 +157,7 @@ export class GetProductEditorDataService {
           purchaseUnitId: supplierProduct.purchaseUnitId,
           purchaseToBaseFactor: supplierProduct.purchaseToBaseFactor,
           lastCost: supplierProduct.lastCost,
-          leadTimeDays: supplierLeadTimeDays,
+          leadTimeDays: supplierProduct.leadTimeDays,
           minimumOrderQuantity: supplierProduct.minimumOrderQuantity,
           preferred: supplierProduct.preferred,
           active: supplierProduct.active,
@@ -177,9 +218,7 @@ export class GetProductEditorDataService {
         componentProductId: component.componentProductId,
         quantityPerKit: component.quantityPerKit,
       })),
-      kitEligibleProducts: allProducts.filter(
-        (product) => product.id !== productId && product.productType === "physical" && product.tracking.stock,
-      ),
+      kitEligibleProducts: kitEligibleProducts(productId),
     };
   }
 }

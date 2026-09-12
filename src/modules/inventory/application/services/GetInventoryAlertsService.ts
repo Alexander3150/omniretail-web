@@ -1,5 +1,10 @@
 import { InventoryTransferRequestStatus, ProductStatus, ProductType } from "@/core/enums";
-import type { InventoryBalance, InventoryTransferRequest, Product, StockLot } from "@/core/entities";
+import type {
+  InventoryBalance,
+  InventoryTransferRequest,
+  Product,
+  StockLot,
+} from "@/core/entities";
 import {
   getAvailableQuantity,
   getBranchAvailableQuantity,
@@ -61,20 +66,30 @@ export class GetInventoryAlertsService {
       ? products.filter((product) => product.tenantId === activeBranch.tenantId)
       : products;
     const branchProducts = tenantProducts.filter(isOperationalStockProduct);
-    const kits = tenantProducts.filter((product) => product.status === ProductStatus.published && product.productType === ProductType.kit);
+    const kits = tenantProducts.filter(
+      (product) =>
+        product.status === ProductStatus.published && product.productType === ProductType.kit,
+    );
     const capabilities = activeBranch
       ? await this.repositories.businessConfig.getCapabilities(activeBranch.tenantId)
       : null;
-    const visibility = getVisibilityFlags(capabilities?.supportsExpiration ?? false, tenantProducts);
-    const lots = visibility.showExpirationFeatures
-      ? await this.repositories.inventory.getLots()
-      : [];
-    const kitComponents = await Promise.all(kits.map((kit) => this.repositories.productKitComponents.getByKitProduct(kit.id)));
+    const visibility = getVisibilityFlags(
+      capabilities?.supportsExpiration ?? false,
+      tenantProducts,
+    );
+    const requiresLotsForAvailability = branchProducts.some((product) => product.tracking.lot);
+    const lots = requiresLotsForAvailability ? await this.repositories.inventory.getLots() : [];
+    const kitComponents = await Promise.all(
+      kits.map((kit) => this.repositories.productKitComponents.getByKitProduct(kit.id)),
+    );
     const settingsEntries = await Promise.all(
-      branchProducts.map(async (product) => [
-        product.id,
-        await this.repositories.inventory.getProductInventorySettings(product.id, branchId),
-      ] as const),
+      branchProducts.map(
+        async (product) =>
+          [
+            product.id,
+            await this.repositories.inventory.getProductInventorySettings(product.id, branchId),
+          ] as const,
+      ),
     );
     const maps: InventoryLookupMaps = {
       branches: new Map(branches.map((branch) => [branch.id, branch])),
@@ -85,11 +100,31 @@ export class GetInventoryAlertsService {
       lotsByProduct: groupLotsByProduct(lots.filter((lot) => lot.branchId === branchId)),
     };
 
-    const physicalRows = branchProducts
-      .map((product) => buildRow(product, branchId, maps, balances))
-    const availabilityByProduct = new Map(branchProducts.map((product) => [product.id, getCanonicalProductAvailability({ product, tenantId: product.tenantId, branchId, balances, lots, serials, locations, at: new Date().toISOString() })]));
-    const kitRows = kits.map((kit, index) => buildKitRow(kit, kitComponents[index], availabilityByProduct, branchId, maps));
-    const rows = [...physicalRows, ...kitRows].sort((left, right) => left.productName.localeCompare(right.productName));
+    const availabilityAt = new Date().toISOString();
+    const availabilityByProduct = new Map(
+      branchProducts.map((product) => [
+        product.id,
+        getCanonicalProductAvailability({
+          product,
+          tenantId: product.tenantId,
+          branchId,
+          balances,
+          lots,
+          serials,
+          locations,
+          at: availabilityAt,
+        }),
+      ]),
+    );
+    const physicalRows = branchProducts.map((product) =>
+      buildRow(product, branchId, maps, balances, availabilityByProduct.get(product.id) ?? 0),
+    );
+    const kitRows = kits.map((kit, index) =>
+      buildKitRow(kit, kitComponents[index], availabilityByProduct, branchId, maps),
+    );
+    const rows = [...physicalRows, ...kitRows].sort((left, right) =>
+      left.productName.localeCompare(right.productName),
+    );
     const alerts = rows.flatMap((row) => [
       ...row.activeAlerts,
       ...buildAvailableElsewhereAlerts(row, balances, maps),
@@ -99,15 +134,12 @@ export class GetInventoryAlertsService {
       rows,
       alerts,
       transferRequests: [
+        ...buildTransferRequestRows(receivedTransferRequests, "received", products, balances, maps),
         ...buildTransferRequestRows(
-          receivedTransferRequests,
-          "received",
-          products,
-          balances,
-          maps,
-        ),
-        ...buildTransferRequestRows(
-          filterRecentTransferResponses([...approvedTransferResponses, ...rejectedTransferResponses]),
+          filterRecentTransferResponses([
+            ...approvedTransferResponses,
+            ...rejectedTransferResponses,
+          ]),
           "response",
           products,
           balances,
@@ -120,9 +152,11 @@ export class GetInventoryAlertsService {
       locations,
       kpis: {
         activeProducts: rows.length,
-        lowStock: rows.filter((row) => row.status === "critical" || row.status === "near_minimum").length,
+        lowStock: rows.filter((row) => row.status === "critical" || row.status === "near_minimum")
+          .length,
         expiringSoon: visibility.showExpirationFeatures
-          ? rows.filter((row) => row.tracksExpiration && isExpiringSoon(row.nextExpirationDate)).length
+          ? rows.filter((row) => row.tracksExpiration && isExpiringSoon(row.nextExpirationDate))
+              .length
           : 0,
         outOfStock: rows.filter((row) => row.status === "out_of_stock").length,
       },
@@ -142,7 +176,8 @@ function getVisibilityFlags(supportsExpiration: boolean, products: Product[]) {
 function filterRecentTransferResponses(requests: InventoryTransferRequest[]) {
   const threshold = Date.now() - TRANSFER_RESPONSE_ALERT_DAYS * 24 * 60 * 60 * 1000;
   return requests.filter((request) => {
-    const timestamp = request.approvedAt ?? request.rejectedAt ?? request.reviewedAt ?? request.updatedAt;
+    const timestamp =
+      request.approvedAt ?? request.rejectedAt ?? request.reviewedAt ?? request.updatedAt;
     const time = new Date(timestamp).getTime();
     return Number.isFinite(time) && time >= threshold;
   });
@@ -232,6 +267,7 @@ function buildRow(
   branchId: string,
   maps: InventoryLookupMaps,
   balances: InventoryBalance[],
+  availableQuantity: number,
 ): InventoryProductRow {
   const branchBalances = balances.filter(
     (balance) => balance.productId === product.id && balance.branchId === branchId,
@@ -239,10 +275,6 @@ function buildRow(
   const quantity = branchBalances.reduce((total, balance) => total + balance.quantity, 0);
   const reservedQuantity = branchBalances.reduce(
     (total, balance) => total + balance.reservedQuantity,
-    0,
-  );
-  const availableQuantity = branchBalances.reduce(
-    (total, balance) => total + getAvailableQuantity(balance),
     0,
   );
   const settings = maps.settingsByProduct.get(product.id);
@@ -294,16 +326,39 @@ function buildKitRow(
   maps: InventoryLookupMaps,
 ): InventoryProductRow {
   const quantity = components?.length
-    ? Math.min(...components.map((component) => Math.floor((availability.get(component.componentProductId) ?? 0) / component.quantityPerKit)))
+    ? Math.min(
+        ...components.map((component) =>
+          Math.floor(
+            (availability.get(component.componentProductId) ?? 0) / component.quantityPerKit,
+          ),
+        ),
+      )
     : 0;
   const status: InventoryStatus = quantity === 0 ? "out_of_stock" : "normal";
   return {
-    productId: product.id, tenantId: product.tenantId, sku: product.sku, productName: product.name,
-    categoryId: product.categoryId, categoryName: maps.categories.get(product.categoryId)?.name ?? "Sin categoria",
-    unitId: product.baseUnitId, unitName: "Kit", branchId, branchName: maps.branches.get(branchId)?.name ?? "Sucursal",
-    defaultLocationName: "Calculado por componentes", locationQuantities: {}, quantity, reservedQuantity: 0,
-    availableQuantity: quantity, minStock: 0, status, statusLabel: getInventoryStatusLabel(status),
-    tracksExpiration: false, nextExpirationLabel: "-", activeAlerts: [], otherBranchStocks: [], isDerivedKit: true,
+    productId: product.id,
+    tenantId: product.tenantId,
+    sku: product.sku,
+    productName: product.name,
+    categoryId: product.categoryId,
+    categoryName: maps.categories.get(product.categoryId)?.name ?? "Sin categoria",
+    unitId: product.baseUnitId,
+    unitName: "Kit",
+    branchId,
+    branchName: maps.branches.get(branchId)?.name ?? "Sucursal",
+    defaultLocationName: "Calculado por componentes",
+    locationQuantities: {},
+    quantity,
+    reservedQuantity: 0,
+    availableQuantity: quantity,
+    minStock: 0,
+    status,
+    statusLabel: getInventoryStatusLabel(status),
+    tracksExpiration: false,
+    nextExpirationLabel: "-",
+    activeAlerts: [],
+    otherBranchStocks: [],
+    isDerivedKit: true,
   };
 }
 
@@ -354,12 +409,9 @@ function buildRowAlerts(row: InventoryProductRow): InventoryAlert[] {
       type: "low_stock",
       productId: row.productId,
       title: row.productName,
-      message:
-        row.status === "out_of_stock"
-          ? "El producto no tiene existencias disponibles en esta sucursal."
-          : `La existencia esta por debajo o cerca del minimo (${row.quantity} vs ${row.minStock}).`,
+      message: getInventoryAvailabilityAlertMessage(row),
       tone: row.status === "near_minimum" ? "warning" : "danger",
-      suggestedReorder: getSuggestedReorder(row),
+      suggestedReorder: getSuggestedReorderQuantity(row),
     });
   }
   if (row.tracksExpiration && isExpiringSoon(row.nextExpirationDate)) {
@@ -400,10 +452,30 @@ function buildAvailableElsewhereAlerts(
   ];
 }
 
-function getSuggestedReorder(row: InventoryProductRow) {
+export function getInventoryMinimumDeficit(
+  row: Pick<InventoryProductRow, "availableQuantity" | "minStock">,
+) {
+  return Math.max(0, row.minStock - row.availableQuantity);
+}
+
+export function getInventoryAvailabilityAlertMessage(
+  row: Pick<
+    InventoryProductRow,
+    "availableQuantity" | "minStock" | "quantity" | "reservedQuantity" | "status"
+  >,
+) {
+  const detail = `${row.availableQuantity} disponible vs ${row.minStock} minimo; deficit ${getInventoryMinimumDeficit(row)}; existencia fisica ${row.quantity}; reservado ${row.reservedQuantity}`;
+  return row.status === "out_of_stock"
+    ? `El producto no tiene disponibilidad en esta sucursal (${detail}).`
+    : `La disponibilidad esta por debajo o cerca del minimo (${detail}).`;
+}
+
+export function getSuggestedReorderQuantity(
+  row: Pick<InventoryProductRow, "availableQuantity" | "minStock" | "reorderPoint">,
+) {
   const target = row.reorderPoint ?? row.minStock;
-  if (target <= row.quantity) return undefined;
-  return target - row.quantity;
+  if (target <= row.availableQuantity) return undefined;
+  return target - row.availableQuantity;
 }
 
 function groupLotsByProduct(lots: StockLot[]) {

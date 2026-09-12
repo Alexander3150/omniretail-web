@@ -1,5 +1,6 @@
 export { PosTerminalPage } from "@/modules/pos/pages/PosTerminalPage";
 export { PosCashShiftPage } from "@/modules/pos/pages/PosCashShiftPage";
+export { PosReturnsPage } from "@/modules/pos/pages/PosReturnsPage";
 export { CloseCashShiftService } from "@/modules/pos/application/services/CloseCashShiftService";
 export { GetCashShiftMovementsService } from "@/modules/pos/application/services/GetCashShiftMovementsService";
 export { GetCashShiftSummaryService } from "@/modules/pos/application/services/GetCashShiftSummaryService";

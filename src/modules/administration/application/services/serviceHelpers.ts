@@ -1,4 +1,4 @@
-import type { BankAccount, Branch, Customer } from "@/core/entities";
+import type { BankAccount, Branch, Customer, Supplier } from "@/core/entities";
 import { BranchStatus, BranchType } from "@/core/enums";
 import type { BranchInputDto } from "@/modules/administration/application/dto/BranchDto";
 import { BUSINESS_CONFIG_MANAGE_PERMISSION } from "@/modules/administration/permissions";
@@ -77,6 +77,81 @@ export function ensureUniqueCustomer(
   if (tenantCustomers.some((customer) => customer.email.trim().toLowerCase() === email)) {
     throw new AdministrationServiceError("Ya existe un cliente con ese correo electrónico.");
   }
+}
+
+/**
+ * La sucursal predeterminada del e-commerce es el punto operacional desde donde se preparan los
+ * pedidos online (Picking/Dispatch). Se valida en el service, no solo en el selector del
+ * formulario, y siempre que venga informada -- no solo mientras la tienda está habilitada -- para
+ * que no se pueda persistir una sucursal inexistente, de otro tenant o inactiva con la tienda
+ * deshabilitada y despues "activarla" sin volver a pasar por esta validación.
+ */
+export function ensureEcommerceDefaultBranch(
+  enabled: boolean,
+  defaultBranchId: string | undefined,
+  branch: Branch | null,
+  tenantId: string,
+) {
+  if (defaultBranchId) {
+    if (!branch || branch.tenantId !== tenantId) {
+      throw new AdministrationServiceError(
+        "La sucursal predeterminada no existe o no pertenece al negocio activo.",
+      );
+    }
+    if (branch.status !== BranchStatus.active) {
+      throw new AdministrationServiceError("La sucursal predeterminada debe estar activa.");
+    }
+    return;
+  }
+
+  if (enabled) {
+    throw new AdministrationServiceError(
+      "Seleccioná una sucursal predeterminada para habilitar el e-commerce.",
+    );
+  }
+}
+
+export function ensureCanReadAuditLogs(permissions: readonly string[]) {
+  if (permissions.includes("admin.audit.read")) return;
+
+  throw new AdministrationServiceError("No tenés permiso para consultar la auditoría.");
+}
+
+export function ensureAuditTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
+}
+
+/**
+ * La autorización de proveedores pertenece a la capa de aplicación. Una UI oculta no impide que
+ * otro consumidor invoque directamente estos servicios.
+ */
+export function ensureCanManageSuppliers(permissions: readonly string[]) {
+  if (permissions.includes("admin.suppliers.manage")) return;
+
+  throw new AdministrationServiceError("No tenés permiso para gestionar proveedores.");
+}
+
+export function ensureSupplierTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
+}
+
+export function ensureSupplierActor(actorUserId: string) {
+  if (actorUserId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
+}
+
+export function ensureSupplierBelongsToTenant(
+  supplier: Supplier | null,
+  tenantId: string,
+): Supplier {
+  if (supplier?.tenantId === tenantId) return supplier;
+
+  throw new AdministrationServiceError("El proveedor no está disponible para el negocio activo.");
 }
 
 /**

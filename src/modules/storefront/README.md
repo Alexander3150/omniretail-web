@@ -8,7 +8,7 @@ Este modulo desarrolla su funcionalidad propia sin duplicar contratos compartido
 
 ## Contracts que consume
 
-ProductRepository, InventoryRepository, OrderRepository, CustomerRepository
+ProductRepository, InventoryRepository, OrderRepository, OrderPaymentConfirmationRepository, CustomerRepository
 
 ## Reglas
 
@@ -17,6 +17,7 @@ ProductRepository, InventoryRepository, OrderRepository, CustomerRepository
 - Usar repositories desde `RepositoryProvider`.
 - Usar `shared/` para componentes globales.
 - Crear DTO, Mappers y Services propios dentro del modulo cuando empiece cada feature.
+- El checkout con tarjeta simulada crea Order/Payment pending y usa el boundary de confirmacion para aprobar, confirmar y reservar atomicamente.
 
 ## Estructura futura
 

@@ -73,4 +73,16 @@ export const administrationPermissions = [
     name: "Gestionar clientes",
     description: "Permite crear, editar y archivar registros comerciales de clientes.",
   },
+  {
+    key: "admin.ecommerce_config.manage",
+    module: "administration",
+    name: "Gestionar diseño e-commerce",
+    description: "Permite configurar la tienda en línea del negocio.",
+  },
+  {
+    key: "admin.audit.read",
+    module: "administration",
+    name: "Leer auditoría",
+    description: "Permite consultar el registro de auditoría.",
+  },
 ] satisfies PermissionDefinition[];

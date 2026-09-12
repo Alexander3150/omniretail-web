@@ -35,10 +35,28 @@ export const administrationNavigation = [
         permission: "admin.customers.manage",
       },
       {
+        id: "administration-ecommerce-config",
+        label: "Diseño E-commerce",
+        href: "/administracion/diseno-ecommerce",
+        permission: "admin.ecommerce_config.manage",
+      },
+      {
+        id: "administration-audit",
+        label: "Auditoría",
+        href: "/administracion/auditoria",
+        permission: "admin.audit.read",
+      },
+      {
         id: "administration-bank-accounts",
         label: "Cuentas bancarias",
         href: "/administracion/cuentas-bancarias",
         permission: "admin.bank_accounts.manage",
+      },
+      {
+        id: "administration-suppliers",
+        label: "Proveedores",
+        href: "/administracion/proveedores",
+        permission: "admin.suppliers.manage",
       },
     ],
   },
