@@ -7,6 +7,7 @@ import {
   PaymentStatus,
   TransportMode,
 } from "@/core/enums";
+import { InsufficientInventoryAvailabilityError } from "@/core/inventory/stockAvailability";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { StorefrontCartItemDto } from "@/modules/storefront/application/dto/StorefrontCartDto";
 import type {
@@ -39,7 +40,8 @@ export class CreateStorefrontCheckoutService {
     idempotencyKey: string;
   }): Promise<StorefrontCheckoutResultDto> {
     assertCheckoutForm(form);
-    if (!idempotencyKey.trim()) throw new Error("No se pudo inicializar el pedido.");
+    const checkoutIdentity = idempotencyKey.trim();
+    if (!checkoutIdentity) throw new Error("No se pudo inicializar el pedido.");
 
     const [ecommerceConfig, products] = await Promise.all([
       this.repositories.businessConfig.getEcommerceConfig(tenantId),
@@ -70,6 +72,7 @@ export class CreateStorefrontCheckoutService {
       throw new Error("La sucursal de despacho no está disponible.");
     }
 
+    const checkoutToken = checkoutIdentity.replaceAll("-", "");
     const orderItems = products.map(({ item, product }, index) => {
       if (!product) throw new Error("Uno de los productos ya no está disponible para e-commerce.");
       if (
@@ -82,7 +85,7 @@ export class CreateStorefrontCheckoutService {
 
       const unitPrice = product.salePrice;
       return {
-        id: `storefront-item-${index}-${product.id}`,
+        id: `storefront-item-${checkoutIdentity}-${index}`,
         productId: product.id,
         skuSnapshot: product.sku,
         nameSnapshot: product.name,
@@ -93,7 +96,6 @@ export class CreateStorefrontCheckoutService {
       };
     });
     const subtotal = orderItems.reduce((total, item) => total + item.subtotal, 0);
-    const checkoutToken = idempotencyKey.replaceAll("-", "");
     const orderNumber = `WEB-${checkoutToken.slice(0, 10).toUpperCase()}`;
     const trackingToken = checkoutToken;
 
@@ -122,7 +124,7 @@ export class CreateStorefrontCheckoutService {
         shippingTotal: 0,
         total: subtotal,
         trackingToken,
-        idempotencyKey,
+        idempotencyKey: checkoutIdentity,
       },
       payment: {
         tenantId,
@@ -133,12 +135,22 @@ export class CreateStorefrontCheckoutService {
         reference: `CARD-SIMULATED-${form.cardLastFour}`,
       },
     });
-    const confirmation = await this.paymentConfirmationService.execute({
-      tenantId,
-      branchId: branch.id,
-      orderId: order.id,
-      paymentId: payment.id,
-    });
+    let confirmation;
+    try {
+      confirmation = await this.paymentConfirmationService.execute({
+        tenantId,
+        branchId: branch.id,
+        orderId: order.id,
+        paymentId: payment.id,
+      });
+    } catch (cause) {
+      if (cause instanceof InsufficientInventoryAvailabilityError) {
+        throw new Error(
+          "No hay suficiente disponibilidad para completar tu pedido. Actualiza el carrito e inténtalo nuevamente.",
+        );
+      }
+      throw cause;
+    }
     const emailSimulation = this.emailSimulationService.simulateConfirmation(form.email);
 
     return {
