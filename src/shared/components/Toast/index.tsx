@@ -36,21 +36,27 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     timersRef.current.delete(id);
   }, []);
 
-  const dismissToast = useCallback((id: string) => {
-    clearToastTimer(id);
-    setToasts((items) => items.filter((toast) => toast.id !== id));
-  }, [clearToastTimer]);
+  const dismissToast = useCallback(
+    (id: string) => {
+      clearToastTimer(id);
+      setToasts((items) => items.filter((toast) => toast.id !== id));
+    },
+    [clearToastTimer],
+  );
 
-  const showToast = useCallback((toast: Omit<ToastMessage, "id">) => {
-    const id = crypto.randomUUID();
-    const duration = toast.duration ?? DEFAULT_TOAST_DURATION;
-    setToasts((items) => [...items, { ...toast, id, duration }]);
+  const showToast = useCallback(
+    (toast: Omit<ToastMessage, "id">) => {
+      const id = crypto.randomUUID();
+      const duration = toast.duration ?? DEFAULT_TOAST_DURATION;
+      setToasts((items) => [...items, { ...toast, id, duration }]);
 
-    if (duration > 0) {
-      const timer = setTimeout(() => dismissToast(id), duration);
-      timersRef.current.set(id, timer);
-    }
-  }, [dismissToast]);
+      if (duration > 0) {
+        const timer = setTimeout(() => dismissToast(id), duration);
+        timersRef.current.set(id, timer);
+      }
+    },
+    [dismissToast],
+  );
 
   useEffect(() => {
     const timers = timersRef.current;

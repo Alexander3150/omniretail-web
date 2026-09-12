@@ -24,4 +24,3 @@ export interface CategoryEditorDto {
 export interface CategoryEditorOptions {
   parents: CategoryListItem[];
 }
-

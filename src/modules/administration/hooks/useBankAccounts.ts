@@ -86,10 +86,7 @@ export function useBankAccounts() {
         setLoading(false);
       });
     } else if (tenantId) {
-      Promise.all([
-        getService.execute(tenantId, permissions),
-        repositories.branches.getActive(),
-      ])
+      Promise.all([getService.execute(tenantId, permissions), repositories.branches.getActive()])
         .then(([nextAccounts, branches]) => {
           if (!active) return;
           setAccounts(nextAccounts);

@@ -105,9 +105,7 @@ export function CashShiftTable({ actorNames, branchNames, shifts }: CashShiftTab
       />
       <CashShiftDetailModal
         actorName={
-          selectedShift
-            ? (actorNames.get(selectedShift.userId) ?? selectedShift.userId)
-            : undefined
+          selectedShift ? (actorNames.get(selectedShift.userId) ?? selectedShift.userId) : undefined
         }
         branchName={
           selectedShift
@@ -151,9 +149,7 @@ function CashShiftDetailModal({
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={shift.status} />
-            <span className="text-sm font-medium text-[var(--color-text-muted)]">
-              {shift.id}
-            </span>
+            <span className="text-sm font-medium text-[var(--color-text-muted)]">{shift.id}</span>
           </div>
           <dl className="grid gap-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-4 sm:grid-cols-2 lg:grid-cols-3">
             <DetailItem label="Sucursal" value={branchName ?? shift.branchId} />

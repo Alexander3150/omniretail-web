@@ -5,7 +5,10 @@ import {
 } from "@/modules/customer/application/dto/CustomerOrderSummaryDto";
 import { resolveCustomerAuthorizationContext } from "@/modules/customer/application/services/CustomerAuthorizationContext";
 
-type OrderRepositories = Pick<RepositoryRegistry, "auth" | "users" | "roles" | "customers" | "orders">;
+type OrderRepositories = Pick<
+  RepositoryRegistry,
+  "auth" | "users" | "roles" | "customers" | "orders"
+>;
 
 /**
  * Solo lectura, tal como quedo definido en el alcance de este PR:

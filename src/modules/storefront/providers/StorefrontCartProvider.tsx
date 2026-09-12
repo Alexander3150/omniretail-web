@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import {
   createStorefrontCartItem,
@@ -40,10 +33,7 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
     () => allItems.filter((item) => item.tenantId === tenantId),
     [allItems, tenantId],
   );
-  const itemCount = useMemo(
-    () => items.reduce((total, item) => total + item.quantity, 0),
-    [items],
-  );
+  const itemCount = useMemo(() => items.reduce((total, item) => total + item.quantity, 0), [items]);
   const subtotal = useMemo(
     () => items.reduce((total, item) => total + item.unitPrice * item.quantity, 0),
     [items],

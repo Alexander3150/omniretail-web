@@ -71,20 +71,19 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   const normalized = { ...base, ...database } as MockDatabase;
 
   normalized.units = (database.units ?? base.units).map(normalizePersistedUnit);
-  normalized.businessCapabilities = (database.businessCapabilities ?? base.businessCapabilities).map(
-    (config) => ({
-      ...config,
-      allowedPosPaymentMethods:
-        config.allowedPosPaymentMethods ??
-        normalized.ecommerceConfigs
-          .find((item) => item.tenantId === config.tenantId)
-          ?.allowedPaymentMethods.filter((method) => method !== "mixed") ?? [
-          PaymentMethod.cash,
-          PaymentMethod.card,
-          PaymentMethod.transfer,
-        ],
-    }),
-  );
+  normalized.businessCapabilities = (
+    database.businessCapabilities ?? base.businessCapabilities
+  ).map((config) => ({
+    ...config,
+    allowedPosPaymentMethods: config.allowedPosPaymentMethods ??
+      normalized.ecommerceConfigs
+        .find((item) => item.tenantId === config.tenantId)
+        ?.allowedPaymentMethods.filter((method) => method !== "mixed") ?? [
+        PaymentMethod.cash,
+        PaymentMethod.card,
+        PaymentMethod.transfer,
+      ],
+  }));
   normalized.productPriceHistory = database.productPriceHistory ?? [];
   normalized.inventoryReservations = database.inventoryReservations ?? [];
   normalized.inventoryReservationConsumeOperations =

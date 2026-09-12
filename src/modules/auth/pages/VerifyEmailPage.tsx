@@ -20,7 +20,11 @@ export function VerifyEmailPage({ token }: { token: string }) {
         {state === "success" ? (
           <>
             <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">Cuenta verificada</h1>
-            <InlineAlert className="mt-4 text-left" title="Tu cuenta quedó activa." tone="success" />
+            <InlineAlert
+              className="mt-4 text-left"
+              title="Tu cuenta quedó activa."
+              tone="success"
+            />
             <Button className="mt-6 w-full" href="/iniciar-sesion">
               Iniciar sesión
             </Button>
@@ -39,7 +43,10 @@ export function VerifyEmailPage({ token }: { token: string }) {
               tone="danger"
             />
             <p className="mt-6 text-sm text-[var(--color-text-muted)]">
-              <Link className="font-semibold text-[var(--color-title)] hover:underline" href="/iniciar-sesion">
+              <Link
+                className="font-semibold text-[var(--color-title)] hover:underline"
+                href="/iniciar-sesion"
+              >
                 Ir a iniciar sesión
               </Link>
             </p>

@@ -70,10 +70,8 @@ export function ReportsPage() {
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             Esta vista requiere el permiso{" "}
-            <span className="font-medium text-[var(--color-text)]">
-              {REPORTS_READ_PERMISSION}
-            </span>
-            . Pedí acceso a un administrador.
+            <span className="font-medium text-[var(--color-text)]">{REPORTS_READ_PERMISSION}</span>.
+            Pedí acceso a un administrador.
           </p>
         </div>
       </div>

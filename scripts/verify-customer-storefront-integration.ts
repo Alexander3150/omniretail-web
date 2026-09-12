@@ -319,10 +319,7 @@ async function verifySessionReactivityAndProfile() {
   await harness.users.updateStatus(customerAUserId, UserStatus.inactive);
   await harness.settle();
   assert.equal(harness.getSnapshot().user, null);
-  await assert.rejects(
-    getCurrentCustomerProfile(harness.repositories),
-    CustomerIdentityError,
-  );
+  await assert.rejects(getCurrentCustomerProfile(harness.repositories), CustomerIdentityError);
 }
 
 function cart(quantity = 1) {
@@ -477,6 +474,25 @@ function verifyPostLoginNavigation() {
   assert.equal(canUserEnterPrivateRoute(employee, "/inicio"), true);
 }
 
+async function verifyRegistrationProvisioning() {
+  const storage = new MemoryStorageAdapter();
+  const store = new MockDatabaseStore(storage);
+  const eventBus = new DataEventBus();
+  const auth = new MockAuthRepository(store, eventBus, storage);
+
+  const registerResult = await auth.registerCustomer({
+    name: "Nuevo Cliente",
+    email: "nuevo@example.com",
+    phone: "12345678",
+    passwordMock: "NuevoCliente123",
+  });
+
+  assert.equal(registerResult.user.type, UserType.customer);
+  assert.ok(registerResult.user.customerId);
+  assert.ok(registerResult.user.roleId);
+  assert.equal(registerResult.user.roleId, "role-customer");
+}
+
 async function main() {
   verifyPostLoginNavigation();
   await verifySessionReactivityAndProfile();
@@ -484,6 +500,7 @@ async function main() {
   await verifyAuthenticatedCheckoutAndIsolation();
   await verifyEmployeeAndCrossTenantIsolation();
   await verifyInactiveCustomerDenied();
+  await verifyRegistrationProvisioning();
   console.log("customer storefront integration verification: PASS");
 }
 

@@ -37,7 +37,11 @@ import { MOCK_SESSION_STORAGE_KEY } from "@/infrastructure/storage/storageKeys";
 export class MockAuthRepository extends BaseMockRepository implements AuthRepository {
   private readonly sessionStorage: LocalStorageAdapter;
 
-  constructor(store: MockDatabaseStore, eventBus: DataEventBus, sessionStorage: LocalStorageAdapter) {
+  constructor(
+    store: MockDatabaseStore,
+    eventBus: DataEventBus,
+    sessionStorage: LocalStorageAdapter,
+  ) {
     super(store, eventBus);
     this.sessionStorage = sessionStorage;
   }
@@ -52,7 +56,8 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
 
     const outcome = this.store.mutate((db) => {
       const ownerOf = (account: AuthAccount) => db.users.find((user) => user.id === account.userId);
-      const matchesEmail = (account: AuthAccount) => account.email.toLowerCase() === normalizedEmail;
+      const matchesEmail = (account: AuthAccount) =>
+        account.email.toLowerCase() === normalizedEmail;
 
       // Candidatos CUSTOMER: tenant-scoped al storefront actual (R-A03: email
       // unico POR TENANT). Sin tenantId resuelto (storefront no disponible)
@@ -212,7 +217,8 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
               ? Math.max(...priorFailureOrLockoutTimestamps)
               : null;
           const escalationHasReset =
-            lastFailureOrLockoutAt !== null && streakStartAt - lastFailureOrLockoutAt > escalationResetMs;
+            lastFailureOrLockoutAt !== null &&
+            streakStartAt - lastFailureOrLockoutAt > escalationResetMs;
 
           const recentLockouts = escalationHasReset
             ? 0
@@ -303,9 +309,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     this.emit("auth.changed", { entityId: sessionId, action: "updated" });
   }
   async getSession(sessionId: string) {
-    const session = this.read(
-      (db) => db.sessions.find((item) => item.id === sessionId) ?? null,
-    );
+    const session = this.read((db) => db.sessions.find((item) => item.id === sessionId) ?? null);
     const isStale =
       !session || Boolean(session.revokedAt) || new Date() >= new Date(session.expiresAt);
     if (isStale) {
@@ -371,6 +375,16 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         createdAt: now,
         updatedAt: now,
       };
+      const customerRole = db.roles.find(
+        (role) =>
+          role.tenantId === tenantId &&
+          role.isSystem &&
+          role.permissions.includes("customer.account.read") &&
+          !role.permissions.some(
+            (p) => p.startsWith("admin.") || p.startsWith("pos.") || p.startsWith("inventory."),
+          ),
+      );
+
       const createdUser = {
         id: this.id("user"),
         tenantId,
@@ -380,6 +394,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         phone: input.phone,
         type: UserType.customer,
         status: UserStatus.active,
+        roleId: customerRole?.id,
         createdAt: now,
         updatedAt: now,
       };
@@ -432,7 +447,8 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     this.store.mutate((db) => {
       const normalizedEmail = input.email.trim().toLowerCase();
       const now = new Date();
-      const matchesEmail = (account: AuthAccount) => account.email.toLowerCase() === normalizedEmail;
+      const matchesEmail = (account: AuthAccount) =>
+        account.email.toLowerCase() === normalizedEmail;
       const ownerOf = (account: AuthAccount) => db.users.find((u) => u.id === account.userId);
 
       // Mismo criterio de candidatos que login(). A diferencia de login(),
@@ -779,11 +795,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       // que un token vencido, sin revelar cual de las tres condiciones
       // fallo.
       const user = db.users.find((item) => item.id === account.userId);
-      if (
-        !user ||
-        user.type !== UserType.employee ||
-        user.tenantId !== invitation.tenantId
-      ) {
+      if (!user || user.type !== UserType.employee || user.tenantId !== invitation.tenantId) {
         throw new Error("Invalid activation token");
       }
 

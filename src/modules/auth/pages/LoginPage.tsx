@@ -113,11 +113,7 @@ export function LoginPage() {
             </Link>
           </div>
 
-          <Button
-            className="w-full"
-            disabled={isSubmitting || tenantLoading}
-            type="submit"
-          >
+          <Button className="w-full" disabled={isSubmitting || tenantLoading} type="submit">
             {isSubmitting ? "Ingresando..." : "Iniciar sesion"}
           </Button>
         </form>
@@ -128,14 +124,22 @@ export function LoginPage() {
           <span aria-hidden="true" className="h-px flex-1 bg-[var(--color-border)]" />
         </div>
 
-        <Button className="mt-4 w-full" onClick={simulateGoogleLogin} type="button" variant="secondary">
+        <Button
+          className="mt-4 w-full"
+          onClick={simulateGoogleLogin}
+          type="button"
+          variant="secondary"
+        >
           <GoogleIcon />
           Google
         </Button>
 
         <p className="mt-6 text-center text-sm text-[var(--color-text-muted)]">
           ¿No tienes cuenta?{" "}
-          <Link className="font-semibold text-[var(--color-title)] hover:underline" href="/registro">
+          <Link
+            className="font-semibold text-[var(--color-title)] hover:underline"
+            href="/registro"
+          >
             Registrate
           </Link>
         </p>

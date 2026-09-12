@@ -69,7 +69,9 @@ export class RegisterSaleInventoryMovementsService {
         quantity: item.saleItem.quantity,
         balances: balances.map((balance) => {
           const plannedQuantity = plannedQuantities.get(balance.id);
-          return plannedQuantity === undefined ? balance : { ...balance, quantity: plannedQuantity };
+          return plannedQuantity === undefined
+            ? balance
+            : { ...balance, quantity: plannedQuantity };
         }),
         locations,
         preferredLocationId: item.sourceLocationId ?? settings?.defaultLocationId,

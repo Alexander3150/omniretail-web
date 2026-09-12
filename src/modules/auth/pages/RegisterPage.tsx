@@ -33,7 +33,9 @@ export function RegisterPage() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[var(--color-app-background)] px-6 py-10">
         <section className="w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-8">
-          <p className="text-sm font-semibold uppercase text-[var(--color-text-muted)]">OmniRetail</p>
+          <p className="text-sm font-semibold uppercase text-[var(--color-text-muted)]">
+            OmniRetail
+          </p>
           <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">Revisa tu correo</h1>
           <p className="mt-3 text-sm text-[var(--color-text-muted)]">
             Creamos tu cuenta con <strong>{completed.email}</strong>. Antes de iniciar sesión,
@@ -63,7 +65,10 @@ export function RegisterPage() {
           )}
 
           <p className="mt-6 text-center text-sm text-[var(--color-text-muted)]">
-            <Link className="font-semibold text-[var(--color-title)] hover:underline" href="/iniciar-sesion">
+            <Link
+              className="font-semibold text-[var(--color-title)] hover:underline"
+              href="/iniciar-sesion"
+            >
               Volver a iniciar sesión
             </Link>
           </p>
@@ -79,7 +84,11 @@ export function RegisterPage() {
         <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">Crea tu cuenta</h1>
 
         {tenantError ? (
-          <InlineAlert className="mt-4" title="La tienda no está disponible en este momento." tone="danger" />
+          <InlineAlert
+            className="mt-4"
+            title="La tienda no está disponible en este momento."
+            tone="danger"
+          />
         ) : null}
 
         <form
@@ -160,7 +169,10 @@ export function RegisterPage() {
 
         <p className="mt-6 text-center text-sm text-[var(--color-text-muted)]">
           ¿Ya tienes cuenta?{" "}
-          <Link className="font-semibold text-[var(--color-title)] hover:underline" href="/iniciar-sesion">
+          <Link
+            className="font-semibold text-[var(--color-title)] hover:underline"
+            href="/iniciar-sesion"
+          >
             Inicia sesión
           </Link>
         </p>

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
+import { RequireSession } from "@/modules/auth/components/RequireSession";
+import { RequirePermission } from "@/modules/auth/components/RequirePermission";
 import { Tabs } from "@/shared/components/Tabs";
 
 const SECTIONS = [
@@ -28,7 +30,13 @@ export default function CuentaLayout({ children }: { children: ReactNode }) {
   const visibleSections = SECTIONS.filter((section) => hasPermission(section.permission));
 
   if (visibleSections.length === 0) {
-    return <div className="min-w-0 space-y-5">{children}</div>;
+    return (
+      <RequireSession>
+        <RequirePermission>
+          <div className="min-w-0 space-y-5">{children}</div>
+        </RequirePermission>
+      </RequireSession>
+    );
   }
 
   const activeValue =
@@ -36,15 +44,23 @@ export default function CuentaLayout({ children }: { children: ReactNode }) {
     visibleSections[0].value;
 
   return (
-    <div className="min-w-0 space-y-5">
-      <Link
-        className="inline-flex text-sm font-semibold text-[var(--color-structure)] hover:underline"
-        href="/"
-      >
-        ← Volver a la tienda
-      </Link>
-      <Tabs items={visibleSections} onChange={(value) => router.push(value)} value={activeValue} />
-      {children}
-    </div>
+    <RequireSession>
+      <RequirePermission>
+        <div className="min-w-0 space-y-5">
+          <Link
+            className="inline-flex text-sm font-semibold text-[var(--color-structure)] hover:underline"
+            href="/"
+          >
+            ← Volver a la tienda
+          </Link>
+          <Tabs
+            items={visibleSections}
+            onChange={(value) => router.push(value)}
+            value={activeValue}
+          />
+          {children}
+        </div>
+      </RequirePermission>
+    </RequireSession>
   );
 }

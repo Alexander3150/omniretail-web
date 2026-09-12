@@ -59,9 +59,7 @@ export class MockPromotionRepository extends BaseMockRepository implements Promo
   }
 
   async getApplicable(criteria: PromotionApplicabilityCriteria) {
-    return this.read(
-      (db) => db.promotions.find((item) => isApplicable(item, criteria)) ?? null,
-    );
+    return this.read((db) => db.promotions.find((item) => isApplicable(item, criteria)) ?? null);
   }
 
   async create(input: Parameters<PromotionRepository["create"]>[0]) {
@@ -73,7 +71,11 @@ export class MockPromotionRepository extends BaseMockRepository implements Promo
       db.promotions.push(created);
       return created;
     });
-    this.emit("promotion.changed", { entityId: item.id, tenantId: item.tenantId, action: "created" });
+    this.emit("promotion.changed", {
+      entityId: item.id,
+      tenantId: item.tenantId,
+      action: "created",
+    });
     return item;
   }
 
@@ -86,7 +88,11 @@ export class MockPromotionRepository extends BaseMockRepository implements Promo
       this.assertNoOverlap(next, db.promotions, id);
       return this.updateById(db.promotions, id, input, "Promotion");
     });
-    this.emit("promotion.changed", { entityId: item.id, tenantId: item.tenantId, action: "updated" });
+    this.emit("promotion.changed", {
+      entityId: item.id,
+      tenantId: item.tenantId,
+      action: "updated",
+    });
     return item;
   }
 
@@ -100,17 +106,23 @@ export class MockPromotionRepository extends BaseMockRepository implements Promo
     if (promotion.productIds.length === 0) {
       throw new Error("Promotion must include at least one product");
     }
-    if (promotion.type === PromotionType.percentage && (promotion.value <= 0 || promotion.value >= 100)) {
+    if (
+      promotion.type === PromotionType.percentage &&
+      (promotion.value <= 0 || promotion.value >= 100)
+    ) {
       throw new Error("Percentage promotion value must be greater than 0 and less than 100");
     }
     for (const productId of promotion.productIds) {
       const product = products.find((item) => item.id === productId);
       if (!product) continue;
       if (
-        (promotion.type === PromotionType.fixedDiscount || promotion.type === PromotionType.fixedPrice) &&
+        (promotion.type === PromotionType.fixedDiscount ||
+          promotion.type === PromotionType.fixedPrice) &&
         (promotion.value <= 0 || promotion.value >= product.salePrice)
       ) {
-        throw new Error("Fixed promotion value must be greater than 0 and less than product sale price");
+        throw new Error(
+          "Fixed promotion value must be greater than 0 and less than product sale price",
+        );
       }
     }
   }
@@ -133,7 +145,9 @@ export class MockPromotionRepository extends BaseMockRepository implements Promo
       );
     });
     if (overlaps) {
-      throw new Error("Promotion overlaps with an existing promotion for the same product, channel and branch scope");
+      throw new Error(
+        "Promotion overlaps with an existing promotion for the same product, channel and branch scope",
+      );
     }
   }
 }

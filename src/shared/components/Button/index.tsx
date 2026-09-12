@@ -16,8 +16,7 @@ const variantClassNames: Record<NonNullable<ButtonProps["variant"]>, string> = {
     "border-[var(--color-primary)] bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)]",
   secondary:
     "border-[var(--color-primary)] bg-white text-[var(--color-title)] hover:bg-[var(--color-app-background)]",
-  danger:
-    "border-[var(--color-danger)] bg-[var(--color-danger)] text-white hover:brightness-95",
+  danger: "border-[var(--color-danger)] bg-[var(--color-danger)] text-white hover:brightness-95",
   ghost:
     "border-transparent bg-transparent text-[var(--color-title)] hover:bg-[var(--color-app-background)]",
 };

@@ -2,7 +2,10 @@ import { UnitStatus } from "@/core/enums";
 import type { Unit } from "@/core/entities";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { UnitEditorDto } from "@/modules/catalog/application/dto/UnitEditorDto";
-import { CatalogServiceError, resolveTenantId } from "@/modules/catalog/application/services/serviceHelpers";
+import {
+  CatalogServiceError,
+  resolveTenantId,
+} from "@/modules/catalog/application/services/serviceHelpers";
 
 export class SaveUnitService {
   constructor(private readonly repositories: RepositoryRegistry) {}

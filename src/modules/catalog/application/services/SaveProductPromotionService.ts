@@ -1,7 +1,10 @@
 import type { Promotion } from "@/core/entities";
 import { ProductStatus, PromotionStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
-import { CatalogServiceError, ensureProduct } from "@/modules/catalog/application/services/serviceHelpers";
+import {
+  CatalogServiceError,
+  ensureProduct,
+} from "@/modules/catalog/application/services/serviceHelpers";
 
 export type SaveProductPromotionInput = Pick<
   Promotion,

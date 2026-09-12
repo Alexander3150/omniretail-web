@@ -50,9 +50,7 @@ interface CheckoutModalProps {
   onReset: () => void;
   onDocumentTypeChange: (documentType: CheckoutDto["documentType"]) => void;
   onPaymentModeChange: (paymentMode: CheckoutPaymentMode) => void;
-  onCheckoutChange: (
-    patch: Partial<Omit<CheckoutDto, "cardTerminalResult">>,
-  ) => void;
+  onCheckoutChange: (patch: Partial<Omit<CheckoutDto, "cardTerminalResult">>) => void;
   onProcessCardPayment: (outcome: CardTerminalOutcome) => void;
   onInvoiceDataChange: (patch: Partial<CheckoutInvoiceDataDto>) => void;
   onDeliveryAddressChange: (patch: Partial<NonNullable<CheckoutDto["deliveryAddress"]>>) => void;
@@ -118,7 +116,12 @@ export function CheckoutModal({
             Restablecer
           </Button>
           <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button disabled={confirmationLoading} onClick={onClose} type="button" variant="secondary">
+            <Button
+              disabled={confirmationLoading}
+              onClick={onClose}
+              type="button"
+              variant="secondary"
+            >
               Cerrar
             </Button>
             <Button
@@ -153,11 +156,7 @@ export function CheckoutModal({
           onValidate();
         }}
       >
-        <CheckoutSummary
-          discountTotal={discountTotal}
-          subtotal={subtotal}
-          total={total}
-        />
+        <CheckoutSummary discountTotal={discountTotal} subtotal={subtotal} total={total} />
 
         <CashShiftStatusPanel
           branchName={currentBranchName}
@@ -229,9 +228,7 @@ export function CheckoutModal({
                   <Input
                     id="checkout-fiscal-address"
                     maxLength={240}
-                    onChange={(event) =>
-                      onInvoiceDataChange({ fiscalAddress: event.target.value })
-                    }
+                    onChange={(event) => onInvoiceDataChange({ fiscalAddress: event.target.value })}
                     value={checkout.invoiceData.fiscalAddress}
                   />
                 </FormField>
@@ -267,14 +264,30 @@ export function CheckoutModal({
           {checkout.deliveryMethod === DeliveryMethod.home_delivery ? (
             <div className="grid gap-4 md:grid-cols-2">
               <FormField id="delivery-recipient" label="Recibe *">
-                <Input id="delivery-recipient" onChange={(event) => onDeliveryAddressChange({ recipientName: event.target.value })} value={checkout.deliveryAddress?.recipientName ?? ""} />
+                <Input
+                  id="delivery-recipient"
+                  onChange={(event) =>
+                    onDeliveryAddressChange({ recipientName: event.target.value })
+                  }
+                  value={checkout.deliveryAddress?.recipientName ?? ""}
+                />
               </FormField>
               <FormField id="delivery-city" label="Ciudad *">
-                <Input id="delivery-city" onChange={(event) => onDeliveryAddressChange({ city: event.target.value })} value={checkout.deliveryAddress?.city ?? ""} />
+                <Input
+                  id="delivery-city"
+                  onChange={(event) => onDeliveryAddressChange({ city: event.target.value })}
+                  value={checkout.deliveryAddress?.city ?? ""}
+                />
               </FormField>
-              <div className="md:col-span-2"><FormField id="delivery-line1" label="DirecciÃ³n *">
-                <Input id="delivery-line1" onChange={(event) => onDeliveryAddressChange({ line1: event.target.value })} value={checkout.deliveryAddress?.line1 ?? ""} />
-              </FormField></div>
+              <div className="md:col-span-2">
+                <FormField id="delivery-line1" label="DirecciÃ³n *">
+                  <Input
+                    id="delivery-line1"
+                    onChange={(event) => onDeliveryAddressChange({ line1: event.target.value })}
+                    value={checkout.deliveryAddress?.line1 ?? ""}
+                  />
+                </FormField>
+              </div>
             </div>
           ) : null}
         </section>
@@ -289,16 +302,12 @@ export function CheckoutModal({
             <Select
               disabled={paymentMethodsLoading || availablePaymentModes.length === 0}
               id="checkout-payment-mode"
-              onChange={(event) =>
-                onPaymentModeChange(event.target.value as CheckoutPaymentMode)
-              }
+              onChange={(event) => onPaymentModeChange(event.target.value as CheckoutPaymentMode)}
               value={checkout.paymentMode}
             >
               {!availablePaymentModes.includes(checkout.paymentMode) ? (
                 <option disabled value={checkout.paymentMode}>
-                  {paymentMethodsLoading
-                    ? "Cargando métodos..."
-                    : "Método no disponible"}
+                  {paymentMethodsLoading ? "Cargando métodos..." : "Método no disponible"}
                 </option>
               ) : null}
               {availablePaymentModes.map((paymentMode) => (
@@ -370,15 +379,13 @@ export function CheckoutModal({
                   label="Banco / cuenta"
                   error={
                     errors.bankAccountId ??
-                    (checkout.transferAmount > 0 ? bankAccountsError ?? undefined : undefined)
+                    (checkout.transferAmount > 0 ? (bankAccountsError ?? undefined) : undefined)
                   }
                 >
                   <Select
                     disabled={bankAccountsLoading || bankAccounts.length === 0}
                     id="checkout-bank-account"
-                    onChange={(event) =>
-                      onCheckoutChange({ bankAccountId: event.target.value })
-                    }
+                    onChange={(event) => onCheckoutChange({ bankAccountId: event.target.value })}
                     value={checkout.bankAccountId}
                   >
                     <option value="">
@@ -425,9 +432,7 @@ export function CheckoutModal({
                       }
                       type="checkbox"
                     />
-                    <span>
-                      He verificado externamente que la transferencia fue recibida.
-                    </span>
+                    <span>He verificado externamente que la transferencia fue recibida.</span>
                   </label>
                   {errors.transferExternallyVerified ? (
                     <p className="mt-1 text-xs font-medium text-[var(--color-danger)]">
@@ -528,9 +533,7 @@ function CashShiftStatusPanel({
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-muted)]">
           <StatusBadge status="Caja abierta" tone="success" />
           <span>
-            {[branchName, registerCode ? `Caja ${registerCode}` : null]
-              .filter(Boolean)
-              .join(" · ")}
+            {[branchName, registerCode ? `Caja ${registerCode}` : null].filter(Boolean).join(" · ")}
           </span>
         </div>
       ) : (
@@ -577,9 +580,7 @@ function SummaryAmount({
 }) {
   return (
     <div>
-      <dt className="text-xs font-semibold uppercase text-[var(--color-text-muted)]">
-        {label}
-      </dt>
+      <dt className="text-xs font-semibold uppercase text-[var(--color-text-muted)]">{label}</dt>
       <dd
         className={
           prominent
@@ -648,14 +649,10 @@ function CardTerminalPanel({
         </p>
       ) : null}
       {!processing && !approved && !rejected ? (
-        <p className="text-sm text-[var(--color-text-muted)]">
-          Pendiente de procesamiento.
-        </p>
+        <p className="text-sm text-[var(--color-text-muted)]">Pendiente de procesamiento.</p>
       ) : null}
 
-      {error ? (
-        <p className="text-xs font-medium text-[var(--color-danger)]">{error}</p>
-      ) : null}
+      {error ? <p className="text-xs font-medium text-[var(--color-danger)]">{error}</p> : null}
 
       <div className="flex flex-col gap-2">
         <Button
@@ -664,11 +661,7 @@ function CardTerminalPanel({
           type="button"
           variant="secondary"
         >
-          {approved
-            ? "Procesar nuevamente"
-            : rejected
-              ? "Reintentar"
-              : "Procesar con terminal"}
+          {approved ? "Procesar nuevamente" : rejected ? "Reintentar" : "Procesar con terminal"}
         </Button>
         <Button
           disabled={processing || amount <= 0}
@@ -715,22 +708,16 @@ function MoneyField({
   );
 }
 
-function ReadonlyAmount({
-  label,
-  value,
-  error,
-}: {
-  label: string;
-  value: number;
-  error?: string;
-}) {
+function ReadonlyAmount({ label, value, error }: { label: string; value: number; error?: string }) {
   return (
     <div>
       <p className="text-sm font-semibold text-[var(--color-text)]">{label}</p>
       <p className="mt-1 rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm font-bold text-[var(--color-title)]">
         {formatCurrency(value)}
       </p>
-      {error ? <p className="mt-1 text-xs font-medium text-[var(--color-danger)]">{error}</p> : null}
+      {error ? (
+        <p className="mt-1 text-xs font-medium text-[var(--color-danger)]">{error}</p>
+      ) : null}
     </div>
   );
 }

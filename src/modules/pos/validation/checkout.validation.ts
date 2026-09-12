@@ -1,7 +1,4 @@
-import type {
-  CardTerminalResultDto,
-  CheckoutDto,
-} from "@/modules/pos/application/dto/CheckoutDto";
+import type { CardTerminalResultDto, CheckoutDto } from "@/modules/pos/application/dto/CheckoutDto";
 
 export type CheckoutValidationErrors = Partial<
   Record<
@@ -33,10 +30,7 @@ export interface CheckoutValidationResult extends CheckoutAmounts {
   isValid: boolean;
 }
 
-export function calculateCheckoutAmounts(
-  checkout: CheckoutDto,
-  total: number,
-): CheckoutAmounts {
+export function calculateCheckoutAmounts(checkout: CheckoutDto, total: number): CheckoutAmounts {
   const cashCents = toCents(checkout.cashAmount);
   const cardCents = toCents(checkout.cardAmount);
   const transferCents = toCents(checkout.transferAmount);
@@ -130,10 +124,7 @@ function validateDocument(checkout: CheckoutDto, errors: CheckoutValidationError
   }
 }
 
-function validateNonNegativeAmounts(
-  checkout: CheckoutDto,
-  errors: CheckoutValidationErrors,
-) {
+function validateNonNegativeAmounts(checkout: CheckoutDto, errors: CheckoutValidationErrors) {
   if (!Number.isFinite(checkout.cashAmount) || checkout.cashAmount < 0) {
     errors.cashAmount = "El monto en efectivo no puede ser negativo.";
   }

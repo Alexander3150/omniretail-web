@@ -93,9 +93,10 @@ function hydratePurchaseOrder(order: PurchaseOrder, db: MockDatabase): PurchaseO
 }
 
 function nextPurchaseOrderNumber(db: MockDatabase) {
-  const next = db.purchaseOrders.reduce((max, order) => {
-    const match = /^OC-(\d+)$/.exec(order.number);
-    return match ? Math.max(max, Number(match[1])) : max;
-  }, 0) + 1;
+  const next =
+    db.purchaseOrders.reduce((max, order) => {
+      const match = /^OC-(\d+)$/.exec(order.number);
+      return match ? Math.max(max, Number(match[1])) : max;
+    }, 0) + 1;
   return `OC-${String(next).padStart(3, "0")}`;
 }

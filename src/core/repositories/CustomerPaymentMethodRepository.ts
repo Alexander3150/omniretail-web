@@ -13,7 +13,13 @@ import type { CustomerPaymentMethodStatus } from "@/core/enums";
  */
 export type CreateCustomerPaymentMethodInput = Pick<
   CustomerPaymentMethod,
-  "tenantId" | "customerId" | "brand" | "last4" | "expirationMonth" | "expirationYear" | "cardholderName"
+  | "tenantId"
+  | "customerId"
+  | "brand"
+  | "last4"
+  | "expirationMonth"
+  | "expirationYear"
+  | "cardholderName"
 > & {
   status?: CustomerPaymentMethodStatus;
 };
@@ -44,5 +50,9 @@ export interface CustomerPaymentMethodRepository {
     input: UpdateCustomerPaymentMethodInput,
   ): Promise<CustomerPaymentMethod>;
   remove(tenantId: string, customerId: string, id: string): Promise<void>;
-  setDefault(tenantId: string, customerId: string, paymentMethodId: string): Promise<CustomerPaymentMethod>;
+  setDefault(
+    tenantId: string,
+    customerId: string,
+    paymentMethodId: string,
+  ): Promise<CustomerPaymentMethod>;
 }

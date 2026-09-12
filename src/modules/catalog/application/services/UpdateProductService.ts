@@ -65,7 +65,12 @@ export class UpdateProductService {
       capabilities,
       current.saleUnitId ?? current.baseUnitId,
     );
-    const tracking = applyTrackingRules(dto.productType, dto.tracking, capabilities, current.tracking);
+    const tracking = applyTrackingRules(
+      dto.productType,
+      dto.tracking,
+      capabilities,
+      current.tracking,
+    );
     const updated = await this.repositories.products.update(
       current.id,
       ProductMapper.toUpdateInput({ ...dto, sku: normalizedSku, saleUnitId, tracking }, current),

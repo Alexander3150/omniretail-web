@@ -40,9 +40,7 @@ export function DashboardIncidents({ incidents, loading }: DashboardIncidentsPro
               <p className="break-words text-sm font-semibold text-[var(--color-text)]">
                 {incident.description}
               </p>
-              <p className="text-sm text-[var(--color-text-muted)]">
-                {incident.typeName ?? "—"}
-              </p>
+              <p className="text-sm text-[var(--color-text-muted)]">{incident.typeName ?? "—"}</p>
               <time
                 className="text-sm text-[var(--color-text-muted)]"
                 dateTime={incident.createdAt}

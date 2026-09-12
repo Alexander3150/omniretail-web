@@ -40,4 +40,3 @@ function toListItem(
     productCount: productCounts.get(category.id) ?? 0,
   };
 }
-

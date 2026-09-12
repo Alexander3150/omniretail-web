@@ -132,7 +132,8 @@ export class MockReceiptRepository extends BaseMockRepository implements Receipt
           (item) => item.id === line.productId && item.tenantId === receipt.tenantId,
         );
         if (!product) throw new Error(`Product not found for ReceiptLine: ${line.id}`);
-        if (product.productType === "kit") throw new Error(`Virtual kits cannot be received: ${line.id}`);
+        if (product.productType === "kit")
+          throw new Error(`Virtual kits cannot be received: ${line.id}`);
         if (!product.tracking.stock) return;
         const balance = findOrCreateBalance(
           db.inventoryBalances,

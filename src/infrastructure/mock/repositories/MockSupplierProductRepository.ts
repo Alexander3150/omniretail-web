@@ -18,9 +18,7 @@ export class MockSupplierProductRepository
   async getByProductForTenant(tenantId: string, productId: string) {
     return this.read((db) =>
       db.supplierProducts
-        .filter(
-          (item) => item.productId === productId && item.tenantId === tenantId && item.active,
-        )
+        .filter((item) => item.productId === productId && item.tenantId === tenantId && item.active)
         .sort((a, b) => Number(b.preferred) - Number(a.preferred)),
     );
   }

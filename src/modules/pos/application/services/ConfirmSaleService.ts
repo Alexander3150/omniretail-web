@@ -249,14 +249,15 @@ export class ConfirmSaleService {
         if (product.sku !== ticketItem.sku || product.name !== ticketItem.name) {
           throw new Error(`Los datos de ${ticketItem.name} cambiaron; actualiza el ticket.`);
         }
-        if (product.productType !== ProductType.kit && product.tracking.stock !== ticketItem.tracksStock) {
+        if (
+          product.productType !== ProductType.kit &&
+          product.tracking.stock !== ticketItem.tracksStock
+        ) {
           throw new Error(
             `El control de inventario de ${product.name} cambió; actualiza el ticket.`,
           );
         }
-        if (
-          product.tracking.expiration && !product.tracking.lot
-        ) {
+        if (product.tracking.expiration && !product.tracking.lot) {
           throw new Error(`${product.name} requiere trazabilidad no soportada en Terminal.`);
         }
 

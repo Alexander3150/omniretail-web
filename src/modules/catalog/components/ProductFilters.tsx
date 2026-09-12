@@ -26,11 +26,7 @@ interface ProductFiltersProps {
   onChange: (filters: Partial<ProductFiltersState>) => void;
 }
 
-export function ProductFilters({
-  filters,
-  categories,
-  onChange,
-}: ProductFiltersProps) {
+export function ProductFilters({ filters, categories, onChange }: ProductFiltersProps) {
   function toggleStatus(status: ProductStatus) {
     onChange({ status: filters.status === status ? "all" : status });
   }
