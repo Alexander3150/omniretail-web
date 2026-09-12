@@ -6,6 +6,7 @@ import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseSt
 import { MockBranchRepository } from "@/infrastructure/mock/repositories/MockBranchRepository";
 import { MockBusinessConfigRepository } from "@/infrastructure/mock/repositories/MockBusinessConfigRepository";
 import { MockCustomerRepository } from "@/infrastructure/mock/repositories/MockCustomerRepository";
+import { MockAuthRepository } from "@/infrastructure/mock/repositories/MockAuthRepository";
 import { MockOrderPaymentConfirmationRepository } from "@/infrastructure/mock/repositories/MockOrderPaymentConfirmationRepository";
 import { MockOrderRepository } from "@/infrastructure/mock/repositories/MockOrderRepository";
 import { MockProductRepository } from "@/infrastructure/mock/repositories/MockProductRepository";
@@ -15,18 +16,45 @@ import { MockUserRepository } from "@/infrastructure/mock/repositories/MockUserR
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import {
+  canUserEnterPrivateRoute,
+  resolvePostLoginDestination,
+} from "@/modules/auth/application/services/postLoginNavigation";
+import {
+  resolveCurrentSessionSnapshot,
+  type CurrentSessionSnapshot,
+} from "@/modules/auth/application/services/resolveCurrentSessionSnapshot";
+import {
   CustomerIdentityError,
   resolveOptionalCustomerAuthorizationContext,
 } from "@/modules/customer/application/services/CustomerAuthorizationContext";
+import { getCurrentCustomerProfile } from "@/modules/customer/application/services/getCurrentCustomerProfile";
 import { getCurrentCustomerOrders } from "@/modules/customer/application/services/orderService";
 import type { StorefrontCheckoutFormDto } from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
 import { CreateStorefrontCheckoutService } from "@/modules/storefront/application/services/CreateStorefrontCheckoutService";
+import { getStorefrontAccountNavigation } from "@/modules/storefront/application/services/storefrontAccountNavigation";
 
 const tenantId = "tenant-demo";
 const customerAId = "customer-ana";
 const customerAUserId = "user-customer";
 const customerBId = "customer-bea";
 const customerBUserId = "user-customer-bea";
+
+class MemoryStorageAdapter extends LocalStorageAdapter {
+  private readonly values = new Map<string, string>();
+
+  override get<T>(key: string): T | null {
+    const rawValue = this.values.get(key);
+    return rawValue === undefined ? null : (JSON.parse(rawValue) as T);
+  }
+
+  override set<T>(key: string, value: T): void {
+    this.values.set(key, JSON.stringify(value));
+  }
+
+  override remove(key: string): void {
+    this.values.delete(key);
+  }
+}
 
 const checkoutForm: StorefrontCheckoutFormDto = {
   fullName: "Cliente Checkout",
@@ -148,6 +176,155 @@ function createHarness() {
   };
 }
 
+function createSessionReactivityHarness() {
+  const storage = new MemoryStorageAdapter();
+  const store = new MockDatabaseStore(storage);
+  const eventBus = new DataEventBus();
+  const auth = new MockAuthRepository(store, eventBus, storage);
+  const users = new MockUserRepository(store, eventBus);
+  const roles = new MockRoleRepository(store, eventBus);
+  const customers = new MockCustomerRepository(store, eventBus);
+  const repositories = { auth, users, roles, customers } as unknown as RepositoryRegistry;
+
+  let snapshot: CurrentSessionSnapshot = { user: null, role: null };
+  let reloadVersion = 0;
+  let pendingReload: Promise<void> = Promise.resolve();
+  let pointerChecks: Promise<void>[] = [];
+
+  const reload = () => {
+    const version = ++reloadVersion;
+    pendingReload = resolveCurrentSessionSnapshot(repositories).then((resolved) => {
+      if (version === reloadVersion) snapshot = resolved;
+    });
+    return pendingReload;
+  };
+
+  eventBus.subscribe("auth.changed", (payload) => {
+    if (payload.action === "created") {
+      pointerChecks.push(
+        auth.getCurrentSessionId().then((currentSessionId) => {
+          assert.equal(
+            currentSessionId,
+            payload.entityId,
+            "auth.changed debe publicarse despues de persistir la nueva sesion",
+          );
+        }),
+      );
+    }
+    void reload();
+  });
+  eventBus.subscribe("user.changed", () => {
+    void reload();
+  });
+
+  return {
+    auth,
+    repositories,
+    users,
+    reload,
+    getSnapshot: () => snapshot,
+    async settle() {
+      const checks = pointerChecks;
+      pointerChecks = [];
+      await Promise.all([pendingReload, ...checks]);
+    },
+  };
+}
+
+async function logoutCurrent(harness: ReturnType<typeof createSessionReactivityHarness>) {
+  const sessionId = await harness.auth.getCurrentSessionId();
+  assert.ok(sessionId);
+  await harness.auth.logout(sessionId);
+  await harness.settle();
+}
+
+async function loginCustomer(harness: ReturnType<typeof createSessionReactivityHarness>) {
+  await harness.auth.login({
+    tenantId,
+    email: "ana@example.com",
+    passwordMock: "ClienteDemo1",
+  });
+  await harness.settle();
+}
+
+async function loginAdmin(harness: ReturnType<typeof createSessionReactivityHarness>) {
+  await harness.auth.login({
+    tenantId,
+    email: "admin@ferrepharma.demo",
+    passwordMock: "AdminDemo123",
+  });
+  await harness.settle();
+}
+
+async function verifySessionReactivityAndProfile() {
+  const harness = createSessionReactivityHarness();
+  await harness.reload();
+  assert.equal(harness.getSnapshot().user, null);
+
+  // Guest -> Customer: el evento debe reconstruir inmediatamente la
+  // identidad que consume StorefrontHeader y la ruta de perfil.
+  await loginCustomer(harness);
+  let snapshot = harness.getSnapshot();
+  assert.equal(snapshot.user?.id, customerAUserId);
+  assert.equal(snapshot.user?.type, UserType.customer);
+  assert.equal(snapshot.role?.id, "role-customer");
+  assert.equal(snapshot.role?.permissions.includes("customer.account.read"), true);
+  assert.deepEqual(getStorefrontAccountNavigation(snapshot.user, false), {
+    href: "/cuenta/perfil",
+    label: "Mi Cuenta",
+  });
+  assert.equal(canUserEnterPrivateRoute(snapshot.user, "/cuenta/perfil"), true);
+  assert.equal((await getCurrentCustomerProfile(harness.repositories)).id, customerAId);
+
+  // Customer -> logout: no puede quedar ninguna identidad derivada.
+  await logoutCurrent(harness);
+  assert.equal(harness.getSnapshot().user, null);
+  assert.deepEqual(getStorefrontAccountNavigation(harness.getSnapshot().user, false), {
+    href: "/iniciar-sesion",
+    label: "Ingresar",
+  });
+
+  // Admin -> logout -> Customer: no conserva User ni Role del Admin.
+  await loginAdmin(harness);
+  assert.equal(harness.getSnapshot().user?.id, "user-admin");
+  await logoutCurrent(harness);
+  assert.equal(harness.getSnapshot().user, null);
+  await loginCustomer(harness);
+  snapshot = harness.getSnapshot();
+  assert.equal(snapshot.user?.id, customerAUserId);
+  assert.equal(snapshot.role?.id, "role-customer");
+  assert.equal(canUserEnterPrivateRoute(snapshot.user, "/inicio"), false);
+  assert.equal((await getCurrentCustomerProfile(harness.repositories)).id, customerAId);
+
+  // Customer -> logout -> Admin: no conserva contexto Customer y el
+  // destino operacional existente permanece intacto.
+  await logoutCurrent(harness);
+  await loginAdmin(harness);
+  snapshot = harness.getSnapshot();
+  assert.equal(snapshot.user?.id, "user-admin");
+  assert.equal(snapshot.user?.type, UserType.employee);
+  assert.equal(snapshot.role?.id, "role-admin");
+  assert.equal(resolvePostLoginDestination(snapshot.user), "/inicio");
+  assert.equal(await resolveOptionalCustomerAuthorizationContext(harness.repositories), null);
+
+  // Refresh/remount: una reconstruccion nueva desde el puntero ya
+  // persistido debe recuperar la misma identidad Customer.
+  await logoutCurrent(harness);
+  await loginCustomer(harness);
+  const rehydrated = await resolveCurrentSessionSnapshot(harness.repositories);
+  assert.equal(rehydrated.user?.id, customerAUserId);
+  assert.equal(rehydrated.role?.id, "role-customer");
+
+  // Un cambio de estado del User invalida inmediatamente el snapshot.
+  await harness.users.updateStatus(customerAUserId, UserStatus.inactive);
+  await harness.settle();
+  assert.equal(harness.getSnapshot().user, null);
+  await assert.rejects(
+    getCurrentCustomerProfile(harness.repositories),
+    CustomerIdentityError,
+  );
+}
+
 function cart(quantity = 1) {
   return [
     {
@@ -253,7 +430,56 @@ async function verifyInactiveCustomerDenied() {
   assert.equal(inactiveCustomerHarness.store.getSnapshot().orders.length, 0);
 }
 
+function verifyPostLoginNavigation() {
+  const harness = createHarness();
+  const snapshot = harness.store.getSnapshot();
+  const customer = snapshot.users.find((user) => user.id === customerAUserId);
+  const employee = snapshot.users.find((user) => user.id === "user-admin");
+  assert.ok(customer);
+  assert.ok(employee);
+
+  assert.deepEqual(getStorefrontAccountNavigation(null, false), {
+    href: "/iniciar-sesion",
+    label: "Ingresar",
+  });
+  assert.deepEqual(getStorefrontAccountNavigation(customer, false), {
+    href: "/cuenta/perfil",
+    label: "Mi Cuenta",
+  });
+  assert.deepEqual(getStorefrontAccountNavigation(employee, false), {
+    href: "/inicio",
+    label: "Ir a inicio",
+  });
+
+  assert.equal(resolvePostLoginDestination(customer), "/");
+  assert.equal(resolvePostLoginDestination(employee), "/inicio");
+  assert.equal(resolvePostLoginDestination(customer, "/cuenta"), "/cuenta");
+  assert.equal(resolvePostLoginDestination(customer, "/cuenta/pedidos"), "/cuenta/pedidos");
+  assert.equal(resolvePostLoginDestination(customer, "/catalogo?oferta=1"), "/catalogo?oferta=1");
+
+  [
+    "/inicio",
+    "/administracion/dashboard",
+    "/inventario/alertas",
+    "/pos/terminal",
+    "//evil.example",
+    "javascript:alert(1)",
+  ].forEach((unsafeReturnUrl) => {
+    assert.equal(resolvePostLoginDestination(customer, unsafeReturnUrl), "/");
+  });
+
+  assert.equal(canUserEnterPrivateRoute(customer, "/cuenta"), true);
+  assert.equal(canUserEnterPrivateRoute(customer, "/cuenta/perfil"), true);
+  assert.equal(canUserEnterPrivateRoute(customer, "/inicio"), false);
+  assert.equal(canUserEnterPrivateRoute(customer, "/administracion/dashboard"), false);
+  assert.equal(canUserEnterPrivateRoute(customer, "/inventario/alertas"), false);
+  assert.equal(canUserEnterPrivateRoute(customer, "/pos/terminal"), false);
+  assert.equal(canUserEnterPrivateRoute(employee, "/inicio"), true);
+}
+
 async function main() {
+  verifyPostLoginNavigation();
+  await verifySessionReactivityAndProfile();
   await verifyGuestCheckout();
   await verifyAuthenticatedCheckoutAndIsolation();
   await verifyEmployeeAndCrossTenantIsolation();

@@ -283,8 +283,12 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       throw new Error(GENERIC_AUTH_ERROR_MESSAGE);
     }
 
-    this.emit("auth.changed", { entityId: outcome.session.id, action: "created" });
+    // El puntero persistido es la fuente canonica que consumen todos los
+    // observadores de auth.changed. Debe quedar actualizado ANTES del
+    // evento; de lo contrario CurrentSessionProvider reconstruye la
+    // identidad anterior y no recibe otra senal para corregirse.
     this.sessionStorage.set(MOCK_SESSION_STORAGE_KEY, outcome.session.id);
+    this.emit("auth.changed", { entityId: outcome.session.id, action: "created" });
     return outcome.session;
   }
   async logout(sessionId: string) {

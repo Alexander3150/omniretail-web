@@ -2,10 +2,10 @@
 
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import { UserType } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 import type { LoginFormDto } from "@/modules/auth/application/dto/LoginFormDto";
+import { resolvePostLoginDestination } from "@/modules/auth/application/services/postLoginNavigation";
 import {
   hasLoginValidationErrors,
   validateLoginForm,
@@ -71,9 +71,11 @@ export function useLogin() {
         setFormError("No se pudo iniciar sesion.");
         return;
       }
-      router.replace(authenticatedUser.type === UserType.customer ? "/cuenta" : "/inicio");
+      router.replace(resolvePostLoginDestination(authenticatedUser));
     } catch (caughtError) {
-      setFormError(caughtError instanceof Error ? caughtError.message : "No se pudo iniciar sesion.");
+      setFormError(
+        caughtError instanceof Error ? caughtError.message : "No se pudo iniciar sesion.",
+      );
     } finally {
       setIsSubmitting(false);
     }
