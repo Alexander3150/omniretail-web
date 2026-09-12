@@ -195,7 +195,9 @@ movimientos tampoco está disponible porque el contrato actual no expone lectura
 
 La feature asume:
 
-- `useCurrentSession()` para resolver `tenantId`, permisos y estado de sesión.
+- `useCurrentSession()` para resolver `tenantId`, actor, permisos y estado de sesión. El service
+  recarga el `User` y su `Role` para aplicar el `branchScope` real mediante
+  `canUserAccessBranch()` antes de devolver resultados.
 - `RepositoryRegistry.cashShifts` como fuente principal, más `branches` y `users` únicamente
   para resolver nombres dentro del mismo tenant.
 - `formatCurrency` y `formatDate` de `shared/utils` para presentar montos y fechas.
@@ -204,6 +206,8 @@ Decisiones y coordinación:
 
 - Caja es 100% solo lectura por decisión de producto. Un eventual ajuste necesita un método nuevo
   en `CashShiftRepository`, acordado con Riquelme como dueño del dominio de caja.
+- `GetCashShiftsService` consulta por tenant y restringe cada turno al alcance `assigned`,
+  `selected` o `all` del Role del actor. El filtrado visual nunca es la frontera de autorización.
 - El contrato actual no permite consultar el desglose de movimientos.
 - `admin.cash.read` es un permiso nuevo. Se esperan colisiones en `permissions.ts`,
   `demoSeed.ts`, `navigation.ts`, `serviceHelpers.ts`, `README.md` y `SCOPE.md` con las ramas

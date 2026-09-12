@@ -452,10 +452,10 @@ Declarados hoy en `permissions.ts` de este módulo (9):
 
 `admin.users.read` · `admin.users.manage` · `admin.roles.read` · `admin.roles.manage` ·
 `admin.branches.read` · `admin.branches.manage` · `admin.business_config.manage` ·
-`admin.suppliers.manage` · `admin.bank_accounts.manage`
+`admin.suppliers.manage` · `admin.bank_accounts.manage` · `admin.cash.read`
 
 **No existen** y hay que declararlos al construir sus pantallas:
-`admin.customers.read/manage` · `admin.audit.read` · `admin.cash.read` ·
+`admin.customers.read/manage` · `admin.audit.read` ·
 `admin.reports.read/export` · `admin.ecommerce_config.manage` · `users.credentials.reset`
 
 La granularidad del repo es `read` / `manage`, no `create/update/archive`. Mantenerla.
