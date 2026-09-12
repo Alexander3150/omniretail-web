@@ -1,4 +1,7 @@
-import type { DataEventName, DataEventPayload } from "@/core/types/events.types";
+import type {
+  DataEventArguments,
+  DataEventName,
+} from "@/core/types/events.types";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import type { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
@@ -17,8 +20,11 @@ export abstract class BaseMockRepository {
     return `${prefix}-${crypto.randomUUID()}`;
   }
 
-  protected emit(event: DataEventName, payload: DataEventPayload): void {
-    this.eventBus.emit(event, payload);
+  protected emit<EventName extends DataEventName>(
+    event: EventName,
+    ...args: DataEventArguments<EventName>
+  ): void {
+    this.eventBus.emit(event, ...args);
   }
 
   protected missing(entity: string, id: string): Error {

@@ -13,7 +13,7 @@ import {
   UserStatus,
   UserType,
 } from "@/core/enums";
-import type { DataEventPayload } from "@/core/types/events.types";
+import type { PickingChangedEventPayload } from "@/core/types/events.types";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import { MockBranchRepository } from "@/infrastructure/mock/repositories/MockBranchRepository";
@@ -37,8 +37,12 @@ const actorB = "user-picker-b";
 async function main() {
   const store = new MockDatabaseStore(new LocalStorageAdapter());
   const eventBus = new DataEventBus();
-  const pickingEvents: DataEventPayload[] = [];
+  const pickingEvents: PickingChangedEventPayload[] = [];
   eventBus.subscribe("picking.changed", (payload) => pickingEvents.push(payload));
+  if (false) {
+    // @ts-expect-error picking.changed requires tenant, branch, PickingOrder and Order IDs.
+    eventBus.emit("picking.changed", {});
+  }
   prepareDatabase(store);
 
   let currentActorId = actorA;
@@ -92,6 +96,7 @@ async function main() {
   assert.equal(queue.length, 1);
   assert.equal(queue[0]?.pickingOrderId, pickingA.id);
   assert.equal(queue[0]?.orderReference, orderA.orderNumber);
+  assert.equal(queue[0]?.priority, PickingPriority.high);
   assert.equal(queue[0]?.progress.requiredQuantity, 8);
   assert.deepEqual(await picking.getQueue({ tenantId, branchId }), [
     expectPickingOrder(store, pickingA.id),

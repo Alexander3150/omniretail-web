@@ -2,6 +2,7 @@ import type {
   PickingIncidentStatus,
   PickingIncidentType,
   PickingItemStatus,
+  PickingPriority,
   PickingStatus,
 } from "@/core/enums";
 import type { PickingInventoryAvailability } from "@/core/repositories";
@@ -19,6 +20,7 @@ export interface PickingQueueItemDto {
   orderReference: string;
   branchId: string;
   status: PickingStatus;
+  priority: PickingPriority;
   assignedUserId: string | null;
   progress: PickingProgressDto;
   startedAt: string | null;

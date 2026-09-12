@@ -63,6 +63,7 @@ export class PickingApplicationService {
           orderReference: order.orderNumber,
           branchId: pickingOrder.branchId,
           status: pickingOrder.status,
+          priority: pickingOrder.priority,
           assignedUserId: pickingOrder.assignedUserId ?? null,
           progress: getProgress(lines),
           startedAt: pickingOrder.startedAt ?? null,

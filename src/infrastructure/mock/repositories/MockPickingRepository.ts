@@ -15,7 +15,11 @@ import {
   UserType,
 } from "@/core/enums";
 import type { PickingRepository, UpdatePickingItemInput } from "@/core/repositories";
-import type { DataEventName, DataEventPayload } from "@/core/types/events.types";
+import type {
+  DataEventArguments,
+  DataEventName,
+  DataEventPayload,
+} from "@/core/types/events.types";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import type { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
@@ -843,9 +847,12 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
     }
   }
 
-  private emitSafely(event: DataEventName, payload: DataEventPayload): void {
+  private emitSafely<EventName extends DataEventName>(
+    event: EventName,
+    ...args: DataEventArguments<EventName>
+  ): void {
     try {
-      this.emit(event, payload);
+      this.emit(event, ...args);
     } catch {
       // The transaction is already committed; listener failures cannot roll it back.
     }
