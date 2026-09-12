@@ -244,7 +244,10 @@ export interface AuthRepository {
    *
    * Válida newPasswordMock contra PASSWORD_POLICY (mismo patrón que
    * resetPassword/activateEmployeeAccount: la política se aplica en la capa
-   * funcional, no solo en el formulario).
+   * funcional, no solo en el formulario), y además rechaza que
+   * newPasswordMock sea igual a currentPasswordMock -- regla de UX (no del
+   * documento de arquitectura) confirmada por QA manual, aplicada aquí y
+   * no solo en el formulario por el mismo motivo que PASSWORD_POLICY.
    *
    * Revoca las SESIONES RESTANTES (todas menos la que se usó para hacer este
    * cambio) -- distinto de resetPassword(), que revoca TODAS sin excepción
