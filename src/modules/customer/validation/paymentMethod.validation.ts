@@ -9,7 +9,9 @@ export type PaymentMethodValidationErrors = Partial<
  * assertValidPaymentMethod, replicadas aca para dar feedback antes de la
  * llamada al repo (mismo patrón usado en PR9/PR10 con
  * validatePasswordAgainstPolicy): last4 exactamente 4 dígitos,
- * expirationMonth 1-12, expirationYear >= año actual.
+ * expirationMonth 1-12, y la fecha de expiracion (mes + año, no solo el
+ * año) no puede ser anterior al mes/año actual -- una tarjeta que vence
+ * en un mes ya pasado del año en curso tambien es invalida.
  */
 export function validatePaymentMethodForm(dto: PaymentMethodFormDto): PaymentMethodValidationErrors {
   const errors: PaymentMethodValidationErrors = {};
@@ -28,8 +30,18 @@ export function validatePaymentMethodForm(dto: PaymentMethodFormDto): PaymentMet
   }
 
   const year = Number(dto.expirationYear);
-  if (!Number.isInteger(year) || year < new Date().getFullYear()) {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  const isPast =
+    Number.isInteger(month) &&
+    Number.isInteger(year) &&
+    (year < currentYear || (year === currentYear && month < currentMonth));
+
+  if (!Number.isInteger(year)) {
     errors.expirationYear = "El año debe ser el actual o uno posterior.";
+  } else if (isPast) {
+    errors.expirationYear = "La tarjeta está vencida.";
   }
 
   return errors;

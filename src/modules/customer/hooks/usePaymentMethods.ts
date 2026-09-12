@@ -2,27 +2,35 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { CustomerPaymentMethod } from "@/core/entities";
-import { PaymentMethod } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import type { PaymentMethodFormDto } from "@/modules/customer/application/dto/PaymentMethodFormDto";
+import { useCustomerIdentity } from "@/modules/customer/hooks/useCustomerIdentity";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 
-export function usePaymentMethods(customerId: string | undefined, tenantId: string | undefined) {
+/**
+ * Sin parametros: la identidad (tenantId/customerId) se resuelve
+ * internamente via useCustomerIdentity -- ninguna pantalla puede pasarle
+ * a este hook el id de otro cliente.
+ */
+export function usePaymentMethods() {
   const repositories = useRepositories();
+  const { tenantId, customerId, loading: identityLoading, error: identityError } =
+    useCustomerIdentity();
   const [paymentMethods, setPaymentMethods] = useState<CustomerPaymentMethod[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    if (!customerId) {
+    if (identityLoading) return;
+    if (!tenantId || !customerId) {
       setPaymentMethods([]);
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
-      const items = await repositories.customerPaymentMethods.getByCustomer(customerId);
+      const items = await repositories.customerPaymentMethods.getByCustomer(tenantId, customerId);
       setPaymentMethods(items);
       setError(null);
     } catch (caughtError) {
@@ -35,7 +43,7 @@ export function usePaymentMethods(customerId: string | undefined, tenantId: stri
     } finally {
       setLoading(false);
     }
-  }, [customerId, repositories]);
+  }, [customerId, identityLoading, repositories, tenantId]);
 
   useEffect(() => {
     let active = true;
@@ -50,82 +58,101 @@ export function usePaymentMethods(customerId: string | undefined, tenantId: stri
 
   useDataEvent("customer-payment-method.changed", reload);
 
+  const requireIdentity = useCallback(() => {
+    if (!tenantId || !customerId) {
+      throw new Error(identityError ?? "No se encontró la cuenta de cliente.");
+    }
+    return { tenantId, customerId };
+  }, [customerId, identityError, tenantId]);
+
   const create = useCallback(
     async (dto: PaymentMethodFormDto) => {
-      if (!customerId || !tenantId) throw new Error("No se encontró la cuenta de cliente.");
+      const identity = requireIdentity();
       setBusy(true);
       try {
+        // brand/last4/expiracion/titular son los unicos campos que vienen
+        // del formulario -- tenantId/customerId salen de la identidad
+        // resuelta en sesion, y type/providerPaymentMethodId/isDefault los
+        // fija el repositorio (ver CreateCustomerPaymentMethodInput).
         return await repositories.customerPaymentMethods.create({
-          tenantId,
-          customerId,
-          type: PaymentMethod.card,
-          // Mock: no hay procesador de pagos real detras de esto. El
-          // identificador se genera aca (nunca en el repositorio, que no
-          // conoce ningun proveedor) para simular el token que en un
-          // backend real vendria de Stripe/etc. -- nunca se guarda numero
-          // completo ni CVV (el repo ya lo rechaza explicitamente).
-          providerPaymentMethodId: `pm_mock_${crypto.randomUUID()}`,
+          ...identity,
           brand: dto.brand.trim(),
           last4: dto.last4.trim(),
           expirationMonth: Number(dto.expirationMonth),
           expirationYear: Number(dto.expirationYear),
           cardholderName: dto.cardholderName.trim() || undefined,
-          // isDefault se maneja como accion separada (setDefault()), nunca
-          // como parte de este formulario -- ver PaymentMethodFormDto.
-          isDefault: false,
         });
       } finally {
         setBusy(false);
       }
     },
-    [customerId, repositories, tenantId],
+    [repositories, requireIdentity],
   );
 
   const update = useCallback(
     async (id: string, dto: PaymentMethodFormDto) => {
+      const identity = requireIdentity();
       setBusy(true);
       try {
-        // UpdateCustomerPaymentMethodInput solo acepta cardholderName/
-        // expirationMonth/expirationYear/isDefault/status -- brand y
-        // last4 no son editables (la "tarjeta" en si no cambia; para eso
-        // se agrega una nueva), asi que ni se envian aunque el formulario
-        // los muestre de nuevo.
-        return await repositories.customerPaymentMethods.update(id, {
-          cardholderName: dto.cardholderName.trim() || undefined,
-          expirationMonth: Number(dto.expirationMonth),
-          expirationYear: Number(dto.expirationYear),
-        });
+        // brand y last4 no son editables (la "tarjeta" en si no cambia;
+        // para eso se agrega una nueva) -- ni se envian aunque el
+        // formulario los muestre de nuevo.
+        return await repositories.customerPaymentMethods.update(
+          identity.tenantId,
+          identity.customerId,
+          id,
+          {
+            cardholderName: dto.cardholderName.trim() || undefined,
+            expirationMonth: Number(dto.expirationMonth),
+            expirationYear: Number(dto.expirationYear),
+          },
+        );
       } finally {
         setBusy(false);
       }
     },
-    [repositories],
+    [repositories, requireIdentity],
   );
 
   const remove = useCallback(
     async (id: string) => {
+      const identity = requireIdentity();
       setBusy(true);
       try {
-        await repositories.customerPaymentMethods.remove(id);
+        await repositories.customerPaymentMethods.remove(identity.tenantId, identity.customerId, id);
       } finally {
         setBusy(false);
       }
     },
-    [repositories],
+    [repositories, requireIdentity],
   );
 
   const setDefault = useCallback(
     async (id: string) => {
-      if (!customerId) throw new Error("No se encontró la cuenta de cliente.");
+      const identity = requireIdentity();
       setBusy(true);
       try {
-        return await repositories.customerPaymentMethods.setDefault(customerId, id);
+        return await repositories.customerPaymentMethods.setDefault(
+          identity.tenantId,
+          identity.customerId,
+          id,
+        );
       } finally {
         setBusy(false);
       }
     },
-    [customerId, repositories],
+    [repositories, requireIdentity],
   );
 
-  return { paymentMethods, loading, busy, error, reload, create, update, remove, setDefault };
+  return {
+    paymentMethods,
+    loading: loading || identityLoading,
+    busy,
+    error: error ?? identityError,
+    reload,
+    create,
+    update,
+    remove,
+    setDefault,
+  };
 }

@@ -1301,6 +1301,7 @@ export const demoSeedDatabase: MockDatabase = {
   addresses: [
     {
       id: "address-ana-1",
+      tenantId: "tenant-demo",
       customerId: "customer-ana",
       label: "Casa",
       recipientName: "Ana Cliente",

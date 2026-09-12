@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import type { Address } from "@/core/entities";
 import { useAddresses } from "@/modules/customer/hooks/useAddresses";
-import { useCustomerProfile } from "@/modules/customer/hooks/useCustomerProfile";
 import type { AddressFormDto } from "@/modules/customer/application/dto/AddressFormDto";
 import {
   hasAddressValidationErrors,
@@ -47,10 +46,7 @@ function toFormDto(address: Address): AddressFormDto {
 type EditorState = { mode: "create" } | { mode: "edit"; address: Address } | null;
 
 export function DireccionesPage() {
-  const { customer } = useCustomerProfile();
-  const { addresses, loading, busy, error, create, update, remove, setDefault } = useAddresses(
-    customer?.id,
-  );
+  const { addresses, loading, busy, error, create, update, remove, setDefault } = useAddresses();
   const { showToast } = useToast();
   const [editor, setEditor] = useState<EditorState>(null);
   const [form, setForm] = useState<AddressFormDto>(EMPTY_FORM);

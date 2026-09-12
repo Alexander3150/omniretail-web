@@ -1,7 +1,6 @@
 "use client";
 
 import { useCustomerOrders } from "@/modules/customer/hooks/useCustomerOrders";
-import { useCustomerProfile } from "@/modules/customer/hooks/useCustomerProfile";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 
@@ -11,8 +10,7 @@ import { StatusBadge } from "@/shared/components/StatusBadge";
  * este.
  */
 export function PedidosPage() {
-  const { customer } = useCustomerProfile();
-  const { orders, loading, error } = useCustomerOrders(customer?.id);
+  const { orders, loading, error } = useCustomerOrders();
 
   return (
     <div className="min-w-0 space-y-5">
@@ -57,7 +55,7 @@ export function PedidosPage() {
                     month: "long",
                     day: "numeric",
                   })}{" "}
-                  · {order.items.length} {order.items.length === 1 ? "producto" : "productos"}
+                  · {order.itemCount} {order.itemCount === 1 ? "producto" : "productos"}
                 </p>
               </div>
               <div className="flex items-center gap-3">

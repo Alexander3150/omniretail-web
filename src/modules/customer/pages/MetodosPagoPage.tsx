@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from "react";
 import type { CustomerPaymentMethod } from "@/core/entities";
-import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
-import { useCustomerProfile } from "@/modules/customer/hooks/useCustomerProfile";
 import { usePaymentMethods } from "@/modules/customer/hooks/usePaymentMethods";
 import type { PaymentMethodFormDto } from "@/modules/customer/application/dto/PaymentMethodFormDto";
 import {
@@ -40,10 +38,8 @@ function toFormDto(method: CustomerPaymentMethod): PaymentMethodFormDto {
 type EditorState = { mode: "create" } | { mode: "edit"; method: CustomerPaymentMethod } | null;
 
 export function MetodosPagoPage() {
-  const { user } = useCurrentSession();
-  const { customer } = useCustomerProfile();
   const { paymentMethods, loading, busy, error, create, update, remove, setDefault } =
-    usePaymentMethods(customer?.id, user?.tenantId);
+    usePaymentMethods();
   const { showToast } = useToast();
   const [editor, setEditor] = useState<EditorState>(null);
   const [form, setForm] = useState<PaymentMethodFormDto>(EMPTY_FORM);

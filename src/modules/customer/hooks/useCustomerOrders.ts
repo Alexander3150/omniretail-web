@@ -1,8 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { Order } from "@/core/entities";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
+import {
+  toCustomerOrderSummaryDto,
+  type CustomerOrderSummaryDto,
+} from "@/modules/customer/application/dto/CustomerOrderSummaryDto";
+import { useCustomerIdentity } from "@/modules/customer/hooks/useCustomerIdentity";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 
 /**
@@ -10,23 +14,35 @@ import { useDataEvent } from "@/shared/hooks/useDataEvent";
  * cualquier accion sobre un pedido (cancelar, ver detalle completo,
  * reordenar) es responsabilidad del modulo storefront (Maria/Riquelme),
  * no de este.
+ *
+ * Sin parametros: la identidad (tenantId/customerId) se resuelve
+ * internamente via useCustomerIdentity, nunca desde la pantalla --
+ * repositories.orders.getByCustomer exige ambos, asi que conocer el
+ * customerId de otro cliente no alcanza para ver sus pedidos.
  */
-export function useCustomerOrders(customerId: string | undefined) {
+export function useCustomerOrders() {
   const repositories = useRepositories();
-  const [orders, setOrders] = useState<Order[]>([]);
+  const { tenantId, customerId, loading: identityLoading, error: identityError } =
+    useCustomerIdentity();
+  const [orders, setOrders] = useState<CustomerOrderSummaryDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    if (!customerId) {
+    if (identityLoading) return;
+    if (!tenantId || !customerId) {
       setOrders([]);
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
-      const items = await repositories.orders.getByCustomer(customerId);
-      setOrders([...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+      const items = await repositories.orders.getByCustomer(tenantId, customerId);
+      setOrders(
+        [...items]
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+          .map(toCustomerOrderSummaryDto),
+      );
       setError(null);
     } catch (caughtError) {
       setOrders([]);
@@ -34,7 +50,7 @@ export function useCustomerOrders(customerId: string | undefined) {
     } finally {
       setLoading(false);
     }
-  }, [customerId, repositories]);
+  }, [customerId, identityLoading, repositories, tenantId]);
 
   useEffect(() => {
     let active = true;
@@ -49,5 +65,5 @@ export function useCustomerOrders(customerId: string | undefined) {
 
   useDataEvent("order.changed", reload);
 
-  return { orders, loading, error, reload };
+  return { orders, loading: loading || identityLoading, error: error ?? identityError, reload };
 }
