@@ -5,6 +5,125 @@ import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCart
 
 export function CartPage() {
   const { items, subtotal, updateQuantity, removeProduct, clearCart } = useStorefrontCart();
-  if (items.length === 0) return <main className="mx-auto max-w-5xl px-5 py-14"><section className="rounded-3xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-10 text-center"><p className="text-sm font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">Tu selección</p><h1 className="mt-2 text-3xl font-black text-[var(--color-text)]">Tu carrito está vacío</h1><p className="mt-3 text-[var(--color-text-muted)]">Explora el catálogo y agrega lo que necesitas.</p><Link className="mt-6 inline-block rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)]" href="/catalogo">Ver catálogo</Link></section></main>;
-  return <main className="mx-auto max-w-5xl px-5 py-12"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-sm font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">Tu selección</p><h1 className="mt-2 text-4xl font-black text-[var(--color-text)]">Carrito</h1></div><button className="text-sm font-bold text-[var(--color-danger)] underline-offset-4 hover:underline" onClick={clearCart} type="button">Vaciar carrito</button></div><div className="mt-8 grid gap-6 lg:grid-cols-[1fr_19rem]"><div className="space-y-4">{items.map((item) => <article key={item.productId} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">Código · {item.sku}</p><h2 className="mt-2 text-xl font-black text-[var(--color-text)]">{item.name}</h2><p className="mt-2 text-lg font-bold text-[var(--color-title)]">Q{item.unitPrice.toFixed(2)} <span className="text-sm font-normal text-[var(--color-text-muted)]">por unidad</span></p></div><button className="rounded-lg px-2 py-1 text-sm font-bold text-[var(--color-danger)] hover:bg-red-50" onClick={() => removeProduct(item.productId)} type="button">Quitar</button></div><div className="mt-5 flex items-center justify-between gap-4 border-t border-[var(--color-border)] pt-4"><div className="flex items-center rounded-xl border border-[var(--color-border)] bg-slate-50"><button aria-label={`Reducir cantidad de ${item.name}`} className="px-4 py-2 font-black" onClick={() => updateQuantity(item.productId, item.quantity - 1)} type="button">−</button><span className="min-w-10 text-center font-bold">{item.quantity}</span><button aria-label={`Aumentar cantidad de ${item.name}`} className="px-4 py-2 font-black" onClick={() => updateQuantity(item.productId, item.quantity + 1)} type="button">+</button></div><p className="text-xl font-black text-[var(--color-text)]">Q{(item.unitPrice * item.quantity).toFixed(2)}</p></div></article>)}</div><aside className="h-fit rounded-2xl bg-[var(--color-topbar)] p-6 text-white shadow-xl shadow-slate-900/15"><p className="text-sm font-bold uppercase tracking-wider text-[var(--color-primary)]">Resumen</p><div className="mt-6 flex items-end justify-between"><span className="text-slate-300">Subtotal</span><span className="text-3xl font-black">Q{subtotal.toFixed(2)}</span></div><p className="mt-3 border-t border-white/10 pt-3 text-sm text-slate-300">Envío a domicilio incluido.</p><Link className="mt-6 block rounded-xl bg-[var(--color-primary)] px-4 py-3 text-center font-black text-[var(--color-topbar)] transition hover:bg-[var(--color-primary-hover)]" href="/checkout">Continuar al checkout</Link><Link className="mt-3 block text-center text-sm font-bold text-slate-300 hover:text-white" href="/catalogo">Seguir comprando</Link></aside></div></main>;
+  if (items.length === 0)
+    return (
+      <main className="mx-auto max-w-5xl px-5 py-14">
+        <section className="rounded-3xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-10 text-center">
+          <p className="text-sm font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">
+            Tu selección
+          </p>
+          <h1 className="mt-2 text-3xl font-black text-[var(--color-text)]">
+            Tu carrito está vacío
+          </h1>
+          <p className="mt-3 text-[var(--color-text-muted)]">
+            Explora el catálogo y agrega lo que necesitas.
+          </p>
+          <Link
+            className="mt-6 inline-block rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)]"
+            href="/catalogo"
+          >
+            Ver catálogo
+          </Link>
+        </section>
+      </main>
+    );
+  return (
+    <main className="mx-auto max-w-5xl px-5 py-12">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">
+            Tu selección
+          </p>
+          <h1 className="mt-2 text-4xl font-black text-[var(--color-text)]">Carrito</h1>
+        </div>
+        <button
+          className="text-sm font-bold text-[var(--color-danger)] underline-offset-4 hover:underline"
+          onClick={clearCart}
+          type="button"
+        >
+          Vaciar carrito
+        </button>
+      </div>
+      <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_19rem]">
+        <div className="space-y-4">
+          {items.map((item) => (
+            <article
+              key={item.productId}
+              className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">
+                    Código · {item.sku}
+                  </p>
+                  <h2 className="mt-2 text-xl font-black text-[var(--color-text)]">{item.name}</h2>
+                  <p className="mt-2 text-lg font-bold text-[var(--color-title)]">
+                    Q{item.unitPrice.toFixed(2)}{" "}
+                    <span className="text-sm font-normal text-[var(--color-text-muted)]">
+                      por unidad
+                    </span>
+                  </p>
+                </div>
+                <button
+                  className="rounded-lg px-2 py-1 text-sm font-bold text-[var(--color-danger)] hover:bg-red-50"
+                  onClick={() => removeProduct(item.productId)}
+                  type="button"
+                >
+                  Quitar
+                </button>
+              </div>
+              <div className="mt-5 flex items-center justify-between gap-4 border-t border-[var(--color-border)] pt-4">
+                <div className="flex items-center rounded-xl border border-[var(--color-border)] bg-slate-50">
+                  <button
+                    aria-label={`Reducir cantidad de ${item.name}`}
+                    className="px-4 py-2 font-black"
+                    onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                    type="button"
+                  >
+                    −
+                  </button>
+                  <span className="min-w-10 text-center font-bold">{item.quantity}</span>
+                  <button
+                    aria-label={`Aumentar cantidad de ${item.name}`}
+                    className="px-4 py-2 font-black"
+                    onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                    type="button"
+                  >
+                    +
+                  </button>
+                </div>
+                <p className="text-xl font-black text-[var(--color-text)]">
+                  Q{(item.unitPrice * item.quantity).toFixed(2)}
+                </p>
+              </div>
+            </article>
+          ))}
+        </div>
+        <aside className="h-fit rounded-2xl bg-[var(--color-topbar)] p-6 text-white shadow-xl shadow-slate-900/15">
+          <p className="text-sm font-bold uppercase tracking-wider text-[var(--color-primary)]">
+            Resumen
+          </p>
+          <div className="mt-6 flex items-end justify-between">
+            <span className="text-slate-300">Subtotal</span>
+            <span className="text-3xl font-black">Q{subtotal.toFixed(2)}</span>
+          </div>
+          <p className="mt-3 border-t border-white/10 pt-3 text-sm text-slate-300">
+            Envío a domicilio incluido.
+          </p>
+          <Link
+            className="mt-6 block rounded-xl bg-[var(--color-primary)] px-4 py-3 text-center font-black text-[var(--color-topbar)] transition hover:bg-[var(--color-primary-hover)]"
+            href="/checkout"
+          >
+            Continuar al checkout
+          </Link>
+          <Link
+            className="mt-3 block text-center text-sm font-bold text-slate-300 hover:text-white"
+            href="/catalogo"
+          >
+            Seguir comprando
+          </Link>
+        </aside>
+      </div>
+    </main>
+  );
 }

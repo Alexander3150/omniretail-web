@@ -9,13 +9,13 @@ export default function PublicLayout({ children }: LayoutProps<"/">) {
   return (
     <CurrentSessionProvider>
       <PublicTenantProvider>
-      <StorefrontCartProvider>
-        <StorefrontCheckoutConfirmationProvider>
-          <StorefrontHeader />
-          {children}
-          <StorefrontFooter />
-        </StorefrontCheckoutConfirmationProvider>
-      </StorefrontCartProvider>
+        <StorefrontCartProvider>
+          <StorefrontCheckoutConfirmationProvider>
+            <StorefrontHeader />
+            {children}
+            <StorefrontFooter />
+          </StorefrontCheckoutConfirmationProvider>
+        </StorefrontCartProvider>
       </PublicTenantProvider>
     </CurrentSessionProvider>
   );
