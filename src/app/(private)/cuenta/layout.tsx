@@ -10,6 +10,8 @@ const SECTIONS = [
   { value: "/cuenta/direcciones", label: "Direcciones", permission: "customer.address.manage" },
   { value: "/cuenta/metodos-pago", label: "Métodos de pago", permission: "customer.payment_method.manage" },
   { value: "/cuenta/pedidos", label: "Mis pedidos", permission: "storefront.orders.read" },
+  { value: "/cuenta/seguridad", label: "Seguridad", permission: "customer.account.read" },
+  { value: "/cuenta/soporte", label: "Soporte", permission: "customer.account.read" },
 ];
 
 export default function CuentaLayout({ children }: { children: ReactNode }) {
