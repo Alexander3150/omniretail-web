@@ -49,8 +49,9 @@ export function CashShiftsPage() {
             No tenés acceso a los turnos de caja
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            Esta vista requiere el permiso <span className="font-medium">{CASH_READ_PERMISSION}</span>
-            . Pedí acceso a un administrador.
+            Esta vista requiere el permiso{" "}
+            <span className="font-medium">{CASH_READ_PERMISSION}</span>. Pedí acceso a un
+            administrador.
           </p>
         </div>
       </div>
@@ -71,7 +72,12 @@ export function CashShiftsPage() {
     <div className="min-w-0 space-y-5">
       <PageHeader
         actions={
-          <Button disabled={loading} onClick={() => void reload()} type="button" variant="secondary">
+          <Button
+            disabled={loading}
+            onClick={() => void reload()}
+            type="button"
+            variant="secondary"
+          >
             {loading ? "Actualizando..." : "Actualizar"}
           </Button>
         }

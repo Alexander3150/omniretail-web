@@ -22,13 +22,7 @@ const valueClassNames: Record<NonNullable<KPICardProps["tone"]>, string> = {
   danger: "text-[var(--color-danger)]",
 };
 
-export function KPICard({
-  hint,
-  label,
-  loading = false,
-  tone = "neutral",
-  value,
-}: KPICardProps) {
+export function KPICard({ hint, label, loading = false, tone = "neutral", value }: KPICardProps) {
   return (
     <article
       aria-busy={loading}

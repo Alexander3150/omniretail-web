@@ -2,7 +2,10 @@ import { LocationStatus } from "@/core/enums";
 import type { StorageLocation } from "@/core/entities";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { LocationEditorDto } from "@/modules/catalog/application/dto/LocationEditorDto";
-import { CatalogServiceError, resolveTenantId } from "@/modules/catalog/application/services/serviceHelpers";
+import {
+  CatalogServiceError,
+  resolveTenantId,
+} from "@/modules/catalog/application/services/serviceHelpers";
 import { normalizeLocationCode } from "@/modules/catalog/validation/location.validation";
 
 export class SaveLocationService {
@@ -36,11 +39,15 @@ export class SaveLocationService {
   }
 
   async archive(locationId: string): Promise<StorageLocation> {
-    return this.repositories.inventory.updateLocation(locationId, { status: LocationStatus.archived });
+    return this.repositories.inventory.updateLocation(locationId, {
+      status: LocationStatus.archived,
+    });
   }
 
   async restore(locationId: string): Promise<StorageLocation> {
-    return this.repositories.inventory.updateLocation(locationId, { status: LocationStatus.active });
+    return this.repositories.inventory.updateLocation(locationId, {
+      status: LocationStatus.active,
+    });
   }
 }
 

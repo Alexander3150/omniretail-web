@@ -175,7 +175,10 @@ export function BankAccountForm({
             <p className="text-sm text-[var(--color-text-muted)]">No hay sucursales activas.</p>
           ) : (
             branchOptions.map((option) => (
-              <label className="flex items-center gap-2 text-sm text-[var(--color-text)]" key={option.id}>
+              <label
+                className="flex items-center gap-2 text-sm text-[var(--color-text)]"
+                key={option.id}
+              >
                 <input
                   checked={value.branchIds.includes(option.id)}
                   disabled={busy}

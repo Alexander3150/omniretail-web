@@ -3,10 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CashShift } from "@/core/entities";
 import { CashShiftStatus, DeliveryMethod, PaymentMethod, TransportMode } from "@/core/enums";
-import type {
-  ConfirmSaleResult,
-  SaleConfirmationPaymentMethod,
-} from "@/core/repositories";
+import type { ConfirmSaleResult, SaleConfirmationPaymentMethod } from "@/core/repositories";
 import { isBranchScopedResourceAvailable } from "@/core/scopes/branchScope";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
@@ -18,10 +15,7 @@ import type {
   CheckoutPaymentMode,
 } from "@/modules/pos/application/dto/CheckoutDto";
 import type { PosProductDto } from "@/modules/pos/application/dto/PosProductDto";
-import type {
-  SaleTicketDto,
-  SaleTicketItemDto,
-} from "@/modules/pos/application/dto/SaleTicketDto";
+import type { SaleTicketDto, SaleTicketItemDto } from "@/modules/pos/application/dto/SaleTicketDto";
 import { ConfirmSaleService } from "@/modules/pos/application/services/ConfirmSaleService";
 import { GetPosProductsService } from "@/modules/pos/application/services/GetPosProductsService";
 import {
@@ -66,22 +60,14 @@ export function usePosTerminal() {
     loading: sessionLoading,
     error: sessionError,
   } = useCurrentSession();
-  const productService = useMemo(
-    () => new GetPosProductsService(repositories),
-    [repositories],
-  );
-  const confirmationService = useMemo(
-    () => new ConfirmSaleService(repositories),
-    [repositories],
-  );
+  const productService = useMemo(() => new GetPosProductsService(repositories), [repositories]);
+  const confirmationService = useMemo(() => new ConfirmSaleService(repositories), [repositories]);
   const [products, setProducts] = useState<PosProductDto[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [ticketState, setTicketState] = useState<TicketState>({ items: [], error: null });
-  const [checkoutState, setCheckoutState] = useState<CheckoutState>(() =>
-    createCheckoutState(0),
-  );
+  const [checkoutState, setCheckoutState] = useState<CheckoutState>(() => createCheckoutState(0));
   const [bankAccounts, setBankAccounts] = useState<CheckoutBankAccountDto[]>([]);
   const [bankAccountsLoading, setBankAccountsLoading] = useState(true);
   const [bankAccountsError, setBankAccountsError] = useState<string | null>(null);
@@ -93,8 +79,7 @@ export function usePosTerminal() {
   const [cashShift, setCashShift] = useState<CashShift | null>(null);
   const [cashShiftLoading, setCashShiftLoading] = useState(true);
   const [cashShiftError, setCashShiftError] = useState<string | null>(null);
-  const [confirmationAttempt, setConfirmationAttempt] =
-    useState<ConfirmationAttempt | null>(null);
+  const [confirmationAttempt, setConfirmationAttempt] = useState<ConfirmationAttempt | null>(null);
   const [confirmationLoading, setConfirmationLoading] = useState(false);
   const [confirmationError, setConfirmationError] = useState<string | null>(null);
   const [confirmationResult, setConfirmationResult] = useState<ConfirmSaleResult | null>(null);
@@ -102,9 +87,7 @@ export function usePosTerminal() {
   const cardTerminalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cardTerminalReferenceSequenceRef = useRef(482931);
   const currentConfirmationContextKey =
-    user && currentBranch && cashShift
-      ? `${user.id}:${currentBranch.id}:${cashShift.id}`
-      : null;
+    user && currentBranch && cashShift ? `${user.id}:${currentBranch.id}:${cashShift.id}` : null;
   const confirmationId =
     confirmationAttempt?.contextKey === currentConfirmationContextKey
       ? confirmationAttempt.confirmationId
@@ -194,14 +177,7 @@ export function usePosTerminal() {
     } finally {
       setBankAccountsLoading(false);
     }
-  }, [
-    branchLoading,
-    canAccessBranch,
-    currentBranch,
-    repositories,
-    sessionLoading,
-    user,
-  ]);
+  }, [branchLoading, canAccessBranch, currentBranch, repositories, sessionLoading, user]);
 
   const reloadCashShift = useCallback(async () => {
     if (branchLoading || sessionLoading) return;
@@ -245,14 +221,7 @@ export function usePosTerminal() {
     } finally {
       setCashShiftLoading(false);
     }
-  }, [
-    branchLoading,
-    canAccessBranch,
-    currentBranch,
-    repositories,
-    sessionLoading,
-    user,
-  ]);
+  }, [branchLoading, canAccessBranch, currentBranch, repositories, sessionLoading, user]);
 
   const reloadPaymentMethods = useCallback(async () => {
     if (branchLoading || sessionLoading) return;
@@ -275,9 +244,7 @@ export function usePosTerminal() {
       const capabilities = await repositories.businessConfig.getCapabilities(
         currentBranch.tenantId,
       );
-      const allowedMethods = getAllowedPosPaymentMethods(
-        capabilities?.allowedPosPaymentMethods,
-      );
+      const allowedMethods = getAllowedPosPaymentMethods(capabilities?.allowedPosPaymentMethods);
       setAllowedPosPaymentMethods(allowedMethods);
       if (allowedMethods.length === 0) {
         setPaymentMethodsError("No hay métodos de pago habilitados para POS.");
@@ -327,10 +294,7 @@ export function usePosTerminal() {
   useDataEvent("cash-shift.changed", reloadCashShift);
   useDataEvent("business-config.changed", reloadPaymentMethods);
 
-  const filteredProducts = useMemo(
-    () => filterPosProducts(products, search),
-    [products, search],
-  );
+  const filteredProducts = useMemo(() => filterPosProducts(products, search), [products, search]);
   const availablePaymentModes = useMemo(
     () => getAvailableCheckoutPaymentModes(allowedPosPaymentMethods),
     [allowedPosPaymentMethods],
@@ -360,83 +324,95 @@ export function usePosTerminal() {
     }));
   }, [invalidateConfirmationAttempt]);
 
-  const addProduct = useCallback((product: PosProductDto) => {
-    invalidateCheckoutValidation();
-    setTicketState((current) => {
-      const existingItem = current.items.find((item) => item.productId === product.productId);
-      const requestedQuantity = (existingItem?.quantity ?? 0) + 1;
-      const validationError = validateTicketQuantity(product, requestedQuantity);
-      if (validationError) return { ...current, error: validationError };
+  const addProduct = useCallback(
+    (product: PosProductDto) => {
+      invalidateCheckoutValidation();
+      setTicketState((current) => {
+        const existingItem = current.items.find((item) => item.productId === product.productId);
+        const requestedQuantity = (existingItem?.quantity ?? 0) + 1;
+        const validationError = validateTicketQuantity(product, requestedQuantity);
+        if (validationError) return { ...current, error: validationError };
 
-      if (existingItem) {
+        if (existingItem) {
+          return {
+            error: null,
+            items: current.items.map((item) =>
+              item.productId === product.productId
+                ? createTicketItem(product, requestedQuantity)
+                : item,
+            ),
+          };
+        }
+
         return {
           error: null,
-          items: current.items.map((item) =>
-            item.productId === product.productId
-              ? createTicketItem(product, requestedQuantity)
-              : item,
+          items: [...current.items, createTicketItem(product, 1)],
+        };
+      });
+    },
+    [invalidateCheckoutValidation],
+  );
+
+  const increaseQuantity = useCallback(
+    (productId: string) => {
+      invalidateCheckoutValidation();
+      setTicketState((current) => {
+        const item = current.items.find((candidate) => candidate.productId === productId);
+        if (!item) return current;
+
+        const requestedQuantity = item.quantity + 1;
+        const validationError = validateTicketQuantity(item, requestedQuantity);
+        if (validationError) return { ...current, error: validationError };
+
+        return {
+          error: null,
+          items: current.items.map((candidate) =>
+            candidate.productId === productId
+              ? updateTicketItemQuantity(candidate, requestedQuantity)
+              : candidate,
           ),
         };
-      }
+      });
+    },
+    [invalidateCheckoutValidation],
+  );
 
-      return {
-        error: null,
-        items: [...current.items, createTicketItem(product, 1)],
-      };
-    });
-  }, [invalidateCheckoutValidation]);
+  const decreaseQuantity = useCallback(
+    (productId: string) => {
+      invalidateCheckoutValidation();
+      setTicketState((current) => {
+        const item = current.items.find((candidate) => candidate.productId === productId);
+        if (!item) return current;
+        if (item.quantity === 1) {
+          return {
+            items: current.items.filter((candidate) => candidate.productId !== productId),
+            error: null,
+          };
+        }
 
-  const increaseQuantity = useCallback((productId: string) => {
-    invalidateCheckoutValidation();
-    setTicketState((current) => {
-      const item = current.items.find((candidate) => candidate.productId === productId);
-      if (!item) return current;
-
-      const requestedQuantity = item.quantity + 1;
-      const validationError = validateTicketQuantity(item, requestedQuantity);
-      if (validationError) return { ...current, error: validationError };
-
-      return {
-        error: null,
-        items: current.items.map((candidate) =>
-          candidate.productId === productId
-            ? updateTicketItemQuantity(candidate, requestedQuantity)
-            : candidate,
-        ),
-      };
-    });
-  }, [invalidateCheckoutValidation]);
-
-  const decreaseQuantity = useCallback((productId: string) => {
-    invalidateCheckoutValidation();
-    setTicketState((current) => {
-      const item = current.items.find((candidate) => candidate.productId === productId);
-      if (!item) return current;
-      if (item.quantity === 1) {
         return {
-          items: current.items.filter((candidate) => candidate.productId !== productId),
           error: null,
+          items: current.items.map((candidate) =>
+            candidate.productId === productId
+              ? updateTicketItemQuantity(candidate, candidate.quantity - 1)
+              : candidate,
+          ),
         };
-      }
+      });
+    },
+    [invalidateCheckoutValidation],
+  );
 
-      return {
+  const removeItem = useCallback(
+    (productId: string) => {
+      invalidateCheckoutValidation();
+      setTicketState((current) => ({
+        items: current.items.filter((item) => item.productId !== productId),
         error: null,
-        items: current.items.map((candidate) =>
-          candidate.productId === productId
-            ? updateTicketItemQuantity(candidate, candidate.quantity - 1)
-            : candidate,
-        ),
-      };
-    });
-  }, [invalidateCheckoutValidation]);
-
-  const removeItem = useCallback((productId: string) => {
-    invalidateCheckoutValidation();
-    setTicketState((current) => ({
-      items: current.items.filter((item) => item.productId !== productId),
-      error: null,
-    }));
-  }, [invalidateCheckoutValidation]);
+      }));
+    },
+    [invalidateCheckoutValidation],
+  );
 
   const clearTicket = useCallback(() => {
     cancelCardTerminalProcessing();
@@ -451,25 +427,25 @@ export function usePosTerminal() {
   );
   const hasCurrentBranchAccess = Boolean(
     !branchLoading &&
-      !sessionLoading &&
-      currentBranch &&
-      user &&
-      user.tenantId === currentBranch.tenantId &&
-      canAccessBranch(currentBranch.id),
+    !sessionLoading &&
+    currentBranch &&
+    user &&
+    user.tenantId === currentBranch.tenantId &&
+    canAccessBranch(currentBranch.id),
   );
   const hasPosSalesPermission = hasPermission("pos.sales.create");
   const hasOpenCashShift = Boolean(
     !cashShiftLoading &&
-      !cashShiftError &&
-      cashShift &&
-      currentBranch &&
-      user &&
-      cashShift.status === CashShiftStatus.open &&
-      cashShift.userId === user.id &&
-      cashShift.branchId === currentBranch.id &&
-      cashShift.tenantId === currentBranch.tenantId &&
-      user.tenantId === currentBranch.tenantId &&
-      hasCurrentBranchAccess,
+    !cashShiftError &&
+    cashShift &&
+    currentBranch &&
+    user &&
+    cashShift.status === CashShiftStatus.open &&
+    cashShift.userId === user.id &&
+    cashShift.branchId === currentBranch.id &&
+    cashShift.tenantId === currentBranch.tenantId &&
+    user.tenantId === currentBranch.tenantId &&
+    hasCurrentBranchAccess,
   );
   const ticketBlockingError = useMemo(
     () =>
@@ -504,10 +480,7 @@ export function usePosTerminal() {
       confirmationId
         ? { ...current, open: true }
         : {
-            ...createCheckoutState(
-              ticket.total,
-              availablePaymentModes[0] ?? PaymentMethod.cash,
-            ),
+            ...createCheckoutState(ticket.total, availablePaymentModes[0] ?? PaymentMethod.cash),
             open: true,
           },
     );
@@ -528,10 +501,7 @@ export function usePosTerminal() {
     cancelCardTerminalProcessing();
     invalidateConfirmationAttempt();
     setCheckoutState((current) => ({
-      ...createCheckoutState(
-        ticket.total,
-        availablePaymentModes[0] ?? PaymentMethod.cash,
-      ),
+      ...createCheckoutState(ticket.total, availablePaymentModes[0] ?? PaymentMethod.cash),
       open: current.open,
     }));
   }, [
@@ -541,18 +511,21 @@ export function usePosTerminal() {
     ticket.total,
   ]);
 
-  const setDocumentType = useCallback((documentType: CheckoutDto["documentType"]) => {
-    invalidateConfirmationAttempt();
-    setCheckoutState((current) => ({
-      ...current,
-      value: { ...current.value, documentType },
-      errors: {},
-      validated: false,
-      readyToConfirm: false,
-      hasOperationalBlock: false,
-      message: null,
-    }));
-  }, [invalidateConfirmationAttempt]);
+  const setDocumentType = useCallback(
+    (documentType: CheckoutDto["documentType"]) => {
+      invalidateConfirmationAttempt();
+      setCheckoutState((current) => ({
+        ...current,
+        value: { ...current.value, documentType },
+        errors: {},
+        validated: false,
+        readyToConfirm: false,
+        hasOperationalBlock: false,
+        message: null,
+      }));
+    },
+    [invalidateConfirmationAttempt],
+  );
 
   const setPaymentMode = useCallback(
     (paymentMode: CheckoutPaymentMode) => {
@@ -671,8 +644,7 @@ export function usePosTerminal() {
             },
             errors: {
               ...current.errors,
-              cardTerminal:
-                outcome === "rejected" ? "Pago rechazado por terminal." : undefined,
+              cardTerminal: outcome === "rejected" ? "Pago rechazado por terminal." : undefined,
             },
             validated: false,
             readyToConfirm: false,
@@ -682,28 +654,27 @@ export function usePosTerminal() {
         });
       }, CARD_TERMINAL_PROCESSING_DELAY_MS);
     },
-    [
-      cancelCardTerminalProcessing,
-      checkoutState.value.cardAmount,
-      invalidateConfirmationAttempt,
-    ],
+    [cancelCardTerminalProcessing, checkoutState.value.cardAmount, invalidateConfirmationAttempt],
   );
 
-  const updateInvoiceData = useCallback((patch: Partial<CheckoutInvoiceDataDto>) => {
-    invalidateConfirmationAttempt();
-    setCheckoutState((current) => ({
-      ...current,
-      value: {
-        ...current.value,
-        invoiceData: { ...current.value.invoiceData, ...patch },
-      },
-      errors: {},
-      validated: false,
-      readyToConfirm: false,
-      hasOperationalBlock: false,
-      message: null,
-    }));
-  }, [invalidateConfirmationAttempt]);
+  const updateInvoiceData = useCallback(
+    (patch: Partial<CheckoutInvoiceDataDto>) => {
+      invalidateConfirmationAttempt();
+      setCheckoutState((current) => ({
+        ...current,
+        value: {
+          ...current.value,
+          invoiceData: { ...current.value.invoiceData, ...patch },
+        },
+        errors: {},
+        validated: false,
+        readyToConfirm: false,
+        hasOperationalBlock: false,
+        message: null,
+      }));
+    },
+    [invalidateConfirmationAttempt],
+  );
 
   const updateDeliveryAddress = useCallback(
     (patch: Partial<NonNullable<CheckoutDto["deliveryAddress"]>>) => {
@@ -792,9 +763,7 @@ export function usePosTerminal() {
     Boolean(paymentMethodsError) ||
     !availablePaymentModes.includes(checkoutState.value.paymentMode);
   const checkoutReadyToConfirm =
-    checkoutState.validated &&
-    checkoutState.readyToConfirm &&
-    !checkoutHasOperationalBlock;
+    checkoutState.validated && checkoutState.readyToConfirm && !checkoutHasOperationalBlock;
   const checkoutMessage = checkoutState.validated
     ? getCheckoutValidationMessage({
         cashShiftError,
@@ -803,9 +772,7 @@ export function usePosTerminal() {
         hasOpenCashShift,
         hasPosSalesPermission,
         hasUnsupportedTraceability: ticket.hasUnsupportedTraceability,
-        hasAllowedPaymentMode: availablePaymentModes.includes(
-          checkoutState.value.paymentMode,
-        ),
+        hasAllowedPaymentMode: availablePaymentModes.includes(checkoutState.value.paymentMode),
         paymentMethodsError,
         paymentMethodsLoading,
       })
@@ -967,10 +934,7 @@ function createTicketItem(product: PosProductDto, quantity: number): SaleTicketI
   };
 }
 
-function updateTicketItemQuantity(
-  item: SaleTicketItemDto,
-  quantity: number,
-): SaleTicketItemDto {
+function updateTicketItemQuantity(item: SaleTicketItemDto, quantity: number): SaleTicketItemDto {
   return {
     ...item,
     quantity,
@@ -987,19 +951,14 @@ function calculateTicket(items: SaleTicketItemDto[]): SaleTicketDto {
     (total, item) => total + toCents(item.discount) * item.quantity,
     0,
   );
-  const totalCents = items.reduce(
-    (total, item) => total + toCents(item.subtotal),
-    0,
-  );
+  const totalCents = items.reduce((total, item) => total + toCents(item.subtotal), 0);
 
   return {
     items,
     subtotal: fromCents(subtotalCents),
     discountTotal: fromCents(discountTotalCents),
     total: fromCents(totalCents),
-    hasUnsupportedTraceability: items.some(
-      (item) => item.requiresUnsupportedTraceability,
-    ),
+    hasUnsupportedTraceability: items.some((item) => item.requiresUnsupportedTraceability),
   };
 }
 
@@ -1067,10 +1026,7 @@ function createCheckoutState(
   };
 }
 
-function createCheckoutValue(
-  total: number,
-  paymentMode: CheckoutPaymentMode,
-): CheckoutDto {
+function createCheckoutValue(total: number, paymentMode: CheckoutPaymentMode): CheckoutDto {
   const totalAmount = fromCents(toCents(total));
   return {
     documentType: "ticket",

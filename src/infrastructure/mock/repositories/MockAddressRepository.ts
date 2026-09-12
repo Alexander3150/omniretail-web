@@ -27,9 +27,7 @@ export class MockAddressRepository extends BaseMockRepository implements Address
   }
 
   async getById(tenantId: string, customerId: string, id: string) {
-    return this.read(
-      (db) => this.findOwned(db, tenantId, customerId, id) ?? null,
-    );
+    return this.read((db) => this.findOwned(db, tenantId, customerId, id) ?? null);
   }
 
   async create(input: CreateAddressInput) {

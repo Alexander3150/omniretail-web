@@ -1,5 +1,8 @@
 import { CategoryStatus } from "@/core/enums";
-import type { CategoryListItem, CategoryEditorDto } from "@/modules/catalog/application/dto/CategoryEditorDto";
+import type {
+  CategoryListItem,
+  CategoryEditorDto,
+} from "@/modules/catalog/application/dto/CategoryEditorDto";
 
 export interface CategoryValidationErrors {
   name?: string;
@@ -75,4 +78,3 @@ export function validateCategoryDto(
 export function hasCategoryValidationErrors(errors: CategoryValidationErrors) {
   return Object.values(errors).some(Boolean);
 }
-

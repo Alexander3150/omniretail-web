@@ -86,8 +86,8 @@ export function EcommerceConfigForm({
       <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
         <h2 className="text-lg font-bold text-[var(--color-title)]">Pago y entrega</h2>
         <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-          Política fija del canal Web/App: pago con tarjeta y envío a domicilio. No es
-          configurable desde esta pantalla.
+          Política fija del canal Web/App: pago con tarjeta y envío a domicilio. No es configurable
+          desde esta pantalla.
         </p>
       </section>
 

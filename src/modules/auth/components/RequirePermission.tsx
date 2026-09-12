@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { navigationConfig } from "@/config/navigation";
+import { canUserEnterPrivateRoute } from "@/modules/auth/application/services/postLoginNavigation";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { EMPLOYEE_HOME_ACCESS_PERMISSION, hasEmployeeHomeAccess } from "@/modules/auth/permissions";
 import { isNavigationItemActive } from "@/shared/navigation/Sidebar";
@@ -89,6 +90,10 @@ function Denied() {
 export function RequirePermission({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { hasPermission, permissions, user } = useCurrentSession();
+
+  if (!canUserEnterPrivateRoute(user, pathname)) {
+    return <Denied />;
+  }
 
   if (pathname === CUENTA_REDIRECT_ROUTE || isSessionOnlyRoute(pathname)) {
     return <>{children}</>;

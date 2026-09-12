@@ -190,12 +190,16 @@ export function CategoriesPage() {
             category={panelCategory}
             mode={panel.mode}
             onCancel={() =>
-              panel.mode === "detail" ? setPanel(null) : setPanel(panelCategory ? { mode: "detail", category: panelCategory } : null)
+              panel.mode === "detail"
+                ? setPanel(null)
+                : setPanel(panelCategory ? { mode: "detail", category: panelCategory } : null)
             }
             onClose={() => setPanel(null)}
             onEdit={() => panelCategory && setPanel({ mode: "edit", category: panelCategory })}
             onSubmit={panel.mode === "create" ? handleCreate : handleUpdate}
-            onViewProducts={(category) => router.push(`/catalogo/productos?categoryId=${category.id}`)}
+            onViewProducts={(category) =>
+              router.push(`/catalogo/productos?categoryId=${category.id}`)
+            }
           />
         ) : null}
       </section>
@@ -598,7 +602,7 @@ function CategoryPanel({
                   : "Editar categoría"}
             </p>
             <h2 className="mt-1 break-words text-lg font-bold text-[var(--color-title)]">
-              {mode === "create" ? "Nueva categoría" : category?.name ?? "Categoría"}
+              {mode === "create" ? "Nueva categoría" : (category?.name ?? "Categoría")}
             </h2>
           </div>
           <button
@@ -661,7 +665,12 @@ function CategoryDetail({
         <Button className="w-full sm:w-auto" onClick={onClose} type="button" variant="secondary">
           Cerrar
         </Button>
-        <Button className="w-full sm:w-auto" onClick={onViewProducts} type="button" variant="secondary">
+        <Button
+          className="w-full sm:w-auto"
+          onClick={onViewProducts}
+          type="button"
+          variant="secondary"
+        >
           Ver productos
         </Button>
         <Button className="w-full sm:w-auto" onClick={onEdit} type="button">
@@ -773,11 +782,7 @@ function CategoryForm({
         </Button>
         <Button className="w-full sm:w-auto" disabled={busy} type="submit">
           <CheckIcon />
-          {busy
-            ? "Guardando..."
-            : mode === "create"
-              ? "Guardar categoría"
-              : "Guardar cambios"}
+          {busy ? "Guardando..." : mode === "create" ? "Guardar categoría" : "Guardar cambios"}
         </Button>
       </footer>
     </form>

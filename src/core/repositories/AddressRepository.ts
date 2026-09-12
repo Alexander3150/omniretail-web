@@ -30,7 +30,12 @@ export interface AddressRepository {
   getByCustomer(tenantId: string, customerId: string): Promise<Address[]>;
   getById(tenantId: string, customerId: string, id: string): Promise<Address | null>;
   create(input: CreateAddressInput): Promise<Address>;
-  update(tenantId: string, customerId: string, id: string, input: UpdateAddressInput): Promise<Address>;
+  update(
+    tenantId: string,
+    customerId: string,
+    id: string,
+    input: UpdateAddressInput,
+  ): Promise<Address>;
   remove(tenantId: string, customerId: string, id: string): Promise<void>;
   setDefault(tenantId: string, customerId: string, addressId: string): Promise<Address>;
 }

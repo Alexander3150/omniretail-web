@@ -38,8 +38,9 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
   const [suppliers, setSuppliers] = useState<PurchaseOrderEditorSupplier[]>([]);
   const [availableProducts, setAvailableProducts] = useState<PurchaseOrderAvailableProduct[]>([]);
   const [productSearch, setProductSearch] = useState("");
-  const [prefillResolution, setPrefillResolution] =
-    useState<PurchaseOrderPrefillResolution | null>(null);
+  const [prefillResolution, setPrefillResolution] = useState<PurchaseOrderPrefillResolution | null>(
+    null,
+  );
   const [prefillNotice, setPrefillNotice] = useState<string | null>(null);
   const [prefillWarning, setPrefillWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -109,7 +110,10 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
               supplierId: resolution.supplierId ?? "",
               expectedDate: getExpectedDate(
                 current.baseDate,
-                getExpectedLeadTime(lineProduct ? [createEditorLine(lineProduct, resolution.quantity)] : [], products),
+                getExpectedLeadTime(
+                  lineProduct ? [createEditorLine(lineProduct, resolution.quantity)] : [],
+                  products,
+                ),
               ),
               lines: lineProduct ? [createEditorLine(lineProduct, resolution.quantity)] : [],
             }));
@@ -128,7 +132,9 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
         }
       } catch (caughtError) {
         if (!active) return;
-        setError(caughtError instanceof Error ? caughtError.message : "No se pudo cargar la orden.");
+        setError(
+          caughtError instanceof Error ? caughtError.message : "No se pudo cargar la orden.",
+        );
       } finally {
         if (active) setLoading(false);
       }
@@ -173,7 +179,8 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
     const search = normalize(productSearch);
     const added = new Set(model.lines.map((line) => line.productId));
     return availableProducts.filter(
-      (product) => !added.has(product.productId) && (!search || product.searchText.includes(search)),
+      (product) =>
+        !added.has(product.productId) && (!search || product.searchText.includes(search)),
     );
   }, [availableProducts, model.lines, productSearch]);
 
@@ -212,7 +219,10 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
         return {
           ...current,
           lines,
-          expectedDate: getExpectedDate(current.baseDate, getExpectedLeadTime(lines, availableProducts)),
+          expectedDate: getExpectedDate(
+            current.baseDate,
+            getExpectedLeadTime(lines, availableProducts),
+          ),
         };
       });
     },
@@ -226,7 +236,10 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
         return {
           ...current,
           lines,
-          expectedDate: getExpectedDate(current.baseDate, getExpectedLeadTime(lines, availableProducts)),
+          expectedDate: getExpectedDate(
+            current.baseDate,
+            getExpectedLeadTime(lines, availableProducts),
+          ),
         };
       });
     },
@@ -388,10 +401,7 @@ function getInitialQuantity(
   ) {
     return requestedQuantity;
   }
-  if (
-    Number.isSafeInteger(product.minimumOrderQuantity) &&
-    product.minimumOrderQuantity > 0
-  ) {
+  if (Number.isSafeInteger(product.minimumOrderQuantity) && product.minimumOrderQuantity > 0) {
     return product.minimumOrderQuantity;
   }
   return 1;

@@ -10,7 +10,10 @@ export function useStorefrontProductDetail(productId: string) {
   const repositories = useRepositories();
   const eventBus = useDataEventBus();
   const { tenantId, loading: tenantLoading, error: tenantError } = usePublicTenant();
-  const service = useMemo(() => new GetStorefrontProductDetailService(repositories), [repositories]);
+  const service = useMemo(
+    () => new GetStorefrontProductDetailService(repositories),
+    [repositories],
+  );
   const [data, setData] = useState<StorefrontProductDetailDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

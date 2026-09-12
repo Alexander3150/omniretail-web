@@ -33,7 +33,9 @@ export function ProductDetailCard({ detail }: ProductDetailCardProps) {
               {productTypeLabels[product.productType]}
             </span>
           </div>
-          <h2 className="break-words text-2xl font-bold text-[var(--color-title)]">{product.name}</h2>
+          <h2 className="break-words text-2xl font-bold text-[var(--color-title)]">
+            {product.name}
+          </h2>
           {product.description ? (
             <p className="mt-2 text-sm text-[var(--color-text)]">{product.description}</p>
           ) : null}

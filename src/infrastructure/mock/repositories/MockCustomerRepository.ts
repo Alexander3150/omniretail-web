@@ -42,7 +42,11 @@ export class MockCustomerRepository extends BaseMockRepository implements Custom
     return item;
   }
 
-  async updateProfileForCustomer(tenantId: string, customerId: string, input: UpdateCustomerProfileInput) {
+  async updateProfileForCustomer(
+    tenantId: string,
+    customerId: string,
+    input: UpdateCustomerProfileInput,
+  ) {
     // Allowlist explicita en runtime -- TypeScript ya restringe el tipo
     // a name/phone, pero un caller que bypasee el tipado no debe poder
     // colar ningun otro campo (tenantId, userId, email, status, etc.)

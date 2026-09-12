@@ -6,13 +6,14 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import type { Role, User } from "@/core/entities";
-import { UserStatus } from "@/core/enums";
 import { canUserAccessBranch } from "@/core/scopes/userBranchAccess";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
+import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/services/resolveCurrentSessionSnapshot";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 
 interface CurrentSessionContextValue {
@@ -34,55 +35,31 @@ export function CurrentSessionProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<Role | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>();
+  const reloadVersion = useRef(0);
 
   const reload = useCallback(async () => {
+    const version = ++reloadVersion.current;
     setLoading(true);
     setError(undefined);
     try {
-      const sessionId = await repositories.auth.getCurrentSessionId();
-      if (!sessionId) {
-        setUser(null);
-        setRole(null);
-        return;
-      }
-
-      const session = await repositories.auth.getSession(sessionId);
-      if (!session) {
-        setUser(null);
-        setRole(null);
-        return;
-      }
-
-      const resolvedUser = await repositories.users.getById(session.userId);
-
-      // Fail-closed: un User desactivado despues de haber iniciado sesion
-      // (por un admin, por ejemplo) no debe seguir viendose como
-      // autenticado solo porque la sesion en storage sigue vigente. Se
-      // trata igual que "sesion invalida", nunca se expone el User ni su
-      // Role -- aplica por igual a Employee y Customer.
-      if (resolvedUser && resolvedUser.status !== UserStatus.active) {
-        setUser(null);
-        setRole(null);
-        setError("La cuenta ya no esta activa.");
-        return;
-      }
-
-      const resolvedRole = resolvedUser?.roleId
-        ? await repositories.roles.getById(resolvedUser.roleId)
-        : null;
-
-      setUser(resolvedUser);
-      setRole(resolvedRole);
-
-      if (!resolvedUser) {
-        setError("No se pudo resolver el usuario de la sesion actual.");
-      }
+      const snapshot = await resolveCurrentSessionSnapshot(repositories);
+      // auth.changed/user.changed y la carga inicial pueden solaparse.
+      // Solo la reconstruccion mas reciente puede publicar estado; asi
+      // una lectura iniciada con la sesion anterior nunca sobreescribe
+      // el resultado de un login/logout posterior.
+      if (version !== reloadVersion.current) return;
+      setUser(snapshot.user);
+      setRole(snapshot.role);
+      setError(snapshot.error);
     } catch {
+      if (version !== reloadVersion.current) return;
       setUser(null);
       setRole(null);
       setError("No se pudo cargar la sesion actual.");
     } finally {
-      setLoading(false);
+      if (version === reloadVersion.current) {
+        setLoading(false);
+      }
     }
   }, [repositories]);
 

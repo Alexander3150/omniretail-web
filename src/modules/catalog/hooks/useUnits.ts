@@ -71,10 +71,7 @@ export function useUnits() {
   );
   const totalPages = Math.max(1, Math.ceil(filteredUnits.length / pageSize));
   const currentPage = Math.min(page, totalPages);
-  const paginatedUnits = filteredUnits.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize,
-  );
+  const paginatedUnits = filteredUnits.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const setSearch = useCallback((value: string) => {
     setSearchState(value);
@@ -134,21 +131,27 @@ export function useUnits() {
     create: (dto: UnitEditorDto) =>
       runMutation(async () => {
         const created = await saveService.create(dto);
-        return getService.execute().then((items) => items.find((item) => item.id === created.id) ?? null);
+        return getService
+          .execute()
+          .then((items) => items.find((item) => item.id === created.id) ?? null);
       }),
     update: (unitId: string, dto: UnitEditorDto) =>
       runMutation(async () => {
         const updated = await saveService.update(unitId, dto);
-        return getService.execute().then((items) => items.find((item) => item.id === updated.id) ?? null);
+        return getService
+          .execute()
+          .then((items) => items.find((item) => item.id === updated.id) ?? null);
       }),
-    archive: (unitId: string) => runMutation(async () => {
-      await saveService.archive(unitId);
-      return null;
-    }),
-    restore: (unitId: string) => runMutation(async () => {
-      await saveService.restore(unitId);
-      return null;
-    }),
+    archive: (unitId: string) =>
+      runMutation(async () => {
+        await saveService.archive(unitId);
+        return null;
+      }),
+    restore: (unitId: string) =>
+      runMutation(async () => {
+        await saveService.restore(unitId);
+        return null;
+      }),
   };
 }
 

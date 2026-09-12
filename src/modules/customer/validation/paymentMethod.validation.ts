@@ -13,7 +13,9 @@ export type PaymentMethodValidationErrors = Partial<
  * año) no puede ser anterior al mes/año actual -- una tarjeta que vence
  * en un mes ya pasado del año en curso tambien es invalida.
  */
-export function validatePaymentMethodForm(dto: PaymentMethodFormDto): PaymentMethodValidationErrors {
+export function validatePaymentMethodForm(
+  dto: PaymentMethodFormDto,
+): PaymentMethodValidationErrors {
   const errors: PaymentMethodValidationErrors = {};
 
   if (!dto.brand.trim()) {

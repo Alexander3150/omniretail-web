@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
-import { UserType } from "@/core/enums";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
+import { getStorefrontAccountNavigation } from "@/modules/storefront/application/services/storefrontAccountNavigation";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
 
 export function StorefrontHeader() {
@@ -17,9 +17,7 @@ export function StorefrontHeader() {
     const query = search.trim();
     router.push(query ? `/catalogo?q=${encodeURIComponent(query)}` : "/catalogo");
   };
-  const isCustomer = user?.type === UserType.customer;
-  const accountHref = !loading && user ? (isCustomer ? "/cuenta" : "/inicio") : "/iniciar-sesion";
-  const accountLabel = !loading && user ? (isCustomer ? "Mi Cuenta" : "Ir a inicio") : "Ingresar";
+  const accountNavigation = getStorefrontAccountNavigation(user, loading);
 
   return (
     <header className="sticky top-0 z-30 bg-[var(--color-topbar)] text-white shadow-lg shadow-slate-900/10">
@@ -52,9 +50,9 @@ export function StorefrontHeader() {
             </span>
           </Link>
           <Link
-            aria-label={accountLabel}
+            aria-label={accountNavigation.label}
             className="rounded-lg px-2.5 py-2 text-slate-200 transition hover:bg-white/10 hover:text-white sm:px-3"
-            href={accountHref}
+            href={accountNavigation.href}
           >
             <svg
               aria-hidden="true"
@@ -67,7 +65,7 @@ export function StorefrontHeader() {
               <circle cx="12" cy="8" r="4" />
               <path d="M4 21c1.5-4 4.2-6 8-6s6.5 2 8 6" />
             </svg>
-            <span className="ml-1 hidden min-[1180px]:inline">{accountLabel}</span>
+            <span className="ml-1 hidden min-[1180px]:inline">{accountNavigation.label}</span>
           </Link>
         </div>
         <form

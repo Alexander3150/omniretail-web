@@ -30,7 +30,9 @@ export class PurchaseOrderEditorService {
         currencyLabel: "No definida",
         leadTimeDays: supplier.leadTimeDays,
         leadTimeLabel:
-          typeof supplier.leadTimeDays === "number" ? `${supplier.leadTimeDays} dias` : "No definido",
+          typeof supplier.leadTimeDays === "number"
+            ? `${supplier.leadTimeDays} dias`
+            : "No definido",
       }))
       .sort((left, right) => left.name.localeCompare(right.name));
   }
@@ -89,57 +91,63 @@ export class PurchaseOrderEditorService {
     const categoryById = new Map(categories.map((category) => [category.id, category]));
 
     const rows = await Promise.all(
-      supplierProducts.filter((supplierProduct) => supplierProduct.active).map(async (supplierProduct) => {
-        const product = productById.get(supplierProduct.productId);
-        const unit = unitById.get(supplierProduct.purchaseUnitId);
-        const categoryName = product?.categoryId
-          ? categoryById.get(product.categoryId)?.name ?? "Sin categoria"
-          : "Sin categoria";
-        const [tiers, balances, settings] = await Promise.all([
-          this.repositories.supplierProducts.getCostTiers(supplierProduct.id),
-          tenantBranchId
-            ? this.repositories.inventory.getBalanceByProduct(supplierProduct.productId, tenantBranchId)
-            : Promise.resolve([]),
-          tenantBranchId
-            ? this.repositories.inventory.getProductInventorySettings(supplierProduct.productId, tenantBranchId)
-            : Promise.resolve(null),
-        ]);
-        const stockQuantity = balances.reduce((sum, balance) => sum + balance.quantity, 0);
-        const minStock = settings?.minStock ?? 0;
-        const reorderPoint = settings?.reorderPoint;
-        const targetStock = reorderPoint ?? minStock;
-        const shortage = Math.max(0, minStock - stockQuantity);
-        const suggestedReorder = Math.max(0, targetStock - stockQuantity);
-        return {
-          id: supplierProduct.id,
-          productId: supplierProduct.productId,
-          productName: product?.name ?? "Producto no disponible",
-          sku: product?.sku ?? supplierProduct.productId,
-          supplierSku: supplierProduct.supplierSku ?? "-",
-          categoryName,
-          unitId: supplierProduct.purchaseUnitId,
-          unitLabel: unit?.symbol ?? unit?.name ?? supplierProduct.purchaseUnitId,
-          configuredCost: supplierProduct.lastCost,
-          minimumOrderQuantity: supplierProduct.minimumOrderQuantity,
-          leadTimeDays: supplierProduct.leadTimeDays,
-          tiers: tiers.map((tier) => ({ minQuantity: tier.minQuantity, unitCost: tier.unitCost })),
-          stockQuantity,
-          minStock,
-          reorderPoint,
-          shortage,
-          suggestedReorder,
-          availabilityLabel: getAvailabilityLabel(stockQuantity, minStock),
-          searchText: [
-            product?.name,
-            product?.sku,
-            supplierProduct.supplierSku,
+      supplierProducts
+        .filter((supplierProduct) => supplierProduct.active)
+        .map(async (supplierProduct) => {
+          const product = productById.get(supplierProduct.productId);
+          const unit = unitById.get(supplierProduct.purchaseUnitId);
+          const categoryName = product?.categoryId
+            ? (categoryById.get(product.categoryId)?.name ?? "Sin categoria")
+            : "Sin categoria";
+          const [tiers, balances, settings] = await Promise.all([
+            this.repositories.supplierProducts.getCostTiers(supplierProduct.id),
+            tenantBranchId
+              ? this.repositories.inventory.getBalanceByProduct(
+                  supplierProduct.productId,
+                  tenantBranchId,
+                )
+              : Promise.resolve([]),
+            tenantBranchId
+              ? this.repositories.inventory.getProductInventorySettings(
+                  supplierProduct.productId,
+                  tenantBranchId,
+                )
+              : Promise.resolve(null),
+          ]);
+          const stockQuantity = balances.reduce((sum, balance) => sum + balance.quantity, 0);
+          const minStock = settings?.minStock ?? 0;
+          const reorderPoint = settings?.reorderPoint;
+          const targetStock = reorderPoint ?? minStock;
+          const shortage = Math.max(0, minStock - stockQuantity);
+          const suggestedReorder = Math.max(0, targetStock - stockQuantity);
+          return {
+            id: supplierProduct.id,
+            productId: supplierProduct.productId,
+            productName: product?.name ?? "Producto no disponible",
+            sku: product?.sku ?? supplierProduct.productId,
+            supplierSku: supplierProduct.supplierSku ?? "-",
             categoryName,
-          ]
-            .filter(Boolean)
-            .join(" ")
-            .toLowerCase(),
-        };
-      }),
+            unitId: supplierProduct.purchaseUnitId,
+            unitLabel: unit?.symbol ?? unit?.name ?? supplierProduct.purchaseUnitId,
+            configuredCost: supplierProduct.lastCost,
+            minimumOrderQuantity: supplierProduct.minimumOrderQuantity,
+            leadTimeDays: supplierProduct.leadTimeDays,
+            tiers: tiers.map((tier) => ({
+              minQuantity: tier.minQuantity,
+              unitCost: tier.unitCost,
+            })),
+            stockQuantity,
+            minStock,
+            reorderPoint,
+            shortage,
+            suggestedReorder,
+            availabilityLabel: getAvailabilityLabel(stockQuantity, minStock),
+            searchText: [product?.name, product?.sku, supplierProduct.supplierSku, categoryName]
+              .filter(Boolean)
+              .join(" ")
+              .toLowerCase(),
+          };
+        }),
     );
 
     return rows.sort((left, right) => left.productName.localeCompare(right.productName));
@@ -180,7 +188,9 @@ export class PurchaseOrderEditorService {
       context.supplierId && allowedSupplierIds.includes(context.supplierId)
         ? context.supplierId
         : undefined;
-    const preferredSupplierId = associatedSupplierProducts.find((item) => item.preferred)?.supplierId;
+    const preferredSupplierId = associatedSupplierProducts.find(
+      (item) => item.preferred,
+    )?.supplierId;
     const supplierId = requestedSupplierId ?? preferredSupplierId;
     const quantitySource =
       associatedSupplierProducts.find((item) => item.supplierId === supplierId) ??
@@ -265,10 +275,7 @@ export interface SavePurchaseOrderInput {
   lines: PurchaseOrderEditorLine[];
 }
 
-export function getTierCost(
-  product: PurchaseOrderAvailableProduct,
-  quantity: number | "",
-): number {
+export function getTierCost(product: PurchaseOrderAvailableProduct, quantity: number | ""): number {
   const comparableQuantity = toFiniteNumber(quantity);
   const tier = [...product.tiers]
     .filter((item) => item.minQuantity <= comparableQuantity)
@@ -323,7 +330,10 @@ export function getExpectedDate(baseDate: string, leadTimeDays?: number) {
   return date.toISOString().slice(0, 10);
 }
 
-export function getExpectedLeadTime(lines: PurchaseOrderEditorLine[], products: PurchaseOrderAvailableProduct[]) {
+export function getExpectedLeadTime(
+  lines: PurchaseOrderEditorLine[],
+  products: PurchaseOrderAvailableProduct[],
+) {
   const source = lines.length > 0 ? lines : products;
   const maxLeadTime = source.reduce<number | undefined>((current, item) => {
     if (typeof item.leadTimeDays !== "number") return current;
@@ -348,7 +358,9 @@ function toPurchaseOrderPayload(input: SavePurchaseOrderInput, status: PurchaseO
     branchId: input.branchId,
     supplierId: input.supplierId,
     status,
-    expectedDate: input.expectedDate ? new Date(`${input.expectedDate}T00:00:00.000`).toISOString() : undefined,
+    expectedDate: input.expectedDate
+      ? new Date(`${input.expectedDate}T00:00:00.000`).toISOString()
+      : undefined,
     notes: input.notes.trim() || undefined,
     subtotal: total,
     total,

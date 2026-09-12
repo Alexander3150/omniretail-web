@@ -11,7 +11,7 @@ estan en `SCOPE.md`.
 
 ## Contracts que consume
 
-UserRepository, RoleRepository, BranchRepository, BusinessConfigRepository, TenantRepository, SupplierRepository, BankAccountRepository, CustomerRepository, AuditLogRepository, CashShiftRepository, SalesRepository, OrderRepository, InventoryRepository, ReceiptRepository, IncidentTypeRepository
+UserRepository, RoleRepository, BranchRepository, BusinessConfigRepository, TenantRepository, SupplierRepository, BankAccountRepository, CustomerRepository, AuditLogRepository, CashShiftRepository, SalesRepository, OrderRepository, InventoryRepository, ReceiptRepository, IncidentTypeRepository, PurchaseOrderRepository, PaymentRepository, ProductRepository
 
 ## Configuracion del negocio
 
@@ -255,6 +255,49 @@ Decisiones y coordinación:
 - `admin.dashboard.read` es un permiso nuevo. Se esperan colisiones en `permissions.ts`,
   `demoSeed.ts`, `navigation.ts`, `serviceHelpers.ts`, `README.md` y `SCOPE.md` con las ramas
   previas de administration; al integrarlas deben conservarse todas las entradas.
+
+## Reportes
+
+La ruta `/administracion/reportes` expone reportes agregados de ventas, compras, movimientos de
+inventario y pagos. Se integra en la navegación como `administration-reports`, exige
+`admin.reports.read` para consultar y `admin.reports.export` para descargar el resultado visible
+como CSV. Se refresca ante `sale.changed`, `purchase-order.changed`, `inventory.changed` y
+`payment.changed`.
+
+La pantalla solo consulta contratos compartidos y agrega sus resultados en memoria. No persiste
+reportes, no modifica las fuentes y no escribe auditoría. El helper CSV vive dentro de
+`administration`; no se promovió a `shared` porque esta entrega no establece una API transversal.
+La exportación conserva BOM UTF-8, escapa la estructura CSV y neutraliza texto que Excel o Sheets
+podrían interpretar como fórmula, sin alterar valores numéricos del dominio.
+
+### Contrato de integracion
+
+La feature asume:
+
+- `useCurrentSession()` únicamente para estados visuales. `GetReportsService` vuelve a resolver la
+  sesión, el actor, su tenant y el Role mediante `auth`, `users` y `roles`; ni lectura ni exportación
+  aceptan `tenantId` o permisos declarados por el caller.
+- `RepositoryRegistry.sales`, `purchaseOrders`, `inventory`, `payments`, `branches`, `suppliers`
+  y `products` con sus contratos vigentes.
+- `formatCurrency` y `formatDate` de `shared/utils` para presentar montos y fechas.
+
+Decisiones y coordinación:
+
+- Lee contratos de Riquelme (`sales`, `payments`) y Melbyn (`purchaseOrders`, `inventory`,
+  `suppliers`, `products`). Si cambian, esta agregación debe revisarse.
+- La generación y descarga de CSV permanecen como helpers module-local.
+- Compras permite filtrar por sucursal y movimientos por producto, usando los IDs ya disponibles
+  en las entidades consultadas.
+- Los rangos y las fechas exportadas usan el mismo día calendario local que muestra la tabla.
+- Los totales de ventas incluyen únicamente ventas `completed`; los de compras excluyen
+  `draft` y `cancelled`. La UI identifica expresamente los registros excluidos y la semántica del
+  monto para no presentarlos como un total financiero indiferenciado.
+- La mayoría de fechas del seed son `2026-01-01`; hay que ajustar el rango de fechas para ver esos
+  datos en la demo.
+- `admin.reports.read` y `admin.reports.export` son permisos nuevos. Se esperan colisiones en
+  `permissions.ts`, `demoSeed.ts`, `navigation.ts`, `serviceHelpers.ts`, `README.md` y `SCOPE.md`
+  con las ocho ramas previas de administration; al integrarlas deben conservarse todas las
+  entradas.
 
 ## Sucursales
 

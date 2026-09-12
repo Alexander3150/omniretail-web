@@ -82,9 +82,7 @@ export function SaleTicket({
                     <button
                       aria-label={`Aumentar cantidad de ${item.name}`}
                       className="flex h-9 w-9 items-center justify-center rounded-md border border-[var(--color-border)] font-bold text-[var(--color-title)] transition hover:bg-[var(--color-app-background)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)] disabled:cursor-not-allowed disabled:opacity-50"
-                      disabled={
-                        item.tracksStock && item.quantity >= (item.availableQuantity ?? 0)
-                      }
+                      disabled={item.tracksStock && item.quantity >= (item.availableQuantity ?? 0)}
                       onClick={() => onIncrease(item.productId)}
                       type="button"
                     >
@@ -134,12 +132,7 @@ export function SaleTicket({
         </div>
       </dl>
       <div className="border-t border-[var(--color-border)] p-5">
-        <Button
-          className="w-full"
-          disabled={!canCheckout}
-          onClick={onCheckout}
-          type="button"
-        >
+        <Button className="w-full" disabled={!canCheckout} onClick={onCheckout} type="button">
           Cobrar
         </Button>
       </div>

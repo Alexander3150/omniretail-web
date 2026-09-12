@@ -40,7 +40,7 @@
 | 7   | Auditoría                 | `/administracion/auditoria`             | `AuditLog`                    | ✅ **Implementada**                  |
 | 8   | Caja                      | `/administracion/caja`                  | `CashShift`, `CashMovement`   | ✅ **Implementada** — solo lectura   |
 | 9   | Dashboard                 | `/administracion/dashboard`             | Agregación                    | ✅ **Implementada**                  |
-| 10  | Reportes                  | `/administracion/reportes`              | Agregación                    | ⚠️ Necesita datos de otros módulos   |
+| 10  | Reportes                  | `/administracion/reportes`              | Agregación                    | ✅ **Implementada**                  |
 | 11  | Roles y permisos          | `/administracion/roles-permisos`        | `Role`, `Permission`          | ⛔ **Bloqueada** — contrato          |
 | 12  | Usuarios                  | `/administracion/usuarios`              | `User` (+ `AuthAccount`)      | ⛔ Bloqueada — depende de #11        |
 | 13  | Planes y facturación SaaS | `/administracion/planes-facturacion`    | _(sin definir)_               | ⛔ Bloqueada — modelo                |
@@ -622,7 +622,7 @@ POS (Riquelme).
 KPIs agregados: ventas del día/mes, alertas de stock, pedidos pendientes, últimas incidencias.
 Sin reglas propias: 100% agregación vía repositorios ajenos. `KPICard` se agrega en esta rama.
 
-### 12.10 Reportes
+### 12.10 Reportes ✅ implementada
 
 Agrega `Sale`, `PurchaseOrder`, `InventoryMovement`, `Payment` vía repositorios compartidos.
 Nunca crear un almacén paralelo de reportes. Dejar para el final.

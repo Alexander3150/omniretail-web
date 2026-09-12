@@ -21,6 +21,21 @@ UI
 -> Backend
 ```
 
+## Customer En Storefront
+
+`ResolvePublicStorefrontContextService` deriva el tenant de la tienda desde el slug configurado y valida tenant/configuracion activa sin aceptar `tenantId` del caller. `PublicTenantProvider` usa ese boundary para exponer el contexto visual existente y el checkout lo revalida como autoridad. La identidad opcional se deriva de los repositories de sesion y se vincula solamente cuando pertenece al mismo tenant publico.
+
+```text
+ResolvePublicStorefrontContextService -> PublicTenantProvider
+-> CreateStorefrontCheckoutService
+-> Current Session -> active Customer User -> active Customer
+-> tenant match
+-> Order.customerId
+-> OrderRepository.getByCustomer para /cuenta/pedidos
+```
+
+Guest y sesiones de personal no producen contexto Customer. Una sesion Customer invalida o inactiva falla cerrada; una identidad valida de otro tenant no se atribuye a la Order del Storefront actual.
+
 ## Order Reservation Lifecycle
 
 `MockOrderRepository` crea o confirma una Order y todas sus reservas dentro de una sola llamada a `MockDatabaseStore.transact`. Las mutaciones de reserva sobre el draft viven en helpers de infraestructura compartidos con `MockInventoryRepository` y `MockOrderPaymentConfirmationRepository`; asi los repositorios usan el mismo algoritmo sin abrir transacciones anidadas ni duplicar la logica de allocations.
@@ -32,7 +47,7 @@ OrderRepository.create / updateStatus
 -> Order + InventoryReservation + InventoryBalance
 ```
 
-El checkout e-commerce crea primero `Order.pending` y `Payment.pending`. Para el pago mock con tarjeta, `OrderPaymentConfirmationRepository.confirm` valida Order, Payment, tenant, branch activa, relacion, importe y estados; en una unica transaccion reserva inventario y cambia ambos estados. Si la reserva falla, Payment y Order permanecen pending. Confirmar otra vez la misma pareja ya confirmada es idempotente.
+El checkout e-commerce crea primero `Order.pending` y `Payment.pending`. Cada `OrderItem.id` queda namespaced por el `idempotencyKey` estable del intento, por lo que un retry conserva identidad y Orders distintas no comparten lineas. Para el pago mock con tarjeta, `OrderPaymentConfirmationRepository.confirm` valida Order, Payment, tenant, branch activa, relacion, importe y estados; en una unica transaccion reserva inventario y cambia ambos estados. Si falta disponibilidad, la transaccion de confirmacion revierte y el boundary compensa eliminando exclusivamente la pareja inmediata `pending/pending` sin reservas ni dependencias. Confirmar otra vez la misma pareja ya confirmada es idempotente.
 
 ```text
 CreateStorefrontCheckoutService

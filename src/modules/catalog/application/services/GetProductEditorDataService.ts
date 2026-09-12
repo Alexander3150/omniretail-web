@@ -115,7 +115,8 @@ export class GetProductEditorDataService {
       supplierProducts,
       media,
       promotions,
-      inventorySettings, kitComponents,
+      inventorySettings,
+      kitComponents,
     ] = await Promise.all([
       this.repositories.units.getConversionsByProduct(productId),
       this.repositories.attributes.getValuesByProduct(productId),
@@ -128,23 +129,20 @@ export class GetProductEditorDataService {
         : Promise.resolve(null),
       this.repositories.productKitComponents.getByKitProduct(productId),
     ]);
-    const currentDefaultLocation =
-      inventorySettings?.defaultLocationId
-        ? branchLocations.find((location) => location.id === inventorySettings.defaultLocationId) ??
-          null
-        : null;
+    const currentDefaultLocation = inventorySettings?.defaultLocationId
+      ? (branchLocations.find((location) => location.id === inventorySettings.defaultLocationId) ??
+        null)
+      : null;
 
     const saleUnitId = detail.product.saleUnitId ?? detail.product.baseUnitId;
     const unitConversion =
       conversions.find(
         (conversion) =>
-          conversion.fromUnitId === detail.product.baseUnitId &&
-          conversion.toUnitId === saleUnitId,
+          conversion.fromUnitId === detail.product.baseUnitId && conversion.toUnitId === saleUnitId,
       ) ??
       conversions.find(
         (conversion) =>
-          conversion.fromUnitId === saleUnitId &&
-          conversion.toUnitId === detail.product.baseUnitId,
+          conversion.fromUnitId === saleUnitId && conversion.toUnitId === detail.product.baseUnitId,
       ) ??
       null;
 
@@ -161,13 +159,13 @@ export class GetProductEditorDataService {
           minimumOrderQuantity: supplierProduct.minimumOrderQuantity,
           preferred: supplierProduct.preferred,
           active: supplierProduct.active,
-          costTiers: (await this.repositories.supplierProducts.getCostTiers(supplierProduct.id)).map(
-            (tier) => ({
-              id: tier.id,
-              minQuantity: tier.minQuantity,
-              unitCost: tier.unitCost,
-            }),
-          ),
+          costTiers: (
+            await this.repositories.supplierProducts.getCostTiers(supplierProduct.id)
+          ).map((tier) => ({
+            id: tier.id,
+            minQuantity: tier.minQuantity,
+            unitCost: tier.unitCost,
+          })),
         };
       }),
     );

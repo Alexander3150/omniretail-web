@@ -34,10 +34,7 @@ export const SESSION_POLICY = {
  * otherwise-valid session (section 4.13). This list will grow as later
  * modules (password change, MFA, etc.) are implemented.
  */
-export const REAUTH_REQUIRED_ACTIONS = [
-  "change_password",
-  "change_role_or_permissions",
-] as const;
+export const REAUTH_REQUIRED_ACTIONS = ["change_password", "change_role_or_permissions"] as const;
 
 export type ReauthRequiredAction = (typeof REAUTH_REQUIRED_ACTIONS)[number];
 

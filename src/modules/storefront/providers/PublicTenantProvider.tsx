@@ -1,16 +1,8 @@
 "use client";
 
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
-import { TenantStatus } from "@/core/enums";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
-import { publicStorefrontSlug } from "@/config/publicStorefront";
+import { ResolvePublicStorefrontContextService } from "@/modules/storefront/application/services/ResolvePublicStorefrontContextService";
 
 interface PublicTenantContextValue {
   tenantId: string | null;
@@ -21,7 +13,11 @@ interface PublicTenantContextValue {
 const PublicTenantContext = createContext<PublicTenantContextValue | null>(null);
 
 export function PublicTenantProvider({ children }: { children: ReactNode }) {
-  const { tenants, businessConfig } = useRepositories();
+  const repositories = useRepositories();
+  const resolver = useMemo(
+    () => new ResolvePublicStorefrontContextService(repositories),
+    [repositories],
+  );
   const [tenantId, setTenantId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,17 +27,8 @@ export function PublicTenantProvider({ children }: { children: ReactNode }) {
 
     const resolvePublicTenant = async () => {
       try {
-        const tenant = await tenants.getBySlug(publicStorefrontSlug);
-        if (!tenant || tenant.status !== TenantStatus.active) {
-          throw new Error("Tenant unavailable");
-        }
-
-        const ecommerceConfig = await businessConfig.getEcommerceConfig(tenant.id);
-        if (!ecommerceConfig?.enabled) {
-          throw new Error("Ecommerce unavailable");
-        }
-
-        if (active) setTenantId(tenant.id);
+        const context = await resolver.execute();
+        if (active) setTenantId(context.tenantId);
       } catch {
         if (active) setError("La tienda pública no está disponible.");
       } finally {
@@ -54,7 +41,7 @@ export function PublicTenantProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, [businessConfig, tenants]);
+  }, [resolver]);
 
   const value = useMemo<PublicTenantContextValue>(
     () => ({ tenantId, loading, error }),

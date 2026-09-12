@@ -201,12 +201,16 @@ export class MockInventoryTransferRepository
 
     itemRequestIds.forEach((requestId) => {
       if (!transferRequestIds.has(requestId)) {
-        throw new Error("Inventory transfer item sourceRequestId must be listed in sourceRequestIds");
+        throw new Error(
+          "Inventory transfer item sourceRequestId must be listed in sourceRequestIds",
+        );
       }
     });
     transferRequestIds.forEach((requestId) => {
       if (!itemRequestIds.has(requestId)) {
-        throw new Error("Inventory transfer sourceRequestIds must match item sourceRequestId values");
+        throw new Error(
+          "Inventory transfer sourceRequestIds must match item sourceRequestId values",
+        );
       }
     });
   }
@@ -248,10 +252,14 @@ export class MockInventoryTransferRepository
     this.assertQuantity(dispatchedQuantity, "dispatchedQuantity");
     this.assertQuantity(receivedQuantity, "receivedQuantity");
     if (dispatchedQuantity > item.requestedQuantity) {
-      throw new Error("Inventory transfer dispatchedQuantity must be less than or equal to requestedQuantity");
+      throw new Error(
+        "Inventory transfer dispatchedQuantity must be less than or equal to requestedQuantity",
+      );
     }
     if (receivedQuantity > dispatchedQuantity) {
-      throw new Error("Inventory transfer receivedQuantity must be less than or equal to dispatchedQuantity");
+      throw new Error(
+        "Inventory transfer receivedQuantity must be less than or equal to dispatchedQuantity",
+      );
     }
   }
 
@@ -273,10 +281,14 @@ export class MockInventoryTransferRepository
       const quantity = item[field] ?? 0;
       this.assertQuantity(quantity, field);
       if (field === "dispatchedQuantity" && quantity > currentItem.requestedQuantity) {
-        throw new Error("Inventory transfer dispatchedQuantity must be less than or equal to requestedQuantity");
+        throw new Error(
+          "Inventory transfer dispatchedQuantity must be less than or equal to requestedQuantity",
+        );
       }
       if (field === "receivedQuantity" && quantity > currentItem.dispatchedQuantity) {
-        throw new Error("Inventory transfer receivedQuantity must be less than or equal to dispatchedQuantity");
+        throw new Error(
+          "Inventory transfer receivedQuantity must be less than or equal to dispatchedQuantity",
+        );
       }
     });
   }
@@ -334,11 +346,12 @@ export class MockInventoryTransferRepository
   private generateTransferNumber(db: MockDatabase, tenantId: string, date: string): string {
     const year = new Date(date).getFullYear();
     const prefix = `TR-${year}-`;
-    const next = db.inventoryTransfers
-      .filter((transfer) => transfer.tenantId === tenantId && transfer.number.startsWith(prefix))
-      .map((transfer) => Number(transfer.number.slice(prefix.length)))
-      .filter((value) => Number.isInteger(value))
-      .reduce((max, value) => Math.max(max, value), 0) + 1;
+    const next =
+      db.inventoryTransfers
+        .filter((transfer) => transfer.tenantId === tenantId && transfer.number.startsWith(prefix))
+        .map((transfer) => Number(transfer.number.slice(prefix.length)))
+        .filter((value) => Number.isInteger(value))
+        .reduce((max, value) => Math.max(max, value), 0) + 1;
     return `${prefix}${String(next).padStart(5, "0")}`;
   }
 
@@ -351,10 +364,7 @@ export class MockInventoryTransferRepository
     ];
   }
 
-  private emitChanged(
-    transfer: InventoryTransfer,
-    action: "created" | "status_changed",
-  ): void {
+  private emitChanged(transfer: InventoryTransfer, action: "created" | "status_changed"): void {
     this.emit("inventory-transfer.changed", {
       entityId: transfer.id,
       tenantId: transfer.tenantId,

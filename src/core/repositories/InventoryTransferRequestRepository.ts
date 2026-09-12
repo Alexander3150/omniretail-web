@@ -30,9 +30,7 @@ export interface ReceiveInventoryTransferRequestInput {
 export interface InventoryTransferRequestRepository {
   getById(id: string): Promise<InventoryTransferRequest | null>;
   getRequests(filters?: InventoryTransferRequestFilters): Promise<InventoryTransferRequest[]>;
-  createRequest(
-    input: CreateInventoryTransferRequestInput,
-  ): Promise<InventoryTransferRequest>;
+  createRequest(input: CreateInventoryTransferRequestInput): Promise<InventoryTransferRequest>;
   approveRequest(
     id: string,
     input?: ReviewInventoryTransferRequestInput,
