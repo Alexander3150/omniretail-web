@@ -49,7 +49,9 @@ export function UserMenu({ description, label, onLogout }: UserMenuProps) {
           className="absolute right-0 top-11 z-30 w-64 rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-lg"
           role="dialog"
         >
-          <p className="truncate text-sm font-bold text-[var(--color-title)]">{label ?? "Cuenta"}</p>
+          <p className="truncate text-sm font-bold text-[var(--color-title)]">
+            {label ?? "Cuenta"}
+          </p>
           {description ? (
             <p className="mt-1 truncate text-xs text-[var(--color-text-muted)]">{description}</p>
           ) : null}

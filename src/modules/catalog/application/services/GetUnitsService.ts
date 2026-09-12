@@ -30,11 +30,7 @@ export class GetUnitsService {
   }
 }
 
-function toListItem(
-  unit: Unit,
-  products: Product[],
-  conversions: UnitConversion[],
-): UnitListItem {
+function toListItem(unit: Unit, products: Product[], conversions: UnitConversion[]): UnitListItem {
   const productIds = new Set<string>();
   products.forEach((product) => {
     if (product.baseUnitId === unit.id || product.saleUnitId === unit.id) {

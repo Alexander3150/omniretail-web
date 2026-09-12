@@ -5,12 +5,7 @@
 import type { ReactNode } from "react";
 import { ProductStatus } from "@/core/enums";
 import { ProductActionsMenu } from "@/modules/catalog/components/ProductActionsMenu";
-import {
-  GlobeIcon,
-  MobileIcon,
-  PosIcon,
-  TagIcon,
-} from "@/modules/catalog/components/CatalogIcons";
+import { GlobeIcon, MobileIcon, PosIcon, TagIcon } from "@/modules/catalog/components/CatalogIcons";
 import { productTypeLabels } from "@/modules/catalog/components/productLabels";
 import type { ProductListItem } from "@/modules/catalog/types/catalog.types";
 import { StatusBadge } from "@/shared/components/StatusBadge";

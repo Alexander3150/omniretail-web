@@ -41,7 +41,10 @@ export function validatePasswordAgainstPolicy(password: string): string | null {
   if (!password) {
     return "La contraseña es obligatoria.";
   }
-  if (password.length < PASSWORD_POLICY.MIN_LENGTH || password.length > PASSWORD_POLICY.MAX_LENGTH) {
+  if (
+    password.length < PASSWORD_POLICY.MIN_LENGTH ||
+    password.length > PASSWORD_POLICY.MAX_LENGTH
+  ) {
     return `La contraseña debe tener entre ${PASSWORD_POLICY.MIN_LENGTH} y ${PASSWORD_POLICY.MAX_LENGTH} caracteres.`;
   }
   if (!PASSWORD_POLICY.ALLOW_SPACES && /\s/.test(password)) {
@@ -95,8 +98,7 @@ export const LOCKOUT_RESET_AFTER_MINUTES = 60;
 export const GENERIC_AUTH_ERROR_MESSAGE =
   "No fue posible iniciar sesión. Verifica tus credenciales o intenta más tarde.";
 
-export const GENERIC_RECOVERY_MESSAGE =
-  "Si existe una cuenta asociada, recibirás instrucciones.";
+export const GENERIC_RECOVERY_MESSAGE = "Si existe una cuenta asociada, recibirás instrucciones.";
 
 /**
  * Mensaje para un intento de registro con un correo que ya tiene cuenta

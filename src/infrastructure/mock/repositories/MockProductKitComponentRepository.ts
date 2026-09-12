@@ -10,7 +10,9 @@ export class MockProductKitComponentRepository
   implements ProductKitComponentRepository
 {
   async getByKitProduct(kitProductId: string) {
-    return this.read((db) => db.productKitComponents.filter((item) => item.kitProductId === kitProductId));
+    return this.read((db) =>
+      db.productKitComponents.filter((item) => item.kitProductId === kitProductId),
+    );
   }
 
   async replaceForKit(
@@ -19,7 +21,9 @@ export class MockProductKitComponentRepository
     components: ReplaceProductKitComponentInput[],
   ) {
     const result = this.store.mutate((db) => {
-      const kit = db.products.find((item) => item.id === kitProductId && item.tenantId === tenantId);
+      const kit = db.products.find(
+        (item) => item.id === kitProductId && item.tenantId === tenantId,
+      );
       if (!kit || kit.productType !== ProductType.kit) throw new Error("Kit product not found");
       if (kit.status === "published" && components.length === 0) {
         throw new Error("A published kit requires at least one component");
@@ -29,8 +33,10 @@ export class MockProductKitComponentRepository
         if (!Number.isFinite(component.quantityPerKit) || component.quantityPerKit <= 0) {
           throw new Error("Kit component quantity must be greater than zero");
         }
-        if (component.componentProductId === kitProductId) throw new Error("A kit cannot include itself");
-        if (componentIds.has(component.componentProductId)) throw new Error("Duplicate kit component");
+        if (component.componentProductId === kitProductId)
+          throw new Error("A kit cannot include itself");
+        if (componentIds.has(component.componentProductId))
+          throw new Error("Duplicate kit component");
         componentIds.add(component.componentProductId);
         const product = db.products.find((item) => item.id === component.componentProductId);
         if (
@@ -42,7 +48,9 @@ export class MockProductKitComponentRepository
           throw new Error("Kit components must be tenant physical stock-tracked products");
         }
       });
-      db.productKitComponents = db.productKitComponents.filter((item) => item.kitProductId !== kitProductId);
+      db.productKitComponents = db.productKitComponents.filter(
+        (item) => item.kitProductId !== kitProductId,
+      );
       const now = this.now();
       const created = components.map((component) => ({
         id: this.id("kit-component"),
@@ -56,7 +64,12 @@ export class MockProductKitComponentRepository
       db.productKitComponents.push(...created);
       return created;
     });
-    this.emit("product.changed", { entityId: kitProductId, tenantId, productId: kitProductId, action: "updated" });
+    this.emit("product.changed", {
+      entityId: kitProductId,
+      tenantId,
+      productId: kitProductId,
+      action: "updated",
+    });
     return result;
   }
 }

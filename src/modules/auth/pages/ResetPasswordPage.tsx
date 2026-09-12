@@ -23,8 +23,12 @@ export function ResetPasswordPage({ token }: { token: string }) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[var(--color-app-background)] px-6 py-10">
         <section className="w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center">
-          <p className="text-sm font-semibold uppercase text-[var(--color-text-muted)]">OmniRetail</p>
-          <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">Contraseña actualizada</h1>
+          <p className="text-sm font-semibold uppercase text-[var(--color-text-muted)]">
+            OmniRetail
+          </p>
+          <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">
+            Contraseña actualizada
+          </h1>
           <InlineAlert
             className="mt-4 text-left"
             title="Ya puedes iniciar sesión con tu nueva contraseña."
@@ -42,7 +46,9 @@ export function ResetPasswordPage({ token }: { token: string }) {
     <main className="flex min-h-screen items-center justify-center bg-[var(--color-app-background)] px-6 py-10">
       <section className="w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-8">
         <p className="text-sm font-semibold uppercase text-[var(--color-text-muted)]">OmniRetail</p>
-        <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">Restablece tu contraseña</h1>
+        <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">
+          Restablece tu contraseña
+        </h1>
 
         <form
           className="mt-6 space-y-4"

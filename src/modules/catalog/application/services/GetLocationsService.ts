@@ -10,7 +10,11 @@ export class GetLocationsService {
       this.repositories.products.getAll(),
     ]);
     const productCounts = branchId
-      ? await countProductsByDefaultLocation(this.repositories, products.map((product) => product.id), branchId)
+      ? await countProductsByDefaultLocation(
+          this.repositories,
+          products.map((product) => product.id),
+          branchId,
+        )
       : new Map<string, number>();
 
     return locations
@@ -38,7 +42,9 @@ async function countProductsByDefaultLocation(
   const productIdsByLocation = new Map<string, Set<string>>();
 
   const settings = await Promise.all(
-    productIds.map((productId) => repositories.inventory.getProductInventorySettings(productId, branchId)),
+    productIds.map((productId) =>
+      repositories.inventory.getProductInventorySettings(productId, branchId),
+    ),
   );
 
   settings.forEach((setting) => {

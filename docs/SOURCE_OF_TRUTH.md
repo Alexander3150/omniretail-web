@@ -164,6 +164,12 @@ Cada incremento confirmado de `PickingItem.pickedQuantity` consume solamente el 
 
 Frontend simula auth; no es seguridad real. Diferenciar `temporarily_locked` de bloqueo/deshabilitacion administrativa. Nunca mostrar o almacenar password en texto plano. No usar preguntas de seguridad tradicionales.
 
+Despues de login, un Customer vuelve al Storefront publico (`/`) y un Employee/Admin conserva `/inicio`. Un destino de retorno para Customer solo puede apuntar a rutas publicas del Storefront o a `/cuenta` y sus subrutas; destinos operativos se ignoran. Dentro del arbol privado, Customer queda limitado a `/cuenta/*` independientemente de permisos operativos asignados por error.
+
+El header del Storefront deriva su enlace de cuenta desde la sesion existente: Guest ve `Ingresar` hacia `/iniciar-sesion`, Customer ve `Mi Cuenta` hacia `/cuenta/perfil` y Employee/Admin conserva el acceso a `/inicio` sin ser tratado como Customer.
+
+Los cambios de sesion actualizan primero el puntero persistido y despues publican `auth.changed`. `CurrentSessionProvider` reconstruye `Session -> User -> Role` desde repositories al montar y ante eventos de auth/user; nunca conserva una reconstruccion anterior si se solapa con un login, logout o cambio de usuario mas reciente.
+
 ## Branch Scope
 
 Empleado puede tener assigned branch, selected branches o all branches. Branch selector solo aparece cuando puede cambiar de sucursal.

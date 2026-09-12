@@ -1,8 +1,5 @@
 import { InventoryTransferRequestStatus } from "@/core/enums";
-import type {
-  InventoryTransferRequest,
-  Product,
-} from "@/core/entities";
+import type { InventoryTransferRequest, Product } from "@/core/entities";
 import type {
   CreateInventoryTransferRequestInput,
   InventoryTransferRequestRepository,
@@ -20,13 +17,14 @@ export class MockInventoryTransferRequestRepository
     return this.read((db) => db.inventoryTransferRequests.find((item) => item.id === id) ?? null);
   }
 
-  async getRequests(filters: Parameters<InventoryTransferRequestRepository["getRequests"]>[0] = {}) {
+  async getRequests(
+    filters: Parameters<InventoryTransferRequestRepository["getRequests"]>[0] = {},
+  ) {
     return this.read((db) =>
       db.inventoryTransferRequests.filter(
         (item) =>
           (!filters.tenantId || item.tenantId === filters.tenantId) &&
-          (!filters.requestingBranchId ||
-            item.requestingBranchId === filters.requestingBranchId) &&
+          (!filters.requestingBranchId || item.requestingBranchId === filters.requestingBranchId) &&
           (!filters.sourceBranchId || item.sourceBranchId === filters.sourceBranchId) &&
           (!filters.status || item.status === filters.status),
       ),
@@ -118,7 +116,9 @@ export class MockInventoryTransferRequestRepository
         typeof input.receivedQuantity === "number" &&
         (!Number.isFinite(input.receivedQuantity) || input.receivedQuantity < 0)
       ) {
-        throw new Error("Inventory transfer request receivedQuantity must be greater than or equal to 0");
+        throw new Error(
+          "Inventory transfer request receivedQuantity must be greater than or equal to 0",
+        );
       }
       const current = this.findRequest(db, id);
       this.assertStatus(current, [InventoryTransferRequestStatus.inTransit], "mark received");

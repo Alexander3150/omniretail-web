@@ -16,7 +16,11 @@ export interface SupplierProductRepository {
   /** Tenant-scoped write: `id` must belong to `tenantId`, otherwise treated as not found. */
   archive(tenantId: string, id: string): Promise<SupplierProduct>;
   /** Tenant-scoped write: `supplierProductId` must belong to `tenantId`, otherwise treated as not found. */
-  setPreferred(tenantId: string, productId: string, supplierProductId: string): Promise<SupplierProduct>;
+  setPreferred(
+    tenantId: string,
+    productId: string,
+    supplierProductId: string,
+  ): Promise<SupplierProduct>;
   getCostTiers(supplierProductId: string): Promise<SupplierCostTier[]>;
   /** Tenant-scoped write: `supplierProductId` must belong to `tenantId`, otherwise treated as not found. */
   replaceCostTiers(

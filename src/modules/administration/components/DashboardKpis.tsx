@@ -8,9 +8,7 @@ interface DashboardKpisProps {
 }
 
 export function DashboardKpis({ loading, summary }: DashboardKpisProps) {
-  const stockAlerts = summary
-    ? summary.stockAlerts.outOfStock + summary.stockAlerts.lowStock
-    : 0;
+  const stockAlerts = summary ? summary.stockAlerts.outOfStock + summary.stockAlerts.lowStock : 0;
   const stockTone = summary?.stockAlerts.outOfStock
     ? "danger"
     : summary?.stockAlerts.lowStock
@@ -18,7 +16,10 @@ export function DashboardKpis({ loading, summary }: DashboardKpisProps) {
       : "neutral";
 
   return (
-    <section aria-label="Indicadores ejecutivos" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <section
+      aria-label="Indicadores ejecutivos"
+      className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+    >
       <KPICard
         hint={`${summary?.salesToday.count ?? 0} ventas`}
         label="Ventas hoy"

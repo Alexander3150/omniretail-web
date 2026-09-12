@@ -85,7 +85,8 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
               entry.orderItemId === orderItem.id &&
               entry.productId === demand.productId,
           );
-          if (!reservation) throw new Error(`Reservation not found for PickingItem: ${orderItem.id}`);
+          if (!reservation)
+            throw new Error(`Reservation not found for PickingItem: ${orderItem.id}`);
           db.pickingItems.push({
             id: this.id("picking-item"),
             pickingOrderId: created.id,

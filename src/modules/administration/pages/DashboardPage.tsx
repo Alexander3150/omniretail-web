@@ -40,7 +40,12 @@ export function DashboardPage() {
     <div className="min-w-0 space-y-5">
       <PageHeader
         actions={
-          <Button disabled={loading} onClick={() => void reload()} type="button" variant="secondary">
+          <Button
+            disabled={loading}
+            onClick={() => void reload()}
+            type="button"
+            variant="secondary"
+          >
             {loading ? "Actualizando..." : "Actualizar"}
           </Button>
         }

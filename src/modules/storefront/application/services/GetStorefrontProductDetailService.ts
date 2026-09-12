@@ -15,7 +15,19 @@ export class GetStorefrontProductDetailService {
   }
 
   async execute(tenantId: string, productId: string): Promise<StorefrontProductDetailDto | null> {
-    const [product, allProducts, branches, balances, locations, lots, serials, categories, media, definitions, values] = await Promise.all([
+    const [
+      product,
+      allProducts,
+      branches,
+      balances,
+      locations,
+      lots,
+      serials,
+      categories,
+      media,
+      definitions,
+      values,
+    ] = await Promise.all([
       this.publishedProductService.execute(tenantId, productId),
       this.repositories.products.getAll(),
       this.repositories.branches.getActive(),
@@ -64,18 +76,19 @@ export class GetStorefrontProductDetailService {
         branchId: branch.id,
         branchName: branch.name,
         address: branch.address,
-        available: getAvailability({
-          product,
-          kitComponents,
-          productsById,
-          tenantId,
-          branchId: branch.id,
-          balances,
-          lots,
-          serials,
-          locations,
-          at,
-        }) > 0,
+        available:
+          getAvailability({
+            product,
+            kitComponents,
+            productsById,
+            tenantId,
+            branchId: branch.id,
+            balances,
+            lots,
+            serials,
+            locations,
+            at,
+          }) > 0,
       }));
 
     return { ...detail, availability };

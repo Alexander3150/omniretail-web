@@ -117,8 +117,7 @@ export class MockCustomerPaymentMethodRepository
         current.status !== CustomerPaymentMethodStatus.archived;
       const next: CustomerPaymentMethod = {
         ...current,
-        cardholderName:
-          "cardholderName" in input ? input.cardholderName : current.cardholderName,
+        cardholderName: "cardholderName" in input ? input.cardholderName : current.cardholderName,
         expirationMonth: input.expirationMonth ?? current.expirationMonth,
         expirationYear: input.expirationYear ?? current.expirationYear,
         status: input.status ?? current.status,

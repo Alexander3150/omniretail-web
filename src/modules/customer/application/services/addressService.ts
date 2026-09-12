@@ -3,7 +3,10 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import type { AddressFormDto } from "@/modules/customer/application/dto/AddressFormDto";
 import { resolveCustomerAuthorizationContext } from "@/modules/customer/application/services/CustomerAuthorizationContext";
 
-type AddressRepositories = Pick<RepositoryRegistry, "auth" | "users" | "roles" | "customers" | "addresses">;
+type AddressRepositories = Pick<
+  RepositoryRegistry,
+  "auth" | "users" | "roles" | "customers" | "addresses"
+>;
 
 function toFields(dto: AddressFormDto) {
   return {
@@ -52,7 +55,12 @@ export async function updateAddress(
   dto: AddressFormDto,
 ): Promise<Address> {
   const context = await resolveCustomerAuthorizationContext(repositories);
-  return repositories.addresses.update(context.tenantId, context.customerId, addressId, toFields(dto));
+  return repositories.addresses.update(
+    context.tenantId,
+    context.customerId,
+    addressId,
+    toFields(dto),
+  );
 }
 
 export async function removeAddress(

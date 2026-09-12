@@ -147,10 +147,14 @@ export async function syncEditorRelatedData(
 ) {
   await Promise.all([
     product.productType === "kit"
-      ? repositories.productKitComponents.replaceForKit(product.tenantId, product.id, dto.kitComponents.map((component) => ({
-          componentProductId: component.componentProductId,
-          quantityPerKit: toFiniteNumber(component.quantityPerKit),
-        })))
+      ? repositories.productKitComponents.replaceForKit(
+          product.tenantId,
+          product.id,
+          dto.kitComponents.map((component) => ({
+            componentProductId: component.componentProductId,
+            quantityPerKit: toFiniteNumber(component.quantityPerKit),
+          })),
+        )
       : Promise.resolve([]),
     syncInventorySettings(repositories, product, dto),
     syncUnitConversion(repositories, product, dto, context),
@@ -166,7 +170,9 @@ export async function syncEditorRelatedData(
           active: tier.active,
         })),
     ),
-    product.productType === "kit" ? Promise.resolve([]) : syncSupplierProducts(repositories, product, dto),
+    product.productType === "kit"
+      ? Promise.resolve([])
+      : syncSupplierProducts(repositories, product, dto),
     syncMedia(repositories, product, dto.media),
   ]);
 }
@@ -174,11 +180,7 @@ export async function syncEditorRelatedData(
 function assertInventorySettings(dto: ProductEditorDto) {
   if (!dto.tracking.stock) return;
   const minStock = toFiniteNumber(dto.inventorySettings.minStock);
-  if (
-    dto.inventorySettings.minStock === "" ||
-    !Number.isSafeInteger(minStock) ||
-    minStock < 0
-  ) {
+  if (dto.inventorySettings.minStock === "" || !Number.isSafeInteger(minStock) || minStock < 0) {
     throw new CatalogServiceError("El stock minimo debe ser mayor o igual a 0.");
   }
 }
@@ -246,7 +248,7 @@ async function syncAttributes(
     if (!name || !value) continue;
 
     let definition = attribute.attributeDefinitionId
-      ? definitions.find((item) => item.id === attribute.attributeDefinitionId) ?? null
+      ? (definitions.find((item) => item.id === attribute.attributeDefinitionId) ?? null)
       : null;
 
     if (!definition) {
@@ -318,8 +320,8 @@ async function syncSupplierProducts(
       saved.id,
       supplierProduct.costTiers.map((tier) => ({
         tenantId: product.tenantId,
-          minQuantity: toFiniteNumber(tier.minQuantity),
-          unitCost: toFiniteNumber(tier.unitCost),
+        minQuantity: toFiniteNumber(tier.minQuantity),
+        unitCost: toFiniteNumber(tier.unitCost),
       })),
     );
   }
@@ -380,7 +382,9 @@ async function syncMedia(
   }
 
   await Promise.all(
-    current.filter((media) => !nextIds.has(media.id)).map((media) => repositories.productMedia.remove(media.id)),
+    current
+      .filter((media) => !nextIds.has(media.id))
+      .map((media) => repositories.productMedia.remove(media.id)),
   );
 }
 

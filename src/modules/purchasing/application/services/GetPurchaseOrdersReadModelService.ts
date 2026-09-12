@@ -52,8 +52,7 @@ export class GetPurchaseOrdersReadModelService {
         }),
       )
       .sort(
-        (left, right) =>
-          new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+        (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
       );
     const suggestions = activeBranchId
       ? await this.getReorderSuggestions(activeBranchId, suppliers, orders)
@@ -152,7 +151,9 @@ export class GetPurchaseOrdersReadModelService {
           const associatedSupplierProducts = supplierProducts.filter(
             (item) => item.active && (!row || item.tenantId === row.tenantId),
           );
-          const preferredSupplierProduct = associatedSupplierProducts.find((item) => item.preferred);
+          const preferredSupplierProduct = associatedSupplierProducts.find(
+            (item) => item.preferred,
+          );
           const preferredSupplier = preferredSupplierProduct
             ? supplierById.get(preferredSupplierProduct.supplierId)
             : undefined;
@@ -182,10 +183,13 @@ export class GetPurchaseOrdersReadModelService {
     const entries = await Promise.all(
       receipts
         .filter((receipt) => receipt.purchaseOrderId)
-        .map(async (receipt) => [
-          receipt.purchaseOrderId as string,
-          await this.repositories.receipts.getLinesByReceipt(receipt.id),
-        ] as const),
+        .map(
+          async (receipt) =>
+            [
+              receipt.purchaseOrderId as string,
+              await this.repositories.receipts.getLinesByReceipt(receipt.id),
+            ] as const,
+        ),
     );
 
     return entries.reduce((map, [purchaseOrderId, lines]) => {
@@ -195,11 +199,7 @@ export class GetPurchaseOrdersReadModelService {
   }
 }
 
-function getOpenPurchaseQuantity(
-  orders: PurchaseOrder[],
-  branchId: string,
-  productId: string,
-) {
+function getOpenPurchaseQuantity(orders: PurchaseOrder[], branchId: string, productId: string) {
   return orders
     .filter((order) => order.branchId === branchId && isActiveReplenishmentOrder(order.status))
     .flatMap((order) => order.items ?? [])

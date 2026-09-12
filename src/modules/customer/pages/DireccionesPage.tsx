@@ -169,7 +169,9 @@ export function DireccionesPage() {
                 {address.line2 ? `, ${address.line2}` : ""}
               </p>
               <p className="text-sm text-[var(--color-text-muted)]">
-                {[address.city, address.stateOrDepartment, address.country].filter(Boolean).join(", ")}
+                {[address.city, address.stateOrDepartment, address.country]
+                  .filter(Boolean)
+                  .join(", ")}
               </p>
 
               <div className="mt-4 flex flex-wrap gap-2">
@@ -226,7 +228,9 @@ export function DireccionesPage() {
             <Input
               disabled={busy}
               id="address-recipient"
-              onChange={(event) => setForm((prev) => ({ ...prev, recipientName: event.target.value }))}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, recipientName: event.target.value }))
+              }
               value={form.recipientName}
             />
           </FormField>
@@ -276,7 +280,9 @@ export function DireccionesPage() {
               <Input
                 disabled={busy}
                 id="address-postal"
-                onChange={(event) => setForm((prev) => ({ ...prev, postalCode: event.target.value }))}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, postalCode: event.target.value }))
+                }
                 value={form.postalCode}
               />
             </FormField>

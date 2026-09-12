@@ -47,9 +47,7 @@ export function PosTerminalPage() {
         <div className="min-w-0 rounded-xl border border-[var(--color-border)] bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h2 className="text-lg font-bold text-[var(--color-title)]">
-                Productos disponibles
-              </h2>
+              <h2 className="text-lg font-bold text-[var(--color-title)]">Productos disponibles</h2>
               <p className="mt-1 text-sm text-[var(--color-text-muted)]">
                 Selecciona productos para agregarlos al ticket actual.
               </p>

@@ -16,11 +16,16 @@ export function RequestPasswordResetPage() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[var(--color-app-background)] px-6 py-10">
         <section className="w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center">
-          <p className="text-sm font-semibold uppercase text-[var(--color-text-muted)]">OmniRetail</p>
+          <p className="text-sm font-semibold uppercase text-[var(--color-text-muted)]">
+            OmniRetail
+          </p>
           <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">Revisa tu correo</h1>
           <InlineAlert className="mt-4 text-left" title={GENERIC_RECOVERY_MESSAGE} tone="info" />
           <p className="mt-6 text-sm text-[var(--color-text-muted)]">
-            <Link className="font-semibold text-[var(--color-title)] hover:underline" href="/iniciar-sesion">
+            <Link
+              className="font-semibold text-[var(--color-title)] hover:underline"
+              href="/iniciar-sesion"
+            >
               Volver a iniciar sesión
             </Link>
           </p>
@@ -33,7 +38,9 @@ export function RequestPasswordResetPage() {
     <main className="flex min-h-screen items-center justify-center bg-[var(--color-app-background)] px-6 py-10">
       <section className="w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-8">
         <p className="text-sm font-semibold uppercase text-[var(--color-text-muted)]">OmniRetail</p>
-        <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">Recupera tu contraseña</h1>
+        <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">
+          Recupera tu contraseña
+        </h1>
         <p className="mt-3 text-sm text-[var(--color-text-muted)]">
           Escribe tu correo y te enviaremos instrucciones para restablecer tu contraseña.
         </p>
@@ -64,7 +71,10 @@ export function RequestPasswordResetPage() {
         </form>
 
         <p className="mt-6 text-center text-sm text-[var(--color-text-muted)]">
-          <Link className="font-semibold text-[var(--color-title)] hover:underline" href="/iniciar-sesion">
+          <Link
+            className="font-semibold text-[var(--color-title)] hover:underline"
+            href="/iniciar-sesion"
+          >
             Volver a iniciar sesión
           </Link>
         </p>

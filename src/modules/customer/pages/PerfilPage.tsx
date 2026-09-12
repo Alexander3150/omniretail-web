@@ -13,13 +13,19 @@ import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { useToast } from "@/shared/components/Toast";
+import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
+import { useRouter } from "next/navigation";
 
 export function PerfilPage() {
   const { customer, email, loading, saving, error, update } = useCustomerProfile();
   const { showToast } = useToast();
+  const repositories = useRepositories();
+  const router = useRouter();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [fieldErrors, setFieldErrors] = useState<ProfileValidationErrors>({});
+  const [isEditing, setIsEditing] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     if (!customer) return;
@@ -38,6 +44,7 @@ export function PerfilPage() {
     try {
       await update(dto);
       showToast({ title: "Datos personales actualizados", tone: "success" });
+      setIsEditing(false);
     } catch (caughtError) {
       showToast({
         title: "No se pudieron guardar los datos",
@@ -47,9 +54,34 @@ export function PerfilPage() {
     }
   }
 
+  function handleCancel() {
+    if (customer) {
+      setName(customer.name);
+      setPhone(customer.phone ?? "");
+    }
+    setFieldErrors({});
+    setIsEditing(false);
+  }
+
+  async function handleLogout() {
+    setLoggingOut(true);
+    try {
+      const sessionId = await repositories.auth.getCurrentSessionId();
+      if (sessionId) {
+        await repositories.auth.logout(sessionId);
+      }
+    } finally {
+      await repositories.auth.clearLocalSession();
+      router.replace("/iniciar-sesion");
+    }
+  }
+
   return (
     <div className="min-w-0 space-y-5">
-      <PageHeader description="Actualiza tu nombre y teléfono de contacto." title="Datos personales" />
+      <PageHeader
+        description="Actualiza tu nombre y teléfono de contacto."
+        title="Datos personales"
+      />
 
       {error ? (
         <div
@@ -72,41 +104,76 @@ export function PerfilPage() {
           Cargando perfil...
         </div>
       ) : (
-        <form
-          className="max-w-lg space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
-          noValidate
-          onSubmit={(event) => {
-            event.preventDefault();
-            void handleSubmit();
-          }}
-        >
-          <FormField hint="El correo no se puede editar desde aquí." id="profile-email" label="Correo electrónico">
-            <Input id="profile-email" readOnly value={email ?? ""} />
-          </FormField>
+        <div className="max-w-lg space-y-8">
+          <form
+            className="space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (isEditing) {
+                void handleSubmit();
+              } else {
+                setIsEditing(true);
+              }
+            }}
+          >
+            <FormField
+              hint="El correo no se puede editar desde aquí."
+              id="profile-email"
+              label="Correo electrónico"
+            >
+              <Input id="profile-email" readOnly value={email ?? ""} />
+            </FormField>
 
-          <FormField error={fieldErrors.name} id="profile-name" label="Nombre completo">
-            <Input
-              disabled={saving}
-              id="profile-name"
-              onChange={(event) => setName(event.target.value)}
-              value={name}
-            />
-          </FormField>
+            <FormField error={fieldErrors.name} id="profile-name" label="Nombre completo">
+              <Input
+                disabled={saving}
+                id="profile-name"
+                onChange={(event) => setName(event.target.value)}
+                readOnly={!isEditing}
+                value={name}
+              />
+            </FormField>
 
-          <FormField error={fieldErrors.phone} hint="Opcional" id="profile-phone" label="Teléfono">
-            <Input
-              disabled={saving}
-              id="profile-phone"
-              onChange={(event) => setPhone(event.target.value)}
-              type="tel"
-              value={phone}
-            />
-          </FormField>
+            <FormField error={fieldErrors.phone} hint="Opcional" id="profile-phone" label="Teléfono">
+              <Input
+                disabled={saving}
+                id="profile-phone"
+                onChange={(event) => setPhone(event.target.value)}
+                readOnly={!isEditing}
+                type="tel"
+                value={phone}
+              />
+            </FormField>
 
-          <Button disabled={saving} type="submit">
-            {saving ? "Guardando..." : "Guardar cambios"}
-          </Button>
-        </form>
+            <div className="flex items-center gap-3 pt-2">
+              <Button disabled={saving} type="submit">
+                {isEditing ? (saving ? "Guardando..." : "Guardar cambios") : "Editar"}
+              </Button>
+              {isEditing && (
+                <Button disabled={saving} onClick={handleCancel} type="button" variant="secondary">
+                  Cancelar
+                </Button>
+              )}
+            </div>
+          </form>
+
+          <hr className="border-t border-[var(--color-border)]" />
+
+          <div>
+            <Button
+              disabled={loggingOut}
+              onClick={() => {
+                void handleLogout();
+              }}
+              type="button"
+              variant="secondary"
+              className="text-[var(--color-danger)] hover:bg-red-50 hover:text-red-700 hover:border-red-200"
+            >
+              {loggingOut ? "Cerrando sesión..." : "Cerrar sesión"}
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );

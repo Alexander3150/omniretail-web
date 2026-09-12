@@ -2,7 +2,10 @@ import { CategoryStatus } from "@/core/enums";
 import type { Category } from "@/core/entities";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { CategoryEditorDto } from "@/modules/catalog/application/dto/CategoryEditorDto";
-import { CatalogServiceError, resolveTenantId } from "@/modules/catalog/application/services/serviceHelpers";
+import {
+  CatalogServiceError,
+  resolveTenantId,
+} from "@/modules/catalog/application/services/serviceHelpers";
 import { normalizeCategoryCode } from "@/modules/catalog/validation/category.validation";
 
 export class SaveCategoryService {

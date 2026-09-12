@@ -227,7 +227,11 @@ export function MetodosPagoPage() {
           </FormField>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <FormField error={fieldErrors.expirationMonth} id="payment-month" label="Mes de expiración">
+            <FormField
+              error={fieldErrors.expirationMonth}
+              id="payment-month"
+              label="Mes de expiración"
+            >
               <Input
                 disabled={busy}
                 id="payment-month"
@@ -240,7 +244,11 @@ export function MetodosPagoPage() {
               />
             </FormField>
 
-            <FormField error={fieldErrors.expirationYear} id="payment-year" label="Año de expiración">
+            <FormField
+              error={fieldErrors.expirationYear}
+              id="payment-year"
+              label="Año de expiración"
+            >
               <Input
                 disabled={busy}
                 id="payment-year"
@@ -258,7 +266,9 @@ export function MetodosPagoPage() {
             <Input
               disabled={busy}
               id="payment-cardholder"
-              onChange={(event) => setForm((prev) => ({ ...prev, cardholderName: event.target.value }))}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, cardholderName: event.target.value }))
+              }
               value={form.cardholderName}
             />
           </FormField>

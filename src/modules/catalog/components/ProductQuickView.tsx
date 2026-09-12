@@ -11,10 +11,7 @@ import { Button } from "@/shared/components/Button";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
 import { cn } from "@/shared/utils/cn";
-import {
-  formatTracking,
-  productTypeLabels,
-} from "@/modules/catalog/components/productLabels";
+import { formatTracking, productTypeLabels } from "@/modules/catalog/components/productLabels";
 import {
   GlobeIcon,
   MobileIcon,
@@ -86,7 +83,9 @@ export function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
               <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
                 PRODUCTO
               </p>
-              <h2 className="mt-1 break-words text-xl font-bold text-[var(--color-title)]">{title}</h2>
+              <h2 className="mt-1 break-words text-xl font-bold text-[var(--color-title)]">
+                {title}
+              </h2>
               <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">SKU {sku}</p>
             </div>
             <button
@@ -177,7 +176,9 @@ function QuickViewGeneral({ detail }: { detail: ProductQuickViewModel }) {
       </div>
       {activePromotion && effectivePrice ? (
         <section className="rounded-xl border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 p-4">
-          <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">Promoción activa</p>
+          <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">
+            Promoción activa
+          </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
             <DetailItem label="Precio regular" value={formatCurrency(effectivePrice.basePrice)} />
             <DetailItem
