@@ -20,6 +20,7 @@ import type {
   InventoryTransferRepository,
   InventoryTransferRequestRepository,
   NotificationRepository,
+  OrderPaymentConfirmationRepository,
   OrderRepository,
   PaymentRepository,
   PickingRepository,
@@ -63,6 +64,7 @@ import {
   MockInventoryTransferRepository,
   MockInventoryTransferRequestRepository,
   MockNotificationRepository,
+  MockOrderPaymentConfirmationRepository,
   MockOrderRepository,
   MockPaymentRepository,
   MockPickingRepository,
@@ -114,6 +116,7 @@ export interface RepositoryRegistry {
   customerPaymentMethods: CustomerPaymentMethodRepository;
   savedPaymentMethods: SavedPaymentMethodRepository;
   orders: OrderRepository;
+  orderPaymentConfirmations: OrderPaymentConfirmationRepository;
   payments: PaymentRepository;
   bankAccounts: BankAccountRepository;
   sales: SalesRepository;
@@ -170,6 +173,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       customerPaymentMethods,
       savedPaymentMethods: customerPaymentMethods,
       orders: new MockOrderRepository(store, eventBus),
+      orderPaymentConfirmations: new MockOrderPaymentConfirmationRepository(store, eventBus),
       payments: new MockPaymentRepository(store, eventBus),
       bankAccounts: new MockBankAccountRepository(store, eventBus),
       sales: new MockSalesRepository(store, eventBus),
