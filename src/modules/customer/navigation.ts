@@ -35,6 +35,18 @@ export const customerNavigation = [
         href: "/cuenta/pedidos",
         permission: "storefront.orders.read",
       },
+      {
+        id: "customer-account-security",
+        label: "Seguridad",
+        href: "/cuenta/seguridad",
+        permission: "customer.account.read",
+      },
+      {
+        id: "customer-account-support",
+        label: "Soporte",
+        href: "/cuenta/soporte",
+        permission: "customer.account.read",
+      },
     ],
   },
 ] satisfies NavigationItem[];

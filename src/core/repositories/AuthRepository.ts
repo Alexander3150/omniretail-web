@@ -95,6 +95,18 @@ export interface RequestPasswordResetInput {
    */
   tenantId?: string;
 }
+export interface ChangePasswordInput {
+  /**
+   * Se resuelve la identidad desde una sesión activa y no revocada, nunca
+   * desde un userId declarado por el caller -- mismo criterio de "un dato
+   * que el cliente puede declarar nunca es autoridad por sí solo" que ya
+   * se aplicó en PR9 (EmployeeInvitation.tenantId) y PR10 (resolución de
+   * candidatos). getCurrentSessionId() ya expone esto públicamente.
+   */
+  sessionId: string;
+  currentPasswordMock: string;
+  newPasswordMock: string;
+}
 export interface AuthRepository {
   login(input: LoginInput): Promise<Session>;
   logout(sessionId: string): Promise<void>;
@@ -220,4 +232,33 @@ export interface AuthRepository {
    * estado.
    */
   activateEmployeeAccount(token: string, newPasswordMock: string): Promise<void>;
+  /**
+   * Cambia la contraseña de una cuenta YA autenticada (doc 4.1/4.13),
+   * distinto de resetPassword() (PR10, no autenticado, por token/link).
+   *
+   * Reautenticación (doc 4.13, "reautenticar con contraseña actual/MFA"):
+   * en este PR la reautenticación ES la verificación de currentPasswordMock
+   * contra el hash actual -- no hay un paso separado. La rama de MFA queda
+   * pendiente de PR13 (MFA no existe todavía); cuando exista, este método
+   * deberá aceptar también un desafío MFA vigente como alternativa.
+   *
+   * Válida newPasswordMock contra PASSWORD_POLICY (mismo patrón que
+   * resetPassword/activateEmployeeAccount: la política se aplica en la capa
+   * funcional, no solo en el formulario), y además rechaza que
+   * newPasswordMock sea igual a currentPasswordMock -- regla de UX (no del
+   * documento de arquitectura) confirmada por QA manual, aplicada aquí y
+   * no solo en el formulario por el mismo motivo que PASSWORD_POLICY.
+   *
+   * Revoca las SESIONES RESTANTES (todas menos la que se usó para hacer este
+   * cambio) -- distinto de resetPassword(), que revoca TODAS sin excepción
+   * porque ahí no hay ninguna sesión activa legítima todavía (el reset llega
+   * por link, no por una sesión). Acá el usuario sigue en el dispositivo
+   * donde acaba de reautenticarse, y el doc dice explícitamente "revocar las
+   * demás sesiones", no todas.
+   *
+   * Genérico por diseño (sirve para cualquier AuthAccount, Customer o
+   * Employee) aunque este PR solo lo conecta desde la UI de "Mi Cuenta" del
+   * cliente -- una pantalla equivalente para empleados no existe todavía.
+   */
+  changePassword(input: ChangePasswordInput): Promise<void>;
 }
