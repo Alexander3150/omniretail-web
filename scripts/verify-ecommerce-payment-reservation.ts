@@ -16,6 +16,7 @@ import { MockOrderPaymentConfirmationRepository } from "@/infrastructure/mock/re
 import { MockOrderRepository } from "@/infrastructure/mock/repositories/MockOrderRepository";
 import { MockProductRepository } from "@/infrastructure/mock/repositories/MockProductRepository";
 import { MockSaleConfirmationRepository } from "@/infrastructure/mock/repositories/MockSaleConfirmationRepository";
+import { MockTenantRepository } from "@/infrastructure/mock/repositories/MockTenantRepository";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import {
@@ -49,11 +50,18 @@ function createHarness(physicalQuantity: number, reservedQuantity = 0) {
   const orders = new MockOrderRepository(store, eventBus);
   const confirmations = new MockOrderPaymentConfirmationRepository(store, eventBus);
   const repositories = {
+    auth: {
+      getCurrentSessionId: async () => null,
+    },
     branches: new MockBranchRepository(store, eventBus),
     businessConfig: new MockBusinessConfigRepository(store, eventBus),
+    customers: {},
     orderPaymentConfirmations: confirmations,
     orders,
     products: new MockProductRepository(store, eventBus),
+    roles: {},
+    tenants: new MockTenantRepository(store, eventBus),
+    users: {},
   } as unknown as RepositoryRegistry;
   return {
     store,
@@ -142,13 +150,11 @@ async function createPendingCheckout(
 async function verifyConsecutiveStorefrontOrders() {
   const { store, checkout } = createHarness(20);
   await checkout.execute({
-    tenantId,
     items: storefrontCart(1),
     form: checkoutForm,
     idempotencyKey: "00000000-0000-4000-8000-000000000001",
   });
   await checkout.execute({
-    tenantId,
     items: storefrontCart(1),
     form: checkoutForm,
     idempotencyKey: "00000000-0000-4000-8000-000000000002",
@@ -174,7 +180,6 @@ async function verifyAccumulatedReservationQaCase() {
   const { store, checkout } = createHarness(15, 6);
   const successfulKey = "00000000-0000-4000-8000-000000000007";
   const successful = await checkout.execute({
-    tenantId,
     items: storefrontCart(7),
     form: checkoutForm,
     idempotencyKey: successfulKey,
@@ -191,7 +196,6 @@ async function verifyAccumulatedReservationQaCase() {
   const persistedOrderItemId = snapshot.orders[0].items[0].id;
 
   await checkout.execute({
-    tenantId,
     items: storefrontCart(7),
     form: checkoutForm,
     idempotencyKey: successfulKey,
@@ -204,7 +208,6 @@ async function verifyAccumulatedReservationQaCase() {
 
   await assert.rejects(
     checkout.execute({
-      tenantId,
       items: storefrontCart(3),
       form: checkoutForm,
       idempotencyKey: "00000000-0000-4000-8000-000000000003",

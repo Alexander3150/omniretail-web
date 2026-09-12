@@ -2,9 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
-import type {
-  StorefrontCheckoutFormDto,
-} from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
+import type { StorefrontCheckoutFormDto } from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
 import { CreateStorefrontCheckoutService } from "@/modules/storefront/application/services/CreateStorefrontCheckoutService";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
 import { useStorefrontCheckoutConfirmation } from "@/modules/storefront/providers/StorefrontCheckoutConfirmationProvider";
@@ -32,7 +30,6 @@ export function useStorefrontCheckout() {
 
       try {
         const nextResult = await service.execute({
-          tenantId,
           items,
           form,
           idempotencyKey: keyRef.current,

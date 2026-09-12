@@ -14,27 +14,29 @@ import type {
   StorefrontCheckoutFormDto,
   StorefrontCheckoutResultDto,
 } from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
+import { resolveOptionalCustomerAuthorizationContext } from "@/modules/customer/application/services/CustomerAuthorizationContext";
 import { GetStorefrontPublishedProductService } from "@/modules/storefront/application/services/GetStorefrontPublishedProductService";
 import { ConfirmStorefrontPaymentService } from "@/modules/storefront/application/services/ConfirmStorefrontPaymentService";
 import { StorefrontOrderEmailSimulationService } from "@/modules/storefront/application/services/StorefrontOrderEmailSimulationService";
+import { ResolvePublicStorefrontContextService } from "@/modules/storefront/application/services/ResolvePublicStorefrontContextService";
 
 export class CreateStorefrontCheckoutService {
   private readonly publishedProductService: GetStorefrontPublishedProductService;
   private readonly paymentConfirmationService: ConfirmStorefrontPaymentService;
+  private readonly publicStorefrontContextService: ResolvePublicStorefrontContextService;
   private readonly emailSimulationService = new StorefrontOrderEmailSimulationService();
 
   constructor(private readonly repositories: RepositoryRegistry) {
     this.publishedProductService = new GetStorefrontPublishedProductService(repositories);
     this.paymentConfirmationService = new ConfirmStorefrontPaymentService(repositories);
+    this.publicStorefrontContextService = new ResolvePublicStorefrontContextService(repositories);
   }
 
   async execute({
-    tenantId,
     items,
     form,
     idempotencyKey,
   }: {
-    tenantId: string;
     items: StorefrontCartItemDto[];
     form: StorefrontCheckoutFormDto;
     idempotencyKey: string;
@@ -43,18 +45,20 @@ export class CreateStorefrontCheckoutService {
     const checkoutIdentity = idempotencyKey.trim();
     if (!checkoutIdentity) throw new Error("No se pudo inicializar el pedido.");
 
-    const [ecommerceConfig, products] = await Promise.all([
-      this.repositories.businessConfig.getEcommerceConfig(tenantId),
+    const { tenantId, ecommerceConfig } = await this.publicStorefrontContextService.execute();
+    const [products, customerContext] = await Promise.all([
       Promise.all(
         items.map(async (item) => ({
           item,
           product: await this.publishedProductService.execute(tenantId, item.productId),
         })),
       ),
+      resolveOptionalCustomerAuthorizationContext(this.repositories),
     ]);
 
-    if (!ecommerceConfig?.enabled || ecommerceConfig.requireAccountForCheckout) {
-      throw new Error("El checkout público no está disponible.");
+    const authenticatedCustomer = customerContext?.tenantId === tenantId ? customerContext : null;
+    if (ecommerceConfig.requireAccountForCheckout && !authenticatedCustomer) {
+      throw new Error("Debes iniciar sesión con una cuenta de esta tienda para comprar.");
     }
     if (!ecommerceConfig.allowedDeliveryMethods.includes(DeliveryMethod.home_delivery)) {
       throw new Error("El envío a domicilio no está disponible.");
@@ -105,7 +109,10 @@ export class CreateStorefrontCheckoutService {
         branchId: branch.id,
         orderNumber,
         source: OrderSource.ecommerce,
-        guestCustomer: { name: form.fullName.trim(), email: form.email.trim() },
+        customerId: authenticatedCustomer?.customerId,
+        guestCustomer: authenticatedCustomer
+          ? undefined
+          : { name: form.fullName.trim(), email: form.email.trim() },
         items: orderItems,
         status: OrderStatus.pending,
         deliveryMethod: DeliveryMethod.home_delivery,
