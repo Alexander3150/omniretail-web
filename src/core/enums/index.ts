@@ -233,6 +233,17 @@ export enum PickingPriority {
   high = "high",
   urgent = "urgent",
 }
+export enum PickingIncidentType {
+  missing = "missing",
+  damaged = "damaged",
+  invalid_lot_serial = "invalid_lot_serial",
+  quantity_difference = "quantity_difference",
+  location_empty = "location_empty",
+}
+export enum PickingIncidentStatus {
+  open = "open",
+  resolved = "resolved",
+}
 export enum DispatchStatus {
   pending = "pending",
   ready = "ready",

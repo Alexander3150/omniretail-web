@@ -88,6 +88,8 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   normalized.inventoryReservations = database.inventoryReservations ?? [];
   normalized.inventoryReservationConsumeOperations =
     database.inventoryReservationConsumeOperations ?? [];
+  normalized.pickingAssignmentReleases = database.pickingAssignmentReleases ?? [];
+  normalized.pickingIncidents = database.pickingIncidents ?? [];
   normalized.products = (database.products ?? base.products).map((product) => ({
     ...product,
     saleUnitId: product.saleUnitId ?? product.baseUnitId,

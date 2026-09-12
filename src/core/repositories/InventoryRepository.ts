@@ -9,6 +9,51 @@ import type {
   StorageLocation,
 } from "@/core/entities";
 import type { InventoryMovementType } from "@/core/enums";
+
+export interface PickingInventoryLotAvailability {
+  lotId: string;
+  lotNumber: string;
+  expirationDate?: string;
+  physicalQuantity: number;
+  serialNumbers: Array<{ id: string; serialNumber: string }>;
+}
+
+export interface PickingInventoryLocationAvailability {
+  balanceId: string;
+  locationId?: string;
+  locationCode?: string;
+  locationName?: string;
+  physicalQuantity: number;
+  ownReservedQuantity: number;
+  otherReservedQuantity: number;
+  freeQuantity: number;
+  usableQuantity: number;
+  lots: PickingInventoryLotAvailability[];
+  serialNumbers: Array<{ id: string; serialNumber: string; lotId?: string }>;
+}
+
+export interface PickingInventoryAvailability {
+  tenantId: string;
+  branchId: string;
+  pickingOrderId: string;
+  orderId: string;
+  productId: string;
+  physicalQuantity: number;
+  ownReservedQuantity: number;
+  otherReservedQuantity: number;
+  freeQuantity: number;
+  usableQuantity: number;
+  locations: PickingInventoryLocationAvailability[];
+}
+
+export interface GetPickingInventoryAvailabilityInput {
+  tenantId: string;
+  branchId: string;
+  pickingOrderId: string;
+  orderId: string;
+  productId: string;
+  at?: string;
+}
 export interface RegisterInventoryMovementInput {
   tenantId: string;
   branchId: string;
@@ -71,6 +116,9 @@ export interface InventoryRepository {
   consumeReservation(
     input: ConsumeInventoryReservationInput,
   ): Promise<ConsumeInventoryReservationResult>;
+  getPickingAvailability(
+    input: GetPickingInventoryAvailabilityInput,
+  ): Promise<PickingInventoryAvailability>;
   getBalanceByProduct(productId: string, branchId?: string): Promise<InventoryBalance[]>;
   getMovements(productId?: string): Promise<InventoryMovement[]>;
   getLots(productId?: string): Promise<StockLot[]>;
