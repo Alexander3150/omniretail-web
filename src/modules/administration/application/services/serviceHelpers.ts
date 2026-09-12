@@ -79,6 +79,26 @@ export function ensureUniqueCustomer(
   }
 }
 
+export function ensureCanManageEcommerceConfig(permissions: readonly string[]) {
+  if (permissions.includes("admin.ecommerce_config.manage")) return;
+
+  throw new AdministrationServiceError(
+    "No tenés permiso para gestionar la configuración de e-commerce.",
+  );
+}
+
+export function ensureEcommerceConfigTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
+}
+
+export function ensureEcommerceConfigActor(actorUserId: string) {
+  if (actorUserId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
+}
+
 /**
  * La sucursal predeterminada del e-commerce es el punto operacional desde donde se preparan los
  * pedidos online (Picking/Dispatch). Se valida en el service, no solo en el selector del
