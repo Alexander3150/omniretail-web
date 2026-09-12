@@ -13,6 +13,8 @@ export interface StorefrontOfferItem {
   name: string;
   sku: string;
   description?: string;
+  imageUrl?: string;
+  imageAlt?: string;
   basePrice: number;
   effectivePrice: number;
   discount: number;
@@ -68,12 +70,12 @@ export function useStorefrontOffers() {
           throw new Error("E-commerce branch is not available");
         }
         const now = new Date();
-        const offers = products.flatMap((product) => {
+        const offers = (await Promise.all(products.map(async (product) => {
           const promotion = selectPromotion(promotions.filter((item) => isApplicableEcommercePromotion(item, tenantId, product.id, ecommerceBranchId, now)), product.salePrice);
-          if (!promotion) return [];
-          const price = calculateEffectivePrice(product.salePrice, promotion);
-          return [{ productId: product.id, name: product.name, sku: product.sku, description: product.description, basePrice: price.basePrice, effectivePrice: price.effectivePrice, discount: price.discountAmount, promotionName: promotion.name }];
-        });
+          if (!promotion) return null;
+          const [media, price] = await Promise.all([repositories.productMedia.getPrimaryByProduct(product.id), Promise.resolve(calculateEffectivePrice(product.salePrice, promotion))]);
+          return { productId: product.id, name: product.name, sku: product.sku, description: product.description, imageUrl: media?.tenantId === tenantId && media.type === "image" ? media.url : undefined, imageAlt: media?.tenantId === tenantId ? media.alt : undefined, basePrice: price.basePrice, effectivePrice: price.effectivePrice, discount: price.discountAmount, promotionName: promotion.name };
+        }))).filter((item) => item !== null) as StorefrontOfferItem[];
         if (active) setItems(offers);
       } catch { if (active) setError("No se pudieron cargar las ofertas."); }
       finally { if (active) setLoading(false); }

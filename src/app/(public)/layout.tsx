@@ -1,3 +1,4 @@
+import { CurrentSessionProvider } from "@/modules/auth/providers/CurrentSessionProvider";
 import { StorefrontFooter } from "@/modules/storefront/components/StorefrontFooter";
 import { StorefrontHeader } from "@/modules/storefront/components/StorefrontHeader";
 import { StorefrontCartProvider } from "@/modules/storefront/providers/StorefrontCartProvider";
@@ -6,7 +7,8 @@ import { PublicTenantProvider } from "@/modules/storefront/providers/PublicTenan
 
 export default function PublicLayout({ children }: LayoutProps<"/">) {
   return (
-    <PublicTenantProvider>
+    <CurrentSessionProvider>
+      <PublicTenantProvider>
       <StorefrontCartProvider>
         <StorefrontCheckoutConfirmationProvider>
           <StorefrontHeader />
@@ -14,6 +16,7 @@ export default function PublicLayout({ children }: LayoutProps<"/">) {
           <StorefrontFooter />
         </StorefrontCheckoutConfirmationProvider>
       </StorefrontCartProvider>
-    </PublicTenantProvider>
+      </PublicTenantProvider>
+    </CurrentSessionProvider>
   );
 }
