@@ -1,5 +1,7 @@
-import type { CustomerRepository } from "@/core/repositories";
+import type { CustomerRepository, UpdateCustomerProfileInput } from "@/core/repositories";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
+
+const PROFILE_ALLOWED_KEYS = new Set<keyof UpdateCustomerProfileInput>(["name", "phone"]);
 
 export class MockCustomerRepository extends BaseMockRepository implements CustomerRepository {
   async getAll() {
@@ -35,6 +37,39 @@ export class MockCustomerRepository extends BaseMockRepository implements Custom
     this.emit("customer.changed", {
       entityId: item.id,
       tenantId: "tenantId" in item ? item.tenantId : undefined,
+      action: "updated",
+    });
+    return item;
+  }
+
+  async updateProfileForCustomer(tenantId: string, customerId: string, input: UpdateCustomerProfileInput) {
+    // Allowlist explicita en runtime -- TypeScript ya restringe el tipo
+    // a name/phone, pero un caller que bypasee el tipado no debe poder
+    // colar ningun otro campo (tenantId, userId, email, status, etc.)
+    // a traves de este boundary de autoservicio.
+    for (const key of Object.keys(input)) {
+      if (!PROFILE_ALLOWED_KEYS.has(key as keyof UpdateCustomerProfileInput)) {
+        throw new Error(`Customer.updateProfileForCustomer: campo no permitido "${key}"`);
+      }
+    }
+    const item = this.store.mutate((db) => {
+      const current = db.customers.find(
+        (customer) => customer.id === customerId && customer.tenantId === tenantId,
+      );
+      if (!current) throw this.missing("Customer", customerId);
+      const next = {
+        ...current,
+        name: input.name !== undefined ? input.name : current.name,
+        phone: "phone" in input ? input.phone : current.phone,
+        updatedAt: this.now(),
+      };
+      const index = db.customers.findIndex((customer) => customer.id === customerId);
+      db.customers[index] = next;
+      return next;
+    });
+    this.emit("customer.changed", {
+      entityId: item.id,
+      tenantId: item.tenantId,
       action: "updated",
     });
     return item;

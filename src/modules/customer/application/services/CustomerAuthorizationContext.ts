@@ -33,7 +33,8 @@ type ContextRepositories = Pick<RepositoryRegistry, "auth" | "users" | "roles" |
  *   -> User.status === active -> User.type === customer
  *   -> customers.getByUserId() -> tenant coherente
  *   -> relacion User.customerId <-> Customer.id
- *   -> roles.getById() -> permissions reales
+ *   -> roles.getById() -> Role existe y pertenece al mismo tenant ->
+ *      permissions reales
  *
  * Profile, Addresses, PaymentMethods y Orders dependen TODOS de esta
  * misma funcion -- no debe existir una segunda forma de resolver "que
@@ -77,8 +78,22 @@ export async function resolveCustomerAuthorizationContext(
     throw new CustomerIdentityError("La relacion entre el usuario y el cliente es inconsistente.");
   }
 
-  const role = user.roleId ? await repositories.roles.getById(user.roleId) : null;
-  const permissions = role?.permissions ?? [];
+  // Un Role solo es una fuente valida de permisos si existe y pertenece
+  // AL MISMO tenant que el User -- nunca se confia en el objeto Role por
+  // el solo hecho de que user.roleId apunte a el. Sin esto, un roleId
+  // corrupto/manipulado que apuntara a un Role de otro tenant otorgaria
+  // silenciosamente los permisos de ese Role ajeno.
+  let permissions: string[] = [];
+  if (user.roleId) {
+    const role = await repositories.roles.getById(user.roleId);
+    if (!role) {
+      throw new CustomerIdentityError("El rol del usuario no existe.");
+    }
+    if (role.tenantId !== user.tenantId) {
+      throw new CustomerIdentityError("El rol del usuario pertenece a otro tenant.");
+    }
+    permissions = role.permissions;
+  }
 
   return {
     userId: user.id,
