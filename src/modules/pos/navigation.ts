@@ -18,6 +18,12 @@ export const posNavigation = [
         href: "/pos/caja",
         permission: "pos.cash.read",
       },
+      {
+        id: "pos-returns",
+        label: "Anulaciones y Devoluciones",
+        href: "/pos/anulaciones",
+        permission: "pos.returns.read",
+      },
     ],
   },
 ] satisfies NavigationItem[];

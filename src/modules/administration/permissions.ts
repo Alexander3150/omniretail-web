@@ -68,4 +68,16 @@ export const administrationPermissions = [
     name: "Leer caja",
     description: "Permite consultar los turnos de caja y su conciliación.",
   },
+  {
+    key: "admin.ecommerce_config.manage",
+    module: "administration",
+    name: "Gestionar diseño e-commerce",
+    description: "Permite configurar la tienda en línea del negocio.",
+  },
+  {
+    key: "admin.audit.read",
+    module: "administration",
+    name: "Leer auditoría",
+    description: "Permite consultar el registro de auditoría.",
+  },
 ] satisfies PermissionDefinition[];

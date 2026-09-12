@@ -27,6 +27,145 @@ Implementado en esta rama:
   permisos de la sesion y rechaza el guardado sin ese permiso; la pantalla ademas no renderiza el
   formulario. Ocultar el menu no se considera enforcement porque la configuracion es tenant-wide.
 
+## Diseno E-commerce
+
+Implementado en esta rama:
+
+- Formulario tenant-wide para habilitar la tienda, definir su nombre y configurar el acceso de
+  clientes e invitados.
+- Seleccion de metodos de pago y entrega basada exclusivamente en `PaymentMethod` y
+  `DeliveryMethod`, con validacion previa a la normalizacion.
+- Selector de sucursal predeterminada con las sucursales activas del tenant. Si la seleccion
+  persistida ya no esta activa, se muestra y conserva hasta que el usuario la cambie.
+- Lectura y actualizacion mediante `BusinessConfigRepository`, sin enviar `tenantId`, `createdAt`
+  ni `updatedAt` en el payload de guardado.
+- Enforcement de `admin.ecommerce_config.manage` dentro de los services de lectura y escritura.
+- Auditoria mediante `ecommerce_config.updated` y refresco reactivo ante
+  `business-config.changed`.
+- Ruta privada `/administracion/diseno-ecommerce` y entrada de navegacion con el permiso nuevo.
+
+### Contrato de integracion
+
+Lo que esta pantalla expone al resto del sistema:
+
+- Ruta `/administracion/diseno-ecommerce` e item `administration-ecommerce-config` en la
+  navegacion de Administracion.
+- Permiso `admin.ecommerce_config.manage` para leer y modificar la configuracion.
+- Accion de auditoria `ecommerce_config.updated`, con `entityType: "EcommerceConfig"`.
+- Refresco ante el evento compartido `business-config.changed`.
+
+Lo que asume de la plataforma:
+
+- `useCurrentSession()` entrega el `tenantId`, el `id` del actor y los permisos efectivos.
+- `RepositoryRegistry` expone `businessConfig`, `branches` y `auditLogs`.
+- La fila de `EcommerceConfig` del tenant ya existe en el seed; el contrato no ofrece `create`.
+
+Decisiones abiertas y coordinacion:
+
+- El branding sigue pendiente porque `EcommerceConfig` no tiene un campo `theme`. La trazabilidad
+  pertenece a Configuracion del negocio y el diseño visual del storefront al modulo propietario.
+- `business-config.changed` tambien se emite al cambiar capacidades; este over-refresh es
+  inofensivo y el borrador local no se reemplaza cuando tiene cambios sin guardar.
+- `SaveBusinessConfigService` no registra auditoria actualmente, una inconsistencia preexistente
+  que debera resolverse por separado.
+- `admin.ecommerce_config.manage` es un permiso nuevo. Se esperan colisiones en `permissions.ts`,
+  `demoSeed.ts`, `navigation.ts`, `serviceHelpers.ts`, `README.md` y `SCOPE.md` con
+  `feature/admin-branches`, `feature/admin-bank-accounts`, `feature/admin-suppliers` y
+  `feature/admin-audit-log`; deben resolverse conservando las entradas de todas las pantallas.
+
+## Auditoria
+
+Implementado en esta rama:
+
+- Listado de solo lectura sobre `AuditLogRepository.getByTenant(tenantId)`, que garantiza el
+  aislamiento antes de entregar datos al service, y ordenado por `createdAt` descendente.
+- Enforcement de `admin.audit.read` dentro del service; la pantalla tambien presenta un estado sin
+  acceso cuando el permiso no esta disponible.
+- Busqueda libre y filtros por accion, tipo de entidad y rango de fechas, aplicados en memoria por
+  la ausencia de filtros en el contrato actual.
+- Paginacion en cliente con `TablePagination` y detalle en `Modal` con metadata serializada de forma
+  defensiva.
+- Resolucion del actor al nombre del usuario del tenant, con fallback al identificador y a
+  `Sistema` cuando no existe `actorUserId`.
+- Refresco manual y sincronizacion reactiva mediante el evento `audit.changed`, ignorando eventos
+  que no pertenecen al tenant activo.
+- Ruta privada `/administracion/auditoria` y entrada de navegacion con el nuevo permiso
+  `admin.audit.read`.
+- La pantalla no expone ni ejecuta ninguna operacion de escritura sobre auditoria.
+
+### Contrato de integracion
+
+Lo que esta pantalla expone al resto del sistema:
+
+- Ruta `/administracion/auditoria` e item `administration-audit` en la navegacion de
+  Administracion.
+- Permiso de solo lectura `admin.audit.read`.
+- Refresco reactivo ante `audit.changed`; no expone alta, edicion, archivado ni llamadas a
+  `AuditLogRepository.append()`.
+
+Lo que asume de la plataforma:
+
+- `useCurrentSession()` entrega el `tenantId` y los permisos efectivos de la sesion.
+- `RepositoryRegistry` expone `auditLogs` para la lectura y `users` para resolver el nombre del
+  actor.
+- `shared/utils/formatDate` define el formato comun de las fechas mostradas.
+
+Decisiones abiertas y coordinacion:
+
+- `AuditLogRepository` ofrece lectura tenant-scoped, pero no filtros funcionales ni paginacion
+  server-side. El backend futuro debera resolver el volumen real dentro de cada tenant.
+- `admin.audit.read` es un permiso nuevo. Se esperan colisiones de integracion en `permissions.ts`,
+  `demoSeed.ts`, `navigation.ts`, `serviceHelpers.ts`, `README.md` y `SCOPE.md` con
+  `feature/admin-branches`, `feature/admin-bank-accounts` y `feature/admin-suppliers`; deben
+  resolverse conservando las entradas de todas las pantallas.
+
+## Proveedores
+
+Implementado en esta rama:
+
+- Listado del maestro de proveedores aislado por el `tenantId` de la sesion.
+- Alta, edicion y archivado mediante services separados sobre `SupplierRepository`; el archivado
+  usa el metodo de contrato `archive(id)` y conserva el historial.
+- Enforcement de `admin.suppliers.manage` dentro de todos los services, tanto para leer como para
+  mutar.
+- Normalizacion antes de validar: los textos opcionales vacios se convierten a `undefined`, el
+  correo se recorta y pasa a minusculas, y luego se validan nombre, estado y formato de correo.
+- `Supplier.leadTimeDays` se expone solo como rollup derivado de las relaciones activas de
+  `SupplierProduct`; no forma parte del formulario ni del DTO de escritura administrativo.
+- Auditoria append-only en alta, edicion y archivado mediante `AuditLogRepository`.
+- Sincronizacion mediante el evento `supplier.changed` que emite `MockSupplierRepository`.
+- Tabla con `DataTable`, formulario en `Modal`, confirmacion de archivado y estados resueltos con
+  `StatusBadge`.
+- Ruta privada `/administracion/proveedores` y entrada de navegacion con
+  `admin.suppliers.manage`.
+
+### Contrato de integracion
+
+Lo que esta pantalla expone al resto del sistema:
+
+- Ruta `/administracion/proveedores` y el item `administration-suppliers` en la navegacion de
+  Administracion.
+- Acceso de lectura y escritura protegido por `admin.suppliers.manage`; no existe un permiso
+  separado de lectura.
+- Acciones de auditoria `supplier.created`, `supplier.updated` y `supplier.archived`, con
+  `entityType: "Supplier"`.
+- Recarga reactiva ante el evento `supplier.changed`.
+
+Lo que asume de la plataforma:
+
+- `useCurrentSession()` entrega un usuario con `tenantId` e `id`, ademas de los permisos efectivos.
+- `RepositoryRegistry` expone `suppliers` y `auditLogs` con los contratos compartidos vigentes.
+- `config/statuses.ts` contiene las etiquetas para los valores de `SupplierStatus`.
+
+Decisiones abiertas y coordinacion:
+
+- Compras mantiene una vista de solo lectura sobre la misma entidad `Supplier`; no debe duplicar el
+  maestro ni sus contratos.
+- El orden definitivo del item en el menu se resolvera al integrar las pantallas paralelas.
+- Se esperan colisiones de integracion en el array de permisos de `role-admin`, `navigation.ts`,
+  `serviceHelpers.ts`, `README.md` y `SCOPE.md` con `feature/admin-branches` y
+  `feature/admin-bank-accounts`; deben resolverse conservando las entradas de las tres pantallas.
+
 ## Consumo de la configuracion en otros modulos
 
 La configuracion no describe al negocio: lo restringe. Los modulos consumidores la leen por

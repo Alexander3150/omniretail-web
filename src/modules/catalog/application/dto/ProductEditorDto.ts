@@ -50,11 +50,12 @@ export type SupplierProductEditorValue = Omit<
     | "preferred"
     | "active"
   >,
-  "lastCost" | "minimumOrderQuantity"
+  "lastCost" | "leadTimeDays" | "minimumOrderQuantity"
 > & {
   id?: string;
   purchaseToBaseFactor: NumericInputValue;
   lastCost: NumericInputValue;
+  leadTimeDays: NumericInputValue;
   minimumOrderQuantity: NumericInputValue;
   costTiers: SupplierCostTierEditorValue[];
 };

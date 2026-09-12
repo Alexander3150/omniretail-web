@@ -1,5 +1,6 @@
 import type { SupplierProductRepository } from "@/core/repositories";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
+import { synchronizeSupplierLeadTimeDays } from "@/infrastructure/mock/database/supplierLeadTime";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
 
 export class MockSupplierProductRepository
@@ -14,9 +15,27 @@ export class MockSupplierProductRepository
     );
   }
 
+  async getByProductForTenant(tenantId: string, productId: string) {
+    return this.read((db) =>
+      db.supplierProducts
+        .filter(
+          (item) => item.productId === productId && item.tenantId === tenantId && item.active,
+        )
+        .sort((a, b) => Number(b.preferred) - Number(a.preferred)),
+    );
+  }
+
   async getBySupplier(supplierId: string) {
     return this.read((db) =>
       db.supplierProducts.filter((item) => item.supplierId === supplierId && item.active),
+    );
+  }
+
+  async getBySupplierForTenant(tenantId: string, supplierId: string) {
+    return this.read((db) =>
+      db.supplierProducts.filter(
+        (item) => item.supplierId === supplierId && item.tenantId === tenantId && item.active,
+      ),
     );
   }
 
@@ -34,6 +53,7 @@ export class MockSupplierProductRepository
       const now = this.now();
       const created = { ...input, id: this.id("supplier-product"), createdAt: now, updatedAt: now };
       db.supplierProducts.push(created);
+      synchronizeSupplierLeadTimeDays(db, [created.supplierId]);
       return created;
     });
     this.emit("supplier-product.changed", {
@@ -45,9 +65,15 @@ export class MockSupplierProductRepository
     return item;
   }
 
-  async update(id: string, input: Parameters<SupplierProductRepository["update"]>[1]) {
+  async update(
+    tenantId: string,
+    id: string,
+    input: Parameters<SupplierProductRepository["update"]>[2],
+  ) {
     const item = this.store.mutate((db) => {
-      const current = db.supplierProducts.find((supplierProduct) => supplierProduct.id === id);
+      const current = db.supplierProducts.find(
+        (supplierProduct) => supplierProduct.id === id && supplierProduct.tenantId === tenantId,
+      );
       if (!current) throw this.missing("SupplierProduct", id);
       const next = { ...current, ...input };
       this.assertValidSupplierProduct(next);
@@ -59,7 +85,9 @@ export class MockSupplierProductRepository
           }
         });
       }
-      return this.updateById(db.supplierProducts, id, input, "SupplierProduct");
+      const updated = this.updateById(db.supplierProducts, id, input, "SupplierProduct");
+      synchronizeSupplierLeadTimeDays(db, [current.supplierId, updated.supplierId]);
+      return updated;
     });
     this.emit("supplier-product.changed", {
       entityId: item.id,
@@ -70,10 +98,21 @@ export class MockSupplierProductRepository
     return item;
   }
 
-  async archive(id: string) {
-    const item = this.store.mutate((db) =>
-      this.updateById(db.supplierProducts, id, { active: false }, "SupplierProduct"),
-    );
+  async archive(tenantId: string, id: string) {
+    const item = this.store.mutate((db) => {
+      const current = db.supplierProducts.find(
+        (supplierProduct) => supplierProduct.id === id && supplierProduct.tenantId === tenantId,
+      );
+      if (!current) throw this.missing("SupplierProduct", id);
+      const archived = this.updateById(
+        db.supplierProducts,
+        id,
+        { active: false },
+        "SupplierProduct",
+      );
+      synchronizeSupplierLeadTimeDays(db, [archived.supplierId]);
+      return archived;
+    });
     this.emit("supplier-product.changed", {
       entityId: item.id,
       tenantId: item.tenantId,
@@ -83,12 +122,13 @@ export class MockSupplierProductRepository
     return item;
   }
 
-  async setPreferred(productId: string, supplierProductId: string) {
+  async setPreferred(tenantId: string, productId: string, supplierProductId: string) {
     const item = this.store.mutate((db) => {
       const selected = db.supplierProducts.find(
         (supplierProduct) =>
           supplierProduct.id === supplierProductId &&
           supplierProduct.productId === productId &&
+          supplierProduct.tenantId === tenantId &&
           supplierProduct.active,
       );
       if (!selected) throw this.missing("SupplierProduct", supplierProductId);
@@ -118,12 +158,15 @@ export class MockSupplierProductRepository
   }
 
   async replaceCostTiers(
+    tenantId: string,
     supplierProductId: string,
-    tiers: Parameters<SupplierProductRepository["replaceCostTiers"]>[1],
+    tiers: Parameters<SupplierProductRepository["replaceCostTiers"]>[2],
   ) {
     this.assertValidCostTiers(tiers);
     const items = this.store.mutate((db) => {
-      const supplierProduct = db.supplierProducts.find((item) => item.id === supplierProductId);
+      const supplierProduct = db.supplierProducts.find(
+        (item) => item.id === supplierProductId && item.tenantId === tenantId,
+      );
       if (!supplierProduct) throw this.missing("SupplierProduct", supplierProductId);
       tiers.forEach((tier) => {
         if (tier.tenantId !== supplierProduct.tenantId) {
@@ -185,7 +228,7 @@ export class MockSupplierProductRepository
   }
 
   private assertValidCostTiers(
-    tiers: Parameters<SupplierProductRepository["replaceCostTiers"]>[1],
+    tiers: Parameters<SupplierProductRepository["replaceCostTiers"]>[2],
   ): void {
     const quantities = new Set<number>();
     for (const tier of tiers) {

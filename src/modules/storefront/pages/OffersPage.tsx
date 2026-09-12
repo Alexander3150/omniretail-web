@@ -1,0 +1,10 @@
+"use client";
+
+import Link from "next/link";
+import { useStorefrontOffers } from "@/modules/storefront/hooks/useStorefrontOffers";
+
+export function OffersPage() {
+  const { items, loading, error } = useStorefrontOffers();
+  if (loading) return <main className="mx-auto max-w-7xl px-5 py-10"><p>Cargando ofertas...</p></main>;
+  return <main className="mx-auto max-w-7xl px-5 py-10"><p className="text-sm font-semibold text-[var(--color-primary)]">Ahorra en línea</p><h1 className="mt-1 text-3xl font-bold text-[var(--color-text)]">Ofertas</h1>{error ? <p className="mt-5 text-[var(--color-danger)]">{error}</p> : null}{!error && items.length === 0 ? <p className="mt-5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 text-[var(--color-text-muted)]">No hay ofertas disponibles en este momento.</p> : null}<div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{items.map((item) => <article key={item.productId} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5"><p className="text-sm font-semibold text-[var(--color-success)]">{item.promotionName}</p><p className="mt-2 text-sm text-[var(--color-text-muted)]">Código: {item.sku}</p><h2 className="mt-1 text-lg font-semibold text-[var(--color-text)]">{item.name}</h2><p className="mt-2 text-sm text-[var(--color-text-muted)]">{item.description ?? "Oferta disponible en e-commerce."}</p><div className="mt-5"><p className="text-sm text-[var(--color-text-muted)] line-through">Q{item.basePrice.toFixed(2)}</p><p className="text-xl font-bold text-[var(--color-title)]">Q{item.effectivePrice.toFixed(2)}</p><p className="text-sm font-semibold text-[var(--color-success)]">Ahorras Q{item.discount.toFixed(2)}</p></div><Link className="mt-5 inline-block rounded-md bg-[var(--color-primary)] px-4 py-2 font-semibold text-[var(--color-topbar)]" href={`/catalogo/${item.productId}`}>Ver producto</Link></article>)}</div></main>;
+}

@@ -1,8 +1,8 @@
 import type { AuditLogRepository } from "@/core/repositories";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
 export class MockAuditLogRepository extends BaseMockRepository implements AuditLogRepository {
-  async getAll() {
-    return this.read((db) => db.auditLogs);
+  async getByTenant(tenantId: string) {
+    return this.read((db) => db.auditLogs.filter((item) => item.tenantId === tenantId));
   }
   async append(input: Parameters<AuditLogRepository["append"]>[0]) {
     const item = this.store.mutate((db) => {

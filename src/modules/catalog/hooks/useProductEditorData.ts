@@ -7,23 +7,24 @@ import { GetProductEditorDataService } from "@/modules/catalog/application/servi
 import { cleanError } from "@/modules/catalog/application/services/serviceHelpers";
 import type { ProductEditorData } from "@/modules/catalog/application/dto/ProductEditorDto";
 
-export function useProductEditorData(productId?: string, branchId?: string) {
+export function useProductEditorData(productId?: string, branchId?: string, tenantId?: string) {
   const repositories = useRepositories();
   const service = useMemo(() => new GetProductEditorDataService(repositories), [repositories]);
   const requestIdRef = useRef(0);
-  const requestKey = `${productId ?? ""}:${branchId ?? ""}`;
+  const requestKey = `${productId ?? ""}:${branchId ?? ""}:${tenantId ?? ""}`;
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<ProductEditorData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
+    if (!tenantId) return;
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
     setLoading(true);
     setError(null);
     try {
-      const nextData = await service.execute(productId, branchId);
+      const nextData = await service.execute(tenantId, productId, branchId);
       if (requestIdRef.current !== requestId) return;
       setData(nextData);
       setLoadedKey(requestKey);
@@ -35,9 +36,10 @@ export function useProductEditorData(productId?: string, branchId?: string) {
     } finally {
       if (requestIdRef.current === requestId) setLoading(false);
     }
-  }, [branchId, productId, requestKey, service]);
+  }, [branchId, productId, requestKey, service, tenantId]);
 
   useEffect(() => {
+    if (!tenantId) return;
     let active = true;
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
@@ -47,7 +49,7 @@ export function useProductEditorData(productId?: string, branchId?: string) {
       setError(null);
     });
     service
-      .execute(productId, branchId)
+      .execute(tenantId, productId, branchId)
       .then((nextData) => {
         if (!active || requestIdRef.current !== requestId) return;
         setData(nextData);
@@ -66,7 +68,7 @@ export function useProductEditorData(productId?: string, branchId?: string) {
     return () => {
       active = false;
     };
-  }, [branchId, productId, requestKey, service]);
+  }, [branchId, productId, requestKey, service, tenantId]);
 
   useDataEvent("product.changed", (payload) => {
     if (!productId || !payload.productId || payload.productId === productId) reload();
