@@ -48,30 +48,41 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
 
   const loadAvailableProducts = useCallback(
     async (supplierId: string) => {
-      const products = await service.getAvailableProducts(supplierId, currentBranch?.id);
+      if (!currentBranch?.tenantId) return [];
+      const products = await service.getAvailableProducts(
+        currentBranch.tenantId,
+        supplierId,
+        currentBranch?.id,
+      );
       setAvailableProducts(products);
       return products;
     },
-    [currentBranch?.id, service],
+    [currentBranch, service],
   );
 
   useEffect(() => {
     let active = true;
     async function load() {
+      if (!currentBranch?.tenantId) return;
       setLoading(true);
       setError(null);
       try {
-        const activeSuppliers = await service.getActiveSuppliers();
+        const tenantId = currentBranch.tenantId;
+        const activeSuppliers = await service.getActiveSuppliers(tenantId);
         if (!active) return;
         if (orderId) {
           setSuppliers(activeSuppliers);
-          const order = await service.getOrderForEdit(orderId, currentBranch?.id);
-          const products = await service.getAvailableProducts(order.supplierId, currentBranch?.id);
+          const order = await service.getOrderForEdit(tenantId, orderId, currentBranch?.id);
+          const products = await service.getAvailableProducts(
+            tenantId,
+            order.supplierId,
+            currentBranch?.id,
+          );
           if (!active) return;
           setModel(order);
           setAvailableProducts(products);
         } else if (prefill?.productId) {
-          const resolution = await service.resolvePrefillContext(prefill);
+          const resolution = await service.resolvePrefillContext(tenantId, prefill);
           if (!active) return;
           setPrefillResolution(resolution);
           setPrefillNotice(resolution?.notice ?? null);
@@ -85,6 +96,7 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
           );
           if (resolution?.supplierId) {
             const products = await service.getAvailableProducts(
+              tenantId,
               resolution.supplierId,
               prefill.branchId ?? currentBranch?.id,
             );
@@ -126,7 +138,7 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
     return () => {
       active = false;
     };
-  }, [currentBranch?.id, orderId, prefill, service]);
+  }, [currentBranch?.id, currentBranch?.tenantId, orderId, prefill, service]);
 
   const linePricing = useMemo(
     () => model.lines.map((line) => ({ lineId: line.id, ...getPricingDetails(line) })),

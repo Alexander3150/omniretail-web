@@ -10,7 +10,7 @@ import {
 } from "react";
 import { TenantStatus } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
-import { publicStorefrontSlug } from "@/modules/storefront/config/publicStorefront";
+import { publicStorefrontSlug } from "@/config/publicStorefront";
 
 interface PublicTenantContextValue {
   tenantId: string | null;

@@ -92,12 +92,7 @@ export class GetSuppliersReadModelService {
         );
         const productsWithCosts = await Promise.all(
           supplierProducts.map((supplierProduct) =>
-            this.toSupplierProductReadModel(
-              supplierProduct,
-              productById,
-              unitById,
-              supplier.leadTimeDays,
-            ),
+            this.toSupplierProductReadModel(supplierProduct, productById, unitById),
           ),
         );
         return this.toSupplierReadModel(
@@ -118,7 +113,6 @@ export class GetSuppliersReadModelService {
     supplierProduct: SupplierProduct,
     productById: Map<string, Product>,
     unitById: Map<string, Unit>,
-    supplierLeadTimeDays?: number,
   ): Promise<SupplierProductReadModel> {
     const product = productById.get(supplierProduct.productId);
     const unit = unitById.get(supplierProduct.purchaseUnitId);
@@ -132,7 +126,7 @@ export class GetSuppliersReadModelService {
       purchaseUnitLabel: unit?.symbol ?? unit?.name ?? supplierProduct.purchaseUnitId,
       minimumOrderQuantity: supplierProduct.minimumOrderQuantity,
       lastCost: supplierProduct.lastCost,
-      leadTimeDays: supplierLeadTimeDays ?? supplierProduct.leadTimeDays,
+      leadTimeDays: supplierProduct.leadTimeDays,
       preferred: supplierProduct.preferred,
       active: supplierProduct.active,
       costTiers: this.sortCostTiers(costTiers),

@@ -23,7 +23,7 @@ UI
 
 ## Order Reservation Lifecycle
 
-`MockOrderRepository` crea o confirma una Order y todas sus reservas dentro de una sola llamada a `MockDatabaseStore.transact`. Las mutaciones de reserva sobre el draft viven en un helper interno de infraestructura compartido con `MockInventoryRepository`; asi ambos repositorios usan el mismo algoritmo sin abrir transacciones anidadas ni duplicar la logica de allocations.
+`MockOrderRepository` crea o confirma una Order y todas sus reservas dentro de una sola llamada a `MockDatabaseStore.transact`. Las mutaciones de reserva sobre el draft viven en helpers de infraestructura compartidos con `MockInventoryRepository` y `MockOrderPaymentConfirmationRepository`; asi los repositorios usan el mismo algoritmo sin abrir transacciones anidadas ni duplicar la logica de allocations.
 
 ```text
 OrderRepository.create / updateStatus
@@ -31,6 +31,18 @@ OrderRepository.create / updateStatus
 -> MockDatabaseStore.transact
 -> Order + InventoryReservation + InventoryBalance
 ```
+
+El checkout e-commerce crea primero `Order.pending` y `Payment.pending`. Para el pago mock con tarjeta, `OrderPaymentConfirmationRepository.confirm` valida Order, Payment, tenant, branch activa, relacion, importe y estados; en una unica transaccion reserva inventario y cambia ambos estados. Si la reserva falla, Payment y Order permanecen pending. Confirmar otra vez la misma pareja ya confirmada es idempotente.
+
+```text
+CreateStorefrontCheckoutService
+-> OrderRepository.createWithPayment
+-> OrderPaymentConfirmationRepository.confirm
+-> MockDatabaseStore.transact
+-> Payment.approved + Order.confirmed + InventoryReservation + InventoryBalance.reservedQuantity
+```
+
+Esta confirmacion no reduce `InventoryBalance.quantity` ni crea `InventoryMovement`; ese consumo fisico continua perteneciendo a Picking.
 
 `MockPickingRepository.updateItem` usa el mismo patron transaccional para persistir el incremento de `PickingItem.pickedQuantity`, consumir las allocations originales de la reserva y crear los movimientos OUT por ubicacion. La mutacion de consumo se comparte con `MockInventoryRepository` y no abre una transaccion anidada.
 

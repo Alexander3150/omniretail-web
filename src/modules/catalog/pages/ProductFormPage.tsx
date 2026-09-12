@@ -23,7 +23,11 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
   const isEdit = mode === "edit";
   const { currentBranch, loading: branchLoading } = useActiveBranch();
   const optionsState = useProductFormOptions();
-  const editorState = useProductEditorData(isEdit ? productId : undefined, currentBranch?.id);
+  const editorState = useProductEditorData(
+    isEdit ? productId : undefined,
+    currentBranch?.id,
+    currentBranch?.tenantId,
+  );
   const mutations = useProductMutations();
   const [confirmArchive, setConfirmArchive] = useState(false);
 

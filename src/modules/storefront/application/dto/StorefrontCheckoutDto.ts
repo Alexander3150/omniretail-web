@@ -1,3 +1,5 @@
+import type { OrderStatus, PaymentStatus } from "@/core/enums";
+
 export interface StorefrontCheckoutFormDto {
   fullName: string;
   email: string;
@@ -17,4 +19,7 @@ export interface StorefrontCheckoutResultDto {
   guestTrackingEnabled: boolean;
   confirmationEmailSent: boolean;
   total: number;
+  orderStatus: OrderStatus;
+  paymentStatus: PaymentStatus;
+  hasInventoryReservations: boolean;
 }

@@ -14,14 +14,17 @@ import type {
   StorefrontCheckoutResultDto,
 } from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
 import { GetStorefrontPublishedProductService } from "@/modules/storefront/application/services/GetStorefrontPublishedProductService";
+import { ConfirmStorefrontPaymentService } from "@/modules/storefront/application/services/ConfirmStorefrontPaymentService";
 import { StorefrontOrderEmailSimulationService } from "@/modules/storefront/application/services/StorefrontOrderEmailSimulationService";
 
 export class CreateStorefrontCheckoutService {
   private readonly publishedProductService: GetStorefrontPublishedProductService;
+  private readonly paymentConfirmationService: ConfirmStorefrontPaymentService;
   private readonly emailSimulationService = new StorefrontOrderEmailSimulationService();
 
   constructor(private readonly repositories: RepositoryRegistry) {
     this.publishedProductService = new GetStorefrontPublishedProductService(repositories);
+    this.paymentConfirmationService = new ConfirmStorefrontPaymentService(repositories);
   }
 
   async execute({
@@ -69,7 +72,11 @@ export class CreateStorefrontCheckoutService {
 
     const orderItems = products.map(({ item, product }, index) => {
       if (!product) throw new Error("Uno de los productos ya no está disponible para e-commerce.");
-      if (!Number.isFinite(item.quantity) || !Number.isInteger(item.quantity) || item.quantity <= 0) {
+      if (
+        !Number.isFinite(item.quantity) ||
+        !Number.isInteger(item.quantity) ||
+        item.quantity <= 0
+      ) {
         throw new Error("La cantidad de un producto no es válida.");
       }
 
@@ -90,7 +97,7 @@ export class CreateStorefrontCheckoutService {
     const orderNumber = `WEB-${checkoutToken.slice(0, 10).toUpperCase()}`;
     const trackingToken = checkoutToken;
 
-    const { order } = await this.repositories.orders.createWithPayment({
+    const { order, payment } = await this.repositories.orders.createWithPayment({
       order: {
         tenantId,
         branchId: branch.id,
@@ -126,14 +133,23 @@ export class CreateStorefrontCheckoutService {
         reference: `CARD-SIMULATED-${form.cardLastFour}`,
       },
     });
+    const confirmation = await this.paymentConfirmationService.execute({
+      tenantId,
+      branchId: branch.id,
+      orderId: order.id,
+      paymentId: payment.id,
+    });
     const emailSimulation = this.emailSimulationService.simulateConfirmation(form.email);
 
     return {
-      orderNumber: order.orderNumber,
-      trackingToken: order.trackingToken,
+      orderNumber: confirmation.order.orderNumber,
+      trackingToken: confirmation.order.trackingToken,
       guestTrackingEnabled: ecommerceConfig.guestTrackingEnabled,
       confirmationEmailSent: emailSimulation.sent,
-      total: order.total,
+      total: confirmation.order.total,
+      orderStatus: confirmation.order.status,
+      paymentStatus: confirmation.payment.status,
+      hasInventoryReservations: confirmation.inventoryReservations.length > 0,
     };
   }
 }
