@@ -10,38 +10,80 @@ import {
 } from "@/core/enums";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
+import { MockBranchRepository } from "@/infrastructure/mock/repositories/MockBranchRepository";
+import { MockBusinessConfigRepository } from "@/infrastructure/mock/repositories/MockBusinessConfigRepository";
 import { MockOrderPaymentConfirmationRepository } from "@/infrastructure/mock/repositories/MockOrderPaymentConfirmationRepository";
 import { MockOrderRepository } from "@/infrastructure/mock/repositories/MockOrderRepository";
+import { MockProductRepository } from "@/infrastructure/mock/repositories/MockProductRepository";
 import { MockSaleConfirmationRepository } from "@/infrastructure/mock/repositories/MockSaleConfirmationRepository";
+import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import {
   getInventoryAvailabilityAlertMessage,
   getInventoryMinimumDeficit,
   getSuggestedReorderQuantity,
 } from "@/modules/inventory/application/services/GetInventoryAlertsService";
+import type { StorefrontCheckoutFormDto } from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
+import { CreateStorefrontCheckoutService } from "@/modules/storefront/application/services/CreateStorefrontCheckoutService";
 
 const tenantId = "tenant-demo";
 const branchId = "branch-centro";
 const physicalProductId = "prod-screws";
 
-function createHarness(physicalQuantity: number) {
+function createHarness(physicalQuantity: number, reservedQuantity = 0) {
   const store = new MockDatabaseStore(new LocalStorageAdapter());
   store.transact((db) => {
     db.orders = [];
     db.payments = [];
     db.inventoryReservations = [];
     db.inventoryReservationConsumeOperations = [];
+    db.inventoryBalances.forEach((balance) => {
+      balance.reservedQuantity = 0;
+    });
     const balance = db.inventoryBalances.find((item) => item.id === "bal-screws");
     assert.ok(balance);
     balance.quantity = physicalQuantity;
-    balance.reservedQuantity = 0;
+    balance.reservedQuantity = reservedQuantity;
   });
   const eventBus = new DataEventBus();
+  const orders = new MockOrderRepository(store, eventBus);
+  const confirmations = new MockOrderPaymentConfirmationRepository(store, eventBus);
+  const repositories = {
+    branches: new MockBranchRepository(store, eventBus),
+    businessConfig: new MockBusinessConfigRepository(store, eventBus),
+    orderPaymentConfirmations: confirmations,
+    orders,
+    products: new MockProductRepository(store, eventBus),
+  } as unknown as RepositoryRegistry;
   return {
     store,
-    orders: new MockOrderRepository(store, eventBus),
-    confirmations: new MockOrderPaymentConfirmationRepository(store, eventBus),
+    orders,
+    confirmations,
+    checkout: new CreateStorefrontCheckoutService(repositories),
   };
+}
+
+const checkoutForm: StorefrontCheckoutFormDto = {
+  fullName: "Cliente QA",
+  email: "qa@example.com",
+  phone: "55550000",
+  addressLine1: "Zona 1",
+  city: "Guatemala",
+  cardholderName: "Cliente QA",
+  cardLastFour: "4242",
+};
+
+function storefrontCart(quantity: number, productId = physicalProductId) {
+  return [
+    {
+      productId,
+      tenantId,
+      sku: productId,
+      name: productId,
+      unitPrice: 1,
+      quantity,
+    },
+  ];
 }
 
 async function createPendingCheckout(
@@ -95,6 +137,95 @@ async function createPendingCheckout(
       currency: "GTQ",
     },
   });
+}
+
+async function verifyConsecutiveStorefrontOrders() {
+  const { store, checkout } = createHarness(20);
+  await checkout.execute({
+    tenantId,
+    items: storefrontCart(1),
+    form: checkoutForm,
+    idempotencyKey: "00000000-0000-4000-8000-000000000001",
+  });
+  await checkout.execute({
+    tenantId,
+    items: storefrontCart(1),
+    form: checkoutForm,
+    idempotencyKey: "00000000-0000-4000-8000-000000000002",
+  });
+
+  const snapshot = store.getSnapshot();
+  assert.equal(snapshot.orders.length, 2);
+  assert.equal(snapshot.inventoryReservations.length, 2);
+  assert.notEqual(snapshot.orders[0].items[0].id, snapshot.orders[1].items[0].id);
+  assert.equal(
+    snapshot.inventoryBalances.find((item) => item.id === "bal-screws")?.reservedQuantity,
+    2,
+  );
+  assert.equal(
+    snapshot.inventoryReservations.every(
+      (reservation) => reservation.status === InventoryReservationStatus.active,
+    ),
+    true,
+  );
+}
+
+async function verifyAccumulatedReservationQaCase() {
+  const { store, checkout } = createHarness(15, 6);
+  const successfulKey = "00000000-0000-4000-8000-000000000007";
+  const successful = await checkout.execute({
+    tenantId,
+    items: storefrontCart(7),
+    form: checkoutForm,
+    idempotencyKey: successfulKey,
+  });
+  assert.equal(successful.orderStatus, OrderStatus.confirmed);
+  assert.equal(successful.paymentStatus, PaymentStatus.approved);
+
+  let snapshot = store.getSnapshot();
+  let balance = snapshot.inventoryBalances.find((item) => item.id === "bal-screws");
+  assert.equal(balance?.quantity, 15);
+  assert.equal(balance?.reservedQuantity, 13);
+  assert.equal((balance?.quantity ?? 0) - (balance?.reservedQuantity ?? 0), 2);
+  assert.equal(snapshot.inventoryReservations.length, 1);
+  const persistedOrderItemId = snapshot.orders[0].items[0].id;
+
+  await checkout.execute({
+    tenantId,
+    items: storefrontCart(7),
+    form: checkoutForm,
+    idempotencyKey: successfulKey,
+  });
+  snapshot = store.getSnapshot();
+  balance = snapshot.inventoryBalances.find((item) => item.id === "bal-screws");
+  assert.equal(balance?.reservedQuantity, 13);
+  assert.equal(snapshot.inventoryReservations.length, 1);
+  assert.equal(snapshot.orders[0].items[0].id, persistedOrderItemId);
+
+  await assert.rejects(
+    checkout.execute({
+      tenantId,
+      items: storefrontCart(3),
+      form: checkoutForm,
+      idempotencyKey: "00000000-0000-4000-8000-000000000003",
+    }),
+    /No hay suficiente disponibilidad para completar tu pedido/,
+  );
+  snapshot = store.getSnapshot();
+  balance = snapshot.inventoryBalances.find((item) => item.id === "bal-screws");
+  assert.equal(balance?.quantity, 15);
+  assert.equal(balance?.reservedQuantity, 13);
+  assert.equal(snapshot.inventoryReservations.length, 1);
+  assert.equal(snapshot.orders.length, 1);
+  assert.equal(snapshot.payments.length, 1);
+  assert.equal(
+    snapshot.orders.some((order) => order.status === OrderStatus.pending),
+    false,
+  );
+  assert.equal(
+    snapshot.payments.some((payment) => payment.status === PaymentStatus.pending),
+    false,
+  );
 }
 
 async function verifyImmediateCardAndLifecycle() {
@@ -174,8 +305,8 @@ async function verifyRollbackAndIsolation() {
     }),
   );
   let snapshot = insufficient.store.getSnapshot();
-  assert.equal(snapshot.orders[0].status, OrderStatus.pending);
-  assert.equal(snapshot.payments[0].status, PaymentStatus.pending);
+  assert.equal(snapshot.orders.length, 0);
+  assert.equal(snapshot.payments.length, 0);
   assert.equal(snapshot.inventoryReservations.length, 0);
   assert.equal(
     snapshot.inventoryBalances.find((item) => item.id === "bal-screws")?.reservedQuantity,
@@ -232,6 +363,38 @@ async function verifyServiceOrder() {
   assert.equal(store.getSnapshot().inventoryReservations.length, 0);
 }
 
+async function verifyKitAndTrackedProducts() {
+  const kit = createHarness(10);
+  const kitCheckout = await createPendingCheckout(kit.orders, "kit", {
+    productId: "prod-kit",
+  });
+  const kitResult = await kit.confirmations.confirm({
+    tenantId,
+    branchId,
+    orderId: kitCheckout.order.id,
+    paymentId: kitCheckout.payment.id,
+  });
+  assert.deepEqual(
+    new Set(kitResult.inventoryReservations.map((reservation) => reservation.productId)),
+    new Set(["prod-analgesic", "prod-screws"]),
+  );
+
+  for (const productId of ["prod-drill", "prod-analgesic"]) {
+    const tracked = createHarness(10);
+    const checkout = await createPendingCheckout(tracked.orders, `tracked-${productId}`, {
+      productId,
+    });
+    const result = await tracked.confirmations.confirm({
+      tenantId,
+      branchId,
+      orderId: checkout.order.id,
+      paymentId: checkout.payment.id,
+    });
+    assert.equal(result.inventoryReservations.length, 1);
+    assert.equal(result.inventoryReservations[0].allocations.length > 0, true);
+  }
+}
+
 async function verifyPosRegression() {
   const store = new MockDatabaseStore(new LocalStorageAdapter());
   const repository = new MockSaleConfirmationRepository(store, new DataEventBus());
@@ -283,10 +446,13 @@ function verifyInventoryAlertCalculations() {
 }
 
 async function main() {
+  await verifyConsecutiveStorefrontOrders();
+  await verifyAccumulatedReservationQaCase();
   await verifyImmediateCardAndLifecycle();
   await verifyDeferredMethodsStayPending();
   await verifyRollbackAndIsolation();
   await verifyServiceOrder();
+  await verifyKitAndTrackedProducts();
   await verifyPosRegression();
   verifyInventoryAlertCalculations();
   console.log("ecommerce payment/reservation findings verification: PASS");
