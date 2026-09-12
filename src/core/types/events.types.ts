@@ -38,6 +38,10 @@ export interface DataEventPayload {
   tenantId?: string;
   branchId?: string;
   productId?: string;
+  pickingOrderId?: string;
+  pickingLineId?: string;
+  orderId?: string;
+  incidentId?: string;
   previousPrice?: number;
   newPrice?: number;
   action?: "created" | "updated" | "archived" | "deleted" | "status_changed" | "reset";

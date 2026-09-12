@@ -13,7 +13,9 @@ import type {
   RegisterInventoryMovementInput,
   ReleaseInventoryReservationInput,
   ReserveOrderItemInput,
+  GetPickingInventoryAvailabilityInput,
 } from "@/core/repositories";
+import { buildPickingInventoryAvailability } from "@/core/inventory/pickingAvailability";
 import type { DataEventName, DataEventPayload } from "@/core/types/events.types";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
 import {
@@ -77,6 +79,48 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
       inventoryMovements: result.inventoryMovements,
       idempotent: result.idempotent,
     };
+  }
+  async getPickingAvailability(input: GetPickingInventoryAvailabilityInput) {
+    return this.read((db) => {
+      const pickingOrder = db.pickingOrders.find(
+        (item) =>
+          item.id === input.pickingOrderId &&
+          item.tenantId === input.tenantId &&
+          item.branchId === input.branchId &&
+          item.orderId === input.orderId,
+      );
+      if (!pickingOrder) {
+        throw new Error(`PickingOrder not found for tenant/branch: ${input.pickingOrderId}`);
+      }
+      const order = db.orders.find(
+        (item) =>
+          item.id === input.orderId &&
+          item.tenantId === input.tenantId &&
+          item.branchId === input.branchId,
+      );
+      if (!order) throw new Error(`Order not found for tenant/branch: ${input.orderId}`);
+      const pickingItems = db.pickingItems.filter(
+        (item) => item.pickingOrderId === pickingOrder.id && item.productId === input.productId,
+      );
+      if (pickingItems.length === 0) {
+        throw new Error(`Product is not part of PickingOrder: ${input.productId}`);
+      }
+      const product = db.products.find(
+        (item) => item.id === input.productId && item.tenantId === input.tenantId,
+      );
+      if (!product) throw new Error(`Product not found for tenant: ${input.productId}`);
+
+      return buildPickingInventoryAvailability({
+        ...input,
+        product,
+        balances: db.inventoryBalances,
+        reservations: db.inventoryReservations,
+        lots: db.stockLots,
+        serials: db.serialNumbers,
+        locations: db.storageLocations,
+        at: input.at ?? this.now(),
+      });
+    });
   }
   async getBalanceByProduct(productId: string, branchId?: string) {
     return this.read((db) =>

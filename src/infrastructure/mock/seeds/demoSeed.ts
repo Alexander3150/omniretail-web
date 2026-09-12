@@ -172,7 +172,7 @@ export const demoSeedDatabase: MockDatabase = {
       type: UserType.employee,
       status: UserStatus.active,
       roleId: "role-warehouse",
-      branchId: "branch-norte",
+      branchId: "branch-centro",
       createdAt: now,
       updatedAt: now,
     },
@@ -253,7 +253,12 @@ export const demoSeedDatabase: MockDatabase = {
       tenantId: "tenant-demo",
       name: "Bodeguero",
       isSystem: true,
-      permissions: ["logistics.picking.complete", "receiving.receipts.confirm"],
+      permissions: [
+        "logistics.picking.read",
+        "logistics.picking.start",
+        "logistics.picking.complete",
+        "receiving.receipts.confirm",
+      ],
       branchScope: "assigned",
       createdAt: now,
       updatedAt: now,
@@ -1553,6 +1558,8 @@ export const demoSeedDatabase: MockDatabase = {
     },
   ],
   pickingItemUpdateOperations: [],
+  pickingAssignmentReleases: [],
+  pickingIncidents: [],
   dispatches: [
     {
       id: "dispatch-001",
