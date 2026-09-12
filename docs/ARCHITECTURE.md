@@ -32,7 +32,7 @@ OrderRepository.create / updateStatus
 -> Order + InventoryReservation + InventoryBalance
 ```
 
-El checkout e-commerce crea primero `Order.pending` y `Payment.pending`. Para el pago mock con tarjeta, `OrderPaymentConfirmationRepository.confirm` valida Order, Payment, tenant, branch activa, relacion, importe y estados; en una unica transaccion reserva inventario y cambia ambos estados. Si la reserva falla, Payment y Order permanecen pending. Confirmar otra vez la misma pareja ya confirmada es idempotente.
+El checkout e-commerce crea primero `Order.pending` y `Payment.pending`. Cada `OrderItem.id` queda namespaced por el `idempotencyKey` estable del intento, por lo que un retry conserva identidad y Orders distintas no comparten lineas. Para el pago mock con tarjeta, `OrderPaymentConfirmationRepository.confirm` valida Order, Payment, tenant, branch activa, relacion, importe y estados; en una unica transaccion reserva inventario y cambia ambos estados. Si falta disponibilidad, la transaccion de confirmacion revierte y el boundary compensa eliminando exclusivamente la pareja inmediata `pending/pending` sin reservas ni dependencias. Confirmar otra vez la misma pareja ya confirmada es idempotente.
 
 ```text
 CreateStorefrontCheckoutService

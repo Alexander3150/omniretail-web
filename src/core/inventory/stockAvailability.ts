@@ -21,7 +21,16 @@ export interface InventoryAllocationPlanInput {
   preferredLocationId?: string | null;
 }
 
-export function getAvailableQuantity(balance: Pick<InventoryBalance, "quantity" | "reservedQuantity">) {
+export class InsufficientInventoryAvailabilityError extends Error {
+  constructor(productId: string) {
+    super(`Stock disponible insuficiente para ${productId}.`);
+    this.name = "InsufficientInventoryAvailabilityError";
+  }
+}
+
+export function getAvailableQuantity(
+  balance: Pick<InventoryBalance, "quantity" | "reservedQuantity">,
+) {
   return Math.max(balance.quantity - balance.reservedQuantity, 0);
 }
 
@@ -80,7 +89,7 @@ export function planInventoryAllocation({
   }
 
   if (remaining > 0) {
-    throw new Error(`Stock disponible insuficiente para ${productId}.`);
+    throw new InsufficientInventoryAvailabilityError(productId);
   }
 
   return allocations;

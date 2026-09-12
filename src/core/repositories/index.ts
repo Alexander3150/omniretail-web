@@ -25,6 +25,7 @@ export type * from "./IncidentTypeRepository";
 export type * from "./CustomerRepository";
 export type * from "./CustomerPaymentMethodRepository";
 export type * from "./SavedPaymentMethodRepository";
+export type * from "./AddressRepository";
 export type * from "./OrderRepository";
 export type * from "./OrderPaymentConfirmationRepository";
 export type * from "./PaymentRepository";

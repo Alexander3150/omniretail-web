@@ -9,6 +9,7 @@ export * from "./MockCashMovementRepository";
 export * from "./MockCategoryRepository";
 export * from "./MockCustomerRepository";
 export * from "./MockCustomerPaymentMethodRepository";
+export * from "./MockAddressRepository";
 export * from "./MockDispatchRepository";
 export * from "./MockInventoryAdjustmentRepository";
 export * from "./MockInventoryRepository";
