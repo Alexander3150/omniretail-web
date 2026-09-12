@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Role, User } from "@/core/entities";
+import { UserStatus } from "@/core/enums";
 import { canUserAccessBranch } from "@/core/scopes/userBranchAccess";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
@@ -53,6 +54,19 @@ export function CurrentSessionProvider({ children }: { children: ReactNode }) {
       }
 
       const resolvedUser = await repositories.users.getById(session.userId);
+
+      // Fail-closed: un User desactivado despues de haber iniciado sesion
+      // (por un admin, por ejemplo) no debe seguir viendose como
+      // autenticado solo porque la sesion en storage sigue vigente. Se
+      // trata igual que "sesion invalida", nunca se expone el User ni su
+      // Role -- aplica por igual a Employee y Customer.
+      if (resolvedUser && resolvedUser.status !== UserStatus.active) {
+        setUser(null);
+        setRole(null);
+        setError("La cuenta ya no esta activa.");
+        return;
+      }
+
       const resolvedRole = resolvedUser?.roleId
         ? await repositories.roles.getById(resolvedUser.roleId)
         : null;

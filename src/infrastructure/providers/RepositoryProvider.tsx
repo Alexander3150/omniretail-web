@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import type {
+  AddressRepository,
   AttributeRepository,
   AuditLogRepository,
   AuthRepository,
@@ -46,6 +47,7 @@ import type {
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import {
+  MockAddressRepository,
   MockAttributeRepository,
   MockAuditLogRepository,
   MockAuthRepository,
@@ -115,6 +117,7 @@ export interface RepositoryRegistry {
   customers: CustomerRepository;
   customerPaymentMethods: CustomerPaymentMethodRepository;
   savedPaymentMethods: SavedPaymentMethodRepository;
+  addresses: AddressRepository;
   orders: OrderRepository;
   orderPaymentConfirmations: OrderPaymentConfirmationRepository;
   payments: PaymentRepository;
@@ -172,6 +175,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       customers: new MockCustomerRepository(store, eventBus),
       customerPaymentMethods,
       savedPaymentMethods: customerPaymentMethods,
+      addresses: new MockAddressRepository(store, eventBus),
       orders: new MockOrderRepository(store, eventBus),
       orderPaymentConfirmations: new MockOrderPaymentConfirmationRepository(store, eventBus),
       payments: new MockPaymentRepository(store, eventBus),
