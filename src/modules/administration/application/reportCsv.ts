@@ -14,8 +14,12 @@ export function downloadCsv(filename: string, csv: string): void {
   URL.revokeObjectURL(url);
 }
 
-function escapeCsvCell(value: string | number): string {
-  const text = String(value);
+export function escapeCsvCell(value: string | number): string {
+  const text = typeof value === "string" ? neutralizeFormula(value) : String(value);
   if (!/[",\r\n]/.test(text)) return text;
   return `"${text.replaceAll('"', '""')}"`;
+}
+
+function neutralizeFormula(value: string): string {
+  return /^\s*[=+\-@]/.test(value) ? `'${value}` : value;
 }

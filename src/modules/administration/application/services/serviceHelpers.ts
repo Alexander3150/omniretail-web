@@ -70,12 +70,6 @@ export function ensureCanExportReports(permissions: readonly string[]) {
   throw new AdministrationServiceError("No tenés permiso para exportar reportes.");
 }
 
-export function ensureReportsTenant(tenantId: string) {
-  if (tenantId.trim()) return;
-
-  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
-}
-
 export function ensureCanManageEcommerceConfig(permissions: readonly string[]) {
   if (permissions.includes("admin.ecommerce_config.manage")) return;
 

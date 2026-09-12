@@ -29,16 +29,18 @@ export function ReportTotals({ totals }: { totals: ReportTotals }) {
 function getTotalItems(totals: ReportTotals): Array<{ label: string; value: string | number }> {
   if (totals.kind === "sales") {
     return [
-      { label: "Ventas", value: totals.count },
-      { label: "Total", value: formatCurrency(totals.total) },
-      { label: "Descuentos", value: formatCurrency(totals.discountTotal) },
-      { label: "Impuestos", value: formatCurrency(totals.taxTotal) },
+      { label: "Ventas completadas", value: totals.count },
+      { label: "Excluidas · canceladas/devueltas", value: totals.excludedCount },
+      { label: "Total completado", value: formatCurrency(totals.total) },
+      { label: "Descuentos completados", value: formatCurrency(totals.discountTotal) },
+      { label: "Impuestos completados", value: formatCurrency(totals.taxTotal) },
     ];
   }
   if (totals.kind === "purchases") {
     return [
-      { label: "Compras", value: totals.count },
-      { label: "Total", value: formatCurrency(totals.total) },
+      { label: "Órdenes operativas", value: totals.count },
+      { label: "Excluidas · borrador/canceladas", value: totals.excludedCount },
+      { label: "Total operativo", value: formatCurrency(totals.total) },
     ];
   }
   if (totals.kind === "movements") {

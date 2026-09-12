@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { PurchaseOrderStatus, SaleStatus } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   MovementReportRow,
@@ -16,8 +17,8 @@ import type {
 import { buildCsv, downloadCsv } from "@/modules/administration/application/reportCsv";
 import { GetReportsService } from "@/modules/administration/application/services/GetReportsService";
 import {
+  AdministrationServiceError,
   cleanError,
-  ensureCanExportReports,
 } from "@/modules/administration/application/services/serviceHelpers";
 import {
   getMovementTypeLabel,
@@ -32,6 +33,7 @@ import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 
 const EMPTY_DATA: ReportsDataDto = {
+  tenantId: "",
   sales: [],
   purchases: [],
   movements: [],
@@ -40,8 +42,7 @@ const EMPTY_DATA: ReportsDataDto = {
 
 export function useReports() {
   const repositories = useRepositories();
-  const { user, permissions, hasPermission, loading: sessionLoading } = useCurrentSession();
-  const tenantId = user?.tenantId ?? "";
+  const { hasPermission, loading: sessionLoading } = useCurrentSession();
   const canRead = hasPermission(REPORTS_READ_PERMISSION);
   const canExport = hasPermission(REPORTS_EXPORT_PERMISSION);
   const service = useMemo(() => new GetReportsService(repositories), [repositories]);
@@ -57,14 +58,14 @@ export function useReports() {
     setLoading(true);
     setError(null);
     try {
-      setData(await service.execute(tenantId, permissions));
+      setData(await service.execute());
     } catch (caughtError) {
       setData(EMPTY_DATA);
       setError(cleanError(caughtError));
     } finally {
       setLoading(false);
     }
-  }, [canRead, permissions, service, sessionLoading, tenantId]);
+  }, [canRead, service, sessionLoading]);
 
   useDataEvent("sale.changed", reload);
   useDataEvent("purchase-order.changed", reload);
@@ -90,7 +91,7 @@ export function useReports() {
     }
 
     service
-      .execute(tenantId, permissions)
+      .execute()
       .then((nextData) => {
         if (!active) return;
         setData(nextData);
@@ -108,7 +109,7 @@ export function useReports() {
     return () => {
       active = false;
     };
-  }, [canRead, permissions, service, sessionLoading, tenantId]);
+  }, [canRead, service, sessionLoading]);
 
   const rows = useMemo<ReportRow[]>(() => filterRows(data, kind, filter), [data, filter, kind]);
   const totals = useMemo<ReportTotals>(() => calculateTotals(kind, rows), [kind, rows]);
@@ -117,12 +118,26 @@ export function useReports() {
     setKindState(nextKind);
     setFilter({});
   }, []);
-  const exportCsv = useCallback(() => {
-    if (!canExport || rows.length === 0) return;
-    ensureCanExportReports(permissions);
-    const csvData = getCsvData(kind, rows);
-    downloadCsv(`reporte-${kind}-${getLocalDateKey(new Date())}.csv`, buildCsv(csvData.headers, csvData.rows));
-  }, [canExport, kind, permissions, rows]);
+  const exportCsv = useCallback(async () => {
+    if (rows.length === 0) return;
+
+    setError(null);
+    try {
+      const exportTenantId = await service.authorizeExport();
+      if (!data.tenantId || exportTenantId !== data.tenantId) {
+        throw new AdministrationServiceError(
+          "Los datos visibles ya no pertenecen a la sesión actual. Actualizá el reporte.",
+        );
+      }
+      const csvData = getCsvData(kind, rows);
+      downloadCsv(
+        `reporte-${kind}-${getLocalDateKey(new Date())}.csv`,
+        buildCsv(csvData.headers, csvData.rows),
+      );
+    } catch (caughtError) {
+      setError(cleanError(caughtError));
+    }
+  }, [data.tenantId, kind, rows, service]);
 
   return {
     loading: loading || sessionLoading,
@@ -142,7 +157,11 @@ export function useReports() {
   };
 }
 
-function filterRows(data: ReportsDataDto, kind: ReportKind, filter: ReportFilter): ReportRow[] {
+export function filterRows(
+  data: ReportsDataDto,
+  kind: ReportKind,
+  filter: ReportFilter,
+): ReportRow[] {
   if (kind === "sales") {
     return data.sales.filter(
       (row) =>
@@ -156,7 +175,8 @@ function filterRows(data: ReportsDataDto, kind: ReportKind, filter: ReportFilter
       (row) =>
         matchesDateRange(row.date, filter) &&
         (!filter.status || row.status === filter.status) &&
-        (!filter.supplierId || row.supplierId === filter.supplierId),
+        (!filter.supplierId || row.supplierId === filter.supplierId) &&
+        (!filter.branchId || row.branchId === filter.branchId),
     );
   }
   if (kind === "movements") {
@@ -164,7 +184,8 @@ function filterRows(data: ReportsDataDto, kind: ReportKind, filter: ReportFilter
       (row) =>
         matchesDateRange(row.date, filter) &&
         (!filter.movementType || row.type === filter.movementType) &&
-        (!filter.branchId || row.branchId === filter.branchId),
+        (!filter.branchId || row.branchId === filter.branchId) &&
+        (!filter.productId || row.productId === filter.productId),
     );
   }
   return data.payments.filter(
@@ -176,32 +197,45 @@ function filterRows(data: ReportsDataDto, kind: ReportKind, filter: ReportFilter
 }
 
 function matchesDateRange(date: string, filter: ReportFilter) {
-  const dateKey = date.slice(0, 10);
+  const dateKey = getLocalDateKey(new Date(date));
   return (!filter.from || dateKey >= filter.from) && (!filter.to || dateKey <= filter.to);
 }
 
-function calculateTotals(kind: ReportKind, rows: ReportRow[]): ReportTotals {
+export function calculateTotals(kind: ReportKind, rows: ReportRow[]): ReportTotals {
   if (kind === "sales") {
     const sales = rows as SalesReportRow[];
+    const effectiveSales = sales.filter((row) => row.status === SaleStatus.completed);
     return {
       kind,
-      count: sales.length,
-      total: sum(sales.map((row) => row.total)),
-      discountTotal: sum(sales.map((row) => row.discountTotal)),
-      taxTotal: sum(sales.map((row) => row.taxTotal)),
+      count: effectiveSales.length,
+      excludedCount: sales.length - effectiveSales.length,
+      total: sum(effectiveSales.map((row) => row.total)),
+      discountTotal: sum(effectiveSales.map((row) => row.discountTotal)),
+      taxTotal: sum(effectiveSales.map((row) => row.taxTotal)),
     };
   }
   if (kind === "purchases") {
     const purchases = rows as PurchasesReportRow[];
-    return { kind, count: purchases.length, total: sum(purchases.map((row) => row.total)) };
+    const operationalPurchases = purchases.filter(
+      (row) =>
+        row.status !== PurchaseOrderStatus.draft && row.status !== PurchaseOrderStatus.cancelled,
+    );
+    return {
+      kind,
+      count: operationalPurchases.length,
+      excludedCount: purchases.length - operationalPurchases.length,
+      total: sum(operationalPurchases.map((row) => row.total)),
+    };
   }
   if (kind === "movements") {
     const movements = rows as MovementReportRow[];
     return {
       kind,
-      byType: groupAmounts(movements, (row) => row.type, (row) => row.quantity).map(
-        ({ key, count, amount }) => ({ type: key, count, quantity: amount }),
-      ),
+      byType: groupAmounts(
+        movements,
+        (row) => row.type,
+        (row) => row.quantity,
+      ).map(({ key, count, amount }) => ({ type: key, count, quantity: amount })),
     };
   }
 
@@ -209,12 +243,16 @@ function calculateTotals(kind: ReportKind, rows: ReportRow[]): ReportTotals {
   return {
     kind: "payments",
     count: payments.length,
-    byMethod: groupAmounts(payments, (row) => row.method, (row) => row.amount).map(
-      ({ key, amount }) => ({ method: key, amount }),
-    ),
-    byStatus: groupAmounts(payments, (row) => row.status, (row) => row.amount).map(
-      ({ key, amount }) => ({ status: key, amount }),
-    ),
+    byMethod: groupAmounts(
+      payments,
+      (row) => row.method,
+      (row) => row.amount,
+    ).map(({ key, amount }) => ({ method: key, amount })),
+    byStatus: groupAmounts(
+      payments,
+      (row) => row.status,
+      (row) => row.amount,
+    ).map(({ key, amount }) => ({ status: key, amount })),
   };
 }
 
@@ -232,7 +270,7 @@ function sum(values: number[]) {
   return values.reduce((total, value) => total + value, 0);
 }
 
-function getCsvData(
+export function getCsvData(
   kind: ReportKind,
   rows: ReportRow[],
 ): { headers: string[]; rows: Array<Array<string | number>> } {
@@ -250,7 +288,7 @@ function getCsvData(
       ],
       rows: (rows as SalesReportRow[]).map((row) => [
         row.number,
-        row.date.slice(0, 10),
+        getLocalDateKey(new Date(row.date)),
         row.branchName,
         getReportStatusLabel(row.status),
         row.subtotal,
@@ -265,7 +303,7 @@ function getCsvData(
       headers: ["Número", "Fecha", "Sucursal", "Proveedor", "Estado", "Subtotal", "Total"],
       rows: (rows as PurchasesReportRow[]).map((row) => [
         row.number,
-        row.date.slice(0, 10),
+        getLocalDateKey(new Date(row.date)),
         row.branchName,
         row.supplierName,
         getReportStatusLabel(row.status),
@@ -278,7 +316,7 @@ function getCsvData(
     return {
       headers: ["Fecha", "Sucursal", "Producto", "Tipo", "Cantidad", "Motivo"],
       rows: (rows as MovementReportRow[]).map((row) => [
-        row.date.slice(0, 10),
+        getLocalDateKey(new Date(row.date)),
         row.branchName,
         row.productName,
         getMovementTypeLabel(row.type),
@@ -290,7 +328,7 @@ function getCsvData(
   return {
     headers: ["Fecha", "Método", "Estado", "Monto", "Referencia", "Origen"],
     rows: (rows as PaymentReportRow[]).map((row) => [
-      row.date.slice(0, 10),
+      getLocalDateKey(new Date(row.date)),
       getPaymentMethodLabel(row.method),
       getReportStatusLabel(row.status),
       row.amount,
@@ -300,7 +338,7 @@ function getCsvData(
   };
 }
 
-function getLocalDateKey(value: Date) {
+export function getLocalDateKey(value: Date) {
   const year = value.getFullYear();
   const month = String(value.getMonth() + 1).padStart(2, "0");
   const day = String(value.getDate()).padStart(2, "0");

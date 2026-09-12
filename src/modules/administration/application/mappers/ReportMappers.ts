@@ -50,6 +50,7 @@ export function toMovementReportRow(
     date: movement.createdAt,
     branchId: movement.branchId,
     branchName: branchNames.get(movement.branchId) ?? movement.branchId,
+    productId: movement.productId,
     productName: productNames.get(movement.productId) ?? movement.productId,
     type: movement.type,
     quantity: movement.quantity,

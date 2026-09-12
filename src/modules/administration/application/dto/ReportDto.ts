@@ -1,3 +1,11 @@
+import type {
+  InventoryMovementType,
+  PaymentMethod,
+  PaymentStatus,
+  PurchaseOrderStatus,
+  SaleStatus,
+} from "@/core/enums";
+
 export type ReportKind = "sales" | "purchases" | "movements" | "payments";
 
 export interface ReportFilter {
@@ -6,6 +14,7 @@ export interface ReportFilter {
   status?: string;
   branchId?: string;
   supplierId?: string;
+  productId?: string;
   movementType?: string;
   method?: string;
 }
@@ -15,7 +24,7 @@ export interface SalesReportRow {
   date: string;
   branchId: string;
   branchName: string;
-  status: string;
+  status: SaleStatus;
   subtotal: number;
   discountTotal: number;
   taxTotal: number;
@@ -29,7 +38,7 @@ export interface PurchasesReportRow {
   branchName: string;
   supplierId: string;
   supplierName: string;
-  status: string;
+  status: PurchaseOrderStatus;
   subtotal: number;
   total: number;
 }
@@ -38,43 +47,42 @@ export interface MovementReportRow {
   date: string;
   branchId: string;
   branchName: string;
+  productId: string;
   productName: string;
-  type: string;
+  type: InventoryMovementType;
   quantity: number;
   reason: string;
 }
 
 export interface PaymentReportRow {
   date: string;
-  method: string;
-  status: string;
+  method: PaymentMethod;
+  status: PaymentStatus;
   amount: number;
   reference: string;
   origin: "Orden" | "Venta" | "—";
 }
 
 export interface ReportsDataDto {
+  tenantId: string;
   sales: SalesReportRow[];
   purchases: PurchasesReportRow[];
   movements: MovementReportRow[];
   payments: PaymentReportRow[];
 }
 
-export type ReportRow =
-  | SalesReportRow
-  | PurchasesReportRow
-  | MovementReportRow
-  | PaymentReportRow;
+export type ReportRow = SalesReportRow | PurchasesReportRow | MovementReportRow | PaymentReportRow;
 
 export type ReportTotals =
   | {
       kind: "sales";
       count: number;
+      excludedCount: number;
       total: number;
       discountTotal: number;
       taxTotal: number;
     }
-  | { kind: "purchases"; count: number; total: number }
+  | { kind: "purchases"; count: number; excludedCount: number; total: number }
   | {
       kind: "movements";
       byType: Array<{ type: string; count: number; quantity: number }>;

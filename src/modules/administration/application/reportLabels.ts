@@ -1,30 +1,39 @@
+import {
+  InventoryMovementType,
+  PaymentMethod,
+  PaymentStatus,
+  PurchaseOrderStatus,
+  SaleStatus,
+} from "@/core/enums";
+
 const statusLabels: Record<string, string> = {
-  completed: "Completada",
-  partially_returned: "Parcialmente devuelta",
-  cancelled: "Cancelada",
-  draft: "Borrador",
-  pending_approval: "Pendiente de aprobación",
-  approved: "Aprobada",
-  sent: "Enviada",
-  partially_received: "Recibida parcialmente",
-  received: "Recibida",
-  pending: "Pendiente",
-  rejected: "Rechazado",
-  refunded: "Reembolsado",
+  [SaleStatus.completed]: "Completada",
+  [SaleStatus.partially_returned]: "Parcialmente devuelta",
+  [SaleStatus.returned]: "Devuelta",
+  [SaleStatus.cancelled]: "Cancelada",
+  [PurchaseOrderStatus.draft]: "Borrador",
+  [PurchaseOrderStatus.pending_approval]: "Pendiente de aprobación",
+  [PurchaseOrderStatus.approved]: "Aprobada",
+  [PurchaseOrderStatus.sent]: "Enviada",
+  [PurchaseOrderStatus.partially_received]: "Recibida parcialmente",
+  [PurchaseOrderStatus.received]: "Recibida",
+  [PaymentStatus.pending]: "Pendiente",
+  [PaymentStatus.rejected]: "Rechazado",
+  [PaymentStatus.refunded]: "Reembolsado",
 };
 
 const movementTypeLabels: Record<string, string> = {
-  in: "Entrada",
-  out: "Salida",
-  adjustment: "Ajuste",
-  transfer: "Transferencia",
+  [InventoryMovementType.in]: "Entrada",
+  [InventoryMovementType.out]: "Salida",
+  [InventoryMovementType.adjustment]: "Ajuste",
+  [InventoryMovementType.transfer]: "Transferencia",
 };
 
 const paymentMethodLabels: Record<string, string> = {
-  cash: "Efectivo",
-  card: "Tarjeta",
-  transfer: "Transferencia",
-  mixed: "Mixto",
+  [PaymentMethod.cash]: "Efectivo",
+  [PaymentMethod.card]: "Tarjeta",
+  [PaymentMethod.transfer]: "Transferencia",
+  [PaymentMethod.mixed]: "Mixto",
 };
 
 export function getReportStatusLabel(status: string) {

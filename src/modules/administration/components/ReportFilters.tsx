@@ -85,6 +85,13 @@ export function ReportFilters({ data, filter, kind, onChange, onReset }: ReportF
               value={filter.supplierId ?? ""}
               onChange={(supplierId) => update({ supplierId })}
             />
+            <OptionFilter
+              id="report-branch"
+              label="Sucursal"
+              options={options.branches}
+              value={filter.branchId ?? ""}
+              onChange={(branchId) => update({ branchId })}
+            />
           </>
         ) : null}
 
@@ -103,6 +110,13 @@ export function ReportFilters({ data, filter, kind, onChange, onReset }: ReportF
               options={options.branches}
               value={filter.branchId ?? ""}
               onChange={(branchId) => update({ branchId })}
+            />
+            <OptionFilter
+              id="report-product"
+              label="Producto"
+              options={options.products}
+              value={filter.productId ?? ""}
+              onChange={(productId) => update({ productId })}
             />
           </>
         ) : null}
@@ -186,6 +200,7 @@ function getOptions(data: ReportsDataDto, kind: ReportKind) {
       ),
       branches: uniqueOptions(data.sales.map((row) => [row.branchId, row.branchName])),
       suppliers: [],
+      products: [],
       movementTypes: [],
       methods: [],
     };
@@ -195,10 +210,9 @@ function getOptions(data: ReportsDataDto, kind: ReportKind) {
       statuses: uniqueOptions(
         data.purchases.map((row) => [row.status, getReportStatusLabel(row.status)]),
       ),
-      branches: [],
-      suppliers: uniqueOptions(
-        data.purchases.map((row) => [row.supplierId, row.supplierName]),
-      ),
+      branches: uniqueOptions(data.purchases.map((row) => [row.branchId, row.branchName])),
+      suppliers: uniqueOptions(data.purchases.map((row) => [row.supplierId, row.supplierName])),
+      products: [],
       movementTypes: [],
       methods: [],
     };
@@ -208,6 +222,7 @@ function getOptions(data: ReportsDataDto, kind: ReportKind) {
       statuses: [],
       branches: uniqueOptions(data.movements.map((row) => [row.branchId, row.branchName])),
       suppliers: [],
+      products: uniqueOptions(data.movements.map((row) => [row.productId, row.productName])),
       movementTypes: uniqueOptions(
         data.movements.map((row) => [row.type, getMovementTypeLabel(row.type)]),
       ),
@@ -220,6 +235,7 @@ function getOptions(data: ReportsDataDto, kind: ReportKind) {
     ),
     branches: [],
     suppliers: [],
+    products: [],
     movementTypes: [],
     methods: uniqueOptions(
       data.payments.map((row) => [row.method, getPaymentMethodLabel(row.method)]),

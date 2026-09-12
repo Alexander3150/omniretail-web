@@ -1,3 +1,4 @@
+import { UserStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { ReportsDataDto } from "@/modules/administration/application/dto/ReportDto";
 import {
@@ -7,16 +8,17 @@ import {
   toSalesReportRow,
 } from "@/modules/administration/application/mappers/ReportMappers";
 import {
+  AdministrationServiceError,
+  ensureCanExportReports,
   ensureCanReadReports,
-  ensureReportsTenant,
 } from "@/modules/administration/application/services/serviceHelpers";
 
 export class GetReportsService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async execute(tenantId: string, permissions: readonly string[]): Promise<ReportsDataDto> {
+  async execute(): Promise<ReportsDataDto> {
+    const { tenantId, permissions } = await this.resolveAuthenticatedContext();
     ensureCanReadReports(permissions);
-    ensureReportsTenant(tenantId);
 
     const [sales, purchases, movements, payments, branches, suppliers, products] =
       await Promise.all([
@@ -45,6 +47,7 @@ export class GetReportsService {
     );
 
     return {
+      tenantId,
       sales: sales
         .filter((sale) => sale.tenantId === tenantId)
         .sort(byNewestFirst)
@@ -62,6 +65,36 @@ export class GetReportsService {
         .sort(byNewestFirst)
         .map(toPaymentReportRow),
     };
+  }
+
+  async authorizeExport(): Promise<string> {
+    const { tenantId, permissions } = await this.resolveAuthenticatedContext();
+    ensureCanExportReports(permissions);
+    return tenantId;
+  }
+
+  private async resolveAuthenticatedContext() {
+    const sessionId = await this.repositories.auth.getCurrentSessionId();
+    if (!sessionId) {
+      throw new AdministrationServiceError("No se pudo resolver la sesión actual.");
+    }
+
+    const session = await this.repositories.auth.getSession(sessionId);
+    if (!session) {
+      throw new AdministrationServiceError("No se pudo resolver la sesión actual.");
+    }
+
+    const actor = await this.repositories.users.getById(session.userId);
+    if (!actor || actor.status !== UserStatus.active || !actor.tenantId.trim()) {
+      throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
+    }
+
+    const role = actor.roleId ? await this.repositories.roles.getById(actor.roleId) : null;
+    if (!role || role.tenantId !== actor.tenantId) {
+      throw new AdministrationServiceError("No se pudo resolver el rol del usuario actual.");
+    }
+
+    return { tenantId: actor.tenantId, permissions: role.permissions };
   }
 }
 
