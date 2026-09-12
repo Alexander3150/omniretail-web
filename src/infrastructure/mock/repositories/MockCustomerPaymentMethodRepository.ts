@@ -242,11 +242,29 @@ export class MockCustomerPaymentMethodRepository
     expirationMonth: number;
     expirationYear: number;
   }): void {
-    if (!/^\d{4}$/.test(input.last4)) {
+    // TypeScript no protege esto en runtime: un caller que bypasea el
+    // tipado puede enviar "12" (string), NaN, o 1.5. Se valida
+    // explicitamente tipo + finitud + entero antes de comparar rangos --
+    // un valor no numerico jamas debe llegar a una comparacion "< 1" que
+    // silenciosamente evalue false.
+    if (typeof input.last4 !== "string" || !/^\d{4}$/.test(input.last4)) {
       throw new Error("CustomerPaymentMethod last4 must contain exactly 4 digits");
     }
-    if (input.expirationMonth < 1 || input.expirationMonth > 12) {
-      throw new Error("CustomerPaymentMethod expirationMonth must be between 1 and 12");
+    if (
+      typeof input.expirationMonth !== "number" ||
+      !Number.isFinite(input.expirationMonth) ||
+      !Number.isInteger(input.expirationMonth) ||
+      input.expirationMonth < 1 ||
+      input.expirationMonth > 12
+    ) {
+      throw new Error("CustomerPaymentMethod expirationMonth must be an integer between 1 and 12");
+    }
+    if (
+      typeof input.expirationYear !== "number" ||
+      !Number.isFinite(input.expirationYear) ||
+      !Number.isInteger(input.expirationYear)
+    ) {
+      throw new Error("CustomerPaymentMethod expirationYear must be a valid integer year");
     }
     const now = new Date();
     const currentYear = now.getFullYear();

@@ -4,59 +4,48 @@ import { useCallback, useEffect, useState } from "react";
 import type { Address } from "@/core/entities";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import type { AddressFormDto } from "@/modules/customer/application/dto/AddressFormDto";
-import { useCustomerIdentity } from "@/modules/customer/hooks/useCustomerIdentity";
+import {
+  createAddress,
+  listAddresses,
+  removeAddress,
+  setDefaultAddress,
+  updateAddress,
+} from "@/modules/customer/application/services/addressService";
+import { CustomerIdentityError } from "@/modules/customer/application/services/CustomerAuthorizationContext";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 
-function toFields(dto: AddressFormDto) {
-  return {
-    label: dto.label.trim(),
-    recipientName: dto.recipientName.trim(),
-    line1: dto.line1.trim(),
-    line2: dto.line2.trim() || undefined,
-    city: dto.city.trim(),
-    stateOrDepartment: dto.stateOrDepartment.trim() || undefined,
-    postalCode: dto.postalCode.trim() || undefined,
-    country: dto.country.trim(),
-    references: dto.references.trim() || undefined,
-  };
-}
-
 /**
- * Sin parametros: la identidad (tenantId/customerId) se resuelve
- * internamente via useCustomerIdentity, nunca se recibe desde la pantalla
- * que llama al hook -- asi ninguna pagina puede, por error o a proposito,
- * operar sobre direcciones de otro cliente.
+ * Solo pasa `repositories` (capacidad) + datos de negocio (addressId,
+ * dto) a los application services -- nunca identidad del actor. El
+ * scope (tenantId/customerId) se resuelve dentro de cada service, no
+ * aca.
  */
 export function useAddresses() {
   const repositories = useRepositories();
-  const { tenantId, customerId, loading: identityLoading, error: identityError } =
-    useCustomerIdentity();
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    if (identityLoading) return;
-    if (!tenantId || !customerId) {
-      setAddresses([]);
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     try {
-      const items = await repositories.addresses.getByCustomer(tenantId, customerId);
+      const items = await listAddresses(repositories);
       setAddresses(items);
       setError(null);
     } catch (caughtError) {
       setAddresses([]);
       setError(
-        caughtError instanceof Error ? caughtError.message : "No se pudieron cargar las direcciones.",
+        caughtError instanceof CustomerIdentityError
+          ? caughtError.message
+          : caughtError instanceof Error
+            ? caughtError.message
+            : "No se pudieron cargar las direcciones.",
       );
     } finally {
       setLoading(false);
     }
-  }, [customerId, identityLoading, repositories, tenantId]);
+  }, [repositories]);
 
   useEffect(() => {
     let active = true;
@@ -70,80 +59,56 @@ export function useAddresses() {
   }, [reload]);
 
   useDataEvent("address.changed", reload);
-
-  const requireIdentity = useCallback(() => {
-    if (!tenantId || !customerId) {
-      throw new Error(identityError ?? "No se encontró la cuenta de cliente.");
-    }
-    return { tenantId, customerId };
-  }, [customerId, identityError, tenantId]);
+  useDataEvent("auth.changed", reload);
+  useDataEvent("user.changed", reload);
 
   const create = useCallback(
     async (dto: AddressFormDto) => {
-      const identity = requireIdentity();
       setBusy(true);
       try {
-        return await repositories.addresses.create({ ...identity, ...toFields(dto) });
+        return await createAddress(repositories, dto);
       } finally {
         setBusy(false);
       }
     },
-    [repositories, requireIdentity],
+    [repositories],
   );
 
   const update = useCallback(
     async (id: string, dto: AddressFormDto) => {
-      const identity = requireIdentity();
       setBusy(true);
       try {
-        return await repositories.addresses.update(
-          identity.tenantId,
-          identity.customerId,
-          id,
-          toFields(dto),
-        );
+        return await updateAddress(repositories, id, dto);
       } finally {
         setBusy(false);
       }
     },
-    [repositories, requireIdentity],
+    [repositories],
   );
 
   const remove = useCallback(
     async (id: string) => {
-      const identity = requireIdentity();
       setBusy(true);
       try {
-        await repositories.addresses.remove(identity.tenantId, identity.customerId, id);
+        await removeAddress(repositories, id);
       } finally {
         setBusy(false);
       }
     },
-    [repositories, requireIdentity],
+    [repositories],
   );
 
   const setDefault = useCallback(
     async (id: string) => {
-      const identity = requireIdentity();
       setBusy(true);
       try {
-        return await repositories.addresses.setDefault(identity.tenantId, identity.customerId, id);
+        return await setDefaultAddress(repositories, id);
       } finally {
         setBusy(false);
       }
     },
-    [repositories, requireIdentity],
+    [repositories],
   );
 
-  return {
-    addresses,
-    loading: loading || identityLoading,
-    busy,
-    error: error ?? identityError,
-    reload,
-    create,
-    update,
-    remove,
-    setDefault,
-  };
+  return { addresses, loading, busy, error, reload, create, update, remove, setDefault };
 }

@@ -2,7 +2,8 @@ import type { Address } from "@/core/entities";
 
 /**
  * tenantId/customerId son obligatorios pero SIEMPRE deben provenir de la
- * identidad resuelta en sesion (ver resolveCustomerIdentity), nunca de un
+ * identidad resuelta en sesion (ver resolveCustomerAuthorizationContext
+ * en modules/customer), nunca de un
  * campo de formulario. isDefault queda fuera del input de creacion: el
  * repositorio decide server-side si la direccion nace default (primera
  * del cliente) -- ver invariante en MockAddressRepository.
