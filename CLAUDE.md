@@ -16,6 +16,8 @@ Consult these only when the task needs them:
 - `docs/GIT_WORKFLOW.md`
 - `docs/MODULE_OWNERSHIP.md`
 - `docs/AI_WORKFLOW.md`
+- `docs/RBAC_PLAN.md` (secuencia de 5 PR de RBAC/Employees; consultar antes de tocar `Role`,
+  `permissionsConfig` o autorización de `auth`/`administration`)
 
 ## Rules
 

@@ -113,7 +113,7 @@ Firmas reales leídas de `src/core/repositories/`.
 | `AuditLogRepository`        | `getByTenant` · `append`                                                                       | Sin filtros funcionales ni paginacion server-side |
 | `TenantRepository`          | `getAll` · `getById`                                                                           | Sin `create` ni `update`                          |
 | `CustomerRepository`        | `getAll` · `getById` · `getByUserId` · `getByEmail` · `create`                                 | Sin `update`                                      |
-| `RoleRepository`            | `getById`                                                                                      | ⛔ **Bloqueante**                                 |
+| `RoleRepository`            | `getById` · `getByTenant` · `create` · `update`                                                | Sin `archive`/status (ver gap #1)                 |
 | `CustomerSegmentRepository` | —                                                                                              | ⛔ **No existe**                                  |
 
 ---
@@ -394,11 +394,11 @@ override `demoMode`) y `src/config/session-policy.ts` (`normalSessionHours: 8`,
 
 ## 6. Bloqueantes y gaps
 
-1. **`RoleRepository` solo expone `getById`.** Bloquea Roles y permisos y, en cascada, Usuarios.
-   **Es contrato tuyo**: el ownership te asigna el CRUD de `Role`, y `docs/MODULE_OWNERSHIP.md`
-   aclara que _"Coordinator no significa dueno exclusivo"_. Abrís vos el PR
-   `chore/admin-role-contracts` con `getAll`, `create`, `update` y `archive`, y le avisás a Andy
-   por ser área común. No se espera autorización, se informa impacto.
+1. **`RoleRepository` ya tiene `getByTenant`/`create`/`update`** (agregado en
+   `feature/rbac-foundation`, ver `docs/RBAC_PLAN.md`). Sigue faltando `archive`/activar-desactivar
+   porque `Role` no tiene campo de estado -- eso sí requiere coordinar con Andy (Role es entidad
+   compartida, `CurrentSessionProvider` la consume en `auth`). Hasta que exista, Roles y permisos
+   (#11) solo puede crear/editar, no desactivar.
 2. **`Branch` sin `schedule`.** Sucursales no puede manejar horarios sin extender la entity.
 3. **`EcommerceConfig` sin `theme`.** Diseño E-commerce no incluye branding.
 4. **`Supplier` sin `contacts[]`, `paymentTerms` ni `currency`; `leadTimeDays` es derivado.**
@@ -627,14 +627,16 @@ Sin reglas propias: 100% agregación vía repositorios ajenos. `KPICard` se agre
 Agrega `Sale`, `PurchaseOrder`, `InventoryMovement`, `Payment` vía repositorios compartidos.
 Nunca crear un almacén paralelo de reportes. Dejar para el final.
 
-### 12.11 Roles y permisos ⛔
+### 12.11 Roles y permisos ⚠️ desbloqueada para crear/editar
 
 Listado: `name`, cantidad de permisos, `branchScope`, `isSystem`.
 Editor: selector de permisos agrupado por dominio, con checkbox por permiso — nunca texto libre.
 Presets sugeridos como plantillas de partida (Propietario, Gerente, Inventario/Compras,
 Bodeguero, Cajero, Auditor); no es lista cerrada.
 Validación: un rol no puede quedar sin nombre ni sin permisos.
-**Bloqueada** hasta extender `RoleRepository`.
+`RoleRepository` ya soporta `getByTenant`/`create`/`update` (`feature/rbac-foundation`). Activar/
+desactivar sigue bloqueado hasta que `Role` tenga un campo de estado -- ver `docs/RBAC_PLAN.md`.
+Pantalla en sí (PR2, `feature/admin-roles-employees`) todavía no construida.
 
 ### 12.12 Usuarios ⛔
 
@@ -747,8 +749,9 @@ Estado actual del seed (`src/infrastructure/mock/seeds/demoSeed.ts`): tenant `te
 
 ## 16. Preguntas abiertas para el equipo
 
-1. `RoleRepository`: confirmar que abrís vos el `chore/` con `getAll`, `create`, `update`,
-   `archive`. **Ruta crítica del módulo.**
+1. `RoleRepository`: `getByTenant`/`create`/`update` ya agregados en `feature/rbac-foundation`.
+   Falta `archive` (requiere que `Role` tenga campo de estado, entidad compartida con `auth`) --
+   coordinar con Andy. Ver `docs/RBAC_PLAN.md`.
 2. `AuthAccount` / `MfaEnrollment`: ¿Andy expone contrato para invitación, activación asistida y
    MFA, o la pantalla de Usuarios se recorta?
 3. `Branch.schedule`: ¿se agrega o Sucursales no maneja horarios?

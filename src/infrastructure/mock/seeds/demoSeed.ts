@@ -39,6 +39,7 @@ import {
   UserStatus,
   UserType,
 } from "@/core/enums";
+import { getAllPermissionKeys } from "@/config/permissions";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { buildPasswordHashMock } from "@/infrastructure/mock/shared/passwordHashMock";
 
@@ -269,6 +270,20 @@ export const demoSeedDatabase: MockDatabase = {
         "storefront.orders.read",
       ],
       branchScope: "assigned",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      // Solo dev/local para QA manual: deriva TODOS los permisos del
+      // sistema desde permissionsConfig, nunca una lista manual. No
+      // asignado a ningun User del seed -- se reasigna a mano
+      // (user.roleId) cuando se necesita probar con acceso total.
+      id: "role-super-admin-qa",
+      tenantId: "tenant-demo",
+      name: "Super Admin (QA)",
+      isSystem: true,
+      permissions: getAllPermissionKeys(),
+      branchScope: "all",
       createdAt: now,
       updatedAt: now,
     },

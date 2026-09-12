@@ -22,3 +22,13 @@ export const permissionsConfig = [
   ...posPermissions,
   ...logisticsPermissions,
 ] satisfies PermissionDefinition[];
+
+/**
+ * Unica forma soportada de armar un rol con "todos los permisos del
+ * sistema" (p. ej. role-super-admin-qa en el seed demo, solo dev/local).
+ * Deriva siempre de permissionsConfig -- nunca una lista manual que
+ * quede desactualizada cada vez que un modulo agrega un permiso nuevo.
+ */
+export function getAllPermissionKeys(): string[] {
+  return permissionsConfig.map((permission) => permission.key);
+}

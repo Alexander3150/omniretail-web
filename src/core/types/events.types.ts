@@ -31,7 +31,8 @@ export type DataEventName =
   | "picking.changed"
   | "dispatch.changed"
   | "notification.changed"
-  | "audit.changed";
+  | "audit.changed"
+  | "role.changed";
 
 export interface DataEventPayload {
   entityId?: string;
