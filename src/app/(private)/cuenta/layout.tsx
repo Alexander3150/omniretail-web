@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
@@ -8,7 +9,11 @@ import { Tabs } from "@/shared/components/Tabs";
 const SECTIONS = [
   { value: "/cuenta/perfil", label: "Perfil", permission: "customer.account.read" },
   { value: "/cuenta/direcciones", label: "Direcciones", permission: "customer.address.manage" },
-  { value: "/cuenta/metodos-pago", label: "Métodos de pago", permission: "customer.payment_method.manage" },
+  {
+    value: "/cuenta/metodos-pago",
+    label: "Métodos de pago",
+    permission: "customer.payment_method.manage",
+  },
   { value: "/cuenta/pedidos", label: "Mis pedidos", permission: "storefront.orders.read" },
 ];
 
@@ -32,6 +37,12 @@ export default function CuentaLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-w-0 space-y-5">
+      <Link
+        className="inline-flex text-sm font-semibold text-[var(--color-structure)] hover:underline"
+        href="/"
+      >
+        ← Volver a la tienda
+      </Link>
       <Tabs items={visibleSections} onChange={(value) => router.push(value)} value={activeValue} />
       {children}
     </div>

@@ -85,6 +85,8 @@ En recepcion de mercaderia, la cantidad rechazada se deriva de la suma de incide
 
 `Customer` puede estar asociado a `User`. Perfil y autenticacion son dominios relacionados pero distintos. Andy administra perfil, direcciones, metodos guardados y seguridad; Maria consume Customer para compras.
 
+La identidad Customer autenticada se resuelve siempre desde la sesion persistida: Session -> User activo de tipo customer -> Customer activo asociado y del mismo tenant. El checkout no acepta `customerId` ni el tenant de identidad desde la UI. Una compra en el mismo tenant del Storefront guarda `Order.customerId`; una sesion de empleado o de otro tenant no se vincula y el aislamiento de "Mis pedidos" usa el Customer resuelto desde esa misma sesion.
+
 ## Customer Payment Methods
 
 `CustomerPaymentMethod` representa un metodo de pago guardado y reutilizable del cliente. `Payment` representa un pago historico de una compra concreta; eliminar un metodo guardado no modifica pagos historicos.
@@ -96,6 +98,8 @@ Solo simulacion frontend. Nunca guardar full card number, CVV ni PIN. Guardar so
 ## Ecommerce
 
 Guest checkout permitido por defecto. `requireAccountForCheckout` permite al tenant decidir si exige cuenta. En compra invitado, email es obligatorio conceptualmente para seguimiento/envios; telefono no necesariamente. Guest tracking usa `trackingToken`. No existe correo real todavia.
+
+El tenant publico continua resolviendose por `PublicTenantProvider`; una sesion Customer solo complementa ese contexto. Si ambos tenants no coinciden, la Order no se atribuye al Customer autenticado. Una sesion Customer invalida o inactiva falla cerrada, mientras que la ausencia de sesion conserva el checkout invitado cuando la configuracion lo permite.
 
 El checkout publico actual solo ofrece tarjeta simulada como metodo de aprobacion inmediata. `ecommercePaymentPolicy` es la fuente canonica de metodos inmediatos y el boundary valida el metodo del Payment persistido, no un valor del caller. Primero persiste `Order.pending` y `Payment.pending`; luego confirma atomica e idempotentemente la pareja como `Order.confirmed` y `Payment.approved` junto con sus reservas. Cada `OrderItem.id` incorpora el `idempotencyKey` normalizado del checkout: es estable al reintentar la misma Order y distinto entre Orders. Si no hay stock suficiente, la confirmacion completa se revierte y la pareja inmediata pending se elimina mediante compensacion segura para no dejar basura operacional. Efectivo, transferencia y mixto no deben aprobarse ni limpiarse automaticamente sin un lifecycle explicito.
 

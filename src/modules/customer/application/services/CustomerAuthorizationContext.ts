@@ -1,5 +1,5 @@
 import type { Customer } from "@/core/entities";
-import { UserStatus, UserType } from "@/core/enums";
+import { CustomerStatus, UserStatus, UserType } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 
 export class CustomerIdentityError extends Error {}
@@ -14,6 +14,11 @@ export interface CustomerAuthorizationContext {
 }
 
 type ContextRepositories = Pick<RepositoryRegistry, "auth" | "users" | "roles" | "customers">;
+
+type CustomerSessionResolution =
+  | { kind: "anonymous" }
+  | { kind: "non_customer" }
+  | { kind: "customer"; context: CustomerAuthorizationContext };
 
 /**
  * UNICA resolucion canonica del "actor Customer" para todo el modulo.
@@ -43,9 +48,34 @@ type ContextRepositories = Pick<RepositoryRegistry, "auth" | "users" | "roles" |
 export async function resolveCustomerAuthorizationContext(
   repositories: ContextRepositories,
 ): Promise<CustomerAuthorizationContext> {
+  const resolution = await resolveCustomerSession(repositories);
+  if (resolution.kind === "anonymous") {
+    throw new CustomerIdentityError("No hay una sesion activa.");
+  }
+  if (resolution.kind === "non_customer") {
+    throw new CustomerIdentityError("La sesion actual no corresponde a un cliente.");
+  }
+  return resolution.context;
+}
+
+/**
+ * Variante para boundaries publicos que admiten invitados. Devuelve null
+ * solamente cuando no hay sesion o cuando la sesion pertenece a personal;
+ * una sesion Customer invalida/inactiva siempre falla cerrada.
+ */
+export async function resolveOptionalCustomerAuthorizationContext(
+  repositories: ContextRepositories,
+): Promise<CustomerAuthorizationContext | null> {
+  const resolution = await resolveCustomerSession(repositories);
+  return resolution.kind === "customer" ? resolution.context : null;
+}
+
+async function resolveCustomerSession(
+  repositories: ContextRepositories,
+): Promise<CustomerSessionResolution> {
   const sessionId = await repositories.auth.getCurrentSessionId();
   if (!sessionId) {
-    throw new CustomerIdentityError("No hay una sesion activa.");
+    return { kind: "anonymous" };
   }
 
   const session = await repositories.auth.getSession(sessionId);
@@ -61,7 +91,7 @@ export async function resolveCustomerAuthorizationContext(
     throw new CustomerIdentityError("El usuario de la sesion no esta activo.");
   }
   if (user.type !== UserType.customer) {
-    throw new CustomerIdentityError("La sesion actual no corresponde a un cliente.");
+    return { kind: "non_customer" };
   }
 
   const customer = await repositories.customers.getByUserId(user.id);
@@ -70,6 +100,9 @@ export async function resolveCustomerAuthorizationContext(
   }
   if (customer.tenantId !== user.tenantId) {
     throw new CustomerIdentityError("El tenant del cliente no coincide con el de la sesion.");
+  }
+  if (customer.status !== CustomerStatus.active) {
+    throw new CustomerIdentityError("La cuenta de cliente no esta activa.");
   }
   // Si el User ya trae customerId propio, debe coincidir con lo resuelto
   // via getByUserId -- una discrepancia aca indica datos corruptos o un
@@ -96,11 +129,14 @@ export async function resolveCustomerAuthorizationContext(
   }
 
   return {
-    userId: user.id,
-    tenantId: customer.tenantId,
-    customerId: customer.id,
-    customer,
-    permissions,
-    hasPermission: (permission: string) => permissions.includes(permission),
+    kind: "customer",
+    context: {
+      userId: user.id,
+      tenantId: customer.tenantId,
+      customerId: customer.id,
+      customer,
+      permissions,
+      hasPermission: (permission: string) => permissions.includes(permission),
+    },
   };
 }

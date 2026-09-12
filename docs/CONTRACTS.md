@@ -73,6 +73,8 @@ de todas las lineas usa `returned` y solo una anulacion usa `cancelled`.
 
 `CustomerPaymentMethodRepository` administra metodos de pago guardados del cliente. El contrato persiste solo datos seguros de referencia (`providerPaymentMethodId`, brand, last4, vencimiento, cardholderName, default y estado). No reemplaza `Payment`, que conserva el pago historico de una compra concreta.
 
+`resolveCustomerAuthorizationContext` es la resolucion estricta del Customer actual para autoservicio y `resolveOptionalCustomerAuthorizationContext` reutiliza la misma validacion en boundaries que admiten invitados. Ambas derivan identidad desde Auth/User/Customer, exigen User y Customer activos y coherencia de tenant; ningun caller aporta `customerId`. El checkout compara ese tenant autenticado con el tenant publico antes de persistir `Order.customerId`.
+
 `SavedPaymentMethod` y `SavedPaymentMethodRepository` son aliases legacy/de compatibilidad hacia `CustomerPaymentMethod` y `CustomerPaymentMethodRepository`. No deben usarse como contratos nuevos.
 
 La logica de precio efectivo vive en `core/pricing` como funcion pura reutilizable por Catalog, Storefront, POS y app movil. No pertenece a Shared UI.
