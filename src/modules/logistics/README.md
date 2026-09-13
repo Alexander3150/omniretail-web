@@ -28,6 +28,7 @@ OrderRepository, PickingRepository, DispatchRepository, InventoryRepository
 - Completion usa `ready_for_dispatch` para entrega a domicilio y `ready_for_pickup` para retiro. `immediate` falla cerrado.
 - `DispatchApplicationService` reconstruye Session/User/Role/Branch, expone DTOs scoped y nunca acepta tenant o actor desde UI.
 - Confirmar Dispatch exige Picking completo y reservas consumidas, copia `Order.transportMode`, es idempotente y no muta inventario.
+- `markDelivered` es el owner atomico e idempotente de `Dispatch + Order: dispatched -> delivered`; no altera envio, inventario ni notificaciones.
 
 ## Estructura futura
 

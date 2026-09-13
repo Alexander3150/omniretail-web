@@ -2,7 +2,10 @@ import type { InventoryReservation, Order, Payment } from "@/core/entities";
 import { DeliveryMethod, OrderStatus, ProductType } from "@/core/enums";
 import { validatePhoneNumber } from "@/config/contact-policy";
 import { normalizeEmail, validateEmail } from "@/config/email-policy";
-import { assertOrderStatusTransition } from "@/core/orders/orderStatusTransitions";
+import {
+  assertAllowedInitialOrderStatus,
+  assertOrderStatusTransition,
+} from "@/core/orders/orderStatusTransitions";
 import type {
   CreateOrderInput,
   CreateOrderWithPaymentInput,
@@ -70,6 +73,7 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
   }
 
   async create(input: CreateOrderInput) {
+    assertAllowedInitialOrderStatus("create", input.status);
     this.assertCreateInput(input);
     input = normalizeOrderCreationInput(input);
     const idempotencyKey = input.idempotencyKey?.trim();
@@ -137,6 +141,7 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
   async createWithPayment(
     input: CreateOrderWithPaymentInput,
   ): Promise<CreateOrderWithPaymentResult> {
+    assertAllowedInitialOrderStatus("createWithPayment", input.order.status);
     this.assertCreateInput(input.order);
     input = { ...input, order: normalizeOrderCreationInput(input.order) };
 

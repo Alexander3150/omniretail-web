@@ -50,6 +50,7 @@ export interface DispatchDetailDto extends PreparedOrderDetailDto {
     carrierName: string | null;
     trackingNumber: string | null;
     dispatchedAt: string | null;
+    deliveredAt: string | null;
     dispatchedByUserId: string | null;
   } | null;
   notification: DispatchNotificationDto | null;
@@ -73,5 +74,18 @@ export interface ConfirmDispatchResultDto {
   dispatchedAt: string;
   notificationStatus: DispatchNotificationStatus;
   notification: DispatchNotificationDto | null;
+  idempotent: boolean;
+}
+
+export interface MarkDispatchDeliveredCommand {
+  orderId: string;
+}
+
+export interface MarkDispatchDeliveredResultDto {
+  orderId: string;
+  orderStatus: OrderStatus;
+  dispatchId: string;
+  dispatchStatus: DispatchStatus;
+  deliveredAt: string;
   idempotent: boolean;
 }

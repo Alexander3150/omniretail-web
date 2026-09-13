@@ -8,6 +8,8 @@ import type {
   DispatchDetailDto,
   DispatchNotificationContactDto,
   DispatchNotificationDto,
+  MarkDispatchDeliveredCommand,
+  MarkDispatchDeliveredResultDto,
   PreparedOrderDetailDto,
   PreparedOrderQueueItemDto,
 } from "@/modules/logistics/application/dto/DispatchReadModelDto";
@@ -52,7 +54,11 @@ export class DispatchApplicationService {
   async getDispatchDetail(selectedBranchId: string, orderId: string): Promise<DispatchDetailDto> {
     const context = await this.context(selectedBranchId, DISPATCH_READ);
     const order = await this.requireScopedOrder(context, orderId);
-    if (![OrderStatus.ready_for_dispatch, OrderStatus.dispatched].includes(order.status)) {
+    if (
+      ![OrderStatus.ready_for_dispatch, OrderStatus.dispatched, OrderStatus.delivered].includes(
+        order.status,
+      )
+    ) {
       throw new Error(`Order is not available in dispatch detail: ${order.id}`);
     }
     const picking = await this.requireCompletedPicking(context, order.id);
@@ -71,6 +77,7 @@ export class DispatchApplicationService {
             carrierName: dispatch.carrierName ?? null,
             trackingNumber: dispatch.trackingNumber ?? null,
             dispatchedAt: dispatch.dispatchedAt ?? null,
+            deliveredAt: dispatch.deliveredAt ?? null,
             dispatchedByUserId: dispatch.dispatchedByUserId ?? null,
           }
         : null,
@@ -104,6 +111,38 @@ export class DispatchApplicationService {
       dispatchedAt: result.dispatch.dispatchedAt,
       notificationStatus: result.notificationStatus,
       notification: toNotificationDto(result.notification ?? null),
+      idempotent: result.idempotent,
+    };
+  }
+
+  async markDelivered(
+    selectedBranchId: string,
+    command: MarkDispatchDeliveredCommand,
+  ): Promise<MarkDispatchDeliveredResultDto> {
+    const runtimeCommand = command as MarkDispatchDeliveredCommand & Record<string, unknown>;
+    if (
+      Object.prototype.hasOwnProperty.call(runtimeCommand, "carrierName") ||
+      Object.prototype.hasOwnProperty.call(runtimeCommand, "trackingNumber") ||
+      Object.prototype.hasOwnProperty.call(runtimeCommand, "transportMode")
+    ) {
+      throw new Error("Delivery confirmation cannot modify dispatch shipment data");
+    }
+    const context = await this.context(selectedBranchId, DISPATCH_CONFIRM);
+    const result = await this.repositories.dispatches.markDelivered({
+      tenantId: context.tenantId,
+      branchId: context.branchId,
+      actorUserId: context.actorUserId,
+      orderId: command.orderId,
+    });
+    if (!result.dispatch.deliveredAt) {
+      throw new Error("Delivered Dispatch has no deliveredAt");
+    }
+    return {
+      orderId: result.order.id,
+      orderStatus: result.order.status,
+      dispatchId: result.dispatch.id,
+      dispatchStatus: result.dispatch.status,
+      deliveredAt: result.dispatch.deliveredAt,
       idempotent: result.idempotent,
     };
   }

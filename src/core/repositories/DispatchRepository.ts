@@ -26,9 +26,23 @@ export interface ConfirmDispatchResult {
   idempotent: boolean;
 }
 
+export interface MarkDispatchDeliveredInput {
+  tenantId: string;
+  branchId: string;
+  actorUserId: string;
+  orderId: string;
+}
+
+export interface MarkDispatchDeliveredResult {
+  dispatch: Dispatch;
+  order: Order;
+  idempotent: boolean;
+}
+
 export interface DispatchRepository {
   getAll(scope: DispatchReadScope): Promise<Dispatch[]>;
   getById(scope: DispatchReadScope, id: string): Promise<Dispatch | null>;
   getByOrder(scope: DispatchReadScope, orderId: string): Promise<Dispatch | null>;
   confirm(input: ConfirmDispatchInput): Promise<ConfirmDispatchResult>;
+  markDelivered(input: MarkDispatchDeliveredInput): Promise<MarkDispatchDeliveredResult>;
 }

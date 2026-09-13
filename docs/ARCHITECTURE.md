@@ -84,6 +84,8 @@ DispatchApplicationService
 
 Dispatch solo verifica que Picking haya consumido las reservas stock-tracked. No actualiza `InventoryBalance`, `InventoryReservation`, `InventoryMovement`, lotes ni seriales. `Order.status` permanece como unica fuente del tracking; no se agrega timeline persistido.
 
+`DispatchRepository.markDelivered` reutiliza el mismo contexto confiable y una unica transaccion para cambiar el Dispatch canonico y su Order de `dispatched` a `delivered`, persistiendo `deliveredAt`. El retry del par ya entregado es idempotente. Esta operacion no acepta cambios de envio, no toca inventario y no vuelve a crear la notificacion de despacho.
+
 `MockSaleConfirmationRepository.confirm` valida dentro de su transaccion si `sourceOrderId` acredita ownership mediante la Order y sus reservas. Las ventas directas conservan el OUT propio; las vinculadas validas persisten Sale, Payment y CashMovement sin modificar reservas, balances ni movimientos de inventario.
 
 ## Cash Shift Lifecycle

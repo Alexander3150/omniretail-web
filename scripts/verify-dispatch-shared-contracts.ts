@@ -5,6 +5,8 @@ import {
   DispatchStatus,
   OrderSource,
   OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
   PickingPriority,
   PickingStatus,
   TransportMode,
@@ -35,6 +37,10 @@ const actorId = "user-warehouse";
 async function main() {
   const store = new MockDatabaseStore(new LocalStorageAdapter());
   const eventBus = new DataEventBus();
+  const dispatchEvents: unknown[] = [];
+  const orderEvents: unknown[] = [];
+  eventBus.subscribe("dispatch.changed", (event) => dispatchEvents.push(event));
+  eventBus.subscribe("order.changed", (event) => orderEvents.push(event));
   prepareDatabase(store);
   const orders = new MockOrderRepository(store, eventBus);
   const picking = new MockPickingRepository(store, eventBus);
@@ -63,6 +69,62 @@ async function main() {
   } as unknown as RepositoryRegistry;
   const service = new DispatchApplicationService(repositories);
   const trackingService = new GetStorefrontOrderTrackingService(repositories);
+
+  // Initial status policy is distinct from lifecycle transition ownership.
+  assert.equal(
+    (await orders.create(orderInput("initial-pending", { status: OrderStatus.pending }))).status,
+    OrderStatus.pending,
+  );
+  assert.equal(
+    (await orders.create(orderInput("initial-confirmed", { status: OrderStatus.confirmed })))
+      .status,
+    OrderStatus.confirmed,
+  );
+  const initialPayment = await orders.createWithPayment({
+    order: orderInput("initial-payment", { status: OrderStatus.pending }),
+    payment: {
+      tenantId,
+      method: PaymentMethod.card,
+      status: PaymentStatus.pending,
+      amount: 24.99,
+      currency: "GTQ",
+    },
+  });
+  assert.equal(initialPayment.order.status, OrderStatus.pending);
+  const beforeRejectedCreation = creationSnapshot(store);
+  for (const status of [
+    OrderStatus.preparing,
+    OrderStatus.picking,
+    OrderStatus.packing,
+    OrderStatus.ready_for_pickup,
+    OrderStatus.ready_for_dispatch,
+    OrderStatus.dispatched,
+    OrderStatus.delivered,
+    OrderStatus.cancelled,
+  ]) {
+    await assert.rejects(
+      orders.create(orderInput(`invalid-initial-${status}`, { status })),
+      /not allowed for create/,
+    );
+  }
+  for (const status of Object.values(OrderStatus).filter(
+    (candidate) => candidate !== OrderStatus.pending,
+  )) {
+    await assert.rejects(
+      orders.createWithPayment({
+        order: orderInput(`invalid-payment-${status}`, { status }),
+        payment: {
+          tenantId,
+          method: PaymentMethod.card,
+          status: PaymentStatus.pending,
+          amount: 24.99,
+          currency: "GTQ",
+        },
+      }),
+      /not allowed for createWithPayment/,
+    );
+  }
+  assert.deepEqual(creationSnapshot(store), beforeRejectedCreation);
 
   const trackingProgress = await createTrackingProgressOrder(orders, picking);
   assert.equal(
@@ -139,6 +201,7 @@ async function main() {
     orders.updateStatus(pending.id, OrderStatus.ready_for_dispatch),
     /not owned/,
   );
+  await assert.rejects(orders.updateStatus(pending.id, OrderStatus.delivered), /not owned/);
   store.transact((db) => {
     const candidate = db.orders.find((item) => item.id === illegal.id);
     assert.ok(candidate);
@@ -224,6 +287,91 @@ async function main() {
     /operation conflict/,
   );
 
+  const deliveryInventoryBefore = inventorySnapshot(store);
+  const notificationCountBeforeDelivery = store.getSnapshot().notifications.length;
+  const dispatchEventsBeforeDelivery = dispatchEvents.length;
+  const orderEventsBeforeDelivery = orderEvents.length;
+  const delivered = await service.markDelivered(branchId, {
+    orderId: thirdParty.completed.id,
+  });
+  assert.equal(delivered.orderStatus, OrderStatus.delivered);
+  assert.equal(delivered.dispatchStatus, DispatchStatus.delivered);
+  assert.ok(delivered.deliveredAt);
+  assert.equal(delivered.idempotent, false);
+  assert.equal(dispatchEvents.length, dispatchEventsBeforeDelivery + 1);
+  assert.equal(orderEvents.length, orderEventsBeforeDelivery + 1);
+  const deliveredRetry = await service.markDelivered(branchId, {
+    orderId: thirdParty.completed.id,
+  });
+  assert.equal(deliveredRetry.idempotent, true);
+  assert.equal(deliveredRetry.dispatchId, delivered.dispatchId);
+  assert.equal(dispatchEvents.length, dispatchEventsBeforeDelivery + 1);
+  assert.equal(orderEvents.length, orderEventsBeforeDelivery + 1);
+  assert.equal(
+    store.getSnapshot().dispatches.filter((item) => item.orderId === thirdParty.completed.id)
+      .length,
+    1,
+  );
+  assert.deepEqual(inventorySnapshot(store), deliveryInventoryBefore);
+  assert.equal(store.getSnapshot().notifications.length, notificationCountBeforeDelivery);
+  const persistedDeliveredDispatch = store
+    .getSnapshot()
+    .dispatches.find((item) => item.id === delivered.dispatchId);
+  assert.equal(persistedDeliveredDispatch?.carrierName, "Carrier QA");
+  assert.equal(persistedDeliveredDispatch?.trackingNumber, "TRACK-001");
+  assert.equal(
+    (await trackingService.execute(tenantId, thirdParty.completed.trackingToken))?.tracking.status,
+    OrderStatus.delivered,
+  );
+  await assert.rejects(
+    service.markDelivered(branchId, {
+      orderId: thirdParty.completed.id,
+      carrierName: "Mutation denied",
+    } as Parameters<DispatchApplicationService["markDelivered"]>[1]),
+    /cannot modify dispatch shipment data/,
+  );
+  await assert.rejects(
+    dispatches.markDelivered({
+      tenantId: "tenant-foreign",
+      branchId,
+      actorUserId: actorId,
+      orderId: thirdParty.completed.id,
+    }),
+    /actor not found|not found for authorized delivery scope/,
+  );
+  await assert.rejects(
+    service.markDelivered(otherBranchId, { orderId: thirdParty.completed.id }),
+    DispatchAuthorizationError,
+  );
+
+  const notDispatched = await prepareOrder(orders, picking, "delivery-not-dispatched", {
+    transportMode: TransportMode.own_fleet,
+  });
+  await assert.rejects(
+    service.markDelivered(branchId, { orderId: notDispatched.completed.id }),
+    /Canonical Dispatch not found/,
+  );
+  store.transact((db) => {
+    const order = db.orders.find((item) => item.id === notDispatched.completed.id);
+    assert.ok(order);
+    order.status = OrderStatus.dispatched;
+    const now = "2026-09-13T00:00:00.000Z";
+    db.dispatches.push({
+      id: "pending-delivery-dispatch",
+      tenantId,
+      branchId,
+      orderId: order.id,
+      status: DispatchStatus.pending,
+      transportMode: order.transportMode,
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+  await assert.rejects(
+    service.markDelivered(branchId, { orderId: notDispatched.completed.id }),
+    /Dispatch is not dispatched/,
+  );
+
   const ownFleet = await prepareOrder(orders, picking, "fleet", {
     transportMode: TransportMode.own_fleet,
     notificationContact: { emailMode: "not_applicable" },
@@ -291,6 +439,7 @@ async function main() {
   const detail = await service.getDispatchDetail(branchId, thirdParty.completed.id);
   assert.equal(detail.dispatch?.id, confirmed.dispatchId);
   assert.equal(detail.recipientPhone, "55550000");
+  assert.equal(detail.dispatch?.deliveredAt, delivered.deliveredAt);
   store.transact((db) => {
     const dispatch = db.dispatches.find((item) => item.id === confirmed.dispatchId);
     assert.ok(dispatch);
@@ -319,7 +468,7 @@ async function main() {
 
   console.log("verify-dispatch-shared-contracts: PASS");
   console.log(
-    "E-AJ: state machine, scope, transport, notification, idempotency and zero inventory mutation: PASS",
+    "initial-state policy, picking, dispatch, delivery, scope, notification and zero inventory mutation: PASS",
   );
 }
 
@@ -524,6 +673,19 @@ function inventorySnapshot(store: MockDatabaseStore) {
     movementCount: snapshot.inventoryMovements.length,
     lots: snapshot.stockLots.map((item) => structuredClone(item)),
     serials: snapshot.serialNumbers.map((item) => structuredClone(item)),
+  };
+}
+
+function creationSnapshot(store: MockDatabaseStore) {
+  const snapshot = store.getSnapshot();
+  return {
+    orderIds: snapshot.orders.map((item) => item.id),
+    paymentIds: snapshot.payments.map((item) => item.id),
+    reservationIds: snapshot.inventoryReservations.map((item) => item.id),
+    reservedQuantities: snapshot.inventoryBalances.map((item) => ({
+      id: item.id,
+      reservedQuantity: item.reservedQuantity,
+    })),
   };
 }
 

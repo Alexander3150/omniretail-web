@@ -19,6 +19,8 @@ import type {
   DispatchNotificationStatus,
   DispatchReadScope,
   DispatchRepository,
+  MarkDispatchDeliveredInput,
+  MarkDispatchDeliveredResult,
 } from "@/core/repositories";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
@@ -249,7 +251,111 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
     };
   }
 
-  private assertActor(input: ConfirmDispatchInput, db: MockDatabase): void {
+  async markDelivered(input: MarkDispatchDeliveredInput): Promise<MarkDispatchDeliveredResult> {
+    const runtimeInput = input as MarkDispatchDeliveredInput & Record<string, unknown>;
+    if (
+      Object.prototype.hasOwnProperty.call(runtimeInput, "carrierName") ||
+      Object.prototype.hasOwnProperty.call(runtimeInput, "trackingNumber") ||
+      Object.prototype.hasOwnProperty.call(runtimeInput, "transportMode")
+    ) {
+      throw new Error("Delivery confirmation cannot modify dispatch shipment data");
+    }
+
+    const result = this.store.transact<
+      MarkDispatchDeliveredResult & { dispatchChanged: boolean; orderChanged: boolean }
+    >((db) => {
+      this.assertActor(input, db);
+      const order = db.orders.find(
+        (item) =>
+          item.id === input.orderId &&
+          item.tenantId === input.tenantId &&
+          item.branchId === input.branchId,
+      );
+      if (!order) {
+        throw new Error(`Order not found for authorized delivery scope: ${input.orderId}`);
+      }
+      if (order.deliveryMethod !== "home_delivery") {
+        throw new Error(
+          `Order delivery method cannot be marked delivered: ${order.deliveryMethod}`,
+        );
+      }
+
+      const matches = db.dispatches.filter(
+        (item) => item.tenantId === input.tenantId && item.orderId === order.id,
+      );
+      if (matches.length !== 1) {
+        throw new Error(`Canonical Dispatch not found for delivery: ${order.id}`);
+      }
+      const dispatch = matches[0];
+      if (dispatch.branchId !== input.branchId) {
+        throw new Error(`Dispatch branch conflict for delivery: ${order.id}`);
+      }
+
+      if (order.status === OrderStatus.delivered || dispatch.status === DispatchStatus.delivered) {
+        if (
+          order.status === OrderStatus.delivered &&
+          dispatch.status === DispatchStatus.delivered &&
+          dispatch.deliveredAt
+        ) {
+          return {
+            order,
+            dispatch,
+            idempotent: true,
+            dispatchChanged: false,
+            orderChanged: false,
+          };
+        }
+        throw new Error(`Delivery state conflict for Order: ${order.id}`);
+      }
+      if (order.status !== OrderStatus.dispatched) {
+        throw new Error(`Order is not dispatched for delivery: ${order.id}`);
+      }
+      if (dispatch.status !== DispatchStatus.dispatched) {
+        throw new Error(`Dispatch is not dispatched for delivery: ${dispatch.id}`);
+      }
+
+      assertOrderStatusTransition(order.status, OrderStatus.delivered, "dispatch");
+      const now = this.now();
+      order.status = OrderStatus.delivered;
+      order.updatedAt = now;
+      dispatch.status = DispatchStatus.delivered;
+      dispatch.deliveredAt = now;
+      dispatch.updatedAt = now;
+      return {
+        order,
+        dispatch,
+        idempotent: false,
+        dispatchChanged: true,
+        orderChanged: true,
+      };
+    });
+
+    if (result.dispatchChanged) {
+      this.emitSafely("dispatch.changed", {
+        entityId: result.dispatch.id,
+        tenantId: result.dispatch.tenantId,
+        branchId: result.dispatch.branchId,
+        orderId: result.order.id,
+        action: "status_changed",
+      });
+    }
+    if (result.orderChanged) {
+      this.emitSafely("order.changed", {
+        entityId: result.order.id,
+        tenantId: result.order.tenantId,
+        branchId: result.order.branchId,
+        orderId: result.order.id,
+        action: "status_changed",
+      });
+    }
+    return {
+      order: result.order,
+      dispatch: result.dispatch,
+      idempotent: result.idempotent,
+    };
+  }
+
+  private assertActor(input: { tenantId: string; actorUserId: string }, db: MockDatabase): void {
     const actor = db.users.find(
       (user) =>
         user.id === input.actorUserId &&

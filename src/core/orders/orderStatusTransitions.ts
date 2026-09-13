@@ -1,6 +1,12 @@
 import { OrderStatus } from "@/core/enums";
 
+export type OrderCreationMethod = "create" | "createWithPayment";
 export type OrderTransitionOwner = "generic" | "picking" | "dispatch";
+
+const allowedInitialStatuses: Record<OrderCreationMethod, ReadonlySet<OrderStatus>> = {
+  create: new Set([OrderStatus.pending, OrderStatus.confirmed]),
+  createWithPayment: new Set([OrderStatus.pending]),
+};
 
 const transitions: Record<OrderTransitionOwner, ReadonlySet<string>> = {
   generic: new Set([
@@ -15,8 +21,27 @@ const transitions: Record<OrderTransitionOwner, ReadonlySet<string>> = {
     transition(OrderStatus.picking, OrderStatus.ready_for_dispatch),
     transition(OrderStatus.picking, OrderStatus.ready_for_pickup),
   ]),
-  dispatch: new Set([transition(OrderStatus.ready_for_dispatch, OrderStatus.dispatched)]),
+  dispatch: new Set([
+    transition(OrderStatus.ready_for_dispatch, OrderStatus.dispatched),
+    transition(OrderStatus.dispatched, OrderStatus.delivered),
+  ]),
 };
+
+export function isAllowedInitialOrderStatus(
+  method: OrderCreationMethod,
+  status: OrderStatus,
+): boolean {
+  return allowedInitialStatuses[method].has(status);
+}
+
+export function assertAllowedInitialOrderStatus(
+  method: OrderCreationMethod,
+  status: OrderStatus,
+): void {
+  if (!isAllowedInitialOrderStatus(method, status)) {
+    throw new Error(`Order status ${status} is not allowed for ${method}`);
+  }
+}
 
 export function assertOrderStatusTransition(
   current: OrderStatus,
