@@ -38,8 +38,33 @@ export interface DataEventPayload {
   tenantId?: string;
   branchId?: string;
   productId?: string;
+  pickingOrderId?: string;
+  pickingLineId?: string;
+  orderId?: string;
+  incidentId?: string;
   previousPrice?: number;
   newPrice?: number;
   action?: "created" | "updated" | "archived" | "deleted" | "status_changed" | "reset";
   metadata?: Record<string, unknown>;
 }
+
+export interface PickingChangedEventPayload extends DataEventPayload {
+  tenantId: string;
+  branchId: string;
+  pickingOrderId: string;
+  orderId: string;
+}
+
+export interface DataEventPayloadMap {
+  "picking.changed": PickingChangedEventPayload;
+}
+
+export type DataEventPayloadFor<EventName extends DataEventName> =
+  EventName extends keyof DataEventPayloadMap
+    ? DataEventPayloadMap[EventName]
+    : DataEventPayload;
+
+export type DataEventArguments<EventName extends DataEventName> =
+  EventName extends keyof DataEventPayloadMap
+    ? [payload: DataEventPayloadFor<EventName>]
+    : [payload?: DataEventPayloadFor<EventName>];

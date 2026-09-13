@@ -1,31 +1,100 @@
-import type { PickingItem, PickingOrder } from "@/core/entities";
-import type { PickingItemStatus, PickingStatus } from "@/core/enums";
+import type {
+  Order,
+  PickingAssignmentRelease,
+  PickingIncident,
+  PickingItem,
+  PickingOrder,
+} from "@/core/entities";
+import type { PickingIncidentType, PickingItemStatus, PickingPriority } from "@/core/enums";
+
+export interface PickingScope {
+  tenantId: string;
+  branchId: string;
+}
+
+export interface CreatePickingOrderInput extends PickingScope {
+  orderId: string;
+  priority: PickingPriority;
+}
 
 type PickingItemMetadataUpdate = Partial<
   Pick<PickingItem, "locationId" | "lotId" | "serialNumbers">
 > & { status?: PickingItemStatus };
 
-export type UpdatePickingItemInput = PickingItemMetadataUpdate &
-  (
+export type UpdatePickingItemInput = PickingScope &
+  PickingItemMetadataUpdate & {
+    pickingOrderId: string;
+    pickingItemId: string;
+    performedByUserId: string;
+  } & (
     | {
         pickedQuantity: number;
         operationId: string;
-        performedByUserId: string;
       }
     | {
         pickedQuantity?: undefined;
         operationId?: never;
-        performedByUserId?: never;
       }
   );
 
+export interface AssignPickingOrderInput extends PickingScope {
+  pickingOrderId: string;
+  actorUserId: string;
+}
+
+export interface AssignPickingOrderResult {
+  pickingOrder: PickingOrder;
+  idempotent: boolean;
+}
+
+export interface ReleasePickingOrderInput extends AssignPickingOrderInput {
+  reason: string;
+}
+
+export interface ReleasePickingOrderResult {
+  pickingOrder: PickingOrder;
+  release: PickingAssignmentRelease;
+}
+
+export interface RegisterPickingIncidentInput extends PickingScope {
+  pickingOrderId: string;
+  pickingLineId?: string;
+  type: PickingIncidentType;
+  quantityAffected?: number;
+  comment: string;
+  createdBy: string;
+}
+
+export interface ResolvePickingIncidentInput extends PickingScope {
+  pickingOrderId: string;
+  incidentId: string;
+  resolvedBy: string;
+}
+
+export type CompletePickingOrderInput = AssignPickingOrderInput;
+
+export interface CompletePickingOrderResult {
+  pickingOrder: PickingOrder;
+  order: Order;
+  idempotent: boolean;
+}
+
+/** All reads are tenant + branch scoped; actor IDs are resolved by an application boundary. */
 export interface PickingRepository {
-  getAll(): Promise<PickingOrder[]>;
-  getById(id: string): Promise<PickingOrder | null>;
-  getByOrder(orderId: string): Promise<PickingOrder | null>;
-  getQueue(): Promise<PickingOrder[]>;
-  create(input: Omit<PickingOrder, "id" | "createdAt" | "updatedAt">): Promise<PickingOrder>;
-  assign(id: string, userId: string): Promise<PickingOrder>;
-  updateStatus(id: string, status: PickingStatus): Promise<PickingOrder>;
-  updateItem(id: string, input: UpdatePickingItemInput): Promise<PickingItem>;
+  getQueue(scope: PickingScope): Promise<PickingOrder[]>;
+  getById(scope: PickingScope, pickingOrderId: string): Promise<PickingOrder | null>;
+  getByOrder(scope: PickingScope, orderId: string): Promise<PickingOrder | null>;
+  getItems(scope: PickingScope, pickingOrderId: string): Promise<PickingItem[]>;
+  create(input: CreatePickingOrderInput): Promise<PickingOrder>;
+  assign(input: AssignPickingOrderInput): Promise<AssignPickingOrderResult>;
+  release(input: ReleasePickingOrderInput): Promise<ReleasePickingOrderResult>;
+  getReleaseHistory(
+    scope: PickingScope,
+    pickingOrderId: string,
+  ): Promise<PickingAssignmentRelease[]>;
+  updateItem(input: UpdatePickingItemInput): Promise<PickingItem>;
+  registerIncident(input: RegisterPickingIncidentInput): Promise<PickingIncident>;
+  getIncidents(scope: PickingScope, pickingOrderId: string): Promise<PickingIncident[]>;
+  resolveIncident(input: ResolvePickingIncidentInput): Promise<PickingIncident>;
+  complete(input: CompletePickingOrderInput): Promise<CompletePickingOrderResult>;
 }

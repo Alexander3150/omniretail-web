@@ -158,7 +158,11 @@ contado y nunca un expected cash arbitrario.
 
 Flujo: Order -> Picking -> Packing -> Dispatch -> Tracking. Productos service no pasan por Picking. Trazabilidad debe respetar `Product.tracking`.
 
-Cada incremento confirmado de `PickingItem.pickedQuantity` consume solamente el delta desde las allocations persistidas de su `InventoryReservation`, respetando su orden original. El consumo es atomico con la actualizacion del item e idempotente por `operationId`; una reserva multi-ubicacion genera un movimiento OUT por balance/ubicacion consumida. Completar el `PickingOrder` solo valida que los items fisicos y sus reservas esten completos y no vuelve a descontar inventario. Disminuir cantidades ya recogidas, reasignar ubicaciones, resolver kits y conectar lotes o seriales quedan pendientes.
+Cada incremento confirmado de `PickingItem.pickedQuantity` consume solamente el delta desde las allocations persistidas de su `InventoryReservation`, respetando su orden original. El consumo es atomico con la actualizacion del item e idempotente por `operationId`; una reserva multi-ubicacion genera un movimiento OUT por balance/ubicacion consumida y la trazabilidad existente selecciona lote/serie segun `Product.tracking`. Disminuir cantidades ya recogidas y reasignar ubicaciones siguen fuera del contrato.
+
+Toda operacion de Picking reconstruye `Session -> User activo -> Role del mismo tenant -> Branch activa autorizada -> actor`; tenant, actor y assignee nunca provienen de la UI. La cola y el detalle son read models tenant+sucursal scoped. La asignacion es atomica: el mismo actor puede reintentar y otro actor recibe conflicto. Liberar una asignacion conserva cantidades y reservas, deja `pending` sin progreso o `in_progress` con progreso, y agrega evidencia append-only con actor, motivo y fecha. Las incidencias son persistentes, tenant+sucursal scoped y deben resolverse antes de completar.
+
+La disponibilidad para Picking pertenece a Inventory y distingue reserva propia, reservas ajenas y stock libre por balance/ubicacion/lote/serie. Una Order puede utilizar su reserva y el stock libre, nunca la reserva de otra Order. Completar es un workflow atomico e idempotente que cambia `PickingOrder -> completed` y `Order -> packing` en una sola transaccion, sin descontar inventario nuevamente.
 
 ## Auth
 

@@ -35,6 +35,8 @@ import type {
   Permission,
   PickingItem,
   PickingItemUpdateOperation,
+  PickingAssignmentRelease,
+  PickingIncident,
   PickingOrder,
   PriceTier,
   Product,
@@ -138,6 +140,8 @@ export interface MockDatabase {
   pickingOrders: PickingOrder[];
   pickingItems: PickingItem[];
   pickingItemUpdateOperations: PickingItemUpdateOperation[];
+  pickingAssignmentReleases: PickingAssignmentRelease[];
+  pickingIncidents: PickingIncident[];
   dispatches: Dispatch[];
   packages: Package[];
   notifications: Notification[];

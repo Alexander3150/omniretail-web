@@ -63,6 +63,8 @@ export type * from "./SaleVoid";
 export type * from "./CreditNote";
 export type * from "./PickingOrder";
 export type * from "./PickingItem";
+export type * from "./PickingAssignmentRelease";
+export type * from "./PickingIncident";
 export type * from "./Dispatch";
 export type * from "./Package";
 export type * from "./Notification";
