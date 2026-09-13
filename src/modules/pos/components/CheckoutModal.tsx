@@ -11,6 +11,7 @@ import type { CheckoutValidationErrors } from "@/modules/pos/validation/checkout
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Modal } from "@/shared/components/Modal";
 import { Select } from "@/shared/components/Select";
 import { StatusBadge } from "@/shared/components/StatusBadge";
@@ -261,30 +262,110 @@ export function CheckoutModal({
               <option value={DeliveryMethod.home_delivery}>Entrega a domicilio</option>
             </Select>
           </FormField>
+          <InlineAlert tone="info" title={getDeliveryMethodMessage(checkout.deliveryMethod)} />
           {checkout.deliveryMethod === DeliveryMethod.home_delivery ? (
             <div className="grid gap-4 md:grid-cols-2">
-              <FormField id="delivery-recipient" label="Recibe *">
+              <FormField
+                id="delivery-recipient"
+                label="Nombre de contacto *"
+                error={errors.recipientName}
+              >
                 <Input
                   id="delivery-recipient"
+                  maxLength={160}
                   onChange={(event) =>
                     onDeliveryAddressChange({ recipientName: event.target.value })
                   }
                   value={checkout.deliveryAddress?.recipientName ?? ""}
                 />
               </FormField>
-              <FormField id="delivery-city" label="Ciudad *">
+              <FormField id="delivery-phone" label="Teléfono *" error={errors.recipientPhone}>
+                <Input
+                  id="delivery-phone"
+                  inputMode="numeric"
+                  onChange={(event) =>
+                    onDeliveryAddressChange({ recipientPhone: event.target.value })
+                  }
+                  value={checkout.deliveryAddress?.recipientPhone ?? ""}
+                />
+              </FormField>
+              <div className="space-y-3">
+                <FormField
+                  id="delivery-email"
+                  label="Correo electrónico"
+                  error={errors.notificationEmail}
+                >
+                  <Input
+                    disabled={checkout.notificationContact.emailMode === "not_applicable"}
+                    id="delivery-email"
+                    maxLength={254}
+                    onChange={(event) =>
+                      onCheckoutChange({
+                        notificationContact: {
+                          emailMode: "send",
+                          email: event.target.value,
+                        },
+                      })
+                    }
+                    type="email"
+                    value={
+                      checkout.notificationContact.emailMode === "send"
+                        ? checkout.notificationContact.email
+                        : ""
+                    }
+                  />
+                </FormField>
+                <label
+                  className="flex cursor-pointer items-center gap-2 text-sm text-[var(--color-text)]"
+                  htmlFor="delivery-email-not-applicable"
+                >
+                  <input
+                    checked={checkout.notificationContact.emailMode === "not_applicable"}
+                    className="h-4 w-4 accent-[var(--color-primary)]"
+                    id="delivery-email-not-applicable"
+                    onChange={(event) =>
+                      onCheckoutChange({
+                        notificationContact: event.target.checked
+                          ? { emailMode: "not_applicable" }
+                          : { emailMode: "send", email: "" },
+                      })
+                    }
+                    type="checkbox"
+                  />
+                  No aplica correo
+                </label>
+              </div>
+              <FormField id="delivery-city" label="Ciudad *" error={errors.deliveryCity}>
                 <Input
                   id="delivery-city"
+                  maxLength={120}
                   onChange={(event) => onDeliveryAddressChange({ city: event.target.value })}
                   value={checkout.deliveryAddress?.city ?? ""}
                 />
               </FormField>
               <div className="md:col-span-2">
-                <FormField id="delivery-line1" label="DirecciÃ³n *">
+                <FormField
+                  id="delivery-line1"
+                  label="Dirección de entrega *"
+                  error={errors.deliveryAddress}
+                >
                   <Input
                     id="delivery-line1"
+                    maxLength={240}
                     onChange={(event) => onDeliveryAddressChange({ line1: event.target.value })}
                     value={checkout.deliveryAddress?.line1 ?? ""}
+                  />
+                </FormField>
+              </div>
+              <div className="md:col-span-2">
+                <FormField id="delivery-references" label="Referencia de dirección (opcional)">
+                  <Input
+                    id="delivery-references"
+                    maxLength={240}
+                    onChange={(event) =>
+                      onDeliveryAddressChange({ references: event.target.value })
+                    }
+                    value={checkout.deliveryAddress?.references ?? ""}
                   />
                 </FormField>
               </div>
@@ -484,6 +565,16 @@ export function CheckoutModal({
       </form>
     </Modal>
   );
+}
+
+function getDeliveryMethodMessage(deliveryMethod: DeliveryMethod) {
+  if (deliveryMethod === DeliveryMethod.immediate) {
+    return "No requiere preparación en Bodega.";
+  }
+  if (deliveryMethod === DeliveryMethod.store_pickup) {
+    return "Se enviará una orden a Bodega para preparar el pedido.";
+  }
+  return "Se enviará a Bodega para preparación y posterior despacho.";
 }
 
 function CashShiftStatusPanel({

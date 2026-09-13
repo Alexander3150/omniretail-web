@@ -685,6 +685,7 @@ export function usePosTerminal() {
           ...current.value,
           deliveryAddress: {
             recipientName: "",
+            recipientPhone: "",
             line1: "",
             city: "",
             country: "Guatemala",
@@ -692,8 +693,10 @@ export function usePosTerminal() {
             ...patch,
           },
         },
+        errors: {},
         validated: false,
         readyToConfirm: false,
+        hasOperationalBlock: false,
         message: null,
       }));
     },
@@ -1047,6 +1050,7 @@ function createCheckoutValue(total: number, paymentMode: CheckoutPaymentMode): C
     transferExternallyVerified: false,
     deliveryMethod: DeliveryMethod.immediate,
     transportMode: TransportMode.none,
+    notificationContact: { emailMode: "send", email: "" },
   };
 }
 

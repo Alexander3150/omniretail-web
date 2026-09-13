@@ -1,6 +1,7 @@
 import type { SaleDocumentType } from "@/core/entities";
 import type { DeliveryMethod, TransportMode } from "@/core/enums";
 import type { AddressSnapshot } from "@/core/types/address.types";
+import type { OrderNotificationContact } from "@/core/types/orderNotification.types";
 
 export type CheckoutPaymentMode = "cash" | "card" | "transfer" | "mixed";
 export type CardTerminalStatus = "idle" | "processing" | "approved" | "rejected";
@@ -34,6 +35,7 @@ export interface CheckoutDto {
   deliveryMethod: DeliveryMethod;
   transportMode: TransportMode;
   deliveryAddress?: AddressSnapshot;
+  notificationContact: OrderNotificationContact;
 }
 
 export interface CheckoutBankAccountDto {
