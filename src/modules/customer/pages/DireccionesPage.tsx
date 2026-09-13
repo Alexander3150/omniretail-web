@@ -31,7 +31,6 @@ const EMPTY_FORM: AddressFormDto = {
   city: "",
   stateOrDepartment: "",
   postalCode: "",
-  country: "",
   references: "",
 };
 
@@ -44,7 +43,6 @@ function toFormDto(address: Address): AddressFormDto {
     city: address.city,
     stateOrDepartment: address.stateOrDepartment ?? "",
     postalCode: address.postalCode ?? "",
-    country: address.country,
     references: address.references ?? "",
   };
 }
@@ -307,35 +305,24 @@ export function DireccionesPage() {
             </FormField>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FormField
-              error={fieldErrors.postalCode}
-              hint="Opcional"
+          <FormField
+            error={fieldErrors.postalCode}
+            hint="Opcional"
+            id="address-postal"
+            label="Código postal"
+          >
+            <Input
+              disabled={busy}
               id="address-postal"
-              label="Código postal"
-            >
-              <Input
-                disabled={busy}
-                id="address-postal"
-                inputMode="numeric"
-                maxLength={5}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, postalCode: event.target.value }))
-                }
-                placeholder="01001"
-                value={form.postalCode}
-              />
-            </FormField>
-
-            <FormField error={fieldErrors.country} id="address-country" label="País">
-              <Input
-                disabled={busy}
-                id="address-country"
-                onChange={(event) => setForm((prev) => ({ ...prev, country: event.target.value }))}
-                value={form.country}
-              />
-            </FormField>
-          </div>
+              inputMode="numeric"
+              maxLength={5}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, postalCode: event.target.value }))
+              }
+              placeholder="01001"
+              value={form.postalCode}
+            />
+          </FormField>
 
           <FormField hint="Opcional" id="address-references" label="Referencias adicionales">
             <Input

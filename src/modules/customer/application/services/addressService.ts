@@ -8,6 +8,11 @@ type AddressRepositories = Pick<
   "auth" | "users" | "roles" | "customers" | "addresses"
 >;
 
+// La plataforma opera unicamente en Guatemala -- pedirle el pais al
+// cliente es informacion redundante, asi que se fija aqui en vez de
+// exponerlo como campo del formulario.
+const PLATFORM_COUNTRY = "Guatemala";
+
 function toFields(dto: AddressFormDto) {
   return {
     label: dto.label.trim(),
@@ -17,7 +22,7 @@ function toFields(dto: AddressFormDto) {
     city: dto.city.trim(),
     stateOrDepartment: dto.stateOrDepartment.trim() || undefined,
     postalCode: dto.postalCode.trim() || undefined,
-    country: dto.country.trim(),
+    country: PLATFORM_COUNTRY,
     references: dto.references.trim() || undefined,
   };
 }
