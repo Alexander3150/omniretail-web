@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
 const helpItems = [
   [
@@ -15,6 +18,7 @@ const helpItems = [
   ],
 ];
 export function HelpPage() {
+  const { config } = usePublicTenant();
   return (
     <main className="mx-auto max-w-5xl px-5 py-12">
       <section className="rounded-3xl bg-[var(--color-topbar)] px-6 py-10 text-white md:px-10">
@@ -49,6 +53,16 @@ export function HelpPage() {
           <p className="mt-2 max-w-xl text-[var(--color-text-muted)]">
             Nuestro equipo puede orientarte sobre productos, entrega y el estado de una compra.
           </p>
+          {config?.contactPhone || config?.contactEmail ? (
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-[var(--color-title)]">
+              {config.contactPhone ? (
+                <a href={`tel:${config.contactPhone}`}>{config.contactPhone}</a>
+              ) : null}
+              {config.contactEmail ? (
+                <a href={`mailto:${config.contactEmail}`}>{config.contactEmail}</a>
+              ) : null}
+            </div>
+          ) : null}
         </div>
         <Link
           className="rounded-xl bg-[var(--color-primary)] px-5 py-3 text-center font-bold text-[var(--color-topbar)] transition hover:bg-[var(--color-primary-hover)]"

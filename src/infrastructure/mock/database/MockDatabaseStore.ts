@@ -71,6 +71,13 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   const normalized = { ...base, ...database } as MockDatabase;
 
   normalized.units = (database.units ?? base.units).map(normalizePersistedUnit);
+  normalized.ecommerceConfigs = (database.ecommerceConfigs ?? base.ecommerceConfigs).map(
+    (config) => ({
+      ...config,
+      contactPhone: config.contactPhone?.trim() || undefined,
+      contactEmail: config.contactEmail?.trim().toLowerCase() || undefined,
+    }),
+  );
   normalized.businessCapabilities = (
     database.businessCapabilities ?? base.businessCapabilities
   ).map((config) => ({

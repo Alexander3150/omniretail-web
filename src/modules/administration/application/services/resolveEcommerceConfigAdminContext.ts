@@ -1,0 +1,40 @@
+import { TenantStatus, UserStatus } from "@/core/enums";
+import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import {
+  AdministrationServiceError,
+  ensureCanManageEcommerceConfig,
+} from "@/modules/administration/application/services/serviceHelpers";
+
+export interface EcommerceConfigAdminContext {
+  tenantId: string;
+  actorUserId: string;
+}
+
+export async function resolveEcommerceConfigAdminContext(
+  repositories: RepositoryRegistry,
+): Promise<EcommerceConfigAdminContext> {
+  const sessionId = await repositories.auth.getCurrentSessionId();
+  if (!sessionId) throw new AdministrationServiceError("No se pudo resolver la sesion actual.");
+
+  const session = await repositories.auth.getSession(sessionId);
+  if (!session) throw new AdministrationServiceError("No se pudo resolver la sesion actual.");
+
+  const actor = await repositories.users.getById(session.userId);
+  if (!actor || actor.status !== UserStatus.active || !actor.tenantId.trim()) {
+    throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
+  }
+
+  const [tenant, role] = await Promise.all([
+    repositories.tenants.getById(actor.tenantId),
+    actor.roleId ? repositories.roles.getById(actor.roleId) : Promise.resolve(null),
+  ]);
+  if (!tenant || tenant.status !== TenantStatus.active || tenant.id !== actor.tenantId) {
+    throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
+  }
+  if (!role || role.tenantId !== actor.tenantId) {
+    throw new AdministrationServiceError("No se pudo resolver el rol del usuario actual.");
+  }
+
+  ensureCanManageEcommerceConfig(role.permissions);
+  return { tenantId: actor.tenantId, actorUserId: actor.id };
+}

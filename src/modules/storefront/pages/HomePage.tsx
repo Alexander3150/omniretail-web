@@ -4,10 +4,12 @@ import Link from "next/link";
 import { StorefrontProductCard } from "@/modules/storefront/components/StorefrontProductCard";
 import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
 import { useStorefrontOffers } from "@/modules/storefront/hooks/useStorefrontOffers";
+import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
 export function HomePage() {
   const { categories, products, loading, error } = useStorefrontDiscovery();
   const { items: offers } = useStorefrontOffers();
+  const { config } = usePublicTenant();
   return (
     <main>
       <section className="overflow-hidden bg-[var(--color-topbar)] text-white">
@@ -77,6 +79,28 @@ export function HomePage() {
           </div>
         </div>
       </section>
+      {config?.branches.length ? (
+        <section className="border-y border-[var(--color-border)] bg-[var(--color-surface)]">
+          <div className="mx-auto max-w-7xl px-5 py-10">
+            <p className="text-sm font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">
+              Tiendas físicas
+            </p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {config.branches.map((branch) => (
+                <article
+                  className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-app-background)] p-5"
+                  key={branch.id}
+                >
+                  <h2 className="font-black text-[var(--color-text)]">{branch.name}</h2>
+                  {branch.address ? (
+                    <p className="mt-2 text-sm text-[var(--color-text-muted)]">{branch.address}</p>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+      ) : null}
       <section className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="mx-auto grid max-w-7xl gap-5 px-5 py-5 text-sm sm:grid-cols-3">
           <div>

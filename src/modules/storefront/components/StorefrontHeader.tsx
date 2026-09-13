@@ -6,9 +6,11 @@ import { FormEvent, useState } from "react";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { getStorefrontAccountNavigation } from "@/modules/storefront/application/services/storefrontAccountNavigation";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
+import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
 export function StorefrontHeader() {
   const { itemCount } = useStorefrontCart();
+  const { config } = usePublicTenant();
   const { user, loading } = useCurrentSession();
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -37,7 +39,7 @@ export function StorefrontHeader() {
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--color-primary)] text-xs text-[var(--color-topbar)] shadow-sm">
             OR
           </span>
-          <span className="hidden min-[390px]:inline">OmniRetail</span>
+          <span className="hidden min-[390px]:inline">{config?.storeName ?? "Tienda"}</span>
         </Link>
         <div className="ml-auto flex items-center gap-1 lg:order-4">
           <Link
