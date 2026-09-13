@@ -1316,6 +1316,7 @@ export const demoSeedDatabase: MockDatabase = {
       recipientName: "Ana Cliente",
       line1: "Zona 10",
       city: "Guatemala",
+      stateOrDepartment: "Guatemala",
       country: "Guatemala",
       isDefault: true,
       createdAt: now,

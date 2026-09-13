@@ -1,20 +1,23 @@
-import { GUATEMALA_DEPARTMENTS, POSTAL_CODE_PATTERN } from "@/config/guatemala-locations";
+import {
+  GUATEMALA_DEPARTMENTS,
+  GUATEMALA_MUNICIPALITIES,
+  POSTAL_CODE_PATTERN,
+} from "@/config/guatemala-locations";
 import type { AddressFormDto } from "@/modules/customer/application/dto/AddressFormDto";
 
 export type AddressValidationErrors = Partial<
   Record<"label" | "recipientName" | "line1" | "city" | "stateOrDepartment" | "postalCode" | "country", string>
 >;
 
-const MIN_CITY_LENGTH = 2;
-const CITY_HAS_LETTER_PATTERN = /[a-zA-ZáéíóúÁÉÍÓÚñÑ]/;
-
 /**
  * Mismo criterio que el repositorio (MockAddressRepository.
  * assertValidAddress), replicado aca para que el formulario falle antes
- * de llamar al repo: label, recipientName, line1, city y country son
- * obligatorios. stateOrDepartment y postalCode siguen siendo opcionales,
- * pero si SE completan ya no aceptan cualquier texto -- antes se podía
- * guardar "huehue" como departamento o "asd" como código postal.
+ * de llamar al repo: label, recipientName, line1, country y ahora
+ * también stateOrDepartment son obligatorios -- Departamento dejó de
+ * ser opcional porque Municipio (antes "Ciudad", el campo `city`)
+ * depende de él para saber qué opciones mostrar y validar; un municipio
+ * sin departamento no tiene forma de verificarse. postalCode sigue
+ * siendo opcional, pero si SE completa ya no acepta cualquier texto.
  */
 export function validateAddressForm(dto: AddressFormDto): AddressValidationErrors {
   const errors: AddressValidationErrors = {};
@@ -29,19 +32,25 @@ export function validateAddressForm(dto: AddressFormDto): AddressValidationError
     errors.line1 = "La dirección es obligatoria.";
   }
 
-  const city = dto.city.trim();
-  if (!city) {
-    errors.city = "La ciudad es obligatoria.";
-  } else if (city.length < MIN_CITY_LENGTH || !CITY_HAS_LETTER_PATTERN.test(city)) {
-    errors.city = "Ingresa una ciudad válida.";
-  }
-
   const stateOrDepartment = dto.stateOrDepartment.trim();
-  if (
-    stateOrDepartment &&
+  if (!stateOrDepartment) {
+    errors.stateOrDepartment = "El departamento es obligatorio.";
+  } else if (
     !GUATEMALA_DEPARTMENTS.includes(stateOrDepartment as (typeof GUATEMALA_DEPARTMENTS)[number])
   ) {
     errors.stateOrDepartment = "Selecciona un departamento válido.";
+  }
+
+  const city = dto.city.trim();
+  if (!city) {
+    errors.city = "El municipio es obligatorio.";
+  } else if (
+    GUATEMALA_DEPARTMENTS.includes(stateOrDepartment as (typeof GUATEMALA_DEPARTMENTS)[number]) &&
+    !GUATEMALA_MUNICIPALITIES[stateOrDepartment as (typeof GUATEMALA_DEPARTMENTS)[number]].includes(
+      city,
+    )
+  ) {
+    errors.city = "Selecciona un municipio que pertenezca al departamento elegido.";
   }
 
   const postalCode = dto.postalCode.trim();

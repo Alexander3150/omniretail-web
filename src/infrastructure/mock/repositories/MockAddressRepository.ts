@@ -4,12 +4,13 @@ import type {
   CreateAddressInput,
   UpdateAddressInput,
 } from "@/core/repositories";
-import { GUATEMALA_DEPARTMENTS, POSTAL_CODE_PATTERN } from "@/config/guatemala-locations";
+import {
+  GUATEMALA_DEPARTMENTS,
+  GUATEMALA_MUNICIPALITIES,
+  POSTAL_CODE_PATTERN,
+} from "@/config/guatemala-locations";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
-
-const MIN_CITY_LENGTH = 2;
-const CITY_HAS_LETTER_PATTERN = /[a-zA-ZáéíóúÁÉÍÓÚñÑ]/;
 
 const UPDATE_ALLOWED_KEYS = new Set<keyof UpdateAddressInput>([
   "label",
@@ -178,11 +179,12 @@ export class MockAddressRepository extends BaseMockRepository implements Address
     postalCode?: string;
     country: string;
   }): void {
-    const required: Array<[string, string]> = [
+    const required: Array<[string, string | undefined]> = [
       ["label", input.label],
       ["recipientName", input.recipientName],
       ["line1", input.line1],
       ["city", input.city],
+      ["stateOrDepartment", input.stateOrDepartment],
       ["country", input.country],
     ];
     for (const [field, value] of required) {
@@ -190,22 +192,20 @@ export class MockAddressRepository extends BaseMockRepository implements Address
         throw new Error(`Address ${field} is required`);
       }
     }
-    // "city" requerido no alcanzaba -- aceptaba cualquier basura ("sadasf").
-    const city = input.city.trim();
-    if (city.length < MIN_CITY_LENGTH || !CITY_HAS_LETTER_PATTERN.test(city)) {
-      throw new Error("Address city must be a valid city name");
-    }
-    // stateOrDepartment/postalCode siguen siendo opcionales, pero si SE
-    // completan ya no aceptan cualquier texto -- antes "huehue"/"asd"
-    // se guardaban sin problema.
-    if (
-      input.stateOrDepartment &&
-      !GUATEMALA_DEPARTMENTS.includes(
-        input.stateOrDepartment as (typeof GUATEMALA_DEPARTMENTS)[number],
-      )
-    ) {
+    // Departamento dejo de ser opcional: Municipio (el campo `city`)
+    // depende de el para saber que opciones son validas -- un municipio
+    // sin departamento no tiene forma de verificarse.
+    const stateOrDepartment = input.stateOrDepartment as (typeof GUATEMALA_DEPARTMENTS)[number];
+    if (!GUATEMALA_DEPARTMENTS.includes(stateOrDepartment)) {
       throw new Error("Address stateOrDepartment must be a valid Guatemala department");
     }
+    // "city" (Municipio) ya no es texto libre -- antes aceptaba cualquier
+    // basura ("sadasf"). Debe pertenecer al departamento seleccionado.
+    if (!GUATEMALA_MUNICIPALITIES[stateOrDepartment].includes(input.city.trim())) {
+      throw new Error("Address city must be a municipality that belongs to the selected department");
+    }
+    // postalCode sigue siendo opcional, pero si SE completa ya no acepta
+    // cualquier texto -- antes "asd" se guardaba sin problema.
     if (input.postalCode && !POSTAL_CODE_PATTERN.test(input.postalCode)) {
       throw new Error("Address postalCode must be 5 digits");
     }

@@ -9,7 +9,11 @@ import {
   validateAddressForm,
   type AddressValidationErrors,
 } from "@/modules/customer/validation/address.validation";
-import { GUATEMALA_DEPARTMENTS } from "@/config/guatemala-locations";
+import {
+  GUATEMALA_DEPARTMENTS,
+  GUATEMALA_MUNICIPALITIES,
+  type GuatemalaDepartment,
+} from "@/config/guatemala-locations";
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { FormField } from "@/shared/components/FormField";
@@ -256,27 +260,21 @@ export function DireccionesPage() {
           </FormField>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <FormField error={fieldErrors.city} id="address-city" label="Ciudad">
-              <Input
-                disabled={busy}
-                id="address-city"
-                onChange={(event) => setForm((prev) => ({ ...prev, city: event.target.value }))}
-                value={form.city}
-              />
-            </FormField>
-
             <FormField
               error={fieldErrors.stateOrDepartment}
-              hint="Opcional"
               id="address-state"
               label="Departamento / estado"
             >
               <Select
                 disabled={busy}
                 id="address-state"
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, stateOrDepartment: event.target.value }))
-                }
+                onChange={(event) => {
+                  const nextDepartment = event.target.value;
+                  // Cambiar de departamento invalida el municipio elegido
+                  // antes -- Municipio siempre se resetea junto con el
+                  // departamento para que nunca queden desincronizados.
+                  setForm((prev) => ({ ...prev, stateOrDepartment: nextDepartment, city: "" }));
+                }}
                 value={form.stateOrDepartment}
               >
                 <option value="">Selecciona un departamento</option>
@@ -285,6 +283,26 @@ export function DireccionesPage() {
                     {department}
                   </option>
                 ))}
+              </Select>
+            </FormField>
+
+            <FormField error={fieldErrors.city} id="address-city" label="Municipio">
+              <Select
+                disabled={busy || !form.stateOrDepartment}
+                id="address-city"
+                onChange={(event) => setForm((prev) => ({ ...prev, city: event.target.value }))}
+                value={form.city}
+              >
+                <option value="">
+                  {form.stateOrDepartment ? "Selecciona un municipio" : "Elige primero un departamento"}
+                </option>
+                {(GUATEMALA_MUNICIPALITIES[form.stateOrDepartment as GuatemalaDepartment] ?? []).map(
+                  (municipality) => (
+                    <option key={municipality} value={municipality}>
+                      {municipality}
+                    </option>
+                  ),
+                )}
               </Select>
             </FormField>
           </div>
