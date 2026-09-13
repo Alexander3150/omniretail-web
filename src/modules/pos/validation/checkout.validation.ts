@@ -1,3 +1,6 @@
+import { validatePhoneNumber } from "@/config/contact-policy";
+import { validateEmail } from "@/config/email-policy";
+import { DeliveryMethod } from "@/core/enums";
 import type { CardTerminalResultDto, CheckoutDto } from "@/modules/pos/application/dto/CheckoutDto";
 
 export type CheckoutValidationErrors = Partial<
@@ -14,7 +17,12 @@ export type CheckoutValidationErrors = Partial<
     | "bankAccountId"
     | "transferReference"
     | "transferExternallyVerified"
-    | "paymentTotal",
+    | "paymentTotal"
+    | "recipientName"
+    | "recipientPhone"
+    | "notificationEmail"
+    | "deliveryCity"
+    | "deliveryAddress",
     string
   >
 >;
@@ -56,6 +64,7 @@ export function validateCheckout(checkout: CheckoutDto, total: number): Checkout
   const amounts = calculateCheckoutAmounts(checkout, total);
 
   validateDocument(checkout, errors);
+  validateDelivery(checkout, errors);
   validateNonNegativeAmounts(checkout, errors);
 
   if (checkout.paymentMode === "cash") {
@@ -110,6 +119,33 @@ export function validateCheckout(checkout: CheckoutDto, total: number): Checkout
     errors,
     isValid: Object.keys(errors).length === 0,
   };
+}
+
+function validateDelivery(checkout: CheckoutDto, errors: CheckoutValidationErrors) {
+  if (checkout.deliveryMethod !== DeliveryMethod.home_delivery) return;
+
+  const address = checkout.deliveryAddress;
+  if (!address?.recipientName.trim()) {
+    errors.recipientName = "El nombre de contacto es obligatorio.";
+  }
+
+  const phone = address?.recipientPhone?.trim() ?? "";
+  if (!phone) {
+    errors.recipientPhone = "El teléfono es obligatorio.";
+  } else {
+    const phoneError = validatePhoneNumber(phone);
+    if (phoneError) errors.recipientPhone = phoneError;
+  }
+
+  if (!address?.city.trim()) errors.deliveryCity = "La ciudad es obligatoria.";
+  if (!address?.line1.trim()) {
+    errors.deliveryAddress = "La dirección de entrega es obligatoria.";
+  }
+
+  if (checkout.notificationContact.emailMode === "send") {
+    const emailError = validateEmail(checkout.notificationContact.email);
+    if (emailError) errors.notificationEmail = emailError;
+  }
 }
 
 function validateDocument(checkout: CheckoutDto, errors: CheckoutValidationErrors) {

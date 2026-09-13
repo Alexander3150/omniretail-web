@@ -45,7 +45,7 @@ export interface ConfirmPosSaleInput {
   customerId?: string;
   sourceOrderId?: string;
   orderIdempotencyKey?: string;
-  /** Optional until the POS UI maps email / no-email intent explicitly. */
+  /** @deprecated POS now derives this snapshot from checkout.notificationContact. */
   notificationContact?: OrderNotificationContact;
 }
 
@@ -136,10 +136,35 @@ export class ConfirmSaleService {
     if (!idempotencyKey) throw new Error("No se pudo identificar el intento de pedido diferido.");
     if (input.checkout.deliveryMethod === DeliveryMethod.home_delivery) {
       const address = input.checkout.deliveryAddress;
-      if (!address?.recipientName.trim() || !address.line1.trim() || !address.city.trim()) {
-        throw new Error("La entrega a domicilio requiere destinatario, direccion y ciudad.");
+      if (
+        !address?.recipientName.trim() ||
+        !address.recipientPhone?.trim() ||
+        !address.line1.trim() ||
+        !address.city.trim()
+      ) {
+        throw new Error("La entrega a domicilio requiere contacto, teléfono, dirección y ciudad.");
       }
     }
+    const deliveryAddress =
+      input.checkout.deliveryMethod === DeliveryMethod.home_delivery
+        ? {
+            recipientName: input.checkout.deliveryAddress!.recipientName.trim(),
+            recipientPhone: input.checkout.deliveryAddress!.recipientPhone!.trim(),
+            line1: input.checkout.deliveryAddress!.line1.trim(),
+            city: input.checkout.deliveryAddress!.city.trim(),
+            country: "Guatemala",
+            references: input.checkout.deliveryAddress!.references?.trim() || undefined,
+          }
+        : undefined;
+    const notificationContact =
+      input.checkout.deliveryMethod === DeliveryMethod.home_delivery
+        ? input.checkout.notificationContact.emailMode === "send"
+          ? {
+              emailMode: "send" as const,
+              email: input.checkout.notificationContact.email.trim(),
+            }
+          : { emailMode: "not_applicable" as const }
+        : undefined;
     const order = await this.repositories.orders.create({
       tenantId: input.currentBranch.tenantId,
       branchId: input.currentBranch.id,
@@ -159,8 +184,8 @@ export class ConfirmSaleService {
       status: OrderStatus.confirmed,
       deliveryMethod: input.checkout.deliveryMethod,
       transportMode: input.checkout.transportMode,
-      notificationContact: input.notificationContact,
-      deliveryAddress: input.checkout.deliveryAddress,
+      notificationContact,
+      deliveryAddress,
       subtotal: fromCents(totals.subtotalCents),
       discountTotal: fromCents(totals.discountTotalCents),
       shippingTotal: 0,
