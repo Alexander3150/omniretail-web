@@ -1,5 +1,6 @@
 import type { InventoryReservation, Order, Payment } from "@/core/entities";
-import { OrderStatus, ProductType } from "@/core/enums";
+import { DeliveryMethod, OrderStatus, ProductType } from "@/core/enums";
+import { validatePhoneNumber } from "@/config/contact-policy";
 import type {
   CreateOrderInput,
   CreateOrderWithPaymentInput,
@@ -340,6 +341,14 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
       throw new Error("Order idempotencyKey cannot be blank");
     }
     if (input.items.length === 0) throw new Error("Order requires at least one item");
+    if (input.deliveryMethod === DeliveryMethod.home_delivery) {
+      const recipientPhone = input.deliveryAddress?.recipientPhone;
+      if (recipientPhone === undefined || !recipientPhone.trim()) {
+        throw new Error("Home delivery recipientPhone is required");
+      }
+      const phoneError = validatePhoneNumber(recipientPhone);
+      if (phoneError) throw new Error(phoneError);
+    }
     input.items.forEach((item) => {
       if (!item.id.trim()) throw new Error("OrderItem id is required");
       if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
@@ -429,6 +438,7 @@ function getOrderCreationFingerprint(input: CreateOrderInput): string {
     deliveryAddress: input.deliveryAddress
       ? {
           recipientName: input.deliveryAddress.recipientName,
+          recipientPhone: input.deliveryAddress.recipientPhone ?? null,
           line1: input.deliveryAddress.line1,
           line2: input.deliveryAddress.line2 ?? null,
           city: input.deliveryAddress.city,
