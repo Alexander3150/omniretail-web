@@ -7,8 +7,9 @@ import {
   UserStatus,
   UserType,
 } from "@/core/enums";
-import type { AuthAccount, Customer } from "@/core/entities";
+import type { AuthAccount, Customer, MfaChallenge, MfaEnrollment, MfaMethod, Session } from "@/core/entities";
 import type { AuthRepository } from "@/core/repositories";
+import { MfaChallengeUnavailableError } from "@/core/repositories/AuthRepository";
 import {
   EMAIL_ALREADY_REGISTERED_MESSAGE,
   EMAIL_VERIFICATION_TOKEN_MINUTES,
@@ -25,6 +26,12 @@ import {
   isPasswordRecoveryEligible,
   validatePasswordAgainstPolicy,
 } from "@/config/auth-policy";
+import {
+  MFA_CHALLENGE_EXPIRATION_MINUTES,
+  MFA_CHALLENGE_MAX_ATTEMPTS,
+  MFA_CODE_DIGITS,
+  RECOVERY_CODES_COUNT,
+} from "@/config/mfa-policy";
 import { publicStorefrontSlug } from "@/config/publicStorefront";
 import { sessionPolicy } from "@/config/session-policy";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
@@ -282,6 +289,22 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         action: "login_success",
       });
 
+      // PR13 (doc R-A16): "si la cuenta exige MFA, la contraseña correcta
+      // no crea sesión definitiva hasta completar el segundo factor" --
+      // login_success ya se registró arriba (las credenciales SÍ eran
+      // correctas), pero la Session todavía no se crea: en su lugar se
+      // abre un MfaChallenge efímero.
+      const enrollment = db.mfaEnrollments.find(
+        (item) => item.userId === account.userId && item.enabled,
+      );
+      if (enrollment) {
+        const challenge = this.createMfaChallenge(db, enrollment, {
+          rememberMe: Boolean(input.rememberMe),
+          deviceLabel: input.deviceLabel,
+        });
+        return { ok: true as const, kind: "mfa_challenge" as const, challenge, enrollment };
+      }
+
       const expires = new Date(
         now.getTime() +
           (input.rememberMe
@@ -300,11 +323,22 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         deviceLabel: input.deviceLabel,
       };
       db.sessions.push(created);
-      return { ok: true as const, session: created };
+      return { ok: true as const, kind: "session" as const, session: created };
     });
 
     if (!outcome.ok) {
       throw new Error(GENERIC_AUTH_ERROR_MESSAGE);
+    }
+
+    if (outcome.kind === "mfa_challenge") {
+      // Sin sesión todavía -- no se toca sessionStorage ni se emite
+      // auth.changed (desde afuera, nadie quedó autenticado todavía).
+      return {
+        status: "mfa_required" as const,
+        challengeId: outcome.challenge.id,
+        method: outcome.challenge.method,
+        demoCodeMock: outcome.enrollment.demoCodeMock,
+      };
     }
 
     // El puntero persistido es la fuente canonica que consumen todos los
@@ -313,7 +347,246 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     // identidad anterior y no recibe otra senal para corregirse.
     this.sessionStorage.set(MOCK_SESSION_STORAGE_KEY, outcome.session.id);
     this.emit("auth.changed", { entityId: outcome.session.id, action: "created" });
+    return { status: "authenticated" as const, session: outcome.session };
+  }
+  async verifyMfaChallenge(challengeId: string, codeMock: string) {
+    const outcome = this.store.mutate((db) => {
+      const now = new Date();
+      const challenge = db.mfaChallenges.find((item) => item.id === challengeId);
+      if (
+        !challenge ||
+        challenge.consumedAt ||
+        challenge.invalidatedAt ||
+        now >= new Date(challenge.expiresAt)
+      ) {
+        // No hay challenge vivo sobre el que reintentar -- distinto de un
+        // código incorrecto con intentos restantes (ver abajo).
+        return { ok: false as const, retriable: false };
+      }
+
+      const user = db.users.find((item) => item.id === challenge.userId);
+      const account = db.authAccounts.find((item) => item.userId === challenge.userId);
+      const tenantId = user?.tenantId ?? "tenant-demo";
+
+      const codeIsValid = this.consumeMfaCode(db, challenge.userId, codeMock);
+      if (!codeIsValid) {
+        // Contador SEPARADO de LOGIN_ATTEMPT_RULES a propósito (doc 4.12:
+        // "no cuentan como una nueva contraseña fallida") -- nunca toca
+        // account.failedLoginAttempts ni el lockout de la cuenta.
+        challenge.failedAttempts += 1;
+        this.logAuthAudit(db, {
+          tenantId,
+          actorUserId: challenge.userId,
+          accountId: account?.id,
+          action: "mfa_failed",
+        });
+        const exceededAttempts = challenge.failedAttempts >= MFA_CHALLENGE_MAX_ATTEMPTS;
+        if (exceededAttempts) {
+          challenge.invalidatedAt = this.now();
+        }
+        // retriable=true en los intentos 1..4 (doc 4.12/QA: "challenge
+        // sigue vivo"); false en el intento que alcanza el máximo -- ahí
+        // el challenge ya quedó invalidado arriba, no hay nada que
+        // reintentar con este mismo challengeId.
+        return { ok: false as const, retriable: !exceededAttempts };
+      }
+
+      challenge.consumedAt = this.now();
+
+      // Misma formula de vigencia que login() -- rememberMe/deviceLabel
+      // vienen del LoginInput original, capturados en el challenge porque
+      // este método solo recibe challengeId + código.
+      const expires = new Date(
+        now.getTime() +
+          (challenge.rememberMe
+            ? sessionPolicy.rememberMeDays * 24
+            : sessionPolicy.normalSessionHours) *
+            60 *
+            60 *
+            1000,
+      );
+      const session: Session = {
+        id: this.id("session"),
+        userId: challenge.userId,
+        createdAt: this.now(),
+        expiresAt: expires.toISOString(),
+        rememberMe: challenge.rememberMe,
+        deviceLabel: challenge.deviceLabel,
+      };
+      db.sessions.push(session);
+      return { ok: true as const, session };
+    });
+
+    if (!outcome.ok) {
+      if (outcome.retriable) {
+        throw new Error("El código no es correcto. Inténtalo de nuevo.");
+      }
+      // No es un caso de enumeración cross-account (R-A13 es sobre no
+      // revelar si una cuenta/correo existe) -- es solo el ciclo de vida
+      // del challenge para un usuario que YA se autenticó con
+      // contraseña. Distinguirlo de un código simplemente incorrecto es
+      // información útil, no un riesgo: le dice al usuario que reintentar
+      // con este mismo challenge ya no sirve.
+      throw new MfaChallengeUnavailableError();
+    }
+
+    this.sessionStorage.set(MOCK_SESSION_STORAGE_KEY, outcome.session.id);
+    this.emit("auth.changed", { entityId: outcome.session.id, action: "created" });
     return outcome.session;
+  }
+  async beginMfaEnrollment(sessionId: string, method: MfaMethod) {
+    return this.store.mutate((db) => {
+      const session = this.requireActiveSession(db, sessionId);
+      const now = this.now();
+      const demoCodeMock = this.generateMfaCodeMock();
+      const existing = db.mfaEnrollments.find((item) => item.userId === session.userId);
+      if (existing) {
+        // Reinicia el enrollment (mismo criterio que reenviar una
+        // invitación): un enrollment sin confirmar previamente no deja
+        // basura -- se reemplaza el método/código y se vuelve a pedir
+        // verificación.
+        existing.method = method;
+        existing.demoCodeMock = demoCodeMock;
+        existing.enabled = false;
+        existing.verifiedAt = undefined;
+        existing.updatedAt = now;
+      } else {
+        db.mfaEnrollments.push({
+          id: this.id("mfa-enrollment"),
+          userId: session.userId,
+          enabled: false,
+          method,
+          demoCodeMock,
+          verifiedAt: undefined,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      return { demoCodeMock };
+    });
+  }
+  async verifyMfaEnrollment(sessionId: string, codeMock: string) {
+    const outcome = this.store.mutate((db) => {
+      const session = this.requireActiveSession(db, sessionId);
+      const enrollment = db.mfaEnrollments.find((item) => item.userId === session.userId);
+      if (!enrollment || enrollment.enabled) {
+        throw new Error("No hay una verificación en dos pasos pendiente de confirmar.");
+      }
+      if (enrollment.demoCodeMock !== codeMock) {
+        throw new Error("El código no es correcto.");
+      }
+
+      const now = this.now();
+      enrollment.enabled = true;
+      enrollment.verifiedAt = now;
+      enrollment.updatedAt = now;
+
+      // Reemplaza cualquier lote previo -- un enrollment recién confirmado
+      // empieza con un set de recovery codes limpio, nunca mezclado con
+      // códigos de un enrollment anterior ya desactivado.
+      db.recoveryCodes = db.recoveryCodes.filter((item) => item.userId !== session.userId);
+      const recoveryCodes = Array.from({ length: RECOVERY_CODES_COUNT }, () =>
+        this.generateRecoveryCode(),
+      );
+      recoveryCodes.forEach((code) => {
+        db.recoveryCodes.push({
+          id: this.id("recovery-code"),
+          userId: session.userId,
+          code,
+          used: false,
+          createdAt: now,
+        });
+      });
+
+      const user = db.users.find((item) => item.id === session.userId);
+      const account = db.authAccounts.find((item) => item.userId === session.userId);
+      const tenantId = user?.tenantId ?? "tenant-demo";
+      this.logAuthAudit(db, {
+        tenantId,
+        actorUserId: session.userId,
+        accountId: account?.id,
+        action: "mfa_enabled",
+      });
+      db.notifications.push({
+        id: this.id("notification"),
+        tenantId,
+        userId: session.userId,
+        channel: NotificationChannel.in_app,
+        type: "mfa_enabled",
+        title: "Verificación en dos pasos activada",
+        message: "Se activó la verificación en dos pasos en tu cuenta.",
+        status: NotificationStatus.unread,
+        relatedEntityType: "AuthAccount",
+        relatedEntityId: account?.id,
+        createdAt: now,
+      });
+
+      return { recoveryCodes };
+    });
+    // "mfa.changed", NO "auth.changed" -- ver comentario en DataEventName
+    // (core/types/events.types.ts): esto no cambia identidad ni permisos,
+    // y auth.changed remontaria el subarbol autenticado a mitad del
+    // wizard de activacion.
+    this.emit("mfa.changed", { action: "updated" });
+    return outcome;
+  }
+  async disableMfa(sessionId: string, currentPasswordMock: string) {
+    this.store.mutate((db) => {
+      const session = this.requireActiveSession(db, sessionId);
+      const account = db.authAccounts.find((item) => item.userId === session.userId);
+      if (!account) throw new Error("No se encontró la cuenta.");
+      if (account.passwordHashMock !== buildPasswordHashMock(currentPasswordMock)) {
+        throw new Error("La contraseña actual no es correcta.");
+      }
+      const enrollment = db.mfaEnrollments.find((item) => item.userId === session.userId);
+      if (!enrollment || !enrollment.enabled) {
+        return undefined;
+      }
+
+      const now = this.now();
+      enrollment.enabled = false;
+      enrollment.updatedAt = now;
+
+      const user = db.users.find((item) => item.id === session.userId);
+      const tenantId = user?.tenantId ?? "tenant-demo";
+      this.logAuthAudit(db, {
+        tenantId,
+        actorUserId: session.userId,
+        accountId: account.id,
+        // No está en la lista literal de R-A30, pero omitir un evento de
+        // auditoría para un cambio de seguridad tan sensible como apagar
+        // el segundo factor sería un hueco real -- mismo criterio que ya
+        // se usó antes en este proyecto para la notificación de
+        // account_locked, que el documento tampoco pedía explícitamente.
+        action: "mfa_disabled",
+      });
+      db.notifications.push({
+        id: this.id("notification"),
+        tenantId,
+        userId: session.userId,
+        channel: NotificationChannel.in_app,
+        type: "mfa_disabled",
+        title: "Verificación en dos pasos desactivada",
+        message: "Se desactivó la verificación en dos pasos en tu cuenta.",
+        status: NotificationStatus.unread,
+        relatedEntityType: "AuthAccount",
+        relatedEntityId: account.id,
+        createdAt: now,
+      });
+      return undefined;
+    });
+    // Ver comentario en verifyMfaEnrollment: "mfa.changed", no
+    // "auth.changed".
+    this.emit("mfa.changed", { action: "updated" });
+  }
+  async getMfaStatus(sessionId: string) {
+    return this.read((db) => {
+      const session = db.sessions.find((item) => item.id === sessionId && !item.revokedAt);
+      if (!session) return null;
+      const enrollment = db.mfaEnrollments.find((item) => item.userId === session.userId);
+      if (!enrollment) return null;
+      return { enabled: enrollment.enabled, method: enrollment.method };
+    });
   }
   async logout(sessionId: string) {
     this.store.mutate((db) => {
@@ -862,15 +1135,9 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
   }
   async changePassword(input: Parameters<AuthRepository["changePassword"]>[0]) {
     this.store.mutate((db) => {
-      const now = new Date();
-      const nowIso = now.toISOString();
+      const nowIso = this.now();
 
-      const session = db.sessions.find(
-        (item) => item.id === input.sessionId && !item.revokedAt,
-      );
-      if (!session || now >= new Date(session.expiresAt)) {
-        throw new Error("Tu sesión ya no es válida. Vuelve a iniciar sesión.");
-      }
+      const session = this.requireActiveSession(db, input.sessionId);
 
       const account = db.authAccounts.find((item) => item.userId === session.userId);
       if (!account) throw new Error("No se encontró la cuenta.");
@@ -883,6 +1150,23 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         account.passwordHashMock === buildPasswordHashMock(input.currentPasswordMock);
       if (!currentMatches) {
         throw new Error("La contraseña actual no es correcta.");
+      }
+
+      // PR13 (doc 4.13, "reautenticar con contraseña actual/MFA"): si la
+      // cuenta tiene el segundo factor activo, cambiar la contraseña exige
+      // AMBOS factores -- currentPasswordMock (ya validado arriba) Y un
+      // código MFA/recovery code vigente. No reemplaza la verificación de
+      // contraseña ya aprobada, se suma solo cuando aplica.
+      const mfaEnrollment = db.mfaEnrollments.find(
+        (item) => item.userId === account.userId && item.enabled,
+      );
+      if (mfaEnrollment) {
+        const mfaCodeValid =
+          Boolean(input.mfaCodeMock) &&
+          this.consumeMfaCode(db, account.userId, input.mfaCodeMock as string);
+        if (!mfaCodeValid) {
+          throw new Error("El código de verificación en dos pasos no es correcto.");
+        }
       }
 
       // Confirmado por QA manual (Andy, cuenta demo): sin este chequeo, la
@@ -972,5 +1256,84 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       metadata: entry.metadata,
       createdAt: this.now(),
     });
+  }
+  /**
+   * Valida que exista una sesión activa y no revocada para sessionId --
+   * mismo chequeo que changePassword() ya hacía inline, extraído (PR13)
+   * porque beginMfaEnrollment/verifyMfaEnrollment/disableMfa lo necesitan
+   * también, palabra por palabra.
+   */
+  private requireActiveSession(db: MockDatabase, sessionId: string): Session {
+    const session = db.sessions.find((item) => item.id === sessionId && !item.revokedAt);
+    if (!session || new Date() >= new Date(session.expiresAt)) {
+      throw new Error("Tu sesión ya no es válida. Vuelve a iniciar sesión.");
+    }
+    return session;
+  }
+  /**
+   * Crea el MfaChallenge efímero que login() devuelve en vez de una
+   * Session cuando la cuenta tiene MFA habilitado (R-A16).
+   */
+  private createMfaChallenge(
+    db: MockDatabase,
+    enrollment: MfaEnrollment,
+    opts: { rememberMe: boolean; deviceLabel?: string },
+  ): MfaChallenge {
+    const challenge: MfaChallenge = {
+      id: this.id("mfa-challenge"),
+      userId: enrollment.userId,
+      method: enrollment.method,
+      failedAttempts: 0,
+      createdAt: this.now(),
+      expiresAt: new Date(
+        Date.now() + MFA_CHALLENGE_EXPIRATION_MINUTES * 60 * 1000,
+      ).toISOString(),
+      rememberMe: opts.rememberMe,
+      deviceLabel: opts.deviceLabel,
+    };
+    db.mfaChallenges.push(challenge);
+    return challenge;
+  }
+  /**
+   * Verifica codeMock contra el código MFA vigente del usuario
+   * (MfaEnrollment.demoCodeMock, fase dummy no rotativo) O contra un
+   * RecoveryCode propio sin usar -- si es un recovery code, lo consume
+   * (used=true) como efecto secundario. Compartido por
+   * verifyMfaChallenge() y changePassword(): una sola fuente de verdad
+   * para "qué cuenta como un código MFA válido para este usuario", en vez
+   * de duplicar la comparación en cada llamador.
+   */
+  private consumeMfaCode(db: MockDatabase, userId: string, codeMock: string): boolean {
+    const enrollment = db.mfaEnrollments.find((item) => item.userId === userId && item.enabled);
+    if (enrollment && enrollment.demoCodeMock === codeMock) {
+      return true;
+    }
+    const recoveryCode = db.recoveryCodes.find(
+      (item) => item.userId === userId && !item.used && item.code === codeMock,
+    );
+    if (recoveryCode) {
+      recoveryCode.used = true;
+      return true;
+    }
+    return false;
+  }
+  /**
+   * Código MFA de demostración: MFA_CODE_DIGITS dígitos numéricos, con
+   * ceros a la izquierda si hace falta (mismo largo siempre, como un TOTP
+   * real).
+   */
+  private generateMfaCodeMock(): string {
+    const max = 10 ** MFA_CODE_DIGITS;
+    const value = Math.floor(Math.random() * max);
+    return String(value).padStart(MFA_CODE_DIGITS, "0");
+  }
+  /**
+   * Formato legible tipo "XXXX-XXXX" (hex mayúsculas) -- ni tan corto que
+   * colisione fácil, ni tan largo que sea incómodo de transcribir a mano
+   * si el usuario decide guardarlo en papel.
+   */
+  private generateRecoveryCode(): string {
+    const part = () => crypto.randomUUID().replace(/-/g, "").slice(0, 4).toUpperCase();
+    return `${part()}-${part()}`;
   }
 }

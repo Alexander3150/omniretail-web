@@ -1,6 +1,15 @@
 export type DataEventName =
   | "auth.changed"
   | "user.changed"
+  // PR13: deliberadamente SEPARADO de "auth.changed" -- ese evento lo
+  // escucha CurrentSessionProvider para recargar user/role, y hace que
+  // RequireSession muestre "Cargando sesion..." mientras tanto (unmount
+  // temporal del subarbol autenticado). Activar/desactivar/verificar MFA
+  // no cambia identidad ni permisos, asi que emitir auth.changed ahi
+  // remontaria toda la pantalla de Seguridad a mitad de un wizard
+  // (perdiendo el paso actual, ej. el modal de recovery codes) sin
+  // necesidad real.
+  | "mfa.changed"
   | "branch.changed"
   | "business-config.changed"
   | "product.changed"

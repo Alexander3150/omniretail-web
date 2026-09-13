@@ -11,6 +11,7 @@ export type * from "./PasswordResetChallenge";
 export type * from "./EmailVerification";
 export type * from "./EmployeeInvitation";
 export type * from "./MfaEnrollment";
+export type * from "./MfaChallenge";
 export type * from "./RecoveryCode";
 export type * from "./Product";
 export type * from "./ProductKitComponent";

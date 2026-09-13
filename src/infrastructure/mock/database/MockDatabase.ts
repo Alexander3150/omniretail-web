@@ -25,6 +25,7 @@ import type {
   InventoryTransfer,
   InventoryTransferItem,
   InventoryTransferRequest,
+  MfaChallenge,
   MfaEnrollment,
   Notification,
   Order,
@@ -87,6 +88,7 @@ export interface MockDatabase {
   emailVerifications: EmailVerification[];
   employeeInvitations: EmployeeInvitation[];
   mfaEnrollments: MfaEnrollment[];
+  mfaChallenges: MfaChallenge[];
   recoveryCodes: RecoveryCode[];
   products: Product[];
   productKitComponents: ProductKitComponent[];

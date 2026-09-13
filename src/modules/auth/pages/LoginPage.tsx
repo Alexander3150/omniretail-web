@@ -46,6 +46,11 @@ export function LoginPage() {
     tenantLoading,
     lockoutSecondsRemaining,
     submit,
+    pendingChallenge,
+    mfaCode,
+    setMfaCode,
+    submitMfaChallenge,
+    cancelMfaChallenge,
   } = useLogin();
   const { showToast } = useToast();
   const isLockedOut = lockoutSecondsRemaining > 0;
@@ -59,6 +64,67 @@ export function LoginPage() {
       description: "Simulado -- no disponible en este entorno de demostracion.",
       tone: "info",
     });
+  }
+
+  // PR13 (MFA, R-A16): segundo paso del MISMO formulario, no una ruta
+  // nueva -- se oculta email/password y se pide el código.
+  if (pendingChallenge) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[var(--color-app-background)] px-6 py-10">
+        <section className="w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-8">
+          <p className="text-sm font-semibold uppercase text-[var(--color-text-muted)]">OmniRetail</p>
+          <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">Verificación en dos pasos</h1>
+          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+            Ingresa el código de tu{" "}
+            {pendingChallenge.method === "totp" ? "aplicación de autenticación" : "correo"}.
+          </p>
+
+          {/* Solo existe porque este entorno de demostración no tiene un
+              canal real de entrega (SMS/app/correo) -- nunca existiría en
+              producción. Mismo criterio de transparencia dummy que ya se
+              usa en registro/recuperación de contraseña. */}
+          <p className="mt-3 rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
+            Modo demo: tu código es <strong>{pendingChallenge.demoCodeMock}</strong>
+          </p>
+
+          <form
+            className="mt-6 space-y-4"
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitMfaChallenge();
+            }}
+          >
+            {formError ? <InlineAlert title={formError} tone="danger" /> : null}
+
+            <FormField id="login-mfa-code" label="Código de verificación">
+              <Input
+                autoComplete="one-time-code"
+                disabled={isSubmitting}
+                id="login-mfa-code"
+                inputMode="numeric"
+                onChange={(event) => setMfaCode(event.target.value)}
+                placeholder="123456"
+                value={mfaCode}
+              />
+            </FormField>
+
+            <Button className="w-full" disabled={isSubmitting || !mfaCode.trim()} type="submit">
+              {isSubmitting ? "Verificando..." : "Verificar"}
+            </Button>
+            <Button
+              className="w-full"
+              disabled={isSubmitting}
+              onClick={cancelMfaChallenge}
+              type="button"
+              variant="secondary"
+            >
+              Volver
+            </Button>
+          </form>
+        </section>
+      </main>
+    );
   }
 
   return (

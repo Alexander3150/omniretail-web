@@ -8,9 +8,9 @@ Responsabilidad: e-commerce publico y parte privada comercial: catalogo, detalle
 
 ## Andy
 
-Modulos: `auth`, `customer`.
+Modulos: `auth`, `customer`, `support`.
 
-Responsabilidad: login, registro, recuperacion, sesion, perfil, direcciones, metodos de pago guardados, seguridad y perfil de empleado basico.
+Responsabilidad: login, registro, recuperacion, sesion, perfil, direcciones, metodos de pago guardados, seguridad (incluye MFA), perfil de empleado basico, y el widget de asistente de soporte (V-WEB-09: boton flotante, FAQ y escalado humano) visible en todo el storefront publico.
 
 ## Jose
 
