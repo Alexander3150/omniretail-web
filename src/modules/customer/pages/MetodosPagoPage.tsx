@@ -281,6 +281,7 @@ export function MetodosPagoPage() {
                 disabled={busy}
                 id="payment-year"
                 inputMode="numeric"
+                maxLength={4}
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, expirationYear: event.target.value }))
                 }

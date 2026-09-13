@@ -4,7 +4,7 @@ import type {
   CustomerPaymentMethodRepository,
   UpdateCustomerPaymentMethodInput,
 } from "@/core/repositories";
-import { CARD_BRANDS } from "@/config/card-brands";
+import { CARD_BRANDS, MAX_EXPIRATION_YEARS_AHEAD } from "@/config/card-brands";
 import { GUATEMALA_BANKS } from "@/config/guatemala-banks";
 import { CustomerPaymentMethodStatus, PaymentMethod } from "@/core/enums";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
@@ -289,6 +289,13 @@ export class MockCustomerPaymentMethodRepository
       (input.expirationYear === currentYear && input.expirationMonth < currentMonth);
     if (isPast) {
       throw new Error("CustomerPaymentMethod expiration date must be the current month or later");
+    }
+    // Ninguna red de tarjetas emite una vigencia mayor a este margen --
+    // sin este limite, un año como 2240 pasaba por no estar en el pasado.
+    if (input.expirationYear > currentYear + MAX_EXPIRATION_YEARS_AHEAD) {
+      throw new Error(
+        `CustomerPaymentMethod expirationYear must not be more than ${MAX_EXPIRATION_YEARS_AHEAD} years ahead`,
+      );
     }
   }
 
