@@ -120,15 +120,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       const tenantId = user?.tenantId ?? "tenant-demo";
 
       // Auto-unlock if the lockout window already elapsed.
-      if (
-        account.status === AccountStatus.temporarily_locked &&
-        account.lockedUntil &&
-        new Date(account.lockedUntil) <= now
-      ) {
-        account.status = AccountStatus.active;
-        account.failedLoginAttempts = 0;
-        account.lockedUntil = undefined;
-      }
+      this.applyAutoUnlockIfExpired(account, now);
 
       if (account.status !== AccountStatus.active) {
         this.logAuthAudit(db, {
@@ -280,6 +272,31 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       const account = db.authAccounts.find((item) => item.userId === challenge.userId);
       const tenantId = user?.tenantId ?? "tenant-demo";
 
+      // Hardening post-auditoria (PR14): un challenge puede seguir "vivo"
+      // (sus propios MFA_CHALLENGE_MAX_ATTEMPTS todavia no se agotaron)
+      // aunque la cuenta YA este bloqueada -- el contador compartido de
+      // registerFailedAuthAttempt (login_failed + mfa_failed juntos) puede
+      // alcanzar el umbral de lockout antes que el limite propio del
+      // challenge. Sin este chequeo, un codigo MFA o recovery code
+      // correcto completaba la autenticacion igual, evadiendo el lockout
+      // que se acababa de aplicar. account.status es la MISMA fuente de
+      // verdad que usa login() (via applyAutoUnlockIfExpired) -- no se
+      // duplica la regla de tiempo/ventana, solo se consulta aca tambien.
+      if (account) {
+        this.applyAutoUnlockIfExpired(account, now);
+        if (account.status !== AccountStatus.active) {
+          // No se toca el challenge ni se llama a consumeMfaCode: un
+          // recovery code valido NO debe consumirse en un intento que de
+          // todos modos se va a rechazar, y el codigo MFA es reutilizable
+          // (no tiene sentido "gastarlo" en un rechazo). El mensaje al
+          // usuario es el mismo "challenge ya no disponible" que cuando
+          // expira -- reintentar login() desde cero mostrara el error
+          // generico de siempre (R-A13: no revelar que la causa fue
+          // lockout).
+          return { ok: false as const, retriable: false };
+        }
+      }
+
       const codeIsValid = this.consumeMfaCode(db, challenge.userId, codeMock);
       if (!codeIsValid) {
         // challenge.failedAttempts sigue siendo su propio contador (5 por
@@ -320,6 +337,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
           accountId: account.id,
           action: "login_success",
         });
+        account.status = AccountStatus.active;
         account.failedLoginAttempts = 0;
         account.lockedUntil = undefined;
         account.updatedAt = this.now();
@@ -1188,6 +1206,24 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       metadata: entry.metadata,
       createdAt: this.now(),
     });
+  }
+  /**
+   * Si el lockout ya vencio (lockedUntil <= now), restaura la cuenta a
+   * estado operable ANTES de evaluar credenciales. Unica fuente de verdad
+   * para "sigue bloqueada la cuenta" -- compartida por login() y
+   * verifyMfaChallenge() (hardening post-auditoria del PR14) para que
+   * ninguna de las dos rutas pueda desincronizarse de la otra.
+   */
+  private applyAutoUnlockIfExpired(account: AuthAccount, now: Date): void {
+    if (
+      account.status === AccountStatus.temporarily_locked &&
+      account.lockedUntil &&
+      new Date(account.lockedUntil) <= now
+    ) {
+      account.status = AccountStatus.active;
+      account.failedLoginAttempts = 0;
+      account.lockedUntil = undefined;
+    }
   }
   /**
    * Contabiliza un fallo de autenticacion -- password incorrecta (login())
