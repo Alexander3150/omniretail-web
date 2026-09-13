@@ -144,6 +144,9 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
       providerPaymentMethodId:
         method.providerPaymentMethodId ?? `pm_demo_${method.id ?? crypto.randomUUID()}`,
       brand: method.brand ?? "unknown",
+      // Backfill para datos persistidos antes de que issuingBank existiera
+      // -- nunca debe faltar en un CustomerPaymentMethod ya construido.
+      issuingBank: method.issuingBank ?? "Banco Industrial",
       last4: method.last4 ?? "0000",
       expirationMonth: method.expirationMonth ?? method.expiryMonth ?? 1,
       expirationYear: method.expirationYear ?? method.expiryYear ?? 2099,

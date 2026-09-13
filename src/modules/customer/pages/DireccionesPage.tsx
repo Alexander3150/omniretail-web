@@ -9,12 +9,14 @@ import {
   validateAddressForm,
   type AddressValidationErrors,
 } from "@/modules/customer/validation/address.validation";
+import { GUATEMALA_DEPARTMENTS } from "@/config/guatemala-locations";
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
 import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
+import { Select } from "@/shared/components/Select";
 import { useToast } from "@/shared/components/Toast";
 
 const EMPTY_FORM: AddressFormDto = {
@@ -263,26 +265,46 @@ export function DireccionesPage() {
               />
             </FormField>
 
-            <FormField hint="Opcional" id="address-state" label="Departamento / estado">
-              <Input
+            <FormField
+              error={fieldErrors.stateOrDepartment}
+              hint="Opcional"
+              id="address-state"
+              label="Departamento / estado"
+            >
+              <Select
                 disabled={busy}
                 id="address-state"
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, stateOrDepartment: event.target.value }))
                 }
                 value={form.stateOrDepartment}
-              />
+              >
+                <option value="">Selecciona un departamento</option>
+                {GUATEMALA_DEPARTMENTS.map((department) => (
+                  <option key={department} value={department}>
+                    {department}
+                  </option>
+                ))}
+              </Select>
             </FormField>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <FormField hint="Opcional" id="address-postal" label="Código postal">
+            <FormField
+              error={fieldErrors.postalCode}
+              hint="Opcional"
+              id="address-postal"
+              label="Código postal"
+            >
               <Input
                 disabled={busy}
                 id="address-postal"
+                inputMode="numeric"
+                maxLength={5}
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, postalCode: event.target.value }))
                 }
+                placeholder="01001"
                 value={form.postalCode}
               />
             </FormField>

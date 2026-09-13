@@ -1,4 +1,5 @@
 import { validatePasswordAgainstPolicy } from "@/config/auth-policy";
+import { validatePhoneNumber } from "@/config/contact-policy";
 import type { RegisterFormDto } from "@/modules/auth/application/dto/RegisterFormDto";
 
 export type RegisterFormValidationErrors = Partial<
@@ -28,9 +29,12 @@ export function validateRegisterForm(dto: RegisterFormDto): RegisterFormValidati
   }
 
   // Telefono es opcional (RegisterCustomerInput.phone?) -- solo se valida
-  // si el usuario escribio algo.
-  if (dto.phone.trim() && dto.phone.trim().length < 8) {
-    errors.phone = "Ingresa un teléfono válido.";
+  // si el usuario escribio algo. Antes solo chequeaba el largo minimo,
+  // sin exigir que fueran solo digitos (ej. "abcdefgh" pasaba). Funcion
+  // canonica compartida con profile.validation.ts.
+  const phoneError = validatePhoneNumber(dto.phone);
+  if (phoneError) {
+    errors.phone = phoneError;
   }
 
   // Antes esto duplicaba a mano las reglas de PASSWORD_POLICY (longitud,

@@ -28,13 +28,15 @@ export async function createPaymentMethod(
   dto: PaymentMethodFormDto,
 ): Promise<CustomerPaymentMethod> {
   const context = await resolveCustomerAuthorizationContext(repositories);
-  // brand/last4/expiracion/titular son los unicos campos que vienen del
-  // formulario -- tenantId/customerId salen del contexto resuelto, y
-  // type/providerPaymentMethodId/isDefault los fija el repositorio.
+  // brand/issuingBank/last4/expiracion/titular son los unicos campos que
+  // vienen del formulario -- tenantId/customerId salen del contexto
+  // resuelto, y type/providerPaymentMethodId/isDefault los fija el
+  // repositorio.
   return repositories.customerPaymentMethods.create({
     tenantId: context.tenantId,
     customerId: context.customerId,
     brand: dto.brand.trim(),
+    issuingBank: dto.issuingBank.trim(),
     last4: dto.last4.trim(),
     expirationMonth: Number(dto.expirationMonth),
     expirationYear: Number(dto.expirationYear),
