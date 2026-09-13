@@ -11,6 +11,19 @@ export class MockBranchRepository extends BaseMockRepository implements BranchRe
   async getActive() {
     return this.read((db) => db.branches.filter((item) => item.status === BranchStatus.active));
   }
+  async getActiveByTenantAndType(
+    tenantId: Parameters<BranchRepository["getActiveByTenantAndType"]>[0],
+    type: Parameters<BranchRepository["getActiveByTenantAndType"]>[1],
+  ) {
+    return this.read((db) =>
+      db.branches.filter(
+        (item) =>
+          item.tenantId === tenantId &&
+          item.type === type &&
+          item.status === BranchStatus.active,
+      ),
+    );
+  }
   async create(input: Parameters<BranchRepository["create"]>[0]) {
     const item = this.store.mutate((db) => {
       const now = this.now();

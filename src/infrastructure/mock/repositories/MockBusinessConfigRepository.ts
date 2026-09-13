@@ -36,7 +36,15 @@ export class MockBusinessConfigRepository
       if (index < 0) throw this.missing("EcommerceConfig", tenantId);
       db.ecommerceConfigs[index] = {
         ...db.ecommerceConfigs[index],
-        ...input,
+        enabled: input.enabled,
+        storeName: input.storeName,
+        contactPhone: input.contactPhone,
+        contactEmail: input.contactEmail,
+        requireAccountForCheckout: input.requireAccountForCheckout,
+        guestTrackingEnabled: input.guestTrackingEnabled,
+        allowedDeliveryMethods: [...input.allowedDeliveryMethods],
+        allowedPaymentMethods: [...input.allowedPaymentMethods],
+        defaultBranchId: input.defaultBranchId,
         updatedAt: this.now(),
       };
       return db.ecommerceConfigs[index];

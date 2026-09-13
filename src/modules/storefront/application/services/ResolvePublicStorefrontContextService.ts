@@ -17,14 +17,18 @@ export interface PublicStorefrontContext {
 export class ResolvePublicStorefrontContextService {
   constructor(private readonly repositories: PublicStorefrontRepositories) {}
 
-  async execute(): Promise<PublicStorefrontContext> {
+  async execute(options: { allowDisabled?: boolean } = {}): Promise<PublicStorefrontContext> {
     const tenant = await this.repositories.tenants.getBySlug(publicStorefrontSlug);
     if (!tenant || tenant.status !== TenantStatus.active) {
       throw new Error("La tienda pública no está disponible.");
     }
 
     const ecommerceConfig = await this.repositories.businessConfig.getEcommerceConfig(tenant.id);
-    if (!ecommerceConfig?.enabled || ecommerceConfig.tenantId !== tenant.id) {
+    if (
+      !ecommerceConfig ||
+      ecommerceConfig.tenantId !== tenant.id ||
+      (!options.allowDisabled && !ecommerceConfig.enabled)
+    ) {
       throw new Error("La tienda pública no está disponible.");
     }
 

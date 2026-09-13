@@ -136,6 +136,8 @@ function toInputDto(config: EcommerceConfigInputDto): EcommerceConfigInputDto {
   return {
     enabled: config.enabled,
     storeName: config.storeName,
+    contactPhone: config.contactPhone,
+    contactEmail: config.contactEmail,
     requireAccountForCheckout: config.requireAccountForCheckout,
     guestTrackingEnabled: config.guestTrackingEnabled,
     allowedDeliveryMethods: [...config.allowedDeliveryMethods],

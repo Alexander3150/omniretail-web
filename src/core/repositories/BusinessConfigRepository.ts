@@ -1,4 +1,18 @@
 import type { BusinessCapabilitiesConfig, EcommerceConfig } from "@/core/entities";
+
+export type UpdateEcommerceConfigInput = Pick<
+  EcommerceConfig,
+  | "enabled"
+  | "storeName"
+  | "contactPhone"
+  | "contactEmail"
+  | "requireAccountForCheckout"
+  | "guestTrackingEnabled"
+  | "allowedDeliveryMethods"
+  | "allowedPaymentMethods"
+  | "defaultBranchId"
+>;
+
 export interface BusinessConfigRepository {
   getCapabilities(tenantId: string): Promise<BusinessCapabilitiesConfig | null>;
   updateCapabilities(
@@ -8,6 +22,6 @@ export interface BusinessConfigRepository {
   getEcommerceConfig(tenantId: string): Promise<EcommerceConfig | null>;
   updateEcommerceConfig(
     tenantId: string,
-    input: Partial<EcommerceConfig>,
+    input: UpdateEcommerceConfigInput,
   ): Promise<EcommerceConfig>;
 }
