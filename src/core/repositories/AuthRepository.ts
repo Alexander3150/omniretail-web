@@ -346,8 +346,9 @@ export interface AuthRepository {
    * demás sesiones", no todas.
    *
    * Genérico por diseño (sirve para cualquier AuthAccount, Customer o
-   * Employee) aunque este PR solo lo conecta desde la UI de "Mi Cuenta" del
-   * cliente -- una pantalla equivalente para empleados no existe todavía.
+   * Employee) -- desde PR13 se conecta tanto desde "Mi Cuenta" del cliente
+   * (SeguridadPage) como desde "Mi perfil" del empleado
+   * (EmployeeSeguridadPage), sin duplicar esta lógica.
    */
   changePassword(input: ChangePasswordInput): Promise<void>;
 }
