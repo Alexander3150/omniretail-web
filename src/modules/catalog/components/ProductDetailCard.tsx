@@ -1,8 +1,7 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element */
-
 import { StatusBadge } from "@/shared/components/StatusBadge";
+import { CatalogImage } from "@/modules/catalog/components/CatalogImage";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
 import type { ProductDetailViewModel } from "@/modules/catalog/types/catalog.types";
 import {
@@ -20,10 +19,11 @@ export function ProductDetailCard({ detail }: ProductDetailCardProps) {
 
   return (
     <section className="grid gap-6 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5 lg:grid-cols-[280px_1fr]">
-      <img
+      <CatalogImage
         alt={product.name}
         className="mx-auto aspect-square w-full max-w-72 rounded-md border border-[var(--color-border)] object-cover lg:mx-0"
-        src={detail.imageUrl}
+        source={detail.imageSource}
+        tenantId={product.tenantId}
       />
       <div className="space-y-5">
         <div>

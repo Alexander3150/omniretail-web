@@ -24,7 +24,7 @@ Implementado en esta rama:
 
 - Listado, busqueda, filtros, paginacion y detalle de productos.
 - Creacion, edicion y archivo mediante `ProductRepository`.
-- Imagen principal mediante `ProductMediaRepository`, con fallback visual.
+- Hasta seis imagenes mediante `ProductMediaRepository`; acepta URLs legacy y uploads procesados en `CatalogImageAssetRepository`/IndexedDB, con principal, orden, alt, reemplazo, borrado y fallback visual.
 - Opciones de categoria, unidad y capacidades de negocio desde repositories.
 - Tracking adaptable por `BusinessCapabilitiesConfig`; productos `service` fuerzan tracking inactivo.
 - Capacidades del negocio aplicadas de verdad, no solo mostradas: sin `supportsServices` o
@@ -36,12 +36,20 @@ Implementado en esta rama:
   llegue desde otro consumidor.
 - Rutas privadas `/catalogo/productos`, `/catalogo/productos/nuevo`, `/catalogo/productos/[id]` y `/catalogo/productos/[id]/editar`.
 
+## Catalogo demo
+
+Las bases mock nuevas reciben el catalogo coherente de **Ferreteria Los Simpson**: 10 categorias
+principales y 30 productos fisicos, con atributos, precios por cantidad, proveedor, configuracion
+de inventario, balance por ubicacion y una imagen principal estatica por producto. No crea kits ni
+servicios, aunque esos contratos de dominio siguen disponibles. El cambio del seed no migra ni
+reinicia automaticamente una base ya persistida en el navegador.
+
 ## Gestion de categorias
 
 Implementado en esta rama:
 
 - Listado, busqueda, filtro por estado, paginacion y panel contextual de categorias.
-- Creacion, edicion, archivo y restauracion mediante `CategoryRepository`.
+- Creacion, edicion, archivo y restauracion mediante `CategoryRepository`, incluida una imagen opcional que reutiliza el pipeline multimedia sin alterar slug ni jerarquia.
 - Conteo real de productos asociados desde `ProductRepository`.
 - Ruta privada `/catalogo/categorias`.
 

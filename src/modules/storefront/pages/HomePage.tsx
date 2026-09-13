@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { StorefrontProductCard } from "@/modules/storefront/components/StorefrontProductCard";
+import { StorefrontCatalogImage } from "@/modules/storefront/components/StorefrontCatalogImage";
 import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
 import { useStorefrontOffers } from "@/modules/storefront/hooks/useStorefrontOffers";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
@@ -149,6 +150,11 @@ export function HomePage() {
                 className="min-w-52 snap-start rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm transition hover:-translate-y-1 hover:border-[var(--color-primary)]"
                 href={`/catalogo?categoria=${category.id}`}
               >
+                <StorefrontCatalogImage
+                  alt={category.name}
+                  className="mb-4 h-28 w-full rounded-xl bg-white/10 object-cover"
+                  source={category.imageSource}
+                />
                 <span className="text-sm font-black text-[var(--color-primary-hover)]">
                   0{index + 1}
                 </span>

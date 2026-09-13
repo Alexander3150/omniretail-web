@@ -1,4 +1,5 @@
 import type { BusinessCapabilitiesConfig, Product, ProductMedia } from "@/core/entities";
+import { getProductMediaSource, isSafeCatalogImageUrl } from "@/core/media/catalogImage";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { normalizeSku } from "@/shared/utils/normalizeSku";
 import type {
@@ -14,7 +15,6 @@ import { ProductMapper } from "@/modules/catalog/application/mappers/ProductMapp
 import {
   applyCapabilityRulesToEditor,
   hasValidationErrors,
-  isValidProductImageUrl,
   validateProductDto,
 } from "@/modules/catalog/validation/product.validation";
 import {
@@ -71,9 +71,11 @@ export async function validateEditorProduct(
   ) {
     throw new CatalogServiceError("La equivalencia de venta debe tener cantidades mayores a 0.");
   }
-  const invalidMedia = normalizedDto.media.find(
-    (media) => media.url.trim() && !isValidProductImageUrl(media.url.trim()),
-  );
+  const invalidMedia = normalizedDto.media.find((media) => {
+    if (media.pendingUpload || media.source?.kind === "mockAsset") return false;
+    const url = media.source?.kind === "url" ? media.source.src : media.url;
+    return !isSafeCatalogImageUrl(url);
+  });
   if (invalidMedia) {
     throw new CatalogServiceError("Cada imagen debe iniciar con / o una URL http(s).");
   }
@@ -173,7 +175,7 @@ export async function syncEditorRelatedData(
     product.productType === "kit"
       ? Promise.resolve([])
       : syncSupplierProducts(repositories, product, dto),
-    syncMedia(repositories, product, dto.media),
+    syncProductMedia(repositories, product, dto.media),
   ]);
 }
 
@@ -335,30 +337,61 @@ async function syncSupplierProducts(
   );
 }
 
-async function syncMedia(
+export async function syncProductMedia(
   repositories: RepositoryRegistry,
   product: Product,
   mediaValues: ProductMediaEditorValue[],
 ) {
   const current = await repositories.productMedia.getByProduct(product.id);
   const nextIds = new Set<string>();
+  if (mediaValues.length > 6) throw new CatalogServiceError("Puedes guardar hasta 6 imagenes.");
   const normalizedMedia = mediaValues
-    .filter((item) => item.url.trim())
+    .filter((item) => item.pendingUpload || item.source || item.url.trim())
     .map((item, index) => ({
       ...item,
-      url: item.url.trim(),
+      url:
+        item.source?.kind === "url" && !item.url.trim() ? item.source.src.trim() : item.url.trim(),
       isPrimary: item.isPrimary,
       sortOrder: index + 1,
     }));
   const hasPrimary = normalizedMedia.some((item) => item.isPrimary);
+  const previousAssetIds = new Set(
+    current.flatMap((item) => {
+      const source = getProductMediaSource(item);
+      return source?.kind === "mockAsset" ? [source.assetId] : [];
+    }),
+  );
 
   for (const [index, media] of normalizedMedia.entries()) {
+    if (!media.pendingUpload && media.source?.kind === "mockAsset") {
+      const ownedAsset = await repositories.catalogImageAssets.get(
+        product.tenantId,
+        media.source.assetId,
+      );
+      if (!ownedAsset) throw new CatalogServiceError("La imagen local ya no esta disponible.");
+    }
+    const newAssetId = media.pendingUpload ? crypto.randomUUID() : null;
+    if (newAssetId && media.pendingUpload) {
+      await repositories.catalogImageAssets.put(
+        {
+          id: newAssetId,
+          tenantId: product.tenantId,
+          mimeType: media.pendingUpload.mimeType,
+          byteSize: media.pendingUpload.byteSize,
+          width: media.pendingUpload.width,
+          height: media.pendingUpload.height,
+          createdAt: new Date().toISOString(),
+        },
+        media.pendingUpload.blob,
+      );
+    }
     const input: ProductMedia = {
       id: media.id ?? "",
       tenantId: product.tenantId,
       productId: product.id,
       type: media.type,
       url: media.url,
+      source: newAssetId ? { kind: "mockAsset", assetId: newAssetId } : media.source,
       alt: media.alt?.trim() || product.name,
       isPrimary: hasPrimary ? media.isPrimary : index === 0,
       sortOrder: media.sortOrder,
@@ -366,18 +399,25 @@ async function syncMedia(
         current.find((item) => item.id === media.id)?.createdAt ?? new Date().toISOString(),
     };
 
-    const saved = media.id
-      ? await repositories.productMedia.update(input)
-      : await repositories.productMedia.add({
-          tenantId: input.tenantId,
-          productId: input.productId,
-          type: input.type,
-          url: input.url,
-          alt: input.alt,
-          isPrimary: input.isPrimary,
-          sortOrder: input.sortOrder,
-          createdAt: input.createdAt,
-        });
+    let saved: ProductMedia;
+    try {
+      saved = media.id
+        ? await repositories.productMedia.update(input)
+        : await repositories.productMedia.add({
+            tenantId: input.tenantId,
+            productId: input.productId,
+            type: input.type,
+            url: input.url,
+            source: input.source,
+            alt: input.alt,
+            isPrimary: input.isPrimary,
+            sortOrder: input.sortOrder,
+            createdAt: input.createdAt,
+          });
+    } catch (error) {
+      if (newAssetId) await repositories.catalogImageAssets.remove(product.tenantId, newAssetId);
+      throw error;
+    }
     nextIds.add(saved.id);
   }
 
@@ -386,6 +426,39 @@ async function syncMedia(
       .filter((media) => !nextIds.has(media.id))
       .map((media) => repositories.productMedia.remove(media.id)),
   );
+
+  const nextMedia = await repositories.productMedia.getByProduct(product.id);
+  const nextAssetIds = new Set(
+    nextMedia.flatMap((item) => {
+      const source = getProductMediaSource(item);
+      return source?.kind === "mockAsset" ? [source.assetId] : [];
+    }),
+  );
+  await Promise.all(
+    [...previousAssetIds]
+      .filter((assetId) => !nextAssetIds.has(assetId))
+      .map((assetId) => removeAssetIfOrphaned(repositories, product.tenantId, assetId)),
+  );
+}
+
+export async function removeAssetIfOrphaned(
+  repositories: RepositoryRegistry,
+  tenantId: string,
+  assetId: string,
+) {
+  const [productReferences, categories] = await Promise.all([
+    repositories.productMedia.getByAssetId(tenantId, assetId),
+    repositories.categories.getAll(),
+  ]);
+  const categoryReference = categories.some(
+    (category) =>
+      category.tenantId === tenantId &&
+      category.image?.kind === "mockAsset" &&
+      category.image.assetId === assetId,
+  );
+  if (productReferences.length === 0 && !categoryReference) {
+    await repositories.catalogImageAssets.remove(tenantId, assetId);
+  }
 }
 
 function assertUniquePositiveSalesTiers(tiers: ProductEditorDto["salesPriceTiers"]) {

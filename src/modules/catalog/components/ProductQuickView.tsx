@@ -1,13 +1,12 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element */
-
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Promotion } from "@/core/entities";
 import { ProductStatus, ProductType, PromotionStatus, PromotionType } from "@/core/enums";
 import { calculateEffectivePrice } from "@/core/pricing";
 import { Button } from "@/shared/components/Button";
+import { CatalogImage } from "@/modules/catalog/components/CatalogImage";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
 import { cn } from "@/shared/utils/cn";
@@ -168,10 +167,11 @@ function QuickViewGeneral({ detail }: { detail: ProductQuickViewModel }) {
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-app-background)] p-3">
-        <img
+        <CatalogImage
           alt={product.name}
           className="mx-auto h-44 max-h-56 w-full object-contain sm:h-56"
-          src={detail.imageUrl}
+          source={detail.imageSource}
+          tenantId={product.tenantId}
         />
       </div>
       {activePromotion && effectivePrice ? (

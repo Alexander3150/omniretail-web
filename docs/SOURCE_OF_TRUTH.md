@@ -27,11 +27,17 @@ Termino visible estandar: Codigo / SKU. Diferenciar `id`, `sku`, `barcode` opcio
 
 ## Product Media
 
-`Product` y `ProductMedia` son conceptos separados. Product no contiene imagenes directamente; ProductMedia guarda referencias URL/path y permite cero, una o multiples imagenes por producto. Solo una imagen debe ser primaria y `sortOrder` define el orden visual.
+`Product` y `ProductMedia` son conceptos separados. Product no contiene imagenes directamente; ProductMedia guarda una fuente `url` o `mockAsset` y conserva `url` para compatibilidad con registros legacy. Permite cero, una o multiples imagenes por producto. Solo una imagen debe ser primaria y `sortOrder` define el orden visual.
 
-Las imagenes demo actuales viven en `public/images/products/`. Los modulos deben consultar `ProductMediaRepository`; no deben importar `demoSeed` ni resolver logica leyendo `public/` directamente. `placeholder-product.webp` se usa solo como fallback de UI.
+Las imagenes demo actuales viven en `public/images/products/`. Los modulos deben consultar `ProductMediaRepository`; no deben importar `demoSeed` ni resolver logica leyendo `public/` directamente. `placeholder-product.webp` se usa solo como fallback de UI. Los uploads mock se guardan como Blob mediante `CatalogImageAssetRepository` (IndexedDB), nunca dentro de `MockDatabaseStore`/LocalStorage. `Category.image` es presentacion opcional y usa la misma fuente.
 
-En una feature futura, Catalog / Crear-Editar Producto podra usar `FileUpload -> preview local -> ProductMediaRepository`. Durante el frontend mock no guardar imagenes grandes/base64 en LocalStorage. Con backend real el flujo sera `FileUpload -> API -> Storage/CDN -> URL -> ProductMedia`.
+El seed canonico para instalaciones mock nuevas representa Ferreteria Los Simpson con exactamente
+10 categorias y 30 productos fisicos. Sus existencias viven en `InventoryBalance`, sus minimos en
+`ProductInventorySettings`, y atributos, escalas de precio y relaciones de proveedor usan sus
+contratos propios. Cambiar `demoSeed` nunca autoriza a borrar ni reemplazar automaticamente
+`omniretail.mock.database.v1`; una base local ya persistida conserva los datos del usuario.
+
+Catalog / Crear-Editar Producto usa `FileUpload -> procesamiento/preview local -> CatalogImageAssetRepository -> ProductMediaRepository`. El asset se persiste antes de su referencia y se compensa si la referencia falla; reemplazo y borrado eliminan el Blob solo cuando ya no tiene referencias. Con backend real el adapter puede cambiar a `API -> Storage/CDN` sin cambiar el contrato de presentacion.
 
 ## Trazabilidad Adaptable
 

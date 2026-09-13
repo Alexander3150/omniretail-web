@@ -7,6 +7,7 @@ import {
   resolveTenantId,
 } from "@/modules/catalog/application/services/serviceHelpers";
 import { normalizeCategoryCode } from "@/modules/catalog/validation/category.validation";
+import { removeAssetIfOrphaned } from "@/modules/catalog/application/services/productEditorHelpers";
 
 export class SaveCategoryService {
   constructor(private readonly repositories: RepositoryRegistry) {}
@@ -15,24 +16,80 @@ export class SaveCategoryService {
     const tenantId = await resolveTenantId(this.repositories);
     if (!tenantId) throw new CatalogServiceError("No se pudo resolver el negocio activo.");
 
-    return this.repositories.categories.create({
-      tenantId,
-      parentId: dto.parentId || undefined,
-      name: dto.name.trim(),
-      slug: normalizeCategoryCode(dto.code),
-      description: cleanDescription(dto.description),
-      status: dto.status,
-    });
+    await this.assertExistingImageOwnership(tenantId, dto);
+    const newAssetId = await this.storePendingImage(tenantId, dto);
+    try {
+      return await this.repositories.categories.create({
+        tenantId,
+        parentId: dto.parentId || undefined,
+        name: dto.name.trim(),
+        slug: normalizeCategoryCode(dto.code),
+        description: cleanDescription(dto.description),
+        image: newAssetId ? { kind: "mockAsset", assetId: newAssetId } : dto.image,
+        status: dto.status,
+      });
+    } catch (error) {
+      if (newAssetId) await this.repositories.catalogImageAssets.remove(tenantId, newAssetId);
+      throw error;
+    }
   }
 
   async update(categoryId: string, dto: CategoryEditorDto): Promise<Category> {
-    return this.repositories.categories.update(categoryId, {
-      parentId: dto.parentId || undefined,
-      name: dto.name.trim(),
-      slug: normalizeCategoryCode(dto.code),
-      description: cleanDescription(dto.description),
-      status: dto.status,
-    });
+    const tenantId = await resolveTenantId(this.repositories);
+    const current = await this.repositories.categories.getById(categoryId);
+    if (!tenantId || !current || current.tenantId !== tenantId) {
+      throw new CatalogServiceError("No se pudo resolver la categoria actual.");
+    }
+    await this.assertExistingImageOwnership(tenantId, dto);
+    const newAssetId = await this.storePendingImage(tenantId, dto);
+    const previousAssetId = current.image?.kind === "mockAsset" ? current.image.assetId : undefined;
+    let updated: Category;
+    try {
+      updated = await this.repositories.categories.update(categoryId, {
+        parentId: dto.parentId || undefined,
+        name: dto.name.trim(),
+        slug: normalizeCategoryCode(dto.code),
+        description: cleanDescription(dto.description),
+        image: dto.removeImage
+          ? undefined
+          : newAssetId
+            ? { kind: "mockAsset", assetId: newAssetId }
+            : dto.image,
+        status: dto.status,
+      });
+    } catch (error) {
+      if (newAssetId) await this.repositories.catalogImageAssets.remove(tenantId, newAssetId);
+      throw error;
+    }
+    const updatedAssetId = updated.image?.kind === "mockAsset" ? updated.image.assetId : undefined;
+    if (previousAssetId && previousAssetId !== updatedAssetId) {
+      await removeAssetIfOrphaned(this.repositories, tenantId, previousAssetId);
+    }
+    return updated;
+  }
+
+  private async storePendingImage(tenantId: string, dto: CategoryEditorDto) {
+    if (!dto.pendingImage) return null;
+    const id = crypto.randomUUID();
+    await this.repositories.catalogImageAssets.put(
+      {
+        id,
+        tenantId,
+        mimeType: dto.pendingImage.mimeType,
+        byteSize: dto.pendingImage.byteSize,
+        width: dto.pendingImage.width,
+        height: dto.pendingImage.height,
+        createdAt: new Date().toISOString(),
+      },
+      dto.pendingImage.blob,
+    );
+    return id;
+  }
+
+  private async assertExistingImageOwnership(tenantId: string, dto: CategoryEditorDto) {
+    if (dto.pendingImage || dto.removeImage || dto.image?.kind !== "mockAsset") return;
+    const asset = await this.repositories.catalogImageAssets.get(tenantId, dto.image.assetId);
+    if (!asset) throw new CatalogServiceError("La imagen local ya no esta disponible.");
   }
 
   async archive(categoryId: string): Promise<Category> {

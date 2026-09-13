@@ -1,12 +1,10 @@
 import type { ProductMedia } from "@/core/entities";
+import { getProductMediaSource, selectPrimaryProductMedia } from "@/core/media/catalogImage";
 
 export const PRODUCT_IMAGE_PLACEHOLDER = "/images/products/placeholder-product.webp";
 
 export function getProductImage(media: ProductMedia[]) {
-  const sortedMedia = [...media].sort((left, right) => left.sortOrder - right.sortOrder);
-  return (
-    sortedMedia.find((item) => item.isPrimary)?.url ??
-    sortedMedia[0]?.url ??
-    PRODUCT_IMAGE_PLACEHOLDER
-  );
+  const primary = selectPrimaryProductMedia(media);
+  const source = primary ? getProductMediaSource(primary) : null;
+  return source?.kind === "url" ? source.src : PRODUCT_IMAGE_PLACEHOLDER;
 }

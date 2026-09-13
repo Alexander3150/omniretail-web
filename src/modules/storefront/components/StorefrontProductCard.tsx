@@ -1,10 +1,10 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import type { StorefrontDiscoveryProductDto } from "@/modules/storefront/application/dto/StorefrontDiscoveryDto";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
+import { StorefrontCatalogImage } from "@/modules/storefront/components/StorefrontCatalogImage";
 
 export function StorefrontProductCard({ product }: { product: StorefrontDiscoveryProductDto }) {
   const { addProduct } = useStorefrontCart();
@@ -24,19 +24,11 @@ export function StorefrontProductCard({ product }: { product: StorefrontDiscover
         type="button"
       >
         <div className="relative">
-          {product.imageUrl ? (
-            <Image
-              alt={product.imageAlt ?? product.name}
-              className="h-48 w-full bg-slate-50 object-cover transition duration-500 group-hover:scale-[1.03]"
-              height={192}
-              src={product.imageUrl}
-              width={384}
-            />
-          ) : (
-            <div className="flex h-48 items-center justify-center bg-slate-100 text-sm text-[var(--color-text-muted)]">
-              Sin imagen disponible
-            </div>
-          )}
+          <StorefrontCatalogImage
+            alt={product.imageAlt ?? product.name}
+            className="h-48 w-full bg-slate-50 object-cover transition duration-500 group-hover:scale-[1.03]"
+            source={product.imageSource}
+          />
         </div>
         <div className="p-5 pb-3">
           {product.categoryName ? (

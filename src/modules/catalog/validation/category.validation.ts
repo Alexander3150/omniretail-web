@@ -25,6 +25,7 @@ export function buildDefaultCategoryDto(): CategoryEditorDto {
     description: "",
     parentId: "",
     status: CategoryStatus.active,
+    image: undefined,
   };
 }
 
@@ -35,6 +36,7 @@ export function categoryToDto(category: CategoryListItem): CategoryEditorDto {
     description: category.description ?? "",
     parentId: category.parentId ?? "",
     status: category.status,
+    image: category.image,
   };
 }
 

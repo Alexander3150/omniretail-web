@@ -10,7 +10,9 @@ REPOSITORY: contrato de acceso a datos definido en `src/core/repositories`.
 
 MOCK REPOSITORY: implementacion temporal frontend que usa `MockDatabaseStore`.
 
-`ProductMediaRepository` es el contrato compartido para consultar y administrar referencias de imagenes de producto sin acoplar modulos a seeds, LocalStorage o assets fisicos.
+`ProductMediaRepository` es el contrato compartido para consultar y administrar referencias de imagenes de producto sin acoplar modulos a seeds, LocalStorage o assets fisicos. Acepta el `url` legacy y la fuente discriminada `url | mockAsset`; `isPrimary`, luego `sortOrder`, determina la seleccion publica entre fuentes validas.
+
+`CatalogImageAssetRepository` persiste Blob y metadata (`id`, `tenantId`, MIME, bytes, dimensiones y fecha) fuera de `MockDatabaseStore`. `get` y `remove` exigen el tenant propietario. La implementacion frontend usa IndexedDB y los consumidores renderizan un `mockAsset` mediante Object URL temporal con revocacion al cambiar o desmontar.
 
 `EcommerceConfig` conserva la configuración administrativa de la tienda y admite `contactPhone`/`contactEmail` opcionales. Su actualización usa un input explícito y el boundary administrativo reconstruye `Session -> User activo -> Tenant activo -> Role del mismo tenant`, exigiendo `admin.ecommerce_config.manage`; `tenantId`, actor y permisos nunca provienen del caller.
 

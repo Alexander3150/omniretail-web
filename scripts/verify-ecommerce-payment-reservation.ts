@@ -6,6 +6,7 @@ import {
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  ProductType,
   TransportMode,
 } from "@/core/enums";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
@@ -45,6 +46,79 @@ function createHarness(physicalQuantity: number, reservedQuantity = 0) {
     assert.ok(balance);
     balance.quantity = physicalQuantity;
     balance.reservedQuantity = reservedQuantity;
+    const template = db.products.find((item) => item.id === physicalProductId);
+    assert.ok(template);
+    const now = "2026-01-01T12:00:00.000Z";
+    db.products.push(
+      {
+        ...template,
+        id: "prod-install",
+        sku: "HARNESS-SERVICE",
+        barcode: undefined,
+        name: "Servicio fixture",
+        productType: ProductType.service,
+        salePrice: 250,
+        tracking: { stock: false, lot: false, expiration: false, serial: false },
+      },
+      {
+        ...template,
+        id: "prod-analgesic",
+        sku: "HARNESS-COMPONENT",
+        barcode: undefined,
+        name: "Componente físico fixture",
+        tracking: { stock: true, lot: true, expiration: false, serial: false },
+      },
+      {
+        ...template,
+        id: "prod-kit",
+        sku: "HARNESS-KIT",
+        barcode: undefined,
+        name: "Kit fixture",
+        productType: ProductType.kit,
+        tracking: { stock: false, lot: false, expiration: false, serial: false },
+      },
+    );
+    db.productKitComponents.push(
+      {
+        id: "harness-kit-component-a",
+        tenantId,
+        kitProductId: "prod-kit",
+        componentProductId: "prod-analgesic",
+        quantityPerKit: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "harness-kit-component-b",
+        tenantId,
+        kitProductId: "prod-kit",
+        componentProductId: physicalProductId,
+        quantityPerKit: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+    );
+    db.inventoryBalances.push({
+      id: "bal-analgesic",
+      tenantId,
+      branchId,
+      productId: "prod-analgesic",
+      locationId: "loc-centro-a",
+      quantity: physicalQuantity,
+      reservedQuantity: 0,
+      minStock: 1,
+      updatedAt: now,
+    });
+    db.stockLots.push({
+      id: "lot-harness-component",
+      tenantId,
+      branchId,
+      productId: "prod-analgesic",
+      locationId: "loc-centro-a",
+      lotNumber: "HARNESS-LOT",
+      quantity: physicalQuantity,
+      createdAt: now,
+    });
   });
   const eventBus = new DataEventBus();
   const orders = new MockOrderRepository(store, eventBus);

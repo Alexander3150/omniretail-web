@@ -1,4 +1,5 @@
 import type { ProductMediaRepository } from "@/core/repositories";
+import { getProductMediaSource, selectPrimaryProductMedia } from "@/core/media/catalogImage";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
 
 export class MockProductMediaRepository
@@ -14,16 +15,26 @@ export class MockProductMediaRepository
   }
 
   async getPrimaryByProduct(productId: string) {
-    return this.read((db) => {
-      const media = db.productMedia
-        .filter((item) => item.productId === productId)
-        .sort((left, right) => left.sortOrder - right.sortOrder);
+    return this.read((db) =>
+      selectPrimaryProductMedia(db.productMedia.filter((item) => item.productId === productId)),
+    );
+  }
 
-      return media.find((item) => item.isPrimary) ?? media[0] ?? null;
-    });
+  async getByAssetId(tenantId: string, assetId: string) {
+    return this.read((db) =>
+      db.productMedia.filter(
+        (item) =>
+          item.tenantId === tenantId &&
+          item.source?.kind === "mockAsset" &&
+          item.source.assetId === assetId,
+      ),
+    );
   }
 
   async add(input: Parameters<ProductMediaRepository["add"]>[0]) {
+    if (!getProductMediaSource({ ...input, id: "validation" })) {
+      throw new Error("La referencia multimedia no es segura.");
+    }
     const media = this.store.mutate((db) => {
       if (input.isPrimary) {
         db.productMedia.forEach((item) => {
@@ -49,6 +60,7 @@ export class MockProductMediaRepository
   }
 
   async update(media: Parameters<ProductMediaRepository["update"]>[0]) {
+    if (!getProductMediaSource(media)) throw new Error("La referencia multimedia no es segura.");
     const updated = this.store.mutate((db) => {
       const index = db.productMedia.findIndex((item) => item.id === media.id);
       if (index < 0) throw this.missing("ProductMedia", media.id);

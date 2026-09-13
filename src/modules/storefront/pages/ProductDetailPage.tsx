@@ -1,8 +1,8 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { StorefrontAvailability } from "@/modules/storefront/components/StorefrontAvailability";
+import { StorefrontCatalogImage } from "@/modules/storefront/components/StorefrontCatalogImage";
 import { useStorefrontProductDetail } from "@/modules/storefront/hooks/useStorefrontProductDetail";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
 
@@ -47,19 +47,11 @@ export function ProductDetailPage({ productId }: { productId: string }) {
       </Link>
       <section className="mt-5 grid gap-7 rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm md:grid-cols-[1.05fr_.95fr] md:p-7">
         <div>
-          {media[0] ? (
-            <Image
-              alt={media[0].alt ?? product.name}
-              className="h-72 w-full rounded-2xl bg-slate-50 object-cover md:h-[25rem]"
-              height={400}
-              src={media[0].url}
-              width={512}
-            />
-          ) : (
-            <div className="flex h-72 items-center justify-center rounded-2xl bg-slate-100 text-sm text-[var(--color-text-muted)]">
-              Sin imagen disponible
-            </div>
-          )}
+          <StorefrontCatalogImage
+            alt={media[0]?.alt ?? product.name}
+            className="h-72 w-full rounded-2xl bg-slate-50 object-cover md:h-[25rem]"
+            source={media[0]?.source}
+          />
         </div>
         <div className="flex flex-col">
           {categoryName ? (
