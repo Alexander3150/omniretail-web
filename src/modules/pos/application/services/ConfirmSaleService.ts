@@ -22,6 +22,7 @@ import type {
 } from "@/core/repositories";
 import { isBranchScopedResourceAvailable } from "@/core/scopes/branchScope";
 import type { CurrencyCode } from "@/core/types/common.types";
+import type { OrderNotificationContact } from "@/core/types/orderNotification.types";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { isStockLotEligible } from "@/infrastructure/mock/repositories/stockLotMutations";
 import type { CheckoutDto } from "@/modules/pos/application/dto/CheckoutDto";
@@ -44,6 +45,8 @@ export interface ConfirmPosSaleInput {
   customerId?: string;
   sourceOrderId?: string;
   orderIdempotencyKey?: string;
+  /** Optional until the POS UI maps email / no-email intent explicitly. */
+  notificationContact?: OrderNotificationContact;
 }
 
 interface ValidatedSaleItem {
@@ -156,6 +159,7 @@ export class ConfirmSaleService {
       status: OrderStatus.confirmed,
       deliveryMethod: input.checkout.deliveryMethod,
       transportMode: input.checkout.transportMode,
+      notificationContact: input.notificationContact,
       deliveryAddress: input.checkout.deliveryAddress,
       subtotal: fromCents(totals.subtotalCents),
       discountTotal: fromCents(totals.discountTotalCents),
