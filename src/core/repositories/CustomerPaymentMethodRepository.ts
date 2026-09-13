@@ -16,6 +16,7 @@ export type CreateCustomerPaymentMethodInput = Pick<
   | "tenantId"
   | "customerId"
   | "brand"
+  | "issuingBank"
   | "last4"
   | "expirationMonth"
   | "expirationYear"
@@ -25,9 +26,10 @@ export type CreateCustomerPaymentMethodInput = Pick<
 };
 
 /**
- * brand y last4 son inmutables tras la creacion (para eso se agrega una
- * tarjeta nueva). isDefault queda fuera: solo setDefault() lo cambia.
- * tenantId/customerId/providerPaymentMethodId nunca son editables.
+ * brand, issuingBank y last4 son inmutables tras la creacion (para eso
+ * se agrega una tarjeta nueva). isDefault queda fuera: solo
+ * setDefault() lo cambia. tenantId/customerId/providerPaymentMethodId
+ * nunca son editables.
  */
 export type UpdateCustomerPaymentMethodInput = Partial<
   Pick<CustomerPaymentMethod, "cardholderName" | "expirationMonth" | "expirationYear" | "status">

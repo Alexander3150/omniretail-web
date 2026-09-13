@@ -128,6 +128,8 @@ export function RegisterPage() {
               autoComplete="tel"
               disabled={isSubmitting}
               id="register-phone"
+              inputMode="numeric"
+              maxLength={8}
               onChange={(event) => setPhone(event.target.value)}
               type="tel"
               value={phone}

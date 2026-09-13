@@ -9,12 +9,18 @@ import {
   validateAddressForm,
   type AddressValidationErrors,
 } from "@/modules/customer/validation/address.validation";
+import {
+  GUATEMALA_DEPARTMENTS,
+  GUATEMALA_MUNICIPALITIES,
+  type GuatemalaDepartment,
+} from "@/config/guatemala-locations";
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
 import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
+import { Select } from "@/shared/components/Select";
 import { useToast } from "@/shared/components/Toast";
 
 const EMPTY_FORM: AddressFormDto = {
@@ -25,7 +31,6 @@ const EMPTY_FORM: AddressFormDto = {
   city: "",
   stateOrDepartment: "",
   postalCode: "",
-  country: "",
   references: "",
 };
 
@@ -38,7 +43,6 @@ function toFormDto(address: Address): AddressFormDto {
     city: address.city,
     stateOrDepartment: address.stateOrDepartment ?? "",
     postalCode: address.postalCode ?? "",
-    country: address.country,
     references: address.references ?? "",
   };
 }
@@ -254,48 +258,71 @@ export function DireccionesPage() {
           </FormField>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <FormField error={fieldErrors.city} id="address-city" label="Ciudad">
-              <Input
+            <FormField
+              error={fieldErrors.stateOrDepartment}
+              id="address-state"
+              label="Departamento / estado"
+            >
+              <Select
                 disabled={busy}
+                id="address-state"
+                onChange={(event) => {
+                  const nextDepartment = event.target.value;
+                  // Cambiar de departamento invalida el municipio elegido
+                  // antes -- Municipio siempre se resetea junto con el
+                  // departamento para que nunca queden desincronizados.
+                  setForm((prev) => ({ ...prev, stateOrDepartment: nextDepartment, city: "" }));
+                }}
+                value={form.stateOrDepartment}
+              >
+                <option value="">Selecciona un departamento</option>
+                {GUATEMALA_DEPARTMENTS.map((department) => (
+                  <option key={department} value={department}>
+                    {department}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+
+            <FormField error={fieldErrors.city} id="address-city" label="Municipio">
+              <Select
+                disabled={busy || !form.stateOrDepartment}
                 id="address-city"
                 onChange={(event) => setForm((prev) => ({ ...prev, city: event.target.value }))}
                 value={form.city}
-              />
-            </FormField>
-
-            <FormField hint="Opcional" id="address-state" label="Departamento / estado">
-              <Input
-                disabled={busy}
-                id="address-state"
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, stateOrDepartment: event.target.value }))
-                }
-                value={form.stateOrDepartment}
-              />
-            </FormField>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FormField hint="Opcional" id="address-postal" label="Código postal">
-              <Input
-                disabled={busy}
-                id="address-postal"
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, postalCode: event.target.value }))
-                }
-                value={form.postalCode}
-              />
-            </FormField>
-
-            <FormField error={fieldErrors.country} id="address-country" label="País">
-              <Input
-                disabled={busy}
-                id="address-country"
-                onChange={(event) => setForm((prev) => ({ ...prev, country: event.target.value }))}
-                value={form.country}
-              />
+              >
+                <option value="">
+                  {form.stateOrDepartment ? "Selecciona un municipio" : "Elige primero un departamento"}
+                </option>
+                {(GUATEMALA_MUNICIPALITIES[form.stateOrDepartment as GuatemalaDepartment] ?? []).map(
+                  (municipality) => (
+                    <option key={municipality} value={municipality}>
+                      {municipality}
+                    </option>
+                  ),
+                )}
+              </Select>
             </FormField>
           </div>
+
+          <FormField
+            error={fieldErrors.postalCode}
+            hint="Opcional"
+            id="address-postal"
+            label="Código postal"
+          >
+            <Input
+              disabled={busy}
+              id="address-postal"
+              inputMode="numeric"
+              maxLength={5}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, postalCode: event.target.value }))
+              }
+              placeholder="01001"
+              value={form.postalCode}
+            />
+          </FormField>
 
           <FormField hint="Opcional" id="address-references" label="Referencias adicionales">
             <Input

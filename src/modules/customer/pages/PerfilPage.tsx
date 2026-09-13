@@ -139,6 +139,8 @@ export function PerfilPage() {
               <Input
                 disabled={saving}
                 id="profile-phone"
+                inputMode="numeric"
+                maxLength={8}
                 onChange={(event) => setPhone(event.target.value)}
                 readOnly={!isEditing}
                 type="tel"

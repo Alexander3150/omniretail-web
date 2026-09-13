@@ -4,6 +4,8 @@ import type {
   CustomerPaymentMethodRepository,
   UpdateCustomerPaymentMethodInput,
 } from "@/core/repositories";
+import { CARD_BRANDS, MAX_EXPIRATION_YEARS_AHEAD } from "@/config/card-brands";
+import { GUATEMALA_BANKS } from "@/config/guatemala-banks";
 import { CustomerPaymentMethodStatus, PaymentMethod } from "@/core/enums";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
@@ -12,6 +14,7 @@ const CREATE_ALLOWED_KEYS = new Set<keyof CreateCustomerPaymentMethodInput>([
   "tenantId",
   "customerId",
   "brand",
+  "issuingBank",
   "last4",
   "expirationMonth",
   "expirationYear",
@@ -82,6 +85,7 @@ export class MockCustomerPaymentMethodRepository
         // procesador de pagos.
         providerPaymentMethodId: this.id("pm-mock"),
         brand: input.brand,
+        issuingBank: input.issuingBank,
         last4: input.last4,
         expirationMonth: input.expirationMonth,
         expirationYear: input.expirationYear,
@@ -237,10 +241,22 @@ export class MockCustomerPaymentMethodRepository
   }
 
   private assertValidPaymentMethod(input: {
+    brand: string;
+    issuingBank: string;
     last4: string;
     expirationMonth: number;
     expirationYear: number;
   }): void {
+    // Allowlist de valores reales, no solo "no vacio" -- antes "Marca"
+    // aceptaba cualquier texto (ej. "casa"). CARD_BRANDS/GUATEMALA_BANKS
+    // son la misma lista que usa el selector del formulario; se revalida
+    // aca para que una llamada directa al repositorio no pueda saltarsela.
+    if (!CARD_BRANDS.includes(input.brand as (typeof CARD_BRANDS)[number])) {
+      throw new Error("CustomerPaymentMethod brand must be one of the supported card brands");
+    }
+    if (!GUATEMALA_BANKS.includes(input.issuingBank as (typeof GUATEMALA_BANKS)[number])) {
+      throw new Error("CustomerPaymentMethod issuingBank must be one of the supported banks");
+    }
     // TypeScript no protege esto en runtime: un caller que bypasea el
     // tipado puede enviar "12" (string), NaN, o 1.5. Se valida
     // explicitamente tipo + finitud + entero antes de comparar rangos --
@@ -273,6 +289,13 @@ export class MockCustomerPaymentMethodRepository
       (input.expirationYear === currentYear && input.expirationMonth < currentMonth);
     if (isPast) {
       throw new Error("CustomerPaymentMethod expiration date must be the current month or later");
+    }
+    // Ninguna red de tarjetas emite una vigencia mayor a este margen --
+    // sin este limite, un año como 2240 pasaba por no estar en el pasado.
+    if (input.expirationYear > currentYear + MAX_EXPIRATION_YEARS_AHEAD) {
+      throw new Error(
+        `CustomerPaymentMethod expirationYear must not be more than ${MAX_EXPIRATION_YEARS_AHEAD} years ahead`,
+      );
     }
   }
 

@@ -240,6 +240,24 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
             accountId: account.id,
             action: "account_locked",
           });
+          // No existia ninguna notificacion para este evento -- solo
+          // quedaba en auditLogs, invisible para el dueño de la cuenta.
+          // Mismo patron que password_changed/password_reset_completed:
+          // in-app, dirigida al propio usuario de la cuenta bloqueada
+          // (sirve igual para Customer que para Employee/Admin).
+          db.notifications.push({
+            id: this.id("notification"),
+            tenantId,
+            userId: account.userId,
+            channel: NotificationChannel.in_app,
+            type: "account_locked",
+            title: "Cuenta bloqueada temporalmente",
+            message: "Se bloqueó tu cuenta por varios intentos fallidos de inicio de sesión.",
+            status: NotificationStatus.unread,
+            relatedEntityType: "AuthAccount",
+            relatedEntityId: account.id,
+            createdAt: now.toISOString(),
+          });
         } else {
           this.logAuthAudit(db, {
             tenantId,
@@ -328,6 +346,16 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     this.emit("auth.changed", { action: "updated" });
   }
   async registerCustomer(input: Parameters<AuthRepository["registerCustomer"]>[0]) {
+    // Password policy en la capa funcional (mismo patron que
+    // resetPassword/activateEmployeeAccount/changePassword): antes de
+    // este ajuste, registerCustomer() no validaba nada de esto -- solo
+    // el formulario (register.validation.ts) lo hacia, asi que una
+    // llamada directa a este metodo podia crear una cuenta con
+    // cualquier contraseña, incluida una compuesta solo de digitos.
+    const passwordError = validatePasswordAgainstPolicy(input.passwordMock);
+    if (passwordError) {
+      throw new Error(passwordError);
+    }
     const result = this.store.mutate((db) => {
       const now = this.now();
       const normalizedEmail = input.email.trim().toLowerCase();
@@ -826,6 +854,98 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         actorUserId: account.userId,
         accountId: account.id,
         action: "employee_activated",
+      });
+
+      return undefined;
+    });
+    this.emit("auth.changed", { action: "updated" });
+  }
+  async changePassword(input: Parameters<AuthRepository["changePassword"]>[0]) {
+    this.store.mutate((db) => {
+      const now = new Date();
+      const nowIso = now.toISOString();
+
+      const session = db.sessions.find(
+        (item) => item.id === input.sessionId && !item.revokedAt,
+      );
+      if (!session || now >= new Date(session.expiresAt)) {
+        throw new Error("Tu sesión ya no es válida. Vuelve a iniciar sesión.");
+      }
+
+      const account = db.authAccounts.find((item) => item.userId === session.userId);
+      if (!account) throw new Error("No se encontró la cuenta.");
+
+      // A diferencia de login()/resetPassword() (donde revelar el motivo
+      // exacto del fallo es un riesgo real de enumeración cross-account),
+      // acá el usuario YA está autenticado como esta cuenta -- decirle que
+      // su contraseña actual es incorrecta no filtra nada que no sepa ya.
+      const currentMatches =
+        account.passwordHashMock === buildPasswordHashMock(input.currentPasswordMock);
+      if (!currentMatches) {
+        throw new Error("La contraseña actual no es correcta.");
+      }
+
+      // Confirmado por QA manual (Andy, cuenta demo): sin este chequeo, la
+      // pantalla permitía "cambiar" la contraseña por la misma que ya tenía
+      // -- técnicamente no rompe nada del dominio, pero no tiene sentido de
+      // producto dejarlo pasar como si fuera un cambio real. No está en el
+      // documento de arquitectura; es una regla de UX razonable agregada a
+      // pedido, igual que las demás políticas, en la capa funcional (no solo
+      // en el formulario) para que una llamada directa no pueda saltársela.
+      if (input.newPasswordMock === input.currentPasswordMock) {
+        throw new Error("La nueva contraseña debe ser diferente a la actual.");
+      }
+
+      const passwordError = validatePasswordAgainstPolicy(input.newPasswordMock);
+      if (passwordError) throw new Error(passwordError);
+
+      const user = db.users.find((item) => item.id === account.userId);
+      if (!user) throw new Error("No se encontró el usuario.");
+      const tenantId = user.tenantId;
+
+      // Todo lo de arriba es validación de solo lectura (sesión, cuenta,
+      // contraseña actual, política, usuario) -- ninguna mutación ocurre
+      // hasta este punto. Igual que en resetPassword(): cualquier fallo
+      // anterior deja passwordHashMock, sesiones, auditoría y notificación
+      // exactamente como estaban, sin cambios parciales.
+      account.passwordHashMock = buildPasswordHashMock(input.newPasswordMock);
+      account.passwordChangedAt = nowIso;
+      account.updatedAt = nowIso;
+
+      // Revoca las sesiones RESTANTES -- todas menos input.sessionId.
+      const revokedSessions = db.sessions.filter(
+        (item) => item.userId === account.userId && item.id !== input.sessionId && !item.revokedAt,
+      );
+      revokedSessions.forEach((item) => {
+        item.revokedAt = nowIso;
+      });
+
+      this.logAuthAudit(db, {
+        tenantId,
+        actorUserId: account.userId,
+        accountId: account.id,
+        action: "session_revoked",
+        metadata: { count: revokedSessions.length },
+      });
+      this.logAuthAudit(db, {
+        tenantId,
+        actorUserId: account.userId,
+        accountId: account.id,
+        action: "password_changed",
+      });
+
+      db.notifications.push({
+        id: this.id("notification"),
+        tenantId,
+        userId: account.userId,
+        channel: NotificationChannel.in_app,
+        type: "password_changed",
+        title: "Contraseña actualizada",
+        message: "Tu contraseña fue actualizada correctamente.",
+        status: NotificationStatus.unread,
+        relatedEntityType: "AuthAccount",
+        relatedEntityId: account.id,
+        createdAt: nowIso,
       });
 
       return undefined;
