@@ -56,9 +56,6 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
   async login(input: Parameters<AuthRepository["login"]>[0]) {
     const normalizedEmail = input.email.trim().toLowerCase();
     const now = new Date();
-    const windowMs = FAILED_ATTEMPTS_WINDOW_MINUTES * 60 * 1000;
-    const lockoutLookbackMs = LOCKOUT_ESCALATION_LOOKBACK_HOURS * 60 * 60 * 1000;
-    const escalationResetMs = LOCKOUT_RESET_AFTER_MINUTES * 60 * 1000;
     const expectedHash = buildPasswordHashMock(input.passwordMock);
 
     const outcome = this.store.mutate((db) => {
@@ -123,15 +120,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       const tenantId = user?.tenantId ?? "tenant-demo";
 
       // Auto-unlock if the lockout window already elapsed.
-      if (
-        account.status === AccountStatus.temporarily_locked &&
-        account.lockedUntil &&
-        new Date(account.lockedUntil) <= now
-      ) {
-        account.status = AccountStatus.active;
-        account.failedLoginAttempts = 0;
-        account.lockedUntil = undefined;
-      }
+      this.applyAutoUnlockIfExpired(account, now);
 
       if (account.status !== AccountStatus.active) {
         this.logAuthAudit(db, {
@@ -153,157 +142,72 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       const accountKindMatches = !input.expectedUserType || user?.type === input.expectedUserType;
 
       if (!passwordMatches || !accountKindMatches) {
-        // A successful login always cuts the failure streak, regardless of
-        // how recent it was: only login_failed/account_locked events that
-        // happened *after* the most recent login_success — and still within
-        // the active window (doc 4.7) — count toward the current attempt
-        // number. Older ones (before the window, or before the last
-        // success) don't carry over. Derived from auditLogs instead of a
-        // stored counter, so it self-resets with time automatically.
-        const lastSuccessAt = db.auditLogs
-          .filter(
-            (log) =>
-              log.entityType === "AuthAccount" &&
-              log.entityId === account.id &&
-              log.tenantId === tenantId &&
-              log.action === "login_success",
-          )
-          .reduce((latest, log) => Math.max(latest, new Date(log.createdAt).getTime()), 0);
-
-        const recentFailureLogs = db.auditLogs.filter(
-          (log) =>
-            log.entityType === "AuthAccount" &&
-            log.entityId === account.id &&
-            log.tenantId === tenantId &&
-            (log.action === "login_failed" || log.action === "account_locked") &&
-            new Date(log.createdAt).getTime() > lastSuccessAt &&
-            now.getTime() - new Date(log.createdAt).getTime() < windowMs,
-        );
-        const currentAttemptNumber = recentFailureLogs.length + 1;
-        // When this current streak started (the earliest failure still inside
-        // the window), or "now" if this is the first failure of a new streak.
-        // Used below to tell the escalation-reset gap apart from the normal
-        // few-seconds-to-minutes spacing between attempts within one streak.
-        const streakStartAt =
-          recentFailureLogs.length > 0
-            ? Math.min(...recentFailureLogs.map((log) => new Date(log.createdAt).getTime()))
-            : now.getTime();
-
-        const rule =
-          LOGIN_ATTEMPT_RULES.find((item) => item.attemptNumber === currentAttemptNumber) ??
-          LOGIN_ATTEMPT_RULES[LOGIN_ATTEMPT_RULES.length - 1];
-
-        // Kept for display/inspection purposes; the lockout decision above
-        // uses the windowed count, not this field.
-        account.failedLoginAttempts = currentAttemptNumber;
-
-        if (rule.triggersLockout) {
-          // Escalation (15/30/60 min) resets once LOCKOUT_RESET_AFTER_MINUTES
-          // pass without a new failure/lockout on this account — the next
-          // lockout after such a quiet period counts as a first occurrence
-          // again, independent of the login_success-based streak reset above.
-          //
-          // The gap is measured from the start of the CURRENT streak
-          // (streakStartAt), not from "now" — attempts within the same
-          // streak are only seconds/minutes apart by design (that's the
-          // failed-attempts window), so comparing against the most recent
-          // one would never detect a quiet period once a new streak is
-          // already a few attempts in.
-          const priorFailureOrLockoutTimestamps = db.auditLogs
-            .filter(
-              (log) =>
-                log.entityType === "AuthAccount" &&
-                log.entityId === account.id &&
-                log.tenantId === tenantId &&
-                (log.action === "login_failed" || log.action === "account_locked") &&
-                new Date(log.createdAt).getTime() < streakStartAt,
-            )
-            .map((log) => new Date(log.createdAt).getTime());
-          const lastFailureOrLockoutAt =
-            priorFailureOrLockoutTimestamps.length > 0
-              ? Math.max(...priorFailureOrLockoutTimestamps)
-              : null;
-          const escalationHasReset =
-            lastFailureOrLockoutAt !== null &&
-            streakStartAt - lastFailureOrLockoutAt > escalationResetMs;
-
-          const recentLockouts = escalationHasReset
-            ? 0
-            : db.auditLogs.filter(
-                (log) =>
-                  log.entityType === "AuthAccount" &&
-                  log.entityId === account.id &&
-                  log.tenantId === tenantId &&
-                  log.action === "account_locked" &&
-                  now.getTime() - new Date(log.createdAt).getTime() < lockoutLookbackMs,
-              ).length;
-          account.status = AccountStatus.temporarily_locked;
-          account.lockedUntil = new Date(
-            now.getTime() + getLockoutMinutesForOccurrence(recentLockouts + 1) * 60 * 1000,
-          ).toISOString();
-          this.logAuthAudit(db, {
-            tenantId,
-            actorUserId: account.userId,
-            accountId: account.id,
-            action: "account_locked",
-          });
-          // No existia ninguna notificacion para este evento -- solo
-          // quedaba en auditLogs, invisible para el dueño de la cuenta.
-          // Mismo patron que password_changed/password_reset_completed:
-          // in-app, dirigida al propio usuario de la cuenta bloqueada
-          // (sirve igual para Customer que para Employee/Admin).
-          db.notifications.push({
-            id: this.id("notification"),
-            tenantId,
-            userId: account.userId,
-            channel: NotificationChannel.in_app,
-            type: "account_locked",
-            title: "Cuenta bloqueada temporalmente",
-            message: "Se bloqueó tu cuenta por varios intentos fallidos de inicio de sesión.",
-            status: NotificationStatus.unread,
-            relatedEntityType: "AuthAccount",
-            relatedEntityId: account.id,
-            createdAt: now.toISOString(),
-          });
-        } else {
-          this.logAuthAudit(db, {
-            tenantId,
-            actorUserId: account.userId,
-            accountId: account.id,
-            action: "login_failed",
-          });
-        }
-
-        account.updatedAt = now.toISOString();
+        this.registerFailedAuthAttempt(db, account, tenantId, "login_failed");
         return { ok: false as const };
       }
 
-      account.failedLoginAttempts = 0;
-      account.lockedUntil = undefined;
       account.lastLoginAt = now.toISOString();
       account.updatedAt = now.toISOString();
+
+      // PR13 (doc R-A16): "si la cuenta exige MFA, la contraseña correcta
+      // no crea sesión definitiva hasta completar el segundo factor" --
+      // la Session todavía no se crea, en su lugar se abre un
+      // MfaChallenge efímero.
+      const enrollment = db.mfaEnrollments.find(
+        (item) => item.userId === account.userId && item.enabled,
+      );
+      if (enrollment) {
+        // PR14 (cierre de hueco de seguridad):
+        //
+        // 1. "login_success" se registra recién en verifyMfaChallenge(),
+        //    NO acá -- si se registrara acá (como hacía antes de este
+        //    PR), cada reinicio de login() con la contraseña correcta
+        //    generaría un login_success nuevo, y registerFailedAuthAttempt
+        //    usa el login_success MÁS RECIENTE como límite para qué
+        //    fallos siguen contando ("lastSuccessAt" mas abajo) -- eso
+        //    borraría en silencio los fallos de MFA acumulados antes del
+        //    reinicio.
+        // 2. Se reutiliza un challenge ya vivo en vez de crear uno con el
+        //    contador de intentos en cero -- antes, reiniciar login()
+        //    regalaba una ventana nueva de MFA_CHALLENGE_MAX_ATTEMPTS
+        //    intentos cada vez, indefinidamente, porque
+        //    failedLoginAttempts/lockedUntil se reseteaban aca abajo
+        //    apenas la password era correcta, sin relacion con los
+        //    fallos de codigo MFA (que vivian solo en
+        //    challenge.failedAttempts, un contador completamente aparte).
+        //
+        // Ambos puntos juntos cierran el bypass: aunque el challenge se
+        // reutilice y ningun login_success interrumpa la racha, la
+        // cuenta sigue acumulando fallos compartidos
+        // (registerFailedAuthAttempt, llamado tambien desde
+        // verifyMfaChallenge) hasta el umbral de LOGIN_ATTEMPT_RULES, que
+        // bloquea la cuenta entera.
+        const liveChallenge = db.mfaChallenges.find(
+          (item) =>
+            item.userId === account.userId &&
+            !item.consumedAt &&
+            !item.invalidatedAt &&
+            now < new Date(item.expiresAt),
+        );
+        const challenge =
+          liveChallenge ??
+          this.createMfaChallenge(db, enrollment, {
+            rememberMe: Boolean(input.rememberMe),
+            deviceLabel: input.deviceLabel,
+          });
+        return { ok: true as const, kind: "mfa_challenge" as const, challenge, enrollment };
+      }
+
+      // Cuenta sin MFA: sin cambio de comportamiento -- login_success se
+      // registra y el reset sigue pasando inmediatamente, acá mismo.
       this.logAuthAudit(db, {
         tenantId,
         actorUserId: account.userId,
         accountId: account.id,
         action: "login_success",
       });
-
-      // PR13 (doc R-A16): "si la cuenta exige MFA, la contraseña correcta
-      // no crea sesión definitiva hasta completar el segundo factor" --
-      // login_success ya se registró arriba (las credenciales SÍ eran
-      // correctas), pero la Session todavía no se crea: en su lugar se
-      // abre un MfaChallenge efímero.
-      const enrollment = db.mfaEnrollments.find(
-        (item) => item.userId === account.userId && item.enabled,
-      );
-      if (enrollment) {
-        const challenge = this.createMfaChallenge(db, enrollment, {
-          rememberMe: Boolean(input.rememberMe),
-          deviceLabel: input.deviceLabel,
-        });
-        return { ok: true as const, kind: "mfa_challenge" as const, challenge, enrollment };
-      }
+      account.failedLoginAttempts = 0;
+      account.lockedUntil = undefined;
 
       const expires = new Date(
         now.getTime() +
@@ -368,18 +272,45 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       const account = db.authAccounts.find((item) => item.userId === challenge.userId);
       const tenantId = user?.tenantId ?? "tenant-demo";
 
+      // Hardening post-auditoria (PR14): un challenge puede seguir "vivo"
+      // (sus propios MFA_CHALLENGE_MAX_ATTEMPTS todavia no se agotaron)
+      // aunque la cuenta YA este bloqueada -- el contador compartido de
+      // registerFailedAuthAttempt (login_failed + mfa_failed juntos) puede
+      // alcanzar el umbral de lockout antes que el limite propio del
+      // challenge. Sin este chequeo, un codigo MFA o recovery code
+      // correcto completaba la autenticacion igual, evadiendo el lockout
+      // que se acababa de aplicar. account.status es la MISMA fuente de
+      // verdad que usa login() (via applyAutoUnlockIfExpired) -- no se
+      // duplica la regla de tiempo/ventana, solo se consulta aca tambien.
+      if (account) {
+        this.applyAutoUnlockIfExpired(account, now);
+        if (account.status !== AccountStatus.active) {
+          // No se toca el challenge ni se llama a consumeMfaCode: un
+          // recovery code valido NO debe consumirse en un intento que de
+          // todos modos se va a rechazar, y el codigo MFA es reutilizable
+          // (no tiene sentido "gastarlo" en un rechazo). El mensaje al
+          // usuario es el mismo "challenge ya no disponible" que cuando
+          // expira -- reintentar login() desde cero mostrara el error
+          // generico de siempre (R-A13: no revelar que la causa fue
+          // lockout).
+          return { ok: false as const, retriable: false };
+        }
+      }
+
       const codeIsValid = this.consumeMfaCode(db, challenge.userId, codeMock);
       if (!codeIsValid) {
-        // Contador SEPARADO de LOGIN_ATTEMPT_RULES a propósito (doc 4.12:
-        // "no cuentan como una nueva contraseña fallida") -- nunca toca
-        // account.failedLoginAttempts ni el lockout de la cuenta.
+        // challenge.failedAttempts sigue siendo su propio contador (5 por
+        // challenge, doc 4.12) -- PERO desde PR14, ADEMAS se contabiliza
+        // en el contador compartido de la cuenta (registerFailedAuthAttempt,
+        // el mismo que usa login() para contraseñas incorrectas). Antes
+        // este fallo nunca tocaba account.failedLoginAttempts, lo que
+        // permitia reiniciar login() indefinidamente para conseguir una
+        // ventana nueva de intentos sin que la cuenta se bloqueara jamas
+        // (ver seccion 2 del spec de este PR).
         challenge.failedAttempts += 1;
-        this.logAuthAudit(db, {
-          tenantId,
-          actorUserId: challenge.userId,
-          accountId: account?.id,
-          action: "mfa_failed",
-        });
+        if (account) {
+          this.registerFailedAuthAttempt(db, account, tenantId, "mfa_failed");
+        }
         const exceededAttempts = challenge.failedAttempts >= MFA_CHALLENGE_MAX_ATTEMPTS;
         if (exceededAttempts) {
           challenge.invalidatedAt = this.now();
@@ -392,6 +323,25 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       }
 
       challenge.consumedAt = this.now();
+
+      // PR14 (cierre de hueco de seguridad): para cuentas con MFA,
+      // login_success recién se registra acá (no en login(), ver
+      // comentario ahí) y el reset de failedLoginAttempts/lockedUntil
+      // también se difiere hasta acá -- antes ambos pasaban apenas la
+      // contraseña era correcta, en login(), sin relación con los
+      // fallos de código MFA.
+      if (account) {
+        this.logAuthAudit(db, {
+          tenantId,
+          actorUserId: account.userId,
+          accountId: account.id,
+          action: "login_success",
+        });
+        account.status = AccountStatus.active;
+        account.failedLoginAttempts = 0;
+        account.lockedUntil = undefined;
+        account.updatedAt = this.now();
+      }
 
       // Misma formula de vigencia que login() -- rememberMe/deviceLabel
       // vienen del LoginInput original, capturados en el challenge porque
@@ -1256,6 +1206,174 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       metadata: entry.metadata,
       createdAt: this.now(),
     });
+  }
+  /**
+   * Si el lockout ya vencio (lockedUntil <= now), restaura la cuenta a
+   * estado operable ANTES de evaluar credenciales. Unica fuente de verdad
+   * para "sigue bloqueada la cuenta" -- compartida por login() y
+   * verifyMfaChallenge() (hardening post-auditoria del PR14) para que
+   * ninguna de las dos rutas pueda desincronizarse de la otra.
+   */
+  private applyAutoUnlockIfExpired(account: AuthAccount, now: Date): void {
+    if (
+      account.status === AccountStatus.temporarily_locked &&
+      account.lockedUntil &&
+      new Date(account.lockedUntil) <= now
+    ) {
+      account.status = AccountStatus.active;
+      account.failedLoginAttempts = 0;
+      account.lockedUntil = undefined;
+    }
+  }
+  /**
+   * Contabiliza un fallo de autenticacion -- password incorrecta (login())
+   * O codigo MFA incorrecto (verifyMfaChallenge()), PR14 seccion 2:
+   * comparten el MISMO contador/ventana/escalada de LOGIN_ATTEMPT_RULES.
+   * Antes, un fallo de codigo MFA solo incrementaba
+   * MfaChallenge.failedAttempts (un contador separado, por diseño
+   * explicito de PR13) -- eso permitia reiniciar login() indefinidamente
+   * para conseguir una ventana nueva de intentos contra el codigo sin que
+   * la cuenta se bloqueara nunca, porque failedLoginAttempts nunca se
+   * enteraba de esos fallos. `failureAction` mantiene el nombre de evento
+   * de auditoria correcto para cada canal (login_failed vs mfa_failed,
+   * R-A30 exige ambos) sin duplicar la logica de ventana/escalada.
+   */
+  private registerFailedAuthAttempt(
+    db: MockDatabase,
+    account: AuthAccount,
+    tenantId: string,
+    failureAction: "login_failed" | "mfa_failed",
+  ): void {
+    const now = new Date();
+    const windowMs = FAILED_ATTEMPTS_WINDOW_MINUTES * 60 * 1000;
+    const lockoutLookbackMs = LOCKOUT_ESCALATION_LOOKBACK_HOURS * 60 * 60 * 1000;
+    const escalationResetMs = LOCKOUT_RESET_AFTER_MINUTES * 60 * 1000;
+
+    const isCountableFailure = (log: { action: string }) =>
+      log.action === "login_failed" || log.action === "mfa_failed" || log.action === "account_locked";
+
+    // A successful login always cuts the failure streak, regardless of
+    // how recent it was: only failure/lockout events that happened
+    // *after* the most recent login_success — and still within the
+    // active window (doc 4.7) — count toward the current attempt number.
+    // Older ones (before the window, or before the last success) don't
+    // carry over. Derived from auditLogs instead of a stored counter, so
+    // it self-resets with time automatically.
+    const lastSuccessAt = db.auditLogs
+      .filter(
+        (log) =>
+          log.entityType === "AuthAccount" &&
+          log.entityId === account.id &&
+          log.tenantId === tenantId &&
+          log.action === "login_success",
+      )
+      .reduce((latest, log) => Math.max(latest, new Date(log.createdAt).getTime()), 0);
+
+    const recentFailureLogs = db.auditLogs.filter(
+      (log) =>
+        log.entityType === "AuthAccount" &&
+        log.entityId === account.id &&
+        log.tenantId === tenantId &&
+        isCountableFailure(log) &&
+        new Date(log.createdAt).getTime() > lastSuccessAt &&
+        now.getTime() - new Date(log.createdAt).getTime() < windowMs,
+    );
+    const currentAttemptNumber = recentFailureLogs.length + 1;
+    // When this current streak started (the earliest failure still inside
+    // the window), or "now" if this is the first failure of a new streak.
+    // Used below to tell the escalation-reset gap apart from the normal
+    // few-seconds-to-minutes spacing between attempts within one streak.
+    const streakStartAt =
+      recentFailureLogs.length > 0
+        ? Math.min(...recentFailureLogs.map((log) => new Date(log.createdAt).getTime()))
+        : now.getTime();
+
+    const rule =
+      LOGIN_ATTEMPT_RULES.find((item) => item.attemptNumber === currentAttemptNumber) ??
+      LOGIN_ATTEMPT_RULES[LOGIN_ATTEMPT_RULES.length - 1];
+
+    // Kept for display/inspection purposes; the lockout decision above
+    // uses the windowed count, not this field.
+    account.failedLoginAttempts = currentAttemptNumber;
+
+    if (rule.triggersLockout) {
+      // Escalation (15/30/60 min) resets once LOCKOUT_RESET_AFTER_MINUTES
+      // pass without a new failure/lockout on this account — the next
+      // lockout after such a quiet period counts as a first occurrence
+      // again, independent of the login_success-based streak reset above.
+      //
+      // The gap is measured from the start of the CURRENT streak
+      // (streakStartAt), not from "now" — attempts within the same
+      // streak are only seconds/minutes apart by design (that's the
+      // failed-attempts window), so comparing against the most recent
+      // one would never detect a quiet period once a new streak is
+      // already a few attempts in.
+      const priorFailureOrLockoutTimestamps = db.auditLogs
+        .filter(
+          (log) =>
+            log.entityType === "AuthAccount" &&
+            log.entityId === account.id &&
+            log.tenantId === tenantId &&
+            isCountableFailure(log) &&
+            new Date(log.createdAt).getTime() < streakStartAt,
+        )
+        .map((log) => new Date(log.createdAt).getTime());
+      const lastFailureOrLockoutAt =
+        priorFailureOrLockoutTimestamps.length > 0
+          ? Math.max(...priorFailureOrLockoutTimestamps)
+          : null;
+      const escalationHasReset =
+        lastFailureOrLockoutAt !== null &&
+        streakStartAt - lastFailureOrLockoutAt > escalationResetMs;
+
+      const recentLockouts = escalationHasReset
+        ? 0
+        : db.auditLogs.filter(
+            (log) =>
+              log.entityType === "AuthAccount" &&
+              log.entityId === account.id &&
+              log.tenantId === tenantId &&
+              log.action === "account_locked" &&
+              now.getTime() - new Date(log.createdAt).getTime() < lockoutLookbackMs,
+          ).length;
+      account.status = AccountStatus.temporarily_locked;
+      account.lockedUntil = new Date(
+        now.getTime() + getLockoutMinutesForOccurrence(recentLockouts + 1) * 60 * 1000,
+      ).toISOString();
+      this.logAuthAudit(db, {
+        tenantId,
+        actorUserId: account.userId,
+        accountId: account.id,
+        action: "account_locked",
+      });
+      // No existia ninguna notificacion para este evento -- solo
+      // quedaba en auditLogs, invisible para el dueño de la cuenta.
+      // Mismo patron que password_changed/password_reset_completed:
+      // in-app, dirigida al propio usuario de la cuenta bloqueada
+      // (sirve igual para Customer que para Employee/Admin).
+      db.notifications.push({
+        id: this.id("notification"),
+        tenantId,
+        userId: account.userId,
+        channel: NotificationChannel.in_app,
+        type: "account_locked",
+        title: "Cuenta bloqueada temporalmente",
+        message: "Se bloqueó tu cuenta por varios intentos fallidos de inicio de sesión.",
+        status: NotificationStatus.unread,
+        relatedEntityType: "AuthAccount",
+        relatedEntityId: account.id,
+        createdAt: now.toISOString(),
+      });
+    } else {
+      this.logAuthAudit(db, {
+        tenantId,
+        actorUserId: account.userId,
+        accountId: account.id,
+        action: failureAction,
+      });
+    }
+
+    account.updatedAt = now.toISOString();
   }
   /**
    * Valida que exista una sesión activa y no revocada para sessionId --
