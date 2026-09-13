@@ -1,4 +1,4 @@
-import { PASSWORD_POLICY } from "@/config/auth-policy";
+import { validatePasswordAgainstPolicy } from "@/config/auth-policy";
 import type { RegisterFormDto } from "@/modules/auth/application/dto/RegisterFormDto";
 
 export type RegisterFormValidationErrors = Partial<
@@ -33,15 +33,15 @@ export function validateRegisterForm(dto: RegisterFormDto): RegisterFormValidati
     errors.phone = "Ingresa un teléfono válido.";
   }
 
-  if (!dto.password) {
-    errors.password = "La contraseña es obligatoria.";
-  } else if (
-    dto.password.length < PASSWORD_POLICY.MIN_LENGTH ||
-    dto.password.length > PASSWORD_POLICY.MAX_LENGTH
-  ) {
-    errors.password = `La contraseña debe tener entre ${PASSWORD_POLICY.MIN_LENGTH} y ${PASSWORD_POLICY.MAX_LENGTH} caracteres.`;
-  } else if (!PASSWORD_POLICY.ALLOW_SPACES && /\s/.test(dto.password)) {
-    errors.password = "La contraseña no puede contener espacios.";
+  // Antes esto duplicaba a mano las reglas de PASSWORD_POLICY (longitud,
+  // espacios) en vez de llamar a la funcion canonica -- por eso una
+  // regla nueva agregada ahi (rechazar solo-numeros) nunca llegaba a
+  // este formulario. Mismo patron que el resto de los formularios de
+  // auth (resetPassword.validation.ts, changePassword.validation.ts):
+  // una sola fuente de verdad, la funcion canonica, nunca una copia.
+  const passwordError = validatePasswordAgainstPolicy(dto.password);
+  if (passwordError) {
+    errors.password = passwordError;
   }
 
   if (!dto.confirmPassword) {

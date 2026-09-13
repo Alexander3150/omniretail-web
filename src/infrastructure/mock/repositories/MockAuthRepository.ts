@@ -240,6 +240,24 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
             accountId: account.id,
             action: "account_locked",
           });
+          // No existia ninguna notificacion para este evento -- solo
+          // quedaba en auditLogs, invisible para el dueño de la cuenta.
+          // Mismo patron que password_changed/password_reset_completed:
+          // in-app, dirigida al propio usuario de la cuenta bloqueada
+          // (sirve igual para Customer que para Employee/Admin).
+          db.notifications.push({
+            id: this.id("notification"),
+            tenantId,
+            userId: account.userId,
+            channel: NotificationChannel.in_app,
+            type: "account_locked",
+            title: "Cuenta bloqueada temporalmente",
+            message: "Se bloqueó tu cuenta por varios intentos fallidos de inicio de sesión.",
+            status: NotificationStatus.unread,
+            relatedEntityType: "AuthAccount",
+            relatedEntityId: account.id,
+            createdAt: now.toISOString(),
+          });
         } else {
           this.logAuthAudit(db, {
             tenantId,
@@ -328,6 +346,16 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     this.emit("auth.changed", { action: "updated" });
   }
   async registerCustomer(input: Parameters<AuthRepository["registerCustomer"]>[0]) {
+    // Password policy en la capa funcional (mismo patron que
+    // resetPassword/activateEmployeeAccount/changePassword): antes de
+    // este ajuste, registerCustomer() no validaba nada de esto -- solo
+    // el formulario (register.validation.ts) lo hacia, asi que una
+    // llamada directa a este metodo podia crear una cuenta con
+    // cualquier contraseña, incluida una compuesta solo de digitos.
+    const passwordError = validatePasswordAgainstPolicy(input.passwordMock);
+    if (passwordError) {
+      throw new Error(passwordError);
+    }
     const result = this.store.mutate((db) => {
       const now = this.now();
       const normalizedEmail = input.email.trim().toLowerCase();

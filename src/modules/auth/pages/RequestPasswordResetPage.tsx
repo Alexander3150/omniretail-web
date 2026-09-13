@@ -6,7 +6,7 @@ import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Input } from "@/shared/components/Input";
-import { GENERIC_RECOVERY_MESSAGE } from "@/config/auth-policy";
+import { GENERIC_RECOVERY_MESSAGE, PASSWORD_RESET_TOKEN_MINUTES } from "@/config/auth-policy";
 
 export function RequestPasswordResetPage() {
   const { email, setEmail, fieldErrors, isSubmitting, completed, submit } =
@@ -21,6 +21,25 @@ export function RequestPasswordResetPage() {
           </p>
           <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">Revisa tu correo</h1>
           <InlineAlert className="mt-4 text-left" title={GENERIC_RECOVERY_MESSAGE} tone="info" />
+          <ol className="mt-4 space-y-2 text-left text-sm text-[var(--color-text)]">
+            <li>
+              <span className="font-semibold">Paso 1.</span> Abre la bandeja de entrada del correo
+              asociado a tu cuenta.
+            </li>
+            <li>
+              <span className="font-semibold">Paso 2.</span> Busca el correo de OmniRetail y haz clic
+              en el enlace de recuperación que contiene.
+            </li>
+            <li>
+              <span className="font-semibold">Paso 3.</span> Ese enlace te llevará directo a una
+              pantalla para elegir tu nueva contraseña -- no necesitas copiar ningún código
+              manualmente.
+            </li>
+          </ol>
+          <p className="mt-4 text-left text-xs text-[var(--color-text-muted)]">
+            El enlace es válido por {PASSWORD_RESET_TOKEN_MINUTES} minutos. Si no llega ningún
+            correo, revisa spam o solicita uno nuevo.
+          </p>
           <p className="mt-6 text-sm text-[var(--color-text-muted)]">
             <Link
               className="font-semibold text-[var(--color-title)] hover:underline"

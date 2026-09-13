@@ -44,9 +44,14 @@ export function LoginPage() {
     formError,
     isSubmitting,
     tenantLoading,
+    lockoutSecondsRemaining,
     submit,
   } = useLogin();
   const { showToast } = useToast();
+  const isLockedOut = lockoutSecondsRemaining > 0;
+  const lockoutMinutes = Math.floor(lockoutSecondsRemaining / 60);
+  const lockoutSeconds = lockoutSecondsRemaining % 60;
+  const lockoutDisplay = `${lockoutMinutes}:${String(lockoutSeconds).padStart(2, "0")}`;
 
   function simulateGoogleLogin() {
     showToast({
@@ -70,12 +75,18 @@ export function LoginPage() {
             void submit();
           }}
         >
-          {formError ? <InlineAlert title={formError} tone="danger" /> : null}
+          {isLockedOut ? (
+            <InlineAlert title="Demasiados intentos fallidos." tone="danger">
+              <p>Podrás intentarlo de nuevo en {lockoutDisplay}.</p>
+            </InlineAlert>
+          ) : formError ? (
+            <InlineAlert title={formError} tone="danger" />
+          ) : null}
 
           <FormField error={fieldErrors.email} id="login-email" label="Correo electronico">
             <Input
               autoComplete="email"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isLockedOut}
               id="login-email"
               onChange={(event) => setEmail(event.target.value)}
               placeholder="tu@correo.com"
@@ -87,7 +98,7 @@ export function LoginPage() {
           <FormField error={fieldErrors.password} id="login-password" label="Contraseña">
             <PasswordInput
               autoComplete="current-password"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isLockedOut}
               id="login-password"
               onChange={(event) => setPassword(event.target.value)}
               value={password}
@@ -113,8 +124,8 @@ export function LoginPage() {
             </Link>
           </div>
 
-          <Button className="w-full" disabled={isSubmitting || tenantLoading} type="submit">
-            {isSubmitting ? "Ingresando..." : "Iniciar sesion"}
+          <Button className="w-full" disabled={isSubmitting || tenantLoading || isLockedOut} type="submit">
+            {isSubmitting ? "Ingresando..." : isLockedOut ? `Espera ${lockoutDisplay}` : "Iniciar sesion"}
           </Button>
         </form>
 

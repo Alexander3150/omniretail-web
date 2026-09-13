@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { getLockoutMinutesForOccurrence, LOGIN_ATTEMPT_RULES } from "@/config/auth-policy";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 import type { LoginFormDto } from "@/modules/auth/application/dto/LoginFormDto";
@@ -11,6 +12,14 @@ import {
   validateLoginForm,
   type LoginFormValidationErrors,
 } from "@/modules/auth/validation/login.validation";
+
+// Numero de intento (dentro de la misma ventana) en el que
+// AuthRepository.login() aplica un bloqueo temporal -- se deriva de la
+// config real en vez de repetir el numero "5" aca, para que un cambio a
+// LOGIN_ATTEMPT_RULES no desincronice este contador del servidor.
+const LOCKOUT_ATTEMPT_NUMBER =
+  LOGIN_ATTEMPT_RULES.find((rule) => rule.triggersLockout)?.attemptNumber ??
+  LOGIN_ATTEMPT_RULES[LOGIN_ATTEMPT_RULES.length - 1].attemptNumber;
 
 export function useLogin() {
   const repositories = useRepositories();
@@ -26,17 +35,72 @@ export function useLogin() {
   // "loading" -- nunca por "error", eso ataria tambien al empleado.
   const { tenantId, loading: tenantLoading, error: tenantError } = usePublicTenant();
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmailState] = useState("");
+  const [password, setPasswordState] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<LoginFormValidationErrors>({});
   const [formError, setFormError] = useState<string | undefined>();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Contador de intentos fallidos CONSECUTIVOS visto por este formulario
+  // (nunca preguntado al servidor). AuthRepository.login() siempre
+  // responde con el mismo error generico exista o no la cuenta, este o
+  // no bloqueada (R-A13/R-A14/R-A19) -- este contador NO cambia eso, es
+  // una capa de UX puramente cliente que se adelanta a lo que
+  // LOGIN_ATTEMPT_RULES ya haria del lado del servidor, usando valores
+  // que ya son publicos en este mismo archivo de config. Nunca revela
+  // si la cuenta escrita existe de verdad ni si el bloqueo real ocurrio.
+  const [, setConsecutiveFailures] = useState(0);
+  const [lockedUntil, setLockedUntil] = useState<number | null>(null);
+  const [lockoutSecondsRemaining, setLockoutSecondsRemaining] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    const tick = () => {
+      if (!active) return;
+      if (!lockedUntil) {
+        setLockoutSecondsRemaining(0);
+        return;
+      }
+      const remaining = Math.max(0, Math.ceil((lockedUntil - Date.now()) / 1000));
+      setLockoutSecondsRemaining(remaining);
+      if (remaining === 0) {
+        setLockedUntil(null);
+        setConsecutiveFailures(0);
+      }
+    };
+    window.queueMicrotask(tick);
+    const interval = window.setInterval(tick, 1000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [lockedUntil]);
+
+  const clearFormError = useCallback(() => {
+    setFormError(undefined);
+  }, []);
+
+  const setEmail = useCallback(
+    (value: string) => {
+      setEmailState(value);
+      clearFormError();
+    },
+    [clearFormError],
+  );
+
+  const setPassword = useCallback(
+    (value: string) => {
+      setPasswordState(value);
+      clearFormError();
+    },
+    [clearFormError],
+  );
+
   const submit = useCallback(async () => {
     setFormError(undefined);
 
-    if (tenantLoading) {
+    if (tenantLoading || lockoutSecondsRemaining > 0) {
       return;
     }
 
@@ -71,15 +135,23 @@ export function useLogin() {
         setFormError("No se pudo iniciar sesion.");
         return;
       }
+      setConsecutiveFailures(0);
       router.replace(resolvePostLoginDestination(authenticatedUser));
     } catch (caughtError) {
       setFormError(
         caughtError instanceof Error ? caughtError.message : "No se pudo iniciar sesion.",
       );
+      setConsecutiveFailures((current) => {
+        const next = current + 1;
+        if (next >= LOCKOUT_ATTEMPT_NUMBER) {
+          setLockedUntil(Date.now() + getLockoutMinutesForOccurrence(1) * 60 * 1000);
+        }
+        return next;
+      });
     } finally {
       setIsSubmitting(false);
     }
-  }, [email, password, rememberMe, repositories, router, tenantId, tenantLoading]);
+  }, [email, lockoutSecondsRemaining, password, rememberMe, repositories, router, tenantId, tenantLoading]);
 
   return {
     email,
@@ -93,6 +165,7 @@ export function useLogin() {
     isSubmitting,
     tenantLoading,
     tenantError,
+    lockoutSecondsRemaining,
     submit,
   };
 }
