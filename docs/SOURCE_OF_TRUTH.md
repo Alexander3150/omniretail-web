@@ -103,7 +103,7 @@ Solo simulacion frontend. Nunca guardar full card number, CVV ni PIN. Guardar so
 
 ## Ecommerce
 
-Guest checkout permitido por defecto. `requireAccountForCheckout` permite al tenant decidir si exige cuenta. En compra invitado, email es obligatorio conceptualmente para seguimiento/envios; telefono no necesariamente. Guest tracking usa `trackingToken`. No existe correo real todavia.
+Guest checkout permitido por defecto. `requireAccountForCheckout` permite al tenant decidir si exige cuenta. En compra invitado, email es obligatorio conceptualmente para seguimiento/envios. El telefono del receptor de una entrega a domicilio vive en `Order.deliveryAddress.recipientPhone`, no en `GuestCustomer` ni en referencias libres. Guest tracking usa `trackingToken`. No existe correo real todavia.
 
 El tenant publico continua resolviendose por `PublicTenantProvider`; una sesion Customer solo complementa ese contexto. Si ambos tenants no coinciden, la Order no se atribuye al Customer autenticado. Una sesion Customer invalida o inactiva falla cerrada, mientras que la ausencia de sesion conserva el checkout invitado cuando la configuracion lo permite.
 
@@ -125,7 +125,7 @@ Una Sale sin `sourceOrderId` conserva la salida directa de inventario. Una Sale 
 
 ## Delivery
 
-`DeliveryMethod`: immediate, store_pickup, home_delivery. `TransportMode`: none, customer, own_fleet, third_party. No mezclar ambos conceptos.
+`DeliveryMethod`: immediate, store_pickup, home_delivery. `TransportMode`: none, customer, own_fleet, third_party. No mezclar ambos conceptos. `AddressSnapshot.recipientPhone` es opcional para compatibilidad legacy y para metodos distintos de `home_delivery`; toda creacion `home_delivery` debe incluir un valor no vacio valido segun `validatePhoneNumber`.
 
 ## POS
 

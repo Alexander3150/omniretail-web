@@ -8,6 +8,7 @@ import {
   TransportMode,
 } from "@/core/enums";
 import { InsufficientInventoryAvailabilityError } from "@/core/inventory/stockAvailability";
+import { validatePhoneNumber } from "@/config/contact-policy";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { StorefrontCartItemDto } from "@/modules/storefront/application/dto/StorefrontCartDto";
 import type {
@@ -119,6 +120,7 @@ export class CreateStorefrontCheckoutService {
         transportMode: TransportMode.third_party,
         deliveryAddress: {
           recipientName: form.fullName.trim(),
+          recipientPhone: form.phone.trim(),
           line1: form.addressLine1.trim(),
           line2: form.addressLine2?.trim() || undefined,
           city: form.city.trim(),
@@ -174,8 +176,7 @@ export class CreateStorefrontCheckoutService {
 }
 
 function buildReferences(form: StorefrontCheckoutFormDto): string | undefined {
-  const values = [form.references?.trim(), `Teléfono: ${form.phone.trim()}`].filter(Boolean);
-  return values.length > 0 ? values.join(" | ") : undefined;
+  return form.references?.trim() || undefined;
 }
 
 function assertCheckoutForm(form: StorefrontCheckoutFormDto): void {
@@ -184,6 +185,8 @@ function assertCheckoutForm(form: StorefrontCheckoutFormDto): void {
     throw new Error("Ingresa un correo electrónico válido.");
   }
   if (!form.phone.trim()) throw new Error("Ingresa un teléfono de contacto.");
+  const phoneError = validatePhoneNumber(form.phone);
+  if (phoneError) throw new Error(phoneError);
   if (!form.addressLine1.trim()) throw new Error("Ingresa la dirección de entrega.");
   if (!form.city.trim()) throw new Error("Ingresa la ciudad de entrega.");
   if (!form.cardholderName.trim()) throw new Error("Ingresa el titular de la tarjeta.");

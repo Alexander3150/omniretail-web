@@ -538,6 +538,13 @@ async function createOrder(
     status: OrderStatus.confirmed,
     deliveryMethod: DeliveryMethod.home_delivery,
     transportMode: TransportMode.own_fleet,
+    deliveryAddress: {
+      recipientName: "Cliente Picking",
+      recipientPhone: "55550000",
+      line1: "Zona 1",
+      city: "Guatemala",
+      country: "Guatemala",
+    },
     subtotal: items.reduce((total, [, quantity]) => total + quantity, 0),
     discountTotal: 0,
     shippingTotal: 0,

@@ -204,6 +204,13 @@ async function createPendingCheckout(
       status: OrderStatus.pending,
       deliveryMethod: DeliveryMethod.home_delivery,
       transportMode: TransportMode.third_party,
+      deliveryAddress: {
+        recipientName: "Cliente QA",
+        recipientPhone: "55550000",
+        line1: "Zona 1",
+        city: "Guatemala",
+        country: "Guatemala",
+      },
       subtotal: total,
       discountTotal: 0,
       shippingTotal: 0,
@@ -237,6 +244,8 @@ async function verifyConsecutiveStorefrontOrders() {
   const snapshot = store.getSnapshot();
   assert.equal(snapshot.orders.length, 2);
   assert.equal(snapshot.inventoryReservations.length, 2);
+  assert.equal(snapshot.orders[0].deliveryAddress?.recipientPhone, checkoutForm.phone);
+  assert.equal(snapshot.orders[0].deliveryAddress?.references, undefined);
   assert.notEqual(snapshot.orders[0].items[0].id, snapshot.orders[1].items[0].id);
   assert.equal(
     snapshot.inventoryBalances.find((item) => item.id === "bal-screws")?.reservedQuantity,
