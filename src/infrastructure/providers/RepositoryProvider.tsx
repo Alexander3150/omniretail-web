@@ -11,6 +11,7 @@ import type {
   BusinessConfigRepository,
   CashShiftRepository,
   CashMovementRepository,
+  CatalogImageAssetRepository,
   CategoryRepository,
   CustomerPaymentMethodRepository,
   CustomerRepository,
@@ -89,6 +90,7 @@ import {
   MockUserRepository,
 } from "@/infrastructure/mock/repositories";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
+import { IndexedDbCatalogImageAssetRepository } from "@/infrastructure/media/IndexedDbCatalogImageAssetRepository";
 
 export interface RepositoryRegistry {
   tenants: TenantRepository;
@@ -129,6 +131,7 @@ export interface RepositoryRegistry {
   cashMovements: CashMovementRepository;
   picking: PickingRepository;
   productMedia: ProductMediaRepository;
+  catalogImageAssets: CatalogImageAssetRepository;
   dispatches: DispatchRepository;
   notifications: NotificationRepository;
   auditLogs: AuditLogRepository;
@@ -187,6 +190,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       cashMovements: new MockCashMovementRepository(store, eventBus),
       picking: new MockPickingRepository(store, eventBus),
       productMedia: new MockProductMediaRepository(store, eventBus),
+      catalogImageAssets: new IndexedDbCatalogImageAssetRepository(),
       dispatches: new MockDispatchRepository(store, eventBus),
       notifications: new MockNotificationRepository(store, eventBus),
       auditLogs: new MockAuditLogRepository(store, eventBus),

@@ -36,6 +36,7 @@ function toListItem(
     code: category.slug.toUpperCase(),
     slug: category.slug,
     description: category.description,
+    image: category.image,
     status: category.status,
     productCount: productCounts.get(category.id) ?? 0,
   };

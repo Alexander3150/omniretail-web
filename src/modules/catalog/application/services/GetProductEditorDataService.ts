@@ -6,7 +6,6 @@ import type {
   ProductEditorData,
   ProductMediaEditorValue,
   SupplierProductEditorValue,
-  ProductKitComponentEditorValue,
 } from "@/modules/catalog/application/dto/ProductEditorDto";
 
 export class GetProductEditorDataService {
@@ -185,6 +184,7 @@ export class GetProductEditorDataService {
       id: item.id,
       type: item.type,
       url: item.url,
+      source: item.source,
       alt: item.alt,
       isPrimary: item.isPrimary,
       sortOrder: item.sortOrder,

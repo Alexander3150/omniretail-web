@@ -1,10 +1,9 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element */
-
 import type { ReactNode } from "react";
 import { ProductStatus } from "@/core/enums";
 import { ProductActionsMenu } from "@/modules/catalog/components/ProductActionsMenu";
+import { CatalogImage } from "@/modules/catalog/components/CatalogImage";
 import { GlobeIcon, MobileIcon, PosIcon, TagIcon } from "@/modules/catalog/components/CatalogIcons";
 import { productTypeLabels } from "@/modules/catalog/components/productLabels";
 import type { ProductListItem } from "@/modules/catalog/types/catalog.types";
@@ -71,10 +70,11 @@ export function ProductTable({
                 >
                   <td className="min-w-[300px] px-4 py-3 sm:min-w-[360px]">
                     <div className="flex items-center gap-3">
-                      <img
+                      <CatalogImage
                         alt={product.name}
                         className="h-11 w-11 rounded-md border border-[var(--color-border)] object-contain"
-                        src={product.imageUrl}
+                        source={product.imageSource}
+                        tenantId={product.tenantId}
                       />
                       <div className="min-w-0">
                         <p className="truncate font-semibold text-[var(--color-title)]">

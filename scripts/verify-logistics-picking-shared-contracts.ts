@@ -384,6 +384,85 @@ function prepareDatabase(store: MockDatabaseStore) {
     db.inventoryReservations = [];
     db.inventoryReservationConsumeOperations = [];
     db.inventoryMovements = [];
+    const productTemplate = db.products.find((item) => item.id === "prod-screws");
+    assert.ok(productTemplate);
+    db.products.push(
+      {
+        ...productTemplate,
+        id: "prod-analgesic",
+        sku: "HARNESS-LOT",
+        barcode: undefined,
+        name: "Producto fixture por lote",
+        tracking: { stock: true, lot: true, expiration: true, serial: false },
+      },
+      {
+        ...productTemplate,
+        id: "prod-sensor-serial-lot",
+        sku: "HARNESS-LOT-SERIAL",
+        barcode: undefined,
+        name: "Producto fixture por lote y serie",
+        tracking: { stock: true, lot: true, expiration: false, serial: true },
+      },
+    );
+    db.inventoryBalances.push(
+      {
+        id: "bal-analgesic",
+        tenantId,
+        branchId,
+        productId: "prod-analgesic",
+        locationId: "loc-centro-a",
+        quantity: 5,
+        reservedQuantity: 0,
+        minStock: 1,
+        updatedAt: "2026-09-12T12:00:00.000Z",
+      },
+      {
+        id: "bal-sensor-serial-lot",
+        tenantId,
+        branchId,
+        productId: "prod-sensor-serial-lot",
+        locationId: "loc-centro-a",
+        quantity: 4,
+        reservedQuantity: 0,
+        minStock: 1,
+        updatedAt: "2026-09-12T12:00:00.000Z",
+      },
+    );
+    db.stockLots.push(
+      {
+        id: "lot-harness-analgesic",
+        tenantId,
+        branchId,
+        productId: "prod-analgesic",
+        locationId: "loc-centro-a",
+        lotNumber: "LOT-A",
+        expirationDate: "2028-01-01T00:00:00.000Z",
+        quantity: 5,
+        createdAt: "2026-09-12T12:00:00.000Z",
+      },
+      {
+        id: "lot-harness-sensor",
+        tenantId,
+        branchId,
+        productId: "prod-sensor-serial-lot",
+        locationId: "loc-centro-a",
+        lotNumber: "LOT-SENSOR",
+        quantity: 2,
+        createdAt: "2026-09-12T12:00:00.000Z",
+      },
+    );
+    db.serialNumbers.push({
+      id: "serial-harness-sensor-a1",
+      tenantId,
+      branchId,
+      productId: "prod-sensor-serial-lot",
+      locationId: "loc-centro-a",
+      lotId: "lot-harness-sensor",
+      serialNumber: "SENSOR-A1",
+      status: SerialStatus.available,
+      createdAt: "2026-09-12T12:00:00.000Z",
+      updatedAt: "2026-09-12T12:00:00.000Z",
+    });
     db.inventoryBalances.forEach((balance) => {
       balance.reservedQuantity = 0;
       if (balance.id === "bal-screws") balance.quantity = 10;

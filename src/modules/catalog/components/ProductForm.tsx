@@ -1,7 +1,5 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element */
-
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import type { Product, Promotion } from "@/core/entities";
 import {
@@ -18,7 +16,9 @@ import { Input } from "@/shared/components/Input";
 import { Select } from "@/shared/components/Select";
 import { cn } from "@/shared/utils/cn";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
-import { PRODUCT_IMAGE_PLACEHOLDER } from "@/shared/utils/getProductImage";
+import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
+import { processCatalogImage } from "@/modules/catalog/application/services/processCatalogImage";
+import { CatalogImage } from "@/modules/catalog/components/CatalogImage";
 import {
   isPositiveInteger,
   isPositiveNumber,
@@ -1899,7 +1899,8 @@ function MediaTab({
   onChange: (value: ProductMediaEditorValue[]) => void;
 }) {
   const primary = value.find((item) => item.isPrimary) ?? value[0];
-  const previewUrl = primary?.url.trim() || PRODUCT_IMAGE_PLACEHOLDER;
+  const { user } = useCurrentSession();
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   function update(index: number, patch: Partial<ProductMediaEditorValue>) {
     let next = value.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item));
@@ -1909,60 +1910,117 @@ function MediaTab({
     onChange(next);
   }
 
+  async function appendFiles(files: FileList | null) {
+    if (!files?.length) return;
+    setUploadError(null);
+    if (value.length + files.length > 6) {
+      setUploadError("Puedes guardar hasta 6 imagenes por producto.");
+      return;
+    }
+    try {
+      const uploads = await Promise.all([...files].map((file) => processCatalogImage(file)));
+      onChange([
+        ...value,
+        ...uploads.map((pendingUpload, index) => ({
+          type: "image" as const,
+          url: "",
+          source: undefined,
+          pendingUpload,
+          alt: "",
+          isPrimary: value.length === 0 && index === 0,
+          sortOrder: value.length + index + 1,
+        })),
+      ]);
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "No se pudo procesar la imagen.");
+    }
+  }
+
+  async function replaceFile(index: number, file: File | undefined) {
+    if (!file) return;
+    setUploadError(null);
+    try {
+      update(index, {
+        pendingUpload: await processCatalogImage(file),
+        source: undefined,
+        url: "",
+      });
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "No se pudo procesar la imagen.");
+    }
+  }
+
   return (
     <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
       <SectionTitle
-        description="Referencias ProductMedia actuales, sin upload backend."
+        description="Hasta 6 imagenes JPEG, PNG o WebP. Los archivos locales se optimizan y guardan fuera de LocalStorage."
         title="Multimedia"
       />
       <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
         <div className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] p-4 text-center">
-          <img
-            alt="Vista previa de imagen principal"
-            className="mx-auto aspect-square w-full max-w-44 rounded-md border border-[var(--color-border)] bg-white object-cover"
-            src={previewUrl}
-          />
-          <span className="mt-3 inline-flex rounded-full bg-white px-3 py-1 text-xs font-bold text-[var(--color-title)]">
-            Imagen principal
-          </span>
+          {primary ? (
+            <>
+              <CatalogMediaPreview media={primary} tenantId={user?.tenantId} />
+              <span className="mt-3 inline-flex rounded-full bg-white px-3 py-1 text-xs font-bold text-[var(--color-title)]">
+                Imagen principal configurada
+              </span>
+            </>
+          ) : (
+            <div className="grid aspect-square w-full place-items-center rounded-md border border-dashed border-[var(--color-border)] bg-white px-4 text-sm font-semibold text-[var(--color-text-muted)]">
+              Sin imagen configurada
+            </div>
+          )}
         </div>
         <div className="space-y-4">
           <div className="flex justify-end">
-            <Button
-              className="w-full sm:w-auto"
-              onClick={() =>
-                onChange([
-                  ...value,
-                  {
-                    type: "image",
-                    url: "",
-                    alt: "",
-                    isPrimary: value.length === 0,
-                    sortOrder: value.length + 1,
-                  },
-                ])
-              }
-              type="button"
-              variant="secondary"
-            >
-              <PlusIcon />
-              Agregar imagen
-            </Button>
+            <label className="inline-flex min-h-10 cursor-pointer items-center justify-center rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-white">
+              Seleccionar archivos
+              <input
+                accept="image/jpeg,image/png,image/webp"
+                className="sr-only"
+                disabled={value.length >= 6}
+                multiple
+                onChange={(event) => {
+                  void appendFiles(event.target.files);
+                  event.target.value = "";
+                }}
+                type="file"
+              />
+            </label>
           </div>
+          {uploadError ? <FieldError>{uploadError}</FieldError> : null}
           {errors.primaryImageUrl ? <FieldError>{errors.primaryImageUrl}</FieldError> : null}
           {value.length ? (
             <div className="space-y-3">
               {value.map((media, index) => (
                 <div
-                  className="grid gap-3 rounded-md border border-[var(--color-border)] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto]"
+                  className="grid gap-3 rounded-md border border-[var(--color-border)] p-3 md:grid-cols-[72px_minmax(0,1fr)_minmax(0,1fr)_auto_auto]"
                   key={`${media.id ?? "new"}-${index}`}
                 >
-                  <Input
-                    aria-label="URL de imagen"
-                    onChange={(event) => update(index, { url: event.target.value })}
-                    placeholder="/images/products/placeholder-product.webp"
-                    value={media.url}
-                  />
+                  <CatalogMediaPreview compact media={media} tenantId={user?.tenantId} />
+                  <div className="space-y-2">
+                    <p className="truncate text-xs text-[var(--color-text-muted)]">
+                      {media.pendingUpload
+                        ? "Archivo local listo para guardar"
+                        : media.source?.kind === "mockAsset"
+                          ? "Archivo local guardado"
+                          : "Imagen legacy"}
+                    </p>
+                    <label className="block cursor-pointer text-xs font-semibold text-[var(--color-title)] underline">
+                      {media.pendingUpload || media.source?.kind === "mockAsset"
+                        ? "Reemplazar archivo"
+                        : "Usar archivo local"}
+                      <input
+                        accept="image/jpeg,image/png,image/webp"
+                        className="sr-only"
+                        onChange={(event) => {
+                          void replaceFile(index, event.target.files?.[0]);
+                          event.target.value = "";
+                        }}
+                        type="file"
+                      />
+                    </label>
+                  </div>
                   <Input
                     aria-label="Texto alternativo"
                     onChange={(event) => update(index, { alt: event.target.value })}
@@ -1994,6 +2052,33 @@ function MediaTab({
         </div>
       </div>
     </section>
+  );
+}
+
+function CatalogMediaPreview({
+  compact,
+  media,
+  tenantId,
+}: {
+  compact?: boolean;
+  media?: ProductMediaEditorValue;
+  tenantId?: string;
+}) {
+  const source = media
+    ? (media.source ??
+      (media.url.trim() ? { kind: "url" as const, src: media.url.trim() } : undefined))
+    : undefined;
+  return (
+    <CatalogImage
+      alt={media?.alt || "Vista previa de imagen"}
+      className={cn(
+        "rounded-md border border-[var(--color-border)] bg-white object-cover",
+        compact ? "h-16 w-16" : "mx-auto aspect-square w-full max-w-44",
+      )}
+      previewBlob={media?.pendingUpload?.blob}
+      source={source}
+      tenantId={tenantId}
+    />
   );
 }
 
@@ -2217,13 +2302,16 @@ function validateEditor(value: ProductEditorDto, editorData: ProductEditorData) 
   }
   const invalidMedia = value.media.find(
     (media) =>
-      media.url.trim() &&
-      !(
-        media.url.trim().startsWith("/") ||
-        media.url.trim().startsWith("http://") ||
-        media.url.trim().startsWith("https://")
-      ),
+      !media.pendingUpload &&
+      media.source?.kind !== "mockAsset" &&
+      (!media.url.trim() ||
+        !(
+          media.url.trim().startsWith("/") ||
+          media.url.trim().startsWith("http://") ||
+          media.url.trim().startsWith("https://")
+        )),
   );
+  if (value.media.length > 6) return "Puedes guardar hasta 6 imagenes por producto.";
   if (invalidMedia) return "Cada imagen debe iniciar con / o una URL http(s).";
   if (
     value.tracking.stock &&
@@ -2276,7 +2364,9 @@ function routeToFirstError(
                 editorError.includes("compra") ||
                 editorError.includes("costo")
               ? "suppliers"
-              : "general",
+              : editorError.includes("imagen") || editorError.includes("multimedia")
+                ? "media"
+                : "general",
     );
   }
 }

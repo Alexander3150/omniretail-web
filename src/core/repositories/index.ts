@@ -8,6 +8,7 @@ export type * from "./ProductRepository";
 export type * from "./ProductKitComponentRepository";
 export type * from "./ProductPriceHistoryRepository";
 export type * from "./ProductMediaRepository";
+export type * from "./CatalogImageAssetRepository";
 export type * from "./ProductSalesPriceTierRepository";
 export type * from "./CategoryRepository";
 export type * from "./UnitRepository";

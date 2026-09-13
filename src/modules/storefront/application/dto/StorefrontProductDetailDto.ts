@@ -1,4 +1,4 @@
-import type { Product } from "@/core/entities";
+import type { CatalogImageSource, Product } from "@/core/entities";
 
 export interface StorefrontBranchAvailabilityDto {
   branchId: string;
@@ -10,7 +10,7 @@ export interface StorefrontBranchAvailabilityDto {
 export interface StorefrontProductDetailDto {
   product: Product;
   categoryName?: string;
-  media: Array<{ url: string; alt?: string }>;
+  media: Array<{ source: CatalogImageSource; alt?: string }>;
   attributes: Array<{ name: string; value: string }>;
   availability?: StorefrontBranchAvailabilityDto[];
 }

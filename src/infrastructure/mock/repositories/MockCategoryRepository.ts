@@ -1,5 +1,6 @@
 import { CategoryStatus } from "@/core/enums";
 import type { CategoryRepository } from "@/core/repositories";
+import { normalizeCatalogImageSource } from "@/core/media/catalogImage";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
 
 export class MockCategoryRepository extends BaseMockRepository implements CategoryRepository {
@@ -13,6 +14,9 @@ export class MockCategoryRepository extends BaseMockRepository implements Catego
     return this.read((db) => db.categories.filter((item) => item.status === "active"));
   }
   async create(input: Parameters<CategoryRepository["create"]>[0]) {
+    if (input.image && !normalizeCatalogImageSource(input.image)) {
+      throw new Error("La referencia de imagen de categoria no es segura.");
+    }
     const item = this.store.mutate((db) => {
       const now = this.now();
       const created = { ...input, id: this.id("categories"), createdAt: now, updatedAt: now };
@@ -27,6 +31,9 @@ export class MockCategoryRepository extends BaseMockRepository implements Catego
     return item;
   }
   async update(id: string, input: Parameters<CategoryRepository["update"]>[1]) {
+    if (input.image && !normalizeCatalogImageSource(input.image)) {
+      throw new Error("La referencia de imagen de categoria no es segura.");
+    }
     const item = this.store.mutate((db) => this.updateById(db.categories, id, input, "Category"));
     this.emit("category.changed", {
       entityId: item.id,

@@ -5,6 +5,7 @@ import {
 } from "@/core/inventory/canonicalAvailability";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { StorefrontProductDetailDto } from "@/modules/storefront/application/dto/StorefrontProductDetailDto";
+import { getProductMediaSource, sortProductMediaForDisplay } from "@/core/media/catalogImage";
 import { GetStorefrontPublishedProductService } from "@/modules/storefront/application/services/GetStorefrontPublishedProductService";
 
 export class GetStorefrontProductDetailService {
@@ -47,9 +48,9 @@ export class GetStorefrontProductDetailService {
       categoryName: categories.find(
         (category) => category.id === product.categoryId && category.tenantId === tenantId,
       )?.name,
-      media: media
-        .filter((item) => item.tenantId === tenantId && item.type === "image")
-        .map((item) => ({ url: item.url, alt: item.alt })),
+      media: sortProductMediaForDisplay(media.filter((item) => item.tenantId === tenantId)).map(
+        (item) => ({ source: getProductMediaSource(item)!, alt: item.alt }),
+      ),
       attributes: values.flatMap((value) => {
         const definition = definitions.find(
           (item) =>

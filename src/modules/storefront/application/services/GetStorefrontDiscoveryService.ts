@@ -1,4 +1,9 @@
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import {
+  getProductMediaSource,
+  normalizeCatalogImageSource,
+  selectPrimaryProductMedia,
+} from "@/core/media/catalogImage";
 import type {
   StorefrontDiscoveryDto,
   StorefrontDiscoveryProductDto,
@@ -16,7 +21,10 @@ export class GetStorefrontDiscoveryService {
     const categoryNames = new Map(categories.map((category) => [category.id, category.name]));
     const productsWithMedia = await Promise.all(
       products.map(async (product): Promise<StorefrontDiscoveryProductDto> => {
-        const media = await this.repositories.productMedia.getPrimaryByProduct(product.id);
+        const productMedia = await this.repositories.productMedia.getByProduct(product.id);
+        const media = selectPrimaryProductMedia(
+          productMedia.filter((item) => item.tenantId === tenantId),
+        );
         return {
           id: product.id,
           sku: product.sku,
@@ -26,18 +34,19 @@ export class GetStorefrontDiscoveryService {
           salePrice: product.salePrice,
           categoryId: product.categoryId,
           categoryName: categoryNames.get(product.categoryId),
-          imageUrl: media?.tenantId === tenantId && media.type === "image" ? media.url : undefined,
-          imageAlt: media?.tenantId === tenantId ? media.alt : undefined,
+          imageSource: media ? (getProductMediaSource(media) ?? undefined) : undefined,
+          imageAlt: media?.alt,
         };
       }),
     );
 
     return {
-      categories: categories.map(({ id, name, slug, description }) => ({
+      categories: categories.map(({ id, name, slug, description, image }) => ({
         id,
         name,
         slug,
         description,
+        imageSource: normalizeCatalogImageSource(image) ?? undefined,
       })),
       products: productsWithMedia,
     };

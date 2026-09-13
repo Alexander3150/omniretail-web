@@ -1,7 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
+import { StorefrontCatalogImage } from "@/modules/storefront/components/StorefrontCatalogImage";
 import { useStorefrontOffers } from "@/modules/storefront/hooks/useStorefrontOffers";
 
 export function OffersPage() {
@@ -77,19 +77,11 @@ export function OffersPage() {
                     -Q{item.discount.toFixed(2)}
                   </span>
                 </div>
-                {item.imageUrl ? (
-                  <Image
-                    alt={item.imageAlt ?? item.name}
-                    className="mt-5 h-40 w-full rounded-xl bg-slate-50 object-cover"
-                    height={160}
-                    src={item.imageUrl}
-                    width={400}
-                  />
-                ) : (
-                  <div className="mt-5 flex h-40 items-center justify-center rounded-xl bg-slate-50 text-sm text-[var(--color-text-muted)]">
-                    Sin imagen disponible
-                  </div>
-                )}
+                <StorefrontCatalogImage
+                  alt={item.imageAlt ?? item.name}
+                  className="mt-5 h-40 w-full rounded-xl bg-slate-50 object-cover"
+                  source={item.imageSource}
+                />
                 <p className="mt-5 text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
                   {item.sku}
                 </p>

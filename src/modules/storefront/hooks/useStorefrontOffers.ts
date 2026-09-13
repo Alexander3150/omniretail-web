@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { Promotion } from "@/core/entities";
+import type { CatalogImageSource, Promotion } from "@/core/entities";
+import { getProductMediaSource, selectPrimaryProductMedia } from "@/core/media/catalogImage";
 import { BranchStatus, PromotionStatus, SalesChannel } from "@/core/enums";
 import { calculateEffectivePrice } from "@/core/pricing";
 import { isBranchScopedResourceAvailable } from "@/core/scopes/branchScope";
@@ -13,7 +14,7 @@ export interface StorefrontOfferItem {
   name: string;
   sku: string;
   description?: string;
-  imageUrl?: string;
+  imageSource?: CatalogImageSource;
   imageAlt?: string;
   basePrice: number;
   effectivePrice: number;
@@ -111,18 +112,20 @@ export function useStorefrontOffers() {
                 product.salePrice,
               );
               if (!promotion) return null;
-              const [media, price] = await Promise.all([
-                repositories.productMedia.getPrimaryByProduct(product.id),
+              const [productMedia, price] = await Promise.all([
+                repositories.productMedia.getByProduct(product.id),
                 Promise.resolve(calculateEffectivePrice(product.salePrice, promotion)),
               ]);
+              const media = selectPrimaryProductMedia(
+                productMedia.filter((item) => item.tenantId === tenantId),
+              );
               return {
                 productId: product.id,
                 name: product.name,
                 sku: product.sku,
                 description: product.description,
-                imageUrl:
-                  media?.tenantId === tenantId && media.type === "image" ? media.url : undefined,
-                imageAlt: media?.tenantId === tenantId ? media.alt : undefined,
+                imageSource: media ? (getProductMediaSource(media) ?? undefined) : undefined,
+                imageAlt: media?.alt,
                 basePrice: price.basePrice,
                 effectivePrice: price.effectivePrice,
                 discount: price.discountAmount,

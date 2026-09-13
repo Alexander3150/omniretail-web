@@ -41,10 +41,11 @@ import {
 } from "@/core/enums";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { buildPasswordHashMock } from "@/infrastructure/mock/shared/passwordHashMock";
+import { hardwareCatalogSeed } from "@/infrastructure/mock/seeds/hardwareCatalogSeed";
 
 const now = "2026-01-01T12:00:00.000Z";
 
-export const demoSeedDatabase: MockDatabase = {
+const legacyDemoSeedDatabase: MockDatabase = {
   tenants: [
     {
       id: "tenant-demo",
@@ -1589,4 +1590,77 @@ export const demoSeedDatabase: MockDatabase = {
   ],
   notifications: [],
   auditLogs: [],
+};
+
+const hardwareOrderItems = legacyDemoSeedDatabase.orderItems.map((item) =>
+  item.productId === "prod-screws"
+    ? {
+        ...item,
+        skuSnapshot: "FIJ-TOR-001",
+        nameSnapshot: 'Tornillo para madera 2" caja 100',
+        unitPrice: 45,
+        subtotal: item.quantity * 45,
+      }
+    : item.productId === "prod-drill"
+      ? {
+          ...item,
+          skuSnapshot: "HER-ELE-001",
+          nameSnapshot: "Taladro percutor 750 W",
+          unitPrice: 599,
+          subtotal: item.quantity * 599,
+        }
+      : item,
+);
+
+export const demoSeedDatabase: MockDatabase = {
+  ...legacyDemoSeedDatabase,
+  ...hardwareCatalogSeed,
+  tenants: legacyDemoSeedDatabase.tenants.map((tenant) => ({
+    ...tenant,
+    name: "Ferretería Los Simpson",
+    legalName: "Ferretería Los Simpson, S.A.",
+  })),
+  ecommerceConfigs: legacyDemoSeedDatabase.ecommerceConfigs.map((config) => ({
+    ...config,
+    storeName: "Ferretería Los Simpson",
+    contactEmail: "ventas@ferreterialossimpson.demo",
+  })),
+  promotions: legacyDemoSeedDatabase.promotions.map((promotion) => ({
+    ...promotion,
+    name: "Taladro Bosch en oferta web",
+    productIds: ["prod-drill"],
+  })),
+  inventoryReservations: legacyDemoSeedDatabase.inventoryReservations,
+  inventoryTransferRequests: legacyDemoSeedDatabase.inventoryTransferRequests.filter(
+    (request) => request.productId === "prod-drill" || request.productId === "prod-screws",
+  ),
+  inventoryTransfers: legacyDemoSeedDatabase.inventoryTransfers,
+  inventoryTransferItems: legacyDemoSeedDatabase.inventoryTransferItems.map((item) =>
+    item.productId === "prod-analgesic" ? { ...item, productId: "prod-cement" } : item,
+  ),
+  purchaseOrders: legacyDemoSeedDatabase.purchaseOrders,
+  purchaseOrderItems: legacyDemoSeedDatabase.purchaseOrderItems,
+  receipts: legacyDemoSeedDatabase.receipts,
+  receiptLines: legacyDemoSeedDatabase.receiptLines,
+  orderItems: hardwareOrderItems,
+  orders: legacyDemoSeedDatabase.orders.map((order) => {
+    const items = hardwareOrderItems.filter((item) => item.orderId === order.id);
+    const subtotal = items.reduce((total, item) => total + item.subtotal, 0);
+    return {
+      ...order,
+      items,
+      subtotal,
+      total: subtotal + order.shippingTotal - order.discountTotal,
+    };
+  }),
+  payments: legacyDemoSeedDatabase.payments.map((payment) =>
+    payment.orderId === "order-001" ? { ...payment, amount: 115 } : payment,
+  ),
+  pickingOrders: legacyDemoSeedDatabase.pickingOrders,
+  pickingItems: legacyDemoSeedDatabase.pickingItems,
+  dispatches: legacyDemoSeedDatabase.dispatches,
+  bankAccounts: legacyDemoSeedDatabase.bankAccounts.map((account) => ({
+    ...account,
+    holderName: "Ferretería Los Simpson, S.A.",
+  })),
 };
