@@ -72,6 +72,18 @@ PickingRepository.updateItem
 -> PickingItem + InventoryReservation + InventoryBalance + InventoryMovement
 ```
 
+La asignacion tambien cambia `Order.confirmed -> preparing` dentro de una sola transaccion. El primer incremento positivo agrega `Order.preparing -> picking` a la transaccion anterior, y completion cambia Picking+Order a `ready_for_dispatch` o `ready_for_pickup` sin tocar inventario.
+
+```text
+DispatchApplicationService
+-> DispatchAuthorizationContext (Session -> User -> Role -> Branch)
+-> DispatchRepository.confirm
+-> MockDatabaseStore.transact
+-> Dispatch.dispatched + Order.dispatched + Notification email simulada opcional
+```
+
+Dispatch solo verifica que Picking haya consumido las reservas stock-tracked. No actualiza `InventoryBalance`, `InventoryReservation`, `InventoryMovement`, lotes ni seriales. `Order.status` permanece como unica fuente del tracking; no se agrega timeline persistido.
+
 `MockSaleConfirmationRepository.confirm` valida dentro de su transaccion si `sourceOrderId` acredita ownership mediante la Order y sus reservas. Las ventas directas conservan el OUT propio; las vinculadas validas persisten Sale, Payment y CashMovement sin modificar reservas, balances ni movimientos de inventario.
 
 ## Cash Shift Lifecycle

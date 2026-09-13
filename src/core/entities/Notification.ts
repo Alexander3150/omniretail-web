@@ -13,6 +13,17 @@ export interface Notification {
   status: NotificationStatus;
   relatedEntityType?: string;
   relatedEntityId?: string;
+  /** Delivery evidence is independent from the in-app read status above. */
+  deliveryStatus?: "simulated_sent";
+  recipientEmail?: string;
+  orderId?: string;
+  dispatchId?: string;
+  orderReference?: string;
+  carrierName?: string;
+  trackingNumber?: string;
+  deduplicationKey?: string;
+  sentAt?: ISODateString;
+  simulatedDeliveryResult?: "accepted";
   createdAt: ISODateString;
   readAt?: ISODateString;
 }

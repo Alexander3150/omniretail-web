@@ -9,6 +9,7 @@ import {
 } from "@/core/enums";
 import { InsufficientInventoryAvailabilityError } from "@/core/inventory/stockAvailability";
 import { validatePhoneNumber } from "@/config/contact-policy";
+import { normalizeEmail, validateEmail } from "@/config/email-policy";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { StorefrontCartItemDto } from "@/modules/storefront/application/dto/StorefrontCartDto";
 import type {
@@ -46,6 +47,7 @@ export class CreateStorefrontCheckoutService {
     const checkoutIdentity = idempotencyKey.trim();
     if (!checkoutIdentity) throw new Error("No se pudo inicializar el pedido.");
 
+    const normalizedEmail = normalizeEmail(form.email);
     const { tenantId, ecommerceConfig } = await this.publicStorefrontContextService.execute();
     const [products, customerContext] = await Promise.all([
       Promise.all(
@@ -113,11 +115,12 @@ export class CreateStorefrontCheckoutService {
         customerId: authenticatedCustomer?.customerId,
         guestCustomer: authenticatedCustomer
           ? undefined
-          : { name: form.fullName.trim(), email: form.email.trim() },
+          : { name: form.fullName.trim(), email: normalizedEmail },
         items: orderItems,
         status: OrderStatus.pending,
         deliveryMethod: DeliveryMethod.home_delivery,
         transportMode: TransportMode.third_party,
+        notificationContact: { emailMode: "send", email: normalizedEmail },
         deliveryAddress: {
           recipientName: form.fullName.trim(),
           recipientPhone: form.phone.trim(),
@@ -160,7 +163,7 @@ export class CreateStorefrontCheckoutService {
       }
       throw cause;
     }
-    const emailSimulation = this.emailSimulationService.simulateConfirmation(form.email);
+    const emailSimulation = this.emailSimulationService.simulateConfirmation(normalizedEmail);
 
     return {
       orderNumber: confirmation.order.orderNumber,
@@ -181,9 +184,7 @@ function buildReferences(form: StorefrontCheckoutFormDto): string | undefined {
 
 function assertCheckoutForm(form: StorefrontCheckoutFormDto): void {
   if (!form.fullName.trim()) throw new Error("Ingresa tu nombre completo.");
-  if (!form.email.trim() || !form.email.includes("@")) {
-    throw new Error("Ingresa un correo electrónico válido.");
-  }
+  if (validateEmail(form.email)) throw new Error("Ingresa un correo electrónico válido.");
   if (!form.phone.trim()) throw new Error("Ingresa un teléfono de contacto.");
   const phoneError = validatePhoneNumber(form.phone);
   if (phoneError) throw new Error(phoneError);

@@ -1,4 +1,4 @@
-import { InventoryMovementType, OrderStatus, ProductStatus, ProductType } from "@/core/enums";
+import { InventoryMovementType, ProductStatus, ProductType } from "@/core/enums";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import {
@@ -28,7 +28,8 @@ export async function runDemoScenario() {
   });
   const foundProduct = await products.getById(product.id);
   const pendingOrders = await orders.getPendingForLogistics();
-  const updatedOrder = await orders.updateStatus("order-002", OrderStatus.dispatched);
+  const updatedOrder = await orders.getById("order-002");
+  if (!updatedOrder) throw new Error("Demo order not found");
   const trackedOrder = await orders.getByTrackingToken(
     updatedOrder.tenantId,
     updatedOrder.trackingToken,

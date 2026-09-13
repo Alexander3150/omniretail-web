@@ -86,7 +86,6 @@ async function main() {
     orderId: orderA.id,
     priority: PickingPriority.high,
   });
-  await orders.updateStatus(orderA.id, OrderStatus.picking);
   const orderB = await createOrder(orders, "B", [["prod-screws", 2]]);
 
   addIsolatedQueueFixtures(store);
@@ -225,11 +224,11 @@ async function main() {
   }
   const completion = await service.complete(branchId, pickingA.id);
   assert.equal(completion.status, PickingStatus.completed);
-  assert.equal(completion.orderStatus, OrderStatus.packing);
+  assert.equal(completion.orderStatus, OrderStatus.ready_for_dispatch);
   assert.equal(completion.idempotent, false);
   const completionRetry = await service.complete(branchId, pickingA.id);
   assert.equal(completionRetry.idempotent, true);
-  assert.equal((await orders.getById(orderA.id))?.status, OrderStatus.packing);
+  assert.equal((await orders.getById(orderA.id))?.status, OrderStatus.ready_for_dispatch);
 
   // M. An injected mid-transaction failure rolls both aggregate changes back.
   const orderC = await createOrder(orders, "C", [["prod-screws", 1]]);
@@ -239,7 +238,6 @@ async function main() {
     orderId: orderC.id,
     priority: PickingPriority.normal,
   });
-  await orders.updateStatus(orderC.id, OrderStatus.picking);
   await picking.assign({ tenantId, branchId, pickingOrderId: pickingC.id, actorUserId: loserId });
   const lineC = (await picking.getItems({ tenantId, branchId }, pickingC.id))[0];
   assert.ok(lineC);
@@ -277,7 +275,7 @@ async function main() {
     pickingOrderId: pickingC.id,
     actorUserId: loserId,
   });
-  assert.equal(completedC.order.status, OrderStatus.packing);
+  assert.equal(completedC.order.status, OrderStatus.ready_for_dispatch);
   assert.equal(
     (
       await picking.complete({
@@ -300,7 +298,6 @@ async function main() {
     orderId: orderD.id,
     priority: PickingPriority.normal,
   });
-  await orders.updateStatus(orderD.id, OrderStatus.picking);
   currentActorId = actorA;
   const manipulatedAssignment = await (
     service.assign as unknown as (

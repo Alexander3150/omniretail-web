@@ -245,6 +245,10 @@ async function verifyConsecutiveStorefrontOrders() {
   assert.equal(snapshot.orders.length, 2);
   assert.equal(snapshot.inventoryReservations.length, 2);
   assert.equal(snapshot.orders[0].deliveryAddress?.recipientPhone, checkoutForm.phone);
+  assert.deepEqual(snapshot.orders[0].notificationContact, {
+    emailMode: "send",
+    email: checkoutForm.email,
+  });
   assert.equal(snapshot.orders[0].deliveryAddress?.references, undefined);
   assert.notEqual(snapshot.orders[0].items[0].id, snapshot.orders[1].items[0].id);
   assert.equal(

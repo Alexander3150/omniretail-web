@@ -10,6 +10,9 @@ export interface Dispatch {
   transportMode: TransportMode;
   carrierName?: string;
   trackingNumber?: string;
+  dispatchedByUserId?: string;
+  confirmationOperationId?: string;
+  confirmationFingerprint?: string;
   vehicle?: string;
   driver?: string;
   packageCount?: number;
