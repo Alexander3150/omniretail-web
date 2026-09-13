@@ -42,12 +42,17 @@ function isSessionOnlyRoute(pathname: string): boolean {
  * el orden -- findRequiredPermission no tiene nocion de "el match mas
  * especifico gana").
  *
- * "/cuenta" (src/app/(private)/cuenta/page.tsx) solo hace
+ * "/cuenta" (src/app/(public)/(accessible)/cuenta/page.tsx) solo hace
  * redirect("/cuenta/perfil") -- nunca renderiza contenido propio. Por
  * eso se permite aca de forma EXPLICITA y EXACTA (nunca por prefijo,
  * a diferencia de SESSION_ONLY_ROUTES) a cualquier sesion valida: la
  * ruta real de destino, /cuenta/perfil, sigue exigiendo su propio
- * permiso normalmente una vez completado el redirect.
+ * permiso normalmente una vez completado el redirect. Este componente
+ * se usa tanto desde (private)/layout.tsx (rutas de backoffice) como
+ * desde (public)/(accessible)/cuenta/layout.tsx (Mi Cuenta de Customer)
+ * -- la resolucion de permisos es la misma independientemente de bajo
+ * que route group fisico viva la pagina, porque solo depende del
+ * pathname.
  */
 const CUENTA_REDIRECT_ROUTE = "/cuenta";
 
