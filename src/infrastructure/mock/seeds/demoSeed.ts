@@ -104,6 +104,8 @@ export const demoSeedDatabase: MockDatabase = {
       tenantId: "tenant-demo",
       enabled: true,
       storeName: "FerrePharma Demo",
+      contactPhone: "+502 2222-3333",
+      contactEmail: "ventas@ferrepharma.demo",
       requireAccountForCheckout: false,
       guestTrackingEnabled: true,
       allowedDeliveryMethods: [

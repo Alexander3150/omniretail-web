@@ -3,9 +3,12 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
+import { UserType } from "@/core/enums";
+import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import type { StorefrontCheckoutFormDto } from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
 import { useStorefrontCheckout } from "@/modules/storefront/hooks/useStorefrontCheckout";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
+import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
 const initialForm: StorefrontCheckoutFormDto = {
   fullName: "",
@@ -21,6 +24,8 @@ const initialForm: StorefrontCheckoutFormDto = {
 };
 export function CheckoutPage() {
   const { items, subtotal } = useStorefrontCart();
+  const { config, tenantId } = usePublicTenant();
+  const { user, loading: sessionLoading } = useCurrentSession();
   const { submitting, error, result, submit } = useStorefrontCheckout();
   const [form, setForm] = useState(initialForm);
   const [step, setStep] = useState<1 | 2>(1);
@@ -30,6 +35,27 @@ export function CheckoutPage() {
   }, [result, router]);
   if (result)
     return <main className="mx-auto max-w-3xl px-5 py-12">Preparando confirmación...</main>;
+  const hasStoreCustomer = user?.type === UserType.customer && user.tenantId === tenantId;
+  if (config?.accountRequired && !sessionLoading && !hasStoreCustomer) {
+    return (
+      <main className="mx-auto max-w-3xl px-5 py-12">
+        <section className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center shadow-sm">
+          <h1 className="text-3xl font-black text-[var(--color-text)]">
+            Inicia sesión para comprar
+          </h1>
+          <p className="mt-3 text-[var(--color-text-muted)]">
+            Esta tienda requiere una cuenta antes de finalizar el pedido.
+          </p>
+          <Link
+            className="mt-6 inline-block rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)]"
+            href="/iniciar-sesion?returnTo=%2Fcheckout"
+          >
+            Iniciar sesión
+          </Link>
+        </section>
+      </main>
+    );
+  }
   if (!items.length)
     return (
       <main className="mx-auto max-w-3xl px-5 py-12">

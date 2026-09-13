@@ -26,9 +26,8 @@ function toBranchOptions(branches: Branch[], tenantId: string): EcommerceBranchO
 
 export function useEcommerceConfig() {
   const repositories = useRepositories();
-  const { user, permissions, hasPermission, loading: sessionLoading } = useCurrentSession();
+  const { user, hasPermission, loading: sessionLoading } = useCurrentSession();
   const tenantId = user?.tenantId ?? null;
-  const actorUserId = user?.id ?? null;
   const canManage = hasPermission("admin.ecommerce_config.manage");
   const getService = useMemo(() => new GetEcommerceConfigService(repositories), [repositories]);
   const saveService = useMemo(() => new SaveEcommerceConfigService(repositories), [repositories]);
@@ -40,7 +39,7 @@ export function useEcommerceConfig() {
 
   const reload = useCallback(async (): Promise<EcommerceConfigDto | null> => {
     if (sessionLoading) return null;
-    if (!tenantId || !actorUserId) {
+    if (!tenantId) {
       setConfig(null);
       setBranchOptions([]);
       setError("No se pudo resolver el negocio activo.");
@@ -52,7 +51,7 @@ export function useEcommerceConfig() {
     setError(null);
     try {
       const [nextConfig, branches] = await Promise.all([
-        getService.execute(tenantId, actorUserId, permissions),
+        getService.execute(),
         repositories.branches.getActive(),
       ]);
       setConfig(nextConfig);
@@ -66,14 +65,14 @@ export function useEcommerceConfig() {
     } finally {
       setLoading(false);
     }
-  }, [actorUserId, getService, permissions, repositories, sessionLoading, tenantId]);
+  }, [getService, repositories, sessionLoading, tenantId]);
 
   useDataEvent("business-config.changed", reload);
 
   useEffect(() => {
     let active = true;
 
-    if (!sessionLoading && (!tenantId || !actorUserId)) {
+    if (!sessionLoading && !tenantId) {
       window.queueMicrotask(() => {
         if (!active) return;
         setConfig(null);
@@ -81,9 +80,9 @@ export function useEcommerceConfig() {
         setError("No se pudo resolver el negocio activo.");
         setLoading(false);
       });
-    } else if (tenantId && actorUserId) {
+    } else if (tenantId) {
       Promise.all([
-        getService.execute(tenantId, actorUserId, permissions),
+        getService.execute(),
         repositories.branches.getActive(),
       ])
         .then(([nextConfig, branches]) => {
@@ -106,11 +105,11 @@ export function useEcommerceConfig() {
     return () => {
       active = false;
     };
-  }, [actorUserId, getService, permissions, repositories, sessionLoading, tenantId]);
+  }, [getService, repositories, sessionLoading, tenantId]);
 
   const save = useCallback(
     async (dto: EcommerceConfigInputDto): Promise<EcommerceConfigDto> => {
-      if (!tenantId || !actorUserId) {
+      if (!tenantId) {
         const message = "No se pudo resolver la sesión actual.";
         setError(message);
         throw new Error(message);
@@ -119,7 +118,7 @@ export function useEcommerceConfig() {
       setSaving(true);
       setError(null);
       try {
-        const savedConfig = await saveService.execute(tenantId, dto, permissions, actorUserId);
+        const savedConfig = await saveService.execute(dto);
         setConfig(savedConfig);
         return savedConfig;
       } catch (caughtError) {
@@ -130,7 +129,7 @@ export function useEcommerceConfig() {
         setSaving(false);
       }
     },
-    [actorUserId, permissions, saveService, tenantId],
+    [saveService, tenantId],
   );
 
   return {

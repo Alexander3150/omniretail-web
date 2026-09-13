@@ -23,7 +23,7 @@ UI
 
 ## Customer En Storefront
 
-`ResolvePublicStorefrontContextService` deriva el tenant de la tienda desde el slug configurado y valida tenant/configuracion activa sin aceptar `tenantId` del caller. `PublicTenantProvider` usa ese boundary para exponer el contexto visual existente y el checkout lo revalida como autoridad. La identidad opcional se deriva de los repositories de sesion y se vincula solamente cuando pertenece al mismo tenant publico.
+`ResolvePublicStorefrontContextService` deriva el tenant de la tienda desde el slug configurado y valida tenant/configuracion activa sin aceptar `tenantId` del caller. `GetPublicStorefrontConfigService` construye el DTO público de configuración y ubicaciones `active + store`; `PublicTenantProvider` lo refresca ante `business-config.changed` y `branch.changed`, ignorando eventos de otros tenants. El checkout revalida el boundary autoritativo y conserva `defaultBranchId` y las reglas operacionales de fulfillment. La identidad opcional se deriva de los repositories de sesion y se vincula solamente cuando pertenece al mismo tenant publico.
 
 ```text
 ResolvePublicStorefrontContextService -> PublicTenantProvider
