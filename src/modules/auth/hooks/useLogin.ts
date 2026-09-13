@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getLockoutMinutesForOccurrence, LOGIN_ATTEMPT_RULES } from "@/config/auth-policy";
+import { MfaChallengeUnavailableError } from "@/core/repositories/AuthRepository";
+import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 import type { LoginFormDto } from "@/modules/auth/application/dto/LoginFormDto";
@@ -41,6 +43,19 @@ export function useLogin() {
   const [fieldErrors, setFieldErrors] = useState<LoginFormValidationErrors>({});
   const [formError, setFormError] = useState<string | undefined>();
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // PR13 (MFA, R-A16): cuando login() responde "mfa_required" en vez de
+  // crear sesión, el MISMO formulario pasa a un segundo paso (nunca una
+  // ruta nueva) pidiendo el código. demoCodeMock viaja acá solo porque
+  // este entorno no tiene un canal real de entrega -- mismo criterio de
+  // transparencia dummy que el resto del sistema (ver AuthRepository.
+  // LoginResult).
+  const [pendingChallenge, setPendingChallenge] = useState<{
+    challengeId: string;
+    method: "totp" | "email";
+    demoCodeMock: string;
+  } | null>(null);
+  const [mfaCode, setMfaCodeState] = useState("");
 
   // Contador de intentos fallidos CONSECUTIVOS visto por este formulario
   // (nunca preguntado al servidor). AuthRepository.login() siempre
@@ -97,6 +112,39 @@ export function useLogin() {
     [clearFormError],
   );
 
+  const setMfaCode = useCallback(
+    (value: string) => {
+      setMfaCodeState(value);
+      clearFormError();
+    },
+    [clearFormError],
+  );
+
+  // Compartido por submit() (cuenta sin MFA) y submitMfaChallenge() (tras
+  // completar el segundo factor): resolver el User autenticado y navegar
+  // al destino correcto. Session.userId -> User.type, nunca se le pide al
+  // usuario que declare el tipo de cuenta.
+  const finishLogin = useCallback(
+    async (repos: RepositoryRegistry, session: { id: string; userId: string }) => {
+      const authenticatedUser = await repos.users.getById(session.userId);
+      if (!authenticatedUser) {
+        // Estado inconsistente: se creo una sesion valida para un userId
+        // que ya no resuelve a un User real. Nunca se inventa un User ni
+        // se otorga un destino de empleado por defecto -- se revoca la
+        // sesion recien creada y se falla igual que cualquier otro error
+        // generico de login (R-A13: no revelar la causa).
+        await repos.auth.logout(session.id);
+        setFormError("No se pudo iniciar sesion.");
+        return;
+      }
+      setConsecutiveFailures(0);
+      setPendingChallenge(null);
+      setMfaCodeState("");
+      router.replace(resolvePostLoginDestination(authenticatedUser));
+    },
+    [router],
+  );
+
   const submit = useCallback(async () => {
     setFormError(undefined);
 
@@ -114,29 +162,25 @@ export function useLogin() {
 
     setIsSubmitting(true);
     try {
-      const session = await repositories.auth.login({
+      const result = await repositories.auth.login({
         tenantId: tenantId ?? undefined,
         email: dto.email.trim(),
         passwordMock: dto.password,
         rememberMe: dto.rememberMe,
       });
-      // El sistema identifica el tipo de cuenta despues de autenticar
-      // (Session.userId -> User.type) -- nunca se le pide al usuario que
-      // lo declare (eso era inseguro y redundante: el propio login ya
-      // puede distinguir credenciales de cliente vs. empleado).
-      const authenticatedUser = await repositories.users.getById(session.userId);
-      if (!authenticatedUser) {
-        // Estado inconsistente: login() creo una sesion valida para un
-        // userId que ya no resuelve a un User real. Nunca se inventa un
-        // User ni se otorga un destino de empleado por defecto -- se
-        // revoca la sesion recien creada y se falla igual que cualquier
-        // otro error generico de login (R-A13: no revelar la causa).
-        await repositories.auth.logout(session.id);
-        setFormError("No se pudo iniciar sesion.");
+
+      if (result.status === "mfa_required") {
+        // PR13 (R-A16): contraseña correcta, pero la sesión todavía no
+        // existe -- el mismo formulario pasa a pedir el segundo factor.
+        setPendingChallenge({
+          challengeId: result.challengeId,
+          method: result.method,
+          demoCodeMock: result.demoCodeMock,
+        });
         return;
       }
-      setConsecutiveFailures(0);
-      router.replace(resolvePostLoginDestination(authenticatedUser));
+
+      await finishLogin(repositories, result.session);
     } catch (caughtError) {
       setFormError(
         caughtError instanceof Error ? caughtError.message : "No se pudo iniciar sesion.",
@@ -151,7 +195,52 @@ export function useLogin() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [email, lockoutSecondsRemaining, password, rememberMe, repositories, router, tenantId, tenantLoading]);
+  }, [
+    email,
+    finishLogin,
+    lockoutSecondsRemaining,
+    password,
+    rememberMe,
+    repositories,
+    tenantId,
+    tenantLoading,
+  ]);
+
+  const submitMfaChallenge = useCallback(async () => {
+    if (!pendingChallenge || !mfaCode.trim()) {
+      return;
+    }
+    setFormError(undefined);
+    setIsSubmitting(true);
+    try {
+      const session = await repositories.auth.verifyMfaChallenge(
+        pendingChallenge.challengeId,
+        mfaCode.trim(),
+      );
+      await finishLogin(repositories, session);
+    } catch (caughtError) {
+      setFormError(
+        caughtError instanceof Error ? caughtError.message : "No se pudo verificar el código.",
+      );
+      // Un challenge muerto (vencido/invalidado/inexistente) no admite
+      // reintento con el mismo challengeId -- se vuelve al primer paso.
+      // Un código simplemente incorrecto (con intentos restantes) deja el
+      // challenge vivo para que el usuario reintente sin repetir su
+      // contraseña (doc 4.12 / QA: "challenge sigue vivo").
+      if (caughtError instanceof MfaChallengeUnavailableError) {
+        setPendingChallenge(null);
+      }
+      setMfaCodeState("");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [finishLogin, mfaCode, pendingChallenge, repositories]);
+
+  const cancelMfaChallenge = useCallback(() => {
+    setPendingChallenge(null);
+    setMfaCodeState("");
+    setFormError(undefined);
+  }, []);
 
   return {
     email,
@@ -167,5 +256,10 @@ export function useLogin() {
     tenantError,
     lockoutSecondsRemaining,
     submit,
+    pendingChallenge,
+    mfaCode,
+    setMfaCode,
+    submitMfaChallenge,
+    cancelMfaChallenge,
   };
 }

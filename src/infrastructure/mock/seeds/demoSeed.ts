@@ -313,6 +313,7 @@ const legacyDemoSeedDatabase: MockDatabase = {
   emailVerifications: [],
   employeeInvitations: [],
   mfaEnrollments: [],
+  mfaChallenges: [],
   recoveryCodes: [],
   categories: [
     {

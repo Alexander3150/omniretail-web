@@ -28,6 +28,7 @@ export function useChangePassword() {
           sessionId,
           currentPasswordMock: dto.currentPassword,
           newPasswordMock: dto.newPassword,
+          mfaCodeMock: dto.mfaCode,
         });
       } finally {
         setBusy(false);

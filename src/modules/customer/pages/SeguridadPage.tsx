@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useChangePassword } from "@/modules/customer/hooks/useChangePassword";
+import { useMfaEnrollment } from "@/modules/customer/hooks/useMfaEnrollment";
 import type { ChangePasswordFormDto } from "@/modules/customer/application/dto/ChangePasswordFormDto";
 import {
   hasChangePasswordValidationErrors,
@@ -10,18 +11,22 @@ import {
 } from "@/modules/customer/validation/changePassword.validation";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
+import { Input } from "@/shared/components/Input";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { PasswordInput } from "@/shared/components/PasswordInput";
 import { useToast } from "@/shared/components/Toast";
+import { TwoFactorAuthSection } from "@/shared/components/TwoFactorAuthSection";
 
 const EMPTY_FORM: ChangePasswordFormDto = {
   currentPassword: "",
   newPassword: "",
   confirmNewPassword: "",
+  mfaCode: "",
 };
 
 export function SeguridadPage() {
   const { busy, changePassword } = useChangePassword();
+  const mfaEnrollment = useMfaEnrollment();
   const { showToast } = useToast();
   const [form, setForm] = useState<ChangePasswordFormDto>(EMPTY_FORM);
   const [fieldErrors, setFieldErrors] = useState<ChangePasswordValidationErrors>({});
@@ -100,10 +105,32 @@ export function SeguridadPage() {
           />
         </FormField>
 
+        {mfaEnrollment.status?.enabled ? (
+          <FormField id="security-mfa-code" label="Código de verificación en dos pasos">
+            <Input
+              disabled={busy}
+              id="security-mfa-code"
+              inputMode="numeric"
+              onChange={(event) => setForm((prev) => ({ ...prev, mfaCode: event.target.value }))}
+              placeholder="123456"
+              value={form.mfaCode}
+            />
+          </FormField>
+        ) : null}
+
         <Button disabled={busy} type="submit">
           {busy ? "Actualizando..." : "Actualizar contraseña"}
         </Button>
       </form>
+
+      <TwoFactorAuthSection
+        busy={mfaEnrollment.busy}
+        loading={mfaEnrollment.loading}
+        onBegin={mfaEnrollment.begin}
+        onDisable={mfaEnrollment.disable}
+        onVerify={mfaEnrollment.verify}
+        status={mfaEnrollment.status}
+      />
     </div>
   );
 }

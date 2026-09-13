@@ -423,12 +423,14 @@ async function main() {
     ...repositories,
     auth: realAuth,
   } as RepositoryRegistry;
-  const adminSession = await realAuth.login({
+  const adminLogin = await realAuth.login({
     email: "admin@ferrepharma.demo",
     passwordMock: "AdminDemo123",
     expectedUserType: UserType.employee,
   });
-  const adminUser = await users.getById(adminSession.userId);
+  assert.equal(adminLogin.status, "authenticated", "V: admin no tiene MFA habilitado en este seed");
+  const adminSession = adminLogin as Extract<typeof adminLogin, { status: "authenticated" }>;
+  const adminUser = await users.getById(adminSession.session.userId);
   assert.ok(adminUser, "V: admin debe autenticarse con ecommerce deshabilitado");
   assert.equal(resolvePostLoginDestination(adminUser), "/inicio", "V: admin conserva /inicio");
   assert.equal(canUserEnterPrivateRoute(adminUser, "/administracion/diseno-ecommerce"), true);
@@ -439,13 +441,15 @@ async function main() {
     "V: admin conserva capacidad de administracion",
   );
 
-  const customerSession = await realAuth.login({
+  const customerLogin = await realAuth.login({
     tenantId,
     email: "fernando1999@gmail.com",
     passwordMock: "Fernando1999.",
     expectedUserType: UserType.customer,
   });
-  const customerUser = await users.getById(customerSession.userId);
+  assert.equal(customerLogin.status, "authenticated", "U: customer no tiene MFA habilitado en este seed");
+  const customerSession = customerLogin as Extract<typeof customerLogin, { status: "authenticated" }>;
+  const customerUser = await users.getById(customerSession.session.userId);
   assert.ok(customerUser, "U: customer debe autenticarse con ecommerce deshabilitado");
   assert.equal(canUserEnterPrivateRoute(customerUser, "/cuenta/perfil"), true, "U: /cuenta sigue habilitada");
   assert.equal((await resolveCustomerAuthorizationContext(authenticatedRepositories)).tenantId, tenantId);
