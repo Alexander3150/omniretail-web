@@ -25,6 +25,8 @@ UI
 
 `ResolvePublicStorefrontContextService` deriva el tenant de la tienda desde el slug configurado y valida tenant/configuracion activa sin aceptar `tenantId` del caller. `GetPublicStorefrontConfigService` construye el DTO público de configuración y ubicaciones `active + store`; `PublicTenantProvider` lo refresca ante `business-config.changed` y `branch.changed`, ignorando eventos de otros tenants. El checkout revalida el boundary autoritativo y conserva `defaultBranchId` y las reglas operacionales de fulfillment. La identidad opcional se deriva de los repositories de sesion y se vincula solamente cuando pertenece al mismo tenant publico.
 
+`EcommerceConfig.enabled` cierra exclusivamente el route group comercial del Storefront. El layout público es el único owner de `PublicTenantProvider`, Header y Footer; el layout comercial agrega únicamente `CommercialStorefrontGate`, sin montar otro shell. El grupo público accesible hereda el chrome común sin gate y conserva login, registro, recuperación, seguimiento y `/cuenta/*`, de modo que autenticación y backoffice no dependan del estado del canal de venta. `PublicTenantProvider` continúa exponiendo el tenant resuelto cuando el canal está deshabilitado; los services de compra mantienen su propio enforcement.
+
 ```text
 ResolvePublicStorefrontContextService -> PublicTenantProvider
 -> CreateStorefrontCheckoutService

@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
 import type { Session } from "@/core/entities";
-import { BranchStatus, BranchType } from "@/core/enums";
+import {
+  AccountStatus,
+  BranchStatus,
+  BranchType,
+  CustomerStatus,
+  UserStatus,
+  UserType,
+} from "@/core/enums";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import { MockAuditLogRepository } from "@/infrastructure/mock/repositories/MockAuditLogRepository";
+import { MockAuthRepository } from "@/infrastructure/mock/repositories/MockAuthRepository";
 import { MockBranchRepository } from "@/infrastructure/mock/repositories/MockBranchRepository";
 import { MockBusinessConfigRepository } from "@/infrastructure/mock/repositories/MockBusinessConfigRepository";
 import { MockCustomerRepository } from "@/infrastructure/mock/repositories/MockCustomerRepository";
@@ -11,12 +20,16 @@ import { MockOrderRepository } from "@/infrastructure/mock/repositories/MockOrde
 import { MockRoleRepository } from "@/infrastructure/mock/repositories/MockRoleRepository";
 import { MockTenantRepository } from "@/infrastructure/mock/repositories/MockTenantRepository";
 import { MockUserRepository } from "@/infrastructure/mock/repositories/MockUserRepository";
+import { buildPasswordHashMock } from "@/infrastructure/mock/shared/passwordHashMock";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import { MOCK_DATABASE_STORAGE_KEY } from "@/infrastructure/storage/storageKeys";
 import type { EcommerceConfigInputDto } from "@/modules/administration/application/dto/EcommerceConfigDto";
 import { GetEcommerceConfigService } from "@/modules/administration/application/services/GetEcommerceConfigService";
 import { SaveEcommerceConfigService } from "@/modules/administration/application/services/SaveEcommerceConfigService";
+import { canUserEnterPrivateRoute, resolvePostLoginDestination } from "@/modules/auth/application/services/postLoginNavigation";
+import { resolveCustomerAuthorizationContext } from "@/modules/customer/application/services/CustomerAuthorizationContext";
+import { getCurrentCustomerOrders } from "@/modules/customer/application/services/orderService";
 import { CreateStorefrontCheckoutService } from "@/modules/storefront/application/services/CreateStorefrontCheckoutService";
 import { GetPublicStorefrontConfigService } from "@/modules/storefront/application/services/GetPublicStorefrontConfigService";
 import { GetStorefrontOrderTrackingService } from "@/modules/storefront/application/services/GetStorefrontOrderTrackingService";
@@ -313,12 +326,168 @@ async function main() {
   assert.equal(legacyConfig.contactPhone, undefined, "R: legacy sin telefono debe cargar");
   assert.equal(legacyConfig.contactEmail, undefined, "R: legacy sin email debe cargar");
 
+  const routeConfig = await businessConfig.getEcommerceConfig(tenantId);
+  await businessConfig.updateEcommerceConfig(
+    tenantId,
+    editableConfig(routeConfig, { enabled: false, requireAccountForCheckout: false }),
+  );
+  const disabledPublicContext = await publicContext.execute({ allowDisabled: true });
+  assert.equal(disabledPublicContext.tenantId, tenantId, "T: tenant sigue resolviendose");
+  assert.equal(disabledPublicContext.ecommerceConfig.enabled, false, "T: canal queda deshabilitado");
+
+  const publicLayout = readFileSync("src/app/(public)/layout.tsx", "utf8");
+  const commercialLayout = readFileSync(
+    "src/app/(public)/(commercial)/layout.tsx",
+    "utf8",
+  );
+  const publicShell = readFileSync(
+    "src/modules/storefront/components/PublicStorefrontShell.tsx",
+    "utf8",
+  );
+  const publicTenantProvider = readFileSync(
+    "src/modules/storefront/providers/PublicTenantProvider.tsx",
+    "utf8",
+  );
+  assert.equal(
+    existsSync("src/app/(public)/(accessible)/layout.tsx"),
+    false,
+    "T-U: rutas accesibles heredan el shell comun sin otro owner",
+  );
+  assert.match(publicLayout, /<PublicStorefrontShell>/, "T-U: layout publico posee el shell comun");
+  assert.match(commercialLayout, /<CommercialStorefrontGate>/, "W: rutas comerciales usan el gate");
+  assert.doesNotMatch(
+    commercialLayout,
+    /PublicStorefrontShell/,
+    "Y: layout comercial no debe montar otro shell",
+  );
+  assert.equal(
+    publicShell.match(/<StorefrontHeader\s*\/>/g)?.length,
+    1,
+    "Y: existe un unico owner del Header",
+  );
+  assert.equal(
+    publicShell.match(/<StorefrontFooter\s*\/>/g)?.length,
+    1,
+    "Y: existe un unico owner del Footer",
+  );
+  assert.equal(
+    publicLayout.match(/<PublicTenantProvider>/g)?.length,
+    1,
+    "Y: existe un unico PublicTenantProvider",
+  );
+  assert.match(
+    publicTenantProvider,
+    /setTenantId\(context\.tenantId\)/,
+    "T-U: provider conserva tenant cuando ecommerce esta deshabilitado",
+  );
+
+  store.transact((db) => {
+    const timestamp = "2026-01-03T00:00:00.000Z";
+    db.customers.push({
+      id: "customer-fernando-qa",
+      tenantId,
+      userId: "user-fernando-qa",
+      code: "CLI-QA",
+      name: "Fernando QA",
+      email: "fernando1999@gmail.com",
+      status: CustomerStatus.active,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    db.users.push({
+      id: "user-fernando-qa",
+      tenantId,
+      customerId: "customer-fernando-qa",
+      name: "Fernando QA",
+      email: "fernando1999@gmail.com",
+      type: UserType.customer,
+      status: UserStatus.active,
+      roleId: "role-customer",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    db.authAccounts.push({
+      id: "auth-fernando-qa",
+      userId: "user-fernando-qa",
+      email: "fernando1999@gmail.com",
+      passwordHashMock: buildPasswordHashMock("Fernando1999."),
+      status: AccountStatus.active,
+      failedLoginAttempts: 0,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+  });
+
+  const realAuth = new MockAuthRepository(store, eventBus, storage);
+  const authenticatedRepositories = {
+    ...repositories,
+    auth: realAuth,
+  } as RepositoryRegistry;
+  const adminSession = await realAuth.login({
+    email: "admin@ferrepharma.demo",
+    passwordMock: "AdminDemo123",
+    expectedUserType: UserType.employee,
+  });
+  const adminUser = await users.getById(adminSession.userId);
+  assert.ok(adminUser, "V: admin debe autenticarse con ecommerce deshabilitado");
+  assert.equal(resolvePostLoginDestination(adminUser), "/inicio", "V: admin conserva /inicio");
+  assert.equal(canUserEnterPrivateRoute(adminUser, "/administracion/diseno-ecommerce"), true);
+  assert.ok(
+    (await roles.getById(adminUser.roleId ?? ""))?.permissions.includes(
+      "admin.ecommerce_config.manage",
+    ),
+    "V: admin conserva capacidad de administracion",
+  );
+
+  const customerSession = await realAuth.login({
+    tenantId,
+    email: "fernando1999@gmail.com",
+    passwordMock: "Fernando1999.",
+    expectedUserType: UserType.customer,
+  });
+  const customerUser = await users.getById(customerSession.userId);
+  assert.ok(customerUser, "U: customer debe autenticarse con ecommerce deshabilitado");
+  assert.equal(canUserEnterPrivateRoute(customerUser, "/cuenta/perfil"), true, "U: /cuenta sigue habilitada");
+  assert.equal((await resolveCustomerAuthorizationContext(authenticatedRepositories)).tenantId, tenantId);
+  assert.ok(Array.isArray(await getCurrentCustomerOrders(authenticatedRepositories)), "U: pedidos existentes legibles");
+
+  const disabledCheckout = new CreateStorefrontCheckoutService(authenticatedRepositories);
+  await assert.rejects(
+    () =>
+      disabledCheckout.execute({
+        items: [],
+        idempotencyKey: "disabled-commercial-check",
+        form: {
+          fullName: "Fernando QA",
+          email: "fernando1999@gmail.com",
+          phone: "55550000",
+          addressLine1: "Zona 1",
+          city: "Guatemala",
+          cardholderName: "Fernando QA",
+          cardLastFour: "4242",
+        },
+      }),
+    /no est.* disponible/i,
+    "W: checkout permanece bloqueado con ecommerce deshabilitado",
+  );
+
+  await realAuth.login({
+    email: "admin@ferrepharma.demo",
+    passwordMock: "AdminDemo123",
+    expectedUserType: UserType.employee,
+  });
+  const disabledConfigForAdmin = await businessConfig.getEcommerceConfig(tenantId);
+  await new SaveEcommerceConfigService(authenticatedRepositories).execute(
+    editableConfig(disabledConfigForAdmin, { enabled: true }),
+  );
+  assert.equal((await businessConfig.getEcommerceConfig(tenantId))?.enabled, true, "X: admin rehabilita ecommerce");
+
   const finalConfig = await businessConfig.getEcommerceConfig(tenantId);
   assert.equal(finalConfig?.defaultBranchId, originalDefaultBranchId, "S: defaultBranchId no cambia");
   assert.equal(originalDefaultBranchId, "branch-centro", "S: fulfillment conserva branch main");
   assert.equal((await branches.getById("branch-centro"))?.type, BranchType.main, "S: main se conserva");
 
-  console.log("Storefront public config contract harness: PASS (A-S)");
+  console.log("Storefront public config contract harness: PASS (A-Y)");
 }
 
 main().catch((error: unknown) => {

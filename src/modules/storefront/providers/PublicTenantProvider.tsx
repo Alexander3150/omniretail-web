@@ -56,7 +56,7 @@ export function PublicTenantProvider({ children }: { children: ReactNode }) {
         if (!active || requestId !== requestIdRef.current) return;
         resolvedTenantIdRef.current = context.tenantId;
         setConfig(nextConfig);
-        setTenantId(nextConfig.storeEnabled ? context.tenantId : null);
+        setTenantId(context.tenantId);
         setError(null);
       } catch {
         if (!active || requestId !== requestIdRef.current) return;
