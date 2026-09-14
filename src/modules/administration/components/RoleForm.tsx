@@ -4,7 +4,6 @@ import { useMemo, useState, type FormEvent } from "react";
 import { permissionsConfig } from "@/config/permissions";
 import { statusesConfig } from "@/config/statuses";
 import { RoleStatus } from "@/core/enums";
-import type { BranchScope } from "@/core/entities";
 import type { RoleDto, RoleInputDto } from "@/modules/administration/application/dto/RoleDto";
 import {
   groupPermissionsByModule,
@@ -15,13 +14,11 @@ import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
 import { Select } from "@/shared/components/Select";
 
-const branchScopeOptions: { value: BranchScope; label: string }[] = [
-  { value: "assigned", label: "Sucursal asignada" },
-  { value: "selected", label: "Sucursales seleccionadas" },
-  { value: "all", label: "Todas las sucursales" },
-];
-
-const statusOptions = Object.values(RoleStatus);
+/**
+ * `archived` no es un estado asignable desde este formulario a propósito -- solo la acción
+ * Archivar (`ArchiveRoleService`) puede llevar un rol ahí. Ver `role.validation.ts`.
+ */
+const statusOptions = [RoleStatus.active, RoleStatus.inactive];
 
 interface RoleFormProps {
   role?: RoleDto;
@@ -64,21 +61,6 @@ export function RoleForm({ role, busy, onCancel, onSubmit }: RoleFormProps) {
             required
             value={value.name}
           />
-        </FormField>
-
-        <FormField id="role-branch-scope" label="Alcance de sucursal">
-          <Select
-            disabled={busy}
-            id="role-branch-scope"
-            onChange={(event) => setField("branchScope", event.target.value as BranchScope)}
-            value={value.branchScope}
-          >
-            {branchScopeOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </Select>
         </FormField>
 
         <FormField id="role-status" label="Estado">
@@ -160,7 +142,6 @@ function toRoleInput(role?: RoleDto): RoleInputDto {
       name: role.name,
       description: role.description,
       permissions: [...role.permissions],
-      branchScope: role.branchScope,
       status: role.status,
     };
   }
@@ -169,7 +150,6 @@ function toRoleInput(role?: RoleDto): RoleInputDto {
     name: "",
     description: "",
     permissions: [],
-    branchScope: "assigned",
     status: RoleStatus.active,
   };
 }

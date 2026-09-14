@@ -636,6 +636,64 @@ Nunca crear un almacén paralelo de reportes. Dejar para el final.
 
 ### 12.11 Roles y permisos ✅ implementada
 
+**Decisión de dominio (PR #88): Role vs User.** `Role` determina `name`/`description`/`status`/
+`permissions`. Qué sucursales puede operar un usuario es responsabilidad de `User`
+(`roleId` + sucursales asignadas), no del Rol — se resuelve en `admin-users`, no acá.
+Create/Edit Role **no** ofrece ni acepta `branchScope`: `RoleInputDto` no incluye ese campo.
+`CreateRoleService` fija `branchScope: "assigned"` (el valor más restrictivo del contrato
+actual — fail-closed) sin exponerlo como decisión funcional; `UpdateRoleService` no lo toca, así
+que un rol conserva el valor con el que nació.
+
+`branchScope` sigue existiendo en `Role` y en `RoleRepository` — **no se borró del dominio**.
+Consumidores reales verificados antes de tocar nada (no se puede eliminar sin romperlos):
+`core/scopes/userBranchAccess.ts` (`isBranchIdInUserScope`/`canUserAccessBranch`),
+`resolveCurrentSessionSnapshot.ts` (auth), `ScopedActiveBranchProvider.tsx` (auth),
+`PickingAuthorizationContext.ts` / `DispatchAuthorizationContext.ts` (logistics),
+`cashShiftServiceContext.ts` / `returnOperationContext.ts` / `GetPosSalesHistoryService.ts` (pos),
+`GetCashShiftsService.ts` (administration). Deuda de migración explícita: cuando `admin-users`
+exista, el modelo objetivo es `canPerform = roleHasPermission AND userHasBranchAccess` (dos
+chequeos independientes); hoy siguen combinados en una sola función porque `User` todavía no
+tiene su propio mecanismo de alcance de sucursal fuera de `Role.branchScope`. No se implementa ese
+resolver acá — pertenece a `rbac-foundation`/`admin-users`.
+
+**Delegación de privilegios (seguridad).** Un actor con `admin.roles.manage` solo puede otorgar
+permisos que él mismo posee: `requestedPermissions ⊆ actorEffectivePermissions`
+(`ensureDelegatablePermissions` en `role.validation.ts`, aplicada en `CreateRoleService` y
+`UpdateRoleService`). `actorEffectivePermissions` es el arreglo `permissions` de la sesión actual
+(`useCurrentSession()` → mismo valor que ya viajaba a cada service). **No existe en el código un
+concepto autoritativo de "super admin"/"platform admin"/bypass por `isSystem`** — se buscó
+explícitamente antes de escribir esta regla (grep sin resultados) — así que no se agregó ninguna
+excepción: ni siquiera `role-admin` (que hoy NO tiene los 36 permisos del catálogo, solo los
+`admin.*`) puede delegar un permiso fuera de su propia lista. Es una limitación real y esperada de
+esta entrega, no un bug. El resolver canónico manage→read (`resolvePermission.ts`,
+`hasPermission`) existe en `feature/rbac-foundation` pero esa rama no está mergeada ni
+reconciliada con ésta — la validación acá es subset literal, sin resolución manage→read; se puede
+adoptar `resolvePermission.ts` como follow-up una vez reconciliada esa rama.
+
+**Estado editable.** Create/Edit solo ofrece `active`/`inactive` — `archived` no es un valor
+asignable por ese camino (`role.validation.ts` lo rechaza aunque llegue por una llamada directa
+al service, no solo oculto en el `<select>`). Archivar es exclusivamente `ArchiveRoleService`
+(`archiveScoped`), que conserva tenant scope, `ensureRoleNotSystem`, auditoría y el evento
+`role.changed`. Un rol ya archivado no se puede volver a abrir en "Editar" desde esta pantalla
+(no hay flujo de reactivación todavía).
+
+**Lectura vs gestión.** `admin.roles.read` navega en modo lectura (ve tabla y "Ver permisos"),
+`admin.roles.manage` además puede crear/editar/archivar — ya separado correctamente en
+`RolesPage`/`RoleTable` (columna de acciones y botón "Nuevo rol" solo si `canManage`). La entrada
+del menú lateral sigue protegida únicamente con `admin.roles.manage`, mismo criterio ya documentado
+para Sucursales: `NavigationItem.permission` es un único string sin mecanismo "cualquiera de estos
+permisos", así que un usuario con solo `admin.roles.read` no ve el ítem en el Sidebar aunque el
+service/página ya lo dejarían entrar por URL directa. No es contradictorio a propósito — es la
+misma limitación de plataforma que Sucursales, no algo nuevo de esta pantalla; resolverlo de raíz
+(permiso múltiple en `NavigationItem`) es un cambio transversal a `shared/navigation` fuera de
+alcance acá.
+
+**Corrección de documentación:** la descripción original del PR #88 mencionaba haber reconciliado
+con `docs/RBAC_PLAN.md`. Ese archivo **no está presente en esta rama** (solo existe, sin mergear,
+en `feature/rbac-foundation`) — se corrige acá para no afirmar algo falso; la reconciliación real
+fue solo sobre el contrato de `RoleRepository` (`chore/admin-role-contracts` + el hardening
+posterior), no sobre el documento completo.
+
 Listado: `name`, `branchScope`, detalle de permisos en modo lectura (modal, incluye conteo),
 `isSystem`, acciones. El detalle de permisos está disponible para cualquier rol, incluidos los
 `isSystem` (que no tienen edición) — es la única forma de inspeccionar qué permisos tiene un rol

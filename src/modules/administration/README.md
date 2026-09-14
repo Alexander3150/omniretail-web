@@ -39,6 +39,18 @@ Implementado en esta rama (`feature/admin-roles-permissions`, sobre el contrato 
   revoca el acceso de las cuentas que ya lo tienen asignado, solo evita asignarlo a cuentas nuevas.
 - Auditoria en alta, edicion y archivado (`role.created` / `role.updated` / `role.archived`).
 - Ruta privada `/administracion/roles-permisos` y entrada de navegacion con `admin.roles.manage`.
+- **PR #88 -- Role vs User:** `branchScope` sale del formulario Create/Edit (`RoleInputDto` ya no
+  lo incluye); `CreateRoleService` lo fija a `"assigned"` sin exponerlo como decision funcional.
+  El campo sigue en `Role`/`RoleRepository` -- lo siguen leyendo Auth, POS, Picking/Dispatch y
+  Caja, no se puede borrar sin romperlos. Que sucursales puede operar un usuario queda para
+  `admin-users` (`User.roleId` + sucursales asignadas), no para el Rol.
+- **PR #88 -- delegacion de privilegios:** un actor con `admin.roles.manage` solo puede otorgar
+  permisos que el mismo posee (`ensureDelegatablePermissions`, subset literal contra la sesion
+  actual). No existe un bypass de "super admin"/`isSystem` -- se busco explicitamente y no hay
+  ningun concepto asi en el codigo, asi que no se invento ninguno.
+- **PR #88 -- estado editable:** Create/Edit solo ofrece `active`/`inactive`; `archived` se
+  rechaza si llega por ese camino, incluso via llamada directa al service. Solo
+  `ArchiveRoleService` archiva.
 
 ## Configuracion del negocio
 

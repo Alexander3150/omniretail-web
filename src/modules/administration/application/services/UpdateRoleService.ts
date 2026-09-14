@@ -9,6 +9,7 @@ import {
   ensureRoleTenant,
 } from "@/modules/administration/application/services/serviceHelpers";
 import {
+  ensureDelegatablePermissions,
   normalizeRoleInput,
   validateRoleInput,
 } from "@/modules/administration/validation/role.validation";
@@ -33,6 +34,7 @@ export class UpdateRoleService {
     ensureRoleNotSystem(current);
     const normalizedInput = normalizeRoleInput(dto);
     validateRoleInput(normalizedInput);
+    ensureDelegatablePermissions(permissions, normalizedInput.permissions);
 
     const role = ensureRoleBelongsToTenant(
       await this.repositories.roles.updateScoped(tenantId, current.id, normalizedInput),

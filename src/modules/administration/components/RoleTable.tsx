@@ -80,10 +80,17 @@ export function RoleTable({ roles, canManage, onArchive, onEdit }: RoleTableProp
       key: "actions",
       header: <span className="sr-only">Acciones</span>,
       className: "text-right",
-      cell: (role) =>
-        role.isSystem ? (
-          <span className="text-xs text-[var(--color-text-muted)]">Protegido</span>
-        ) : (
+      cell: (role) => {
+        if (role.isSystem) {
+          return <span className="text-xs text-[var(--color-text-muted)]">Protegido</span>;
+        }
+        // Un rol archivado no se reabre por acá: Create/Edit ya no puede representar "archived"
+        // como estado (ver role.validation.ts), así que reactivar un rol no es un flujo soportado
+        // desde esta pantalla todavía.
+        if (role.status === "archived") {
+          return <span className="text-xs text-[var(--color-text-muted)]">Archivado</span>;
+        }
+        return (
           <div className="flex flex-wrap justify-end gap-2">
             <Button
               className="min-h-9 px-3 py-1.5"
@@ -93,18 +100,17 @@ export function RoleTable({ roles, canManage, onArchive, onEdit }: RoleTableProp
             >
               Editar
             </Button>
-            {role.status !== "archived" ? (
-              <Button
-                className="min-h-9 px-3 py-1.5"
-                onClick={() => onArchive(role)}
-                type="button"
-                variant="danger"
-              >
-                Archivar
-              </Button>
-            ) : null}
+            <Button
+              className="min-h-9 px-3 py-1.5"
+              onClick={() => onArchive(role)}
+              type="button"
+              variant="danger"
+            >
+              Archivar
+            </Button>
           </div>
-        ),
+        );
+      },
     });
   }
 
