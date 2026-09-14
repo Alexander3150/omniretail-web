@@ -7,8 +7,13 @@ import type { Address, CustomerPaymentMethod } from "@/core/entities";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import type { StorefrontCheckoutFormDto } from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
+import {
+  shouldClearStaleCheckoutConfirmation,
+  shouldShowCurrentCheckoutConfirmation,
+} from "@/modules/storefront/application/services/storefrontCheckoutLifecycle";
 import { useStorefrontCheckout } from "@/modules/storefront/hooks/useStorefrontCheckout";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
+import { useStorefrontCheckoutConfirmation } from "@/modules/storefront/providers/StorefrontCheckoutConfirmationProvider";
 import { municipalitiesByDepartment } from "@/modules/storefront/data/guatemalaLocations";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
@@ -55,8 +60,10 @@ export function CheckoutPage() {
   const { user } = useCurrentSession();
   const { tenantId, config, loading: configLoading } = usePublicTenant();
   const { submitting, error, result, submit } = useStorefrontCheckout();
+  const { setResult } = useStorefrontCheckoutConfirmation();
   const [form, setForm] = useState(initialForm);
   const [step, setStep] = useState<1 | 2>(1);
+  const [completedByCurrentCheckout, setCompletedByCurrentCheckout] = useState(false);
   const [savedCards, setSavedCards] = useState<CustomerPaymentMethod[]>([]);
   const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
   const [customerEmail, setCustomerEmail] = useState("");
@@ -155,9 +162,14 @@ export function CheckoutPage() {
     }));
   };
   useEffect(() => {
-    if (result) router.replace("/pedido/confirmacion");
-  }, [result, router]);
-  if (result)
+    if (shouldClearStaleCheckoutConfirmation(result, completedByCurrentCheckout)) setResult(null);
+  }, [completedByCurrentCheckout, result, setResult]);
+  useEffect(() => {
+    if (shouldShowCurrentCheckoutConfirmation(result, completedByCurrentCheckout)) {
+      router.replace("/pedido/confirmacion");
+    }
+  }, [completedByCurrentCheckout, result, router]);
+  if (shouldShowCurrentCheckoutConfirmation(result, completedByCurrentCheckout))
     return <main className="mx-auto max-w-3xl px-5 py-12">Preparando confirmación...</main>;
   if (!items.length)
     return (
@@ -211,6 +223,7 @@ export function CheckoutPage() {
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (config?.accountRequired && !user) return;
+    setCompletedByCurrentCheckout(true);
     void submit({ ...form, phone: form.phone.replace(/\D/g, "").replace(/^502/, "") });
   };
   return (
