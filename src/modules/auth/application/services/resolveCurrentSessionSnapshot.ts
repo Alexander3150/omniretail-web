@@ -1,8 +1,8 @@
 import type { Role, User } from "@/core/entities";
-import { UserStatus } from "@/core/enums";
+import { TenantStatus, UserStatus, UserType } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 
-type SessionRepositories = Pick<RepositoryRegistry, "auth" | "users" | "roles">;
+type SessionRepositories = Pick<RepositoryRegistry, "auth" | "users" | "roles" | "tenants">;
 
 export interface CurrentSessionSnapshot {
   user: User | null;
@@ -46,5 +46,22 @@ export async function resolveCurrentSessionSnapshot(
   }
 
   const role = user.roleId ? await repositories.roles.getById(user.roleId) : null;
+  if (user.type === UserType.employee) {
+    const tenant = await repositories.tenants.getById(user.tenantId);
+    if (!tenant || tenant.status !== TenantStatus.active) {
+      return {
+        user: null,
+        role: null,
+        error: "El negocio de la cuenta no esta activo.",
+      };
+    }
+    if (!role || role.tenantId !== user.tenantId) {
+      return {
+        user: null,
+        role: null,
+        error: "El rol de la cuenta no pertenece al negocio activo.",
+      };
+    }
+  }
   return { user, role };
 }

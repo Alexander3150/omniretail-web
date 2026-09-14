@@ -51,7 +51,7 @@ export async function resolveTrustedDispatchContext(
     !branch ||
     branch.status !== BranchStatus.active ||
     branch.tenantId !== user.tenantId ||
-    !canUserAccessBranch(user, role, branch.id)
+    !canUserAccessBranch(user, role, branch)
   ) {
     throw new DispatchAuthorizationError();
   }

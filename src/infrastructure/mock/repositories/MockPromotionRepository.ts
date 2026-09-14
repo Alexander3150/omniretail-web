@@ -54,8 +54,30 @@ export class MockPromotionRepository extends BaseMockRepository implements Promo
     );
   }
 
+  async getActiveByTenant(tenantId: string) {
+    return this.read((db) =>
+      db.promotions.filter(
+        (item) => item.tenantId === tenantId && item.status === PromotionStatus.active,
+      ),
+    );
+  }
+
   async getByProduct(productId: string) {
     return this.read((db) => db.promotions.filter((item) => item.productIds.includes(productId)));
+  }
+
+  async getByProductScoped(tenantId: string, productId: string) {
+    return this.read((db) =>
+      db.promotions.filter(
+        (item) => item.tenantId === tenantId && item.productIds.includes(productId),
+      ),
+    );
+  }
+
+  async getByIdScoped(tenantId: string, id: string) {
+    return this.read(
+      (db) => db.promotions.find((item) => item.id === id && item.tenantId === tenantId) ?? null,
+    );
   }
 
   async getApplicable(criteria: PromotionApplicabilityCriteria) {
@@ -96,9 +118,21 @@ export class MockPromotionRepository extends BaseMockRepository implements Promo
     return item;
   }
 
+  async updateScoped(
+    tenantId: string,
+    id: string,
+    input: Parameters<PromotionRepository["updateScoped"]>[2],
+  ) {
+    if ("tenantId" in input && input.tenantId !== tenantId) {
+      throw new Error("Cross-tenant promotion update denied");
+    }
+    if (!(await this.getByIdScoped(tenantId, id))) throw this.missing("Promotion", id);
+    return this.update(id, input);
+  }
+
   private assertValidPromotion(
     promotion: Omit<Promotion, "id" | "createdAt" | "updatedAt"> | Promotion,
-    products: { id: string; salePrice: number }[],
+    products: { id: string; tenantId: string; salePrice: number }[],
   ): void {
     if (promotion.channels.length === 0) {
       throw new Error("Promotion must include at least one channel");
@@ -115,6 +149,9 @@ export class MockPromotionRepository extends BaseMockRepository implements Promo
     for (const productId of promotion.productIds) {
       const product = products.find((item) => item.id === productId);
       if (!product) continue;
+      if (product.tenantId !== promotion.tenantId) {
+        throw new Error("Promotion products must belong to the same tenant");
+      }
       if (
         (promotion.type === PromotionType.fixedDiscount ||
           promotion.type === PromotionType.fixedPrice) &&

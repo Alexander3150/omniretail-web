@@ -85,13 +85,13 @@ export async function validateEditorProduct(
   assertInventorySettings(normalizedDto);
 
   const normalizedSku = normalizeSku(normalizedDto.sku);
-  const duplicateSku = await repositories.products.getBySku(normalizedSku);
+  const duplicateSku = await repositories.products.getBySkuScoped(tenantId, normalizedSku);
   if (duplicateSku && duplicateSku.id !== currentProductId) {
     throw new CatalogServiceError("Ya existe un producto con este Codigo / SKU.");
   }
 
   if (normalizedDto.barcode?.trim()) {
-    const products = await repositories.products.getAll();
+    const products = await repositories.products.getByTenant(tenantId);
     const duplicateBarcode = products.find(
       (product) =>
         product.barcode === normalizedDto.barcode?.trim() && product.id !== currentProductId,
@@ -102,9 +102,9 @@ export async function validateEditorProduct(
   }
 
   const [category, baseUnit, saleUnit] = await Promise.all([
-    repositories.categories.getById(normalizedDto.categoryId),
-    repositories.units.getById(normalizedDto.baseUnitId),
-    repositories.units.getById(normalizedDto.saleUnitId),
+    repositories.categories.getByIdScoped(tenantId, normalizedDto.categoryId),
+    repositories.units.getByIdScoped(tenantId, normalizedDto.baseUnitId),
+    repositories.units.getByIdScoped(tenantId, normalizedDto.saleUnitId),
   ]);
   ensureActiveCategory(category);
   ensureActiveUnit(baseUnit);
@@ -215,13 +215,13 @@ async function syncUnitConversion(
   // lo que pase con `dto.inventoryQuantity`/`dto.saleQuantity` (evita confiar en esos numeros).
   if (!context.capabilities.supportsUnitsAndPackaging && !context.isNewProduct) return;
 
-  await repositories.units.replaceConversionsForProduct(
+  await repositories.units.replaceConversionsForProductScoped(
+    product.tenantId,
     product.id,
     dto.baseUnitId === dto.saleUnitId
       ? []
       : [
           {
-            tenantId: product.tenantId,
             fromUnitId: dto.baseUnitId,
             toUnitId: dto.saleUnitId,
             factor: toFiniteNumber(dto.saleQuantity) / toFiniteNumber(dto.inventoryQuantity),
@@ -448,7 +448,7 @@ export async function removeAssetIfOrphaned(
 ) {
   const [productReferences, categories] = await Promise.all([
     repositories.productMedia.getByAssetId(tenantId, assetId),
-    repositories.categories.getAll(),
+    repositories.categories.getByTenant(tenantId),
   ]);
   const categoryReference = categories.some(
     (category) =>

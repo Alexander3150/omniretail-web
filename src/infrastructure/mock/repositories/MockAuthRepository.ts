@@ -7,7 +7,14 @@ import {
   UserStatus,
   UserType,
 } from "@/core/enums";
-import type { AuthAccount, Customer, MfaChallenge, MfaEnrollment, MfaMethod, Session } from "@/core/entities";
+import type {
+  AuthAccount,
+  Customer,
+  MfaChallenge,
+  MfaEnrollment,
+  MfaMethod,
+  Session,
+} from "@/core/entities";
 import type { AuthRepository } from "@/core/repositories";
 import { MfaChallengeUnavailableError } from "@/core/repositories/AuthRepository";
 import {
@@ -143,6 +150,16 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
 
       if (!passwordMatches || !accountKindMatches) {
         this.registerFailedAuthAttempt(db, account, tenantId, "login_failed");
+        return { ok: false as const };
+      }
+
+      if (user?.type === UserType.employee && !this.isValidOperationalUser(db, user.id)) {
+        this.logAuthAudit(db, {
+          tenantId,
+          actorUserId: account.userId,
+          accountId: account.id,
+          action: "login_failed",
+        });
         return { ok: false as const };
       }
 
@@ -295,6 +312,10 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
           // lockout).
           return { ok: false as const, retriable: false };
         }
+      }
+
+      if (user?.type === UserType.employee && !this.isValidOperationalUser(db, user.id)) {
+        return { ok: false as const, retriable: false };
       }
 
       const codeIsValid = this.consumeMfaCode(db, challenge.userId, codeMock);
@@ -1207,6 +1228,15 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       createdAt: this.now(),
     });
   }
+  private isValidOperationalUser(db: MockDatabase, userId: string): boolean {
+    const user = db.users.find((item) => item.id === userId);
+    if (!user || user.type !== UserType.employee || user.status !== UserStatus.active) return false;
+    const tenant = db.tenants.find((item) => item.id === user.tenantId);
+    if (!tenant || tenant.status !== TenantStatus.active) return false;
+    const role = user.roleId ? db.roles.find((item) => item.id === user.roleId) : null;
+    return Boolean(role && role.tenantId === user.tenantId);
+  }
+
   /**
    * Si el lockout ya vencio (lockedUntil <= now), restaura la cuenta a
    * estado operable ANTES de evaluar credenciales. Unica fuente de verdad
@@ -1250,7 +1280,9 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     const escalationResetMs = LOCKOUT_RESET_AFTER_MINUTES * 60 * 1000;
 
     const isCountableFailure = (log: { action: string }) =>
-      log.action === "login_failed" || log.action === "mfa_failed" || log.action === "account_locked";
+      log.action === "login_failed" ||
+      log.action === "mfa_failed" ||
+      log.action === "account_locked";
 
     // A successful login always cuts the failure streak, regardless of
     // how recent it was: only failure/lockout events that happened
@@ -1403,9 +1435,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       method: enrollment.method,
       failedAttempts: 0,
       createdAt: this.now(),
-      expiresAt: new Date(
-        Date.now() + MFA_CHALLENGE_EXPIRATION_MINUTES * 60 * 1000,
-      ).toISOString(),
+      expiresAt: new Date(Date.now() + MFA_CHALLENGE_EXPIRATION_MINUTES * 60 * 1000).toISOString(),
       rememberMe: opts.rememberMe,
       deviceLabel: opts.deviceLabel,
     };

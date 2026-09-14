@@ -4,6 +4,7 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import {
   CatalogServiceError,
   ensureProduct,
+  resolveTenantId,
 } from "@/modules/catalog/application/services/serviceHelpers";
 
 export type SaveProductPromotionInput = Pick<
@@ -20,7 +21,10 @@ export class SaveProductPromotionService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(input: SaveProductPromotionInput): Promise<Promotion> {
-    const product = ensureProduct(await this.repositories.products.getById(input.productId));
+    const tenantId = await resolveTenantId(this.repositories);
+    const product = ensureProduct(
+      await this.repositories.products.getByIdScoped(tenantId, input.productId),
+    );
     if (product.status === ProductStatus.archived) {
       throw new CatalogServiceError("Restaura el producto para gestionar promociones.");
     }
@@ -30,7 +34,7 @@ export class SaveProductPromotionService {
         ? PromotionStatus.scheduled
         : PromotionStatus.active;
     const payload = {
-      tenantId: input.tenantId,
+      tenantId,
       name: `Promoción ${input.productName}`,
       description: undefined,
       type: input.type,
@@ -46,7 +50,11 @@ export class SaveProductPromotionService {
 
     try {
       if (input.promotionId) {
-        return await this.repositories.promotions.update(input.promotionId, payload);
+        return await this.repositories.promotions.updateScoped(
+          tenantId,
+          input.promotionId,
+          payload,
+        );
       }
       return await this.repositories.promotions.create(payload);
     } catch (error) {

@@ -186,11 +186,16 @@ Despues de login, un Customer vuelve al Storefront publico (`/`) y un Employee/A
 
 El header del Storefront deriva su enlace de cuenta desde la sesion existente: Guest ve `Ingresar` hacia `/iniciar-sesion`, Customer ve `Mi Cuenta` hacia `/cuenta/perfil` y Employee/Admin conserva el acceso a `/inicio` sin ser tratado como Customer.
 
-Los cambios de sesion actualizan primero el puntero persistido y despues publican `auth.changed`. `CurrentSessionProvider` reconstruye `Session -> User -> Role` desde repositories al montar y ante eventos de auth/user; nunca conserva una reconstruccion anterior si se solapa con un login, logout o cambio de usuario mas reciente.
+Los cambios de sesion actualizan primero el puntero persistido y despues publican `auth.changed`. `CurrentSessionProvider` reconstruye la identidad desde repositories al montar y ante eventos de auth/user; nunca conserva una reconstruccion anterior si se solapa con un login, logout o cambio de usuario mas reciente. Para Employee la cadena obligatoria es `Session -> User activo -> Tenant activo -> Role existente del mismo tenant`; login y finalizacion MFA tampoco pueden crear una sesion operativa si esa cadena falla. Customer conserva su boundary propio.
 
 ## Branch Scope
 
-Empleado puede tener assigned branch, selected branches o all branches. Branch selector solo aparece cuando puede cambiar de sucursal.
+Empleado puede tener assigned branch, selected branches o all branches. El universo inicial siempre son las branches activas de `User.tenantId`: `all` no cruza tenants y `selected` solo admite `allowedBranchIds` cuyo Branch pertenece al mismo tenant. Toda autorizacion exige `Role.tenantId === User.tenantId` y `Branch.tenantId === User.tenantId`. Branch selector solo aparece cuando puede cambiar de sucursal.
+
+Los flujos privados de Catalog derivan `tenantId` de esa sesion operativa y usan lecturas y
+mutaciones tenant-scoped para Product, Category y Unit. No se acepta `tenantId` desde la UI ni se
+consulta el dataset global para filtrarlo despues cuando el repository puede reducirlo. Un recurso
+de otro tenant se trata como inexistente y no puede editarse, archivarse ni usarse como referencia.
 
 ## Delete / Archive
 

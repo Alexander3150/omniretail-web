@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Role, User } from "@/core/entities";
-import { canUserAccessBranch } from "@/core/scopes/userBranchAccess";
+import { isBranchIdInUserScope } from "@/core/scopes/userBranchAccess";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/services/resolveCurrentSessionSnapshot";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
@@ -87,7 +87,7 @@ export function CurrentSessionProvider({ children }: { children: ReactNode }) {
       permissions,
       hasPermission: (permission) => permissionSet.has(permission),
       canAccessBranch: (branchId) =>
-        user && role ? canUserAccessBranch(user, role, branchId) : false,
+        user && role ? isBranchIdInUserScope(user, role, branchId) : false,
       loading,
       isDemo: false,
       error,

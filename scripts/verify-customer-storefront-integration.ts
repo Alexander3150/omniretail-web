@@ -183,8 +183,15 @@ function createSessionReactivityHarness() {
   const auth = new MockAuthRepository(store, eventBus, storage);
   const users = new MockUserRepository(store, eventBus);
   const roles = new MockRoleRepository(store, eventBus);
+  const tenants = new MockTenantRepository(store, eventBus);
   const customers = new MockCustomerRepository(store, eventBus);
-  const repositories = { auth, users, roles, customers } as unknown as RepositoryRegistry;
+  const repositories = {
+    auth,
+    users,
+    roles,
+    tenants,
+    customers,
+  } as unknown as RepositoryRegistry;
 
   let snapshot: CurrentSessionSnapshot = { user: null, role: null };
   let reloadVersion = 0;

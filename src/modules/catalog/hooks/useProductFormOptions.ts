@@ -20,12 +20,12 @@ export function useProductFormOptions() {
     setLoading(true);
     setError(null);
     try {
-      const [categories, units, tenantId] = await Promise.all([
-        repositories.categories.getActive(),
-        repositories.units.getActive(),
-        resolveTenantId(repositories),
-      ]);
+      const tenantId = await resolveTenantId(repositories);
       if (!tenantId) throw new Error("No tenant");
+      const [categories, units] = await Promise.all([
+        repositories.categories.getActiveByTenant(tenantId),
+        repositories.units.getActiveByTenant(tenantId),
+      ]);
       const businessCapabilities = await requireCapabilities(repositories, tenantId);
       setOptions({ categories, units, businessCapabilities });
     } catch (caughtError) {
@@ -37,13 +37,13 @@ export function useProductFormOptions() {
 
   useEffect(() => {
     let active = true;
-    Promise.all([
-      repositories.categories.getActive(),
-      repositories.units.getActive(),
-      resolveTenantId(repositories),
-    ])
-      .then(async ([categories, units, tenantId]) => {
+    resolveTenantId(repositories)
+      .then(async (tenantId) => {
         if (!tenantId) throw new Error("No tenant");
+        const [categories, units] = await Promise.all([
+          repositories.categories.getActiveByTenant(tenantId),
+          repositories.units.getActiveByTenant(tenantId),
+        ]);
         const businessCapabilities = await requireCapabilities(repositories, tenantId);
         if (active) {
           setOptions({ categories, units, businessCapabilities });

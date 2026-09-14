@@ -15,6 +15,8 @@ ProductRepository, CategoryRepository, UnitRepository, AttributeRepository, Prom
 - No duplicar entities de `core/`.
 - No acceder directamente a LocalStorage.
 - Usar repositories desde `RepositoryProvider`.
+- Derivar el tenant desde la sesion operativa y usar exclusivamente las operaciones tenant-scoped
+  de Product, Category y Unit en rutas privadas.
 - Usar `shared/` para componentes globales.
 - Crear DTO, Mappers y Services propios dentro del modulo cuando empiece cada feature.
 
@@ -24,6 +26,7 @@ Implementado en esta rama:
 
 - Listado, busqueda, filtros, paginacion y detalle de productos.
 - Creacion, edicion y archivo mediante `ProductRepository`.
+- Listado, detalle, validacion de referencias y mutaciones fallan cerrados ante IDs de otro tenant.
 - Hasta seis imagenes mediante `ProductMediaRepository`; acepta URLs legacy y uploads procesados en `CatalogImageAssetRepository`/IndexedDB, con principal, orden, alt, reemplazo, borrado y fallback visual.
 - Opciones de categoria, unidad y capacidades de negocio desde repositories.
 - Tracking adaptable por `BusinessCapabilitiesConfig`; productos `service` fuerzan tracking inactivo.

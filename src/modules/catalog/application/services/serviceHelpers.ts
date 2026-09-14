@@ -1,6 +1,7 @@
 import { CategoryStatus, ProductType, UnitStatus } from "@/core/enums";
 import type { BusinessCapabilitiesConfig, Category, Product, Unit } from "@/core/entities";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/services/resolveCurrentSessionSnapshot";
 import {
   getDisabledProductTypeMessage,
   isProductTypeAllowed,
@@ -14,12 +15,11 @@ export class CatalogServiceError extends Error {
 }
 
 export async function resolveTenantId(repositories: RepositoryRegistry) {
-  const [products, categories, units] = await Promise.all([
-    repositories.products.getAll(),
-    repositories.categories.getActive(),
-    repositories.units.getActive(),
-  ]);
-  return products[0]?.tenantId ?? categories[0]?.tenantId ?? units[0]?.tenantId ?? null;
+  const snapshot = await resolveCurrentSessionSnapshot(repositories);
+  if (!snapshot.user || !snapshot.role) {
+    throw new CatalogServiceError("No se pudo resolver el negocio activo.");
+  }
+  return snapshot.user.tenantId;
 }
 
 export async function requireCapabilities(

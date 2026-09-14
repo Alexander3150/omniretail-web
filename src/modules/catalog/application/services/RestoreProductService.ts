@@ -4,15 +4,19 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import {
   CatalogServiceError,
   ensureProduct,
+  resolveTenantId,
 } from "@/modules/catalog/application/services/serviceHelpers";
 
 export class RestoreProductService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(productId: string): Promise<Product> {
-    const product = ensureProduct(await this.repositories.products.getById(productId));
+    const tenantId = await resolveTenantId(this.repositories);
+    const product = ensureProduct(
+      await this.repositories.products.getByIdScoped(tenantId, productId),
+    );
     try {
-      return await this.repositories.products.update(product.id, {
+      return await this.repositories.products.updateScoped(tenantId, product.id, {
         status: ProductStatus.published,
       });
     } catch {

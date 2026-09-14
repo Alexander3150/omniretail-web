@@ -2,6 +2,7 @@ import type { Product, Unit, UnitConversion } from "@/core/entities";
 import { UnitCategory } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { UnitListItem } from "@/modules/catalog/application/dto/UnitEditorDto";
+import { resolveTenantId } from "@/modules/catalog/application/services/serviceHelpers";
 
 export const UNIT_CATEGORY_LABELS: Record<UnitCategory, string> = {
   [UnitCategory.unit]: "Unidad",
@@ -15,12 +16,15 @@ export class GetUnitsService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(): Promise<UnitListItem[]> {
+    const tenantId = await resolveTenantId(this.repositories);
     const [units, products] = await Promise.all([
-      this.repositories.units.getAll(),
-      this.repositories.products.getAll(),
+      this.repositories.units.getByTenant(tenantId),
+      this.repositories.products.getByTenant(tenantId),
     ]);
     const conversions = await Promise.all(
-      products.map((product) => this.repositories.units.getConversionsByProduct(product.id)),
+      products.map((product) =>
+        this.repositories.units.getConversionsByProductScoped(tenantId, product.id),
+      ),
     );
     const flatConversions = conversions.flat();
 
