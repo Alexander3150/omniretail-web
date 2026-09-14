@@ -22,6 +22,7 @@ export interface CreateSaleInput {
 export interface SalesRepository {
   getAll(): Promise<Sale[]>;
   listByTenant(tenantId: string): Promise<Sale[]>;
+  listByBranch(tenantId: string, branchId: string): Promise<Sale[]>;
   getById(id: string): Promise<Sale | null>;
   getByIdScoped(tenantId: string, branchId: string, id: string): Promise<Sale | null>;
   getByDocumentNumber(

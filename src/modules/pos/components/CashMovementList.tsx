@@ -23,15 +23,13 @@ const columns: DataTableColumn<CashMovementDto>[] = [
   {
     key: "reason",
     header: "Motivo",
-    cell: (movement) => movement.reason,
+    cell: (movement) => (movement.referenceType === "sale" ? "Venta" : movement.reason),
   },
   {
     key: "reference",
     header: "Referencia",
     cell: (movement) =>
-      movement.referenceType === "sale" && movement.referenceId
-        ? `Venta · ${movement.referenceId}`
-        : "Manual",
+      movement.referenceType === "sale" ? (movement.saleNumber ?? "No disponible") : "Manual",
   },
   {
     key: "amount",

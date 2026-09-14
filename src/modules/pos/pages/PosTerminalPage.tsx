@@ -1,22 +1,31 @@
 "use client";
 
-import { PageHeader } from "@/shared/components/PageHeader";
+import { useState } from "react";
 import { CheckoutModal } from "@/modules/pos/components/CheckoutModal";
+import { PosSalesHistoryModal } from "@/modules/pos/components/PosSalesHistoryModal";
 import { ProductSearch } from "@/modules/pos/components/ProductSearch";
 import { QuickProductList } from "@/modules/pos/components/QuickProductList";
 import { SaleTicket } from "@/modules/pos/components/SaleTicket";
 import { usePosTerminal } from "@/modules/pos/hooks/usePosTerminal";
+import { Button } from "@/shared/components/Button";
+import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
 
 export function PosTerminalPage() {
   const terminal = usePosTerminal();
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   return (
     <div className="min-w-0 space-y-5">
       <PageHeader
-        title="Terminal de Cobro"
+        actions={
+          <Button type="button" variant="secondary" onClick={() => setHistoryOpen(true)}>
+            Historial de ventas
+          </Button>
+        }
         description="Registra ventas desde la sucursal activa."
+        title="Terminal de Cobro"
       />
 
       {terminal.confirmationResult ? (
@@ -122,6 +131,7 @@ export function PosTerminalPage() {
         onReset={terminal.resetCheckout}
         onValidate={terminal.validateCheckout}
       />
+      <PosSalesHistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} />
     </div>
   );
 }

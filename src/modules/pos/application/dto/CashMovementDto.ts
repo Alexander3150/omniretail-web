@@ -9,6 +9,7 @@ export interface CashMovementDto {
   reason: string;
   referenceType?: string;
   referenceId?: string;
+  saleNumber?: string;
   createdByUserId: string;
   createdAt: ISODateString;
 }
