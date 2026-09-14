@@ -1,5 +1,6 @@
-import type { SaleDocumentType } from "@/core/entities";
+import type { BankAccountType, SaleDocumentType } from "@/core/entities";
 import type { DeliveryMethod, TransportMode } from "@/core/enums";
+import type { CurrencyCode } from "@/core/types/common.types";
 import type { AddressSnapshot } from "@/core/types/address.types";
 import type { OrderNotificationContact } from "@/core/types/orderNotification.types";
 
@@ -38,7 +39,17 @@ export interface CheckoutDto {
   notificationContact: OrderNotificationContact;
 }
 
+/**
+ * Datos estructurados de una cuenta bancaria disponible para el checkout de POS. A propósito NO
+ * es un `label` único concatenado -- cada campo llega por separado para que la UI decida cómo
+ * mostrarlos (y para que `accountNumber` completo, el único consumidor autorizado a recibirlo,
+ * no termine escondido dentro de un string que también viaja a otros lugares).
+ */
 export interface CheckoutBankAccountDto {
   id: string;
-  label: string;
+  bankName: string;
+  accountType: BankAccountType;
+  holderName: string;
+  accountNumber: string;
+  currency: CurrencyCode;
 }
