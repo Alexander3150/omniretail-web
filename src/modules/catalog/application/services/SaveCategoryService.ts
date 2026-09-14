@@ -16,6 +16,7 @@ export class SaveCategoryService {
     const tenantId = await resolveTenantId(this.repositories);
     if (!tenantId) throw new CatalogServiceError("No se pudo resolver el negocio activo.");
 
+    await this.assertParentOwnership(tenantId, dto.parentId);
     await this.assertExistingImageOwnership(tenantId, dto);
     const newAssetId = await this.storePendingImage(tenantId, dto);
     try {
@@ -36,16 +37,17 @@ export class SaveCategoryService {
 
   async update(categoryId: string, dto: CategoryEditorDto): Promise<Category> {
     const tenantId = await resolveTenantId(this.repositories);
-    const current = await this.repositories.categories.getById(categoryId);
-    if (!tenantId || !current || current.tenantId !== tenantId) {
+    const current = await this.repositories.categories.getByIdScoped(tenantId, categoryId);
+    if (!current) {
       throw new CatalogServiceError("No se pudo resolver la categoria actual.");
     }
+    await this.assertParentOwnership(tenantId, dto.parentId, categoryId);
     await this.assertExistingImageOwnership(tenantId, dto);
     const newAssetId = await this.storePendingImage(tenantId, dto);
     const previousAssetId = current.image?.kind === "mockAsset" ? current.image.assetId : undefined;
     let updated: Category;
     try {
-      updated = await this.repositories.categories.update(categoryId, {
+      updated = await this.repositories.categories.updateScoped(tenantId, categoryId, {
         parentId: dto.parentId || undefined,
         name: dto.name.trim(),
         slug: normalizeCategoryCode(dto.code),
@@ -93,11 +95,25 @@ export class SaveCategoryService {
   }
 
   async archive(categoryId: string): Promise<Category> {
-    return this.repositories.categories.archive(categoryId);
+    const tenantId = await resolveTenantId(this.repositories);
+    return this.repositories.categories.archiveScoped(tenantId, categoryId);
+  }
+
+  private async assertParentOwnership(tenantId: string, parentId?: string, categoryId?: string) {
+    if (!parentId) return;
+    if (parentId === categoryId) {
+      throw new CatalogServiceError("Una categoria no puede ser su propia categoria padre.");
+    }
+    if (!(await this.repositories.categories.getByIdScoped(tenantId, parentId))) {
+      throw new CatalogServiceError("La categoria padre no esta disponible.");
+    }
   }
 
   async restore(categoryId: string): Promise<Category> {
-    return this.repositories.categories.update(categoryId, { status: CategoryStatus.active });
+    const tenantId = await resolveTenantId(this.repositories);
+    return this.repositories.categories.updateScoped(tenantId, categoryId, {
+      status: CategoryStatus.active,
+    });
   }
 }
 

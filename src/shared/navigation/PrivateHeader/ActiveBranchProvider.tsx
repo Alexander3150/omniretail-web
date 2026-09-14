@@ -27,13 +27,18 @@ interface ActiveBranchProviderProps {
    * ends up with an empty list, never an arbitrary default). Omitted means
    * unrestricted, matching the previous behavior.
    */
-  canAccessBranch?: (branchId: string) => boolean;
+  tenantId: string | null;
+  canAccessBranch?: (branch: Branch) => boolean;
   children: ReactNode;
 }
 
 const ActiveBranchContext = createContext<ActiveBranchContextValue | null>(null);
 
-export function ActiveBranchProvider({ canAccessBranch, children }: ActiveBranchProviderProps) {
+export function ActiveBranchProvider({
+  tenantId,
+  canAccessBranch,
+  children,
+}: ActiveBranchProviderProps) {
   const repositories = useRepositories();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
@@ -42,7 +47,7 @@ export function ActiveBranchProvider({ canAccessBranch, children }: ActiveBranch
   const applyBranches = useCallback(
     (activeBranches: Branch[]) => {
       const accessibleBranches = canAccessBranch
-        ? activeBranches.filter((branch) => canAccessBranch(branch.id))
+        ? activeBranches.filter((branch) => canAccessBranch(branch))
         : activeBranches;
       setBranches(accessibleBranches);
       setActiveBranchId((current) => {
@@ -55,13 +60,20 @@ export function ActiveBranchProvider({ canAccessBranch, children }: ActiveBranch
   );
 
   const reloadBranches = useCallback(async () => {
-    const activeBranches = await repositories.branches.getActive();
+    if (!tenantId) {
+      applyBranches([]);
+      return;
+    }
+    const activeBranches = await repositories.branches.getActiveByTenant(tenantId);
     applyBranches(activeBranches);
-  }, [applyBranches, repositories]);
+  }, [applyBranches, repositories, tenantId]);
 
   useEffect(() => {
     let active = true;
-    repositories.branches.getActive().then((activeBranches) => {
+    const request = tenantId
+      ? repositories.branches.getActiveByTenant(tenantId)
+      : Promise.resolve([]);
+    request.then((activeBranches) => {
       if (!active) return;
       applyBranches(activeBranches);
     });
@@ -69,7 +81,7 @@ export function ActiveBranchProvider({ canAccessBranch, children }: ActiveBranch
     return () => {
       active = false;
     };
-  }, [applyBranches, repositories]);
+  }, [applyBranches, repositories, tenantId]);
 
   useDataEvent("branch.changed", reloadBranches);
 

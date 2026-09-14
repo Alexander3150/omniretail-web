@@ -32,7 +32,9 @@ export class GetCashShiftsService {
 
     const shifts = await this.repositories.cashShifts.listByTenant(tenantId);
     return shifts
-      .filter((shift) => canUserAccessBranch(actor, role, shift.branchId))
+      .filter((shift) =>
+        canUserAccessBranch(actor, role, { id: shift.branchId, tenantId: shift.tenantId }),
+      )
       .sort((left, right) => right.openedAt.localeCompare(left.openedAt))
       .map(toCashShiftDto);
   }

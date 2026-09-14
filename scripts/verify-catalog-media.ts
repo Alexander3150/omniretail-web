@@ -27,7 +27,10 @@ import {
   MockPromotionRepository,
   MockSupplierProductRepository,
   MockSupplierRepository,
+  MockTenantRepository,
   MockUnitRepository,
+  MockUserRepository,
+  MockRoleRepository,
 } from "@/infrastructure/mock/repositories";
 import { MockProductMediaRepository } from "@/infrastructure/mock/repositories/MockProductMediaRepository";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
@@ -106,12 +109,30 @@ function createHarness(
   const productMedia = new MockProductMediaRepository(store, eventBus);
   const products = new MockProductRepository(store, eventBus);
   const units = new MockUnitRepository(store, eventBus);
+  const employee = store
+    .getSnapshot()
+    .users.find((user) => user.tenantId === TENANT_A && Boolean(user.roleId));
+  assert.ok(employee);
+  const session = {
+    id: "catalog-media-session",
+    userId: employee.id,
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    rememberMe: false,
+  };
   const repositories = {
+    auth: {
+      getCurrentSessionId: async () => session.id,
+      getSession: async (sessionId: string) => (sessionId === session.id ? session : null),
+    },
     catalogImageAssets: assets,
     categories,
     productMedia,
     products,
     units,
+    tenants: new MockTenantRepository(store, eventBus),
+    users: new MockUserRepository(store, eventBus),
+    roles: new MockRoleRepository(store, eventBus),
     attributes: new MockAttributeRepository(store, eventBus),
     branches: new MockBranchRepository(store, eventBus),
     businessConfig: new MockBusinessConfigRepository(store, eventBus),
@@ -461,10 +482,7 @@ async function verifyRealProductServicesAndReload() {
   // P. Un remount/refresh reconstruye repositories desde LocalStorage y conserva `source`.
   // El adapter de assets representa la IndexedDB durable del mismo navegador/origen.
   let reloaded = createHarness(initial.storage, initial.assets);
-  let editorData = await new GetProductEditorDataService(reloaded.repositories).execute(
-    created.tenantId,
-    created.id,
-  );
+  let editorData = await new GetProductEditorDataService(reloaded.repositories).execute(created.id);
   assert.equal(editorData.media[0]?.source?.kind, "mockAsset");
   assert.equal(
     editorData.media[0]?.source?.kind === "mockAsset"
@@ -524,10 +542,7 @@ async function verifyRealProductServicesAndReload() {
   assert.ok(primaryAssetId && primaryAssetId !== createdAssetId);
 
   // Replace atraviesa reload DTO -> update service -> repository y mantiene referencia valida.
-  editorData = await new GetProductEditorDataService(reloaded.repositories).execute(
-    created.tenantId,
-    created.id,
-  );
+  editorData = await new GetProductEditorDataService(reloaded.repositories).execute(created.id);
   const replacedDto = productDto(reloaded.store, {
     ...editDto,
     media: editorData.media.map((item) =>

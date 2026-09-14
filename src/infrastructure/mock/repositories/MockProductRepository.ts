@@ -7,12 +7,28 @@ export class MockProductRepository extends BaseMockRepository implements Product
   async getAll() {
     return this.read((db) => db.products);
   }
+  async getByTenant(tenantId: string) {
+    return this.read((db) => db.products.filter((item) => item.tenantId === tenantId));
+  }
   async getById(id: string) {
     return this.read((db) => db.products.find((item) => item.id === id) ?? null);
+  }
+  async getByIdScoped(tenantId: string, id: string) {
+    return this.read(
+      (db) => db.products.find((item) => item.id === id && item.tenantId === tenantId) ?? null,
+    );
   }
   async getBySku(sku: string) {
     const normalizedSku = normalizeSku(sku);
     return this.read((db) => db.products.find((item) => item.sku === normalizedSku) ?? null);
+  }
+  async getBySkuScoped(tenantId: string, sku: string) {
+    const normalizedSku = normalizeSku(sku);
+    return this.read(
+      (db) =>
+        db.products.find((item) => item.tenantId === tenantId && item.sku === normalizedSku) ??
+        null,
+    );
   }
   async getPublishedForEcommerce(tenantId: string) {
     const products = await this.getPublishedForChannel(SalesChannel.ecommerce);
@@ -154,5 +170,20 @@ export class MockProductRepository extends BaseMockRepository implements Product
       action: "archived",
     });
     return product;
+  }
+  async updateScoped(
+    tenantId: string,
+    id: string,
+    input: Parameters<ProductRepository["updateScoped"]>[2],
+  ) {
+    if ("tenantId" in input && input.tenantId !== tenantId) {
+      throw new Error("Cross-tenant product update denied");
+    }
+    if (!(await this.getByIdScoped(tenantId, id))) throw this.missing("Product", id);
+    return this.update(id, input);
+  }
+  async archiveScoped(tenantId: string, id: string) {
+    if (!(await this.getByIdScoped(tenantId, id))) throw this.missing("Product", id);
+    return this.archive(id);
   }
 }

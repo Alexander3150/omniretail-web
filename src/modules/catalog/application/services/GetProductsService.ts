@@ -5,6 +5,7 @@ import { ProductStatus, PromotionStatus, PromotionType } from "@/core/enums";
 import type { Promotion } from "@/core/entities";
 import { calculateEffectivePrice } from "@/core/pricing";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
+import { resolveTenantId } from "@/modules/catalog/application/services/serviceHelpers";
 
 function getCurrentPromotion(
   productId: string,
@@ -41,12 +42,13 @@ export class GetProductsService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(): Promise<ProductListItem[]> {
+    const tenantId = await resolveTenantId(this.repositories);
     const [products, categories, promotions] = await Promise.all([
-      this.repositories.products.getAll(),
-      this.repositories.categories.getAll(),
-      this.repositories.promotions.getActive(),
+      this.repositories.products.getByTenant(tenantId),
+      this.repositories.categories.getByTenant(tenantId),
+      this.repositories.promotions.getActiveByTenant(tenantId),
     ]);
-    const units = await this.repositories.units.getAll();
+    const units = await this.repositories.units.getByTenant(tenantId);
     const mediaEntries = await Promise.all(
       products.map(
         async (product) =>

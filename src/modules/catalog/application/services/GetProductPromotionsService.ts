@@ -13,7 +13,10 @@ export class GetProductPromotionsService {
   async execute(productId: string): Promise<ProductPromotionsViewModel | null> {
     const detail = await new GetProductDetailService(this.repositories).execute(productId);
     if (!detail) return null;
-    const promotions = await this.repositories.promotions.getByProduct(productId);
+    const promotions = await this.repositories.promotions.getByProductScoped(
+      detail.product.tenantId,
+      productId,
+    );
 
     return {
       ...detail,

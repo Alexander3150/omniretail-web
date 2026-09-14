@@ -58,6 +58,13 @@ async function main() {
     const userId = `user-mfa-${counter}`;
     const accountId = `auth-mfa-${counter}`;
     store.mutate((db) => {
+      const roleId =
+        opts.type === UserType.employee
+          ? db.roles.find((role) => role.tenantId === opts.tenantId)?.id
+          : undefined;
+      if (opts.type === UserType.employee && !roleId) {
+        throw new Error("El fixture Employee requiere un rol del mismo tenant.");
+      }
       db.users.push({
         id: userId,
         tenantId: opts.tenantId,
@@ -65,6 +72,7 @@ async function main() {
         email: opts.email,
         type: opts.type,
         status: UserStatus.active,
+        roleId,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
@@ -132,7 +140,8 @@ async function main() {
 
   function loginSuccessCountFor(accountId: string) {
     return store.read(
-      (db) => db.auditLogs.filter((l) => l.entityId === accountId && l.action === "login_success").length,
+      (db) =>
+        db.auditLogs.filter((l) => l.entityId === accountId && l.action === "login_success").length,
     );
   }
 
@@ -197,22 +206,50 @@ async function main() {
     // que el contador COMPARTIDO llegue al umbral de lockout (5) antes que
     // el limite PROPIO del challenge (tambien 5), que es exactamente la
     // condicion de carrera que exploto el blocker 1.
-    await assertLoginThrows(wrongLoginInput, `${label} A0: password incorrecta cuenta como intento 1`);
-    await assertLoginThrows(wrongLoginInput, `${label} A0: password incorrecta cuenta como intento 2`);
+    await assertLoginThrows(
+      wrongLoginInput,
+      `${label} A0: password incorrecta cuenta como intento 1`,
+    );
+    await assertLoginThrows(
+      wrongLoginInput,
+      `${label} A0: password incorrecta cuenta como intento 2`,
+    );
 
     const { challengeId: challengeId1, demoCodeMock } = await requireMfaChallenge(loginInput);
     const challengeBefore = getChallenge(challengeId1)!;
-    assert(challengeBefore.failedAttempts === 0, `${label} A: challenge nuevo con failedAttempts=0`);
-    assert(loginSuccessCountFor(acc.accountId) === 0, `${label} A: NO se registro login_success al abrir el challenge (no prematuro)`);
-    assert(sessionsCountFor(acc.userId) === 0, `${label} A: NO se creo Session al abrir el challenge`);
+    assert(
+      challengeBefore.failedAttempts === 0,
+      `${label} A: challenge nuevo con failedAttempts=0`,
+    );
+    assert(
+      loginSuccessCountFor(acc.accountId) === 0,
+      `${label} A: NO se registro login_success al abrir el challenge (no prematuro)`,
+    );
+    assert(
+      sessionsCountFor(acc.userId) === 0,
+      `${label} A: NO se creo Session al abrir el challenge`,
+    );
 
     console.log(`\n=== B/C/D/E: reiniciar login mientras el challenge sigue vivo (${label}) ===`);
-    await assertVerifyDenied(challengeId1, "000000", `${label} B: primer codigo MFA incorrecto se rechaza (reintentable)`);
+    await assertVerifyDenied(
+      challengeId1,
+      "000000",
+      `${label} B: primer codigo MFA incorrecto se rechaza (reintentable)`,
+    );
     const { challengeId: challengeId2 } = await requireMfaChallenge(loginInput);
-    assert(challengeId2 === challengeId1, `${label} C: reiniciar login devuelve el MISMO challenge`);
+    assert(
+      challengeId2 === challengeId1,
+      `${label} C: reiniciar login devuelve el MISMO challenge`,
+    );
     const challengeAfterRestart = getChallenge(challengeId1)!;
-    assert(challengeAfterRestart.failedAttempts === 1, `${label} D: failedAttempts NO vuelve a cero tras reiniciar (fue ${challengeAfterRestart.failedAttempts})`);
-    assert(challengeAfterRestart.expiresAt === challengeBefore.expiresAt, `${label} E: expiresAt (TTL) NO se renueva tras reiniciar`);
+    assert(
+      challengeAfterRestart.failedAttempts === 1,
+      `${label} D: failedAttempts NO vuelve a cero tras reiniciar (fue ${challengeAfterRestart.failedAttempts})`,
+    );
+    assert(
+      challengeAfterRestart.expiresAt === challengeBefore.expiresAt,
+      `${label} E: expiresAt (TTL) NO se renueva tras reiniciar`,
+    );
 
     console.log(`\n=== F/G: seguir fallando MFA hasta el lockout de cuenta (${label}) ===`);
     // Van 2 fallos de password + 1 fallo MFA (el de arriba) = 3. Con 2
@@ -220,23 +257,43 @@ async function main() {
     // queda en failedAttempts=3, todavia MUY por debajo de su propio
     // limite de 5 -- sigue "vivo".
     await assertVerifyDenied(challengeId1, "000000", `${label} F: segundo codigo MFA incorrecto`);
-    await assertVerifyDenied(challengeId1, "000000", `${label} F: tercer codigo MFA incorrecto (5to fallo acumulado -> lockout)`);
+    await assertVerifyDenied(
+      challengeId1,
+      "000000",
+      `${label} F: tercer codigo MFA incorrecto (5to fallo acumulado -> lockout)`,
+    );
 
     const accLocked = getAccount(acc.accountId);
-    assert(accLocked.status === AccountStatus.temporarily_locked, `${label} G: account.status === temporarily_locked`);
+    assert(
+      accLocked.status === AccountStatus.temporarily_locked,
+      `${label} G: account.status === temporarily_locked`,
+    );
     assert(Boolean(accLocked.lockedUntil), `${label} G: account.lockedUntil quedo seteado`);
 
     const challengeWhileLocked = getChallenge(challengeId1)!;
     assert(!challengeWhileLocked.consumedAt, `${label} G: el challenge sigue sin consumir`);
-    assert(!challengeWhileLocked.invalidatedAt, `${label} G: el challenge sigue sin invalidar (failedAttempts=${challengeWhileLocked.failedAttempts} < 5)`);
+    assert(
+      !challengeWhileLocked.invalidatedAt,
+      `${label} G: el challenge sigue sin invalidar (failedAttempts=${challengeWhileLocked.failedAttempts} < 5)`,
+    );
 
-    console.log(`\n=== H: login con password correcta mientras esta locked -> DENIED (${label}) ===`);
+    console.log(
+      `\n=== H: login con password correcta mientras esta locked -> DENIED (${label}) ===`,
+    );
     const challengesCountBeforeH = store.read((db) => db.mfaChallenges.length);
-    await assertLoginThrows(loginInput, `${label} H: login con password correcta se rechaza mientras la cuenta esta bloqueada`);
+    await assertLoginThrows(
+      loginInput,
+      `${label} H: login con password correcta se rechaza mientras la cuenta esta bloqueada`,
+    );
     const challengesCountAfterH = store.read((db) => db.mfaChallenges.length);
-    assert(challengesCountAfterH === challengesCountBeforeH, `${label} H: NO se creo un challenge nuevo mientras esta locked`);
+    assert(
+      challengesCountAfterH === challengesCountBeforeH,
+      `${label} H: NO se creo un challenge nuevo mientras esta locked`,
+    );
 
-    console.log(`\n=== I: BLOCKER 1 -- codigo MFA correcto mientras esta locked -> DENIED (${label}) ===`);
+    console.log(
+      `\n=== I: BLOCKER 1 -- codigo MFA correcto mientras esta locked -> DENIED (${label}) ===`,
+    );
     const sessionsBeforeI = sessionsCountFor(acc.userId);
     const loginSuccessBeforeI = loginSuccessCountFor(acc.accountId);
     await assertVerifyDenied(
@@ -245,20 +302,34 @@ async function main() {
       `${label} I: codigo MFA CORRECTO se rechaza mientras la cuenta esta bloqueada (blocker 1)`,
     );
     assert(sessionsCountFor(acc.userId) === sessionsBeforeI, `${label} I: NO se creo Session`);
-    assert(loginSuccessCountFor(acc.accountId) === loginSuccessBeforeI, `${label} I: NO se registro login_success`);
+    assert(
+      loginSuccessCountFor(acc.accountId) === loginSuccessBeforeI,
+      `${label} I: NO se registro login_success`,
+    );
     const challengeAfterI = getChallenge(challengeId1)!;
-    assert(!challengeAfterI.consumedAt, `${label} I: el challenge NO quedo consumido por el intento rechazado`);
+    assert(
+      !challengeAfterI.consumedAt,
+      `${label} I: el challenge NO quedo consumido por el intento rechazado`,
+    );
 
-    console.log(`\n=== J/K: BLOCKER 2 -- recovery code valido mientras esta locked -> DENIED, no se consume (${label}) ===`);
+    console.log(
+      `\n=== J/K: BLOCKER 2 -- recovery code valido mientras esta locked -> DENIED, no se consume (${label}) ===`,
+    );
     const sessionsBeforeJ = sessionsCountFor(acc.userId);
     await assertVerifyDenied(
       challengeId1,
       "RECOVERY-CODE-1",
       `${label} J: recovery code VALIDO se rechaza mientras la cuenta esta bloqueada (blocker 2)`,
     );
-    assert(sessionsCountFor(acc.userId) === sessionsBeforeJ, `${label} J: NO se creo Session con el recovery code`);
+    assert(
+      sessionsCountFor(acc.userId) === sessionsBeforeJ,
+      `${label} J: NO se creo Session con el recovery code`,
+    );
     const recoveryAfterJ = getRecoveryCode(acc.userId, "RECOVERY-CODE-1")!;
-    assert(!recoveryAfterJ.used, `${label} K: el recovery code NO se consumio en el intento rechazado por lockout`);
+    assert(
+      !recoveryAfterJ.used,
+      `${label} K: el recovery code NO se consumio en el intento rechazado por lockout`,
+    );
 
     console.log(`\n=== L: lockout expirado -> vuelve a ser coherente (${label}) ===`);
     store.mutate((db) => {
@@ -266,31 +337,50 @@ async function main() {
       account.lockedUntil = new Date(Date.now() - 1000).toISOString();
       return undefined;
     });
-    const { challengeId: challengeId3, demoCodeMock: demoCodeAfterUnlock } = await requireMfaChallenge(loginInput);
-    assert(challengeId3 === challengeId1, `${label} L: challenge vivo se sigue reutilizando tras el auto-unlock (no se abre uno nuevo de mas)`);
+    const { challengeId: challengeId3, demoCodeMock: demoCodeAfterUnlock } =
+      await requireMfaChallenge(loginInput);
+    assert(
+      challengeId3 === challengeId1,
+      `${label} L: challenge vivo se sigue reutilizando tras el auto-unlock (no se abre uno nuevo de mas)`,
+    );
     const accAfterAutoUnlock = getAccount(acc.accountId);
-    assert(accAfterAutoUnlock.status === AccountStatus.active, `${label} L: auto-unlock restaura status=active`);
+    assert(
+      accAfterAutoUnlock.status === AccountStatus.active,
+      `${label} L: auto-unlock restaura status=active`,
+    );
     assert(!accAfterAutoUnlock.lockedUntil, `${label} L: auto-unlock limpia lockedUntil`);
 
-    console.log(`\n=== M: MFA correcto en cuenta YA NO bloqueada -> exito coherente (${label}) ===`);
+    console.log(
+      `\n=== M: MFA correcto en cuenta YA NO bloqueada -> exito coherente (${label}) ===`,
+    );
     const loginSuccessBeforeM = loginSuccessCountFor(acc.accountId);
     const sessionsBeforeM = sessionsCountFor(acc.userId);
     const session = await repo.verifyMfaChallenge(challengeId3, demoCodeAfterUnlock);
     assert(Boolean(session.id), `${label} M: verifyMfaChallenge exitoso devuelve una Session`);
-    assert(sessionsCountFor(acc.userId) === sessionsBeforeM + 1, `${label} M: se creo exactamente 1 Session nueva`);
+    assert(
+      sessionsCountFor(acc.userId) === sessionsBeforeM + 1,
+      `${label} M: se creo exactamente 1 Session nueva`,
+    );
     assert(
       loginSuccessCountFor(acc.accountId) === loginSuccessBeforeM + 1,
       `${label} M: se registro exactamente 1 login_success nuevo`,
     );
     const accAfterSuccess = getAccount(acc.accountId);
-    assert(accAfterSuccess.status === AccountStatus.active, `${label} M: status queda active (blocker 3)`);
+    assert(
+      accAfterSuccess.status === AccountStatus.active,
+      `${label} M: status queda active (blocker 3)`,
+    );
     assert(!accAfterSuccess.lockedUntil, `${label} M: lockedUntil queda coherente (undefined)`);
     assert(accAfterSuccess.failedLoginAttempts === 0, `${label} M: failedLoginAttempts se resetea`);
     const challengeAfterSuccess = getChallenge(challengeId3)!;
     assert(Boolean(challengeAfterSuccess.consumedAt), `${label} M: el challenge queda consumido`);
 
     console.log(`\n=== N: reutilizar un challenge YA consumido -> DENIED (${label}) ===`);
-    await assertVerifyDenied(challengeId3, demoCodeAfterUnlock, `${label} N: un challenge consumido no puede reutilizarse`);
+    await assertVerifyDenied(
+      challengeId3,
+      demoCodeAfterUnlock,
+      `${label} N: un challenge consumido no puede reutilizarse`,
+    );
 
     return acc;
   }
@@ -311,8 +401,15 @@ async function main() {
       email: `no-mfa-${counter}@example.com`,
       password: "NoMfaPass123",
     });
-    const result = await repo.login({ tenantId: "tenant-demo", email: acc.email, passwordMock: acc.password });
-    assert(result.status === "authenticated", "O: cuenta sin MFA autentica directo (sin challenge)");
+    const result = await repo.login({
+      tenantId: "tenant-demo",
+      email: acc.email,
+      passwordMock: acc.password,
+    });
+    assert(
+      result.status === "authenticated",
+      "O: cuenta sin MFA autentica directo (sin challenge)",
+    );
 
     const accLockout = createLoginAccount({
       type: UserType.customer,
@@ -320,12 +417,19 @@ async function main() {
       email: `no-mfa-lockout-${counter}@example.com`,
       password: "NoMfaLockPass1",
     });
-    const wrongInput = { tenantId: "tenant-demo", email: accLockout.email, passwordMock: "Wrong999" };
+    const wrongInput = {
+      tenantId: "tenant-demo",
+      email: accLockout.email,
+      passwordMock: "Wrong999",
+    };
     for (let i = 0; i < 5; i += 1) {
       await assertLoginThrows(wrongInput, `P: password incorrecta ${i + 1}/5 se rechaza`);
     }
     const accLockedAfter = getAccount(accLockout.accountId);
-    assert(accLockedAfter.status === AccountStatus.temporarily_locked, "P: lockout por password sigue funcionando igual (5 fallos -> temporarily_locked)");
+    assert(
+      accLockedAfter.status === AccountStatus.temporarily_locked,
+      "P: lockout por password sigue funcionando igual (5 fallos -> temporarily_locked)",
+    );
   }
 
   // ---------------------------------------------------------------
@@ -351,9 +455,16 @@ async function main() {
     assert(recoveryAfterFirstUse.used, "el recovery code queda marcado used=true");
 
     const { challengeId: challengeB } = await requireMfaChallenge(loginInput);
-    await assertVerifyDenied(challengeB, "RECOVERY-ONETIME-1", "reusar el mismo recovery code en un challenge NUEVO -> rechazo");
+    await assertVerifyDenied(
+      challengeB,
+      "RECOVERY-ONETIME-1",
+      "reusar el mismo recovery code en un challenge NUEVO -> rechazo",
+    );
     const recoveryAfterReuse = getRecoveryCode(acc.userId, "RECOVERY-ONETIME-1")!;
-    assert(recoveryAfterReuse.used, "el recovery code sigue used=true (no se revirtio por el intento fallido)");
+    assert(
+      recoveryAfterReuse.used,
+      "el recovery code sigue used=true (no se revirtio por el intento fallido)",
+    );
   }
 
   console.log(failed ? "\nHay FAILs arriba, revisar." : "\nTodo OK.");

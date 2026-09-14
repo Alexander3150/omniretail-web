@@ -153,8 +153,15 @@ PrivateShell
     `-- Main
 ```
 
-La sucursal actual es contexto global del shell privado y se obtiene desde
-`BranchRepository`. En una fase posterior Auth/Role/BranchScope filtrara las
-sucursales disponibles para cada empleado. Notifications queda preparado para
+La sucursal actual es contexto global del shell privado. `CurrentSessionProvider` reconstruye la
+identidad operativa y `ActiveBranchProvider` consulta primero
+`BranchRepository.getActiveByTenant(user.tenantId)`; despues aplica `Role.branchScope`. Tanto `all`
+como `selected` quedan encerrados en ese tenant y la autorizacion final exige coincidencia de tenant
+entre User, Role y Branch. Notifications queda preparado para
 conectarse al centro de notificaciones real. UserMenu queda reservado para
-Session -> User -> Profile cuando Auth/Profile este completo.
+Session -> User -> Profile.
+
+Los servicios privados de Catalog resuelven el tenant desde la sesion canonica, no desde DTOs ni
+desde el primer registro disponible. Product, Category y Unit se consultan y mutan mediante
+operaciones tenant-scoped del repository; las operaciones globales permanecen solo para callers
+legacy que aun las requieren.

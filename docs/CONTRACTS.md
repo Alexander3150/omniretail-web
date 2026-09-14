@@ -10,6 +10,22 @@ REPOSITORY: contrato de acceso a datos definido en `src/core/repositories`.
 
 MOCK REPOSITORY: implementacion temporal frontend que usa `MockDatabaseStore`.
 
+`ProductRepository`, `CategoryRepository` y `UnitRepository` conservan sus operaciones globales
+legacy por compatibilidad, pero todo flujo privado de Catalog debe usar sus variantes tenant-scoped
+para listar, leer por identidad y mutar. Un ID de otro tenant se resuelve como inexistente y las
+mutaciones scoped no permiten cambiar `tenantId`. Las conversiones de unidad por producto se leen y
+reemplazan con el mismo scope del producto.
+
+`BranchRepository.getActiveByTenant` y `getByIdScoped` son los boundaries operativos de sucursal.
+`branchScope = all` significa todas las sucursales del tenant autenticado, nunca todas las globales;
+`selected` aplica `allowedBranchIds` solo despues de verificar que User, Role y Branch pertenecen al
+mismo tenant.
+
+La sesion operativa Employee se reconstruye como
+`Session -> User activo -> Tenant activo -> Role existente del mismo tenant`. Login, finalizacion de
+MFA y `CurrentSessionProvider` fallan cerrados si se rompe esa cadena. Este requisito no cambia la
+resolucion Customer ni crea roles o permisos nuevos.
+
 `ProductMediaRepository` es el contrato compartido para consultar y administrar referencias de imagenes de producto sin acoplar modulos a seeds, LocalStorage o assets fisicos. Acepta el `url` legacy y la fuente discriminada `url | mockAsset`; `isPrimary`, luego `sortOrder`, determina la seleccion publica entre fuentes validas.
 
 `CatalogImageAssetRepository` persiste Blob y metadata (`id`, `tenantId`, MIME, bytes, dimensiones y fecha) fuera de `MockDatabaseStore`. `get` y `remove` exigen el tenant propietario. La implementacion frontend usa IndexedDB y los consumidores renderizan un `mockAsset` mediante Object URL temporal con revocacion al cambiar o desmontar.
@@ -18,7 +34,7 @@ MOCK REPOSITORY: implementacion temporal frontend que usa `MockDatabaseStore`.
 
 `GetPublicStorefrontConfigService.execute()` es el read model público mínimo del Storefront. Resuelve internamente el tenant por slug y solo publica nombre, estado, reglas públicas, contacto configurado y sucursales retornadas por `BranchRepository.getActiveByTenantAndType(tenantId, BranchType.store)`. No expone identificadores internos de configuración ni reutiliza esa consulta para fulfillment o disponibilidad operacional; `defaultBranchId` puede seguir apuntando a una sucursal `main`.
 
-`PromotionRepository` es el contrato compartido para crear, editar y consultar promociones aplicables. La aplicabilidad debe considerar tenant, producto, fecha, canal y scope de sucursal; no basta con `status=active`.
+`PromotionRepository` es el contrato compartido para crear, editar y consultar promociones aplicables. La aplicabilidad debe considerar tenant, producto, fecha, canal y scope de sucursal; no basta con `status=active`. Los flujos privados de Catalog usan sus lecturas y actualizaciones tenant-scoped, y una promocion solo puede referenciar Products de su mismo tenant.
 
 `ProductPriceHistoryRepository` es el contrato compartido para leer y registrar cambios de precio base de producto. El mock debe escribir historial cuando cambia `Product.salePrice` desde el flujo comun de `ProductRepository.update`.
 

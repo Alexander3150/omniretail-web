@@ -7,20 +7,27 @@ import {
   toProductDto,
   validateEditorProduct,
 } from "@/modules/catalog/application/services/productEditorHelpers";
-import { ensureProduct } from "@/modules/catalog/application/services/serviceHelpers";
+import {
+  ensureProduct,
+  resolveTenantId,
+} from "@/modules/catalog/application/services/serviceHelpers";
 
 export class UpdateProductWithCommercialDataService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(productId: string, dto: ProductEditorDto): Promise<Product> {
-    const current = ensureProduct(await this.repositories.products.getById(productId));
+    const tenantId = await resolveTenantId(this.repositories);
+    const current = ensureProduct(
+      await this.repositories.products.getByIdScoped(tenantId, productId),
+    );
     const { normalizedDto, capabilities, isNewProduct } = await validateEditorProduct(
       this.repositories,
       dto,
       current.tenantId,
       current,
     );
-    const updated = await this.repositories.products.update(
+    const updated = await this.repositories.products.updateScoped(
+      tenantId,
       current.id,
       ProductMapper.toUpdateInput(toProductDto(normalizedDto), current),
     );

@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
+import { canUserAccessBranch } from "@/core/scopes/userBranchAccess";
 import { ActiveBranchProvider } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 
 /**
@@ -11,7 +12,14 @@ import { ActiveBranchProvider } from "@/shared/navigation/PrivateHeader/ActiveBr
  * lista de branches vacia en vez de recibir la primera activa por defecto.
  */
 export function ScopedActiveBranchProvider({ children }: { children: ReactNode }) {
-  const { canAccessBranch } = useCurrentSession();
+  const { user, role } = useCurrentSession();
 
-  return <ActiveBranchProvider canAccessBranch={canAccessBranch}>{children}</ActiveBranchProvider>;
+  return (
+    <ActiveBranchProvider
+      tenantId={user?.tenantId ?? null}
+      canAccessBranch={(branch) => (user && role ? canUserAccessBranch(user, role, branch) : false)}
+    >
+      {children}
+    </ActiveBranchProvider>
+  );
 }
