@@ -22,13 +22,13 @@ export class ArchiveRoleService {
     ensureRoleTenant(tenantId);
     ensureRoleActor(actorUserId);
     const current = ensureRoleBelongsToTenant(
-      await this.repositories.roles.getById(roleId),
+      await this.repositories.roles.getByIdScoped(tenantId, roleId),
       tenantId,
     );
     ensureRoleNotSystem(current);
 
     const role = ensureRoleBelongsToTenant(
-      await this.repositories.roles.archive(current.id),
+      await this.repositories.roles.archiveScoped(tenantId, current.id),
       tenantId,
     );
     await this.repositories.auditLogs.append({

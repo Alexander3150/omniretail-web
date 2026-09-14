@@ -27,7 +27,7 @@ export class UpdateRoleService {
     ensureRoleTenant(tenantId);
     ensureRoleActor(actorUserId);
     const current = ensureRoleBelongsToTenant(
-      await this.repositories.roles.getById(roleId),
+      await this.repositories.roles.getByIdScoped(tenantId, roleId),
       tenantId,
     );
     ensureRoleNotSystem(current);
@@ -35,7 +35,7 @@ export class UpdateRoleService {
     validateRoleInput(normalizedInput);
 
     const role = ensureRoleBelongsToTenant(
-      await this.repositories.roles.update(current.id, normalizedInput),
+      await this.repositories.roles.updateScoped(tenantId, current.id, normalizedInput),
       tenantId,
     );
     await this.repositories.auditLogs.append({

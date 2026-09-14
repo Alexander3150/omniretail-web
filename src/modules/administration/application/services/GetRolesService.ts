@@ -12,8 +12,8 @@ export class GetRolesService {
   async execute(tenantId: string, permissions: readonly string[]): Promise<RoleDto[]> {
     ensureCanReadRoles(permissions);
     ensureRoleTenant(tenantId);
-    const roles = await this.repositories.roles.getAll();
+    const roles = await this.repositories.roles.listByTenant(tenantId);
 
-    return roles.filter((role) => role.tenantId === tenantId).map(toRoleDto);
+    return roles.map(toRoleDto);
   }
 }
