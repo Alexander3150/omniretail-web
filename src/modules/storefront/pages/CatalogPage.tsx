@@ -8,6 +8,7 @@ export function CatalogPage() {
   const { categories, products, loading, error, reload } = useStorefrontDiscovery();
   const search = useCatalogSearchFilter();
   const selectedCategory = useCatalogCategoryFilter();
+  const activeCategory = categories.find((category) => category.id === selectedCategory);
   const filteredProducts = useMemo(() => {
     const normalized = search.trim().toLocaleLowerCase();
     return products.filter((product) => {
@@ -42,57 +43,97 @@ export function CatalogPage() {
     );
   return (
     <main className="mx-auto max-w-7xl px-5 py-12">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-sm font-bold uppercase tracking-[.18em] text-[var(--color-primary-hover)]">
-            Tienda
-          </p>
-          <h1 className="mt-2 text-4xl font-black text-[var(--color-text)]">Catálogo</h1>
-          <p className="mt-2 text-[var(--color-text-muted)]">
-            Selecciona un producto para conocer más o agrégalo directamente a tu carrito.
-          </p>
-        </div>
-        <p className="rounded-full bg-[var(--color-surface)] px-4 py-2 text-sm font-bold text-[var(--color-title)] shadow-sm">
-          {filteredProducts.length} resultados
-        </p>
-      </div>
-      <div className="mt-8 grid gap-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm md:grid-cols-[1fr_14rem]">
-        <label className="grid gap-2 text-sm font-bold text-[var(--color-text)]">
-          Buscar productos
-          <input
-            className="rounded-xl border border-[var(--color-border)] bg-slate-50 px-4 py-3 font-normal outline-none transition focus:border-[var(--color-primary-hover)] focus:ring-4 focus:ring-[var(--color-primary)]/15"
-            onChange={(event) => updateCatalogSearchFilter(event.target.value)}
-            placeholder="Nombre, marca o código"
-            value={search}
-          />
-        </label>
-        <label className="grid gap-2 text-sm font-bold text-[var(--color-text)]">
-          Categoría
-          <select
-            className="rounded-xl border border-[var(--color-border)] bg-slate-50 px-4 py-3 font-normal outline-none"
-            onChange={(event) => updateCatalogCategoryFilter(event.target.value)}
-            value={selectedCategory}
-          >
-            <option value="">Todas las categorías</option>
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      {filteredProducts.length === 0 ? (
-        <section className="mt-6 rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-10 text-center text-[var(--color-text-muted)]">
-          No hay productos que coincidan con tus filtros.
+      <div className="grid gap-5 lg:grid-cols-[15rem_minmax(0,1fr)]">
+        <aside className="h-fit space-y-4 lg:sticky lg:top-5">
+          <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
+            <label className="block">
+              <span className="text-xs font-black uppercase tracking-wider text-[var(--color-primary-hover)]">
+                Buscar productos
+              </span>
+              <span className="relative mt-3 block">
+                <span className="pointer-events-none absolute inset-y-0 left-3 grid place-items-center text-sm text-[var(--color-text-muted)]">
+                  ⌕
+                </span>
+                <input
+                  className="w-full rounded-lg border border-[var(--color-border)] bg-slate-50 py-2.5 pl-9 pr-3 text-sm font-normal text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary-hover)] focus:ring-4 focus:ring-[var(--color-primary)]/15"
+                  onChange={(event) => updateCatalogSearchFilter(event.target.value)}
+                  placeholder="Nombre, SKU o tipo..."
+                  value={search}
+                />
+              </span>
+            </label>
+          </section>
+          <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-xs font-black uppercase tracking-wider text-[var(--color-primary-hover)]">
+                Categoría
+              </h2>
+              {selectedCategory ? (
+                <button
+                  className="text-xs font-bold text-[var(--color-title)] underline"
+                  onClick={() => updateCatalogCategoryFilter("")}
+                  type="button"
+                >
+                  Limpiar
+                </button>
+              ) : null}
+            </div>
+            <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
+              {categories.map((category) => {
+                const count = products.filter(
+                  (product) => product.categoryId === category.id,
+                ).length;
+                return (
+                  <label
+                    className="flex cursor-pointer items-center gap-2 text-sm text-[var(--color-text)]"
+                    key={category.id}
+                  >
+                    <input
+                      checked={selectedCategory === category.id}
+                      className="h-4 w-4 accent-[var(--color-primary-hover)]"
+                      onChange={() =>
+                        updateCatalogCategoryFilter(
+                          selectedCategory === category.id ? "" : category.id,
+                        )
+                      }
+                      type="checkbox"
+                    />
+                    <span className="flex-1 truncate">{category.name}</span>
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-[var(--color-text-muted)]">
+                      {count}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </section>
+        </aside>
+        <section>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-4 shadow-sm">
+            <div>
+              <p className="font-black text-[var(--color-text)]">
+                Mostrando {filteredProducts.length} de {products.length} productos
+              </p>
+              {activeCategory ? (
+                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                  Categoría: {activeCategory.name}
+                </p>
+              ) : null}
+            </div>
+          </div>
+          {filteredProducts.length === 0 ? (
+            <section className="mt-6 rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-10 text-center text-[var(--color-text-muted)]">
+              No hay productos que coincidan con tus filtros.
+            </section>
+          ) : (
+            <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {filteredProducts.map((product) => (
+                <StorefrontProductCard compact key={product.id} product={product} />
+              ))}
+            </div>
+          )}
         </section>
-      ) : (
-        <div className="mt-7 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredProducts.map((product) => (
-            <StorefrontProductCard key={product.id} product={product} />
-          ))}
-        </div>
-      )}
+      </div>
     </main>
   );
 }
