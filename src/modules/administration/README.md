@@ -37,12 +37,14 @@ Implementado en esta rama:
 - Listado comercial de clientes aislado por el `tenantId` de la sesión, con búsqueda por código,
   nombre o correo y filtro por estado, ordenado por cantidad de compras descendente.
 - `purchaseCount` se calcula en `GetCustomersService` sumando `Order` (e-commerce) y `Sale`
-  (mostrador) por `customerId`, excluyendo `cancelled` en ambos. Es agregación local dentro del
-  service -- no existe (ni hace falta) un contrato nuevo en `core`: `RepositoryRegistry` ya expone
-  `orders` y `sales` a Administration, mismo patrón que usan `GetDashboardSummaryService` y
-  `GetReportsService`. Ver `.ai/skills/contract-change/SKILL.md`: no se justifica un contract
-  change para una sola pantalla cuando se resuelve con agregación local.
-- Único permiso `admin.customers.read`; no existe `admin.customers.manage`. La entrada de
+  (mostrador) por `customerId`, excluyendo `cancelled` en ambos. `Order + Sale` vinculadas por
+  `sourceOrderId` cuentan una sola vez cuando la Order relacionada ya fue contabilizada para el
+  mismo cliente; una `Sale` legacy con `sourceOrderId` inexistente o no contabilizable se cuenta
+  una vez si es válida.
+- `GetCustomersService` lee `Customer`, `Order` y `Sale` mediante boundaries tenant-scoped
+  (`listByTenant`) en los repositorios compartidos. No usa `getAll()` global ni carga registros de
+  otros tenants para luego filtrarlos en memoria.
+- Único permiso `admin.customers.read`; no hay permiso administrativo de gestión. La entrada de
   navegación usa el mismo permiso que el service, sin la ambigüedad manage-vs-read que tenían otras
   pantallas de este módulo.
 - Sin mutaciones: no se crean, editan ni archivan clientes desde Administration, y por lo tanto no

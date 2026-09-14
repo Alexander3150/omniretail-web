@@ -112,7 +112,7 @@ Firmas reales leídas de `src/core/repositories/`.
 | `UserRepository`            | `getAll` · `getById` · `getByEmail` · `create` · `update` · `updateStatus`                     | ✅ Completo                                         |
 | `AuditLogRepository`        | `getByTenant` · `append`                                                                       | Sin filtros funcionales ni paginacion server-side   |
 | `TenantRepository`          | `getAll` · `getById`                                                                           | Sin `create` ni `update`                            |
-| `CustomerRepository`        | `getAll` · `getById` · `getByUserId` · `getByEmail` · `create` · `update`                      | Sin segmentos                                       |
+| `CustomerRepository`        | `getAll` · `listByTenant` · `getById` · `getByUserId` · `getByEmail` · `create` · `update`     | Sin segmentos                                       |
 | `RoleRepository`            | `getById`                                                                                       | ⛔ **Bloqueante**                                   |
 | `CustomerSegmentRepository` | —                                                                                               | ⛔ **No existe**                                    |
 
@@ -448,14 +448,15 @@ Tabla de traducción. **La columna derecha es la que vale.**
 
 ## 8. Permisos
 
-Declarados hoy en `permissions.ts` de este módulo (9):
+Declarados hoy en `permissions.ts` de este módulo:
 
 `admin.users.read` · `admin.users.manage` · `admin.roles.read` · `admin.roles.manage` ·
 `admin.branches.read` · `admin.branches.manage` · `admin.business_config.manage` ·
-`admin.suppliers.manage` · `admin.bank_accounts.manage` · `admin.cash.read`
+`admin.suppliers.manage` · `admin.bank_accounts.manage` · `admin.cash.read` ·
+`admin.customers.read`
 
 **No existen** y hay que declararlos al construir sus pantallas:
-`admin.customers.read/manage` · `admin.audit.read` ·
+`admin.audit.read` ·
 `admin.reports.read/export` · `admin.ecommerce_config.manage` · `users.credentials.reset`
 
 La granularidad del repo es `read` / `manage`, no `create/update/archive`. Mantenerla.
