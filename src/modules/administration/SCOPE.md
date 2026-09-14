@@ -37,7 +37,7 @@
 | 4   | Cuentas bancarias         | `/administracion/cuentas-bancarias`     | `BankAccount`                 | ✅ **Implementada**                  |
 | 5   | Diseño E-commerce         | `/administracion/diseno-ecommerce`      | `EcommerceConfig`             | ✅ **Implementada** — sin branding   |
 | 6   | Clientes                  | `/administracion/clientes`              | `Customer`, `CustomerSegment` | ⚠️ Parcial — sin update ni segmentos |
-| 7   | Auditoría                 | `/administracion/auditoria`             | `AuditLog`                    | ⛔ Removida — riesgo de privacidad   |
+| 7   | Auditoría                 | `/administracion/auditoria`             | `AuditLog`                    | ✅ **Implementada**                  |
 | 8   | Caja                      | `/administracion/caja`                  | `CashShift`, `CashMovement`   | ✅ **Implementada** — solo lectura   |
 | 9   | Dashboard                 | `/administracion/dashboard`             | Agregación                    | ✅ **Implementada**                  |
 | 10  | Reportes                  | `/administracion/reportes`              | Agregación                    | ✅ **Implementada**                  |
@@ -406,10 +406,8 @@ override `demoMode`) y `src/config/session-policy.ts` (`normalSessionHours: 8`,
    quedan bloqueadas. Esto **sí** es dominio de Andy.
 6. **`TenantRepository` sin `update`.** Bloquea escritura de datos del negocio.
 7. **`CustomerRepository` sin `update` y sin `CustomerSegmentRepository`.**
-8. **La pantalla de Auditoría se removió.** Exponía `login_success`/`login_failed` de todos los
-   usuarios (incluyendo clientes) porque `MockAuthRepository.logAuthAudit` escribe en el mismo
-   `db.auditLogs` que leía la pantalla. `AuditLogRepository.append()` sigue en uso por Sucursales,
-   Proveedores y Cuentas bancarias para su propio rastro de auditoría; eso no se tocó.
+8. **`AuditLogRepository` sin filtros funcionales ni paginacion.** La lectura esta aislada por
+   tenant en el repositorio; los filtros de la pantalla se aplican en cliente sobre ese subconjunto.
 9. **Planes y facturación / Sincronización sin entity.** No inventar; definir en equipo.
 10. **El filtro de permisos del Sidebar no está conectado.** `filterNavigationItemsByPermissions`
     existe y funciona, pero `PrivateShell` nunca pasa `allowedPermissions`, así que hoy se ve
@@ -604,12 +602,11 @@ El self-service del cliente (registro, login, direcciones, pedidos propios) vive
 `customer` de Andy. No duplicar.
 Segmentos bloqueados hasta que exista `CustomerSegmentRepository`.
 
-### 12.7 Auditoría ⛔ removida
+### 12.7 Auditoría ✅ implementada
 
-Se removió por decisión de producto: la pantalla mostraba `login_success`/`login_failed` de
-**todos** los usuarios, incluidos clientes, lo cual se consideró demasiado invasivo. El escritor
-(`AuditLogRepository.append()`, usado por otros módulos vía R-P04) sigue intacto; solo se quitó la
-pantalla de lectura, su service, su permiso (`admin.audit.read`) y su entrada de navegación.
+Tabla filtrable: `createdAt`, actor, `action`, `entityType`, `entityId`, `metadata`.
+Sin campo `module`: si se necesita agrupar por módulo, se deriva de `action` o `entityType`.
+Filtrado en cliente (`getAll`). Nunca se escribe desde acá: lo emiten los demás módulos (R-P04).
 
 ### 12.8 Caja ✅ implementada
 
