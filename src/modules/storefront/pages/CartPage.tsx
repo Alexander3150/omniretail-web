@@ -3,13 +3,22 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
+import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
 
 export function CartPage() {
   const { items, subtotal, updateQuantity, removeProduct, clearCart } = useStorefrontCart();
+  const { products } = useStorefrontDiscovery();
+  const availabilityByProductId = new Map(
+    products.map((product) => [product.id, product.availableQuantity]),
+  );
+  const invalidItems = items.filter((item) => {
+    const availableQuantity = availabilityByProductId.get(item.productId);
+    return availableQuantity !== undefined && availableQuantity !== null && item.quantity > availableQuantity;
+  });
   const itemCount = items.reduce((total, item) => total + item.quantity, 0);
   if (items.length === 0)
     return (
-      <main className="mx-auto max-w-5xl px-5 py-14">
+      <main className="mx-auto max-w-5xl px-4 py-14 sm:px-5">
         <section className="rounded-3xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-10 text-center">
           <p className="text-sm font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">
             Tu selección
@@ -30,7 +39,7 @@ export function CartPage() {
       </main>
     );
   return (
-    <main className="mx-auto max-w-7xl px-5 py-12">
+    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-5 sm:py-12">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">
@@ -48,7 +57,7 @@ export function CartPage() {
       </div>
       <div className="mt-8 grid gap-6 2xl:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
-          <div className="hidden grid-cols-[minmax(16rem,22rem)_6rem_7rem_7rem_6.5rem_3rem] gap-3 border-b border-[var(--color-border)] bg-slate-50 px-5 py-4 text-xs font-black uppercase tracking-wider text-[var(--color-primary-hover)] lg:grid">
+          <div className="hidden grid-cols-[minmax(14rem,1fr)_5rem_6rem_6rem_6rem_3rem] gap-3 border-b border-[var(--color-border)] bg-slate-50 px-5 py-4 text-xs font-black uppercase tracking-wider text-[var(--color-primary-hover)] xl:grid">
             <span>Producto</span>
             <span>SKU</span>
             <span className="text-center">Cantidad</span>
@@ -56,10 +65,16 @@ export function CartPage() {
             <span className="text-right">Total</span>
             <span className="text-right">Acción</span>
           </div>
-          {items.map((item) => (
+          {items.map((item) => {
+            const availableQuantity = availabilityByProductId.get(item.productId);
+            const isInvalid =
+              availableQuantity !== undefined &&
+              availableQuantity !== null &&
+              item.quantity > availableQuantity;
+            return (
             <article
               key={item.productId}
-              className="grid min-h-32 gap-3 border-b border-[var(--color-border)] px-5 py-5 last:border-b-0 lg:grid-cols-[minmax(16rem,22rem)_6rem_7rem_7rem_6.5rem_3rem] lg:items-center"
+              className="grid min-h-32 gap-3 border-b border-[var(--color-border)] px-4 py-5 last:border-b-0 sm:px-5 xl:grid-cols-[minmax(14rem,1fr)_5rem_6rem_6rem_6rem_3rem] xl:items-center"
             >
               <div className="flex min-w-0 items-center gap-4">
                 {item.imageUrl ? (
@@ -79,9 +94,17 @@ export function CartPage() {
                   <h2 className="mt-1 truncate text-lg font-black text-[var(--color-text)]">
                     {item.name}
                   </h2>
-                  <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                    Producto disponible para compra en línea
-                  </p>
+                  {isInvalid ? (
+                    <p className="mt-1 text-sm font-bold text-[var(--color-danger)]" role="alert">
+                      {availableQuantity === 0
+                        ? "Agotado. Retira este producto para continuar."
+                        : `Solo hay ${availableQuantity} unidades disponibles.`}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                      Producto disponible para compra en línea
+                    </p>
+                  )}
                 </div>
               </div>
               <p className="text-sm font-mono text-[var(--color-text-muted)]">{item.sku}</p>
@@ -102,6 +125,7 @@ export function CartPage() {
                   <button
                     aria-label={`Aumentar cantidad de ${item.name}`}
                     className="px-4 py-2 font-black"
+                    disabled={availableQuantity !== undefined && availableQuantity !== null && item.quantity >= availableQuantity}
                     onClick={() => updateQuantity(item.productId, item.quantity + 1)}
                     type="button"
                   >
@@ -130,7 +154,8 @@ export function CartPage() {
                 ×
               </button>
             </article>
-          ))}
+            );
+          })}
         </div>
         <aside className="h-fit rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
           <p className="text-xl font-black text-[var(--color-text)]">Resumen de compra</p>
@@ -151,12 +176,18 @@ export function CartPage() {
               Q{subtotal.toFixed(2)}
             </span>
           </div>
-          <Link
-            className="mt-6 block rounded-xl bg-[var(--color-primary-hover)] px-4 py-3 text-center font-black text-white transition hover:brightness-110"
-            href="/checkout"
-          >
-            Continuar al checkout
-          </Link>
+          {invalidItems.length > 0 ? (
+            <p className="mt-6 rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-[var(--color-danger)]" role="alert">
+              Corrige o retira los productos agotados antes de continuar al checkout.
+            </p>
+          ) : (
+            <Link
+              className="mt-6 block rounded-xl bg-[var(--color-primary-hover)] px-4 py-3 text-center font-black text-white transition hover:brightness-110"
+              href="/checkout"
+            >
+              Continuar al checkout
+            </Link>
+          )}
           <Link
             className="mt-4 block text-center text-sm font-bold text-[var(--color-title)] hover:underline"
             href="/catalogo"

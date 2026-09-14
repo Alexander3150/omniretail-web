@@ -16,6 +16,7 @@ import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCart
 import { useStorefrontCheckoutConfirmation } from "@/modules/storefront/providers/StorefrontCheckoutConfirmationProvider";
 import { municipalitiesByDepartment } from "@/modules/storefront/data/guatemalaLocations";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
+import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
 
 const departments = Object.keys(municipalitiesByDepartment);
 
@@ -56,6 +57,7 @@ const initialForm: StorefrontCheckoutFormDto = {
 };
 export function CheckoutPage() {
   const { items, subtotal } = useStorefrontCart();
+  const { products } = useStorefrontDiscovery();
   const repositories = useRepositories();
   const { user } = useCurrentSession();
   const { tenantId, config, loading: configLoading } = usePublicTenant();
@@ -70,6 +72,10 @@ export function CheckoutPage() {
   const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState<string | "new">("new");
   const [selectedAddressId, setSelectedAddressId] = useState<string | "new">("new");
   const router = useRouter();
+  const invalidCartItems = items.filter((item) => {
+    const availableQuantity = products.find((product) => product.id === item.productId)?.availableQuantity;
+    return availableQuantity !== undefined && availableQuantity !== null && item.quantity > availableQuantity;
+  });
   useEffect(() => {
     let active = true;
     const loadCustomerCheckoutData = async () => {
@@ -184,6 +190,18 @@ export function CheckoutPage() {
         </Link>
       </main>
     );
+  if (invalidCartItems.length > 0)
+    return (
+      <main className="mx-auto max-w-3xl px-4 py-12 sm:px-5">
+        <section className="rounded-2xl border border-[var(--color-danger)]/30 bg-[var(--color-surface)] p-5 text-center shadow-sm sm:p-8">
+          <h1 className="text-2xl font-black text-[var(--color-text)]">Revisa la disponibilidad</h1>
+          <p className="mt-3 text-[var(--color-text-muted)]">
+            Hay productos agotados o con una cantidad mayor a la disponible. Corrígelos en el carrito antes de continuar.
+          </p>
+          <Link className="mt-6 inline-block rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)]" href="/carrito">Volver al carrito</Link>
+        </section>
+      </main>
+    );
   if (!configLoading && config?.accountRequired && !user)
     return (
       <main className="mx-auto max-w-3xl px-5 py-14">
@@ -227,11 +245,11 @@ export function CheckoutPage() {
     void submit({ ...form, phone: form.phone.replace(/\D/g, "").replace(/^502/, "") });
   };
   return (
-    <main className="mx-auto max-w-7xl px-5 py-10">
+    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-5 sm:py-10">
       <Link className="text-sm font-bold text-[var(--color-title)]" href="/carrito">
         ← Volver al carrito
       </Link>
-      <div className="mx-auto mt-4 flex max-w-xl items-center gap-4">
+      <div className="mx-auto mt-4 flex max-w-xl items-center gap-2 sm:gap-4">
         <Step active={step === 1} number="1" label="Envío y datos" />
         <span className="h-px flex-1 bg-[var(--color-primary)]/50" />
         <Step active={step === 2} number="2" label="Pago" />
@@ -241,8 +259,8 @@ export function CheckoutPage() {
       <div className="mt-8 grid gap-7 xl:grid-cols-[minmax(0,1fr)_27rem]">
         <form className="space-y-5" onSubmit={handleSubmit}>
           {step === 1 ? (
-            <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-7 shadow-sm">
-              <div className="flex items-center justify-between">
+            <section className="min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm sm:p-7">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-xl font-black text-[var(--color-text)]">
                   Información de entrega
                 </h2>
@@ -258,12 +276,12 @@ export function CheckoutPage() {
                   </p>
                   {savedAddresses.map((address) => (
                     <button
-                      className={`flex w-full items-start justify-between gap-4 rounded-xl border p-4 text-left transition ${selectedAddressId === address.id ? "border-[var(--color-primary-hover)] bg-[var(--color-primary)]/10" : "border-[var(--color-border)] hover:border-[var(--color-primary)]"}`}
+                      className={`flex w-full min-w-0 flex-wrap items-start justify-between gap-3 rounded-xl border p-4 text-left transition ${selectedAddressId === address.id ? "border-[var(--color-primary-hover)] bg-[var(--color-primary)]/10" : "border-[var(--color-border)] hover:border-[var(--color-primary)]"}`}
                       key={address.id}
                       onClick={() => selectSavedAddress(address)}
                       type="button"
                     >
-                      <span>
+                      <span className="min-w-0 break-words">
                         <span className="block font-bold text-[var(--color-text)]">
                           {address.label}
                           {address.isDefault ? " · Predeterminada" : ""}
@@ -380,9 +398,9 @@ export function CheckoutPage() {
             </section>
           ) : null}
           <section
-            className={`rounded-xl border bg-[var(--color-surface)] p-7 shadow-sm ${step === 2 ? "border-[var(--color-primary-hover)]" : "border-[var(--color-border)] opacity-70"}`}
+            className={`min-w-0 rounded-xl border bg-[var(--color-surface)] p-4 shadow-sm sm:p-7 ${step === 2 ? "border-[var(--color-primary-hover)]" : "border-[var(--color-border)] opacity-70"}`}
           >
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-xl font-black text-[var(--color-text)]">Método de pago</h2>
               <span className="text-sm font-bold text-[var(--color-success)]">
                 ♢ Pago 100% seguro
@@ -390,8 +408,8 @@ export function CheckoutPage() {
             </div>
             {step === 2 ? (
               <div className="mt-5 space-y-4">
-                <div className="flex items-center justify-between gap-4 rounded-xl border border-[var(--color-border)] bg-slate-50 p-4 text-sm">
-                  <div>
+                <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[var(--color-border)] bg-slate-50 p-4 text-sm">
+                  <div className="min-w-0 break-words">
                     <p className="font-bold text-[var(--color-text)]">
                       ▱ &nbsp; Entrega en tu dirección
                     </p>
@@ -407,8 +425,8 @@ export function CheckoutPage() {
                     Modificar
                   </button>
                 </div>
-                <div className="rounded-xl border-2 border-[var(--color-primary-hover)] bg-[var(--color-primary)]/10 p-5">
-                  <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] pb-4">
+                <div className="min-w-0 rounded-xl border-2 border-[var(--color-primary-hover)] bg-[var(--color-primary)]/10 p-4 sm:p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] pb-4">
                     <p className="font-bold text-[var(--color-text)]">
                       ◉ &nbsp; ▣ &nbsp; Tarjeta de crédito o débito
                     </p>
@@ -423,12 +441,12 @@ export function CheckoutPage() {
                       </p>
                       {savedCards.map((card) => (
                         <button
-                          className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition ${selectedPaymentMethodId === card.id ? "border-[var(--color-primary-hover)] bg-white" : "border-[var(--color-border)] bg-white/70 hover:border-[var(--color-primary)]"}`}
+                          className={`flex w-full min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-left transition ${selectedPaymentMethodId === card.id ? "border-[var(--color-primary-hover)] bg-white" : "border-[var(--color-border)] bg-white/70 hover:border-[var(--color-primary)]"}`}
                           key={card.id}
                           onClick={() => selectSavedCard(card)}
                           type="button"
                         >
-                          <span>
+                          <span className="min-w-0 break-words">
                             <span className="block font-bold text-[var(--color-text)]">
                               {card.brand} •••• {card.last4}
                             </span>
@@ -525,7 +543,7 @@ export function CheckoutPage() {
             </button>
           </section>
         </form>
-        <aside className="h-fit rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
+        <aside className="h-fit min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm sm:p-6">
           <p className="text-xl font-black text-[var(--color-text)]">Resumen del pedido</p>
           <div className="mt-4 space-y-3 border-t border-[var(--color-border)] pt-4">
             {items.map((item) => (

@@ -7,6 +7,7 @@ import { useStorefrontProductDetail } from "@/modules/storefront/hooks/useStoref
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
 import { useToast } from "@/shared/components/Toast";
 import { StorefrontCatalogImage } from "@/modules/storefront/components/StorefrontCatalogImage";
+import { ProductType } from "@/core/enums";
 
 export function ProductDetailPage({ productId }: { productId: string }) {
   const { data, loading, error, reload } = useStorefrontProductDetail(productId);
@@ -45,7 +46,10 @@ export function ProductDetailPage({ productId }: { productId: string }) {
       </main>
     );
   const { product, availability, categoryName, media, attributes } = data;
+  const isOutOfStock =
+    product.productType !== ProductType.service && Boolean(availability?.length) && !availability!.some((branch) => branch.available);
   const addToCart = async () => {
+    if (isOutOfStock) return;
     await Promise.all(Array.from({ length: quantity }, () => addProduct(product.id)));
     setAddedQuantity(quantity);
     showToast({
@@ -114,7 +118,8 @@ export function ProductDetailPage({ productId }: { productId: string }) {
                 <span className="font-black text-[var(--color-text)]">{quantity}</span>
                 <button
                   aria-label="Aumentar cantidad"
-                  className="px-4 text-xl font-bold text-[var(--color-title)]"
+                  className="px-4 text-xl font-bold text-[var(--color-title)] disabled:opacity-40"
+                  disabled={isOutOfStock}
                   onClick={() => setQuantity((current) => current + 1)}
                   type="button"
                 >
@@ -122,13 +127,19 @@ export function ProductDetailPage({ productId }: { productId: string }) {
                 </button>
               </div>
               <button
-                className="h-12 flex-1 rounded-xl bg-[var(--color-primary-hover)] px-5 font-bold text-white transition hover:brightness-110"
+                className="h-12 flex-1 rounded-xl bg-[var(--color-primary-hover)] px-5 font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600"
+                disabled={isOutOfStock}
                 onClick={() => void addToCart()}
                 type="button"
               >
-                Agregar al carrito
+                {isOutOfStock ? "Agotado" : "Agregar al carrito"}
               </button>
             </div>
+            {isOutOfStock ? (
+              <p className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700">
+                Agotado por el momento. Podrás agregarlo cuando vuelva a haber disponibilidad.
+              </p>
+            ) : null}
             {addedQuantity ? (
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-success)]/30 bg-[var(--color-success)]/10 px-3 py-2 text-sm text-[var(--color-success)]">
                 <span>

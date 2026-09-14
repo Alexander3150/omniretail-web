@@ -8,7 +8,7 @@ export function StorefrontFooter() {
   const businessName = config?.storeName ?? "Tienda";
   return (
     <footer className="mt-auto border-t border-white/10 bg-[var(--color-topbar)] text-slate-300">
-      <div className="mx-auto grid max-w-7xl gap-8 px-5 py-10 md:grid-cols-[1.3fr_1fr_1fr]">
+      <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-5 md:grid-cols-[1.3fr_1fr_1fr]">
         <div>
           <p className="text-lg font-black text-white">{businessName}</p>
           <p className="mt-2 max-w-sm text-sm leading-6">

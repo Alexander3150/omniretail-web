@@ -19,7 +19,9 @@ export function StorefrontProductCard({
   const { addProduct } = useStorefrontCart();
   const [added, setAdded] = useState(false);
   const { showToast } = useToast();
+  const isOutOfStock = product.availableQuantity !== null && product.availableQuantity <= 0;
   const add = async () => {
+    if (isOutOfStock) return;
     await addProduct(product.id);
     setAdded(true);
     showToast({
@@ -41,6 +43,11 @@ export function StorefrontProductCard({
           {offer ? (
             <span className="absolute left-3 top-3 rounded-md bg-[var(--color-success)] px-2.5 py-1 text-xs font-black uppercase tracking-wider text-white">
               Oferta
+            </span>
+          ) : null}
+          {isOutOfStock ? (
+            <span className="absolute right-3 top-3 rounded-md bg-slate-800 px-2.5 py-1 text-xs font-black uppercase tracking-wider text-white">
+              Agotado
             </span>
           ) : null}
         </div>
@@ -86,11 +93,12 @@ export function StorefrontProductCard({
         </div>
         <button
           aria-label={`Agregar ${product.name} al carrito`}
-          className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-bold text-[var(--color-topbar)] transition hover:bg-[var(--color-primary-hover)]"
+        className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-bold text-[var(--color-topbar)] transition hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600"
+          disabled={isOutOfStock}
           onClick={() => void add()}
           type="button"
         >
-          {added ? "Agregado" : "Agregar"}
+          {isOutOfStock ? "Agotado" : added ? "Agregado" : "Agregar"}
         </button>
       </div>
     </article>

@@ -3,6 +3,7 @@
 import { useCustomerOrders } from "@/modules/customer/hooks/useCustomerOrders";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
+import Link from "next/link";
 
 /**
  * Solo lectura -- cualquier accion sobre un pedido (cancelar, ver detalle
@@ -43,7 +44,8 @@ export function PedidosPage() {
       ) : (
         <div className="space-y-3">
           {orders.map((order) => (
-            <article
+            <Link
+              href={`/cuenta/pedidos/${order.id}`}
               className="flex flex-col gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between"
               key={order.id}
             >
@@ -66,7 +68,7 @@ export function PedidosPage() {
                   Q{order.total.toFixed(2)}
                 </span>
               </div>
-            </article>
+            </Link>
           ))}
         </div>
       )}

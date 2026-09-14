@@ -8,6 +8,9 @@ import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { createMockDatabase } from "@/infrastructure/mock/database/createMockDatabase";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import { MockCategoryRepository } from "@/infrastructure/mock/repositories/MockCategoryRepository";
+import { MockBusinessConfigRepository } from "@/infrastructure/mock/repositories/MockBusinessConfigRepository";
+import { MockInventoryRepository } from "@/infrastructure/mock/repositories/MockInventoryRepository";
+import { MockProductKitComponentRepository } from "@/infrastructure/mock/repositories/MockProductKitComponentRepository";
 import { MockProductMediaRepository } from "@/infrastructure/mock/repositories/MockProductMediaRepository";
 import { MockProductRepository } from "@/infrastructure/mock/repositories/MockProductRepository";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
@@ -168,6 +171,9 @@ async function main(): Promise<void> {
     products: new MockProductRepository(store, eventBus),
     categories: new MockCategoryRepository(store, eventBus),
     productMedia: new MockProductMediaRepository(store, eventBus),
+    businessConfig: new MockBusinessConfigRepository(store, eventBus),
+    inventory: new MockInventoryRepository(store, eventBus),
+    productKitComponents: new MockProductKitComponentRepository(store, eventBus),
   } as unknown as RepositoryRegistry;
 
   assert.equal(db.categories.length, 10, "A: deben existir 10 categorías");
@@ -308,6 +314,9 @@ async function main(): Promise<void> {
   assert.equal(discovery.products.length, 30, "V: Ecommerce debe descubrir los 30 productos Web");
   assert.equal(discovery.categories.length, 10, "W: Ecommerce debe descubrir las 10 categorías");
   assert.ok(discovery.products.every(({ imageSource }) => imageSource?.kind === "url"));
+  const soldOutGrinder = discovery.products.find((item) => item.sku === "HER-ELE-002");
+  assert.ok(soldOutGrinder, "V: Producto agotado debe continuar visible en ecommerce");
+  assert.equal(soldOutGrinder.availableQuantity, 0, "V: Producto agotado debe informar disponibilidad cero");
   assert.ok(discovery.categories.every(({ imageSource }) => imageSource?.kind === "url"));
   const foreignDiscovery = await storefront.execute("tenant-other");
   assert.equal(foreignDiscovery.products.length, 0, "X: filtrado tenant de productos");

@@ -42,13 +42,13 @@ export function OrderConfirmationPage() {
     );
 
   return (
-    <main className="mx-auto max-w-5xl px-5 py-10 print:max-w-none print:p-0">
-      <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm print:hidden sm:p-9">
+    <main className="mx-auto max-w-5xl px-4 py-8 print:max-w-none print:p-0 sm:px-5 sm:py-10">
+      <section className="min-w-0 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm print:hidden sm:p-9">
         <div className="text-center">
           <span className="inline-grid h-14 w-14 place-items-center rounded-full border-2 border-[var(--color-primary)] bg-[var(--color-primary)]/15 text-3xl font-black text-[var(--color-primary-hover)]">
             ✓
           </span>
-          <h1 className="mt-5 text-4xl font-black text-[var(--color-text)]">
+          <h1 className="mt-5 text-3xl font-black text-[var(--color-text)] sm:text-4xl">
             ¡Gracias por tu compra!
           </h1>
           <div className="mt-3 flex flex-wrap justify-center gap-3 text-sm">
@@ -121,7 +121,7 @@ export function OrderConfirmationPage() {
           </section>
         </div>
         <section className="mt-6 overflow-hidden rounded-xl border border-[var(--color-border)]">
-          <div className="flex items-center justify-between gap-4 bg-[var(--color-primary)]/10 px-5 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-[var(--color-primary)]/10 px-4 py-3 sm:px-5">
             <h2 className="font-black text-[var(--color-text)]">
               Productos en este pedido (
               {result.items.reduce((total, item) => total + item.quantity, 0)} unidades)
@@ -130,9 +130,9 @@ export function OrderConfirmationPage() {
               Total: Q{result.total.toFixed(2)}
             </span>
           </div>
-          <div className="divide-y divide-[var(--color-border)] bg-[var(--color-surface)] px-5">
+          <div className="divide-y divide-[var(--color-border)] bg-[var(--color-surface)] px-4 sm:px-5">
             {result.items.map((item) => (
-              <article className="flex items-center justify-between gap-4 py-4" key={item.sku}>
+              <article className="flex min-w-0 flex-wrap items-center justify-between gap-3 py-4 sm:flex-nowrap" key={item.sku}>
                 <div className="flex min-w-0 items-center gap-3">
                   {item.imageUrl ? (
                     <Image

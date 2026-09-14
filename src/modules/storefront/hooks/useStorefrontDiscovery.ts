@@ -52,10 +52,14 @@ export function useStorefrontDiscovery() {
     const unsubscribeCategories = eventBus.subscribe("category.changed", (event) => {
       if (active && !tenantLoading && event.tenantId === tenantId) void load();
     });
+    const unsubscribeStock = eventBus.subscribe("stock.changed", (event) => {
+      if (active && !tenantLoading && event.tenantId === tenantId) void load();
+    });
     return () => {
       active = false;
       unsubscribeProducts();
       unsubscribeCategories();
+      unsubscribeStock();
     };
   }, [eventBus, reloadKey, service, tenantError, tenantId, tenantLoading]);
 
