@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { StorefrontProductCard } from "@/modules/storefront/components/StorefrontProductCard";
 import { StorefrontCatalogImage } from "@/modules/storefront/components/StorefrontCatalogImage";
+import { StorefrontHorizontalCarousel } from "@/modules/storefront/components/StorefrontHorizontalCarousel";
 import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
 import { useStorefrontOffers } from "@/modules/storefront/hooks/useStorefrontOffers";
 
@@ -60,7 +61,7 @@ export function HomePage() {
         (left, right) =>
           Number(offersByProductId.has(right.id)) - Number(offersByProductId.has(left.id)),
       )
-      .slice(0, 3)
+      .slice(0, 8)
       .map((product) => ({ product, offer: offersByProductId.get(product.id) }));
   }, [offers, products]);
   useEffect(() => {
@@ -199,11 +200,11 @@ export function HomePage() {
         ) : null}
         {error ? <p className="mt-6 text-[var(--color-danger)]">{error}</p> : null}
         {!loading && !error ? (
-          <div className="mt-8 grid grid-cols-2 gap-x-7 gap-y-10 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
+          <StorefrontHorizontalCarousel ariaLabel="Categorías disponibles">
             {categories.map((category) => (
               <Link
                 key={category.name}
-                className="group mx-auto w-full max-w-40 text-center"
+                className="group w-36 shrink-0 snap-start text-center sm:w-40"
                 href={`/catalogo?categoria=${category.id}`}
               >
                 <StorefrontCatalogImage
@@ -214,7 +215,7 @@ export function HomePage() {
                 <p className="mt-3 font-bold text-[var(--color-text)]">{category.name}</p>
               </Link>
             ))}
-          </div>
+          </StorefrontHorizontalCarousel>
         ) : null}
       </section>
       <section className="mx-auto max-w-7xl px-5 py-14">
@@ -232,19 +233,23 @@ export function HomePage() {
           </Link>
         </div>
         {!loading && featuredProducts.length > 0 ? (
-          <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <StorefrontHorizontalCarousel ariaLabel="Productos destacados">
             {featuredProducts.map(({ product, offer }) => (
-              <StorefrontProductCard
+              <div
+                className="w-[84%] shrink-0 snap-start sm:w-[calc((100%-1.25rem)/2)] lg:w-[calc((100%-3.75rem)/4)]"
                 key={product.id}
-                offer={
-                  offer
-                    ? { originalPrice: offer.basePrice, promotionName: offer.promotionName }
-                    : undefined
-                }
-                product={{ ...product, salePrice: offer?.effectivePrice ?? product.salePrice }}
-              />
+              >
+                <StorefrontProductCard
+                  offer={
+                    offer
+                      ? { originalPrice: offer.basePrice, promotionName: offer.promotionName }
+                      : undefined
+                  }
+                  product={{ ...product, salePrice: offer?.effectivePrice ?? product.salePrice }}
+                />
+              </div>
             ))}
-          </div>
+          </StorefrontHorizontalCarousel>
         ) : null}
       </section>
     </main>
