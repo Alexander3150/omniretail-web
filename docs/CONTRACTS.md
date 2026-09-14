@@ -81,6 +81,13 @@ vacia. Los montos siguen siendo positivos; `CashMovementType` define ingreso o e
 `SalesRepository.getByDocumentNumber` y `getByIdScoped` exigen `tenantId + branchId`; son los
 contratos de consulta para devoluciones y no requieren `getAll()` ni filtrado en React.
 
+`SalesRepository.listByBranch` es el boundary de lectura para historiales operativos POS: reduce el
+dataset dentro del repository a la coincidencia exacta de `tenantId + branchId`. Cuando el historial
+necesita relacionar `Sale.sourceOrderId`, `OrderRepository.getByIdsScoped` resuelve en una sola
+consulta solo los IDs solicitados que pertenecen al mismo tenant y sucursal; ignora duplicados,
+inexistentes y referencias fuera de scope. Los filtros funcionales se aplican despues sobre este
+dataset ya autorizado y ninguna de estas lecturas modifica ventas, pedidos o inventario.
+
 `SaleReversalRepository` inspecciona cantidades retornables y elegibilidad y procesa
 `processReturn`/`voidSale` de forma atomica e idempotente por
 `tenantId + operation + idempotencyKey`. Una devolucion completada persiste `ReturnRequest` con

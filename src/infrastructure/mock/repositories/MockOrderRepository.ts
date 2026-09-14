@@ -50,6 +50,17 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
     return this.read((db) => db.orders.filter((item) => item.tenantId === tenantId));
   }
 
+  async getByIdsScoped(tenantId: string, branchId: string, ids: string[]) {
+    const requestedIds = new Set(ids);
+    if (requestedIds.size === 0) return [];
+    return this.read((db) =>
+      db.orders.filter(
+        (item) =>
+          item.tenantId === tenantId && item.branchId === branchId && requestedIds.has(item.id),
+      ),
+    );
+  }
+
   async getById(id: string) {
     return this.read((db) => db.orders.find((item) => item.id === id) ?? null);
   }

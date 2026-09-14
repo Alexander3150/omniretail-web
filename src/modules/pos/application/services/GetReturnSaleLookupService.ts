@@ -1,5 +1,6 @@
-import type { ReturnSaleLookupDto } from "@/modules/pos/application/dto/ReturnSaleLookupDto";
+import { DeliveryMethod } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import type { ReturnSaleLookupDto } from "@/modules/pos/application/dto/ReturnSaleLookupDto";
 import {
   requireReturnOperationContext,
   type ReturnOperationContext,
@@ -32,6 +33,17 @@ export class GetReturnSaleLookupService {
       actorUserId: context.actorUserId,
       saleId: sale.id,
     });
+    const sourceOrderId = sale.sourceOrderId?.trim();
+    const sourceOrders = sourceOrderId
+      ? await this.repositories.orders.getByIdsScoped(context.tenantId, context.branchId, [
+          sourceOrderId,
+        ])
+      : [];
+    const returnBlockedNotice = getReturnBlockedNotice(
+      sourceOrders[0]?.deliveryMethod ?? DeliveryMethod.immediate,
+      inspection.partialReturnAllowed,
+      inspection.items,
+    );
     const itemInspection = new Map(inspection.items.map((item) => [item.saleItemId, item]));
     const items = inspection.sale.items.map((item) => {
       const state = itemInspection.get(item.id);
@@ -48,7 +60,7 @@ export class GetReturnSaleLookupService {
         discount: item.discount,
         subtotal: item.subtotal,
         canReturn: state.isSafelyReversible && state.returnableQuantity > 0,
-        blockedReason: state.blockedReason,
+        blockedReason: returnBlockedNotice ? undefined : state.blockedReason,
       };
     });
     const refunds = new Map<string, number>();
@@ -87,10 +99,42 @@ export class GetReturnSaleLookupService {
         voidTotal: inspection.voidAllowed,
         partialReturn: inspection.partialReturnAllowed,
         voidBlockedReason: inspection.voidBlockedReason,
-        returnBlockedReason: inspection.returnBlockedReason,
+        returnBlockedReason: returnBlockedNotice ?? inspection.returnBlockedReason,
       },
     };
   }
+}
+
+export function getReturnBlockedNotice(
+  deliveryMethod: DeliveryMethod,
+  partialReturnAllowed: boolean,
+  items: Array<{ returnableQuantity: number; isSafelyReversible: boolean }>,
+) {
+  if (!partialReturnAllowed && deliveryMethod === DeliveryMethod.store_pickup) {
+    return "Esta venta no admite devoluciones porque fue realizada con retiro en tienda.";
+  }
+  if (!partialReturnAllowed && deliveryMethod === DeliveryMethod.home_delivery) {
+    return "Esta venta no admite devoluciones porque fue realizada con envío a domicilio.";
+  }
+  const hasUnsafeReturnableInventory = items.some(
+    (item) => item.returnableQuantity > 0 && !item.isSafelyReversible,
+  );
+  const hasSafelyReturnableInventory = items.some(
+    (item) => item.returnableQuantity > 0 && item.isSafelyReversible,
+  );
+  if (!partialReturnAllowed && hasUnsafeReturnableInventory && !hasSafelyReturnableInventory) {
+    return "No es posible procesar la devolución porque no se puede validar de forma segura el movimiento de inventario de esta venta.";
+  }
+  return undefined;
+}
+
+export function isReturnBlockedNotice(reason?: string) {
+  return (
+    reason === "Esta venta no admite devoluciones porque fue realizada con retiro en tienda." ||
+    reason === "Esta venta no admite devoluciones porque fue realizada con envío a domicilio." ||
+    reason ===
+      "No es posible procesar la devolución porque no se puede validar de forma segura el movimiento de inventario de esta venta."
+  );
 }
 
 function roundMoney(value: number) {
