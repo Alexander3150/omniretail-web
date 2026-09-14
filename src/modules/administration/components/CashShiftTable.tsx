@@ -155,7 +155,6 @@ function CashShiftDetailModal({
             <DetailItem label="Sucursal" value={branchName ?? shift.branchId} />
             <DetailItem label="ID de sucursal" value={shift.branchId} />
             <DetailItem label="Cajero" value={actorName ?? shift.userId} />
-            <DetailItem label="ID de cajero" value={shift.userId} />
             <DetailItem label="Caja" value={shift.registerCode} />
             <DetailItem label="Estado" value={<StatusBadge status={shift.status} />} />
             <DetailItem label="Fecha de apertura" value={formatDate(shift.openedAt)} />

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CashShift } from "@/core/entities";
 import { CashShiftStatus, DeliveryMethod, PaymentMethod, TransportMode } from "@/core/enums";
 import type { ConfirmSaleResult, SaleConfirmationPaymentMethod } from "@/core/repositories";
-import { isBranchScopedResourceAvailable } from "@/core/scopes/branchScope";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import type {
@@ -17,6 +16,7 @@ import type {
 import type { PosProductDto } from "@/modules/pos/application/dto/PosProductDto";
 import type { SaleTicketDto, SaleTicketItemDto } from "@/modules/pos/application/dto/SaleTicketDto";
 import { ConfirmSaleService } from "@/modules/pos/application/services/ConfirmSaleService";
+import { GetCheckoutBankAccountsService } from "@/modules/pos/application/services/GetCheckoutBankAccountsService";
 import { GetPosProductsService } from "@/modules/pos/application/services/GetPosProductsService";
 import {
   calculateCheckoutAmounts,
@@ -62,6 +62,10 @@ export function usePosTerminal() {
   } = useCurrentSession();
   const productService = useMemo(() => new GetPosProductsService(repositories), [repositories]);
   const confirmationService = useMemo(() => new ConfirmSaleService(repositories), [repositories]);
+  const bankAccountsService = useMemo(
+    () => new GetCheckoutBankAccountsService(repositories),
+    [repositories],
+  );
   const [products, setProducts] = useState<PosProductDto[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -153,31 +157,18 @@ export function usePosTerminal() {
     setBankAccountsLoading(true);
     setBankAccountsError(null);
     try {
-      const [accounts, tenant] = await Promise.all([
-        repositories.bankAccounts.getActive(),
-        repositories.tenants.getById(currentBranch.tenantId),
-      ]);
-      if (!tenant) throw new Error("No se pudo resolver la moneda del negocio actual.");
-      setBankAccounts(
-        accounts
-          .filter(
-            (account) =>
-              account.tenantId === currentBranch.tenantId &&
-              account.currency === tenant.defaultCurrency &&
-              isBranchScopedResourceAvailable(account.branchIds, currentBranch.id),
-          )
-          .map((account) => ({
-            id: account.id,
-            label: `${account.alias} · ${account.bankName} · ${account.accountNumberMasked}`,
-          })),
-      );
+      const accounts = await bankAccountsService.execute({
+        tenantId: currentBranch.tenantId,
+        branchId: currentBranch.id,
+      });
+      setBankAccounts(accounts);
     } catch {
       setBankAccounts([]);
       setBankAccountsError("No se pudieron cargar las cuentas bancarias disponibles.");
     } finally {
       setBankAccountsLoading(false);
     }
-  }, [branchLoading, canAccessBranch, currentBranch, repositories, sessionLoading, user]);
+  }, [bankAccountsService, branchLoading, canAccessBranch, currentBranch, sessionLoading, user]);
 
   const reloadCashShift = useCallback(async () => {
     if (branchLoading || sessionLoading) return;
