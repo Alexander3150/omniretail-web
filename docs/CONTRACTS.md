@@ -26,6 +26,13 @@ La sesion operativa Employee se reconstruye como
 MFA y `CurrentSessionProvider` fallan cerrados si se rompe esa cadena. Este requisito no cambia la
 resolucion Customer ni crea roles o permisos nuevos.
 
+`RoleRepository` ademas de `getById` expone `getAll`, `create`, `update` y `archive`, mismo patron
+CRUD que `BranchRepository`/`SupplierRepository`. `Role.status` (`RoleStatus`: active/inactive/archived)
+es nuevo; `archive(id)` lo fija en `archived`. El repositorio es generico y no protege roles
+`isSystem` de ser editados o archivados -- esa invariante de negocio queda para la capa de
+aplicacion (los futuros services de la pantalla Roles y permisos), igual que la autorizacion por
+permisos no vive en el repositorio de ninguna otra entidad de este modulo.
+
 `ProductMediaRepository` es el contrato compartido para consultar y administrar referencias de imagenes de producto sin acoplar modulos a seeds, LocalStorage o assets fisicos. Acepta el `url` legacy y la fuente discriminada `url | mockAsset`; `isPrimary`, luego `sortOrder`, determina la seleccion publica entre fuentes validas.
 
 `CatalogImageAssetRepository` persiste Blob y metadata (`id`, `tenantId`, MIME, bytes, dimensiones y fecha) fuera de `MockDatabaseStore`. `get` y `remove` exigen el tenant propietario. La implementacion frontend usa IndexedDB y los consumidores renderizan un `mockAsset` mediante Object URL temporal con revocacion al cambiar o desmontar.

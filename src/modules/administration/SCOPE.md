@@ -41,7 +41,7 @@
 | 8   | Caja                      | `/administracion/caja`                  | `CashShift`, `CashMovement`   | ✅ **Implementada** — solo lectura  |
 | 9   | Dashboard                 | `/administracion/dashboard`             | Agregación                    | ✅ **Implementada**                 |
 | 10  | Reportes                  | `/administracion/reportes`              | Agregación                    | ✅ **Implementada**                 |
-| 11  | Roles y permisos          | `/administracion/roles-permisos`        | `Role`, `Permission`          | ⛔ **Bloqueada** — contrato         |
+| 11  | Roles y permisos          | `/administracion/roles-permisos`        | `Role`, `Permission`          | ⛔ No implementada — contrato ya desbloqueado (`chore/admin-role-contracts`) |
 | 12  | Usuarios                  | `/administracion/usuarios`              | `User` (+ `AuthAccount`)      | ⛔ Bloqueada — depende de #11       |
 | 13  | Planes y facturación SaaS | `/administracion/planes-facturacion`    | _(sin definir)_               | ⛔ Bloqueada — modelo               |
 | 14  | Sincronización            | `/administracion/sincronizacion`        | _(sin definir)_               | ⛔ Bloqueada — modelo               |
@@ -113,7 +113,7 @@ Firmas reales leídas de `src/core/repositories/`.
 | `AuditLogRepository`        | `getByTenant` · `append`                                                                       | Sin filtros funcionales ni paginacion server-side   |
 | `TenantRepository`          | `getAll` · `getById`                                                                           | Sin `create` ni `update`                            |
 | `CustomerRepository`        | `getAll` · `listByTenant` · `getById` · `getByUserId` · `getByEmail` · `create` · `update`     | Sin segmentos                                       |
-| `RoleRepository`            | `getById`                                                                                       | ⛔ **Bloqueante**                                   |
+| `RoleRepository`            | `getById` · `getAll` · `create` · `update` · `archive`                                         | ✅ Completo (`chore/admin-role-contracts`)          |
 | `CustomerSegmentRepository` | —                                                                                               | ⛔ **No existe**                                    |
 
 ---
@@ -208,10 +208,11 @@ interface Role {
   isSystem: boolean;
   permissions: string[];
   branchScope: BranchScope;
+  status: RoleStatus; // active | inactive | archived -- agregado en chore/admin-role-contracts
   createdAt: ISODateString;
   updatedAt: ISODateString;
 }
-// `branchScope` vive en Role, NO en User. Role no tiene `preset` ni `status`.
+// `branchScope` vive en Role, NO en User. Role no tiene `preset`.
 
 interface Permission {
   key: string;
@@ -394,11 +395,13 @@ override `demoMode`) y `src/config/session-policy.ts` (`normalSessionHours: 8`,
 
 ## 6. Bloqueantes y gaps
 
-1. **`RoleRepository` solo expone `getById`.** Bloquea Roles y permisos y, en cascada, Usuarios.
-   **Es contrato tuyo**: el ownership te asigna el CRUD de `Role`, y `docs/MODULE_OWNERSHIP.md`
-   aclara que _"Coordinator no significa dueno exclusivo"_. Abrís vos el PR
-   `chore/admin-role-contracts` con `getAll`, `create`, `update` y `archive`, y le avisás a Andy
-   por ser área común. No se espera autorización, se informa impacto.
+1. ~~**`RoleRepository` solo expone `getById`.**~~ **Resuelto en `chore/admin-role-contracts`:**
+   ahora expone `getAll`, `create`, `update` y `archive` (mismo patrón que
+   `BranchRepository`/`SupplierRepository`), y `Role` ganó `status: RoleStatus`
+   (`active`/`inactive`/`archived`). El repositorio no protege roles `isSystem` de edición/archivado
+   ni aplica permisos -- eso es responsabilidad de los services de la futura pantalla Roles y
+   permisos, que ahora ya puede arrancar. Pendiente: avisar a Andy (área común, `docs/MODULE_OWNERSHIP.md`
+   dice que coordinar no exige autorización previa, solo informar impacto).
 2. **`Branch` sin `schedule`.** Sucursales no puede manejar horarios sin extender la entity.
 3. **`EcommerceConfig` sin `theme`.** Diseño E-commerce no incluye branding.
 4. **`Supplier` sin `contacts[]`, `paymentTerms` ni `currency`; `leadTimeDays` es derivado.**
@@ -714,8 +717,8 @@ Convención de rama: `feature/admin-<funcionalidad>` (`docs/GIT_WORKFLOW.md`), s
 | --- | ----------------------------------- | ------------------------- | --------------------------- |
 | 1   | `feature/admin-business-config`     | Configuración del negocio | — ✅ hecha                  |
 | 2   | `feature/admin-branches`            | Sucursales                | —                           |
-| 3   | `chore/admin-role-contracts`        | _(contrato)_              | avisar a Andy               |
-| 4   | `feature/admin-roles-permissions`   | Roles y permisos          | 3                           |
+| 3   | `chore/admin-role-contracts`        | _(contrato)_              | — ✅ hecha, avisar a Andy   |
+| 4   | `feature/admin-roles-permissions`   | Roles y permisos          | 3 ✅ desbloqueada           |
 | 5   | `feature/admin-users`               | Usuarios                  | 2, 4 + contrato AuthAccount |
 | 6   | `feature/admin-suppliers`           | Proveedores               | —                           |
 | 7   | `feature/admin-bank-accounts`       | Cuentas bancarias         | 2                           |
