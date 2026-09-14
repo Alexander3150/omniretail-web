@@ -6,6 +6,7 @@ export function toBankAccountDto(account: BankAccount): BankAccountDto {
     id: account.id,
     bankName: account.bankName,
     holderName: account.holderName,
+    accountNumber: account.accountNumber,
     accountNumberMasked: account.accountNumberMasked,
     accountType: account.accountType,
     currency: account.currency,
