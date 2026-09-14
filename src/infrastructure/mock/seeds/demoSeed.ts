@@ -261,7 +261,13 @@ export const demoSeedDatabase: MockDatabase = {
       tenantId: "tenant-demo",
       name: "Cliente",
       isSystem: true,
-      permissions: ["customer.account.read", "storefront.orders.read"],
+      permissions: [
+        "customer.account.read",
+        "customer.account.update",
+        "customer.address.manage",
+        "customer.payment_method.manage",
+        "storefront.orders.read",
+      ],
       branchScope: "assigned",
       createdAt: now,
       updatedAt: now,
@@ -1297,6 +1303,7 @@ export const demoSeedDatabase: MockDatabase = {
   addresses: [
     {
       id: "address-ana-1",
+      tenantId: "tenant-demo",
       customerId: "customer-ana",
       label: "Casa",
       recipientName: "Ana Cliente",

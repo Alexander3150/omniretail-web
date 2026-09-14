@@ -15,14 +15,10 @@ import type { NavigationItem } from "@/shared/types/navigation.types";
  * en navigationConfig queda denegado por defecto (fail-closed), incluidas
  * rutas nuevas/dinamicas que accidentalmente no se hayan registrado.
  *
- * /cuenta NO esta aca: su item en customerNavigation ya declara
- * `permission: "customer.account.read"`, asi que el mecanismo generico de
- * abajo (findRequiredPermission + hasPermission) la protege igual que
- * cualquier otra ruta -- una excepcion "solo sesion" hubiera sido
- * redundante con esa permission real y hubiera dejado un segundo camino
- * de autorizacion mas permisivo para la misma ruta. Vacio hoy, se deja el
- * mecanismo por si una ruta genuinamente sin permiso operacional lo
- * necesita a futuro.
+ * /cuenta NO esta aca (ver CUENTA_REDIRECT_ROUTE abajo -- necesita
+ * matching EXACTO, no por prefijo, algo que esta lista no puede expresar
+ * sin abrir tambien /cuenta/*). Vacio hoy, se deja el mecanismo por si
+ * una ruta genuinamente sin permiso operacional lo necesita a futuro.
  */
 const SESSION_ONLY_ROUTES: string[] = [];
 
@@ -31,6 +27,28 @@ function isSessionOnlyRoute(pathname: string): boolean {
     (route) => pathname === route || pathname.startsWith(`${route}/`),
   );
 }
+
+/**
+ * PR11 reestructuro customerNavigation en un grupo "Mi cuenta" sin href
+ * propio + 4 hijos (/cuenta/perfil, /cuenta/direcciones, etc.), cada uno
+ * con SU permiso especifico -- a proposito, para que
+ * findRequiredPermission (mas abajo, primer-match sobre el arbol) pueda
+ * distinguir "customer.account.read" de "customer.address.manage" por
+ * ruta. Eso significa que "/cuenta" (bare, sin sub-ruta) ya no resuelve
+ * NINGUN permiso: no tiene item propio, y agregarle uno con
+ * href="/cuenta" rompería la resolucion de los 4 hijos (su matching por
+ * prefijo lo intercepta ANTES de llegar a cualquier hijo, sin importar
+ * el orden -- findRequiredPermission no tiene nocion de "el match mas
+ * especifico gana").
+ *
+ * "/cuenta" (src/app/(private)/cuenta/page.tsx) solo hace
+ * redirect("/cuenta/perfil") -- nunca renderiza contenido propio. Por
+ * eso se permite aca de forma EXPLICITA y EXACTA (nunca por prefijo,
+ * a diferencia de SESSION_ONLY_ROUTES) a cualquier sesion valida: la
+ * ruta real de destino, /cuenta/perfil, sigue exigiendo su propio
+ * permiso normalmente una vez completado el redirect.
+ */
+const CUENTA_REDIRECT_ROUTE = "/cuenta";
 
 function findRequiredPermission(items: NavigationItem[], pathname: string): string | undefined {
   for (const item of items) {
@@ -65,13 +83,14 @@ function Denied() {
  *
  * /inicio usa el permission sintetico EMPLOYEE_HOME_ACCESS_PERMISSION
  * (ver modules/auth/permissions.ts) -- mismo mecanismo, sin caso especial
- * duplicado entre sidebar y guard de rutas.
+ * duplicado entre sidebar y guard de rutas. /cuenta (exacto) usa el
+ * mismo espiritu: ver CUENTA_REDIRECT_ROUTE arriba.
  */
 export function RequirePermission({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { hasPermission, permissions, user } = useCurrentSession();
 
-  if (isSessionOnlyRoute(pathname)) {
+  if (pathname === CUENTA_REDIRECT_ROUTE || isSessionOnlyRoute(pathname)) {
     return <>{children}</>;
   }
 

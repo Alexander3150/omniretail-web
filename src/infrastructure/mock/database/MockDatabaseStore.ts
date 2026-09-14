@@ -12,6 +12,7 @@ import {
   UnitStatus,
 } from "@/core/enums";
 import type {
+  Address,
   CustomerPaymentMethod,
   InventoryAdjustment,
   InventoryTransferRequest,
@@ -32,6 +33,8 @@ type PersistedCustomerPaymentMethod = Partial<CustomerPaymentMethod> & {
   holderName?: string;
 };
 
+type PersistedAddress = Partial<Address>;
+
 type PersistedProductInventorySettings = Partial<ProductInventorySettings>;
 type PersistedInventoryAdjustment = Partial<InventoryAdjustment>;
 type PersistedInventoryTransferRequest = Partial<InventoryTransferRequest>;
@@ -42,6 +45,7 @@ type PersistedUnit = Partial<Unit>;
 type PersistedMockDatabase = Partial<
   Omit<
     MockDatabase,
+    | "addresses"
     | "customerPaymentMethods"
     | "inventoryAdjustments"
     | "inventoryTransferItems"
@@ -51,6 +55,7 @@ type PersistedMockDatabase = Partial<
     | "units"
   >
 > & {
+  addresses?: PersistedAddress[];
   customerPaymentMethods?: PersistedCustomerPaymentMethod[];
   inventoryAdjustments?: PersistedInventoryAdjustment[];
   inventoryTransferItems?: PersistedInventoryTransferItem[];
@@ -148,6 +153,26 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
       status: method.status ?? CustomerPaymentMethodStatus.active,
       createdAt,
       updatedAt: method.updatedAt ?? createdAt,
+    };
+  });
+  normalized.addresses = (database.addresses ?? base.addresses).map((address) => {
+    const customer = normalized.customers.find((item) => item.id === address.customerId);
+    return {
+      id: address.id ?? `address-${crypto.randomUUID()}`,
+      tenantId: address.tenantId ?? customer?.tenantId ?? "tenant-demo",
+      customerId: address.customerId ?? "",
+      label: address.label ?? "",
+      recipientName: address.recipientName ?? "",
+      line1: address.line1 ?? "",
+      line2: address.line2,
+      city: address.city ?? "",
+      stateOrDepartment: address.stateOrDepartment,
+      postalCode: address.postalCode,
+      country: address.country ?? "",
+      references: address.references,
+      isDefault: address.isDefault ?? false,
+      createdAt: address.createdAt ?? new Date().toISOString(),
+      updatedAt: address.updatedAt ?? address.createdAt ?? new Date().toISOString(),
     };
   });
   normalized.promotions = (database.promotions ?? base.promotions).map((promotion) => ({

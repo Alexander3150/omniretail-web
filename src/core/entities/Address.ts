@@ -2,6 +2,7 @@ import type { ISODateString } from "@/core/types/common.types";
 
 export interface Address {
   id: string;
+  tenantId: string;
   customerId: string;
   label: string;
   recipientName: string;

@@ -1,5 +1,5 @@
-import { CuentaPage } from "@/modules/customer/pages/CuentaPage";
+import { redirect } from "next/navigation";
 
 export default function CuentaRoutePage() {
-  return <CuentaPage />;
+  redirect("/cuenta/perfil");
 }

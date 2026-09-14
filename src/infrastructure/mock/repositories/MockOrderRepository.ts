@@ -53,8 +53,13 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
     );
   }
 
-  async getByCustomer(customerId: string) {
-    return this.read((db) => db.orders.filter((item) => item.customerId === customerId));
+  async getByCustomer(tenantId: string, customerId: string) {
+    // customerId por si solo no alcanza: se exige tenantId tambien, y el
+    // filtro por customerId ya excluye pedidos guest (Order.customerId es
+    // opcional y los guest orders no lo tienen seteado).
+    return this.read((db) =>
+      db.orders.filter((item) => item.tenantId === tenantId && item.customerId === customerId),
+    );
   }
 
   async getPendingForLogistics() {

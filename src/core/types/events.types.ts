@@ -21,6 +21,7 @@ export type DataEventName =
   | "incident-type.changed"
   | "customer.changed"
   | "customer-payment-method.changed"
+  | "address.changed"
   | "order.changed"
   | "payment.changed"
   | "sale.changed"
