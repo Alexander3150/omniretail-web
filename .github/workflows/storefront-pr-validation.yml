@@ -44,6 +44,7 @@ jobs:
           npx --yes --package=tsx tsx scripts/verify-order-recipient-phone-shared.ts
           npx --yes --package=tsx tsx scripts/verify-catalog-media.ts
           npx --yes --package=tsx tsx scripts/verify-tenant-isolation-foundation.ts
+          npx --yes --package=tsx tsx scripts/verify-storefront-second-purchase.ts
 
       - name: Build application
         run: npm run build

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode, type WheelEvent } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 export function StorefrontHorizontalCarousel({
   ariaLabel,
@@ -29,9 +29,26 @@ export function StorefrontHorizontalCarousel({
     const observer = new ResizeObserver(updatePosition);
     observer.observe(viewport);
     viewport.addEventListener("scroll", updatePosition, { passive: true });
+    const handleWheel = (event: WheelEvent) => {
+      const horizontalDelta =
+        Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (!horizontalDelta) return;
+
+      const maxScroll = viewport.scrollWidth - viewport.clientWidth;
+      const canMove =
+        horizontalDelta < 0 ? viewport.scrollLeft > 1 : viewport.scrollLeft < maxScroll - 1;
+
+      // El listener debe ser nativo y no pasivo: React no garantiza que
+      // preventDefault cancele el scroll vertical del documento en todos los navegadores.
+      if (!canMove) return;
+      event.preventDefault();
+      viewport.scrollBy({ left: horizontalDelta, behavior: "auto" });
+    };
+    viewport.addEventListener("wheel", handleWheel, { passive: false });
     return () => {
       observer.disconnect();
       viewport.removeEventListener("scroll", updatePosition);
+      viewport.removeEventListener("wheel", handleWheel);
     };
   }, [children]);
 
@@ -42,17 +59,6 @@ export function StorefrontHorizontalCarousel({
       left: direction * Math.max(viewport.clientWidth * 0.82, 240),
       behavior: "smooth",
     });
-  };
-
-  const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
-    const viewport = viewportRef.current;
-    if (!viewport || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
-    const maxScroll = viewport.scrollWidth - viewport.clientWidth;
-    const canMove =
-      event.deltaY < 0 ? viewport.scrollLeft > 1 : viewport.scrollLeft < maxScroll - 1;
-    if (!canMove) return;
-    event.preventDefault();
-    viewport.scrollBy({ left: event.deltaY, behavior: "auto" });
   };
 
   return (
@@ -70,7 +76,6 @@ export function StorefrontHorizontalCarousel({
             move(1);
           }
         }}
-        onWheel={handleWheel}
         ref={viewportRef}
         role="region"
         tabIndex={0}
