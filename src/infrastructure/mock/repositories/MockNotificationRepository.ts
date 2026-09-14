@@ -6,8 +6,16 @@ export class MockNotificationRepository
   extends BaseMockRepository
   implements NotificationRepository
 {
-  async getAll() {
-    return this.read((db) => db.notifications);
+  async getAll(tenantId: string) {
+    return this.read((db) => db.notifications.filter((item) => item.tenantId === tenantId));
+  }
+  async getByDispatch(tenantId: string, dispatchId: string) {
+    return this.read(
+      (db) =>
+        db.notifications.find(
+          (item) => item.tenantId === tenantId && item.dispatchId === dispatchId,
+        ) ?? null,
+    );
   }
   async getByUser(userId: string) {
     return this.read((db) => db.notifications.filter((item) => item.userId === userId));

@@ -1,19 +1,26 @@
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { LocationListItem } from "@/modules/catalog/application/dto/LocationEditorDto";
+import { resolveTenantId } from "@/modules/catalog/application/services/serviceHelpers";
 
 export class GetLocationsService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(branchId?: string): Promise<LocationListItem[]> {
+    const tenantId = await resolveTenantId(this.repositories);
     const [locations, products] = await Promise.all([
       this.repositories.inventory.getLocations(branchId),
-      this.repositories.products.getAll(),
+      this.repositories.products.getByTenant(tenantId),
     ]);
     const productCounts = branchId
-      ? await countProductsByDefaultLocation(this.repositories, products.map((product) => product.id), branchId)
+      ? await countProductsByDefaultLocation(
+          this.repositories,
+          products.map((product) => product.id),
+          branchId,
+        )
       : new Map<string, number>();
 
     return locations
+      .filter((location) => location.tenantId === tenantId)
       .map((location) => ({
         id: location.id,
         tenantId: location.tenantId,
@@ -38,7 +45,9 @@ async function countProductsByDefaultLocation(
   const productIdsByLocation = new Map<string, Set<string>>();
 
   const settings = await Promise.all(
-    productIds.map((productId) => repositories.inventory.getProductInventorySettings(productId, branchId)),
+    productIds.map((productId) =>
+      repositories.inventory.getProductInventorySettings(productId, branchId),
+    ),
   );
 
   settings.forEach((setting) => {

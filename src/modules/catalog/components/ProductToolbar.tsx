@@ -25,7 +25,9 @@ export function ProductToolbar({
         <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
           CATÁLOGO
         </p>
-        <h1 className="mt-1 break-words text-2xl font-bold text-[var(--color-title)]">Catálogo y precios</h1>
+        <h1 className="mt-1 break-words text-2xl font-bold text-[var(--color-title)]">
+          Catálogo y precios
+        </h1>
       </div>
       <div className="flex min-w-0 flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-end">
         <SearchInput

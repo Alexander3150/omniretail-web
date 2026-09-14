@@ -1,4 +1,9 @@
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import {
+  getProductMediaSource,
+  normalizeCatalogImageSource,
+  selectPrimaryProductMedia,
+} from "@/core/media/catalogImage";
 import type {
   StorefrontDiscoveryDto,
   StorefrontDiscoveryProductDto,
@@ -8,24 +13,18 @@ export class GetStorefrontDiscoveryService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(tenantId: string): Promise<StorefrontDiscoveryDto> {
-    const [products, activeCategories, ecommerceConfig] = await Promise.all([
+    const [products, activeCategories] = await Promise.all([
       this.repositories.products.getPublishedForEcommerce(tenantId),
       this.repositories.categories.getActive(),
-      this.repositories.businessConfig.getEcommerceConfig(tenantId),
     ]);
-    const visibleCategoryIds = new Set(ecommerceConfig?.visibleCategoryIds ?? []);
-    const visibleProducts =
-      visibleCategoryIds.size > 0
-        ? products.filter((product) => visibleCategoryIds.has(product.categoryId))
-        : products;
-    const publishedCategoryIds = new Set(visibleProducts.map((product) => product.categoryId));
-    const categories = activeCategories.filter(
-      (category) => category.tenantId === tenantId && publishedCategoryIds.has(category.id),
-    );
+    const categories = activeCategories.filter((category) => category.tenantId === tenantId);
     const categoryNames = new Map(categories.map((category) => [category.id, category.name]));
     const productsWithMedia = await Promise.all(
-      visibleProducts.map(async (product): Promise<StorefrontDiscoveryProductDto> => {
-        const media = await this.repositories.productMedia.getPrimaryByProduct(product.id);
+      products.map(async (product): Promise<StorefrontDiscoveryProductDto> => {
+        const productMedia = await this.repositories.productMedia.getByProduct(product.id);
+        const media = selectPrimaryProductMedia(
+          productMedia.filter((item) => item.tenantId === tenantId),
+        );
         return {
           id: product.id,
           sku: product.sku,
@@ -35,20 +34,19 @@ export class GetStorefrontDiscoveryService {
           salePrice: product.salePrice,
           categoryId: product.categoryId,
           categoryName: categoryNames.get(product.categoryId),
-          imageUrl: media?.tenantId === tenantId && media.type === "image" ? media.url : undefined,
-          imageAlt: media?.tenantId === tenantId ? media.alt : undefined,
+          imageSource: media ? (getProductMediaSource(media) ?? undefined) : undefined,
+          imageAlt: media?.alt,
         };
       }),
     );
 
     return {
-      categories: categories.map(({ id, name, slug, description, imageUrl, imageAlt }) => ({
+      categories: categories.map(({ id, name, slug, description, image }) => ({
         id,
         name,
         slug,
         description,
-        imageUrl,
-        imageAlt,
+        imageSource: normalizeCatalogImageSource(image) ?? undefined,
       })),
       products: productsWithMedia,
     };

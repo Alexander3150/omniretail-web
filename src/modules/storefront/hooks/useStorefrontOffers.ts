@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { Promotion } from "@/core/entities";
+import type { CatalogImageSource, Promotion } from "@/core/entities";
+import { getProductMediaSource, selectPrimaryProductMedia } from "@/core/media/catalogImage";
 import { BranchStatus, PromotionStatus, SalesChannel } from "@/core/enums";
 import { calculateEffectivePrice } from "@/core/pricing";
 import { isBranchScopedResourceAvailable } from "@/core/scopes/branchScope";
@@ -13,8 +14,7 @@ export interface StorefrontOfferItem {
   name: string;
   sku: string;
   description?: string;
-  categoryName?: string;
-  imageUrl?: string;
+  imageSource?: CatalogImageSource;
   imageAlt?: string;
   basePrice: number;
   effectivePrice: number;
@@ -83,12 +83,10 @@ export function useStorefrontOffers() {
           throw new Error("E-commerce branch is not configured");
 
         const ecommerceBranchId = ecommerceConfig.defaultBranchId;
-        const visibleCategoryIds = new Set(ecommerceConfig.visibleCategoryIds ?? []);
-        const [ecommerceBranch, products, promotions, categories] = await Promise.all([
+        const [ecommerceBranch, products, promotions] = await Promise.all([
           repositories.branches.getById(ecommerceBranchId),
           repositories.products.getPublishedForEcommerce(tenantId),
           repositories.promotions.getActive(),
-          repositories.categories.getActive(),
         ]);
         if (
           !ecommerceBranch ||
@@ -98,51 +96,42 @@ export function useStorefrontOffers() {
           throw new Error("E-commerce branch is not available");
         }
         const now = new Date();
-        const categoryNames = new Map(
-          categories
-            .filter((category) => category.tenantId === tenantId)
-            .map((category) => [category.id, category.name]),
-        );
         const offers = (
           await Promise.all(
-            products
-              .filter(
-                (product) =>
-                  visibleCategoryIds.size === 0 || visibleCategoryIds.has(product.categoryId),
-              )
-              .map(async (product) => {
-                const promotion = selectPromotion(
-                  promotions.filter((item) =>
-                    isApplicableEcommercePromotion(
-                      item,
-                      tenantId,
-                      product.id,
-                      ecommerceBranchId,
-                      now,
-                    ),
+            products.map(async (product) => {
+              const promotion = selectPromotion(
+                promotions.filter((item) =>
+                  isApplicableEcommercePromotion(
+                    item,
+                    tenantId,
+                    product.id,
+                    ecommerceBranchId,
+                    now,
                   ),
-                  product.salePrice,
-                );
-                if (!promotion) return null;
-                const [media, price] = await Promise.all([
-                  repositories.productMedia.getPrimaryByProduct(product.id),
-                  Promise.resolve(calculateEffectivePrice(product.salePrice, promotion)),
-                ]);
-                return {
-                  productId: product.id,
-                  name: product.name,
-                  sku: product.sku,
-                  categoryName: categoryNames.get(product.categoryId),
-                  description: product.description,
-                  imageUrl:
-                    media?.tenantId === tenantId && media.type === "image" ? media.url : undefined,
-                  imageAlt: media?.tenantId === tenantId ? media.alt : undefined,
-                  basePrice: price.basePrice,
-                  effectivePrice: price.effectivePrice,
-                  discount: price.discountAmount,
-                  promotionName: promotion.name,
-                };
-              }),
+                ),
+                product.salePrice,
+              );
+              if (!promotion) return null;
+              const [productMedia, price] = await Promise.all([
+                repositories.productMedia.getByProduct(product.id),
+                Promise.resolve(calculateEffectivePrice(product.salePrice, promotion)),
+              ]);
+              const media = selectPrimaryProductMedia(
+                productMedia.filter((item) => item.tenantId === tenantId),
+              );
+              return {
+                productId: product.id,
+                name: product.name,
+                sku: product.sku,
+                description: product.description,
+                imageSource: media ? (getProductMediaSource(media) ?? undefined) : undefined,
+                imageAlt: media?.alt,
+                basePrice: price.basePrice,
+                effectivePrice: price.effectivePrice,
+                discount: price.discountAmount,
+                promotionName: promotion.name,
+              };
+            }),
           )
         ).filter((item) => item !== null) as StorefrontOfferItem[];
         if (active) setItems(offers);

@@ -17,6 +17,7 @@ import {
   ensureProductTypeAllowed,
   ensureUnitConfigUnchanged,
   requireCapabilities,
+  resolveTenantId,
 } from "@/modules/catalog/application/services/serviceHelpers";
 
 export class UpdateProductService {
@@ -30,15 +31,18 @@ export class UpdateProductService {
       );
     }
 
-    const current = ensureProduct(await this.repositories.products.getById(productId));
+    const tenantId = await resolveTenantId(this.repositories);
+    const current = ensureProduct(
+      await this.repositories.products.getByIdScoped(tenantId, productId),
+    );
     const normalizedSku = normalizeSku(dto.sku);
-    const duplicateSku = await this.repositories.products.getBySku(normalizedSku);
+    const duplicateSku = await this.repositories.products.getBySkuScoped(tenantId, normalizedSku);
     if (duplicateSku && duplicateSku.id !== current.id) {
       throw new CatalogServiceError("Ya existe un producto con este Codigo / SKU.");
     }
 
     if (dto.barcode?.trim()) {
-      const products = await this.repositories.products.getAll();
+      const products = await this.repositories.products.getByTenant(tenantId);
       const duplicateBarcode = products.find(
         (product) => product.barcode === dto.barcode?.trim() && product.id !== current.id,
       );
@@ -48,8 +52,8 @@ export class UpdateProductService {
     }
 
     const [category, unit] = await Promise.all([
-      this.repositories.categories.getById(dto.categoryId),
-      this.repositories.units.getById(dto.baseUnitId),
+      this.repositories.categories.getByIdScoped(tenantId, dto.categoryId),
+      this.repositories.units.getByIdScoped(tenantId, dto.baseUnitId),
     ]);
     ensureActiveCategory(category);
     ensureActiveUnit(unit);
@@ -65,8 +69,14 @@ export class UpdateProductService {
       capabilities,
       current.saleUnitId ?? current.baseUnitId,
     );
-    const tracking = applyTrackingRules(dto.productType, dto.tracking, capabilities, current.tracking);
-    const updated = await this.repositories.products.update(
+    const tracking = applyTrackingRules(
+      dto.productType,
+      dto.tracking,
+      capabilities,
+      current.tracking,
+    );
+    const updated = await this.repositories.products.updateScoped(
+      tenantId,
       current.id,
       ProductMapper.toUpdateInput({ ...dto, sku: normalizedSku, saleUnitId, tracking }, current),
     );

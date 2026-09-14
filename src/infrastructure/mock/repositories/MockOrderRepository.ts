@@ -1,5 +1,11 @@
 import type { InventoryReservation, Order, Payment } from "@/core/entities";
-import { OrderStatus, ProductType } from "@/core/enums";
+import { DeliveryMethod, OrderStatus, ProductType } from "@/core/enums";
+import { validatePhoneNumber } from "@/config/contact-policy";
+import { normalizeEmail, validateEmail } from "@/config/email-policy";
+import {
+  assertAllowedInitialOrderStatus,
+  assertOrderStatusTransition,
+} from "@/core/orders/orderStatusTransitions";
 import type {
   CreateOrderInput,
   CreateOrderWithPaymentInput,
@@ -40,6 +46,10 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
     return this.read((db) => db.orders);
   }
 
+  async listByTenant(tenantId: string) {
+    return this.read((db) => db.orders.filter((item) => item.tenantId === tenantId));
+  }
+
   async getById(id: string) {
     return this.read((db) => db.orders.find((item) => item.id === id) ?? null);
   }
@@ -67,7 +77,9 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
   }
 
   async create(input: CreateOrderInput) {
+    assertAllowedInitialOrderStatus("create", input.status);
     this.assertCreateInput(input);
+    input = normalizeOrderCreationInput(input);
     const idempotencyKey = input.idempotencyKey?.trim();
     const fingerprint = getOrderCreationFingerprint(input);
 
@@ -133,7 +145,9 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
   async createWithPayment(
     input: CreateOrderWithPaymentInput,
   ): Promise<CreateOrderWithPaymentResult> {
+    assertAllowedInitialOrderStatus("createWithPayment", input.order.status);
     this.assertCreateInput(input.order);
+    input = { ...input, order: normalizeOrderCreationInput(input.order) };
 
     const result = this.store.transact<OrderWithPaymentMutationResult>((db) => {
       const idempotencyKey = input.order.idempotencyKey?.trim();
@@ -257,9 +271,7 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
         return { order, orderChanged: false, reservationChanges };
       }
 
-      if (status === OrderStatus.pending) {
-        throw new Error(`Order cannot transition from ${order.status} to pending: ${order.id}`);
-      }
+      assertOrderStatusTransition(order.status, status, "generic");
 
       let reservationChanges: InventoryReservationMutationResult[] = [];
       if (status === OrderStatus.confirmed) {
@@ -277,10 +289,6 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
         reservationChanges = releaseOrderReservationsInDatabase(order, db, {
           now: () => this.now(),
         });
-      } else if (order.status === OrderStatus.pending) {
-        throw new Error(`Pending order must be confirmed before ${status}: ${order.id}`);
-      } else if (order.status === OrderStatus.cancelled || order.status === OrderStatus.delivered) {
-        throw new Error(`Terminal order cannot transition to ${status}: ${order.id}`);
       }
 
       order.status = status;
@@ -340,6 +348,26 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
       throw new Error("Order idempotencyKey cannot be blank");
     }
     if (input.items.length === 0) throw new Error("Order requires at least one item");
+    if (input.deliveryMethod === DeliveryMethod.home_delivery) {
+      const recipientPhone = input.deliveryAddress?.recipientPhone;
+      if (recipientPhone === undefined || !recipientPhone.trim()) {
+        throw new Error("Home delivery recipientPhone is required");
+      }
+      const phoneError = validatePhoneNumber(recipientPhone);
+      if (phoneError) throw new Error(phoneError);
+    }
+    if (input.notificationContact) {
+      if (input.notificationContact.emailMode === "send") {
+        const emailError = validateEmail(input.notificationContact.email);
+        if (emailError) throw new Error(emailError);
+      } else if (input.notificationContact.emailMode === "not_applicable") {
+        if ("email" in input.notificationContact && input.notificationContact.email !== undefined) {
+          throw new Error("Order notificationContact not_applicable cannot include email");
+        }
+      } else {
+        throw new Error("Order notificationContact emailMode is invalid");
+      }
+    }
     input.items.forEach((item) => {
       if (!item.id.trim()) throw new Error("OrderItem id is required");
       if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
@@ -429,6 +457,7 @@ function getOrderCreationFingerprint(input: CreateOrderInput): string {
     deliveryAddress: input.deliveryAddress
       ? {
           recipientName: input.deliveryAddress.recipientName,
+          recipientPhone: input.deliveryAddress.recipientPhone ?? null,
           line1: input.deliveryAddress.line1,
           line2: input.deliveryAddress.line2 ?? null,
           city: input.deliveryAddress.city,
@@ -438,6 +467,12 @@ function getOrderCreationFingerprint(input: CreateOrderInput): string {
           references: input.deliveryAddress.references ?? null,
         }
       : null,
+    notificationContact:
+      input.notificationContact === undefined
+        ? null
+        : input.notificationContact.emailMode === "send"
+          ? { emailMode: "send", email: normalizeEmail(input.notificationContact.email) }
+          : { emailMode: "not_applicable" },
     subtotal: input.subtotal,
     discountTotal: input.discountTotal,
     shippingTotal: input.shippingTotal,
@@ -456,4 +491,15 @@ function getOrderCreationFingerprint(input: CreateOrderInput): string {
       }))
       .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
   });
+}
+
+function normalizeOrderCreationInput(input: CreateOrderInput): CreateOrderInput {
+  if (input.notificationContact?.emailMode !== "send") return input;
+  return {
+    ...input,
+    notificationContact: {
+      emailMode: "send",
+      email: normalizeEmail(input.notificationContact.email),
+    },
+  };
 }

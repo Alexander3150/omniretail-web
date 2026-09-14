@@ -14,8 +14,10 @@ export interface InlineAlertProps {
 const toneClassNames: Record<StatusTone, string> = {
   neutral: "border-[var(--color-border)] bg-white text-[var(--color-text)]",
   info: "border-[var(--color-structure)]/30 bg-[var(--color-structure)]/10 text-[var(--color-title)]",
-  success: "border-[var(--color-success)]/30 bg-[var(--color-success)]/10 text-[var(--color-success)]",
-  warning: "border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 text-[var(--color-warning)]",
+  success:
+    "border-[var(--color-success)]/30 bg-[var(--color-success)]/10 text-[var(--color-success)]",
+  warning:
+    "border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 text-[var(--color-warning)]",
   danger: "border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 text-[var(--color-danger)]",
 };
 
@@ -35,7 +37,10 @@ export function InlineAlert({
   className,
 }: InlineAlertProps) {
   return (
-    <div className={cn("rounded-md border px-4 py-3 text-sm", toneClassNames[tone], className)} role="alert">
+    <div
+      className={cn("rounded-md border px-4 py-3 text-sm", toneClassNames[tone], className)}
+      role="alert"
+    >
       <p className="font-semibold">{title}</p>
       {description ? <p className="mt-1 text-[var(--color-text-muted)]">{description}</p> : null}
       {children ? <div className="mt-2">{children}</div> : null}

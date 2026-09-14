@@ -5,6 +5,7 @@ import {
 } from "@/core/inventory/canonicalAvailability";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { StorefrontProductDetailDto } from "@/modules/storefront/application/dto/StorefrontProductDetailDto";
+import { getProductMediaSource, sortProductMediaForDisplay } from "@/core/media/catalogImage";
 import { GetStorefrontPublishedProductService } from "@/modules/storefront/application/services/GetStorefrontPublishedProductService";
 
 export class GetStorefrontProductDetailService {
@@ -15,7 +16,19 @@ export class GetStorefrontProductDetailService {
   }
 
   async execute(tenantId: string, productId: string): Promise<StorefrontProductDetailDto | null> {
-    const [product, allProducts, branches, balances, locations, lots, serials, categories, media, definitions, values] = await Promise.all([
+    const [
+      product,
+      allProducts,
+      branches,
+      balances,
+      locations,
+      lots,
+      serials,
+      categories,
+      media,
+      definitions,
+      values,
+    ] = await Promise.all([
       this.publishedProductService.execute(tenantId, productId),
       this.repositories.products.getAll(),
       this.repositories.branches.getActive(),
@@ -35,9 +48,9 @@ export class GetStorefrontProductDetailService {
       categoryName: categories.find(
         (category) => category.id === product.categoryId && category.tenantId === tenantId,
       )?.name,
-      media: media
-        .filter((item) => item.tenantId === tenantId && item.type === "image")
-        .map((item) => ({ url: item.url, alt: item.alt })),
+      media: sortProductMediaForDisplay(media.filter((item) => item.tenantId === tenantId)).map(
+        (item) => ({ source: getProductMediaSource(item)!, alt: item.alt }),
+      ),
       attributes: values.flatMap((value) => {
         const definition = definitions.find(
           (item) =>
@@ -64,18 +77,19 @@ export class GetStorefrontProductDetailService {
         branchId: branch.id,
         branchName: branch.name,
         address: branch.address,
-        available: getAvailability({
-          product,
-          kitComponents,
-          productsById,
-          tenantId,
-          branchId: branch.id,
-          balances,
-          lots,
-          serials,
-          locations,
-          at,
-        }) > 0,
+        available:
+          getAvailability({
+            product,
+            kitComponents,
+            productsById,
+            tenantId,
+            branchId: branch.id,
+            balances,
+            lots,
+            serials,
+            locations,
+            at,
+          }) > 0,
       }));
 
     return { ...detail, availability };

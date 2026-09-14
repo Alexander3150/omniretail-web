@@ -1,104 +1,76 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { BranchType } from "@/core/enums";
-import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
+import Link from "next/link";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
-interface ContactData {
-  phone?: string;
-  email?: string;
-  branchCount: number;
-}
-
+const helpItems = [
+  [
+    "Compra con confianza",
+    "Explora el catálogo, agrega productos al carrito y confirma tu entrega a domicilio.",
+  ],
+  [
+    "Ofertas activas",
+    "Las promociones disponibles se muestran con su precio final y ahorro calculado.",
+  ],
+  [
+    "Seguimiento de pedido",
+    "Después de comprar podrás consultar el estado de tu pedido cuando el negocio lo habilite.",
+  ],
+];
 export function HelpPage() {
-  const repositories = useRepositories();
-  const { tenantId, loading: tenantLoading } = usePublicTenant();
-  const [contact, setContact] = useState<ContactData | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      if (!tenantId) {
-        if (active) setContact(null);
-        return;
-      }
-      const branches = (await repositories.branches.getActive()).filter(
-        (branch) => branch.tenantId === tenantId && branch.type === BranchType.store,
-      );
-      if (!active) return;
-      setContact({
-        phone: branches.find((branch) => branch.phone)?.phone,
-        email: branches.find((branch) => branch.email)?.email,
-        branchCount: branches.length,
-      });
-    };
-    if (!tenantLoading) void load();
-    return () => {
-      active = false;
-    };
-  }, [repositories.branches, tenantId, tenantLoading]);
-
+  const { config } = usePublicTenant();
   return (
-    <main className="mx-auto max-w-6xl px-5 py-12">
+    <main className="mx-auto max-w-5xl px-5 py-12">
       <section className="rounded-3xl bg-[var(--color-topbar)] px-6 py-10 text-white md:px-10">
         <p className="text-sm font-bold uppercase tracking-[.2em] text-[var(--color-primary)]">
           Estamos para ayudarte
         </p>
         <h1 className="mt-3 text-4xl font-black">Ayuda de compra</h1>
         <p className="mt-3 max-w-2xl leading-7 text-slate-300">
-          Conoce los medios de contacto y las sucursales disponibles del negocio.
+          Encuentra respuestas rápidas y conoce cómo funciona tu experiencia de compra en línea.
         </p>
       </section>
-
-      <section className="mt-8 grid gap-5 md:grid-cols-3">
-        <ContactCard
-          detail={contact?.phone ?? "Información aún no configurada"}
-          icon="☎"
-          loading={tenantLoading || contact === null}
-          title="Línea de contacto"
-        />
-        <ContactCard
-          detail={contact?.email ?? "Información aún no configurada"}
-          icon="✉"
-          loading={tenantLoading || contact === null}
-          title="Correo electrónico"
-        />
-        <ContactCard
-          detail={
-            contact
-              ? `${contact.branchCount} ${contact.branchCount === 1 ? "sucursal activa" : "sucursales activas"}`
-              : "Información aún no configurada"
-          }
-          icon="⌂"
-          loading={tenantLoading || contact === null}
-          title="Sucursales físicas"
-        />
+      <div className="mt-8 grid gap-5 md:grid-cols-3">
+        {helpItems.map(([title, description], index) => (
+          <section
+            key={title}
+            className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
+          >
+            <p className="text-sm font-black text-[var(--color-primary-hover)]">0{index + 1}</p>
+            <h2 className="mt-6 text-xl font-black text-[var(--color-text)]">{title}</h2>
+            <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">{description}</p>
+          </section>
+        ))}
+      </div>
+      <section className="mt-8 grid gap-5 rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 md:grid-cols-[1fr_auto] md:items-center">
+        <div>
+          <p className="text-sm font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">
+            Contacto del negocio
+          </p>
+          <h2 className="mt-2 text-2xl font-black text-[var(--color-text)]">
+            ¿Necesitas ayuda con tu pedido?
+          </h2>
+          <p className="mt-2 max-w-xl text-[var(--color-text-muted)]">
+            Nuestro equipo puede orientarte sobre productos, entrega y el estado de una compra.
+          </p>
+          {config?.contactPhone || config?.contactEmail ? (
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-[var(--color-title)]">
+              {config.contactPhone ? (
+                <a href={`tel:${config.contactPhone}`}>{config.contactPhone}</a>
+              ) : null}
+              {config.contactEmail ? (
+                <a href={`mailto:${config.contactEmail}`}>{config.contactEmail}</a>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+        <Link
+          className="rounded-xl bg-[var(--color-primary)] px-5 py-3 text-center font-bold text-[var(--color-topbar)] transition hover:bg-[var(--color-primary-hover)]"
+          href="/catalogo"
+        >
+          Ir al catálogo
+        </Link>
       </section>
     </main>
-  );
-}
-
-function ContactCard({
-  icon,
-  title,
-  detail,
-  loading,
-}: {
-  icon: string;
-  title: string;
-  detail: string;
-  loading: boolean;
-}) {
-  return (
-    <section className="min-h-44 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center shadow-sm">
-      <span className="mx-auto grid h-11 w-11 place-items-center rounded-full bg-[var(--color-primary)]/15 text-xl font-black text-[var(--color-title)]">
-        {icon}
-      </span>
-      <h2 className="mt-4 font-black text-[var(--color-text)]">{title}</h2>
-      <p className="mt-3 break-words text-sm font-semibold text-[var(--color-title)]">
-        {loading ? "Cargando información..." : detail}
-      </p>
-    </section>
   );
 }

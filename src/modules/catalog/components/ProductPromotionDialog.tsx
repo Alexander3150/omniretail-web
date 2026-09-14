@@ -213,12 +213,17 @@ function PromotionOverview({
           Restaura el producto para gestionar promociones.
         </p>
       ) : (
-      <div className="flex justify-end">
-        <Button className="w-full min-h-10 px-3 py-2 sm:w-auto" onClick={onCreate} type="button" variant="secondary">
-          <TagIcon />
-          Nueva promoción
-        </Button>
-      </div>
+        <div className="flex justify-end">
+          <Button
+            className="w-full min-h-10 px-3 py-2 sm:w-auto"
+            onClick={onCreate}
+            type="button"
+            variant="secondary"
+          >
+            <TagIcon />
+            Nueva promoción
+          </Button>
+        </div>
       )}
       <div className="space-y-3">
         {promotions.map((promotion) => {
@@ -244,23 +249,31 @@ function PromotionOverview({
               </div>
               <dl className="mt-4 grid gap-3 text-sm md:grid-cols-2">
                 <Detail label="Inicio" value={formatDate(promotion.startAt)} />
-                <Detail label="Fin" value={promotion.endAt ? formatDate(promotion.endAt) : "Sin fecha final"} />
-                <Detail label="Canales" value={<PromotionChannels channels={promotion.channels} />} />
+                <Detail
+                  label="Fin"
+                  value={promotion.endAt ? formatDate(promotion.endAt) : "Sin fecha final"}
+                />
+                <Detail
+                  label="Canales"
+                  value={<PromotionChannels channels={promotion.channels} />}
+                />
                 <Detail
                   label="Inventario"
-                  value={promotion.untilStockEnds ? "Hasta agotar existencias" : "Sin límite de stock"}
+                  value={
+                    promotion.untilStockEnds ? "Hasta agotar existencias" : "Sin límite de stock"
+                  }
                 />
               </dl>
               <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
                 {readOnly ? null : (
-                <Button
-                  className="min-h-10 px-3 py-2"
-                  onClick={() => onEdit(promotion)}
-                  type="button"
-                  variant="secondary"
-                >
-                  Editar
-                </Button>
+                  <Button
+                    className="min-h-10 px-3 py-2"
+                    onClick={() => onEdit(promotion)}
+                    type="button"
+                    variant="secondary"
+                  >
+                    Editar
+                  </Button>
                 )}
                 {!readOnly && promotion.status !== PromotionStatus.ended ? (
                   <Button
@@ -332,7 +345,9 @@ function PromotionForm({
         <Metric label="Precio promocional" value={formatCurrency(preview.effectivePrice)} />
         <Metric
           label="Estado"
-          value={new Date(toIsoStart(state.startDate)).getTime() > nowTimestamp ? "Programada" : "Activa"}
+          value={
+            new Date(toIsoStart(state.startDate)).getTime() > nowTimestamp ? "Programada" : "Activa"
+          }
         />
       </div>
       <label className="block space-y-2 text-sm font-semibold text-[var(--color-text)]">
@@ -381,7 +396,10 @@ function PromotionForm({
       <div className="space-y-2">
         <p className="text-sm font-semibold text-[var(--color-text)]">Canales</p>
         <div className="flex flex-wrap gap-2">
-          <ChannelButton active={state.channels.includes(SalesChannel.pos)} onClick={() => toggleChannel(SalesChannel.pos)}>
+          <ChannelButton
+            active={state.channels.includes(SalesChannel.pos)}
+            onClick={() => toggleChannel(SalesChannel.pos)}
+          >
             <PosIcon />
             POS
           </ChannelButton>
@@ -565,7 +583,9 @@ function formatPromotionValue(promotion: Promotion) {
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("es-GT", { day: "2-digit", month: "short", year: "numeric" }).format(
-    new Date(value),
-  );
+  return new Intl.DateTimeFormat("es-GT", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(value));
 }

@@ -1,7 +1,5 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element */
-
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import type { Product, Promotion } from "@/core/entities";
 import {
@@ -18,7 +16,9 @@ import { Input } from "@/shared/components/Input";
 import { Select } from "@/shared/components/Select";
 import { cn } from "@/shared/utils/cn";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
-import { PRODUCT_IMAGE_PLACEHOLDER } from "@/shared/utils/getProductImage";
+import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
+import { processCatalogImage } from "@/modules/catalog/application/services/processCatalogImage";
+import { CatalogImage } from "@/modules/catalog/components/CatalogImage";
 import {
   isPositiveInteger,
   isPositiveNumber,
@@ -69,14 +69,7 @@ interface ProductFormProps {
 }
 
 type ProductFormTab =
-  | "general"
-  | "units"
-  | "tracking"
-  | "attributes"
-  | "prices"
-  | "promotion"
-  | "suppliers"
-  | "media";
+  "general" | "units" | "tracking" | "attributes" | "prices" | "promotion" | "suppliers" | "media";
 
 type PromotionProduct = Pick<
   Product,
@@ -244,7 +237,8 @@ export function ProductForm({
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 space-y-2">
             <nav aria-label="Ruta" className="text-sm font-semibold text-[var(--color-text-muted)]">
-              Catalogo &gt; {isEdit ? `Editar: ${detail?.product.name ?? value.name}` : "Nuevo producto"}
+              Catalogo &gt;{" "}
+              {isEdit ? `Editar: ${detail?.product.name ?? value.name}` : "Nuevo producto"}
             </nav>
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="break-words text-2xl font-bold text-[var(--color-title)]">
@@ -264,7 +258,12 @@ export function ProductForm({
             >
               {"<-"} Volver
             </Button>
-            <Button className="w-full sm:w-auto" disabled={busy} form="catalog-product-form" type="submit">
+            <Button
+              className="w-full sm:w-auto"
+              disabled={busy}
+              form="catalog-product-form"
+              type="submit"
+            >
               <CheckIcon />
               {busy ? "Guardando..." : "Guardar producto"}
             </Button>
@@ -358,7 +357,11 @@ export function ProductForm({
             />
           ) : null}
           {activeTab === "media" ? (
-            <MediaTab errors={errors} onChange={(media) => updateValue({ media })} value={value.media} />
+            <MediaTab
+              errors={errors}
+              onChange={(media) => updateValue({ media })}
+              value={value.media}
+            />
           ) : null}
         </div>
 
@@ -412,16 +415,26 @@ export function ProductForm({
               <SummaryItem label="Categoria" value={categoryName} />
               <SummaryItem
                 label="Inventario"
-                value={value.tracking.stock ? baseUnit?.name ?? "Controlado" : "Sin control"}
+                value={value.tracking.stock ? (baseUnit?.name ?? "Controlado") : "Sin control"}
               />
               <SummaryItem label="Venta" value={saleUnit?.name ?? "Sin unidad"} />
               <SummaryItem label="Proveedor preferido" value={preferredSupplierName ?? "-"} />
               <SummaryItem
                 label="Costo proveedor"
-                value={preferredSupplier ? formatCurrency(toFiniteNumber(preferredSupplier.lastCost)) : "-"}
+                value={
+                  preferredSupplier
+                    ? formatCurrency(toFiniteNumber(preferredSupplier.lastCost))
+                    : "-"
+                }
               />
-              <SummaryItem label="Precio de venta" value={formatCurrency(toFiniteNumber(value.salePrice))} />
-              <SummaryItem label="Promocion" value={showPromotionTab ? `${editorData.promotionCount} vigente` : "-"} />
+              <SummaryItem
+                label="Precio de venta"
+                value={formatCurrency(toFiniteNumber(value.salePrice))}
+              />
+              <SummaryItem
+                label="Promocion"
+                value={showPromotionTab ? `${editorData.promotionCount} vigente` : "-"}
+              />
             </dl>
           </section>
 
@@ -718,7 +731,9 @@ function UnitsTab({
                   disabled={unitsProtected}
                   id="inventoryQuantity"
                   min="0.0001"
-                  onChange={(event) => onChange({ inventoryQuantity: parseDecimalInput(event.target.value) })}
+                  onChange={(event) =>
+                    onChange({ inventoryQuantity: parseDecimalInput(event.target.value) })
+                  }
                   step="0.0001"
                   type="number"
                   value={value.inventoryQuantity}
@@ -737,8 +752,7 @@ function UnitsTab({
                   min="0.0001"
                   onChange={(event) =>
                     onChange({
-                      saleQuantity:
-                        parseDecimalInput(event.target.value),
+                      saleQuantity: parseDecimalInput(event.target.value),
                     })
                   }
                   step="0.0001"
@@ -762,8 +776,6 @@ function UnitsTab({
     </section>
   );
 }
-
-
 
 function TrackingTab({
   value,
@@ -899,7 +911,8 @@ function TrackingTab({
               <p className="mt-2 text-sm font-semibold text-[var(--color-danger)]">{error}</p>
             ) : assignedArchivedDefaultLocation ? (
               <p className="mt-2 text-xs font-semibold text-[var(--color-danger)]">
-                La ubicacion asignada actualmente esta archivada. Elige una activa o deja el campo sin ubicacion.
+                La ubicacion asignada actualmente esta archivada. Elige una activa o deja el campo
+                sin ubicacion.
               </p>
             ) : (
               <p className="mt-2 text-xs text-[var(--color-text-muted)]">
@@ -976,28 +989,57 @@ function KitComponentsEditor({
   return (
     <div className="space-y-3 rounded-md bg-[var(--color-app-background)] p-3">
       <p className="text-sm text-[var(--color-text)]">
-        El inventario de este kit se calcula a partir de sus componentes. El kit no tiene stock ni trazabilidad propios.
+        El inventario de este kit se calcula a partir de sus componentes. El kit no tiene stock ni
+        trazabilidad propios.
       </p>
       {value.map((component, index) => {
         const product = eligibleProducts.find((item) => item.id === component.componentProductId);
         return (
-          <div className="grid gap-2 sm:grid-cols-[1fr_110px_auto]" key={component.componentProductId}>
+          <div
+            className="grid gap-2 sm:grid-cols-[1fr_110px_auto]"
+            key={component.componentProductId}
+          >
             <div className="rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-title)]">
               {product ? `${product.sku} — ${product.name}` : "Componente no disponible"}
             </div>
-            <Input min="0.0001" step="0.0001" type="number" value={component.quantityPerKit}
-              onChange={(event) => onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, quantityPerKit: parseDecimalInput(event.target.value) } : item))} />
-            <button className="rounded-md border border-[var(--color-danger)] px-3 text-sm font-semibold text-[var(--color-danger)]" type="button"
-              onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}>Eliminar</button>
+            <Input
+              min="0.0001"
+              step="0.0001"
+              type="number"
+              value={component.quantityPerKit}
+              onChange={(event) =>
+                onChange(
+                  value.map((item, itemIndex) =>
+                    itemIndex === index
+                      ? { ...item, quantityPerKit: parseDecimalInput(event.target.value) }
+                      : item,
+                  ),
+                )
+              }
+            />
+            <button
+              className="rounded-md border border-[var(--color-danger)] px-3 text-sm font-semibold text-[var(--color-danger)]"
+              type="button"
+              onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}
+            >
+              Eliminar
+            </button>
           </div>
         );
       })}
-      <Select value="" onChange={(event) => {
-        const componentProductId = event.target.value;
-        if (componentProductId) onChange([...value, { componentProductId, quantityPerKit: 1 }]);
-      }}>
+      <Select
+        value=""
+        onChange={(event) => {
+          const componentProductId = event.target.value;
+          if (componentProductId) onChange([...value, { componentProductId, quantityPerKit: 1 }]);
+        }}
+      >
         <option value="">Agregar componente físico…</option>
-        {available.map((product) => <option key={product.id} value={product.id}>{product.sku} — {product.name}</option>)}
+        {available.map((product) => (
+          <option key={product.id} value={product.id}>
+            {product.sku} — {product.name}
+          </option>
+        ))}
       </Select>
     </div>
   );
@@ -1045,7 +1087,10 @@ function AttributesTab({
       {value.length ? (
         <div className="space-y-3">
           {value.map((attribute, index) => (
-            <div className="grid gap-3 rounded-md border border-[var(--color-border)] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" key={index}>
+            <div
+              className="grid gap-3 rounded-md border border-[var(--color-border)] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+              key={index}
+            >
               <Input
                 aria-label="Nombre del atributo"
                 disabled={readOnly}
@@ -1123,7 +1168,9 @@ function PricesTab({
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h3 className="text-sm font-bold text-[var(--color-title)]">Precios por cantidad</h3>
-            <p className="text-sm text-[var(--color-text-muted)]">Precio unitario desde una cantidad minima.</p>
+            <p className="text-sm text-[var(--color-text-muted)]">
+              Precio unitario desde una cantidad minima.
+            </p>
           </div>
           <Button
             onClick={() =>
@@ -1146,18 +1193,25 @@ function PricesTab({
             {sortedTiers.map((tier) => {
               const index = value.salesPriceTiers.indexOf(tier);
               return (
-                <div className="grid gap-3 rounded-md bg-[var(--color-app-background)] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" key={`${tier.id ?? "new"}-${index}`}>
+                <div
+                  className="grid gap-3 rounded-md bg-[var(--color-app-background)] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+                  key={`${tier.id ?? "new"}-${index}`}
+                >
                   <Input
                     aria-label="Cantidad minima"
                     min="2"
-                    onChange={(event) => updateTier(index, { minQuantity: parseIntegerInput(event.target.value) })}
+                    onChange={(event) =>
+                      updateTier(index, { minQuantity: parseIntegerInput(event.target.value) })
+                    }
                     type="number"
                     value={tier.minQuantity}
                   />
                   <Input
                     aria-label="Precio unitario"
                     min="0"
-                    onChange={(event) => updateTier(index, { unitPrice: parseDecimalInput(event.target.value) })}
+                    onChange={(event) =>
+                      updateTier(index, { unitPrice: parseDecimalInput(event.target.value) })
+                    }
                     step="0.01"
                     type="number"
                     value={tier.unitPrice}
@@ -1165,7 +1219,9 @@ function PricesTab({
                   <Button
                     onClick={() =>
                       onChange({
-                        salesPriceTiers: value.salesPriceTiers.filter((_, itemIndex) => itemIndex !== index),
+                        salesPriceTiers: value.salesPriceTiers.filter(
+                          (_, itemIndex) => itemIndex !== index,
+                        ),
                       })
                     }
                     type="button"
@@ -1316,7 +1372,10 @@ function PromotionOverview({
         {promotions.map((promotion) => {
           const price = calculateEffectivePrice(product.salePrice, promotion);
           return (
-            <article className="rounded-md border border-[var(--color-border)] bg-white p-4" key={promotion.id}>
+            <article
+              className="rounded-md border border-[var(--color-border)] bg-white p-4"
+              key={promotion.id}
+            >
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
                   <h3 className="font-bold text-[var(--color-title)]">{promotion.name}</h3>
@@ -1333,34 +1392,42 @@ function PromotionOverview({
               </div>
               <dl className="mt-4 grid gap-3 text-sm md:grid-cols-2">
                 <Detail label="Inicio" value={formatDate(promotion.startAt)} />
-                <Detail label="Fin" value={promotion.endAt ? formatDate(promotion.endAt) : "Sin fecha final"} />
-                <Detail label="Canales" value={<PromotionChannels channels={promotion.channels} />} />
+                <Detail
+                  label="Fin"
+                  value={promotion.endAt ? formatDate(promotion.endAt) : "Sin fecha final"}
+                />
+                <Detail
+                  label="Canales"
+                  value={<PromotionChannels channels={promotion.channels} />}
+                />
                 <Detail
                   label="Inventario"
-                  value={promotion.untilStockEnds ? "Hasta agotar existencias" : "Sin limite de stock"}
+                  value={
+                    promotion.untilStockEnds ? "Hasta agotar existencias" : "Sin limite de stock"
+                  }
                 />
               </dl>
               <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
                 {readOnly ? null : (
-                <Button
-                  className="min-h-10 px-3 py-2"
-                  onClick={() => onEdit(promotion)}
-                  type="button"
-                  variant="secondary"
-                >
-                  Editar
-                </Button>
+                  <Button
+                    className="min-h-10 px-3 py-2"
+                    onClick={() => onEdit(promotion)}
+                    type="button"
+                    variant="secondary"
+                  >
+                    Editar
+                  </Button>
                 )}
                 {readOnly ? null : (
-                <Button
-                  className="min-h-10 px-3 py-2"
-                  disabled={busy}
-                  onClick={() => onFinalize(promotion)}
-                  type="button"
-                  variant="danger"
-                >
-                  Finalizar
-                </Button>
+                  <Button
+                    className="min-h-10 px-3 py-2"
+                    disabled={busy}
+                    onClick={() => onFinalize(promotion)}
+                    type="button"
+                    variant="danger"
+                  >
+                    Finalizar
+                  </Button>
                 )}
               </div>
             </article>
@@ -1420,7 +1487,9 @@ function PromotionEditor({
         <Metric label="Precio promocional" value={formatCurrency(preview.effectivePrice)} />
         <Metric
           label="Estado"
-          value={new Date(toIsoStart(state.startDate)).getTime() > nowTimestamp ? "Programada" : "Activa"}
+          value={
+            new Date(toIsoStart(state.startDate)).getTime() > nowTimestamp ? "Programada" : "Activa"
+          }
         />
       </div>
       <div className="grid gap-3 md:grid-cols-2">
@@ -1467,15 +1536,24 @@ function PromotionEditor({
       <div className="space-y-2">
         <p className="text-sm font-semibold text-[var(--color-text)]">Canales</p>
         <div className="flex flex-wrap gap-2">
-          <ChannelButton active={state.channels.includes(SalesChannel.pos)} onClick={() => toggleChannel(SalesChannel.pos)}>
+          <ChannelButton
+            active={state.channels.includes(SalesChannel.pos)}
+            onClick={() => toggleChannel(SalesChannel.pos)}
+          >
             <PosIcon />
             POS
           </ChannelButton>
-          <ChannelButton active={state.channels.includes(SalesChannel.ecommerce)} onClick={() => toggleChannel(SalesChannel.ecommerce)}>
+          <ChannelButton
+            active={state.channels.includes(SalesChannel.ecommerce)}
+            onClick={() => toggleChannel(SalesChannel.ecommerce)}
+          >
             <GlobeIcon />
             Web
           </ChannelButton>
-          <ChannelButton active={state.channels.includes(SalesChannel.mobileApp)} onClick={() => toggleChannel(SalesChannel.mobileApp)}>
+          <ChannelButton
+            active={state.channels.includes(SalesChannel.mobileApp)}
+            onClick={() => toggleChannel(SalesChannel.mobileApp)}
+          >
             <MobileIcon />
             App
           </ChannelButton>
@@ -1496,7 +1574,12 @@ function PromotionEditor({
         <Button className="w-full sm:w-auto" onClick={onCancel} type="button" variant="secondary">
           Cancelar
         </Button>
-        <Button className="w-full sm:w-auto" disabled={busy} onClick={() => onSubmit(state)} type="button">
+        <Button
+          className="w-full sm:w-auto"
+          disabled={busy}
+          onClick={() => onSubmit(state)}
+          type="button"
+        >
           <TagIcon />
           {busy ? "Guardando..." : "Guardar promocion"}
         </Button>
@@ -1553,7 +1636,10 @@ function SuppliersTab({
         title="Proveedores"
       />
       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
-        <Select onChange={(event) => setSelectedSupplierId(event.target.value)} value={selectedSupplierId}>
+        <Select
+          onChange={(event) => setSelectedSupplierId(event.target.value)}
+          value={selectedSupplierId}
+        >
           <option value="">Proveedor registrado</option>
           {availableSuppliers.map((supplier) => (
             <option key={supplier.id} value={supplier.id}>
@@ -1596,10 +1682,15 @@ function SuppliersTab({
             const purchaseUnit = units.find((unit) => unit.id === item.purchaseUnitId);
             const needsPurchaseConversion = item.purchaseUnitId !== baseUnitId;
             return (
-              <article className="space-y-4 rounded-md border border-[var(--color-border)] p-4" key={`${item.id ?? "new"}-${item.supplierId}`}>
+              <article
+                className="space-y-4 rounded-md border border-[var(--color-border)] p-4"
+                key={`${item.id ?? "new"}-${item.supplierId}`}
+              >
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div>
-                    <h3 className="font-bold text-[var(--color-title)]">{supplier?.name ?? "Proveedor"}</h3>
+                    <h3 className="font-bold text-[var(--color-title)]">
+                      {supplier?.name ?? "Proveedor"}
+                    </h3>
                     <p className="text-sm text-[var(--color-text-muted)]">
                       {needsPurchaseConversion
                         ? `1 ${purchaseUnit?.name ?? "unidad de compra"} = ${item.purchaseToBaseFactor || "-"} ${baseUnitName}`
@@ -1629,7 +1720,9 @@ function SuppliersTab({
                   <NativeField label="Codigo proveedor">
                     <input
                       className={inputClassName}
-                      onChange={(event) => updateSupplier(index, { supplierSku: event.target.value })}
+                      onChange={(event) =>
+                        updateSupplier(index, { supplierSku: event.target.value })
+                      }
                       value={item.supplierSku ?? ""}
                     />
                   </NativeField>
@@ -1658,8 +1751,7 @@ function SuppliersTab({
                         min="0.0001"
                         onChange={(event) =>
                           updateSupplier(index, {
-                            purchaseToBaseFactor:
-                              parseDecimalInput(event.target.value),
+                            purchaseToBaseFactor: parseDecimalInput(event.target.value),
                           })
                         }
                         placeholder="Cantidad"
@@ -1677,7 +1769,9 @@ function SuppliersTab({
                     <input
                       className={inputClassName}
                       min="0"
-                      onChange={(event) => updateSupplier(index, { lastCost: parseDecimalInput(event.target.value) })}
+                      onChange={(event) =>
+                        updateSupplier(index, { lastCost: parseDecimalInput(event.target.value) })
+                      }
                       step="0.01"
                       type="number"
                       value={item.lastCost}
@@ -1687,7 +1781,11 @@ function SuppliersTab({
                     <input
                       className={inputClassName}
                       min="1"
-                      onChange={(event) => updateSupplier(index, { minimumOrderQuantity: parseIntegerInput(event.target.value) })}
+                      onChange={(event) =>
+                        updateSupplier(index, {
+                          minimumOrderQuantity: parseIntegerInput(event.target.value),
+                        })
+                      }
                       type="number"
                       value={item.minimumOrderQuantity}
                     />
@@ -1708,12 +1806,17 @@ function SuppliersTab({
                 </div>
                 <div className="space-y-3 rounded-md bg-[var(--color-app-background)] p-3">
                   <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                    <h4 className="text-sm font-bold text-[var(--color-title)]">Costos por volumen</h4>
+                    <h4 className="text-sm font-bold text-[var(--color-title)]">
+                      Costos por volumen
+                    </h4>
                     <Button
                       className="min-h-10 px-3 py-2"
                       onClick={() =>
                         updateSupplier(index, {
-                          costTiers: [...item.costTiers, { minQuantity: 1, unitCost: item.lastCost }],
+                          costTiers: [
+                            ...item.costTiers,
+                            { minQuantity: 1, unitCost: item.lastCost },
+                          ],
                         })
                       }
                       type="button"
@@ -1726,12 +1829,19 @@ function SuppliersTab({
                   {item.costTiers.length ? (
                     <div className="space-y-2">
                       {item.costTiers.map((tier, tierIndex) => (
-                        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" key={`${tier.id ?? "new"}-${tierIndex}`}>
+                        <div
+                          className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+                          key={`${tier.id ?? "new"}-${tierIndex}`}
+                        >
                           <input
                             aria-label="Cantidad minima proveedor"
                             className={inputClassName}
                             min="1"
-                            onChange={(event) => updateCostTier(index, tierIndex, { minQuantity: parseIntegerInput(event.target.value) })}
+                            onChange={(event) =>
+                              updateCostTier(index, tierIndex, {
+                                minQuantity: parseIntegerInput(event.target.value),
+                              })
+                            }
                             type="number"
                             value={tier.minQuantity}
                           />
@@ -1739,7 +1849,11 @@ function SuppliersTab({
                             aria-label="Costo unitario proveedor"
                             className={inputClassName}
                             min="0"
-                            onChange={(event) => updateCostTier(index, tierIndex, { unitCost: parseDecimalInput(event.target.value) })}
+                            onChange={(event) =>
+                              updateCostTier(index, tierIndex, {
+                                unitCost: parseDecimalInput(event.target.value),
+                              })
+                            }
                             step="0.01"
                             type="number"
                             value={tier.unitCost}
@@ -1747,7 +1861,9 @@ function SuppliersTab({
                           <Button
                             onClick={() =>
                               updateSupplier(index, {
-                                costTiers: item.costTiers.filter((_, itemIndex) => itemIndex !== tierIndex),
+                                costTiers: item.costTiers.filter(
+                                  (_, itemIndex) => itemIndex !== tierIndex,
+                                ),
                               })
                             }
                             type="button"
@@ -1783,7 +1899,8 @@ function MediaTab({
   onChange: (value: ProductMediaEditorValue[]) => void;
 }) {
   const primary = value.find((item) => item.isPrimary) ?? value[0];
-  const previewUrl = primary?.url.trim() || PRODUCT_IMAGE_PLACEHOLDER;
+  const { user } = useCurrentSession();
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   function update(index: number, patch: Partial<ProductMediaEditorValue>) {
     let next = value.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item));
@@ -1793,54 +1910,117 @@ function MediaTab({
     onChange(next);
   }
 
+  async function appendFiles(files: FileList | null) {
+    if (!files?.length) return;
+    setUploadError(null);
+    if (value.length + files.length > 6) {
+      setUploadError("Puedes guardar hasta 6 imagenes por producto.");
+      return;
+    }
+    try {
+      const uploads = await Promise.all([...files].map((file) => processCatalogImage(file)));
+      onChange([
+        ...value,
+        ...uploads.map((pendingUpload, index) => ({
+          type: "image" as const,
+          url: "",
+          source: undefined,
+          pendingUpload,
+          alt: "",
+          isPrimary: value.length === 0 && index === 0,
+          sortOrder: value.length + index + 1,
+        })),
+      ]);
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "No se pudo procesar la imagen.");
+    }
+  }
+
+  async function replaceFile(index: number, file: File | undefined) {
+    if (!file) return;
+    setUploadError(null);
+    try {
+      update(index, {
+        pendingUpload: await processCatalogImage(file),
+        source: undefined,
+        url: "",
+      });
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "No se pudo procesar la imagen.");
+    }
+  }
+
   return (
     <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
-      <SectionTitle description="Referencias ProductMedia actuales, sin upload backend." title="Multimedia" />
+      <SectionTitle
+        description="Hasta 6 imagenes JPEG, PNG o WebP. Los archivos locales se optimizan y guardan fuera de LocalStorage."
+        title="Multimedia"
+      />
       <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
         <div className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] p-4 text-center">
-          <img
-            alt="Vista previa de imagen principal"
-            className="mx-auto aspect-square w-full max-w-44 rounded-md border border-[var(--color-border)] bg-white object-cover"
-            src={previewUrl}
-          />
-          <span className="mt-3 inline-flex rounded-full bg-white px-3 py-1 text-xs font-bold text-[var(--color-title)]">
-            Imagen principal
-          </span>
+          {primary ? (
+            <>
+              <CatalogMediaPreview media={primary} tenantId={user?.tenantId} />
+              <span className="mt-3 inline-flex rounded-full bg-white px-3 py-1 text-xs font-bold text-[var(--color-title)]">
+                Imagen principal configurada
+              </span>
+            </>
+          ) : (
+            <div className="grid aspect-square w-full place-items-center rounded-md border border-dashed border-[var(--color-border)] bg-white px-4 text-sm font-semibold text-[var(--color-text-muted)]">
+              Sin imagen configurada
+            </div>
+          )}
         </div>
         <div className="space-y-4">
           <div className="flex justify-end">
-            <Button
-              className="w-full sm:w-auto"
-              onClick={() =>
-                onChange([
-                  ...value,
-                  {
-                    type: "image",
-                    url: "",
-                    alt: "",
-                    isPrimary: value.length === 0,
-                    sortOrder: value.length + 1,
-                  },
-                ])
-              }
-              type="button"
-              variant="secondary"
-            >
-              <PlusIcon />
-              Agregar imagen
-            </Button>
+            <label className="inline-flex min-h-10 cursor-pointer items-center justify-center rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-white">
+              Seleccionar archivos
+              <input
+                accept="image/jpeg,image/png,image/webp"
+                className="sr-only"
+                disabled={value.length >= 6}
+                multiple
+                onChange={(event) => {
+                  void appendFiles(event.target.files);
+                  event.target.value = "";
+                }}
+                type="file"
+              />
+            </label>
           </div>
+          {uploadError ? <FieldError>{uploadError}</FieldError> : null}
           {errors.primaryImageUrl ? <FieldError>{errors.primaryImageUrl}</FieldError> : null}
           {value.length ? (
             <div className="space-y-3">
               {value.map((media, index) => (
-                <div className="grid gap-3 rounded-md border border-[var(--color-border)] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto]" key={`${media.id ?? "new"}-${index}`}>
-                  <Input
-                    aria-label="URL de imagen"
-                    onChange={(event) => update(index, { url: event.target.value })}
-                    placeholder="/images/products/placeholder-product.webp"
-                    value={media.url}
-                  />
+                <div
+                  className="grid gap-3 rounded-md border border-[var(--color-border)] p-3 md:grid-cols-[72px_minmax(0,1fr)_minmax(0,1fr)_auto_auto]"
+                  key={`${media.id ?? "new"}-${index}`}
+                >
+                  <CatalogMediaPreview compact media={media} tenantId={user?.tenantId} />
+                  <div className="space-y-2">
+                    <p className="truncate text-xs text-[var(--color-text-muted)]">
+                      {media.pendingUpload
+                        ? "Archivo local listo para guardar"
+                        : media.source?.kind === "mockAsset"
+                          ? "Archivo local guardado"
+                          : "Imagen legacy"}
+                    </p>
+                    <label className="block cursor-pointer text-xs font-semibold text-[var(--color-title)] underline">
+                      {media.pendingUpload || media.source?.kind === "mockAsset"
+                        ? "Reemplazar archivo"
+                        : "Usar archivo local"}
+                      <input
+                        accept="image/jpeg,image/png,image/webp"
+                        className="sr-only"
+                        onChange={(event) => {
+                          void replaceFile(index, event.target.files?.[0]);
+                          event.target.value = "";
+                        }}
+                        type="file"
+                      />
+                    </label>
+                  </div>
                   <Input
                     aria-label="Texto alternativo"
                     onChange={(event) => update(index, { alt: event.target.value })}
@@ -1872,6 +2052,33 @@ function MediaTab({
         </div>
       </div>
     </section>
+  );
+}
+
+function CatalogMediaPreview({
+  compact,
+  media,
+  tenantId,
+}: {
+  compact?: boolean;
+  media?: ProductMediaEditorValue;
+  tenantId?: string;
+}) {
+  const source = media
+    ? (media.source ??
+      (media.url.trim() ? { kind: "url" as const, src: media.url.trim() } : undefined))
+    : undefined;
+  return (
+    <CatalogImage
+      alt={media?.alt || "Vista previa de imagen"}
+      className={cn(
+        "rounded-md border border-[var(--color-border)] bg-white object-cover",
+        compact ? "h-16 w-16" : "mx-auto aspect-square w-full max-w-44",
+      )}
+      previewBlob={media?.pendingUpload?.blob}
+      source={source}
+      tenantId={tenantId}
+    />
   );
 }
 
@@ -2075,29 +2282,36 @@ function validateEditor(value: ProductEditorDto, editorData: ProductEditorData) 
   for (const supplierProduct of value.supplierProducts) {
     if (supplierIds.has(supplierProduct.supplierId)) return "No repitas proveedores.";
     supplierIds.add(supplierProduct.supplierId);
-    if (!isPositiveNumber(supplierProduct.purchaseToBaseFactor)) return "El contenido de compra debe ser mayor a 0.";
-    if (toFiniteNumber(supplierProduct.lastCost, -1) < 0) return "El costo del proveedor debe ser mayor o igual a 0.";
+    if (!isPositiveNumber(supplierProduct.purchaseToBaseFactor))
+      return "El contenido de compra debe ser mayor a 0.";
+    if (toFiniteNumber(supplierProduct.lastCost, -1) < 0)
+      return "El costo del proveedor debe ser mayor o igual a 0.";
     if (!isPositiveInteger(supplierProduct.minimumOrderQuantity)) {
       return "El pedido minimo debe ser un entero mayor a 0.";
     }
     const costQuantities = new Set<number>();
     for (const tier of supplierProduct.costTiers) {
       const minQuantity = toFiniteNumber(tier.minQuantity);
-      if (!isPositiveInteger(tier.minQuantity)) return "La cantidad minima de costo debe ser un entero mayor a 0.";
-      if (toFiniteNumber(tier.unitCost, -1) < 0) return "El costo por volumen debe ser mayor o igual a 0.";
+      if (!isPositiveInteger(tier.minQuantity))
+        return "La cantidad minima de costo debe ser un entero mayor a 0.";
+      if (toFiniteNumber(tier.unitCost, -1) < 0)
+        return "El costo por volumen debe ser mayor o igual a 0.";
       if (costQuantities.has(minQuantity)) return "No repitas cantidades de costo.";
       costQuantities.add(minQuantity);
     }
   }
   const invalidMedia = value.media.find(
     (media) =>
-      media.url.trim() &&
-      !(
-        media.url.trim().startsWith("/") ||
-        media.url.trim().startsWith("http://") ||
-        media.url.trim().startsWith("https://")
-      ),
+      !media.pendingUpload &&
+      media.source?.kind !== "mockAsset" &&
+      (!media.url.trim() ||
+        !(
+          media.url.trim().startsWith("/") ||
+          media.url.trim().startsWith("http://") ||
+          media.url.trim().startsWith("https://")
+        )),
   );
+  if (value.media.length > 6) return "Puedes guardar hasta 6 imagenes por producto.";
   if (invalidMedia) return "Cada imagen debe iniciar con / o una URL http(s).";
   if (
     value.tracking.stock &&
@@ -2143,14 +2357,16 @@ function routeToFirstError(
       editorError.includes("stock minimo") || editorError.includes("ubicacion")
         ? "tracking"
         : editorError.includes("conversion") || editorError.includes("equivalencia")
-        ? "units"
-        : editorError.includes("mayorista")
-          ? "prices"
-          : editorError.includes("proveedor") ||
-              editorError.includes("compra") ||
-              editorError.includes("costo")
-            ? "suppliers"
-            : "general",
+          ? "units"
+          : editorError.includes("mayorista")
+            ? "prices"
+            : editorError.includes("proveedor") ||
+                editorError.includes("compra") ||
+                editorError.includes("costo")
+              ? "suppliers"
+              : editorError.includes("imagen") || editorError.includes("multimedia")
+                ? "media"
+                : "general",
     );
   }
 }
@@ -2176,7 +2392,10 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
-function buildInitialValue(options: ProductFormOptions, editorData: ProductEditorData): ProductEditorDto {
+function buildInitialValue(
+  options: ProductFormOptions,
+  editorData: ProductEditorData,
+): ProductEditorDto {
   const detail = editorData.detail;
   const inventorySettings = {
     branchId: editorData.inventorySettings?.branchId ?? "",
@@ -2190,8 +2409,7 @@ function buildInitialValue(options: ProductFormOptions, editorData: ProductEdito
     const conversionQuantities: Pick<ProductEditorDto, "inventoryQuantity" | "saleQuantity"> =
       sameUnit || !conversion
         ? { inventoryQuantity: 1, saleQuantity: sameUnit ? 1 : "" }
-        : conversion.fromUnitId === detail.product.baseUnitId &&
-            conversion.toUnitId === saleUnitId
+        : conversion.fromUnitId === detail.product.baseUnitId && conversion.toUnitId === saleUnitId
           ? { inventoryQuantity: 1, saleQuantity: conversion.factor }
           : { inventoryQuantity: conversion.factor, saleQuantity: 1 };
     const editedDraft: ProductEditorDto = {
@@ -2246,8 +2464,8 @@ function buildInitialValue(options: ProductFormOptions, editorData: ProductEdito
     attributes: [],
     salesPriceTiers: [],
     supplierProducts: [],
-      media: [],
-      kitComponents: [],
+    media: [],
+    kitComponents: [],
   };
   return applyCapabilityRulesToEditor(newDraft, options.businessCapabilities);
 }

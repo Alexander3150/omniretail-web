@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import type { BankAccountDto, BankAccountInputDto } from "@/modules/administration/application/dto/BankAccountDto";
+import type {
+  BankAccountDto,
+  BankAccountInputDto,
+} from "@/modules/administration/application/dto/BankAccountDto";
 import { BankAccountForm } from "@/modules/administration/components/BankAccountForm";
 import { BankAccountTable } from "@/modules/administration/components/BankAccountTable";
 import { useBankAccounts } from "@/modules/administration/hooks/useBankAccounts";
@@ -91,8 +94,8 @@ export function BankAccountsPage() {
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             Gestionar cuentas bancarias requiere el permiso{" "}
-            <span className="font-medium text-[var(--color-text)]">admin.bank_accounts.manage</span>.
-            Pedí acceso a un administrador.
+            <span className="font-medium text-[var(--color-text)]">admin.bank_accounts.manage</span>
+            . Pedí acceso a un administrador.
           </p>
         </div>
       </div>

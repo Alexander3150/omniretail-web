@@ -10,7 +10,10 @@ export function useStorefrontOrderTracking(trackingToken: string) {
   const repositories = useRepositories();
   const eventBus = useDataEventBus();
   const { tenantId, loading: tenantLoading, error: tenantError } = usePublicTenant();
-  const service = useMemo(() => new GetStorefrontOrderTrackingService(repositories), [repositories]);
+  const service = useMemo(
+    () => new GetStorefrontOrderTrackingService(repositories),
+    [repositories],
+  );
   const [data, setData] = useState<StorefrontOrderTrackingDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

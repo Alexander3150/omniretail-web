@@ -1,6 +1,8 @@
 import {
   BUSINESS_CONFIG_MANAGE_PERMISSION,
   CASH_READ_PERMISSION,
+  DASHBOARD_READ_PERMISSION,
+  REPORTS_READ_PERMISSION,
 } from "@/modules/administration/permissions";
 import type { NavigationItem } from "@/shared/types/navigation.types";
 
@@ -27,22 +29,34 @@ export const administrationNavigation = [
         permission: BUSINESS_CONFIG_MANAGE_PERMISSION,
       },
       {
+        id: "administration-customers",
+        label: "Clientes",
+        href: "/administracion/clientes",
+        permission: "admin.customers.read",
+      },
+      {
         id: "administration-cash",
         label: "Caja",
         href: "/administracion/caja",
         permission: CASH_READ_PERMISSION,
       },
       {
+        id: "administration-dashboard",
+        label: "Dashboard",
+        href: "/administracion/dashboard",
+        permission: DASHBOARD_READ_PERMISSION,
+      },
+      {
+        id: "administration-reports",
+        label: "Reportes",
+        href: "/administracion/reportes",
+        permission: REPORTS_READ_PERMISSION,
+      },
+      {
         id: "administration-ecommerce-config",
         label: "Diseño E-commerce",
         href: "/administracion/diseno-ecommerce",
         permission: "admin.ecommerce_config.manage",
-      },
-      {
-        id: "administration-audit",
-        label: "Auditoría",
-        href: "/administracion/auditoria",
-        permission: "admin.audit.read",
       },
       {
         id: "administration-bank-accounts",

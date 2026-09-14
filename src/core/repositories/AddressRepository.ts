@@ -2,7 +2,8 @@ import type { Address } from "@/core/entities";
 
 /**
  * tenantId/customerId son obligatorios pero SIEMPRE deben provenir de la
- * identidad resuelta en sesion (ver resolveCustomerIdentity), nunca de un
+ * identidad resuelta en sesion (ver resolveCustomerAuthorizationContext
+ * en modules/customer), nunca de un
  * campo de formulario. isDefault queda fuera del input de creacion: el
  * repositorio decide server-side si la direccion nace default (primera
  * del cliente) -- ver invariante en MockAddressRepository.
@@ -29,7 +30,12 @@ export interface AddressRepository {
   getByCustomer(tenantId: string, customerId: string): Promise<Address[]>;
   getById(tenantId: string, customerId: string, id: string): Promise<Address | null>;
   create(input: CreateAddressInput): Promise<Address>;
-  update(tenantId: string, customerId: string, id: string, input: UpdateAddressInput): Promise<Address>;
+  update(
+    tenantId: string,
+    customerId: string,
+    id: string,
+    input: UpdateAddressInput,
+  ): Promise<Address>;
   remove(tenantId: string, customerId: string, id: string): Promise<void>;
   setDefault(tenantId: string, customerId: string, addressId: string): Promise<Address>;
 }

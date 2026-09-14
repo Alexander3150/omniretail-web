@@ -23,17 +23,9 @@ export class MockBusinessConfigRepository
     return updated;
   }
   async getEcommerceConfig(tenantId: string) {
-    return this.store.mutate((db) => {
-      const config = db.ecommerceConfigs.find((item) => item.tenantId === tenantId);
-      if (!config) return null;
-      // Datos mock creados antes de la selección de categorías: aplicar la configuración
-      // inicial de ferretería una sola vez para que no expongan categorías ajenas.
-      if (config.tenantId === "tenant-demo" && !config.visibleCategoryIds) {
-        config.visibleCategoryIds = ["cat-tools", "cat-hardware"];
-        config.updatedAt = this.now();
-      }
-      return config;
-    });
+    return this.read(
+      (db) => db.ecommerceConfigs.find((item) => item.tenantId === tenantId) ?? null,
+    );
   }
   async updateEcommerceConfig(
     tenantId: string,
@@ -44,7 +36,15 @@ export class MockBusinessConfigRepository
       if (index < 0) throw this.missing("EcommerceConfig", tenantId);
       db.ecommerceConfigs[index] = {
         ...db.ecommerceConfigs[index],
-        ...input,
+        enabled: input.enabled,
+        storeName: input.storeName,
+        contactPhone: input.contactPhone,
+        contactEmail: input.contactEmail,
+        requireAccountForCheckout: input.requireAccountForCheckout,
+        guestTrackingEnabled: input.guestTrackingEnabled,
+        allowedDeliveryMethods: [...input.allowedDeliveryMethods],
+        allowedPaymentMethods: [...input.allowedPaymentMethods],
+        defaultBranchId: input.defaultBranchId,
         updatedAt: this.now(),
       };
       return db.ecommerceConfigs[index];

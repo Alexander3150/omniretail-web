@@ -11,10 +11,12 @@ export class GetInventoryMovementsService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(activeBranchId?: string): Promise<InventoryMovementsData> {
+    const branches = await this.repositories.branches.getAll();
+    const activeBranch = branches.find((branch) => branch.id === activeBranchId);
+    const tenantId = activeBranch?.tenantId;
     const [
       movements,
       products,
-      branches,
       units,
       locations,
       users,
@@ -28,21 +30,18 @@ export class GetInventoryMovementsService {
     ] = await Promise.all([
       this.repositories.inventory.getMovements(),
       this.repositories.products.getAll(),
-      this.repositories.branches.getAll(),
       this.repositories.units.getAll(),
       this.repositories.inventory.getLocations(),
       this.repositories.users.getAll(),
       this.repositories.purchaseOrders.getAll(),
       this.repositories.receipts.getAll(),
-      this.repositories.dispatches.getAll(),
+      this.repositories.dispatches.getAll({ tenantId: tenantId ?? "" }),
       this.repositories.orders.getAll(),
       this.repositories.sales.getAll(),
       this.repositories.inventoryAdjustments.query(),
       this.repositories.inventoryTransfers.query(),
     ]);
 
-    const activeBranch = branches.find((branch) => branch.id === activeBranchId);
-    const tenantId = activeBranch?.tenantId;
     const productById = new Map(products.map((product) => [product.id, product]));
     const branchById = new Map(branches.map((branch) => [branch.id, branch]));
     const unitById = new Map(units.map((unit) => [unit.id, unit]));

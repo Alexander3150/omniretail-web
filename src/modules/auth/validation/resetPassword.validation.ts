@@ -15,7 +15,9 @@ export type ResetPasswordValidationErrors = Partial<Record<"password" | "confirm
  * función es solo feedback inmediato de UI; una llamada directa al
  * repositorio no depende de esto para quedar protegida.
  */
-export function validateResetPasswordForm(dto: ResetPasswordFormDto): ResetPasswordValidationErrors {
+export function validateResetPasswordForm(
+  dto: ResetPasswordFormDto,
+): ResetPasswordValidationErrors {
   const errors: ResetPasswordValidationErrors = {};
 
   const passwordError = validatePasswordAgainstPolicy(dto.password);

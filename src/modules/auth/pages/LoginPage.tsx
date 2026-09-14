@@ -44,9 +44,19 @@ export function LoginPage() {
     formError,
     isSubmitting,
     tenantLoading,
+    lockoutSecondsRemaining,
     submit,
+    pendingChallenge,
+    mfaCode,
+    setMfaCode,
+    submitMfaChallenge,
+    cancelMfaChallenge,
   } = useLogin();
   const { showToast } = useToast();
+  const isLockedOut = lockoutSecondsRemaining > 0;
+  const lockoutMinutes = Math.floor(lockoutSecondsRemaining / 60);
+  const lockoutSeconds = lockoutSecondsRemaining % 60;
+  const lockoutDisplay = `${lockoutMinutes}:${String(lockoutSeconds).padStart(2, "0")}`;
 
   function simulateGoogleLogin() {
     showToast({
@@ -54,6 +64,67 @@ export function LoginPage() {
       description: "Simulado -- no disponible en este entorno de demostracion.",
       tone: "info",
     });
+  }
+
+  // PR13 (MFA, R-A16): segundo paso del MISMO formulario, no una ruta
+  // nueva -- se oculta email/password y se pide el código.
+  if (pendingChallenge) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[var(--color-app-background)] px-6 py-10">
+        <section className="w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-8">
+          <p className="text-sm font-semibold uppercase text-[var(--color-text-muted)]">OmniRetail</p>
+          <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">Verificación en dos pasos</h1>
+          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+            Ingresa el código de tu{" "}
+            {pendingChallenge.method === "totp" ? "aplicación de autenticación" : "correo"}.
+          </p>
+
+          {/* Solo existe porque este entorno de demostración no tiene un
+              canal real de entrega (SMS/app/correo) -- nunca existiría en
+              producción. Mismo criterio de transparencia dummy que ya se
+              usa en registro/recuperación de contraseña. */}
+          <p className="mt-3 rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
+            Modo demo: tu código es <strong>{pendingChallenge.demoCodeMock}</strong>
+          </p>
+
+          <form
+            className="mt-6 space-y-4"
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitMfaChallenge();
+            }}
+          >
+            {formError ? <InlineAlert title={formError} tone="danger" /> : null}
+
+            <FormField id="login-mfa-code" label="Código de verificación">
+              <Input
+                autoComplete="one-time-code"
+                disabled={isSubmitting}
+                id="login-mfa-code"
+                inputMode="numeric"
+                onChange={(event) => setMfaCode(event.target.value)}
+                placeholder="123456"
+                value={mfaCode}
+              />
+            </FormField>
+
+            <Button className="w-full" disabled={isSubmitting || !mfaCode.trim()} type="submit">
+              {isSubmitting ? "Verificando..." : "Verificar"}
+            </Button>
+            <Button
+              className="w-full"
+              disabled={isSubmitting}
+              onClick={cancelMfaChallenge}
+              type="button"
+              variant="secondary"
+            >
+              Volver
+            </Button>
+          </form>
+        </section>
+      </main>
+    );
   }
 
   return (
@@ -70,12 +141,18 @@ export function LoginPage() {
             void submit();
           }}
         >
-          {formError ? <InlineAlert title={formError} tone="danger" /> : null}
+          {isLockedOut ? (
+            <InlineAlert title="Demasiados intentos fallidos." tone="danger">
+              <p>Podrás intentarlo de nuevo en {lockoutDisplay}.</p>
+            </InlineAlert>
+          ) : formError ? (
+            <InlineAlert title={formError} tone="danger" />
+          ) : null}
 
           <FormField error={fieldErrors.email} id="login-email" label="Correo electronico">
             <Input
               autoComplete="email"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isLockedOut}
               id="login-email"
               onChange={(event) => setEmail(event.target.value)}
               placeholder="tu@correo.com"
@@ -87,7 +164,7 @@ export function LoginPage() {
           <FormField error={fieldErrors.password} id="login-password" label="Contraseña">
             <PasswordInput
               autoComplete="current-password"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isLockedOut}
               id="login-password"
               onChange={(event) => setPassword(event.target.value)}
               value={password}
@@ -113,12 +190,8 @@ export function LoginPage() {
             </Link>
           </div>
 
-          <Button
-            className="w-full"
-            disabled={isSubmitting || tenantLoading}
-            type="submit"
-          >
-            {isSubmitting ? "Ingresando..." : "Iniciar sesion"}
+          <Button className="w-full" disabled={isSubmitting || tenantLoading || isLockedOut} type="submit">
+            {isSubmitting ? "Ingresando..." : isLockedOut ? `Espera ${lockoutDisplay}` : "Iniciar sesion"}
           </Button>
         </form>
 
@@ -128,14 +201,22 @@ export function LoginPage() {
           <span aria-hidden="true" className="h-px flex-1 bg-[var(--color-border)]" />
         </div>
 
-        <Button className="mt-4 w-full" onClick={simulateGoogleLogin} type="button" variant="secondary">
+        <Button
+          className="mt-4 w-full"
+          onClick={simulateGoogleLogin}
+          type="button"
+          variant="secondary"
+        >
           <GoogleIcon />
           Google
         </Button>
 
         <p className="mt-6 text-center text-sm text-[var(--color-text-muted)]">
           ¿No tienes cuenta?{" "}
-          <Link className="font-semibold text-[var(--color-title)] hover:underline" href="/registro">
+          <Link
+            className="font-semibold text-[var(--color-title)] hover:underline"
+            href="/registro"
+          >
             Registrate
           </Link>
         </p>

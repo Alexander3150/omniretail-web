@@ -10,9 +10,31 @@ REPOSITORY: contrato de acceso a datos definido en `src/core/repositories`.
 
 MOCK REPOSITORY: implementacion temporal frontend que usa `MockDatabaseStore`.
 
-`ProductMediaRepository` es el contrato compartido para consultar y administrar referencias de imagenes de producto sin acoplar modulos a seeds, LocalStorage o assets fisicos.
+`ProductRepository`, `CategoryRepository` y `UnitRepository` conservan sus operaciones globales
+legacy por compatibilidad, pero todo flujo privado de Catalog debe usar sus variantes tenant-scoped
+para listar, leer por identidad y mutar. Un ID de otro tenant se resuelve como inexistente y las
+mutaciones scoped no permiten cambiar `tenantId`. Las conversiones de unidad por producto se leen y
+reemplazan con el mismo scope del producto.
 
-`PromotionRepository` es el contrato compartido para crear, editar y consultar promociones aplicables. La aplicabilidad debe considerar tenant, producto, fecha, canal y scope de sucursal; no basta con `status=active`.
+`BranchRepository.getActiveByTenant` y `getByIdScoped` son los boundaries operativos de sucursal.
+`branchScope = all` significa todas las sucursales del tenant autenticado, nunca todas las globales;
+`selected` aplica `allowedBranchIds` solo despues de verificar que User, Role y Branch pertenecen al
+mismo tenant.
+
+La sesion operativa Employee se reconstruye como
+`Session -> User activo -> Tenant activo -> Role existente del mismo tenant`. Login, finalizacion de
+MFA y `CurrentSessionProvider` fallan cerrados si se rompe esa cadena. Este requisito no cambia la
+resolucion Customer ni crea roles o permisos nuevos.
+
+`ProductMediaRepository` es el contrato compartido para consultar y administrar referencias de imagenes de producto sin acoplar modulos a seeds, LocalStorage o assets fisicos. Acepta el `url` legacy y la fuente discriminada `url | mockAsset`; `isPrimary`, luego `sortOrder`, determina la seleccion publica entre fuentes validas.
+
+`CatalogImageAssetRepository` persiste Blob y metadata (`id`, `tenantId`, MIME, bytes, dimensiones y fecha) fuera de `MockDatabaseStore`. `get` y `remove` exigen el tenant propietario. La implementacion frontend usa IndexedDB y los consumidores renderizan un `mockAsset` mediante Object URL temporal con revocacion al cambiar o desmontar.
+
+`EcommerceConfig` conserva la configuración administrativa de la tienda y admite `contactPhone`/`contactEmail` opcionales. Su actualización usa un input explícito y el boundary administrativo reconstruye `Session -> User activo -> Tenant activo -> Role del mismo tenant`, exigiendo `admin.ecommerce_config.manage`; `tenantId`, actor y permisos nunca provienen del caller.
+
+`GetPublicStorefrontConfigService.execute()` es el read model público mínimo del Storefront. Resuelve internamente el tenant por slug y solo publica nombre, estado, reglas públicas, contacto configurado y sucursales retornadas por `BranchRepository.getActiveByTenantAndType(tenantId, BranchType.store)`. No expone identificadores internos de configuración ni reutiliza esa consulta para fulfillment o disponibilidad operacional; `defaultBranchId` puede seguir apuntando a una sucursal `main`.
+
+`PromotionRepository` es el contrato compartido para crear, editar y consultar promociones aplicables. La aplicabilidad debe considerar tenant, producto, fecha, canal y scope de sucursal; no basta con `status=active`. Los flujos privados de Catalog usan sus lecturas y actualizaciones tenant-scoped, y una promocion solo puede referenciar Products de su mismo tenant.
 
 `ProductPriceHistoryRepository` es el contrato compartido para leer y registrar cambios de precio base de producto. El mock debe escribir historial cuando cambia `Product.salePrice` desde el flujo comun de `ProductRepository.update`.
 
@@ -30,11 +52,19 @@ MOCK REPOSITORY: implementacion temporal frontend que usa `MockDatabaseStore`.
 
 `InventoryRepository` tambien administra `InventoryReservation`, atribuida a `OrderItem` y compuesta por allocations que persisten el `InventoryBalance.balanceId` exacto. `reserveForOrderItem` y `releaseReservation` cambian solamente stock reservado; `consumeReservation` es atomica e idempotente por `operationId`, consume exclusivamente las allocations originales y crea un `InventoryMovement.out` por balance/ubicacion. La reserva no depende de POS, ecommerce, app movil, picking ni dispatch.
 
-`OrderRepository` integra el lifecycle de reservas dentro de la misma transaccion mock de Order. `create` y `createWithPayment` con estado `confirmed`, y `updateStatus` desde `pending` hacia `confirmed`, reservan todos los items `physical` con `tracking.stock = true`; cancelar libera el remanente de las reservas existentes. `CreateOrderInput.idempotencyKey` es opcional y, cuando existe, se persiste en Order junto con el fingerprint del payload para impedir Orders y reservas duplicadas. Servicios, productos sin stock y kits sin resolucion de componentes no generan reservas.
+`OrderRepository` separa politica de creacion y transiciones existentes. `create` solo admite `pending | confirmed`; `createWithPayment` solo admite `pending`. Los estados avanzados, terminales y `cancelled` se rechazan antes de abrir la transaccion, por lo que no dejan Order, Payment ni reservas parciales. `create` con estado `confirmed`, y `updateStatus` desde `pending` hacia `confirmed`, reservan todos los items `physical` con `tracking.stock = true`; cancelar libera el remanente de las reservas existentes. `CreateOrderInput.idempotencyKey` es opcional y, cuando existe, se persiste en Order junto con el fingerprint del payload para impedir Orders y reservas duplicadas. Servicios, productos sin stock y kits sin resolucion de componentes no generan reservas.
 
-`OrderPaymentConfirmationRepository.confirm` es el boundary de aprobacion mock del pago de una Order e-commerce. Exige Payment y Order relacionados, mismo tenant, branch activa coincidente, importe total equivalente, un metodo persistido permitido por `ecommercePaymentPolicy` y el par de estados `pending/pending` o `approved/confirmed`. La reserva, `Payment.approved` y `Order.confirmed` se persisten en una sola transaccion; un fallo de stock no deja cambios parciales y un retry no duplica reservas. La operacion solo incrementa `reservedQuantity`: el consumo fisico y `InventoryMovement.out` pertenecen a Picking.
+`AddressSnapshot.recipientPhone` es el telefono de contacto de quien recibe el pedido y no necesariamente del comprador. Se conserva opcional para leer Orders legacy y representar otros metodos de entrega, pero `OrderRepository.create` y `createWithPayment` lo exigen y validan con la politica canonica cuando `deliveryMethod = home_delivery`; tambien forma parte del fingerprint idempotente.
 
-`PickingRepository.updateItem` exige `operationId` y actor cuando cambia `pickedQuantity`. Cada incremento consume solamente el delta desde las allocations persistidas de la `InventoryReservation`, en su orden original, dentro de la misma transaccion mock que actualiza el item. Los reintentos identicos no duplican movimientos y reutilizar una operacion con otro payload produce conflicto. El estado `completed` de `PickingOrder` valida que sus items fisicos y reservas requeridas esten completos, pero no vuelve a consumir inventario.
+`OrderPaymentConfirmationRepository.confirm` es el boundary de aprobacion mock del pago de una Order e-commerce. Exige Payment y Order relacionados, mismo tenant, branch activa coincidente, importe total equivalente, un metodo persistido permitido por `ecommercePaymentPolicy` y el par de estados `pending/pending` o `approved/confirmed`. La reserva, `Payment.approved` y `Order.confirmed` se persisten en una sola transaccion; un fallo de stock no deja cambios parciales y un retry no duplica reservas. Ante disponibilidad insuficiente, la implementacion mock descarta como compensacion solamente la Order y Payment inmediatos que sigan `pending`, esten relacionados y no tengan reservas ni dependencias; metodos diferidos y errores inesperados no usan ese cleanup. La operacion solo incrementa `reservedQuantity`: el consumo fisico y `InventoryMovement.out` pertenecen a Picking.
+
+`PickingRepository` exige `tenantId + branchId` en todas sus lecturas y mutaciones; esos IDs y el actor solo llegan despues de validarse en `PickingApplicationService`. `assign` resuelve competencia y cambia atomicamente `Order.confirmed -> preparing`; `release` conserva progreso y agrega `PickingAssignmentRelease` append-only. `updateItem` exige `operationId` cuando cambia `pickedQuantity`; el primer incremento real cambia `Order.preparing -> picking` dentro de la misma transaccion que consume el delta reservado, actualiza balance/reservado y crea `InventoryMovement.out`. Los reintentos identicos no duplican movimientos y reutilizar una operacion con otro payload produce conflicto. `complete` valida lineas, reservas e incidencias y cambia atomicamente a `PickingOrder.completed + Order.ready_for_dispatch` para `home_delivery` o `Order.ready_for_pickup` para `store_pickup`; `immediate` falla cerrado. Completion nunca vuelve a tocar inventario.
+
+`Order.notificationContact` es un snapshot discriminado opcional: `send` exige email canonico normalizado, `not_applicable` prohibe email y `undefined` conserva semantica legacy/unknown. Forma parte del fingerprint de creacion. Checkout e-commerce siempre persiste `send` desde el formulario; POS acepta el contrato opcional sin exigirlo todavia a su UI.
+
+`DispatchRepository.confirm` es el unico boundary de confirmacion de envio y reemplaza el CRUD generico como autoridad. Recibe scope confiable (`tenantId`, `branchId`, actor) desde `DispatchAuthorizationContext`, valida Order/Picking/reservas/incidencias y usa `Order.transportMode`. `third_party` exige carrier y tracking; `own_fleet` permite ambos opcionales. Persiste en una transaccion Dispatch+Order+operacion idempotente y, cuando aplica, una Notification email simulada deduplicada. `DispatchRepository.markDelivered` es el owner exclusivo de `Order.dispatched + Dispatch.dispatched -> delivered`: persiste `deliveredAt` atomicamente, permite retry coherente y rechaza cambios a carrier/tracking/transporte. Ninguna de las dos operaciones modifica inventario; markDelivered tampoco crea notificaciones. Sus lecturas son tenant scoped y opcionalmente branch scoped.
+
+`InventoryRepository.getPickingAvailability` es la unica proyeccion de disponibilidad para Picking. Resuelve el `PickingOrder/Order/product` tenant+sucursal scoped y calcula por balance, ubicacion, lote y serie: existencia fisica elegible, reserva remanente propia, reservas ajenas, stock libre y cantidad utilizable. La cantidad utilizable suma reserva propia y libre, pero excluye reservas de otras Orders; Logistics consume esta proyeccion y no replica la formula.
 
 `SaleConfirmationRepository.confirm` mantiene la salida directa de inventario para una Sale sin `sourceOrderId`. Cuando existe `sourceOrderId`, valida dentro de la transaccion que la Order pertenezca al mismo tenant y branch, no este cancelada, coincida en productos y cantidades, y que cada `OrderItem` fisico con stock conserve una `InventoryReservation` coherente en estado `active` o `consumed`; en ese caso la Sale no crea un segundo movimiento OUT porque Picking es responsable de consumir la reserva. Una reserva ausente, liberada o inconsistente rechaza toda la confirmacion sin fallback a inventario directo.
 
@@ -72,6 +102,8 @@ de todas las lineas usa `returned` y solo una anulacion usa `cancelled`.
 `SupplierProductRepository` administra la relacion producto-proveedor, incluyendo unidad de compra por proveedor, factor hacia unidad base, costo, minimo, lead time, preferred y `SupplierCostTier`. `SupplierProduct.leadTimeDays` es el dato especifico; el `Supplier.leadTimeDays` expuesto a consumidores agregados es una proyeccion read-only calculada como el maximo de las relaciones activas y queda `undefined` cuando no hay ninguna.
 
 `CustomerPaymentMethodRepository` administra metodos de pago guardados del cliente. El contrato persiste solo datos seguros de referencia (`providerPaymentMethodId`, brand, last4, vencimiento, cardholderName, default y estado). No reemplaza `Payment`, que conserva el pago historico de una compra concreta.
+
+`resolveCustomerAuthorizationContext` es la resolucion estricta del Customer actual para autoservicio y `resolveOptionalCustomerAuthorizationContext` reutiliza la misma validacion en boundaries que admiten invitados. Ambas derivan identidad desde Auth/User/Customer, exigen User y Customer activos y coherencia de tenant; ningun caller aporta `customerId`. El checkout compara ese tenant autenticado con el tenant publico antes de persistir `Order.customerId`.
 
 `SavedPaymentMethod` y `SavedPaymentMethodRepository` son aliases legacy/de compatibilidad hacia `CustomerPaymentMethod` y `CustomerPaymentMethodRepository`. No deben usarse como contratos nuevos.
 

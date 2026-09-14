@@ -1,6 +1,15 @@
 export type DataEventName =
   | "auth.changed"
   | "user.changed"
+  // PR13: deliberadamente SEPARADO de "auth.changed" -- ese evento lo
+  // escucha CurrentSessionProvider para recargar user/role, y hace que
+  // RequireSession muestre "Cargando sesion..." mientras tanto (unmount
+  // temporal del subarbol autenticado). Activar/desactivar/verificar MFA
+  // no cambia identidad ni permisos, asi que emitir auth.changed ahi
+  // remontaria toda la pantalla de Seguridad a mitad de un wizard
+  // (perdiendo el paso actual, ej. el modal de recovery codes) sin
+  // necesidad real.
+  | "mfa.changed"
   | "branch.changed"
   | "business-config.changed"
   | "product.changed"
@@ -38,8 +47,33 @@ export interface DataEventPayload {
   tenantId?: string;
   branchId?: string;
   productId?: string;
+  pickingOrderId?: string;
+  pickingLineId?: string;
+  orderId?: string;
+  incidentId?: string;
   previousPrice?: number;
   newPrice?: number;
   action?: "created" | "updated" | "archived" | "deleted" | "status_changed" | "reset";
   metadata?: Record<string, unknown>;
 }
+
+export interface PickingChangedEventPayload extends DataEventPayload {
+  tenantId: string;
+  branchId: string;
+  pickingOrderId: string;
+  orderId: string;
+}
+
+export interface DataEventPayloadMap {
+  "picking.changed": PickingChangedEventPayload;
+}
+
+export type DataEventPayloadFor<EventName extends DataEventName> =
+  EventName extends keyof DataEventPayloadMap
+    ? DataEventPayloadMap[EventName]
+    : DataEventPayload;
+
+export type DataEventArguments<EventName extends DataEventName> =
+  EventName extends keyof DataEventPayloadMap
+    ? [payload: DataEventPayloadFor<EventName>]
+    : [payload?: DataEventPayloadFor<EventName>];

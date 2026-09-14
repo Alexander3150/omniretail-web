@@ -29,12 +29,13 @@ export class CreateProductService {
       );
     }
 
+    const tenantId = await resolveTenantId(this.repositories);
     const normalizedSku = normalizeSku(dto.sku);
-    const duplicateSku = await this.repositories.products.getBySku(normalizedSku);
+    const duplicateSku = await this.repositories.products.getBySkuScoped(tenantId, normalizedSku);
     if (duplicateSku) throw new CatalogServiceError("Ya existe un producto con este Codigo / SKU.");
 
     if (dto.barcode?.trim()) {
-      const products = await this.repositories.products.getAll();
+      const products = await this.repositories.products.getByTenant(tenantId);
       const duplicateBarcode = products.find((product) => product.barcode === dto.barcode?.trim());
       if (duplicateBarcode) {
         throw new CatalogServiceError("Ya existe un producto con este codigo de barras.");
@@ -42,16 +43,11 @@ export class CreateProductService {
     }
 
     const [category, unit] = await Promise.all([
-      this.repositories.categories.getById(dto.categoryId),
-      this.repositories.units.getById(dto.baseUnitId),
+      this.repositories.categories.getByIdScoped(tenantId, dto.categoryId),
+      this.repositories.units.getByIdScoped(tenantId, dto.baseUnitId),
     ]);
     ensureActiveCategory(category);
     ensureActiveUnit(unit);
-
-    const tenantId =
-      category?.tenantId ?? unit?.tenantId ?? (await resolveTenantId(this.repositories));
-    if (!tenantId)
-      throw new CatalogServiceError("No hay un negocio disponible para crear productos.");
 
     const capabilities = await requireCapabilities(this.repositories, tenantId);
     ensureProductTypeAllowed(dto.productType, capabilities);

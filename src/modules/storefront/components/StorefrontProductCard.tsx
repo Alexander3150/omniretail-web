@@ -1,58 +1,40 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import { useToast } from "@/shared/components/Toast";
 import type { StorefrontDiscoveryProductDto } from "@/modules/storefront/application/dto/StorefrontDiscoveryDto";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
+import { StorefrontCatalogImage } from "@/modules/storefront/components/StorefrontCatalogImage";
 
 export function StorefrontProductCard({
   product,
   compact = false,
-  offer,
 }: {
   product: StorefrontDiscoveryProductDto;
   compact?: boolean;
-  offer?: { originalPrice: number; promotionName: string };
 }) {
   const { addProduct } = useStorefrontCart();
+  const [expanded, setExpanded] = useState(false);
   const [added, setAdded] = useState(false);
-  const { showToast } = useToast();
   const add = async () => {
     await addProduct(product.id);
     setAdded(true);
-    showToast({
-      title: "Producto agregado al carrito",
-      description: `${product.name} ya está en tu selección.`,
-      tone: "success",
-    });
     window.setTimeout(() => setAdded(false), 1400);
   };
   return (
     <article className="group overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-[var(--color-title)]/10">
-      <Link className="block text-left" href={`/catalogo/${product.id}`}>
+      <button
+        aria-expanded={expanded}
+        className="block w-full text-left"
+        onClick={() => setExpanded((value) => !value)}
+        type="button"
+      >
         <div className="relative">
-          {product.imageUrl ? (
-            <Image
-              alt={product.imageAlt ?? product.name}
-              className={`${compact ? "h-40" : "h-48"} w-full bg-slate-50 object-contain object-center p-3 transition duration-500 group-hover:scale-[1.03]`}
-              height={compact ? 160 : 192}
-              src={product.imageUrl}
-              width={384}
-            />
-          ) : (
-            <div
-              className={`flex ${compact ? "h-40" : "h-48"} items-center justify-center bg-slate-100 text-sm text-[var(--color-text-muted)]`}
-            >
-              Sin imagen disponible
-            </div>
-          )}
-          {offer ? (
-            <span className="absolute left-3 top-3 rounded-md bg-[var(--color-success)] px-2.5 py-1 text-xs font-black uppercase tracking-wider text-white">
-              Oferta
-            </span>
-          ) : null}
+          <StorefrontCatalogImage
+            alt={product.imageAlt ?? product.name}
+            className={`${compact ? "h-40" : "h-48"} w-full bg-slate-50 object-cover transition duration-500 group-hover:scale-[1.03]`}
+            source={product.imageSource}
+          />
         </div>
         <div className={`${compact ? "p-4 pb-2" : "p-5 pb-3"}`}>
           {product.categoryName ? (
@@ -60,42 +42,25 @@ export function StorefrontProductCard({
               {product.categoryName}
             </p>
           ) : null}
-          {!compact ? (
-            <div className="mt-2">
-              <p className="text-xs text-[var(--color-text-muted)]">
-                {product.brand ?? `Código · ${product.sku}`}
-              </p>
-            </div>
-          ) : null}
+          <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+            {product.brand ?? `Código · ${product.sku}`}
+          </p>
           <p className="mt-1 text-xs text-[var(--color-text-muted)]">Código · {product.sku}</p>
-          <h2 className="mt-2 line-clamp-2 text-lg font-bold text-[var(--color-text)]">
-            {product.name}
-          </h2>
-          {!compact ? (
-            <p className="mt-2 line-clamp-2 text-sm leading-5 text-[var(--color-text-muted)]">
-              {product.description ?? "Sin descripción disponible."}
-            </p>
-          ) : null}
+          <h2 className="mt-2 text-lg font-bold text-[var(--color-text)]">{product.name}</h2>
+          <p
+            className={`mt-2 text-sm leading-5 text-[var(--color-text-muted)] ${expanded ? "" : "line-clamp-2"}`}
+          >
+            {product.description ?? "Sin descripción disponible."}
+          </p>
         </div>
-      </Link>
+      </button>
       <div
         className={`flex items-end justify-between gap-3 ${compact ? "px-4 pb-4" : "px-5 pb-5"}`}
       >
-        <div>
-          {offer ? (
-            <p className="text-sm text-[var(--color-text-muted)] line-through">
-              Q{offer.originalPrice.toFixed(2)}
-            </p>
-          ) : null}
-          <p className="text-xl font-black text-[var(--color-title)]">
-            Q{product.salePrice.toFixed(2)}
-          </p>
-          {offer ? (
-            <p className="text-xs font-bold text-[var(--color-success)]">{offer.promotionName}</p>
-          ) : null}
-        </div>
+        <p className="text-xl font-black text-[var(--color-title)]">
+          Q{product.salePrice.toFixed(2)}
+        </p>
         <button
-          aria-label={`Agregar ${product.name} al carrito`}
           className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-bold text-[var(--color-topbar)] transition hover:bg-[var(--color-primary-hover)]"
           onClick={() => void add()}
           type="button"
@@ -103,6 +68,16 @@ export function StorefrontProductCard({
           {added ? "Agregado" : "Agregar"}
         </button>
       </div>
+      {expanded ? (
+        <div className="border-t border-[var(--color-border)] bg-slate-50 px-5 py-3">
+          <Link
+            className="text-sm font-bold text-[var(--color-title)] underline-offset-4 hover:underline"
+            href={`/catalogo/${product.id}`}
+          >
+            Ver ficha completa →
+          </Link>
+        </div>
+      ) : null}
     </article>
   );
 }

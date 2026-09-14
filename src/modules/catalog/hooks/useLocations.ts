@@ -76,9 +76,7 @@ export function useLocations() {
 
   const branchLocations = useMemo(
     () =>
-      currentBranch
-        ? locations.filter((location) => location.branchId === currentBranch.id)
-        : [],
+      currentBranch ? locations.filter((location) => location.branchId === currentBranch.id) : [],
     [currentBranch, locations],
   );
   const filteredLocations = useMemo(
@@ -144,26 +142,32 @@ export function useLocations() {
     create: (dto: LocationEditorDto) =>
       runMutation(async () => {
         if (!currentBranch) throw new Error("No hay una sucursal activa.");
-        const created = await saveService.create({ ...dto, branchId: currentBranch.id, parentId: "" });
-        return getService.execute(currentBranch.id).then(
-          (items) => items.find((item) => item.id === created.id) ?? null,
-        );
+        const created = await saveService.create({
+          ...dto,
+          branchId: currentBranch.id,
+          parentId: "",
+        });
+        return getService
+          .execute(currentBranch.id)
+          .then((items) => items.find((item) => item.id === created.id) ?? null);
       }),
     update: (locationId: string, dto: LocationEditorDto) =>
       runMutation(async () => {
         const updated = await saveService.update(locationId, dto);
-        return getService.execute(dto.branchId).then(
-          (items) => items.find((item) => item.id === updated.id) ?? null,
-        );
+        return getService
+          .execute(dto.branchId)
+          .then((items) => items.find((item) => item.id === updated.id) ?? null);
       }),
-    archive: (locationId: string) => runMutation(async () => {
-      await saveService.archive(locationId);
-      return null;
-    }),
-    restore: (locationId: string) => runMutation(async () => {
-      await saveService.restore(locationId);
-      return null;
-    }),
+    archive: (locationId: string) =>
+      runMutation(async () => {
+        await saveService.archive(locationId);
+        return null;
+      }),
+    restore: (locationId: string) =>
+      runMutation(async () => {
+        await saveService.restore(locationId);
+        return null;
+      }),
   };
 }
 

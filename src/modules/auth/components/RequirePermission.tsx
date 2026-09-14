@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { navigationConfig } from "@/config/navigation";
+import { canUserEnterPrivateRoute } from "@/modules/auth/application/services/postLoginNavigation";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { EMPLOYEE_HOME_ACCESS_PERMISSION, hasEmployeeHomeAccess } from "@/modules/auth/permissions";
 import { isNavigationItemActive } from "@/shared/navigation/Sidebar";
@@ -41,12 +42,17 @@ function isSessionOnlyRoute(pathname: string): boolean {
  * el orden -- findRequiredPermission no tiene nocion de "el match mas
  * especifico gana").
  *
- * "/cuenta" (src/app/(private)/cuenta/page.tsx) solo hace
+ * "/cuenta" (src/app/(public)/(accessible)/cuenta/page.tsx) solo hace
  * redirect("/cuenta/perfil") -- nunca renderiza contenido propio. Por
  * eso se permite aca de forma EXPLICITA y EXACTA (nunca por prefijo,
  * a diferencia de SESSION_ONLY_ROUTES) a cualquier sesion valida: la
  * ruta real de destino, /cuenta/perfil, sigue exigiendo su propio
- * permiso normalmente una vez completado el redirect.
+ * permiso normalmente una vez completado el redirect. Este componente
+ * se usa tanto desde (private)/layout.tsx (rutas de backoffice) como
+ * desde (public)/(accessible)/cuenta/layout.tsx (Mi Cuenta de Customer)
+ * -- la resolucion de permisos es la misma independientemente de bajo
+ * que route group fisico viva la pagina, porque solo depende del
+ * pathname.
  */
 const CUENTA_REDIRECT_ROUTE = "/cuenta";
 
@@ -89,6 +95,10 @@ function Denied() {
 export function RequirePermission({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { hasPermission, permissions, user } = useCurrentSession();
+
+  if (!canUserEnterPrivateRoute(user, pathname)) {
+    return <Denied />;
+  }
 
   if (pathname === CUENTA_REDIRECT_ROUTE || isSessionOnlyRoute(pathname)) {
     return <>{children}</>;

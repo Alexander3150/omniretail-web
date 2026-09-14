@@ -9,16 +9,20 @@ import {
   validatePaymentMethodForm,
   type PaymentMethodValidationErrors,
 } from "@/modules/customer/validation/paymentMethod.validation";
+import { CARD_BRANDS } from "@/config/card-brands";
+import { GUATEMALA_BANKS } from "@/config/guatemala-banks";
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
 import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
+import { Select } from "@/shared/components/Select";
 import { useToast } from "@/shared/components/Toast";
 
 const EMPTY_FORM: PaymentMethodFormDto = {
   brand: "",
+  issuingBank: "",
   last4: "",
   expirationMonth: "",
   expirationYear: "",
@@ -28,6 +32,7 @@ const EMPTY_FORM: PaymentMethodFormDto = {
 function toFormDto(method: CustomerPaymentMethod): PaymentMethodFormDto {
   return {
     brand: method.brand,
+    issuingBank: method.issuingBank,
     last4: method.last4,
     expirationMonth: String(method.expirationMonth),
     expirationYear: String(method.expirationYear),
@@ -161,6 +166,7 @@ export function MetodosPagoPage() {
               {method.cardholderName ? (
                 <p className="mt-2 text-sm text-[var(--color-text)]">{method.cardholderName}</p>
               ) : null}
+              <p className="text-sm text-[var(--color-text-muted)]">{method.issuingBank}</p>
               <p className="text-sm text-[var(--color-text-muted)]">
                 Vence {String(method.expirationMonth).padStart(2, "0")}/{method.expirationYear}
               </p>
@@ -206,13 +212,35 @@ export function MetodosPagoPage() {
           }}
         >
           <FormField error={fieldErrors.brand} id="payment-brand" label="Marca">
-            <Input
+            <Select
               disabled={busy || editor?.mode === "edit"}
               id="payment-brand"
               onChange={(event) => setForm((prev) => ({ ...prev, brand: event.target.value }))}
-              placeholder="Visa, Mastercard..."
               value={form.brand}
-            />
+            >
+              <option value="">Selecciona una marca</option>
+              {CARD_BRANDS.map((brand) => (
+                <option key={brand} value={brand}>
+                  {brand}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+
+          <FormField error={fieldErrors.issuingBank} id="payment-bank" label="Banco emisor">
+            <Select
+              disabled={busy || editor?.mode === "edit"}
+              id="payment-bank"
+              onChange={(event) => setForm((prev) => ({ ...prev, issuingBank: event.target.value }))}
+              value={form.issuingBank}
+            >
+              <option value="">Selecciona un banco</option>
+              {GUATEMALA_BANKS.map((bank) => (
+                <option key={bank} value={bank}>
+                  {bank}
+                </option>
+              ))}
+            </Select>
           </FormField>
 
           <FormField error={fieldErrors.last4} id="payment-last4" label="Últimos 4 dígitos">
@@ -227,7 +255,11 @@ export function MetodosPagoPage() {
           </FormField>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <FormField error={fieldErrors.expirationMonth} id="payment-month" label="Mes de expiración">
+            <FormField
+              error={fieldErrors.expirationMonth}
+              id="payment-month"
+              label="Mes de expiración"
+            >
               <Input
                 disabled={busy}
                 id="payment-month"
@@ -240,11 +272,16 @@ export function MetodosPagoPage() {
               />
             </FormField>
 
-            <FormField error={fieldErrors.expirationYear} id="payment-year" label="Año de expiración">
+            <FormField
+              error={fieldErrors.expirationYear}
+              id="payment-year"
+              label="Año de expiración"
+            >
               <Input
                 disabled={busy}
                 id="payment-year"
                 inputMode="numeric"
+                maxLength={4}
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, expirationYear: event.target.value }))
                 }
@@ -258,7 +295,9 @@ export function MetodosPagoPage() {
             <Input
               disabled={busy}
               id="payment-cardholder"
-              onChange={(event) => setForm((prev) => ({ ...prev, cardholderName: event.target.value }))}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, cardholderName: event.target.value }))
+              }
               value={form.cardholderName}
             />
           </FormField>

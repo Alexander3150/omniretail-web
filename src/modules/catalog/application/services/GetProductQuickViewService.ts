@@ -13,29 +13,36 @@ export class GetProductQuickViewService {
   async execute(productId: string): Promise<ProductQuickViewModel | null> {
     const detail = await new GetProductDetailService(this.repositories).execute(productId);
     if (!detail) return null;
+    const tenantId = detail.product.tenantId;
 
     const [balances, branches, locations, suppliers, units, promotions] = await Promise.all([
       this.repositories.inventory.getBalanceByProduct(productId),
-      this.repositories.branches.getActive(),
+      this.repositories.branches.getActiveByTenant(tenantId),
       this.repositories.inventory.getLocations(),
-      this.repositories.suppliers.getActive(),
-      this.repositories.units.getActive(),
-      this.repositories.promotions.getByProduct(productId),
+      this.repositories.suppliers.getActiveByTenant(tenantId),
+      this.repositories.units.getActiveByTenant(tenantId),
+      this.repositories.promotions.getByProductScoped(tenantId, productId),
     ]);
 
     const branchNames = new Map(branches.map((branch) => [branch.id, branch.name]));
-    const locationNames = new Map(locations.map((location) => [location.id, location.name]));
+    const locationNames = new Map(
+      locations
+        .filter((location) => location.tenantId === tenantId)
+        .map((location) => [location.id, location.name]),
+    );
     const unitNames = new Map(units.map((unit) => [unit.id, unit.name]));
-    const supplierProducts = await this.getSupplierProducts(productId);
+    const supplierProducts = await this.getSupplierProducts(tenantId, productId);
 
     return {
       ...detail,
-      inventory: balances.map<ProductInventorySummaryItem>((balance) => ({
-        balance,
-        branchName: branchNames.get(balance.branchId) ?? "Sucursal no disponible",
-        locationName: balance.locationId ? locationNames.get(balance.locationId) : undefined,
-        stockStatus: getStockStatus(balance.quantity, balance.minStock),
-      })),
+      inventory: balances
+        .filter((balance) => balance.tenantId === tenantId)
+        .map<ProductInventorySummaryItem>((balance) => ({
+          balance,
+          branchName: branchNames.get(balance.branchId) ?? "Sucursal no disponible",
+          locationName: balance.locationId ? locationNames.get(balance.locationId) : undefined,
+          stockStatus: getStockStatus(balance.quantity, balance.minStock),
+        })),
       suppliers: supplierProducts
         .map<ProductSupplierSummaryItem | null>((supplierProduct) => {
           const supplier = suppliers.find((item) => item.id === supplierProduct.supplierId);
@@ -53,15 +60,18 @@ export class GetProductQuickViewService {
     };
   }
 
-  private async getSupplierProducts(productId: string) {
-    const suppliers = await this.repositories.suppliers.getActive();
+  private async getSupplierProducts(tenantId: string, productId: string) {
+    const suppliers = await this.repositories.suppliers.getActiveByTenant(tenantId);
     const entries = await Promise.all(
       suppliers.map((supplier) => this.repositories.suppliers.getProductsBySupplier(supplier.id)),
     );
 
     return entries
       .flat()
-      .filter((supplierProduct: SupplierProduct) => supplierProduct.productId === productId);
+      .filter(
+        (supplierProduct: SupplierProduct) =>
+          supplierProduct.tenantId === tenantId && supplierProduct.productId === productId,
+      );
   }
 }
 

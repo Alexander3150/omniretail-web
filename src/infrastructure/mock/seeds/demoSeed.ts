@@ -41,10 +41,11 @@ import {
 } from "@/core/enums";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { buildPasswordHashMock } from "@/infrastructure/mock/shared/passwordHashMock";
+import { hardwareCatalogSeed } from "@/infrastructure/mock/seeds/hardwareCatalogSeed";
 
 const now = "2026-01-01T12:00:00.000Z";
 
-export const demoSeedDatabase: MockDatabase = {
+const legacyDemoSeedDatabase: MockDatabase = {
   tenants: [
     {
       id: "tenant-demo",
@@ -104,7 +105,8 @@ export const demoSeedDatabase: MockDatabase = {
       tenantId: "tenant-demo",
       enabled: true,
       storeName: "FerrePharma Demo",
-      visibleCategoryIds: ["cat-tools", "cat-hardware"],
+      contactPhone: "+502 2222-3333",
+      contactEmail: "ventas@ferrepharma.demo",
       requireAccountForCheckout: false,
       guestTrackingEnabled: true,
       allowedDeliveryMethods: [
@@ -173,7 +175,7 @@ export const demoSeedDatabase: MockDatabase = {
       type: UserType.employee,
       status: UserStatus.active,
       roleId: "role-warehouse",
-      branchId: "branch-norte",
+      branchId: "branch-centro",
       createdAt: now,
       updatedAt: now,
     },
@@ -200,9 +202,12 @@ export const demoSeedDatabase: MockDatabase = {
         "admin.users.manage",
         "admin.roles.manage",
         "admin.business_config.manage",
+        "admin.customers.read",
+        "admin.dashboard.read",
+        "admin.reports.read",
+        "admin.reports.export",
         "admin.cash.read",
         "admin.ecommerce_config.manage",
-        "admin.audit.read",
         "admin.branches.read",
         "admin.branches.manage",
         "admin.bank_accounts.manage",
@@ -251,7 +256,12 @@ export const demoSeedDatabase: MockDatabase = {
       tenantId: "tenant-demo",
       name: "Bodeguero",
       isSystem: true,
-      permissions: ["logistics.picking.complete", "receiving.receipts.confirm"],
+      permissions: [
+        "logistics.picking.read",
+        "logistics.picking.start",
+        "logistics.picking.complete",
+        "receiving.receipts.confirm",
+      ],
       branchScope: "assigned",
       createdAt: now,
       updatedAt: now,
@@ -303,6 +313,7 @@ export const demoSeedDatabase: MockDatabase = {
   emailVerifications: [],
   employeeInvitations: [],
   mfaEnrollments: [],
+  mfaChallenges: [],
   recoveryCodes: [],
   categories: [
     {
@@ -1309,6 +1320,7 @@ export const demoSeedDatabase: MockDatabase = {
       recipientName: "Ana Cliente",
       line1: "Zona 10",
       city: "Guatemala",
+      stateOrDepartment: "Guatemala",
       country: "Guatemala",
       isDefault: true,
       createdAt: now,
@@ -1332,7 +1344,8 @@ export const demoSeedDatabase: MockDatabase = {
       customerId: "customer-ana",
       type: PaymentMethod.card,
       providerPaymentMethodId: "pm_demo_ana_visa_4242",
-      brand: "visa",
+      brand: "Visa",
+      issuingBank: "Banco Industrial",
       last4: "4242",
       expirationMonth: 8,
       expirationYear: 2029,
@@ -1348,7 +1361,8 @@ export const demoSeedDatabase: MockDatabase = {
       customerId: "customer-ana",
       type: PaymentMethod.card,
       providerPaymentMethodId: "pm_demo_ana_mastercard_9876",
-      brand: "mastercard",
+      brand: "Mastercard",
+      issuingBank: "Banco G&T Continental",
       last4: "9876",
       expirationMonth: 11,
       expirationYear: 2030,
@@ -1551,6 +1565,8 @@ export const demoSeedDatabase: MockDatabase = {
     },
   ],
   pickingItemUpdateOperations: [],
+  pickingAssignmentReleases: [],
+  pickingIncidents: [],
   dispatches: [
     {
       id: "dispatch-001",
@@ -1575,4 +1591,77 @@ export const demoSeedDatabase: MockDatabase = {
   ],
   notifications: [],
   auditLogs: [],
+};
+
+const hardwareOrderItems = legacyDemoSeedDatabase.orderItems.map((item) =>
+  item.productId === "prod-screws"
+    ? {
+        ...item,
+        skuSnapshot: "FIJ-TOR-001",
+        nameSnapshot: 'Tornillo para madera 2" caja 100',
+        unitPrice: 45,
+        subtotal: item.quantity * 45,
+      }
+    : item.productId === "prod-drill"
+      ? {
+          ...item,
+          skuSnapshot: "HER-ELE-001",
+          nameSnapshot: "Taladro percutor 750 W",
+          unitPrice: 599,
+          subtotal: item.quantity * 599,
+        }
+      : item,
+);
+
+export const demoSeedDatabase: MockDatabase = {
+  ...legacyDemoSeedDatabase,
+  ...hardwareCatalogSeed,
+  tenants: legacyDemoSeedDatabase.tenants.map((tenant) => ({
+    ...tenant,
+    name: "Ferretería Los Simpson",
+    legalName: "Ferretería Los Simpson, S.A.",
+  })),
+  ecommerceConfigs: legacyDemoSeedDatabase.ecommerceConfigs.map((config) => ({
+    ...config,
+    storeName: "Ferretería Los Simpson",
+    contactEmail: "ventas@ferreterialossimpson.demo",
+  })),
+  promotions: legacyDemoSeedDatabase.promotions.map((promotion) => ({
+    ...promotion,
+    name: "Taladro Bosch en oferta web",
+    productIds: ["prod-drill"],
+  })),
+  inventoryReservations: legacyDemoSeedDatabase.inventoryReservations,
+  inventoryTransferRequests: legacyDemoSeedDatabase.inventoryTransferRequests.filter(
+    (request) => request.productId === "prod-drill" || request.productId === "prod-screws",
+  ),
+  inventoryTransfers: legacyDemoSeedDatabase.inventoryTransfers,
+  inventoryTransferItems: legacyDemoSeedDatabase.inventoryTransferItems.map((item) =>
+    item.productId === "prod-analgesic" ? { ...item, productId: "prod-cement" } : item,
+  ),
+  purchaseOrders: legacyDemoSeedDatabase.purchaseOrders,
+  purchaseOrderItems: legacyDemoSeedDatabase.purchaseOrderItems,
+  receipts: legacyDemoSeedDatabase.receipts,
+  receiptLines: legacyDemoSeedDatabase.receiptLines,
+  orderItems: hardwareOrderItems,
+  orders: legacyDemoSeedDatabase.orders.map((order) => {
+    const items = hardwareOrderItems.filter((item) => item.orderId === order.id);
+    const subtotal = items.reduce((total, item) => total + item.subtotal, 0);
+    return {
+      ...order,
+      items,
+      subtotal,
+      total: subtotal + order.shippingTotal - order.discountTotal,
+    };
+  }),
+  payments: legacyDemoSeedDatabase.payments.map((payment) =>
+    payment.orderId === "order-001" ? { ...payment, amount: 115 } : payment,
+  ),
+  pickingOrders: legacyDemoSeedDatabase.pickingOrders,
+  pickingItems: legacyDemoSeedDatabase.pickingItems,
+  dispatches: legacyDemoSeedDatabase.dispatches,
+  bankAccounts: legacyDemoSeedDatabase.bankAccounts.map((account) => ({
+    ...account,
+    holderName: "Ferretería Los Simpson, S.A.",
+  })),
 };

@@ -616,7 +616,7 @@ function UnitPanel({
                   : "Editar unidad"}
             </p>
             <h2 className="mt-1 break-words text-lg font-bold text-[var(--color-title)]">
-              {mode === "create" ? "Nueva unidad" : unit?.name ?? "Unidad"}
+              {mode === "create" ? "Nueva unidad" : (unit?.name ?? "Unidad")}
             </h2>
           </div>
           <button

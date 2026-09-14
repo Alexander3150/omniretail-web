@@ -49,11 +49,37 @@ export function EcommerceConfigForm({
           <Input
             disabled={saving}
             id="ecommerce-store-name"
+            maxLength={120}
             onChange={(event) => setField("storeName", event.target.value)}
             required
             value={value.storeName}
           />
         </FormField>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FormField id="ecommerce-contact-phone" label="Teléfono público">
+            <Input
+              autoComplete="tel"
+              disabled={saving}
+              id="ecommerce-contact-phone"
+              maxLength={32}
+              onChange={(event) => setField("contactPhone", event.target.value)}
+              type="tel"
+              value={value.contactPhone ?? ""}
+            />
+          </FormField>
+          <FormField id="ecommerce-contact-email" label="Correo público">
+            <Input
+              autoComplete="email"
+              disabled={saving}
+              id="ecommerce-contact-email"
+              maxLength={254}
+              onChange={(event) => setField("contactEmail", event.target.value)}
+              type="email"
+              value={value.contactEmail ?? ""}
+            />
+          </FormField>
+        </div>
 
         <div className="grid gap-4 lg:grid-cols-3">
           <BusinessConfigToggle
@@ -86,8 +112,8 @@ export function EcommerceConfigForm({
       <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
         <h2 className="text-lg font-bold text-[var(--color-title)]">Pago y entrega</h2>
         <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-          Política fija del canal Web/App: pago con tarjeta y envío a domicilio. No es
-          configurable desde esta pantalla.
+          Política fija del canal Web/App: pago con tarjeta y envío a domicilio. No es configurable
+          desde esta pantalla.
         </p>
       </section>
 

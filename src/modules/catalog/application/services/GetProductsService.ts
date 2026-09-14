@@ -1,10 +1,11 @@
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
-import { getProductImage } from "@/shared/utils/getProductImage";
+import { getProductMediaSource, selectPrimaryProductMedia } from "@/core/media/catalogImage";
 import type { ProductListItem } from "@/modules/catalog/types/catalog.types";
 import { ProductStatus, PromotionStatus, PromotionType } from "@/core/enums";
 import type { Promotion } from "@/core/entities";
 import { calculateEffectivePrice } from "@/core/pricing";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
+import { resolveTenantId } from "@/modules/catalog/application/services/serviceHelpers";
 
 function getCurrentPromotion(
   productId: string,
@@ -41,12 +42,13 @@ export class GetProductsService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(): Promise<ProductListItem[]> {
+    const tenantId = await resolveTenantId(this.repositories);
     const [products, categories, promotions] = await Promise.all([
-      this.repositories.products.getAll(),
-      this.repositories.categories.getAll(),
-      this.repositories.promotions.getActive(),
+      this.repositories.products.getByTenant(tenantId),
+      this.repositories.categories.getByTenant(tenantId),
+      this.repositories.promotions.getActiveByTenant(tenantId),
     ]);
-    const units = await this.repositories.units.getAll();
+    const units = await this.repositories.units.getByTenant(tenantId);
     const mediaEntries = await Promise.all(
       products.map(
         async (product) =>
@@ -71,7 +73,10 @@ export class GetProductsService {
         return {
           id: product.id,
           tenantId: product.tenantId,
-          imageUrl: getProductImage(mediaByProduct.get(product.id) ?? []),
+          imageSource: getPrimaryImageSource(
+            mediaByProduct.get(product.id) ?? [],
+            product.tenantId,
+          ),
           sku: product.sku,
           barcode: product.barcode,
           name: product.name,
@@ -97,4 +102,12 @@ export class GetProductsService {
       })
       .sort((left, right) => left.name.localeCompare(right.name));
   }
+}
+
+function getPrimaryImageSource(
+  media: Awaited<ReturnType<RepositoryRegistry["productMedia"]["getByProduct"]>>,
+  tenantId: string,
+) {
+  const primary = selectPrimaryProductMedia(media.filter((item) => item.tenantId === tenantId));
+  return primary ? (getProductMediaSource(primary) ?? undefined) : undefined;
 }

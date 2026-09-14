@@ -1,7 +1,10 @@
 import type { Product } from "@/core/entities";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { ProductEditorDto } from "@/modules/catalog/application/dto/ProductEditorDto";
-import { syncEditorRelatedData, validateEditorProduct } from "@/modules/catalog/application/services/productEditorHelpers";
+import {
+  syncEditorRelatedData,
+  validateEditorProduct,
+} from "@/modules/catalog/application/services/productEditorHelpers";
 import { resolveTenantId } from "@/modules/catalog/application/services/serviceHelpers";
 import { CatalogServiceError } from "@/modules/catalog/application/services/serviceHelpers";
 

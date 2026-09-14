@@ -6,12 +6,14 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import type { Role, User } from "@/core/entities";
-import { canUserAccessBranch } from "@/core/scopes/userBranchAccess";
+import { isBranchIdInUserScope } from "@/core/scopes/userBranchAccess";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
+import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/services/resolveCurrentSessionSnapshot";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 
 interface CurrentSessionContextValue {
@@ -33,42 +35,31 @@ export function CurrentSessionProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<Role | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>();
+  const reloadVersion = useRef(0);
 
   const reload = useCallback(async () => {
+    const version = ++reloadVersion.current;
     setLoading(true);
     setError(undefined);
     try {
-      const sessionId = await repositories.auth.getCurrentSessionId();
-      if (!sessionId) {
-        setUser(null);
-        setRole(null);
-        return;
-      }
-
-      const session = await repositories.auth.getSession(sessionId);
-      if (!session) {
-        setUser(null);
-        setRole(null);
-        return;
-      }
-
-      const resolvedUser = await repositories.users.getById(session.userId);
-      const resolvedRole = resolvedUser?.roleId
-        ? await repositories.roles.getById(resolvedUser.roleId)
-        : null;
-
-      setUser(resolvedUser);
-      setRole(resolvedRole);
-
-      if (!resolvedUser) {
-        setError("No se pudo resolver el usuario de la sesion actual.");
-      }
+      const snapshot = await resolveCurrentSessionSnapshot(repositories);
+      // auth.changed/user.changed y la carga inicial pueden solaparse.
+      // Solo la reconstruccion mas reciente puede publicar estado; asi
+      // una lectura iniciada con la sesion anterior nunca sobreescribe
+      // el resultado de un login/logout posterior.
+      if (version !== reloadVersion.current) return;
+      setUser(snapshot.user);
+      setRole(snapshot.role);
+      setError(snapshot.error);
     } catch {
+      if (version !== reloadVersion.current) return;
       setUser(null);
       setRole(null);
       setError("No se pudo cargar la sesion actual.");
     } finally {
-      setLoading(false);
+      if (version === reloadVersion.current) {
+        setLoading(false);
+      }
     }
   }, [repositories]);
 
@@ -96,7 +87,7 @@ export function CurrentSessionProvider({ children }: { children: ReactNode }) {
       permissions,
       hasPermission: (permission) => permissionSet.has(permission),
       canAccessBranch: (branchId) =>
-        user && role ? canUserAccessBranch(user, role, branchId) : false,
+        user && role ? isBranchIdInUserScope(user, role, branchId) : false,
       loading,
       isDemo: false,
       error,

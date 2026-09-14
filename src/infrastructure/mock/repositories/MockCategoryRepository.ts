@@ -1,18 +1,37 @@
 import { CategoryStatus } from "@/core/enums";
 import type { CategoryRepository } from "@/core/repositories";
+import { normalizeCatalogImageSource } from "@/core/media/catalogImage";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
 
 export class MockCategoryRepository extends BaseMockRepository implements CategoryRepository {
   async getAll() {
     return this.read((db) => db.categories);
   }
+  async getByTenant(tenantId: string) {
+    return this.read((db) => db.categories.filter((item) => item.tenantId === tenantId));
+  }
   async getById(id: string) {
     return this.read((db) => db.categories.find((item) => item.id === id) ?? null);
+  }
+  async getByIdScoped(tenantId: string, id: string) {
+    return this.read(
+      (db) => db.categories.find((item) => item.id === id && item.tenantId === tenantId) ?? null,
+    );
   }
   async getActive() {
     return this.read((db) => db.categories.filter((item) => item.status === "active"));
   }
+  async getActiveByTenant(tenantId: string) {
+    return this.read((db) =>
+      db.categories.filter(
+        (item) => item.tenantId === tenantId && item.status === CategoryStatus.active,
+      ),
+    );
+  }
   async create(input: Parameters<CategoryRepository["create"]>[0]) {
+    if (input.image && !normalizeCatalogImageSource(input.image)) {
+      throw new Error("La referencia de imagen de categoria no es segura.");
+    }
     const item = this.store.mutate((db) => {
       const now = this.now();
       const created = { ...input, id: this.id("categories"), createdAt: now, updatedAt: now };
@@ -27,6 +46,9 @@ export class MockCategoryRepository extends BaseMockRepository implements Catego
     return item;
   }
   async update(id: string, input: Parameters<CategoryRepository["update"]>[1]) {
+    if (input.image && !normalizeCatalogImageSource(input.image)) {
+      throw new Error("La referencia de imagen de categoria no es segura.");
+    }
     const item = this.store.mutate((db) => this.updateById(db.categories, id, input, "Category"));
     this.emit("category.changed", {
       entityId: item.id,
@@ -56,5 +78,20 @@ export class MockCategoryRepository extends BaseMockRepository implements Catego
       action: "archived",
     });
     return item;
+  }
+  async updateScoped(
+    tenantId: string,
+    id: string,
+    input: Parameters<CategoryRepository["updateScoped"]>[2],
+  ) {
+    if ("tenantId" in input && input.tenantId !== tenantId) {
+      throw new Error("Cross-tenant category update denied");
+    }
+    if (!(await this.getByIdScoped(tenantId, id))) throw this.missing("Category", id);
+    return this.update(id, input);
+  }
+  async archiveScoped(tenantId: string, id: string) {
+    if (!(await this.getByIdScoped(tenantId, id))) throw this.missing("Category", id);
+    return this.archive(id);
   }
 }

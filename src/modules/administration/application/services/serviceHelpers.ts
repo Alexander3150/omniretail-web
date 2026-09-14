@@ -4,6 +4,9 @@ import type { BranchInputDto } from "@/modules/administration/application/dto/Br
 import {
   BUSINESS_CONFIG_MANAGE_PERMISSION,
   CASH_READ_PERMISSION,
+  DASHBOARD_READ_PERMISSION,
+  REPORTS_EXPORT_PERMISSION,
+  REPORTS_READ_PERMISSION,
 } from "@/modules/administration/permissions";
 
 export class AdministrationServiceError extends Error {
@@ -25,6 +28,18 @@ export function ensureCanManageBusinessConfig(permissions: readonly string[]) {
   );
 }
 
+export function ensureCanReadCustomers(permissions: readonly string[]) {
+  if (permissions.includes("admin.customers.read")) return;
+
+  throw new AdministrationServiceError("No tenés permiso para consultar clientes.");
+}
+
+export function ensureCustomerTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
+}
+
 export function ensureCanReadCash(permissions: readonly string[]) {
   if (permissions.includes(CASH_READ_PERMISSION)) return;
 
@@ -41,6 +56,30 @@ export function ensureCashActor(actorUserId: string) {
   if (actorUserId.trim()) return;
 
   throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
+}
+
+export function ensureCanReadDashboard(permissions: readonly string[]) {
+  if (permissions.includes(DASHBOARD_READ_PERMISSION)) return;
+
+  throw new AdministrationServiceError("No tenés permiso para consultar el dashboard.");
+}
+
+export function ensureDashboardTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
+}
+
+export function ensureCanReadReports(permissions: readonly string[]) {
+  if (permissions.includes(REPORTS_READ_PERMISSION)) return;
+
+  throw new AdministrationServiceError("No tenés permiso para consultar los reportes.");
+}
+
+export function ensureCanExportReports(permissions: readonly string[]) {
+  if (permissions.includes(REPORTS_EXPORT_PERMISSION)) return;
+
+  throw new AdministrationServiceError("No tenés permiso para exportar reportes.");
 }
 
 export function ensureCanManageEcommerceConfig(permissions: readonly string[]) {
@@ -93,18 +132,6 @@ export function ensureEcommerceDefaultBranch(
       "Seleccioná una sucursal predeterminada para habilitar el e-commerce.",
     );
   }
-}
-
-export function ensureCanReadAuditLogs(permissions: readonly string[]) {
-  if (permissions.includes("admin.audit.read")) return;
-
-  throw new AdministrationServiceError("No tenés permiso para consultar la auditoría.");
-}
-
-export function ensureAuditTenant(tenantId: string) {
-  if (tenantId.trim()) return;
-
-  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
 }
 
 /**

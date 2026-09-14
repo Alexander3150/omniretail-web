@@ -11,6 +11,9 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
+import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
+import { processCatalogImage } from "@/modules/catalog/application/services/processCatalogImage";
+import { CatalogImage } from "@/modules/catalog/components/CatalogImage";
 import { CategoryStatus } from "@/core/enums";
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
@@ -190,12 +193,16 @@ export function CategoriesPage() {
             category={panelCategory}
             mode={panel.mode}
             onCancel={() =>
-              panel.mode === "detail" ? setPanel(null) : setPanel(panelCategory ? { mode: "detail", category: panelCategory } : null)
+              panel.mode === "detail"
+                ? setPanel(null)
+                : setPanel(panelCategory ? { mode: "detail", category: panelCategory } : null)
             }
             onClose={() => setPanel(null)}
             onEdit={() => panelCategory && setPanel({ mode: "edit", category: panelCategory })}
             onSubmit={panel.mode === "create" ? handleCreate : handleUpdate}
-            onViewProducts={(category) => router.push(`/catalogo/productos?categoryId=${category.id}`)}
+            onViewProducts={(category) =>
+              router.push(`/catalogo/productos?categoryId=${category.id}`)
+            }
           />
         ) : null}
       </section>
@@ -598,7 +605,7 @@ function CategoryPanel({
                   : "Editar categoría"}
             </p>
             <h2 className="mt-1 break-words text-lg font-bold text-[var(--color-title)]">
-              {mode === "create" ? "Nueva categoría" : category?.name ?? "Categoría"}
+              {mode === "create" ? "Nueva categoría" : (category?.name ?? "Categoría")}
             </h2>
           </div>
           <button
@@ -647,6 +654,7 @@ function CategoryDetail({
 }) {
   return (
     <div className="space-y-4">
+      <CategoryImagePreview category={category} />
       <dl className="divide-y divide-[var(--color-border)] rounded-md border border-[var(--color-border)] bg-white px-4">
         <DetailItem label="Nombre" value={category.name} />
         <DetailItem label="Código" value={category.code} />
@@ -661,7 +669,12 @@ function CategoryDetail({
         <Button className="w-full sm:w-auto" onClick={onClose} type="button" variant="secondary">
           Cerrar
         </Button>
-        <Button className="w-full sm:w-auto" onClick={onViewProducts} type="button" variant="secondary">
+        <Button
+          className="w-full sm:w-auto"
+          onClick={onViewProducts}
+          type="button"
+          variant="secondary"
+        >
           Ver productos
         </Button>
         <Button className="w-full sm:w-auto" onClick={onEdit} type="button">
@@ -679,6 +692,33 @@ function DetailItem({ label, value }: { label: string; value: ReactNode }) {
       <dt className="text-xs font-semibold uppercase text-[var(--color-text-muted)]">{label}</dt>
       <dd className="mt-1 break-words text-sm font-semibold text-[var(--color-text)]">{value}</dd>
     </div>
+  );
+}
+
+function CategoryImagePreview({
+  category,
+  dto,
+}: {
+  category?: CategoryListItem;
+  dto?: CategoryEditorDto;
+}) {
+  const { user } = useCurrentSession();
+  const source = dto?.removeImage ? undefined : (dto?.image ?? category?.image);
+  if (!dto?.pendingImage && !source) {
+    return (
+      <div className="grid h-28 place-items-center rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] text-sm text-[var(--color-text-muted)]">
+        Sin imagen
+      </div>
+    );
+  }
+  return (
+    <CatalogImage
+      alt={category?.name ?? dto?.name ?? "Vista previa de categoria"}
+      className="h-32 w-full rounded-md border border-[var(--color-border)] bg-white object-cover"
+      previewBlob={dto?.pendingImage?.blob}
+      source={source}
+      tenantId={user?.tenantId ?? category?.tenantId}
+    />
   );
 }
 
@@ -701,6 +741,7 @@ function CategoryForm({
     category ? categoryToDto(category) : buildDefaultCategoryDto(),
   );
   const [errors, setErrors] = useState<CategoryValidationErrors>({});
+  const [imageError, setImageError] = useState<string | null>(null);
   const parentOptions = useMemo(
     () => allCategories.filter((item) => item.id !== category?.id),
     [allCategories, category?.id],
@@ -716,6 +757,16 @@ function CategoryForm({
 
   function update(patch: Partial<CategoryEditorDto>) {
     setValue((current) => ({ ...current, ...patch }));
+  }
+
+  async function selectImage(file: File | undefined) {
+    if (!file) return;
+    setImageError(null);
+    try {
+      update({ pendingImage: await processCatalogImage(file), removeImage: false });
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : "No se pudo procesar la imagen.");
+    }
   }
 
   return (
@@ -742,6 +793,38 @@ function CategoryForm({
           onChange={(event) => update({ description: event.target.value })}
           value={value.description}
         />
+      </Field>
+      <Field id="category-image" label="Imagen">
+        <CategoryImagePreview dto={value} />
+        <div className="mt-2 flex flex-wrap gap-2">
+          <label className="inline-flex min-h-10 cursor-pointer items-center justify-center rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-white">
+            {value.image || value.pendingImage ? "Reemplazar imagen" : "Seleccionar imagen"}
+            <input
+              accept="image/jpeg,image/png,image/webp"
+              className="sr-only"
+              id="category-image"
+              onChange={(event) => {
+                void selectImage(event.target.files?.[0]);
+                event.target.value = "";
+              }}
+              type="file"
+            />
+          </label>
+          {value.image || value.pendingImage ? (
+            <Button
+              onClick={() =>
+                update({ image: undefined, pendingImage: undefined, removeImage: true })
+              }
+              type="button"
+              variant="danger"
+            >
+              Eliminar imagen
+            </Button>
+          ) : null}
+        </div>
+        {imageError ? (
+          <p className="mt-2 text-sm text-[var(--color-danger)]">{imageError}</p>
+        ) : null}
       </Field>
       <Field id="category-status" label="Estado">
         <Select
@@ -773,11 +856,7 @@ function CategoryForm({
         </Button>
         <Button className="w-full sm:w-auto" disabled={busy} type="submit">
           <CheckIcon />
-          {busy
-            ? "Guardando..."
-            : mode === "create"
-              ? "Guardar categoría"
-              : "Guardar cambios"}
+          {busy ? "Guardando..." : mode === "create" ? "Guardar categoría" : "Guardar cambios"}
         </Button>
       </footer>
     </form>

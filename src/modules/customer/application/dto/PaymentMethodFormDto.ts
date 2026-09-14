@@ -9,6 +9,7 @@
  */
 export interface PaymentMethodFormDto {
   brand: string;
+  issuingBank: string;
   last4: string;
   expirationMonth: string;
   expirationYear: string;

@@ -1,10 +1,11 @@
+import type { CatalogImageSource } from "@/core/entities";
+
 export interface StorefrontCategoryDto {
   id: string;
   name: string;
   slug: string;
   description?: string;
-  imageUrl?: string;
-  imageAlt?: string;
+  imageSource?: CatalogImageSource;
 }
 
 export interface StorefrontDiscoveryProductDto {
@@ -16,7 +17,7 @@ export interface StorefrontDiscoveryProductDto {
   salePrice: number;
   categoryId: string;
   categoryName?: string;
-  imageUrl?: string;
+  imageSource?: CatalogImageSource;
   imageAlt?: string;
 }
 

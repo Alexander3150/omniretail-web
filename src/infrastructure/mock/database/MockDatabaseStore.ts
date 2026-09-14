@@ -71,24 +71,32 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   const normalized = { ...base, ...database } as MockDatabase;
 
   normalized.units = (database.units ?? base.units).map(normalizePersistedUnit);
-  normalized.businessCapabilities = (database.businessCapabilities ?? base.businessCapabilities).map(
+  normalized.ecommerceConfigs = (database.ecommerceConfigs ?? base.ecommerceConfigs).map(
     (config) => ({
       ...config,
-      allowedPosPaymentMethods:
-        config.allowedPosPaymentMethods ??
-        normalized.ecommerceConfigs
-          .find((item) => item.tenantId === config.tenantId)
-          ?.allowedPaymentMethods.filter((method) => method !== "mixed") ?? [
-          PaymentMethod.cash,
-          PaymentMethod.card,
-          PaymentMethod.transfer,
-        ],
+      contactPhone: config.contactPhone?.trim() || undefined,
+      contactEmail: config.contactEmail?.trim().toLowerCase() || undefined,
     }),
   );
+  normalized.businessCapabilities = (
+    database.businessCapabilities ?? base.businessCapabilities
+  ).map((config) => ({
+    ...config,
+    allowedPosPaymentMethods: config.allowedPosPaymentMethods ??
+      normalized.ecommerceConfigs
+        .find((item) => item.tenantId === config.tenantId)
+        ?.allowedPaymentMethods.filter((method) => method !== "mixed") ?? [
+        PaymentMethod.cash,
+        PaymentMethod.card,
+        PaymentMethod.transfer,
+      ],
+  }));
   normalized.productPriceHistory = database.productPriceHistory ?? [];
   normalized.inventoryReservations = database.inventoryReservations ?? [];
   normalized.inventoryReservationConsumeOperations =
     database.inventoryReservationConsumeOperations ?? [];
+  normalized.pickingAssignmentReleases = database.pickingAssignmentReleases ?? [];
+  normalized.pickingIncidents = database.pickingIncidents ?? [];
   normalized.products = (database.products ?? base.products).map((product) => ({
     ...product,
     saleUnitId: product.saleUnitId ?? product.baseUnitId,
@@ -145,6 +153,9 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
       providerPaymentMethodId:
         method.providerPaymentMethodId ?? `pm_demo_${method.id ?? crypto.randomUUID()}`,
       brand: method.brand ?? "unknown",
+      // Backfill para datos persistidos antes de que issuingBank existiera
+      // -- nunca debe faltar en un CustomerPaymentMethod ya construido.
+      issuingBank: method.issuingBank ?? "Banco Industrial",
       last4: method.last4 ?? "0000",
       expirationMonth: method.expirationMonth ?? method.expiryMonth ?? 1,
       expirationYear: method.expirationYear ?? method.expiryYear ?? 2099,

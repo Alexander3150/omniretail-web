@@ -30,7 +30,6 @@ export function useStorefrontCheckout() {
 
       try {
         const nextResult = await service.execute({
-          tenantId,
           items,
           form,
           idempotencyKey: keyRef.current,

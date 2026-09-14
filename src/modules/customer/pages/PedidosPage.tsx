@@ -48,7 +48,9 @@ export function PedidosPage() {
               key={order.id}
             >
               <div>
-                <p className="font-semibold text-[var(--color-title)]">Pedido {order.orderNumber}</p>
+                <p className="font-semibold text-[var(--color-title)]">
+                  Pedido {order.orderNumber}
+                </p>
                 <p className="text-sm text-[var(--color-text-muted)]">
                   {new Date(order.createdAt).toLocaleDateString("es-GT", {
                     year: "numeric",

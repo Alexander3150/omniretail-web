@@ -24,7 +24,7 @@ export function useProductEditorData(productId?: string, branchId?: string, tena
     setLoading(true);
     setError(null);
     try {
-      const nextData = await service.execute(tenantId, productId, branchId);
+      const nextData = await service.execute(productId, branchId);
       if (requestIdRef.current !== requestId) return;
       setData(nextData);
       setLoadedKey(requestKey);
@@ -49,7 +49,7 @@ export function useProductEditorData(productId?: string, branchId?: string, tena
       setError(null);
     });
     service
-      .execute(tenantId, productId, branchId)
+      .execute(productId, branchId)
       .then((nextData) => {
         if (!active || requestIdRef.current !== requestId) return;
         setData(nextData);

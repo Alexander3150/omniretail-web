@@ -22,6 +22,12 @@ export const PASSWORD_POLICY = {
   ALLOW_UNICODE: true,
   ALLOW_SPACES: false,
   REQUIRE_COMPLEXITY_RULES: false, // no forced uppercase/number/symbol combo
+  // No es "complejidad forzada" (mayus/numero/simbolo obligatorios) --
+  // ese combo sigue sin exigirse. Esto es mas angosto: una contraseña
+  // compuesta ÚNICAMENTE de dígitos (p.ej. "12345678") queda rechazada.
+  // Agregado a pedido explicito (reunion con Melbyn), no viene del PDF
+  // de arquitectura.
+  REJECT_ALL_NUMERIC: true,
   FORCE_PERIODIC_CHANGE: false, // no 30/60/90 day rotation
   REJECT_COMMON_OR_COMPROMISED_PASSWORDS: true,
 } as const;
@@ -41,11 +47,17 @@ export function validatePasswordAgainstPolicy(password: string): string | null {
   if (!password) {
     return "La contraseña es obligatoria.";
   }
-  if (password.length < PASSWORD_POLICY.MIN_LENGTH || password.length > PASSWORD_POLICY.MAX_LENGTH) {
+  if (
+    password.length < PASSWORD_POLICY.MIN_LENGTH ||
+    password.length > PASSWORD_POLICY.MAX_LENGTH
+  ) {
     return `La contraseña debe tener entre ${PASSWORD_POLICY.MIN_LENGTH} y ${PASSWORD_POLICY.MAX_LENGTH} caracteres.`;
   }
   if (!PASSWORD_POLICY.ALLOW_SPACES && /\s/.test(password)) {
     return "La contraseña no puede contener espacios.";
+  }
+  if (PASSWORD_POLICY.REJECT_ALL_NUMERIC && /^\d+$/.test(password)) {
+    return "La contraseña no puede contener solo números.";
   }
   return null;
 }
@@ -95,8 +107,7 @@ export const LOCKOUT_RESET_AFTER_MINUTES = 60;
 export const GENERIC_AUTH_ERROR_MESSAGE =
   "No fue posible iniciar sesión. Verifica tus credenciales o intenta más tarde.";
 
-export const GENERIC_RECOVERY_MESSAGE =
-  "Si existe una cuenta asociada, recibirás instrucciones.";
+export const GENERIC_RECOVERY_MESSAGE = "Si existe una cuenta asociada, recibirás instrucciones.";
 
 /**
  * Mensaje para un intento de registro con un correo que ya tiene cuenta

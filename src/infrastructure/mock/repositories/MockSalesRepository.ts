@@ -7,6 +7,9 @@ export class MockSalesRepository extends BaseMockRepository implements SalesRepo
   async getAll() {
     return this.read((db) => db.sales);
   }
+  async listByTenant(tenantId: string) {
+    return this.read((db) => db.sales.filter((item) => item.tenantId === tenantId));
+  }
   async getById(id: string) {
     return this.read((db) => db.sales.find((item) => item.id === id) ?? null);
   }

@@ -11,7 +11,7 @@ estan en `SCOPE.md`.
 
 ## Contracts que consume
 
-UserRepository, RoleRepository, BranchRepository, BusinessConfigRepository, TenantRepository, SupplierRepository, BankAccountRepository, CustomerRepository, AuditLogRepository, CashShiftRepository
+UserRepository, RoleRepository, BranchRepository, BusinessConfigRepository, TenantRepository, SupplierRepository, BankAccountRepository, CustomerRepository, AuditLogRepository, CashShiftRepository, SalesRepository, OrderRepository, InventoryRepository, ReceiptRepository, IncidentTypeRepository, PurchaseOrderRepository, PaymentRepository, ProductRepository
 
 ## Configuracion del negocio
 
@@ -26,6 +26,56 @@ Implementado en esta rama:
 - Enforcement del permiso `admin.business_config.manage`: `SaveBusinessConfigService` recibe los
   permisos de la sesion y rechaza el guardado sin ese permiso; la pantalla ademas no renderiza el
   formulario. Ocultar el menu no se considera enforcement porque la configuracion es tenant-wide.
+
+## Clientes
+
+Pantalla de solo lectura: la administración únicamente puede **ver** el listado de clientes
+ordenado por frecuencia de compra. No hay alta, edición ni archivado desde acá.
+
+Implementado en esta rama:
+
+- Listado comercial de clientes aislado por el `tenantId` de la sesión, con búsqueda por código,
+  nombre o correo y filtro por estado, ordenado por cantidad de compras descendente.
+- `purchaseCount` se calcula en `GetCustomersService` sumando `Order` (e-commerce) y `Sale`
+  (mostrador) por `customerId`, excluyendo `cancelled` en ambos. `Order + Sale` vinculadas por
+  `sourceOrderId` cuentan una sola vez cuando la Order relacionada ya fue contabilizada para el
+  mismo cliente; una `Sale` legacy con `sourceOrderId` inexistente o no contabilizable se cuenta
+  una vez si es válida.
+- `GetCustomersService` lee `Customer`, `Order` y `Sale` mediante boundaries tenant-scoped
+  (`listByTenant`) en los repositorios compartidos. No usa `getAll()` global ni carga registros de
+  otros tenants para luego filtrarlos en memoria.
+- Único permiso `admin.customers.read`; no hay permiso administrativo de gestión. La entrada de
+  navegación usa el mismo permiso que el service, sin la ambigüedad manage-vs-read que tenían otras
+  pantallas de este módulo.
+- Sin mutaciones: no se crean, editan ni archivan clientes desde Administration, y por lo tanto no
+  hay auditoría (`customer.created/updated/archived`) que emitir desde acá.
+- Refresco reactivo ante `customer.changed`, emitido por el módulo `customer` (self-service) cuando
+  el cliente edita su propio perfil.
+- Segmentos fuera de alcance porque no existe `CustomerSegmentRepository`.
+- Ruta privada `/administracion/clientes` y entrada de navegación con `admin.customers.read`.
+
+### Contrato de integracion
+
+Lo que esta pantalla expone al resto del sistema:
+
+- Ruta `/administracion/clientes` e item `administration-customers` en la navegación de
+  Administración, protegido por `admin.customers.read`.
+- Permiso `admin.customers.read`, declarado en `permissions.ts` y asignado a `role-admin` en el
+  seed demo.
+- Refresco reactivo ante el evento `customer.changed`.
+- No emite eventos ni acciones de auditoría propias: es solo lectura.
+
+Lo que asume de la plataforma:
+
+- `useCurrentSession()` entrega el `tenantId` y los permisos efectivos.
+- `RepositoryRegistry` expone `customers`, `orders` y `sales` como fuentes de lectura.
+
+Decisiones abiertas y coordinacion:
+
+- Si en el futuro se necesita distinguir canal (online vs. mostrador) en el ranking, o un rango de
+  fechas, hay que ampliar `GetCustomersService` -- sigue sin requerir contrato nuevo en `core`
+  mientras la fuente siga siendo `orders`/`sales` ya expuestos.
+- Los segmentos permanecen fuera de alcance hasta contar con `CustomerSegmentRepository`.
 
 ## Diseno E-commerce
 
@@ -73,51 +123,24 @@ Decisiones abiertas y coordinacion:
   `feature/admin-branches`, `feature/admin-bank-accounts`, `feature/admin-suppliers` y
   `feature/admin-audit-log`; deben resolverse conservando las entradas de todas las pantallas.
 
-## Auditoria
+## Auditoria (pantalla removida)
 
-Implementado en esta rama:
+La pantalla `/administracion/auditoria` (listado de solo lectura sobre `AuditLogRepository`) se
+removio por decision de producto: exponia `login_success`/`login_failed` de **todos** los usuarios,
+incluyendo clientes (`MockAuthRepository.logAuthAudit` escribe en el mismo `db.auditLogs` que leia
+esta pantalla), lo cual se considero demasiado invasivo para el valor que aportaba.
 
-- Listado de solo lectura sobre `AuditLogRepository.getByTenant(tenantId)`, que garantiza el
-  aislamiento antes de entregar datos al service, y ordenado por `createdAt` descendente.
-- Enforcement de `admin.audit.read` dentro del service; la pantalla tambien presenta un estado sin
-  acceso cuando el permiso no esta disponible.
-- Busqueda libre y filtros por accion, tipo de entidad y rango de fechas, aplicados en memoria por
-  la ausencia de filtros en el contrato actual.
-- Paginacion en cliente con `TablePagination` y detalle en `Modal` con metadata serializada de forma
-  defensiva.
-- Resolucion del actor al nombre del usuario del tenant, con fallback al identificador y a
-  `Sistema` cuando no existe `actorUserId`.
-- Refresco manual y sincronizacion reactiva mediante el evento `audit.changed`, ignorando eventos
-  que no pertenecen al tenant activo.
-- Ruta privada `/administracion/auditoria` y entrada de navegacion con el nuevo permiso
-  `admin.audit.read`.
-- La pantalla no expone ni ejecuta ninguna operacion de escritura sobre auditoria.
+Se eliminaron: `AuditLogPage`, `useAuditLogs`, `AuditLogTable`, `AuditLogFilters`,
+`GetAuditLogsService`, `AuditLogMapper`, `AuditLogDto`, el permiso `admin.audit.read`, la entrada de
+navegacion `administration-audit` y la ruta privada.
 
-### Contrato de integracion
-
-Lo que esta pantalla expone al resto del sistema:
-
-- Ruta `/administracion/auditoria` e item `administration-audit` en la navegacion de
-  Administracion.
-- Permiso de solo lectura `admin.audit.read`.
-- Refresco reactivo ante `audit.changed`; no expone alta, edicion, archivado ni llamadas a
-  `AuditLogRepository.append()`.
-
-Lo que asume de la plataforma:
-
-- `useCurrentSession()` entrega el `tenantId` y los permisos efectivos de la sesion.
-- `RepositoryRegistry` expone `auditLogs` para la lectura y `users` para resolver el nombre del
-  actor.
-- `shared/utils/formatDate` define el formato comun de las fechas mostradas.
-
-Decisiones abiertas y coordinacion:
-
-- `AuditLogRepository` ofrece lectura tenant-scoped, pero no filtros funcionales ni paginacion
-  server-side. El backend futuro debera resolver el volumen real dentro de cada tenant.
-- `admin.audit.read` es un permiso nuevo. Se esperan colisiones de integracion en `permissions.ts`,
-  `demoSeed.ts`, `navigation.ts`, `serviceHelpers.ts`, `README.md` y `SCOPE.md` con
-  `feature/admin-branches`, `feature/admin-bank-accounts` y `feature/admin-suppliers`; deben
-  resolverse conservando las entradas de todas las pantallas.
+**Lo que NO se toco, a proposito:** `AuditLogRepository`, `MockAuditLogRepository` y el metodo
+`append()` siguen intactos. Sucursales, Proveedores y Cuentas bancarias siguen escribiendo su propio
+rastro de auditoria en alta/edicion/archivado (ver sus secciones) -- eso es trazabilidad de negocio
+legitima, no el problema de privacidad detectado. Tampoco se toco `logAuthAudit` en
+`MockAuthRepository`: el conteo de intentos fallidos (`account.failedLoginAttempts`) vive en un
+campo propio de la cuenta, no depende de leer `auditLogs`, asi que remover esta pantalla no afecta
+el lockout de seguridad.
 
 ## Proveedores
 
@@ -214,6 +237,90 @@ Decisiones y coordinación:
   `feature/admin-branches`, `feature/admin-bank-accounts`, `feature/admin-suppliers`,
   `feature/admin-audit-log`, `feature/admin-ecommerce-config` y `feature/admin-customers`; al
   integrarlas deben conservarse todas las entradas.
+
+## Dashboard
+
+La ruta `/administracion/dashboard` expone un resumen ejecutivo de solo lectura y se integra en la
+navegación como `administration-dashboard`. Requiere el permiso nuevo
+`admin.dashboard.read` y se refresca ante `sale.changed`, `order.changed`, `stock.changed` y
+`receipt.changed`.
+
+La pantalla agrega ventas del día y del mes calendario local, alertas de stock, pedidos que esperan
+atención operativa y las cinco incidencias de recepción más recientes. No expone operaciones de
+escritura. Esta rama también agrega `KPICard` como componente shared puramente presentacional;
+su API acepta etiqueta, valor, texto secundario, tono y estado de carga.
+
+### Contrato de integracion
+
+La feature asume:
+
+- `useCurrentSession()` para resolver `tenantId`, permisos y estado de sesión.
+- `RepositoryRegistry.sales`, `orders`, `branches`, `receipts` e `incidentTypes` con sus
+  contratos vigentes.
+- `formatCurrency` y `formatDate` de `shared/utils` para presentar montos y fechas.
+
+Decisiones y coordinación:
+
+- Lee contratos compartidos de Riquelme (`sales`), María (`orders`) y Melbyn (`inventory`,
+  `receipts`). Si esos contratos cambian, esta agregación debe revisarse.
+- El KPI de stock NO recalcula disponibilidad por su cuenta: instancia
+  `GetInventoryAlertsService` (módulo `inventory`, dueño de la disponibilidad canónica —
+  físico + reservas + lotes + vencimiento + seriales + kits derivados) una vez por sucursal activa
+  del tenant y suma `kpis.outOfStock`/`kpis.lowStock`. Administration no mantiene una segunda regla
+  de bajo stock.
+- El KPI de "pedidos pendientes" reutiliza `OrderRepository.getPendingForLogistics()` (la cola
+  operativa real: `confirmed`, `preparing`, `picking`, `packing`, `ready_for_dispatch`), no
+  `OrderStatus.pending` en solitario — ese estado todavía no entró a operación.
+- `KPICard` es un componente shared nuevo y presentacional; coordinar su evolución si otro equipo
+  necesita ampliar la API.
+- Con el seed actual, ventas de hoy y del mes muestran cero porque todos los `createdAt` son
+  `2026-01-01T12:00:00.000Z`. No se reemplaza el calendario real por una ventana móvil.
+- `admin.dashboard.read` es un permiso nuevo. Se esperan colisiones en `permissions.ts`,
+  `demoSeed.ts`, `navigation.ts`, `serviceHelpers.ts`, `README.md` y `SCOPE.md` con las ramas
+  previas de administration; al integrarlas deben conservarse todas las entradas.
+
+## Reportes
+
+La ruta `/administracion/reportes` expone reportes agregados de ventas, compras, movimientos de
+inventario y pagos. Se integra en la navegación como `administration-reports`, exige
+`admin.reports.read` para consultar y `admin.reports.export` para descargar el resultado visible
+como CSV. Se refresca ante `sale.changed`, `purchase-order.changed`, `inventory.changed` y
+`payment.changed`.
+
+La pantalla solo consulta contratos compartidos y agrega sus resultados en memoria. No persiste
+reportes, no modifica las fuentes y no escribe auditoría. El helper CSV vive dentro de
+`administration`; no se promovió a `shared` porque esta entrega no establece una API transversal.
+La exportación conserva BOM UTF-8, escapa la estructura CSV y neutraliza texto que Excel o Sheets
+podrían interpretar como fórmula, sin alterar valores numéricos del dominio.
+
+### Contrato de integracion
+
+La feature asume:
+
+- `useCurrentSession()` únicamente para estados visuales. `GetReportsService` vuelve a resolver la
+  sesión, el actor, su tenant y el Role mediante `auth`, `users` y `roles`; ni lectura ni exportación
+  aceptan `tenantId` o permisos declarados por el caller.
+- `RepositoryRegistry.sales`, `purchaseOrders`, `inventory`, `payments`, `branches`, `suppliers`
+  y `products` con sus contratos vigentes.
+- `formatCurrency` y `formatDate` de `shared/utils` para presentar montos y fechas.
+
+Decisiones y coordinación:
+
+- Lee contratos de Riquelme (`sales`, `payments`) y Melbyn (`purchaseOrders`, `inventory`,
+  `suppliers`, `products`). Si cambian, esta agregación debe revisarse.
+- La generación y descarga de CSV permanecen como helpers module-local.
+- Compras permite filtrar por sucursal y movimientos por producto, usando los IDs ya disponibles
+  en las entidades consultadas.
+- Los rangos y las fechas exportadas usan el mismo día calendario local que muestra la tabla.
+- Los totales de ventas incluyen únicamente ventas `completed`; los de compras excluyen
+  `draft` y `cancelled`. La UI identifica expresamente los registros excluidos y la semántica del
+  monto para no presentarlos como un total financiero indiferenciado.
+- La mayoría de fechas del seed son `2026-01-01`; hay que ajustar el rango de fechas para ver esos
+  datos en la demo.
+- `admin.reports.read` y `admin.reports.export` son permisos nuevos. Se esperan colisiones en
+  `permissions.ts`, `demoSeed.ts`, `navigation.ts`, `serviceHelpers.ts`, `README.md` y `SCOPE.md`
+  con las ocho ramas previas de administration; al integrarlas deben conservarse todas las
+  entradas.
 
 ## Sucursales
 
