@@ -22,6 +22,7 @@ export interface CreateOrderWithPaymentResult {
 export interface OrderRepository {
   getAll(): Promise<Order[]>;
   listByTenant(tenantId: string): Promise<Order[]>;
+  listByBranch(tenantId: string, branchId: string): Promise<Order[]>;
   getByIdsScoped(tenantId: string, branchId: string, ids: string[]): Promise<Order[]>;
   getById(id: string): Promise<Order | null>;
   getByTrackingToken(tenantId: string, trackingToken: string): Promise<Order | null>;

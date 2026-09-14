@@ -1446,7 +1446,7 @@ const legacyDemoSeedDatabase: MockDatabase = {
       tenantId: "tenant-demo",
       branchId: "branch-centro",
       orderNumber: "WEB-002",
-      source: OrderSource.ecommerce,
+      source: OrderSource.pos,
       guestCustomer: { name: "Invitado Demo", email: "guest@example.com" },
       items: [
         {
@@ -1586,6 +1586,7 @@ const legacyDemoSeedDatabase: MockDatabase = {
       updatedAt: now,
     },
   ],
+  storePickupDeliveries: [],
   packages: [
     {
       id: "package-001",

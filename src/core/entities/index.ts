@@ -68,6 +68,7 @@ export type * from "./PickingItem";
 export type * from "./PickingAssignmentRelease";
 export type * from "./PickingIncident";
 export type * from "./Dispatch";
+export type * from "./StorePickupDelivery";
 export type * from "./Package";
 export type * from "./Notification";
 export type * from "./AuditLog";

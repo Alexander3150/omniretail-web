@@ -28,7 +28,9 @@ export class DispatchApplicationService {
 
   async getPreparedQueue(selectedBranchId: string): Promise<PreparedOrderQueueItemDto[]> {
     const context = await this.context(selectedBranchId, DISPATCH_READ);
-    const orders = (await this.repositories.orders.getAll()).filter(
+    const orders = (
+      await this.repositories.orders.listByBranch(context.tenantId, context.branchId)
+    ).filter(
       (order) =>
         order.tenantId === context.tenantId &&
         order.branchId === context.branchId &&

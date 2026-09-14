@@ -54,6 +54,49 @@ export interface GetPickingInventoryAvailabilityInput {
   productId: string;
   at?: string;
 }
+
+export interface PickingFulfillmentTraceLocation {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface PickingFulfillmentTraceLot {
+  id: string;
+  number: string;
+  expiresAt?: string;
+}
+
+export interface PickingFulfillmentTraceSerial {
+  id: string;
+  number: string;
+}
+
+export interface PickingFulfillmentTraceAllocation {
+  inventoryMovementId: string;
+  reservationId: string;
+  quantity: number;
+  location?: PickingFulfillmentTraceLocation;
+  lot?: PickingFulfillmentTraceLot;
+  serial?: PickingFulfillmentTraceSerial;
+  consumedAt: string;
+}
+
+export interface PickingFulfillmentItemTrace {
+  pickingItemId: string;
+  orderItemId: string;
+  productId: string;
+  requestedQuantity: number;
+  pickedQuantity: number;
+  allocations: PickingFulfillmentTraceAllocation[];
+}
+
+export interface GetPickingFulfillmentTraceInput {
+  tenantId: string;
+  branchId: string;
+  orderId: string;
+  pickingOrderId: string;
+}
 export interface RegisterInventoryMovementInput {
   tenantId: string;
   branchId: string;
@@ -119,6 +162,9 @@ export interface InventoryRepository {
   getPickingAvailability(
     input: GetPickingInventoryAvailabilityInput,
   ): Promise<PickingInventoryAvailability>;
+  getPickingFulfillmentTrace(
+    input: GetPickingFulfillmentTraceInput,
+  ): Promise<PickingFulfillmentItemTrace[]>;
   getBalanceByProduct(productId: string, branchId?: string): Promise<InventoryBalance[]>;
   getMovements(productId?: string): Promise<InventoryMovement[]>;
   getLots(productId?: string): Promise<StockLot[]>;
