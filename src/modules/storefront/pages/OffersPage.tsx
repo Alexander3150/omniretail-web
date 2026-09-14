@@ -1,11 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { StorefrontCatalogImage } from "@/modules/storefront/components/StorefrontCatalogImage";
+import { useState } from "react";
 import { useStorefrontOffers } from "@/modules/storefront/hooks/useStorefrontOffers";
+import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
+import { useToast } from "@/shared/components/Toast";
+import { StorefrontCatalogImage } from "@/modules/storefront/components/StorefrontCatalogImage";
 
 export function OffersPage() {
   const { items, loading, error } = useStorefrontOffers();
+  const { addProduct } = useStorefrontCart();
+  const { showToast } = useToast();
+  const [addedProductId, setAddedProductId] = useState<string | null>(null);
+
+  const addOffer = async (productId: string, name: string) => {
+    await addProduct(productId);
+    setAddedProductId(productId);
+    showToast({
+      title: "Producto agregado al carrito",
+      description: `${name} ya está en tu selección.`,
+      tone: "success",
+    });
+    window.setTimeout(() => setAddedProductId(null), 1400);
+  };
 
   if (loading) {
     return (
@@ -67,50 +84,50 @@ export function OffersPage() {
             {items.map((item) => (
               <article
                 key={item.productId}
-                className="group flex min-h-72 flex-col rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-md"
+                className="group overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-md"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <p className="rounded-full bg-[var(--color-primary)]/15 px-3 py-1 text-xs font-bold text-[var(--color-title)]">
-                    {item.promotionName}
-                  </p>
-                  <span className="text-sm font-bold text-[var(--color-success)]">
-                    -Q{item.discount.toFixed(2)}
-                  </span>
-                </div>
-                <StorefrontCatalogImage
-                  alt={item.imageAlt ?? item.name}
-                  className="mt-5 h-40 w-full rounded-xl bg-slate-50 object-cover"
-                  source={item.imageSource}
-                />
-                <p className="mt-5 text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-                  {item.sku}
-                </p>
-                <h3 className="mt-2 text-xl font-bold leading-tight text-[var(--color-title)]">
-                  {item.name}
-                </h3>
-                <p className="mt-3 line-clamp-2 text-sm leading-6 text-[var(--color-text-muted)]">
-                  {item.description ?? "Oferta disponible en e-commerce."}
-                </p>
-                <div className="mt-auto border-t border-[var(--color-border)] pt-5">
-                  <p className="text-sm text-[var(--color-text-muted)] line-through">
-                    Q{item.basePrice.toFixed(2)}
-                  </p>
-                  <div className="mt-1 flex items-end justify-between gap-3">
-                    <div>
-                      <p className="text-2xl font-bold text-[var(--color-title)]">
+                <Link className="block" href={`/catalogo/${item.productId}`}>
+                  <div className="relative bg-slate-50">
+                    <StorefrontCatalogImage
+                      alt={item.imageAlt ?? item.name}
+                      className="h-52 w-full object-contain object-center p-4 transition duration-300 group-hover:scale-[1.03]"
+                      source={item.imageSource}
+                    />
+                    <span className="absolute left-3 top-3 rounded-md bg-red-700 px-3 py-1 text-sm font-black text-white">
+                      -{Math.round((item.discount / item.basePrice) * 100)}%
+                    </span>
+                    <span className="absolute left-3 top-12 rounded-md bg-[var(--color-primary)]/90 px-2 py-1 text-xs font-bold text-[var(--color-topbar)]">
+                      {item.promotionName}
+                    </span>
+                  </div>
+                  <div className="p-5">
+                    <p className="text-xs font-black uppercase tracking-wider text-[var(--color-primary-hover)]">
+                      {item.sku}
+                    </p>
+                    <h3 className="mt-2 line-clamp-2 text-xl font-bold leading-tight text-[var(--color-title)]">
+                      {item.name}
+                    </h3>
+                    <p className="mt-3 inline-flex rounded-md bg-[var(--color-success)]/10 px-2 py-1 text-sm font-bold text-[var(--color-success)]">
+                      Ahorras: Q{item.discount.toFixed(2)}
+                    </p>
+                    <div className="mt-3 border-t border-[var(--color-border)] pt-3">
+                      <p className="text-sm text-[var(--color-text-muted)] line-through">
+                        Q{item.basePrice.toFixed(2)}
+                      </p>
+                      <p className="mt-1 text-2xl font-black text-red-700">
                         Q{item.effectivePrice.toFixed(2)}
                       </p>
-                      <p className="mt-1 text-sm font-semibold text-[var(--color-success)]">
-                        Ahorras Q{item.discount.toFixed(2)}
-                      </p>
                     </div>
-                    <Link
-                      className="rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-bold text-[var(--color-topbar)] transition hover:brightness-95"
-                      href={`/catalogo/${item.productId}`}
-                    >
-                      Ver
-                    </Link>
                   </div>
+                </Link>
+                <div className="flex justify-end px-5 pb-5">
+                  <button
+                    className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-bold text-[var(--color-topbar)] transition hover:bg-[var(--color-primary-hover)]"
+                    onClick={() => void addOffer(item.productId, item.name)}
+                    type="button"
+                  >
+                    {addedProductId === item.productId ? "Agregado" : "Agregar"}
+                  </button>
                 </div>
               </article>
             ))}
