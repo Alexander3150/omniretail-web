@@ -3,6 +3,8 @@ export interface StorefrontCategoryDto {
   name: string;
   slug: string;
   description?: string;
+  imageUrl?: string;
+  imageAlt?: string;
 }
 
 export interface StorefrontDiscoveryProductDto {

@@ -33,7 +33,14 @@ export class GetStorefrontDiscoveryService {
     );
 
     return {
-      categories: categories.map(({ id, name, slug, description }) => ({ id, name, slug, description })),
+      categories: categories.map(({ id, name, slug, description, imageUrl, imageAlt }) => ({
+        id,
+        name,
+        slug,
+        description,
+        imageUrl,
+        imageAlt,
+      })),
       products: productsWithMedia,
     };
   }

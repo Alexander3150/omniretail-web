@@ -1,19 +1,15 @@
 "use client";
 
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { TenantStatus } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { publicStorefrontSlug } from "@/config/publicStorefront";
 
 interface PublicTenantContextValue {
   tenantId: string | null;
+  storeName: string | null;
+  requireAccountForCheckout: boolean;
+  guestTrackingEnabled: boolean;
   loading: boolean;
   error: string | null;
 }
@@ -23,6 +19,9 @@ const PublicTenantContext = createContext<PublicTenantContextValue | null>(null)
 export function PublicTenantProvider({ children }: { children: ReactNode }) {
   const { tenants, businessConfig } = useRepositories();
   const [tenantId, setTenantId] = useState<string | null>(null);
+  const [storeName, setStoreName] = useState<string | null>(null);
+  const [requireAccountForCheckout, setRequireAccountForCheckout] = useState(false);
+  const [guestTrackingEnabled, setGuestTrackingEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,7 +40,12 @@ export function PublicTenantProvider({ children }: { children: ReactNode }) {
           throw new Error("Ecommerce unavailable");
         }
 
-        if (active) setTenantId(tenant.id);
+        if (active) {
+          setTenantId(tenant.id);
+          setStoreName(ecommerceConfig.storeName.trim() || tenant.name);
+          setRequireAccountForCheckout(ecommerceConfig.requireAccountForCheckout);
+          setGuestTrackingEnabled(ecommerceConfig.guestTrackingEnabled);
+        }
       } catch {
         if (active) setError("La tienda pública no está disponible.");
       } finally {
@@ -57,8 +61,15 @@ export function PublicTenantProvider({ children }: { children: ReactNode }) {
   }, [businessConfig, tenants]);
 
   const value = useMemo<PublicTenantContextValue>(
-    () => ({ tenantId, loading, error }),
-    [error, loading, tenantId],
+    () => ({
+      tenantId,
+      storeName,
+      requireAccountForCheckout,
+      guestTrackingEnabled,
+      loading,
+      error,
+    }),
+    [error, guestTrackingEnabled, loading, requireAccountForCheckout, storeName, tenantId],
   );
 
   return <PublicTenantContext.Provider value={value}>{children}</PublicTenantContext.Provider>;

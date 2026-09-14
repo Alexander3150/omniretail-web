@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import {
   createStorefrontCartItem,
@@ -40,10 +33,7 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
     () => allItems.filter((item) => item.tenantId === tenantId),
     [allItems, tenantId],
   );
-  const itemCount = useMemo(
-    () => items.reduce((total, item) => total + item.quantity, 0),
-    [items],
-  );
+  const itemCount = useMemo(() => items.reduce((total, item) => total + item.quantity, 0), [items]);
   const subtotal = useMemo(
     () => items.reduce((total, item) => total + item.unitPrice * item.quantity, 0),
     [items],
@@ -54,12 +44,17 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
       if (!tenantId) return;
       const product = await publishedProductService.execute(tenantId, productId);
       if (!product) return;
+      const primaryMedia = await repositories.productMedia.getPrimaryByProduct(product.id);
+      const media =
+        primaryMedia?.tenantId === tenantId && primaryMedia.type === "image"
+          ? { imageUrl: primaryMedia.url, imageAlt: primaryMedia.alt }
+          : undefined;
 
       setAllItems((current) => {
         const existing = current.find(
           (item) => item.tenantId === tenantId && item.productId === product.id,
         );
-        if (!existing) return [...current, createStorefrontCartItem(product)];
+        if (!existing) return [...current, createStorefrontCartItem(product, media)];
 
         return current.map((item) =>
           item === existing
@@ -67,6 +62,7 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
                 ...item,
                 sku: product.sku,
                 name: product.name,
+                ...media,
                 unitPrice: product.salePrice,
                 quantity: item.quantity + 1,
               }
@@ -74,7 +70,7 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
         );
       });
     },
-    [publishedProductService, tenantId],
+    [publishedProductService, repositories.productMedia, tenantId],
   );
 
   const updateQuantity = useCallback(

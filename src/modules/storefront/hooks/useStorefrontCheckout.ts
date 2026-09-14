@@ -2,9 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
-import type {
-  StorefrontCheckoutFormDto,
-} from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
+import type { StorefrontCheckoutFormDto } from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
 import { CreateStorefrontCheckoutService } from "@/modules/storefront/application/services/CreateStorefrontCheckoutService";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
 import { useStorefrontCheckoutConfirmation } from "@/modules/storefront/providers/StorefrontCheckoutConfirmationProvider";
@@ -40,7 +38,14 @@ export function useStorefrontCheckout() {
         setResult(nextResult);
         clearCart();
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "No se pudo procesar el pedido.");
+        keyRef.current = null;
+        const message = cause instanceof Error ? cause.message : "";
+        setError(
+          message.includes("Inventory reservation conflict") ||
+            message.includes("Insufficient stock")
+            ? "No se pudo reservar uno de los productos. Revisa la disponibilidad o ajusta el carrito."
+            : message || "No se pudo procesar el pedido.",
+        );
       } finally {
         setSubmitting(false);
       }

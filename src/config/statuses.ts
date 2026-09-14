@@ -3,6 +3,7 @@ export type StatusTone = "neutral" | "info" | "success" | "warning" | "danger";
 export interface StatusDefinition {
   label: string;
   tone: StatusTone;
+  storefrontOrderProgress?: "confirmed" | "preparing" | "sent";
 }
 
 export const statusesConfig: Record<string, StatusDefinition> = {
@@ -12,14 +13,22 @@ export const statusesConfig: Record<string, StatusDefinition> = {
   blocked: { label: "Bloqueado", tone: "danger" },
   published: { label: "Publicado", tone: "success" },
   pending: { label: "Pendiente", tone: "warning" },
-  confirmed: { label: "Confirmado", tone: "info" },
-  preparing: { label: "Preparando", tone: "info" },
-  picking: { label: "Picking", tone: "info" },
-  packing: { label: "Empacando", tone: "info" },
-  ready_for_pickup: { label: "Listo para recoger", tone: "success" },
-  ready_for_dispatch: { label: "Listo para despacho", tone: "success" },
-  dispatched: { label: "Despachado", tone: "info" },
-  delivered: { label: "Entregado", tone: "success" },
+  confirmed: { label: "Confirmado", tone: "info", storefrontOrderProgress: "confirmed" },
+  preparing: { label: "Preparando", tone: "info", storefrontOrderProgress: "preparing" },
+  picking: { label: "Picking", tone: "info", storefrontOrderProgress: "preparing" },
+  packing: { label: "Empacando", tone: "info", storefrontOrderProgress: "preparing" },
+  ready_for_pickup: {
+    label: "Listo para recoger",
+    tone: "success",
+    storefrontOrderProgress: "preparing",
+  },
+  ready_for_dispatch: {
+    label: "Listo para despacho",
+    tone: "success",
+    storefrontOrderProgress: "preparing",
+  },
+  dispatched: { label: "Despachado", tone: "info", storefrontOrderProgress: "sent" },
+  delivered: { label: "Entregado", tone: "success", storefrontOrderProgress: "sent" },
   cancelled: { label: "Cancelado", tone: "danger" },
   approved: { label: "Aprobado", tone: "success" },
   rejected: { label: "Rechazado", tone: "danger" },

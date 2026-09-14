@@ -8,6 +8,8 @@ export interface Category {
   name: string;
   slug: string;
   description?: string;
+  imageUrl?: string;
+  imageAlt?: string;
   status: CategoryStatus;
   createdAt: ISODateString;
   updatedAt: ISODateString;

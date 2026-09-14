@@ -70,6 +70,8 @@ export class CreateStorefrontCheckoutService {
       throw new Error("La sucursal de despacho no está disponible.");
     }
 
+    const checkoutToken = idempotencyKey.replaceAll("-", "");
+    const orderNumber = `WEB-${checkoutToken.slice(0, 10).toUpperCase()}`;
     const orderItems = products.map(({ item, product }, index) => {
       if (!product) throw new Error("Uno de los productos ya no está disponible para e-commerce.");
       if (
@@ -82,7 +84,7 @@ export class CreateStorefrontCheckoutService {
 
       const unitPrice = product.salePrice;
       return {
-        id: `storefront-item-${index}-${product.id}`,
+        id: `storefront-item-${checkoutToken}-${index}-${product.id}`,
         productId: product.id,
         skuSnapshot: product.sku,
         nameSnapshot: product.name,
@@ -93,8 +95,6 @@ export class CreateStorefrontCheckoutService {
       };
     });
     const subtotal = orderItems.reduce((total, item) => total + item.subtotal, 0);
-    const checkoutToken = idempotencyKey.replaceAll("-", "");
-    const orderNumber = `WEB-${checkoutToken.slice(0, 10).toUpperCase()}`;
     const trackingToken = checkoutToken;
 
     const { order, payment } = await this.repositories.orders.createWithPayment({
@@ -130,7 +130,7 @@ export class CreateStorefrontCheckoutService {
         status: PaymentStatus.pending,
         amount: subtotal,
         currency: "GTQ",
-        reference: `CARD-SIMULATED-${form.cardLastFour}`,
+        reference: "CARD-SIMULATED",
       },
     });
     const confirmation = await this.paymentConfirmationService.execute({
@@ -150,6 +150,23 @@ export class CreateStorefrontCheckoutService {
       orderStatus: confirmation.order.status,
       paymentStatus: confirmation.payment.status,
       hasInventoryReservations: confirmation.inventoryReservations.length > 0,
+      deliveryAddress: {
+        recipientName: form.fullName.trim(),
+        line1: form.addressLine1.trim(),
+        line2: form.addressLine2?.trim() || undefined,
+        city: form.city.trim(),
+        department: form.department?.trim() || undefined,
+        phone: form.phone.trim(),
+      },
+      items: orderItems.map((item, index) => ({
+        sku: item.skuSnapshot,
+        name: item.nameSnapshot,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        subtotal: item.subtotal,
+        imageUrl: items[index]?.imageUrl,
+        imageAlt: items[index]?.imageAlt,
+      })),
     };
   }
 }
@@ -167,8 +184,4 @@ function assertCheckoutForm(form: StorefrontCheckoutFormDto): void {
   if (!form.phone.trim()) throw new Error("Ingresa un teléfono de contacto.");
   if (!form.addressLine1.trim()) throw new Error("Ingresa la dirección de entrega.");
   if (!form.city.trim()) throw new Error("Ingresa la ciudad de entrega.");
-  if (!form.cardholderName.trim()) throw new Error("Ingresa el titular de la tarjeta.");
-  if (!/^\d{4}$/.test(form.cardLastFour)) {
-    throw new Error("Ingresa los últimos 4 dígitos de la tarjeta.");
-  }
 }

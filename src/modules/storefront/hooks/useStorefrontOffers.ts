@@ -13,6 +13,7 @@ export interface StorefrontOfferItem {
   name: string;
   sku: string;
   description?: string;
+  categoryName?: string;
   imageUrl?: string;
   imageAlt?: string;
   basePrice: number;
@@ -82,10 +83,11 @@ export function useStorefrontOffers() {
           throw new Error("E-commerce branch is not configured");
 
         const ecommerceBranchId = ecommerceConfig.defaultBranchId;
-        const [ecommerceBranch, products, promotions] = await Promise.all([
+        const [ecommerceBranch, products, promotions, categories] = await Promise.all([
           repositories.branches.getById(ecommerceBranchId),
           repositories.products.getPublishedForEcommerce(tenantId),
           repositories.promotions.getActive(),
+          repositories.categories.getActive(),
         ]);
         if (
           !ecommerceBranch ||
@@ -95,6 +97,11 @@ export function useStorefrontOffers() {
           throw new Error("E-commerce branch is not available");
         }
         const now = new Date();
+        const categoryNames = new Map(
+          categories
+            .filter((category) => category.tenantId === tenantId)
+            .map((category) => [category.id, category.name]),
+        );
         const offers = (
           await Promise.all(
             products.map(async (product) => {
@@ -119,6 +126,7 @@ export function useStorefrontOffers() {
                 productId: product.id,
                 name: product.name,
                 sku: product.sku,
+                categoryName: categoryNames.get(product.categoryId),
                 description: product.description,
                 imageUrl:
                   media?.tenantId === tenantId && media.type === "image" ? media.url : undefined,
