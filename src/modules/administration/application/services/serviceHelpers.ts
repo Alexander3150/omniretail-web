@@ -1,4 +1,4 @@
-import type { BankAccount, Branch, Supplier } from "@/core/entities";
+import type { BankAccount, Branch, Role, Supplier } from "@/core/entities";
 import { BranchStatus, BranchType } from "@/core/enums";
 import type { BranchInputDto } from "@/modules/administration/application/dto/BranchDto";
 import {
@@ -304,6 +304,56 @@ export function ensureBankAccountBranchIds(
         "No se puede habilitar una sucursal inactiva para la cuenta bancaria.",
       );
     }
+  }
+}
+
+/**
+ * Leer roles acepta `admin.roles.read` o `admin.roles.manage`, mismo criterio defensivo que
+ * Sucursales. La navegación se protege con `manage` porque es la audiencia real de la pantalla
+ * (ver "Sucursales" en README.md); este camino de solo lectura queda como capa defensiva para un
+ * futuro rol read-only.
+ */
+export function ensureCanReadRoles(permissions: readonly string[]) {
+  if (permissions.includes("admin.roles.read") || permissions.includes("admin.roles.manage")) {
+    return;
+  }
+
+  throw new AdministrationServiceError("No tenés permiso para consultar roles.");
+}
+
+export function ensureCanManageRoles(permissions: readonly string[]) {
+  if (permissions.includes("admin.roles.manage")) return;
+
+  throw new AdministrationServiceError("No tenés permiso para gestionar roles.");
+}
+
+export function ensureRoleTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
+}
+
+export function ensureRoleActor(actorUserId: string) {
+  if (actorUserId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
+}
+
+export function ensureRoleBelongsToTenant(role: Role | null, tenantId: string): Role {
+  if (role?.tenantId === tenantId) return role;
+
+  throw new AdministrationServiceError("El rol no está disponible para el negocio activo.");
+}
+
+/**
+ * Los roles `isSystem` (los que trae la plataforma en el seed) nunca se editan ni archivan desde
+ * esta pantalla: evita que alguien se quite sin querer el permiso de administrar roles, o rompa un
+ * rol del que dependen otras cuentas. El repositorio en sí no protege esto (es CRUD genérico,
+ * igual que Branch/Supplier) -- la invariante vive acá, en la capa de aplicación.
+ */
+export function ensureRoleNotSystem(role: Role) {
+  if (role.isSystem) {
+    throw new AdministrationServiceError("Los roles del sistema no se pueden editar ni archivar.");
   }
 }
 

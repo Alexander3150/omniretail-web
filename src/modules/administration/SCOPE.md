@@ -41,7 +41,7 @@
 | 8   | Caja                      | `/administracion/caja`                  | `CashShift`, `CashMovement`   | ✅ **Implementada** — solo lectura  |
 | 9   | Dashboard                 | `/administracion/dashboard`             | Agregación                    | ✅ **Implementada**                 |
 | 10  | Reportes                  | `/administracion/reportes`              | Agregación                    | ✅ **Implementada**                 |
-| 11  | Roles y permisos          | `/administracion/roles-permisos`        | `Role`, `Permission`          | ⛔ No implementada — contrato ya desbloqueado (`chore/admin-role-contracts`) |
+| 11  | Roles y permisos          | `/administracion/roles-permisos`        | `Role`, `Permission`          | ✅ **Implementada** (`feature/admin-roles-permissions`) |
 | 12  | Usuarios                  | `/administracion/usuarios`              | `User` (+ `AuthAccount`)      | ⛔ Bloqueada — depende de #11       |
 | 13  | Planes y facturación SaaS | `/administracion/planes-facturacion`    | _(sin definir)_               | ⛔ Bloqueada — modelo               |
 | 14  | Sincronización            | `/administracion/sincronizacion`        | _(sin definir)_               | ⛔ Bloqueada — modelo               |
@@ -634,14 +634,82 @@ Sin reglas propias: 100% agregación vía repositorios ajenos. `KPICard` se agre
 Agrega `Sale`, `PurchaseOrder`, `InventoryMovement`, `Payment` vía repositorios compartidos.
 Nunca crear un almacén paralelo de reportes. Dejar para el final.
 
-### 12.11 Roles y permisos ⛔
+### 12.11 Roles y permisos ✅ implementada
 
-Listado: `name`, cantidad de permisos, `branchScope`, `isSystem`.
+**Decisión de dominio (PR #88): Role vs User.** `Role` determina `name`/`description`/`status`/
+`permissions`. Qué sucursales puede operar un usuario es responsabilidad de `User`
+(`roleId` + sucursales asignadas), no del Rol — se resuelve en `admin-users`, no acá.
+Create/Edit Role **no** ofrece ni acepta `branchScope`: `RoleInputDto` no incluye ese campo.
+`CreateRoleService` fija `branchScope: "assigned"` (el valor más restrictivo del contrato
+actual — fail-closed) sin exponerlo como decisión funcional; `UpdateRoleService` no lo toca, así
+que un rol conserva el valor con el que nació.
+
+`branchScope` sigue existiendo en `Role` y en `RoleRepository` — **no se borró del dominio**.
+Consumidores reales verificados antes de tocar nada (no se puede eliminar sin romperlos):
+`core/scopes/userBranchAccess.ts` (`isBranchIdInUserScope`/`canUserAccessBranch`),
+`resolveCurrentSessionSnapshot.ts` (auth), `ScopedActiveBranchProvider.tsx` (auth),
+`PickingAuthorizationContext.ts` / `DispatchAuthorizationContext.ts` (logistics),
+`cashShiftServiceContext.ts` / `returnOperationContext.ts` / `GetPosSalesHistoryService.ts` (pos),
+`GetCashShiftsService.ts` (administration). Deuda de migración explícita: cuando `admin-users`
+exista, el modelo objetivo es `canPerform = roleHasPermission AND userHasBranchAccess` (dos
+chequeos independientes); hoy siguen combinados en una sola función porque `User` todavía no
+tiene su propio mecanismo de alcance de sucursal fuera de `Role.branchScope`. No se implementa ese
+resolver acá — pertenece a `rbac-foundation`/`admin-users`.
+
+**Delegación de privilegios (seguridad).** Un actor con `admin.roles.manage` solo puede otorgar
+permisos que él mismo posee: `requestedPermissions ⊆ actorEffectivePermissions`
+(`ensureDelegatablePermissions` en `role.validation.ts`, aplicada en `CreateRoleService` y
+`UpdateRoleService`). `actorEffectivePermissions` es el arreglo `permissions` de la sesión actual
+(`useCurrentSession()` → mismo valor que ya viajaba a cada service). **No existe en el código un
+concepto autoritativo de "super admin"/"platform admin"/bypass por `isSystem`** — se buscó
+explícitamente antes de escribir esta regla (grep sin resultados) — así que no se agregó ninguna
+excepción: ni siquiera `role-admin` (que hoy NO tiene los 36 permisos del catálogo, solo los
+`admin.*`) puede delegar un permiso fuera de su propia lista. Es una limitación real y esperada de
+esta entrega, no un bug. El resolver canónico manage→read (`resolvePermission.ts`,
+`hasPermission`) existe en `feature/rbac-foundation` pero esa rama no está mergeada ni
+reconciliada con ésta — la validación acá es subset literal, sin resolución manage→read; se puede
+adoptar `resolvePermission.ts` como follow-up una vez reconciliada esa rama.
+
+**Estado editable.** Create/Edit solo ofrece `active`/`inactive` — `archived` no es un valor
+asignable por ese camino (`role.validation.ts` lo rechaza aunque llegue por una llamada directa
+al service, no solo oculto en el `<select>`). Archivar es exclusivamente `ArchiveRoleService`
+(`archiveScoped`), que conserva tenant scope, `ensureRoleNotSystem`, auditoría y el evento
+`role.changed`. Un rol ya archivado no se puede volver a abrir en "Editar" desde esta pantalla
+(no hay flujo de reactivación todavía).
+
+**Lectura vs gestión.** `admin.roles.read` navega en modo lectura (ve tabla y "Ver permisos"),
+`admin.roles.manage` además puede crear/editar/archivar — ya separado correctamente en
+`RolesPage`/`RoleTable` (columna de acciones y botón "Nuevo rol" solo si `canManage`). La entrada
+del menú lateral sigue protegida únicamente con `admin.roles.manage`, mismo criterio ya documentado
+para Sucursales: `NavigationItem.permission` es un único string sin mecanismo "cualquiera de estos
+permisos", así que un usuario con solo `admin.roles.read` no ve el ítem en el Sidebar aunque el
+service/página ya lo dejarían entrar por URL directa. No es contradictorio a propósito — es la
+misma limitación de plataforma que Sucursales, no algo nuevo de esta pantalla; resolverlo de raíz
+(permiso múltiple en `NavigationItem`) es un cambio transversal a `shared/navigation` fuera de
+alcance acá.
+
+**Corrección de documentación:** la descripción original del PR #88 mencionaba haber reconciliado
+con `docs/RBAC_PLAN.md`. Ese archivo **no está presente en esta rama** (solo existe, sin mergear,
+en `feature/rbac-foundation`) — se corrige acá para no afirmar algo falso; la reconciliación real
+fue solo sobre el contrato de `RoleRepository` (`chore/admin-role-contracts` + el hardening
+posterior), no sobre el documento completo.
+
+Listado: `name`, `branchScope`, detalle de permisos en modo lectura (modal, incluye conteo),
+`isSystem`, acciones. El detalle de permisos está disponible para cualquier rol, incluidos los
+`isSystem` (que no tienen edición) — es la única forma de inspeccionar qué permisos tiene un rol
+protegido.
 Editor: selector de permisos agrupado por dominio, con checkbox por permiso — nunca texto libre.
-Presets sugeridos como plantillas de partida (Propietario, Gerente, Inventario/Compras,
-Bodeguero, Cajero, Auditor); no es lista cerrada.
-Validación: un rol no puede quedar sin nombre ni sin permisos.
-**Desbloqueada** por el contrato tenant-scoped de `RoleRepository`; la UI sigue sin implementar.
+Sin presets de arranque: los roles por defecto (Administrador, Inventario, Cajero, Bodeguero,
+Cliente) ya existen sembrados como `isSystem`; una plantilla que los imite sería redundante. "Nuevo
+rol" arranca en blanco y el administrador lo arma permiso por permiso.
+Validación: un rol no puede quedar sin nombre, sin permisos, ni con una key de permiso que no
+exista en el catálogo.
+Los roles `isSystem` quedan protegidos: no se pueden editar ni archivar desde esta pantalla — el
+contrato `updateScoped` ya excluye `isSystem` del payload editable a nivel de tipo
+(`fix(roles): harden tenant and session boundaries`), y los services además rechazan la operación
+explícitamente (`ensureRoleNotSystem`) como defensa adicional.
+Archivar un rol no revoca el acceso ya otorgado a cuentas existentes, solo impide asignarlo a
+cuentas nuevas — no hay un mecanismo de revocación retroactiva en esta entrega.
 
 ### 12.12 Usuarios ⛔
 
@@ -716,7 +784,7 @@ Convención de rama: `feature/admin-<funcionalidad>` (`docs/GIT_WORKFLOW.md`), s
 | 1   | `feature/admin-business-config`     | Configuración del negocio | — ✅ hecha                  |
 | 2   | `feature/admin-branches`            | Sucursales                | —                           |
 | 3   | `chore/admin-role-contracts`        | _(contrato)_              | — ✅ hecha, avisar a Andy   |
-| 4   | `feature/admin-roles-permissions`   | Roles y permisos          | 3 ✅ desbloqueada           |
+| 4   | `feature/admin-roles-permissions`   | Roles y permisos          | 3 ✅ hecha                  |
 | 5   | `feature/admin-users`               | Usuarios                  | 2, 4 + contrato AuthAccount |
 | 6   | `feature/admin-suppliers`           | Proveedores               | —                           |
 | 7   | `feature/admin-bank-accounts`       | Cuentas bancarias         | 2                           |
