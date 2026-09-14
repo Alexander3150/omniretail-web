@@ -1,5 +1,5 @@
 import type { Role, User } from "@/core/entities";
-import { TenantStatus, UserStatus, UserType } from "@/core/enums";
+import { RoleStatus, TenantStatus, UserStatus, UserType } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 
 type SessionRepositories = Pick<RepositoryRegistry, "auth" | "users" | "roles" | "tenants">;
@@ -45,7 +45,9 @@ export async function resolveCurrentSessionSnapshot(
     };
   }
 
-  const role = user.roleId ? await repositories.roles.getById(user.roleId) : null;
+  const role = user.roleId
+    ? await repositories.roles.getByIdScoped(user.tenantId, user.roleId)
+    : null;
   if (user.type === UserType.employee) {
     const tenant = await repositories.tenants.getById(user.tenantId);
     if (!tenant || tenant.status !== TenantStatus.active) {
@@ -55,11 +57,11 @@ export async function resolveCurrentSessionSnapshot(
         error: "El negocio de la cuenta no esta activo.",
       };
     }
-    if (!role || role.tenantId !== user.tenantId) {
+    if (!role || role.status !== RoleStatus.active) {
       return {
         user: null,
         role: null,
-        error: "El rol de la cuenta no pertenece al negocio activo.",
+        error: "El rol de la cuenta no esta activo en el negocio.",
       };
     }
   }

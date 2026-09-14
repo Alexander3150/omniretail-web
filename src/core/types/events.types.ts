@@ -11,6 +11,7 @@ export type DataEventName =
   // necesidad real.
   | "mfa.changed"
   | "branch.changed"
+  | "role.changed"
   | "business-config.changed"
   | "product.changed"
   | "product-price.changed"

@@ -435,7 +435,7 @@ async function main() {
   assert.equal(resolvePostLoginDestination(adminUser), "/inicio", "V: admin conserva /inicio");
   assert.equal(canUserEnterPrivateRoute(adminUser, "/administracion/diseno-ecommerce"), true);
   assert.ok(
-    (await roles.getById(adminUser.roleId ?? ""))?.permissions.includes(
+    (await roles.getByIdScoped(adminUser.tenantId, adminUser.roleId ?? ""))?.permissions.includes(
       "admin.ecommerce_config.manage",
     ),
     "V: admin conserva capacidad de administracion",

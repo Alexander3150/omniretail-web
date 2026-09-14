@@ -8,6 +8,11 @@ export enum BranchStatus {
   inactive = "inactive",
   archived = "archived",
 }
+export enum RoleStatus {
+  active = "active",
+  inactive = "inactive",
+  archived = "archived",
+}
 export enum BranchType {
   main = "main",
   store = "store",
