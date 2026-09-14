@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { OrderStatus, PaymentStatus } from "@/core/enums";
 import { StorefrontOrderProgress } from "@/modules/storefront/components/StorefrontOrderProgress";
+import { downloadStorefrontReceiptPdf } from "@/modules/storefront/application/services/StorefrontReceiptPdfService";
 import { useStorefrontCheckoutConfirmation } from "@/modules/storefront/providers/StorefrontCheckoutConfirmationProvider";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
@@ -172,10 +173,15 @@ export function OrderConfirmationPage() {
           ) : null}
           <button
             className="rounded-xl border border-[var(--color-border)] px-5 py-3 font-bold text-[var(--color-text)]"
-            onClick={() => window.print()}
+            onClick={() =>
+              void downloadStorefrontReceiptPdf({
+                storeName: config?.storeName ?? "Tienda",
+                result,
+              })
+            }
             type="button"
           >
-            Guardar comprobante
+            Descargar comprobante PDF
           </button>
           <Link
             className="rounded-xl border border-[var(--color-border)] px-5 py-3 font-bold text-[var(--color-text)]"
