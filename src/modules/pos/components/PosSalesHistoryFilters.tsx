@@ -1,6 +1,10 @@
 import type { ReactNode } from "react";
 import { DeliveryMethod, OrderStatus, SaleStatus } from "@/core/enums";
 import type { PosSaleHistoryFilters } from "@/modules/pos/application/dto/PosSaleHistoryDto";
+import {
+  orderStatusPresentation,
+  saleStatusPresentation,
+} from "@/modules/pos/application/services/GetPosSalesHistoryService";
 import { Button } from "@/shared/components/Button";
 import { SearchInput } from "@/shared/components/SearchInput";
 import { Select } from "@/shared/components/Select";
@@ -55,10 +59,11 @@ export function PosSalesHistoryFilters({
             }
           >
             <option value="all">Todos los estados</option>
-            <option value={SaleStatus.completed}>Activa</option>
-            <option value={SaleStatus.partially_returned}>Devolución parcial</option>
-            <option value={SaleStatus.returned}>Devuelta totalmente</option>
-            <option value={SaleStatus.cancelled}>Anulada</option>
+            {Object.values(SaleStatus).map((status) => (
+              <option key={status} value={status}>
+                {saleStatusPresentation[status].label}
+              </option>
+            ))}
           </Select>
         </FilterField>
         <FilterField label="Estado operativo">
@@ -72,16 +77,11 @@ export function PosSalesHistoryFilters({
             }
           >
             <option value="all">Todos los estados</option>
-            <option value="pending_stage">Pendiente</option>
-            <option value={OrderStatus.picking}>En picking</option>
-            <option value={OrderStatus.packing}>En packing</option>
-            <option value={OrderStatus.ready_for_dispatch}>
-              Empaquetado - Listo para Despacho
-            </option>
-            <option value={OrderStatus.ready_for_pickup}>Listo para entrega</option>
-            <option value={OrderStatus.dispatched}>Despachado</option>
-            <option value={OrderStatus.delivered}>Entregado</option>
-            <option value={OrderStatus.cancelled}>Cancelado</option>
+            {Object.values(OrderStatus).map((status) => (
+              <option key={status} value={status}>
+                {orderStatusPresentation[status].label}
+              </option>
+            ))}
           </Select>
         </FilterField>
       </div>

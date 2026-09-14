@@ -1,14 +1,20 @@
 import assert from "node:assert/strict";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import type { Order, Sale } from "@/core/entities";
 import type { OrderRepository } from "@/core/repositories";
+import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import {
   BranchStatus,
   BranchType,
+  CashShiftStatus,
   DeliveryMethod,
   OrderSource,
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  ProductStatus,
+  ProductType,
   SaleStatus,
   TenantStatus,
   TransportMode,
@@ -22,11 +28,21 @@ import {
   MockOrderRepository,
   MockPaymentRepository,
   MockRoleRepository,
+  MockSaleReversalRepository,
   MockSalesRepository,
   MockUserRepository,
 } from "@/infrastructure/mock/repositories";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
-import { GetPosSalesHistoryService } from "@/modules/pos/application/services/GetPosSalesHistoryService";
+import {
+  GetPosSalesHistoryService,
+  orderStatusPresentation,
+  saleStatusPresentation,
+} from "@/modules/pos/application/services/GetPosSalesHistoryService";
+import {
+  GetReturnSaleLookupService,
+  getReturnBlockedNotice,
+} from "@/modules/pos/application/services/GetReturnSaleLookupService";
+import { ReturnSaleDetails } from "@/modules/pos/components/ReturnSaleDetails";
 
 class MemoryStorageAdapter extends LocalStorageAdapter {
   private readonly values = new Map<string, string>();
@@ -199,7 +215,7 @@ async function verifyPosSalesHistory() {
         tenantId: tenantA,
         name: "POS History A",
         isSystem: false,
-        permissions: ["pos.sales.read"],
+        permissions: ["pos.sales.read", "pos.returns.read"],
         branchScope: "all",
         createdAt: now,
         updatedAt: now,
@@ -407,13 +423,13 @@ async function verifyPosSalesHistory() {
   assert.equal(pickup?.deliveryMethod, DeliveryMethod.store_pickup);
   assert.equal(pickup?.orderNumber, "ORDER-history-order-pickup");
   assert.equal(pickup?.orderStatus, OrderStatus.ready_for_pickup);
-  assert.equal(pickup?.operationalStatusLabel, "Listo para entrega");
+  assert.equal(pickup?.operationalStatusLabel, "Listo para retiro");
   assert.equal(repeatedPickup?.sourceOrderId, pickup?.sourceOrderId);
   assert.equal(repeatedPickup?.orderNumber, pickup?.orderNumber);
   assert.equal(repeatedPickup?.orderStatus, pickup?.orderStatus);
   assert.equal(repeatedPickup?.operationalStatusLabel, pickup?.operationalStatusLabel);
   assert.equal(repeatedPickup?.orderStatus, OrderStatus.ready_for_pickup);
-  assert.equal(repeatedPickup?.operationalStatusLabel, "Listo para entrega");
+  assert.equal(repeatedPickup?.operationalStatusLabel, "Listo para retiro");
   const delivery = branchOne.sales.find((item) => item.saleId === "history-delivery");
   assert.equal(delivery?.deliveryMethod, DeliveryMethod.home_delivery);
   assert.equal(delivery?.operationalStatusLabel, "Despachado");
@@ -464,14 +480,33 @@ async function verifyPosSalesHistory() {
     ["history-delivery"],
   );
 
+  assert.deepEqual(
+    Object.entries(saleStatusPresentation).map(([status, presentation]) => [
+      status,
+      presentation.label,
+    ]),
+    [
+      [SaleStatus.completed, "Completada"],
+      [SaleStatus.partially_returned, "Devolución parcial"],
+      [SaleStatus.returned, "Devuelta totalmente"],
+      [SaleStatus.cancelled, "Anulada"],
+    ],
+  );
+  assert.deepEqual(Object.keys(saleStatusPresentation).sort(), Object.values(SaleStatus).sort());
+
   for (const [status, label] of [
-    [OrderStatus.confirmed, "Pendiente"],
+    [OrderStatus.pending, "Pendiente"],
+    [OrderStatus.confirmed, "Confirmado"],
+    [OrderStatus.preparing, "Preparando"],
     [OrderStatus.picking, "En picking"],
-    [OrderStatus.packing, "En packing"],
-    [OrderStatus.ready_for_dispatch, "Empaquetado - Listo para Despacho"],
+    [OrderStatus.packing, "En empaque"],
+    [OrderStatus.ready_for_pickup, "Listo para retiro"],
+    [OrderStatus.ready_for_dispatch, "Listo para despacho"],
     [OrderStatus.dispatched, "Despachado"],
     [OrderStatus.delivered, "Entregado"],
+    [OrderStatus.cancelled, "Cancelado"],
   ] as const) {
+    assert.equal(orderStatusPresentation[status].label, label);
     store.mutate((db) => {
       const current = db.orders.find((item) => item.id === "history-order-delivery");
       assert.ok(current);
@@ -486,6 +521,115 @@ async function verifyPosSalesHistory() {
       label,
     );
   }
+
+  assert.equal(
+    getReturnBlockedNotice(DeliveryMethod.store_pickup, false, []),
+    "Esta venta no admite devoluciones porque fue realizada con retiro en tienda.",
+  );
+  assert.equal(
+    getReturnBlockedNotice(DeliveryMethod.home_delivery, false, []),
+    "Esta venta no admite devoluciones porque fue realizada con envío a domicilio.",
+  );
+  assert.equal(
+    getReturnBlockedNotice(DeliveryMethod.immediate, false, [
+      { returnableQuantity: 1, isSafelyReversible: false },
+    ]),
+    "No es posible procesar la devolución porque no se puede validar de forma segura el movimiento de inventario de esta venta.",
+  );
+  assert.equal(
+    getReturnBlockedNotice(DeliveryMethod.immediate, true, [
+      { returnableQuantity: 1, isSafelyReversible: true },
+    ]),
+    undefined,
+  );
+
+  store.mutate((db) => {
+    db.products.push({
+      id: "history-product",
+      tenantId: tenantA,
+      sku: "HISTORY-SKU",
+      name: "Producto histórico",
+      productType: ProductType.physical,
+      categoryId: "history-category",
+      baseUnitId: "history-unit",
+      saleUnitId: "history-unit",
+      salePrice: 12.5,
+      status: ProductStatus.published,
+      tracking: { stock: true, lot: false, expiration: false, serial: false },
+      channels: { ecommerce: false, pos: true, mobileApp: false },
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.cashShifts.push({
+      id: `shift-${branchA1}`,
+      tenantId: tenantA,
+      branchId: branchA1,
+      userId: "history-user-a",
+      registerCode: "HISTORY-REGISTER",
+      status: CashShiftStatus.open,
+      openedAt: now,
+      openingAmount: 100,
+      createdAt: now,
+      updatedAt: now,
+    });
+    for (const saleId of ["history-pickup", "history-delivery"]) {
+      const currentSale = db.sales.find((item) => item.id === saleId);
+      assert.ok(currentSale);
+      const originalItem = currentSale.items[0];
+      assert.ok(originalItem);
+      currentSale.items.push({
+        ...originalItem,
+        id: `${originalItem.id}-second`,
+        skuSnapshot: `${originalItem.skuSnapshot}-SECOND`,
+        nameSnapshot: `${originalItem.nameSnapshot} adicional`,
+      });
+    }
+  });
+
+  const returnLookupService = new GetReturnSaleLookupService({
+    branches,
+    orders: underlyingOrders,
+    roles,
+    saleReversals: new MockSaleReversalRepository(store, eventBus),
+    sales,
+    users,
+  } as unknown as RepositoryRegistry);
+  const pickupReturnLookup = await returnLookupService.execute({
+    actorUserId: "history-user-a",
+    branchId: branchA1,
+    documentNumber: "POS-history-pickup",
+    tenantId: tenantA,
+  });
+  const deliveryReturnLookup = await returnLookupService.execute({
+    actorUserId: "history-user-a",
+    branchId: branchA1,
+    documentNumber: "POS-history-delivery",
+    tenantId: tenantA,
+  });
+  assert.ok(pickupReturnLookup);
+  assert.ok(deliveryReturnLookup);
+  assertBlockedReturnRender(
+    pickupReturnLookup,
+    "Esta venta no admite devoluciones porque fue realizada con retiro en tienda.",
+  );
+  assertBlockedReturnRender(
+    deliveryReturnLookup,
+    "Esta venta no admite devoluciones porque fue realizada con envío a domicilio.",
+  );
+
+  const immediateReturnLookup = await returnLookupService.execute({
+    actorUserId: "history-user-a",
+    branchId: branchA1,
+    documentNumber: "POS-history-immediate",
+    tenantId: tenantA,
+  });
+  assert.ok(immediateReturnLookup);
+  assert.equal(immediateReturnLookup.allowedOperations.partialReturn, false);
+  assert.equal(immediateReturnLookup.returnableItems.length, 0);
+  assert.equal(
+    immediateReturnLookup.allowedOperations.returnBlockedReason,
+    "No es posible procesar la devolución porque no se puede validar de forma segura el movimiento de inventario de esta venta.",
+  );
 
   store.mutate((db) => {
     const current = db.orders.find((item) => item.id === "history-order-pickup");
@@ -523,6 +667,33 @@ async function verifyPosSalesHistory() {
   );
 
   console.log("POS sales history harness: PASS (A-N)");
+}
+
+function assertBlockedReturnRender(
+  lookup: NonNullable<Awaited<ReturnType<GetReturnSaleLookupService["execute"]>>>,
+  expectedMessage: string,
+) {
+  assert.equal(lookup.items.length, 2);
+  const markup = renderToStaticMarkup(
+    createElement(ReturnSaleDetails, {
+      lookup,
+      canProcessReturn: true,
+      canVoid: true,
+      onBeginOperation: () => undefined,
+    }),
+  );
+  assert.equal(countOccurrences(markup, expectedMessage), 1);
+  for (const label of ["Vendida", "Devuelta", "Retornable", "Importe"]) {
+    assert.ok(markup.includes(label), `Return details must preserve the ${label} quantity column`);
+  }
+  assert.ok(markup.includes("HISTORY-SKU"));
+  assert.ok(markup.includes("HISTORY-SKU-SECOND"));
+  assert.ok(!markup.includes("huella histórica"));
+  assert.ok(!markup.includes("huella historica"));
+}
+
+function countOccurrences(value: string, search: string) {
+  return value.split(search).length - 1;
 }
 
 void verifyPosSalesHistory();

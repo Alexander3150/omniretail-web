@@ -5,7 +5,7 @@ import type { CurrencyCode } from "@/core/types/common.types";
 export type PosSaleHistoryTone = "neutral" | "info" | "success" | "warning" | "danger";
 export type PosSaleHistoryDeliveryFilter = "all" | "unavailable" | DeliveryMethod;
 export type PosSaleHistoryOperationalFilter =
-  "all" | "immediate" | "unavailable" | "pending_stage" | OrderStatus;
+  "all" | "immediate" | "unavailable" | OrderStatus;
 
 export interface PosSaleHistoryFilters {
   search: string;

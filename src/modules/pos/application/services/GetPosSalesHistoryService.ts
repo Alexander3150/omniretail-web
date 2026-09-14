@@ -157,24 +157,27 @@ export class GetPosSalesHistoryService {
   }
 }
 
-const saleStatusPresentation: Record<SaleStatus, { label: string; tone: PosSaleHistoryTone }> = {
-  [SaleStatus.completed]: { label: "Activa", tone: "success" },
+export const saleStatusPresentation: Record<
+  SaleStatus,
+  { label: string; tone: PosSaleHistoryTone }
+> = {
+  [SaleStatus.completed]: { label: "Completada", tone: "success" },
   [SaleStatus.partially_returned]: { label: "Devolución parcial", tone: "warning" },
   [SaleStatus.returned]: { label: "Devuelta totalmente", tone: "neutral" },
   [SaleStatus.cancelled]: { label: "Anulada", tone: "danger" },
 };
 
-const orderStatusPresentation: Record<OrderStatus, { label: string; tone: PosSaleHistoryTone }> = {
+export const orderStatusPresentation: Record<
+  OrderStatus,
+  { label: string; tone: PosSaleHistoryTone }
+> = {
   [OrderStatus.pending]: { label: "Pendiente", tone: "warning" },
-  [OrderStatus.confirmed]: { label: "Pendiente", tone: "warning" },
-  [OrderStatus.preparing]: { label: "Pendiente", tone: "warning" },
+  [OrderStatus.confirmed]: { label: "Confirmado", tone: "warning" },
+  [OrderStatus.preparing]: { label: "Preparando", tone: "warning" },
   [OrderStatus.picking]: { label: "En picking", tone: "info" },
-  [OrderStatus.packing]: { label: "En packing", tone: "info" },
-  [OrderStatus.ready_for_pickup]: { label: "Listo para entrega", tone: "success" },
-  [OrderStatus.ready_for_dispatch]: {
-    label: "Empaquetado - Listo para Despacho",
-    tone: "success",
-  },
+  [OrderStatus.packing]: { label: "En empaque", tone: "info" },
+  [OrderStatus.ready_for_pickup]: { label: "Listo para retiro", tone: "success" },
+  [OrderStatus.ready_for_dispatch]: { label: "Listo para despacho", tone: "success" },
   [OrderStatus.dispatched]: { label: "Despachado", tone: "info" },
   [OrderStatus.delivered]: { label: "Entregado", tone: "success" },
   [OrderStatus.cancelled]: { label: "Cancelado", tone: "danger" },
@@ -219,14 +222,6 @@ function matchesFilters(sale: PosSaleHistoryItemDto, filters: PosSaleHistoryFilt
       if (sale.sourceOrderId) return false;
     } else if (filters.operationalStatus === "unavailable") {
       if (!sale.hasUnavailableOrder) return false;
-    } else if (filters.operationalStatus === "pending_stage") {
-      if (
-        sale.orderStatus !== OrderStatus.pending &&
-        sale.orderStatus !== OrderStatus.confirmed &&
-        sale.orderStatus !== OrderStatus.preparing
-      ) {
-        return false;
-      }
     } else if (sale.orderStatus !== filters.operationalStatus) return false;
   }
   return true;

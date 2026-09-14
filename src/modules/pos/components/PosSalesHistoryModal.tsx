@@ -50,7 +50,7 @@ export function PosSalesHistoryModal({ open, onClose }: PosSalesHistoryModalProp
               value={history.summary.total}
             />
             <KPICard
-              label="Activas"
+              label="Completadas"
               loading={history.loading}
               tone="success"
               value={history.summary.active}

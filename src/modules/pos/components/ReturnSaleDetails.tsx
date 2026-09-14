@@ -1,4 +1,5 @@
 import type { ReturnSaleLookupDto } from "@/modules/pos/application/dto/ReturnSaleLookupDto";
+import { isReturnBlockedNotice } from "@/modules/pos/application/services/GetReturnSaleLookupService";
 import type { SaleReversalMode } from "@/modules/pos/hooks/usePosReturns";
 import { Button } from "@/shared/components/Button";
 import { DataTable, type DataTableColumn } from "@/shared/components/DataTable";
@@ -27,6 +28,11 @@ export function ReturnSaleDetails({
   canVoid,
   onBeginOperation,
 }: ReturnSaleDetailsProps) {
+  const returnBlockedNotice = isReturnBlockedNotice(
+    lookup.allowedOperations.returnBlockedReason,
+  )
+    ? lookup.allowedOperations.returnBlockedReason
+    : undefined;
   const columns: DataTableColumn<ReturnSaleLookupDto["items"][number]>[] = [
     {
       key: "product",
@@ -35,7 +41,7 @@ export function ReturnSaleDetails({
         <div>
           <p className="font-semibold text-[var(--color-title)]">{item.name}</p>
           <p className="text-xs text-[var(--color-text-muted)]">{item.sku}</p>
-          {item.blockedReason ? (
+          {item.blockedReason && !returnBlockedNotice ? (
             <p className="mt-1 text-xs text-[var(--color-warning)]">{item.blockedReason}</p>
           ) : null}
         </div>
@@ -134,6 +140,13 @@ export function ReturnSaleDetails({
             Selecciona únicamente una operación permitida por el estado actual del documento.
           </p>
         </div>
+        {returnBlockedNotice ? (
+          <InlineAlert
+            description={returnBlockedNotice}
+            title="Devolución no disponible"
+            tone="warning"
+          />
+        ) : null}
         <div className="grid gap-4 lg:grid-cols-2">
           <OperationCard
             description="Devuelve cantidades específicas y conserva el resto de la venta."
@@ -142,7 +155,9 @@ export function ReturnSaleDetails({
             reason={
               !canProcessReturn
                 ? "No tienes permiso para procesar devoluciones."
-                : lookup.allowedOperations.returnBlockedReason
+                : returnBlockedNotice
+                  ? undefined
+                  : lookup.allowedOperations.returnBlockedReason
             }
             onClick={() => onBeginOperation("return")}
           />
@@ -222,7 +237,7 @@ function formatPaymentSummary(summary: string) {
 
 function saleStatusLabel(status: ReturnSaleLookupDto["sale"]["status"]) {
   if (status === "completed") return "Completada";
-  if (status === "partially_returned") return "Devuelta parcialmente";
+  if (status === "partially_returned") return "Devolución parcial";
   if (status === "returned") return "Devuelta totalmente";
   return "Anulada";
 }
