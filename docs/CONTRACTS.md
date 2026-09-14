@@ -122,6 +122,8 @@ de todas las lineas usa `returned` y solo una anulacion usa `cancelled`.
 
 `SavedPaymentMethod` y `SavedPaymentMethodRepository` son aliases legacy/de compatibilidad hacia `CustomerPaymentMethod` y `CustomerPaymentMethodRepository`. No deben usarse como contratos nuevos.
 
+`AuthRepository.getAuthAccountStatusByUserId(tenantId, userId)` es la lectura administrativa del estado de cuenta de OTRO usuario (status, si tiene MFA activo, ultima conexion), pensada para la pantalla de Usuarios de administration. Es tenant-scoped: `tenantId` llega ya resuelto/autorizado por el caller (la sesion administrativa activa), nunca del propio caller, y un `userId` de otro tenant se resuelve como `null` igual que inexistente. Distinta de `getMfaStatus(sessionId)`, que solo resuelve la sesion propia del usuario logueado.
+
 La logica de precio efectivo vive en `core/pricing` como funcion pura reutilizable por Catalog, Storefront, POS y app movil. No pertenece a Shared UI.
 
 No crear `StorefrontProduct`, `InventoryProduct` o `PosProduct`. Debe existir un unico `Product` compartido en `core/`.

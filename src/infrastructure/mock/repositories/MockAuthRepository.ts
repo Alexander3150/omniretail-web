@@ -560,6 +560,27 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       return { enabled: enrollment.enabled, method: enrollment.method };
     });
   }
+  async getAuthAccountStatusByUserId(tenantId: string, userId: string) {
+    return this.read((db) => {
+      // El scope de tenant vive en User, no en AuthAccount (esta no tiene
+      // tenantId propio) -- por eso se valida aca, ANTES de resolver la
+      // cuenta, igual que el resto de las lecturas administrativas
+      // tenant-scoped del proyecto (p.ej. BranchRepository.getByIdScoped).
+      // Un userId de otro tenant se resuelve como null, sin distinguir el
+      // motivo (mismo criterio que el resto de esos contratos: no revela
+      // si el ID pertenece a otro tenant o directamente no existe).
+      const user = db.users.find((item) => item.id === userId && item.tenantId === tenantId);
+      if (!user) return null;
+      const account = db.authAccounts.find((item) => item.userId === userId);
+      if (!account) return null;
+      const enrollment = db.mfaEnrollments.find((item) => item.userId === userId);
+      return {
+        status: account.status,
+        mfaEnabled: Boolean(enrollment?.enabled),
+        lastLoginAt: account.lastLoginAt,
+      };
+    });
+  }
   async logout(sessionId: string) {
     this.store.mutate((db) => {
       const session = db.sessions.find((item) => item.id === sessionId);
