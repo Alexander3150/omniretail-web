@@ -76,6 +76,7 @@ export function CurrentSessionProvider({ children }: { children: ReactNode }) {
 
   useDataEvent("auth.changed", reload);
   useDataEvent("user.changed", reload);
+  useDataEvent("role.changed", reload);
 
   const permissions = useMemo(() => role?.permissions ?? [], [role]);
   const permissionSet = useMemo(() => new Set(permissions), [permissions]);

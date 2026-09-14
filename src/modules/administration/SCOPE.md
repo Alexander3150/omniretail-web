@@ -113,7 +113,7 @@ Firmas reales leídas de `src/core/repositories/`.
 | `AuditLogRepository`        | `getByTenant` · `append`                                                                       | Sin filtros funcionales ni paginacion server-side   |
 | `TenantRepository`          | `getAll` · `getById`                                                                           | Sin `create` ni `update`                            |
 | `CustomerRepository`        | `getAll` · `listByTenant` · `getById` · `getByUserId` · `getByEmail` · `create` · `update`     | Sin segmentos                                       |
-| `RoleRepository`            | `getById` · `getAll` · `create` · `update` · `archive`                                         | ✅ Completo (`chore/admin-role-contracts`)          |
+| `RoleRepository`            | `listByTenant` · `getByIdScoped` · `create` · `updateScoped` · `archiveScoped`                  | ✅ Completo (`chore/admin-role-contracts`)          |
 | `CustomerSegmentRepository` | —                                                                                               | ⛔ **No existe**                                    |
 
 ---
@@ -396,12 +396,10 @@ override `demoMode`) y `src/config/session-policy.ts` (`normalSessionHours: 8`,
 ## 6. Bloqueantes y gaps
 
 1. ~~**`RoleRepository` solo expone `getById`.**~~ **Resuelto en `chore/admin-role-contracts`:**
-   ahora expone `getAll`, `create`, `update` y `archive` (mismo patrón que
-   `BranchRepository`/`SupplierRepository`), y `Role` ganó `status: RoleStatus`
-   (`active`/`inactive`/`archived`). El repositorio no protege roles `isSystem` de edición/archivado
-   ni aplica permisos -- eso es responsabilidad de los services de la futura pantalla Roles y
-   permisos, que ahora ya puede arrancar. Pendiente: avisar a Andy (área común, `docs/MODULE_OWNERSHIP.md`
-   dice que coordinar no exige autorización previa, solo informar impacto).
+   ahora expone CRUD tenant-scoped (`listByTenant`, `getByIdScoped`, `updateScoped`,
+   `archiveScoped`) y `create`; `Role` ganó `status: RoleStatus` (`active`/`inactive`/`archived`).
+   El payload mutable excluye identidad, tenant, `isSystem` y timestamps. La prohibición completa
+   de editar/archivar roles sistema y los permisos siguen en los futuros application services.
 2. **`Branch` sin `schedule`.** Sucursales no puede manejar horarios sin extender la entity.
 3. **`EcommerceConfig` sin `theme`.** Diseño E-commerce no incluye branding.
 4. **`Supplier` sin `contacts[]`, `paymentTerms` ni `currency`; `leadTimeDays` es derivado.**
@@ -643,7 +641,7 @@ Editor: selector de permisos agrupado por dominio, con checkbox por permiso — 
 Presets sugeridos como plantillas de partida (Propietario, Gerente, Inventario/Compras,
 Bodeguero, Cajero, Auditor); no es lista cerrada.
 Validación: un rol no puede quedar sin nombre ni sin permisos.
-**Bloqueada** hasta extender `RoleRepository`.
+**Desbloqueada** por el contrato tenant-scoped de `RoleRepository`; la UI sigue sin implementar.
 
 ### 12.12 Usuarios ⛔
 
@@ -667,7 +665,7 @@ cambia según la elección y escribe `User.branchId` o `User.allowedBranchIds`.
 
 Auditoría: cada alta, cambio de rol, activación o archivado genera `AuditLog`. Siempre.
 
-**Bloqueada** por `RoleRepository` y por la ausencia de contrato para `AuthAccount`/`MfaEnrollment`.
+**Bloqueada** por la ausencia de contrato para `AuthAccount`/`MfaEnrollment`.
 
 ### 12.13 Planes y facturación SaaS ⛔ GAP
 
@@ -756,8 +754,7 @@ Estado actual del seed (`src/infrastructure/mock/seeds/demoSeed.ts`): tenant `te
 
 ## 16. Preguntas abiertas para el equipo
 
-1. `RoleRepository`: confirmar que abrís vos el `chore/` con `getAll`, `create`, `update`,
-   `archive`. **Ruta crítica del módulo.**
+1. `RoleRepository`: resuelto en `chore/admin-role-contracts` con fronteras tenant-scoped.
 2. `AuthAccount` / `MfaEnrollment`: ¿Andy expone contrato para invitación, activación asistida y
    MFA, o la pantalla de Usuarios se recorta?
 3. `Branch.schedule`: ¿se agrega o Sucursales no maneja horarios?

@@ -1,4 +1,4 @@
-import { BranchStatus, UserStatus, UserType } from "@/core/enums";
+import { BranchStatus, RoleStatus, UserStatus, UserType } from "@/core/enums";
 import { canUserAccessBranch } from "@/core/scopes/userBranchAccess";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 
@@ -42,8 +42,12 @@ export async function resolveTrustedDispatchContext(
   ) {
     throw new DispatchAuthorizationError();
   }
-  const role = await repositories.roles.getById(user.roleId);
-  if (!role || role.tenantId !== user.tenantId || !role.permissions.includes(requiredPermission)) {
+  const role = await repositories.roles.getByIdScoped(user.tenantId, user.roleId);
+  if (
+    !role ||
+    role.status !== RoleStatus.active ||
+    !role.permissions.includes(requiredPermission)
+  ) {
     throw new DispatchAuthorizationError();
   }
   const branch = await repositories.branches.getById(selectedBranchId);

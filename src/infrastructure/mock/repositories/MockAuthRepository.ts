@@ -3,6 +3,7 @@ import {
   CustomerStatus,
   NotificationChannel,
   NotificationStatus,
+  RoleStatus,
   TenantStatus,
   UserStatus,
   UserType,
@@ -1234,7 +1235,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     const tenant = db.tenants.find((item) => item.id === user.tenantId);
     if (!tenant || tenant.status !== TenantStatus.active) return false;
     const role = user.roleId ? db.roles.find((item) => item.id === user.roleId) : null;
-    return Boolean(role && role.tenantId === user.tenantId);
+    return Boolean(role && role.tenantId === user.tenantId && role.status === RoleStatus.active);
   }
 
   /**

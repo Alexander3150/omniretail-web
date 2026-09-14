@@ -8,6 +8,7 @@ import {
   PickingIncidentType,
   PickingPriority,
   PickingStatus,
+  RoleStatus,
   SerialStatus,
   TransportMode,
   UserStatus,
@@ -485,6 +486,7 @@ function prepareDatabase(store: MockDatabaseStore) {
         "logistics.picking.complete",
       ],
       branchScope: "assigned",
+      status: RoleStatus.active,
       createdAt: now,
       updatedAt: now,
     });

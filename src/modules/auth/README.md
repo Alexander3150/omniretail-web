@@ -15,8 +15,10 @@ AuthRepository, UserRepository, TenantRepository, RoleRepository, BranchReposito
 - No duplicar entities de `core/`.
 - No acceder directamente a LocalStorage.
 - Usar repositories desde `RepositoryProvider`.
-- Para Employee exigir Tenant activo y Role existente del mismo tenant antes de publicar o crear
-  una sesion operativa; el scope de Branch se aplica despues de reducir por tenant.
+- Para Employee exigir Tenant activo y Role `active` del mismo tenant antes de publicar o crear
+  una sesion operativa; login, MFA y revalidacion de sesion fallan cerrados.
+- `CurrentSessionProvider` escucha `role.changed` para retirar permisos cuando un Role se vuelve
+  `inactive` o `archived`; el scope de Branch se aplica despues de reducir por tenant.
 - Usar `shared/` para componentes globales.
 - Crear DTO, Mappers y Services propios dentro del modulo cuando empiece cada feature.
 

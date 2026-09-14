@@ -1,12 +1,13 @@
 import type { Role } from "@/core/entities";
 
 export interface RoleRepository {
-  getById(id: string): Promise<Role | null>;
-  getAll(): Promise<Role[]>;
+  listByTenant(tenantId: string): Promise<Role[]>;
+  getByIdScoped(tenantId: string, id: string): Promise<Role | null>;
   create(input: Omit<Role, "id" | "createdAt" | "updatedAt">): Promise<Role>;
-  update(
+  updateScoped(
+    tenantId: string,
     id: string,
-    input: Partial<Omit<Role, "id" | "tenantId" | "createdAt" | "updatedAt">>,
+    input: Partial<Omit<Role, "id" | "tenantId" | "isSystem" | "createdAt" | "updatedAt">>,
   ): Promise<Role>;
-  archive(id: string): Promise<Role>;
+  archiveScoped(tenantId: string, id: string): Promise<Role>;
 }

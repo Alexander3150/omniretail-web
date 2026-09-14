@@ -13,8 +13,8 @@ export interface Role {
   branchScope: BranchScope;
   /**
    * Un rol `isSystem` (los sembrados por la plataforma) nunca debe archivarse ni actualizarse por
-   * este contrato: la invariante vive en la capa de aplicación (futuro `ArchiveRoleService` /
-   * `UpdateRoleService`), no acá -- el repositorio es CRUD genérico, igual que Branch/Supplier.
+   * los futuros application services. El payload de update tampoco puede modificar `isSystem`,
+   * para que el repositorio no corrompa accidentalmente el flag aunque esa política se omita.
    */
   status: RoleStatus;
   createdAt: ISODateString;

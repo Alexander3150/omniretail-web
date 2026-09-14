@@ -1,4 +1,4 @@
-import { BranchStatus, UserStatus, UserType } from "@/core/enums";
+import { BranchStatus, RoleStatus, UserStatus, UserType } from "@/core/enums";
 import { canUserAccessBranch } from "@/core/scopes/userBranchAccess";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 
@@ -34,8 +34,8 @@ export async function requireReturnOperationContext(
   if (!branch || branch.tenantId !== tenantId || branch.status !== BranchStatus.active) {
     throw new Error("La sucursal no esta activa para este negocio.");
   }
-  const role = user.roleId ? await repositories.roles.getById(user.roleId) : null;
-  if (!role || role.tenantId !== tenantId || !role.permissions.includes(permission)) {
+  const role = user.roleId ? await repositories.roles.getByIdScoped(tenantId, user.roleId) : null;
+  if (!role || role.status !== RoleStatus.active || !role.permissions.includes(permission)) {
     throw new Error("No tienes permiso para realizar esta operacion.");
   }
   if (!canUserAccessBranch(user, role, branch)) {

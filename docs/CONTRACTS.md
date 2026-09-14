@@ -22,16 +22,17 @@ reemplazan con el mismo scope del producto.
 mismo tenant.
 
 La sesion operativa Employee se reconstruye como
-`Session -> User activo -> Tenant activo -> Role existente del mismo tenant`. Login, finalizacion de
-MFA y `CurrentSessionProvider` fallan cerrados si se rompe esa cadena. Este requisito no cambia la
-resolucion Customer ni crea roles o permisos nuevos.
+`Session -> User activo -> Tenant activo -> Role active del mismo tenant`. Login, finalizacion de
+MFA y `CurrentSessionProvider` fallan cerrados si se rompe esa cadena. `CurrentSessionProvider`
+escucha `role.changed` para revalidar una sesion ya publicada. Este requisito no rompe la resolucion
+Customer cuando el usuario no utiliza Role ni crea roles o permisos nuevos.
 
-`RoleRepository` ademas de `getById` expone `getAll`, `create`, `update` y `archive`, mismo patron
-CRUD que `BranchRepository`/`SupplierRepository`. `Role.status` (`RoleStatus`: active/inactive/archived)
-es nuevo; `archive(id)` lo fija en `archived`. El repositorio es generico y no protege roles
-`isSystem` de ser editados o archivados -- esa invariante de negocio queda para la capa de
-aplicacion (los futuros services de la pantalla Roles y permisos), igual que la autorizacion por
-permisos no vive en el repositorio de ninguna otra entidad de este modulo.
+`RoleRepository` expone `listByTenant`, `getByIdScoped`, `create`, `updateScoped` y `archiveScoped`.
+Las fronteras de lectura y mutacion de Roles son tenant-scoped; no se expone un fallback global.
+`Role.status` usa `RoleStatus` (`active`/`inactive`/`archived`) y `archiveScoped` lo fija en
+`archived`. El payload mutable excluye `id`, `tenantId`, `isSystem`, `createdAt` y `updatedAt`.
+La prohibicion de editar o archivar por completo un Role `isSystem` queda para los futuros
+application services de Roles y permisos; el contrato compartido ya impide corromper el flag.
 
 `ProductMediaRepository` es el contrato compartido para consultar y administrar referencias de imagenes de producto sin acoplar modulos a seeds, LocalStorage o assets fisicos. Acepta el `url` legacy y la fuente discriminada `url | mockAsset`; `isPrimary`, luego `sortOrder`, determina la seleccion publica entre fuentes validas.
 
