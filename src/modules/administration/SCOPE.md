@@ -29,22 +29,22 @@
 
 ## 2. Tabla maestra de pantallas
 
-| #   | Pantalla                  | Ruta                                    | Entidad principal             | Estado                               |
-| --- | ------------------------- | --------------------------------------- | ----------------------------- | ------------------------------------ |
-| 1   | Configuración del negocio | `/administracion/configuracion-negocio` | `BusinessCapabilitiesConfig`  | ✅ **Implementada**                  |
-| 2   | Sucursales                | `/administracion/sucursales`            | `Branch`                      | ✅ **Implementada**                  |
-| 3   | Proveedores               | `/administracion/proveedores`           | `Supplier`                    | ✅ **Implementada**                  |
-| 4   | Cuentas bancarias         | `/administracion/cuentas-bancarias`     | `BankAccount`                 | ✅ **Implementada**                  |
-| 5   | Diseño E-commerce         | `/administracion/diseno-ecommerce`      | `EcommerceConfig`             | ✅ **Implementada** — sin branding   |
-| 6   | Clientes                  | `/administracion/clientes`              | `Customer`, `CustomerSegment` | ⚠️ Parcial — sin update ni segmentos |
-| 7   | Auditoría                 | `/administracion/auditoria`             | `AuditLog`                    | ✅ **Implementada**                  |
-| 8   | Caja                      | `/administracion/caja`                  | `CashShift`, `CashMovement`   | ✅ **Implementada** — solo lectura   |
-| 9   | Dashboard                 | `/administracion/dashboard`             | Agregación                    | ✅ **Implementada**                  |
-| 10  | Reportes                  | `/administracion/reportes`              | Agregación                    | ✅ **Implementada**                  |
-| 11  | Roles y permisos          | `/administracion/roles-permisos`        | `Role`, `Permission`          | ⛔ **Bloqueada** — contrato          |
-| 12  | Usuarios                  | `/administracion/usuarios`              | `User` (+ `AuthAccount`)      | ⛔ Bloqueada — depende de #11        |
-| 13  | Planes y facturación SaaS | `/administracion/planes-facturacion`    | _(sin definir)_               | ⛔ Bloqueada — modelo                |
-| 14  | Sincronización            | `/administracion/sincronizacion`        | _(sin definir)_               | ⛔ Bloqueada — modelo                |
+| #   | Pantalla                  | Ruta                                    | Entidad principal             | Estado                              |
+| --- | ------------------------- | --------------------------------------- | ----------------------------- | ----------------------------------- |
+| 1   | Configuración del negocio | `/administracion/configuracion-negocio` | `BusinessCapabilitiesConfig`  | ✅ **Implementada**                 |
+| 2   | Sucursales                | `/administracion/sucursales`            | `Branch`                      | ✅ **Implementada**                 |
+| 3   | Proveedores               | `/administracion/proveedores`           | `Supplier`                    | ✅ **Implementada**                 |
+| 4   | Cuentas bancarias         | `/administracion/cuentas-bancarias`     | `BankAccount`                 | ✅ **Implementada**                 |
+| 5   | Diseño E-commerce         | `/administracion/diseno-ecommerce`      | `EcommerceConfig`             | ✅ **Implementada** — sin branding  |
+| 6   | Clientes                  | `/administracion/clientes`              | `Customer`, `CustomerSegment` | ✅ **Implementada** — solo lectura, ranking por frecuencia |
+| 7   | Auditoría                 | `/administracion/auditoria`             | `AuditLog`                    | ✅ **Implementada**                 |
+| 8   | Caja                      | `/administracion/caja`                  | `CashShift`, `CashMovement`   | ✅ **Implementada** — solo lectura  |
+| 9   | Dashboard                 | `/administracion/dashboard`             | Agregación                    | ✅ **Implementada**                 |
+| 10  | Reportes                  | `/administracion/reportes`              | Agregación                    | ✅ **Implementada**                 |
+| 11  | Roles y permisos          | `/administracion/roles-permisos`        | `Role`, `Permission`          | ⛔ **Bloqueada** — contrato         |
+| 12  | Usuarios                  | `/administracion/usuarios`              | `User` (+ `AuthAccount`)      | ⛔ Bloqueada — depende de #11       |
+| 13  | Planes y facturación SaaS | `/administracion/planes-facturacion`    | _(sin definir)_               | ⛔ Bloqueada — modelo               |
+| 14  | Sincronización            | `/administracion/sincronizacion`        | _(sin definir)_               | ⛔ Bloqueada — modelo               |
 
 ---
 
@@ -103,18 +103,18 @@ normalización + validación: si normalizás primero, la validación no puede fa
 
 Firmas reales leídas de `src/core/repositories/`.
 
-| Repositorio                 | Métodos                                                                                        | Estado                                            |
-| --------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `BusinessConfigRepository`  | `getCapabilities` · `updateCapabilities` · `getEcommerceConfig` · `updateEcommerceConfig`      | ✅ Completo                                       |
-| `BranchRepository`          | `getAll` · `getById` · `getActive` · `create` · `update`                                       | ✅ Completo                                       |
-| `SupplierRepository`        | `getAll` · `getById` · `getActive` · `getProductsBySupplier` · `create` · `update` · `archive` | ✅ Completo                                       |
-| `BankAccountRepository`     | `getAll` · `getActive` · `getById` · `create` · `update`                                       | ✅ Completo                                       |
-| `UserRepository`            | `getAll` · `getById` · `getByEmail` · `create` · `update` · `updateStatus`                     | ✅ Completo                                       |
-| `AuditLogRepository`        | `getByTenant` · `append`                                                                       | Sin filtros funcionales ni paginacion server-side |
-| `TenantRepository`          | `getAll` · `getById`                                                                           | Sin `create` ni `update`                          |
-| `CustomerRepository`        | `getAll` · `getById` · `getByUserId` · `getByEmail` · `create`                                 | Sin `update`                                      |
-| `RoleRepository`            | `getById`                                                                                      | ⛔ **Bloqueante**                                 |
-| `CustomerSegmentRepository` | —                                                                                              | ⛔ **No existe**                                  |
+| Repositorio                 | Métodos                                                                                        | Estado                                             |
+| --------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `BusinessConfigRepository`  | `getCapabilities` · `updateCapabilities` · `getEcommerceConfig` · `updateEcommerceConfig`      | ✅ Completo                                         |
+| `BranchRepository`          | `getAll` · `getById` · `getActive` · `create` · `update`                                       | ✅ Completo                                         |
+| `SupplierRepository`        | `getAll` · `getById` · `getActive` · `getProductsBySupplier` · `create` · `update` · `archive` | ✅ Completo                                         |
+| `BankAccountRepository`     | `getAll` · `getActive` · `getById` · `create` · `update`                                       | ✅ Completo                                         |
+| `UserRepository`            | `getAll` · `getById` · `getByEmail` · `create` · `update` · `updateStatus`                     | ✅ Completo                                         |
+| `AuditLogRepository`        | `getByTenant` · `append`                                                                       | Sin filtros funcionales ni paginacion server-side   |
+| `TenantRepository`          | `getAll` · `getById`                                                                           | Sin `create` ni `update`                            |
+| `CustomerRepository`        | `getAll` · `listByTenant` · `getById` · `getByUserId` · `getByEmail` · `create` · `update`     | Sin segmentos                                       |
+| `RoleRepository`            | `getById`                                                                                       | ⛔ **Bloqueante**                                   |
+| `CustomerSegmentRepository` | —                                                                                               | ⛔ **No existe**                                    |
 
 ---
 
@@ -405,7 +405,7 @@ override `demoMode`) y `src/config/session-policy.ts` (`normalSessionHours: 8`,
 5. **Sin contrato para `AuthAccount` ni `MfaEnrollment`.** Invitación, activación asistida y MFA
    quedan bloqueadas. Esto **sí** es dominio de Andy.
 6. **`TenantRepository` sin `update`.** Bloquea escritura de datos del negocio.
-7. **`CustomerRepository` sin `update` y sin `CustomerSegmentRepository`.**
+7. **Sin `CustomerSegmentRepository`.**
 8. **`AuditLogRepository` sin filtros funcionales ni paginacion.** La lectura esta aislada por
    tenant en el repositorio; los filtros de la pantalla se aplican en cliente sobre ese subconjunto.
 9. **Planes y facturación / Sincronización sin entity.** No inventar; definir en equipo.
@@ -448,14 +448,15 @@ Tabla de traducción. **La columna derecha es la que vale.**
 
 ## 8. Permisos
 
-Declarados hoy en `permissions.ts` de este módulo (9):
+Declarados hoy en `permissions.ts` de este módulo:
 
 `admin.users.read` · `admin.users.manage` · `admin.roles.read` · `admin.roles.manage` ·
 `admin.branches.read` · `admin.branches.manage` · `admin.business_config.manage` ·
-`admin.suppliers.manage` · `admin.bank_accounts.manage` · `admin.cash.read`
+`admin.suppliers.manage` · `admin.bank_accounts.manage` · `admin.cash.read` ·
+`admin.customers.read`
 
 **No existen** y hay que declararlos al construir sus pantallas:
-`admin.customers.read/manage` · `admin.audit.read` ·
+`admin.audit.read` ·
 `admin.reports.read/export` · `admin.ecommerce_config.manage` · `users.credentials.reset`
 
 La granularidad del repo es `read` / `manage`, no `create/update/archive`. Mantenerla.
@@ -595,9 +596,11 @@ Campos reales: `enabled`, `storeName`, `requireAccountForCheckout`, `guestTracki
 Sin branding hasta que se agregue `theme`.
 No se configura acá la trazabilidad (eso es 12.1) ni el diseño visual del storefront (María).
 
-### 12.6 Clientes
+### 12.6 Clientes ✅ implementada
 
-Vista comercial. Tabla: `code`, `name`, `email`, segmento, `status`.
+Vista comercial de solo lectura, ranking por frecuencia de compra. Tabla: `code`, `name`, `email`,
+`purchaseCount`, `status`. `purchaseCount` agrega `Order` + `Sale` por `customerId` (lectura
+directa vía `RepositoryRegistry`, sin contrato nuevo en `core`). Sin alta, edición ni archivado.
 El self-service del cliente (registro, login, direcciones, pedidos propios) vive en el módulo
 `customer` de Andy. No duplicar.
 Segmentos bloqueados hasta que exista `CustomerSegmentRepository`.

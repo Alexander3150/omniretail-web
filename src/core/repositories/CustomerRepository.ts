@@ -14,6 +14,7 @@ export type UpdateCustomerProfileInput = {
 
 export interface CustomerRepository {
   getAll(): Promise<Customer[]>;
+  listByTenant(tenantId: string): Promise<Customer[]>;
   getById(id: string): Promise<Customer | null>;
   getByUserId(userId: string): Promise<Customer | null>;
   getByEmail(email: string): Promise<Customer | null>;

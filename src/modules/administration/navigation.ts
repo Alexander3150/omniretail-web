@@ -29,6 +29,12 @@ export const administrationNavigation = [
         permission: BUSINESS_CONFIG_MANAGE_PERMISSION,
       },
       {
+        id: "administration-customers",
+        label: "Clientes",
+        href: "/administracion/clientes",
+        permission: "admin.customers.read",
+      },
+      {
         id: "administration-cash",
         label: "Caja",
         href: "/administracion/caja",

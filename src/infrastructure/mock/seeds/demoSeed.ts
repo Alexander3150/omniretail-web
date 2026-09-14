@@ -202,6 +202,7 @@ const legacyDemoSeedDatabase: MockDatabase = {
         "admin.users.manage",
         "admin.roles.manage",
         "admin.business_config.manage",
+        "admin.customers.read",
         "admin.dashboard.read",
         "admin.reports.read",
         "admin.reports.export",

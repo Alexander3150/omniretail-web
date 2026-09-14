@@ -27,6 +27,56 @@ Implementado en esta rama:
   permisos de la sesion y rechaza el guardado sin ese permiso; la pantalla ademas no renderiza el
   formulario. Ocultar el menu no se considera enforcement porque la configuracion es tenant-wide.
 
+## Clientes
+
+Pantalla de solo lectura: la administración únicamente puede **ver** el listado de clientes
+ordenado por frecuencia de compra. No hay alta, edición ni archivado desde acá.
+
+Implementado en esta rama:
+
+- Listado comercial de clientes aislado por el `tenantId` de la sesión, con búsqueda por código,
+  nombre o correo y filtro por estado, ordenado por cantidad de compras descendente.
+- `purchaseCount` se calcula en `GetCustomersService` sumando `Order` (e-commerce) y `Sale`
+  (mostrador) por `customerId`, excluyendo `cancelled` en ambos. `Order + Sale` vinculadas por
+  `sourceOrderId` cuentan una sola vez cuando la Order relacionada ya fue contabilizada para el
+  mismo cliente; una `Sale` legacy con `sourceOrderId` inexistente o no contabilizable se cuenta
+  una vez si es válida.
+- `GetCustomersService` lee `Customer`, `Order` y `Sale` mediante boundaries tenant-scoped
+  (`listByTenant`) en los repositorios compartidos. No usa `getAll()` global ni carga registros de
+  otros tenants para luego filtrarlos en memoria.
+- Único permiso `admin.customers.read`; no hay permiso administrativo de gestión. La entrada de
+  navegación usa el mismo permiso que el service, sin la ambigüedad manage-vs-read que tenían otras
+  pantallas de este módulo.
+- Sin mutaciones: no se crean, editan ni archivan clientes desde Administration, y por lo tanto no
+  hay auditoría (`customer.created/updated/archived`) que emitir desde acá.
+- Refresco reactivo ante `customer.changed`, emitido por el módulo `customer` (self-service) cuando
+  el cliente edita su propio perfil.
+- Segmentos fuera de alcance porque no existe `CustomerSegmentRepository`.
+- Ruta privada `/administracion/clientes` y entrada de navegación con `admin.customers.read`.
+
+### Contrato de integracion
+
+Lo que esta pantalla expone al resto del sistema:
+
+- Ruta `/administracion/clientes` e item `administration-customers` en la navegación de
+  Administración, protegido por `admin.customers.read`.
+- Permiso `admin.customers.read`, declarado en `permissions.ts` y asignado a `role-admin` en el
+  seed demo.
+- Refresco reactivo ante el evento `customer.changed`.
+- No emite eventos ni acciones de auditoría propias: es solo lectura.
+
+Lo que asume de la plataforma:
+
+- `useCurrentSession()` entrega el `tenantId` y los permisos efectivos.
+- `RepositoryRegistry` expone `customers`, `orders` y `sales` como fuentes de lectura.
+
+Decisiones abiertas y coordinacion:
+
+- Si en el futuro se necesita distinguir canal (online vs. mostrador) en el ranking, o un rango de
+  fechas, hay que ampliar `GetCustomersService` -- sigue sin requerir contrato nuevo en `core`
+  mientras la fuente siga siendo `orders`/`sales` ya expuestos.
+- Los segmentos permanecen fuera de alcance hasta contar con `CustomerSegmentRepository`.
+
 ## Diseno E-commerce
 
 Implementado en esta rama:
