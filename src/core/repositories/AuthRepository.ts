@@ -1,5 +1,6 @@
 import type { MfaMethod, Session, User } from "@/core/entities";
-import type { UserType } from "@/core/enums";
+import type { AccountStatus, UserType } from "@/core/enums";
+import type { ISODateString } from "@/core/types/common.types";
 
 export interface LoginInput {
   /**
@@ -198,6 +199,30 @@ export interface AuthRepository {
    * a partir de otro estado.
    */
   getMfaStatus(sessionId: string): Promise<{ enabled: boolean; method: MfaMethod } | null>;
+  /**
+   * Lectura administrativa del estado de cuenta de OTRO usuario (Employee/
+   * Admin) -- para la pantalla de Usuarios de administration (coordinado
+   * con Jose, ver docs/MODULE_OWNERSHIP.md "User/Auth": Andy + Jose).
+   * Distinta de getMfaStatus(sessionId), que solo resuelve la sesion
+   * PROPIA del usuario logueado.
+   *
+   * `tenantId` debe llegar ya resuelto/autorizado por el caller (la
+   * sesion administrativa activa del admin que consulta), nunca de un
+   * valor declarado por el propio caller -- mismo criterio que el resto
+   * de los contratos tenant-scoped del proyecto (BranchRepository.
+   * getByIdScoped, RoleRepository.getByIdScoped). Un `userId` de OTRO
+   * tenant, inexistente, o sin AuthAccount todavia se resuelve como
+   * `null` sin distinguir el motivo -- no revela si un ID pertenece a
+   * otro tenant.
+   */
+  getAuthAccountStatusByUserId(
+    tenantId: string,
+    userId: string,
+  ): Promise<{
+    status: AccountStatus;
+    mfaEnabled: boolean;
+    lastLoginAt?: ISODateString;
+  } | null>;
   logout(sessionId: string): Promise<void>;
   getSession(sessionId: string): Promise<Session | null>;
   getCurrentSessionId(): Promise<string | null>;
