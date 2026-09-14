@@ -1,107 +1,164 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { StorefrontProductCard } from "@/modules/storefront/components/StorefrontProductCard";
 import { StorefrontCatalogImage } from "@/modules/storefront/components/StorefrontCatalogImage";
+import { StorefrontHorizontalCarousel } from "@/modules/storefront/components/StorefrontHorizontalCarousel";
 import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
 import { useStorefrontOffers } from "@/modules/storefront/hooks/useStorefrontOffers";
-import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
+
+const hardwareHeroMessages = [
+  {
+    badge: "Mayoreo B2B",
+    title: "Herramientas de alto rendimiento",
+    description:
+      "Equipamiento industrial para contratistas, talleres y constructoras con precios escalonados por volumen.",
+  },
+  {
+    badge: "Para tu proyecto",
+    title: "Todo para construir con confianza",
+    description: "Encuentra herramientas, fijación y suministros para cada etapa de tu obra.",
+  },
+  {
+    badge: "Compra inteligente",
+    title: "Calidad que impulsa tu trabajo",
+    description:
+      "Productos seleccionados para profesionales que buscan disponibilidad y rendimiento.",
+  },
+] as const;
 
 export function HomePage() {
   const { categories, products, loading, error } = useStorefrontDiscovery();
   const { items: offers } = useStorefrontOffers();
-  const { config } = usePublicTenant();
+  const hardwareImages = useMemo(
+    () =>
+      products
+        .filter(
+          (product) =>
+            product.imageSource &&
+            /herramient|ferreter|construcc|fijaci/i.test(
+              `${product.categoryName ?? ""} ${product.name}`,
+            ),
+        )
+        .slice(0, 3),
+    [products],
+  );
+  const slides = useMemo(
+    () =>
+      hardwareHeroMessages.map((message, index) => {
+        const image = hardwareImages[index % Math.max(hardwareImages.length, 1)];
+        return { ...message, imageSource: image?.imageSource, imageAlt: image?.imageAlt };
+      }),
+    [hardwareImages],
+  );
+  const [activeSlide, setActiveSlide] = useState(0);
+  const slide = slides[activeSlide % Math.max(slides.length, 1)];
+  const featuredProducts = useMemo(() => {
+    const offersByProductId = new Map(offers.map((offer) => [offer.productId, offer]));
+    return [...products]
+      .sort(
+        (left, right) =>
+          Number(offersByProductId.has(right.id)) - Number(offersByProductId.has(left.id)),
+      )
+      .slice(0, 8)
+      .map((product) => ({ product, offer: offersByProductId.get(product.id) }));
+  }, [offers, products]);
+  useEffect(() => {
+    if (slides.length < 2) return;
+    const timer = window.setInterval(
+      () => setActiveSlide((current) => (current + 1) % slides.length),
+      9000,
+    );
+    return () => window.clearInterval(timer);
+  }, [slides.length]);
+
+  const showPreviousSlide = () =>
+    setActiveSlide((current) => (current - 1 + slides.length) % slides.length);
+  const showNextSlide = () => setActiveSlide((current) => (current + 1) % slides.length);
   return (
     <main>
-      <section className="overflow-hidden bg-[var(--color-topbar)] text-white">
-        <div className="mx-auto grid max-w-7xl items-center gap-10 px-5 py-12 md:grid-cols-[1.05fr_.95fr] md:py-16">
-          <div>
-            <p className="inline-flex rounded-full bg-[var(--color-primary)] px-3 py-1 text-xs font-black uppercase tracking-[.16em] text-[var(--color-topbar)]">
-              Tienda en línea
-            </p>
-            <h1 className="mt-5 max-w-xl text-4xl font-black leading-[1.05] tracking-tight md:text-6xl">
-              Encuentra lo que buscas.{" "}
-              <span className="text-[var(--color-primary)]">Compra con confianza.</span>
-            </h1>
-            <p className="mt-5 max-w-lg text-base leading-7 text-slate-300">
-              Productos publicados, ofertas activas y una experiencia de compra clara desde el
-              catálogo hasta el seguimiento.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
+      <section className="mx-auto max-w-7xl px-5 py-8 sm:py-10">
+        <div className="relative min-h-[26rem] overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm sm:min-h-[30rem]">
+          {slide?.imageSource ? (
+            <>
+              <div className="absolute inset-y-0 right-0 z-10 w-full bg-gradient-to-r from-white via-white/90 to-white/10 sm:w-3/4" />
+              <StorefrontCatalogImage
+                alt={slide.imageAlt ?? "Imagen promocional de ferretería"}
+                className="absolute inset-0 z-0 h-full w-full object-contain object-right p-5 sm:p-8"
+                source={slide.imageSource}
+              />
+              <div className="relative z-20 flex min-h-[26rem] max-w-xl flex-col justify-center px-7 py-14 sm:min-h-[30rem] sm:px-12">
+                <p className="inline-flex w-fit rounded-md bg-amber-300 px-3 py-1 text-xs font-black uppercase tracking-wider text-[var(--color-title)]">
+                  {slide.badge}
+                </p>
+                <h1 className="mt-5 text-4xl font-black leading-tight text-[var(--color-text)] sm:text-5xl">
+                  {slide.title}
+                </h1>
+                <p className="mt-4 max-w-lg text-base leading-7 text-[var(--color-text-muted)] sm:text-lg">
+                  {slide.description}
+                </p>
+                <div className="mt-7 flex flex-wrap gap-3">
+                  <Link
+                    className="rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)] transition hover:bg-[var(--color-primary-hover)]"
+                    href="/catalogo"
+                  >
+                    Explorar catálogo →
+                  </Link>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex min-h-[26rem] flex-col justify-center px-7 sm:min-h-[30rem] sm:px-12">
+              <p className="text-sm font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">
+                Ferretería profesional
+              </p>
+              <h1 className="mt-4 text-4xl font-black text-[var(--color-text)] sm:text-5xl">
+                Herramientas de alto rendimiento
+              </h1>
               <Link
-                className="rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)] shadow-lg shadow-blue-500/20 transition hover:-translate-y-0.5 hover:bg-[var(--color-primary-hover)]"
+                className="mt-7 w-fit rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)]"
                 href="/catalogo"
               >
                 Explorar catálogo
               </Link>
-              <Link
-                className="rounded-xl border border-white/25 px-5 py-3 font-bold text-white transition hover:bg-white/10"
-                href="/ofertas"
-              >
-                Ver ofertas
-              </Link>
             </div>
-            <div className="mt-10 grid max-w-xl grid-cols-3 gap-3 border-t border-white/10 pt-6 text-sm">
-              <div>
-                <p className="font-black text-[var(--color-primary)]">01</p>
-                <p className="mt-1 text-slate-300">Explora</p>
+          )}
+          {slides.length > 1 ? (
+            <>
+              <div className="absolute bottom-6 left-1/2 z-20 flex -translate-x-1/2 gap-2">
+                {slides.map((item, index) => (
+                  <button
+                    aria-label={`Ver diapositiva ${index + 1}`}
+                    className={`h-2.5 rounded-full transition ${index === activeSlide ? "w-7 bg-[var(--color-primary-hover)]" : "w-2.5 bg-[var(--color-border)]"}`}
+                    key={item.title}
+                    onClick={() => setActiveSlide(index)}
+                    type="button"
+                  />
+                ))}
               </div>
-              <div>
-                <p className="font-black text-[var(--color-primary)]">02</p>
-                <p className="mt-1 text-slate-300">Agrega al carrito</p>
-              </div>
-              <div>
-                <p className="font-black text-[var(--color-primary)]">03</p>
-                <p className="mt-1 text-slate-300">Sigue tu pedido</p>
-              </div>
-            </div>
-          </div>
-          <div className="relative">
-            <div className="absolute -right-8 -top-8 h-40 w-40 rounded-full bg-[var(--color-primary)]/20 blur-3xl" />
-            <div className="relative grid gap-3 rounded-3xl border border-white/10 bg-white/10 p-4 backdrop-blur sm:grid-cols-2">
-              <div className="min-h-48 rounded-2xl bg-[var(--color-primary)] p-5 text-[var(--color-topbar)] sm:col-span-2">
-                <p className="text-xs font-black uppercase tracking-[.15em]">Compra inteligente</p>
-                <p className="mt-8 max-w-xs text-2xl font-black leading-tight">
-                  Descubre productos y promociones disponibles para ti.
-                </p>
-              </div>
-              {categories.slice(0, 3).map((category, index) => (
-                <Link
-                  key={category.id}
-                  href={`/catalogo?categoria=${category.id}`}
-                  className={`rounded-2xl border border-white/10 p-5 transition hover:-translate-y-1 hover:bg-white/10 ${index === 2 ? "sm:col-span-2" : ""}`}
+              <div className="absolute bottom-5 right-5 z-20 flex gap-2">
+                <button
+                  aria-label="Diapositiva anterior"
+                  className="grid h-11 w-11 place-items-center rounded-full border border-[var(--color-primary-hover)] bg-white/90 text-2xl text-[var(--color-title)] transition hover:bg-[var(--color-primary)]"
+                  onClick={showPreviousSlide}
+                  type="button"
                 >
-                  <p className="text-xs font-black text-[var(--color-primary)]">CATEGORÍA</p>
-                  <p className="mt-6 font-bold">{category.name}</p>
-                  <p className="mt-1 text-sm text-slate-300">Explorar →</p>
-                </Link>
-              ))}
-            </div>
-          </div>
+                  ‹
+                </button>
+                <button
+                  aria-label="Diapositiva siguiente"
+                  className="grid h-11 w-11 place-items-center rounded-full border border-[var(--color-primary-hover)] bg-white/90 text-2xl text-[var(--color-title)] transition hover:bg-[var(--color-primary)]"
+                  onClick={showNextSlide}
+                  type="button"
+                >
+                  ›
+                </button>
+              </div>
+            </>
+          ) : null}
         </div>
       </section>
-      {config?.branches.length ? (
-        <section className="border-y border-[var(--color-border)] bg-[var(--color-surface)]">
-          <div className="mx-auto max-w-7xl px-5 py-10">
-            <p className="text-sm font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">
-              Tiendas físicas
-            </p>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {config.branches.map((branch) => (
-                <article
-                  className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-app-background)] p-5"
-                  key={branch.id}
-                >
-                  <h2 className="font-black text-[var(--color-text)]">{branch.name}</h2>
-                  {branch.address ? (
-                    <p className="mt-2 text-sm text-[var(--color-text-muted)]">{branch.address}</p>
-                  ) : null}
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
-      ) : null}
       <section className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="mx-auto grid max-w-7xl gap-5 px-5 py-5 text-sm sm:grid-cols-3">
           <div>
@@ -143,72 +200,24 @@ export function HomePage() {
         ) : null}
         {error ? <p className="mt-6 text-[var(--color-danger)]">{error}</p> : null}
         {!loading && !error ? (
-          <div className="mt-6 flex snap-x gap-4 overflow-x-auto pb-2">
-            {categories.map((category, index) => (
+          <StorefrontHorizontalCarousel ariaLabel="Categorías disponibles">
+            {categories.map((category) => (
               <Link
-                key={category.id}
-                className="min-w-52 snap-start rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm transition hover:-translate-y-1 hover:border-[var(--color-primary)]"
+                key={category.name}
+                className="group w-36 shrink-0 snap-start text-center sm:w-40"
                 href={`/catalogo?categoria=${category.id}`}
               >
                 <StorefrontCatalogImage
                   alt={category.name}
-                  className="mb-4 h-28 w-full rounded-xl bg-white/10 object-cover"
+                  className="aspect-square w-full rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] object-cover p-3 shadow-sm transition duration-300 group-hover:-translate-y-1 group-hover:border-[var(--color-primary)] group-hover:shadow-md"
                   source={category.imageSource}
                 />
-                <span className="text-sm font-black text-[var(--color-primary-hover)]">
-                  0{index + 1}
-                </span>
-                <p className="mt-6 text-lg font-bold text-[var(--color-text)]">{category.name}</p>
-                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                  Ver productos disponibles
-                </p>
+                <p className="mt-3 font-bold text-[var(--color-text)]">{category.name}</p>
               </Link>
             ))}
-          </div>
+          </StorefrontHorizontalCarousel>
         ) : null}
       </section>
-      {offers.length > 0 ? (
-        <section className="border-y border-[var(--color-border)] bg-[var(--color-surface)]">
-          <div className="mx-auto max-w-7xl px-5 py-12">
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <p className="text-sm font-bold uppercase tracking-wider text-[var(--color-success)]">
-                  Precios especiales
-                </p>
-                <h2 className="mt-1 text-3xl font-black text-[var(--color-text)]">
-                  Ofertas que no duran para siempre
-                </h2>
-              </div>
-              <Link className="text-sm font-bold text-[var(--color-title)]" href="/ofertas">
-                Todas las ofertas →
-              </Link>
-            </div>
-            <div className="mt-6 flex snap-x gap-4 overflow-x-auto pb-3">
-              {offers.slice(0, 5).map((offer) => (
-                <Link
-                  key={offer.productId}
-                  className="min-w-64 snap-start rounded-2xl border border-[var(--color-border)] bg-[var(--color-app-background)] p-5 transition hover:-translate-y-1 hover:shadow-md"
-                  href={`/catalogo/${offer.productId}`}
-                >
-                  <p className="inline-flex rounded-full bg-[var(--color-primary)]/15 px-2.5 py-1 text-xs font-black uppercase tracking-wider text-[var(--color-title)]">
-                    {offer.promotionName}
-                  </p>
-                  <p className="mt-5 font-bold text-[var(--color-text)]">{offer.name}</p>
-                  <p className="mt-4 text-sm text-[var(--color-text-muted)] line-through">
-                    Q{offer.basePrice.toFixed(2)}
-                  </p>
-                  <p className="text-2xl font-black text-[var(--color-title)]">
-                    Q{offer.effectivePrice.toFixed(2)}
-                  </p>
-                  <p className="mt-1 text-sm font-bold text-[var(--color-success)]">
-                    Ahorras Q{offer.discount.toFixed(2)}
-                  </p>
-                </Link>
-              ))}
-            </div>
-          </div>
-        </section>
-      ) : null}
       <section className="mx-auto max-w-7xl px-5 py-14">
         <div className="flex items-end justify-between gap-4">
           <div>
@@ -223,12 +232,24 @@ export function HomePage() {
             Ver catálogo →
           </Link>
         </div>
-        {!loading && products.length > 0 ? (
-          <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {products.slice(0, 3).map((product) => (
-              <StorefrontProductCard key={product.id} product={product} />
+        {!loading && featuredProducts.length > 0 ? (
+          <StorefrontHorizontalCarousel ariaLabel="Productos destacados">
+            {featuredProducts.map(({ product, offer }) => (
+              <div
+                className="w-[84%] shrink-0 snap-start sm:w-[calc((100%-1.25rem)/2)] lg:w-[calc((100%-3.75rem)/4)]"
+                key={product.id}
+              >
+                <StorefrontProductCard
+                  offer={
+                    offer
+                      ? { originalPrice: offer.basePrice, promotionName: offer.promotionName }
+                      : undefined
+                  }
+                  product={{ ...product, salePrice: offer?.effectivePrice ?? product.salePrice }}
+                />
+              </div>
             ))}
-          </div>
+          </StorefrontHorizontalCarousel>
         ) : null}
       </section>
     </main>

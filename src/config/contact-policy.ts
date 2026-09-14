@@ -22,9 +22,7 @@ export function validatePhoneNumber(phone: string): string | null {
   const trimmed = phone.trim();
   if (!trimmed) return null;
 
-  if (!/^\d+$/.test(trimmed)) {
-    return "El teléfono solo puede contener números.";
-  }
+  if (!/^\d+$/.test(trimmed)) return "El teléfono solo puede contener números.";
   if (trimmed.length !== PHONE_POLICY.DIGITS) {
     return `El teléfono debe tener exactamente ${PHONE_POLICY.DIGITS} dígitos.`;
   }

@@ -9,6 +9,7 @@ import { MockCustomerRepository } from "@/infrastructure/mock/repositories/MockC
 import { MockAuthRepository } from "@/infrastructure/mock/repositories/MockAuthRepository";
 import { MockOrderPaymentConfirmationRepository } from "@/infrastructure/mock/repositories/MockOrderPaymentConfirmationRepository";
 import { MockOrderRepository } from "@/infrastructure/mock/repositories/MockOrderRepository";
+import { MockPaymentRepository } from "@/infrastructure/mock/repositories/MockPaymentRepository";
 import { MockProductRepository } from "@/infrastructure/mock/repositories/MockProductRepository";
 import { MockRoleRepository } from "@/infrastructure/mock/repositories/MockRoleRepository";
 import { MockTenantRepository } from "@/infrastructure/mock/repositories/MockTenantRepository";
@@ -28,7 +29,10 @@ import {
   resolveOptionalCustomerAuthorizationContext,
 } from "@/modules/customer/application/services/CustomerAuthorizationContext";
 import { getCurrentCustomerProfile } from "@/modules/customer/application/services/getCurrentCustomerProfile";
-import { getCurrentCustomerOrders } from "@/modules/customer/application/services/orderService";
+import {
+  getCurrentCustomerOrderDetail,
+  getCurrentCustomerOrders,
+} from "@/modules/customer/application/services/orderService";
 import type { StorefrontCheckoutFormDto } from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
 import { CreateStorefrontCheckoutService } from "@/modules/storefront/application/services/CreateStorefrontCheckoutService";
 import { getStorefrontAccountNavigation } from "@/modules/storefront/application/services/storefrontAccountNavigation";
@@ -161,6 +165,7 @@ function createHarness() {
     customers: new MockCustomerRepository(store, eventBus),
     orderPaymentConfirmations: new MockOrderPaymentConfirmationRepository(store, eventBus),
     orders: new MockOrderRepository(store, eventBus),
+    payments: new MockPaymentRepository(store, eventBus),
     products: new MockProductRepository(store, eventBus),
     roles: new MockRoleRepository(store, eventBus),
     tenants: new MockTenantRepository(store, eventBus),
@@ -390,6 +395,10 @@ async function verifyAuthenticatedCheckoutAndIsolation() {
     visibleOrders.map((order) => order.id),
     [customerAOrder.id],
   );
+  const ownDetail = await getCurrentCustomerOrderDetail(harness.repositories, customerAOrder.id);
+  assert.equal(ownDetail?.orderNumber, customerAOrder.orderNumber);
+  const foreignDetail = await getCurrentCustomerOrderDetail(harness.repositories, customerBOrder.id);
+  assert.equal(foreignDetail, null, "customer A cannot open customer B order by id");
 }
 
 async function verifyEmployeeAndCrossTenantIsolation() {

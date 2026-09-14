@@ -2,24 +2,40 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
+import { UserType } from "@/core/enums";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
-import { getStorefrontAccountNavigation } from "@/modules/storefront/application/services/storefrontAccountNavigation";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
+import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
+import { StorefrontCatalogImage } from "@/modules/storefront/components/StorefrontCatalogImage";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
 export function StorefrontHeader() {
   const { itemCount } = useStorefrontCart();
-  const { config } = usePublicTenant();
+  const { products } = useStorefrontDiscovery();
   const { user, loading } = useCurrentSession();
+  const { config } = usePublicTenant();
   const router = useRouter();
   const [search, setSearch] = useState("");
+  const normalizedSearch = search.trim().toLocaleLowerCase();
+  const suggestions = useMemo(() => {
+    if (!normalizedSearch) return [];
+    return products
+      .filter((product) =>
+        [product.name, product.sku, product.brand, product.categoryName]
+          .filter(Boolean)
+          .some((value) => value!.toLocaleLowerCase().includes(normalizedSearch)),
+      )
+      .slice(0, 5);
+  }, [normalizedSearch, products]);
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const query = search.trim();
     router.push(query ? `/catalogo?q=${encodeURIComponent(query)}` : "/catalogo");
   };
-  const accountNavigation = getStorefrontAccountNavigation(user, loading);
+  const isCustomer = user?.type === UserType.customer;
+  const accountHref = !loading && user ? (isCustomer ? "/cuenta" : "/inicio") : "/iniciar-sesion";
+  const accountLabel = !loading && user ? (isCustomer ? "Mi Cuenta" : "Ir a inicio") : "Ingresar";
 
   return (
     <header className="sticky top-0 z-30 bg-[var(--color-topbar)] text-white shadow-lg shadow-slate-900/10">
@@ -52,9 +68,9 @@ export function StorefrontHeader() {
             </span>
           </Link>
           <Link
-            aria-label={accountNavigation.label}
+            aria-label={accountLabel}
             className="rounded-lg px-2.5 py-2 text-slate-200 transition hover:bg-white/10 hover:text-white sm:px-3"
-            href={accountNavigation.href}
+            href={accountHref}
           >
             <svg
               aria-hidden="true"
@@ -67,7 +83,7 @@ export function StorefrontHeader() {
               <circle cx="12" cy="8" r="4" />
               <path d="M4 21c1.5-4 4.2-6 8-6s6.5 2 8 6" />
             </svg>
-            <span className="ml-1 hidden min-[1180px]:inline">{accountNavigation.label}</span>
+            <span className="ml-1 hidden min-[1180px]:inline">{accountLabel}</span>
           </Link>
         </div>
         <form
@@ -79,12 +95,22 @@ export function StorefrontHeader() {
           </label>
           <div className="relative mx-auto max-w-xl">
             <input
-              className="w-full rounded-xl border border-white/15 bg-white/10 py-2.5 pl-4 pr-12 text-sm text-white outline-none placeholder:text-slate-300 transition focus:border-[var(--color-primary)] focus:bg-white/15 focus:ring-2 focus:ring-[var(--color-primary)]/30"
+              className="w-full rounded-xl border border-white/15 bg-white/10 py-2.5 pl-4 pr-20 text-sm text-white outline-none placeholder:text-slate-300 transition focus:border-[var(--color-primary)] focus:bg-white/15 focus:ring-2 focus:ring-[var(--color-primary)]/30"
               id="storefront-search"
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Buscar productos, marcas o códigos"
               value={search}
             />
+            {search ? (
+              <button
+                aria-label="Limpiar búsqueda"
+                className="absolute inset-y-1 right-11 px-2 text-slate-300 transition hover:text-white"
+                onClick={() => setSearch("")}
+                type="button"
+              >
+                ×
+              </button>
+            ) : null}
             <button
               aria-label="Buscar productos"
               className="absolute inset-y-1 right-1 rounded-lg bg-[var(--color-primary)] px-3 text-sm font-black text-[var(--color-topbar)] transition hover:bg-[var(--color-primary-hover)]"
@@ -92,6 +118,56 @@ export function StorefrontHeader() {
             >
               ⌕
             </button>
+            {normalizedSearch ? (
+              <div className="absolute left-0 right-0 top-[calc(100%+.45rem)] z-50 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-2xl shadow-slate-950/25">
+                <div className="flex items-center justify-between gap-4 bg-[var(--color-primary)]/10 px-4 py-3 text-xs font-bold uppercase tracking-wider text-[var(--color-title)]">
+                  <span>Sugerencias de productos</span>
+                  <span>Presiona Enter para buscar</span>
+                </div>
+                {suggestions.length > 0 ? (
+                  <div className="divide-y divide-[var(--color-border)]">
+                    {suggestions.map((product) => (
+                      <Link
+                        className="flex items-center gap-3 px-4 py-3 transition hover:bg-slate-50"
+                        href={`/catalogo/${product.id}`}
+                        key={product.id}
+                        onClick={() => setSearch("")}
+                      >
+                        <StorefrontCatalogImage
+                          alt={product.imageAlt ?? product.name}
+                          className="h-11 w-11 shrink-0 rounded-md border border-[var(--color-border)] bg-slate-50 object-contain p-1"
+                          source={product.imageSource}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-bold text-[var(--color-text)]">
+                            {product.name}
+                          </span>
+                          <span className="mt-0.5 block truncate text-sm text-[var(--color-text-muted)]">
+                            {product.categoryName ?? "Sin categoría"} • SKU: {product.sku}
+                          </span>
+                        </span>
+                        <span className="shrink-0 font-black text-[var(--color-title)]">
+                          Q{product.salePrice.toFixed(2)}
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="px-4 py-5 text-center text-sm text-[var(--color-text-muted)]">
+                    No encontramos productos para “{search.trim()}”.
+                  </p>
+                )}
+                {suggestions.length > 0 ? (
+                  <button
+                    className="flex w-full items-center justify-center gap-2 border-t border-[var(--color-border)] bg-slate-50 px-4 py-3 text-sm font-bold text-[var(--color-title)] hover:bg-[var(--color-primary)]/10"
+                    onClick={() => router.push(`/catalogo?q=${encodeURIComponent(search.trim())}`)}
+                    type="button"
+                  >
+                    ⌕ Ver todos los resultados para “{search.trim()}”
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </form>
         <nav
@@ -109,6 +185,13 @@ export function StorefrontHeader() {
             href="/ofertas"
           >
             Ofertas
+          </Link>
+          <Link
+            className="rounded-lg px-2.5 py-2 text-slate-200 transition hover:bg-white/10 hover:text-white sm:px-3"
+            href="/sucursales"
+          >
+            <span aria-hidden="true">▥</span>
+            <span className="ml-1">Sucursales</span>
           </Link>
           <Link
             className="rounded-lg px-2.5 py-2 text-slate-200 transition hover:bg-white/10 hover:text-white sm:px-3"

@@ -174,6 +174,21 @@ export class CreateStorefrontCheckoutService {
       orderStatus: confirmation.order.status,
       paymentStatus: confirmation.payment.status,
       hasInventoryReservations: confirmation.inventoryReservations.length > 0,
+      deliveryAddress: {
+        recipientName: form.fullName.trim(),
+        line1: form.addressLine1.trim(),
+        line2: form.addressLine2?.trim() || undefined,
+        city: form.city.trim(),
+        department: form.department?.trim() || undefined,
+        phone: form.phone.trim(),
+      },
+      items: orderItems.map((item) => ({
+        sku: item.skuSnapshot,
+        name: item.nameSnapshot,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        subtotal: item.subtotal,
+      })),
     };
   }
 }

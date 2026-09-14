@@ -37,7 +37,14 @@ export function useStorefrontCheckout() {
         setResult(nextResult);
         clearCart();
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "No se pudo procesar el pedido.");
+        keyRef.current = null;
+        const message = cause instanceof Error ? cause.message : "";
+        setError(
+          message.includes("Inventory reservation conflict") ||
+            message.includes("Insufficient stock")
+            ? "No se pudo reservar uno de los productos. Revisa la disponibilidad o ajusta el carrito."
+            : message || "No se pudo procesar el pedido.",
+        );
       } finally {
         setSubmitting(false);
       }

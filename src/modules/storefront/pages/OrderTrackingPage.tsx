@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { statusesConfig } from "@/config/statuses";
+import { StorefrontOrderProgress } from "@/modules/storefront/components/StorefrontOrderProgress";
 import { useStorefrontOrderTracking } from "@/modules/storefront/hooks/useStorefrontOrderTracking";
 
 export function OrderTrackingPage({ trackingToken }: { trackingToken: string }) {
@@ -44,23 +45,20 @@ export function OrderTrackingPage({ trackingToken }: { trackingToken: string }) 
       <Link className="text-sm font-bold text-[var(--color-title)]" href="/catalogo">
         ← Seguir comprando
       </Link>
-      <section className="mt-5 overflow-hidden rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
-        <div className="bg-[var(--color-topbar)] px-6 py-7 text-white">
-          <p className="text-sm text-slate-300">Pedido {data.orderNumber}</p>
-          <h1 className="mt-2 text-3xl font-black">Seguimiento de pedido</h1>
-          <p className="mt-3 inline-block rounded-full bg-[var(--color-primary)]/20 px-3 py-1 text-sm font-bold text-[var(--color-primary)]">
-            {status?.label ?? data.status}
+      <section className="mt-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm sm:p-8">
+        <div className="text-center">
+          <p className="text-sm text-[var(--color-text-muted)]">Pedido {data.orderNumber}</p>
+          <h1 className="mt-2 text-3xl font-black text-[var(--color-text)]">
+            Seguimiento de pedido
+          </h1>
+          <p className="mt-3 inline-block rounded-md border border-[var(--color-primary)] bg-[var(--color-primary)]/10 px-3 py-1 text-sm font-bold text-[var(--color-title)]">
+            Estado actual: {status?.label ?? data.status}
           </p>
         </div>
-        <div className="p-6">
-          <section className="rounded-2xl border border-[var(--color-border)] bg-slate-50 p-5">
-            <p className="text-xs font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">
-              Estado actual
-            </p>
-            <p className="mt-2 text-xl font-black text-[var(--color-text)]">
-              {status?.label ?? data.status}
-            </p>
-          </section>
+        <div className="mt-7">
+          <StorefrontOrderProgress status={data.status} />
+        </div>
+        <div className="mt-8">
           <div className="mt-8 space-y-3">
             {data.items.map((item, index) => (
               <article
