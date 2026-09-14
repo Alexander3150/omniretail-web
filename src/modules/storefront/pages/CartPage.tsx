@@ -1,10 +1,12 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
 
 export function CartPage() {
   const { items, subtotal, updateQuantity, removeProduct, clearCart } = useStorefrontCart();
+  const itemCount = items.reduce((total, item) => total + item.quantity, 0);
   if (items.length === 0)
     return (
       <main className="mx-auto max-w-5xl px-5 py-14">
@@ -28,7 +30,7 @@ export function CartPage() {
       </main>
     );
   return (
-    <main className="mx-auto max-w-5xl px-5 py-12">
+    <main className="mx-auto max-w-7xl px-5 py-12">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">
@@ -44,36 +46,50 @@ export function CartPage() {
           Vaciar carrito
         </button>
       </div>
-      <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_19rem]">
-        <div className="space-y-4">
+      <div className="mt-8 grid gap-6 2xl:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
+          <div className="hidden grid-cols-[minmax(16rem,22rem)_6rem_7rem_7rem_6.5rem_3rem] gap-3 border-b border-[var(--color-border)] bg-slate-50 px-5 py-4 text-xs font-black uppercase tracking-wider text-[var(--color-primary-hover)] lg:grid">
+            <span>Producto</span>
+            <span>SKU</span>
+            <span className="text-center">Cantidad</span>
+            <span className="text-right">Precio unit.</span>
+            <span className="text-right">Total</span>
+            <span className="text-right">Acción</span>
+          </div>
           {items.map((item) => (
             <article
               key={item.productId}
-              className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm"
+              className="grid min-h-32 gap-3 border-b border-[var(--color-border)] px-5 py-5 last:border-b-0 lg:grid-cols-[minmax(16rem,22rem)_6rem_7rem_7rem_6.5rem_3rem] lg:items-center"
             >
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">
-                    Código · {item.sku}
-                  </p>
-                  <h2 className="mt-2 text-xl font-black text-[var(--color-text)]">{item.name}</h2>
-                  <p className="mt-2 text-lg font-bold text-[var(--color-title)]">
-                    Q{item.unitPrice.toFixed(2)}{" "}
-                    <span className="text-sm font-normal text-[var(--color-text-muted)]">
-                      por unidad
-                    </span>
+              <div className="flex min-w-0 items-center gap-4">
+                {item.imageUrl ? (
+                  <Image
+                    alt={item.imageAlt ?? item.name}
+                    className="h-16 w-16 shrink-0 rounded-xl border border-[var(--color-border)] bg-slate-50 object-contain object-center p-1"
+                    height={64}
+                    src={item.imageUrl}
+                    width={64}
+                  />
+                ) : (
+                  <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl border border-[var(--color-border)] bg-slate-50 text-center text-xs text-[var(--color-text-muted)]">
+                    Sin imagen
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <h2 className="mt-1 truncate text-lg font-black text-[var(--color-text)]">
+                    {item.name}
+                  </h2>
+                  <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                    Producto disponible para compra en línea
                   </p>
                 </div>
-                <button
-                  className="rounded-lg px-2 py-1 text-sm font-bold text-[var(--color-danger)] hover:bg-red-50"
-                  onClick={() => removeProduct(item.productId)}
-                  type="button"
-                >
-                  Quitar
-                </button>
               </div>
-              <div className="mt-5 flex items-center justify-between gap-4 border-t border-[var(--color-border)] pt-4">
-                <div className="flex items-center rounded-xl border border-[var(--color-border)] bg-slate-50">
+              <p className="text-sm font-mono text-[var(--color-text-muted)]">{item.sku}</p>
+              <div className="flex items-center justify-between gap-4 md:block">
+                <span className="text-sm font-bold text-[var(--color-text-muted)] md:hidden">
+                  Cantidad
+                </span>
+                <div className="flex w-fit items-center rounded-xl border border-[var(--color-border)] bg-slate-50">
                   <button
                     aria-label={`Reducir cantidad de ${item.name}`}
                     className="px-4 py-2 font-black"
@@ -92,32 +108,57 @@ export function CartPage() {
                     +
                   </button>
                 </div>
-                <p className="text-xl font-black text-[var(--color-text)]">
-                  Q{(item.unitPrice * item.quantity).toFixed(2)}
-                </p>
               </div>
+              <p className="flex justify-between text-base font-bold text-[var(--color-text)] lg:block lg:text-right">
+                <span className="text-sm font-bold text-[var(--color-text-muted)] lg:hidden">
+                  Precio unitario
+                </span>
+                Q{item.unitPrice.toFixed(2)}
+              </p>
+              <p className="flex justify-between text-lg font-black text-[var(--color-text)] md:block md:text-right">
+                <span className="text-sm font-bold text-[var(--color-text-muted)] md:hidden">
+                  Total
+                </span>
+                Q{(item.unitPrice * item.quantity).toFixed(2)}
+              </p>
+              <button
+                aria-label={`Quitar ${item.name}`}
+                className="grid h-9 w-9 justify-self-end place-items-center rounded-full border border-[var(--color-danger)]/35 bg-red-50 text-xl font-black leading-none text-[var(--color-danger)] shadow-sm transition hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-[var(--color-danger)]/35"
+                onClick={() => removeProduct(item.productId)}
+                type="button"
+              >
+                ×
+              </button>
             </article>
           ))}
         </div>
-        <aside className="h-fit rounded-2xl bg-[var(--color-topbar)] p-6 text-white shadow-xl shadow-slate-900/15">
-          <p className="text-sm font-bold uppercase tracking-wider text-[var(--color-primary)]">
-            Resumen
-          </p>
-          <div className="mt-6 flex items-end justify-between">
-            <span className="text-slate-300">Subtotal</span>
-            <span className="text-3xl font-black">Q{subtotal.toFixed(2)}</span>
+        <aside className="h-fit rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
+          <p className="text-xl font-black text-[var(--color-text)]">Resumen de compra</p>
+          <div className="mt-5 space-y-4 border-y border-[var(--color-border)] py-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[var(--color-text-muted)]">
+                Subtotal ({itemCount} {itemCount === 1 ? "producto" : "productos"})
+              </span>
+              <span className="font-bold text-[var(--color-text)]">Q{subtotal.toFixed(2)}</span>
+            </div>
+            <p className="text-sm text-[var(--color-text-muted)]">
+              Los descuentos por volumen se mostrarán cuando estén aplicados en el pedido.
+            </p>
           </div>
-          <p className="mt-3 border-t border-white/10 pt-3 text-sm text-slate-300">
-            Envío a domicilio incluido.
-          </p>
+          <div className="mt-4 flex items-end justify-between">
+            <span className="font-black text-[var(--color-text)]">Total estimado</span>
+            <span className="text-xl font-black text-[var(--color-text)]">
+              Q{subtotal.toFixed(2)}
+            </span>
+          </div>
           <Link
-            className="mt-6 block rounded-xl bg-[var(--color-primary)] px-4 py-3 text-center font-black text-[var(--color-topbar)] transition hover:bg-[var(--color-primary-hover)]"
+            className="mt-6 block rounded-xl bg-[var(--color-primary-hover)] px-4 py-3 text-center font-black text-white transition hover:brightness-110"
             href="/checkout"
           >
             Continuar al checkout
           </Link>
           <Link
-            className="mt-3 block text-center text-sm font-bold text-slate-300 hover:text-white"
+            className="mt-4 block text-center text-sm font-bold text-[var(--color-title)] hover:underline"
             href="/catalogo"
           >
             Seguir comprando
