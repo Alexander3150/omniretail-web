@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import type { BankAccountType } from "@/core/entities";
 import type {
   CardTerminalOutcome,
   CardTerminalResultDto,
@@ -17,6 +18,11 @@ import { Select } from "@/shared/components/Select";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
 import { DeliveryMethod, TransportMode } from "@/core/enums";
+
+const accountTypeLabels: Record<BankAccountType, string> = {
+  monetary: "Monetaria",
+  savings: "Ahorro",
+};
 
 interface CheckoutModalProps {
   open: boolean;
@@ -478,11 +484,16 @@ export function CheckoutModal({
                     </option>
                     {bankAccounts.map((account) => (
                       <option key={account.id} value={account.id}>
-                        {account.label}
+                        {account.bankName} · {accountTypeLabels[account.accountType]} ·{" "}
+                        {account.holderName}
                       </option>
                     ))}
                   </Select>
                 </FormField>
+                <SelectedBankAccountDetail
+                  account={bankAccounts.find((item) => item.id === checkout.bankAccountId)}
+                  key={checkout.bankAccountId || "none"}
+                />
                 <FormField
                   id="checkout-transfer-reference"
                   label="Referencia"
@@ -690,6 +701,57 @@ function PaymentSection({ title, children }: { title: string; children: ReactNod
     <div className="space-y-3 rounded-lg border border-[var(--color-border)] p-4">
       <h4 className="font-semibold text-[var(--color-title)]">{title}</h4>
       {children}
+    </div>
+  );
+}
+
+/**
+ * El número completo de la cuenta seleccionada solo se pinta acá, dentro del checkout de
+ * transferencia -- este es el único consumidor autorizado a mostrarlo (ver
+ * GetCheckoutBankAccountsService). Nunca queda en un query param, log ni mensaje de error.
+ */
+function SelectedBankAccountDetail({ account }: { account?: CheckoutBankAccountDto }) {
+  const [copied, setCopied] = useState(false);
+
+  if (!account) return null;
+
+  async function handleCopy() {
+    if (!account) return;
+    await navigator.clipboard.writeText(account.accountNumber);
+    setCopied(true);
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 text-sm">
+      <DetailRow label="Banco" value={account.bankName} />
+      <DetailRow label="Tipo de cuenta" value={accountTypeLabels[account.accountType]} />
+      <DetailRow label="Titular" value={account.holderName} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <DetailRow label="Número completo" value={account.accountNumber} mono />
+        <Button
+          className="min-h-8 px-3 py-1.5 text-xs"
+          onClick={() => void handleCopy()}
+          type="button"
+          variant="secondary"
+        >
+          {copied ? "Copiado ✓" : "Copiar"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-xs font-semibold uppercase text-[var(--color-text-muted)]">
+        {label}
+      </span>
+      <span
+        className={`text-right font-semibold text-[var(--color-text)] ${mono ? "font-mono" : ""}`}
+      >
+        {value}
+      </span>
     </div>
   );
 }
