@@ -301,11 +301,20 @@ export function CheckoutPage() {
                   {selectedPaymentMethodId === "new" ? (
                     <div className="mt-4 grid gap-4 sm:grid-cols-2">
                       <label className="grid gap-2 text-sm font-bold text-[var(--color-text)] sm:col-span-2">
-                        Número de tarjeta
+                        Número de tarjeta (últimos 4 dígitos)
                         <input
-                          className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-3 font-normal text-[var(--color-text-muted)]"
-                          readOnly
-                          value="•••• •••• •••• ••••"
+                          autoComplete="off"
+                          className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-3 font-normal text-[var(--color-text)]"
+                          inputMode="numeric"
+                          maxLength={4}
+                          onChange={(event) =>
+                            setForm({
+                              ...form,
+                              cardLastFour: event.target.value.replace(/\D/g, "").slice(0, 4),
+                            })
+                          }
+                          placeholder="1234"
+                          value={form.cardLastFour}
                         />
                       </label>
                       <div className="sm:col-span-2">
