@@ -11,6 +11,11 @@ export class MockBankAccountRepository extends BaseMockRepository implements Ban
   async getActive() {
     return this.read((db) => db.bankAccounts.filter((item) => item.status === "active"));
   }
+  async getActiveByTenant(tenantId: string) {
+    return this.read((db) =>
+      db.bankAccounts.filter((item) => item.status === "active" && item.tenantId === tenantId),
+    );
+  }
   async create(input: Parameters<BankAccountRepository["create"]>[0]) {
     const item = this.store.mutate((db) => {
       const now = this.now();

@@ -144,7 +144,6 @@ export function BankAccountsPage() {
           accounts={accounts}
           canManage={canManage}
           onArchive={setArchiveTarget}
-          onCopied={() => showToast({ title: "Número copiado al portapapeles", tone: "success" })}
           onEdit={(account) => setEditor({ mode: "edit", account })}
         />
       )}

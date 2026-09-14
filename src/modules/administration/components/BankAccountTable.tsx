@@ -13,7 +13,6 @@ interface BankAccountTableProps {
   accounts: BankAccountDto[];
   canManage: boolean;
   onArchive: (account: BankAccountDto) => void;
-  onCopied?: () => void;
   onEdit: (account: BankAccountDto) => void;
 }
 
@@ -21,7 +20,6 @@ export function BankAccountTable({
   accounts,
   canManage,
   onArchive,
-  onCopied,
   onEdit,
 }: BankAccountTableProps) {
   const columns: DataTableColumn<BankAccountDto>[] = [
@@ -50,20 +48,10 @@ export function BankAccountTable({
       ),
     },
     {
-      key: "accountNumber",
+      key: "accountNumberMasked",
       header: "Número",
       cell: (account) => (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-[var(--color-text)]">{account.accountNumber}</span>
-          <Button
-            className="min-h-8 px-2 py-1 text-xs"
-            onClick={() => void handleCopyAccountNumber(account.accountNumber, onCopied)}
-            type="button"
-            variant="ghost"
-          >
-            Copiar
-          </Button>
-        </div>
+        <span className="font-mono text-[var(--color-text)]">{account.accountNumberMasked}</span>
       ),
     },
     {
@@ -116,9 +104,4 @@ export function BankAccountTable({
       rowKey={(account) => account.id}
     />
   );
-}
-
-async function handleCopyAccountNumber(accountNumber: string, onCopied?: () => void) {
-  await navigator.clipboard.writeText(accountNumber);
-  onCopied?.();
 }
