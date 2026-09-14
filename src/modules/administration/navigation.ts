@@ -29,6 +29,15 @@ export const administrationNavigation = [
         permission: BUSINESS_CONFIG_MANAGE_PERMISSION,
       },
       {
+        id: "administration-roles",
+        label: "Roles y permisos",
+        href: "/administracion/roles-permisos",
+        // Mismo criterio que Sucursales: NavigationItem.permission es un unico string, asi que la
+        // entrada se protege con `admin.roles.manage`, el permiso de la audiencia real. El service
+        // acepta ademas `admin.roles.read` de forma defensiva.
+        permission: "admin.roles.manage",
+      },
+      {
         id: "administration-customers",
         label: "Clientes",
         href: "/administracion/clientes",

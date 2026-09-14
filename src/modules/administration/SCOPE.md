@@ -41,7 +41,7 @@
 | 8   | Caja                      | `/administracion/caja`                  | `CashShift`, `CashMovement`   | ✅ **Implementada** — solo lectura  |
 | 9   | Dashboard                 | `/administracion/dashboard`             | Agregación                    | ✅ **Implementada**                 |
 | 10  | Reportes                  | `/administracion/reportes`              | Agregación                    | ✅ **Implementada**                 |
-| 11  | Roles y permisos          | `/administracion/roles-permisos`        | `Role`, `Permission`          | ⛔ No implementada — contrato ya desbloqueado (`chore/admin-role-contracts`) |
+| 11  | Roles y permisos          | `/administracion/roles-permisos`        | `Role`, `Permission`          | ✅ **Implementada** (`feature/admin-roles-permissions`) |
 | 12  | Usuarios                  | `/administracion/usuarios`              | `User` (+ `AuthAccount`)      | ⛔ Bloqueada — depende de #11       |
 | 13  | Planes y facturación SaaS | `/administracion/planes-facturacion`    | _(sin definir)_               | ⛔ Bloqueada — modelo               |
 | 14  | Sincronización            | `/administracion/sincronizacion`        | _(sin definir)_               | ⛔ Bloqueada — modelo               |
@@ -634,14 +634,24 @@ Sin reglas propias: 100% agregación vía repositorios ajenos. `KPICard` se agre
 Agrega `Sale`, `PurchaseOrder`, `InventoryMovement`, `Payment` vía repositorios compartidos.
 Nunca crear un almacén paralelo de reportes. Dejar para el final.
 
-### 12.11 Roles y permisos ⛔
+### 12.11 Roles y permisos ✅ implementada
 
-Listado: `name`, cantidad de permisos, `branchScope`, `isSystem`.
+Listado: `name`, `branchScope`, detalle de permisos en modo lectura (modal, incluye conteo),
+`isSystem`, acciones. El detalle de permisos está disponible para cualquier rol, incluidos los
+`isSystem` (que no tienen edición) — es la única forma de inspeccionar qué permisos tiene un rol
+protegido.
 Editor: selector de permisos agrupado por dominio, con checkbox por permiso — nunca texto libre.
-Presets sugeridos como plantillas de partida (Propietario, Gerente, Inventario/Compras,
-Bodeguero, Cajero, Auditor); no es lista cerrada.
-Validación: un rol no puede quedar sin nombre ni sin permisos.
-**Desbloqueada** por el contrato tenant-scoped de `RoleRepository`; la UI sigue sin implementar.
+Sin presets de arranque: los roles por defecto (Administrador, Inventario, Cajero, Bodeguero,
+Cliente) ya existen sembrados como `isSystem`; una plantilla que los imite sería redundante. "Nuevo
+rol" arranca en blanco y el administrador lo arma permiso por permiso.
+Validación: un rol no puede quedar sin nombre, sin permisos, ni con una key de permiso que no
+exista en el catálogo.
+Los roles `isSystem` quedan protegidos: no se pueden editar ni archivar desde esta pantalla — el
+contrato `updateScoped` ya excluye `isSystem` del payload editable a nivel de tipo
+(`fix(roles): harden tenant and session boundaries`), y los services además rechazan la operación
+explícitamente (`ensureRoleNotSystem`) como defensa adicional.
+Archivar un rol no revoca el acceso ya otorgado a cuentas existentes, solo impide asignarlo a
+cuentas nuevas — no hay un mecanismo de revocación retroactiva en esta entrega.
 
 ### 12.12 Usuarios ⛔
 
@@ -716,7 +726,7 @@ Convención de rama: `feature/admin-<funcionalidad>` (`docs/GIT_WORKFLOW.md`), s
 | 1   | `feature/admin-business-config`     | Configuración del negocio | — ✅ hecha                  |
 | 2   | `feature/admin-branches`            | Sucursales                | —                           |
 | 3   | `chore/admin-role-contracts`        | _(contrato)_              | — ✅ hecha, avisar a Andy   |
-| 4   | `feature/admin-roles-permissions`   | Roles y permisos          | 3 ✅ desbloqueada           |
+| 4   | `feature/admin-roles-permissions`   | Roles y permisos          | 3 ✅ hecha                  |
 | 5   | `feature/admin-users`               | Usuarios                  | 2, 4 + contrato AuthAccount |
 | 6   | `feature/admin-suppliers`           | Proveedores               | —                           |
 | 7   | `feature/admin-bank-accounts`       | Cuentas bancarias         | 2                           |

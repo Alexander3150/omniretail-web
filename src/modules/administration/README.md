@@ -13,6 +13,33 @@ estan en `SCOPE.md`.
 
 UserRepository, RoleRepository, BranchRepository, BusinessConfigRepository, TenantRepository, SupplierRepository, BankAccountRepository, CustomerRepository, AuditLogRepository, CashShiftRepository, SalesRepository, OrderRepository, InventoryRepository, ReceiptRepository, IncidentTypeRepository, PurchaseOrderRepository, PaymentRepository, ProductRepository
 
+## Roles y permisos
+
+Implementado en esta rama (`feature/admin-roles-permissions`, sobre el contrato de
+`chore/admin-role-contracts`):
+
+- Listado de roles aislado por el `tenantId` de la sesion; alta, edicion y archivado mediante
+  services separados sobre `RoleRepository`.
+- Enforcement de `admin.roles.manage` para mutar; `admin.roles.read` o `admin.roles.manage` para
+  consultar. La entrada de navegacion se protege con `manage`, mismo criterio que Sucursales.
+- Los permisos de un rol nunca son texto libre: el formulario ofrece un checkbox por permiso,
+  agrupado por modulo, sobre el catalogo completo de `src/config/permissions.ts`
+  (`permissionsConfig`). El service valida igual que cada key exista en ese catalogo.
+- Sin presets de arranque a proposito: los roles por defecto (Administrador, Inventario, Cajero,
+  Bodeguero, Cliente) ya existen sembrados y son `isSystem`; ofrecer plantillas que los imitan en
+  el alta seria redundante. "Nuevo rol" arranca en blanco -- el administrador arma el suyo permiso
+  por permiso.
+- Cada rol expone su detalle de permisos en modo lectura ("Ver permisos" en `RoleTable`), incluidos
+  los `isSystem`, que no tienen boton de editar -- sin esto no habria forma de inspeccionar los
+  permisos de un rol protegido desde la UI.
+- Los roles `isSystem: true` (los del seed) quedan protegidos: no se pueden editar ni archivar
+  desde esta pantalla (`ensureRoleNotSystem` en `serviceHelpers.ts`). El repositorio en si es CRUD
+  generico y no aplica esta regla -- vive en la capa de aplicacion.
+- `Role.status` (`RoleStatus`) es nuevo (ver `chore/admin-role-contracts`); archivar un rol no
+  revoca el acceso de las cuentas que ya lo tienen asignado, solo evita asignarlo a cuentas nuevas.
+- Auditoria en alta, edicion y archivado (`role.created` / `role.updated` / `role.archived`).
+- Ruta privada `/administracion/roles-permisos` y entrada de navegacion con `admin.roles.manage`.
+
 ## Configuracion del negocio
 
 Implementado en esta rama:
