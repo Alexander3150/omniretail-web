@@ -22,15 +22,8 @@ export function validatePhoneNumber(phone: string): string | null {
   const trimmed = phone.trim();
   if (!trimmed) return null;
 
-  // En el checkout se presenta el número con el prefijo local `+502`.
-  // Aceptamos también espacios o guiones de formato, pero nunca letras ni
-  // otros símbolos, y validamos siempre los ocho dígitos nacionales.
-  const compact = trimmed.replace(/[\s-]/g, "");
-  const nationalNumber = compact.startsWith("+502") ? compact.slice(4) : compact;
-  if (!/^\d+$/.test(nationalNumber)) {
-    return "Ingresa un teléfono guatemalteco válido.";
-  }
-  if (nationalNumber.length !== PHONE_POLICY.DIGITS) {
+  if (!/^\d+$/.test(trimmed)) return "El teléfono solo puede contener números.";
+  if (trimmed.length !== PHONE_POLICY.DIGITS) {
     return `El teléfono debe tener exactamente ${PHONE_POLICY.DIGITS} dígitos.`;
   }
   return null;

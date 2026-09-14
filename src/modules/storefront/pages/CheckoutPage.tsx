@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import type { CustomerPaymentMethod } from "@/core/entities";
+import type { Address, CustomerPaymentMethod } from "@/core/entities";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import type { StorefrontCheckoutFormDto } from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
@@ -53,25 +53,39 @@ export function CheckoutPage() {
   const { items, subtotal } = useStorefrontCart();
   const repositories = useRepositories();
   const { user } = useCurrentSession();
-  const { tenantId } = usePublicTenant();
+  const { tenantId, config, loading: configLoading } = usePublicTenant();
   const { submitting, error, result, submit } = useStorefrontCheckout();
   const [form, setForm] = useState(initialForm);
   const [step, setStep] = useState<1 | 2>(1);
   const [savedCards, setSavedCards] = useState<CustomerPaymentMethod[]>([]);
+  const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
+  const [customerEmail, setCustomerEmail] = useState("");
   const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState<string | "new">("new");
+  const [selectedAddressId, setSelectedAddressId] = useState<string | "new">("new");
   const router = useRouter();
   useEffect(() => {
     let active = true;
-    if (!user || !tenantId) {
-      setSavedCards([]);
-      return;
-    }
-    void (async () => {
+    const loadCustomerCheckoutData = async () => {
+      if (!user || !tenantId) {
+        if (active) {
+          setSavedCards([]);
+          setSavedAddresses([]);
+          setCustomerEmail("");
+          setSelectedPaymentMethodId("new");
+          setSelectedAddressId("new");
+        }
+        return;
+      }
       const customer = await repositories.customers.getByUserId(user.id);
       if (!customer || customer.tenantId !== tenantId) return;
-      const cards = await repositories.customerPaymentMethods.getByCustomer(tenantId, customer.id);
+      const [cards, addresses] = await Promise.all([
+        repositories.customerPaymentMethods.getByCustomer(tenantId, customer.id),
+        repositories.addresses.getByCustomer(tenantId, customer.id),
+      ]);
       if (!active) return;
       setSavedCards(cards);
+      setSavedAddresses(addresses);
+      setCustomerEmail(customer.email);
       const defaultCard = cards.find((card) => card.isDefault) ?? cards[0];
       if (defaultCard) {
         setSelectedPaymentMethodId(defaultCard.id);
@@ -81,7 +95,25 @@ export function CheckoutPage() {
           cardLastFour: defaultCard.last4,
         }));
       }
-    })();
+      const defaultAddress = addresses.find((address) => address.isDefault) ?? addresses[0];
+      if (defaultAddress) {
+        setSelectedAddressId(defaultAddress.id);
+        setForm((current) => ({
+          ...current,
+          fullName: defaultAddress.recipientName,
+          email: customer.email,
+          phone: customer.phone ? formatGuatemalaPhone(customer.phone) : "",
+          addressLine1: defaultAddress.line1,
+          addressLine2: defaultAddress.line2 ?? "",
+          city: defaultAddress.city,
+          department: defaultAddress.stateOrDepartment ?? "",
+          references: defaultAddress.references ?? "",
+        }));
+      } else {
+        setForm((current) => ({ ...current, email: customer.email }));
+      }
+    };
+    void loadCustomerCheckoutData();
     return () => {
       active = false;
     };
@@ -94,6 +126,33 @@ export function CheckoutPage() {
       cardholderName: card.cardholderName ?? "Titular registrado",
       cardLastFour: card.last4,
     });
+  };
+  const selectSavedAddress = (address: Address) => {
+    setSelectedAddressId(address.id);
+    setForm((current) => ({
+      ...current,
+      fullName: address.recipientName,
+      email: customerEmail || current.email,
+      addressLine1: address.line1,
+      addressLine2: address.line2 ?? "",
+      city: address.city,
+      department: address.stateOrDepartment ?? "",
+      references: address.references ?? "",
+    }));
+  };
+  const useAnotherAddress = () => {
+    setSelectedAddressId("new");
+    setForm((current) => ({
+      ...current,
+      fullName: "",
+      phone: "",
+      addressLine1: "",
+      addressLine2: "",
+      city: "",
+      department: "",
+      references: "",
+      email: customerEmail || current.email,
+    }));
   };
   useEffect(() => {
     if (result) router.replace("/pedido/confirmacion");
@@ -113,17 +172,46 @@ export function CheckoutPage() {
         </Link>
       </main>
     );
+  if (!configLoading && config?.accountRequired && !user)
+    return (
+      <main className="mx-auto max-w-3xl px-5 py-14">
+        <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center shadow-sm">
+          <h1 className="text-3xl font-black text-[var(--color-text)]">
+            Inicia sesión para continuar
+          </h1>
+          <p className="mx-auto mt-3 max-w-lg text-[var(--color-text-muted)]">
+            Esta tienda requiere una cuenta para completar una compra. Inicia sesión o crea una
+            cuenta para continuar al pago.
+          </p>
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <Link
+              className="rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)]"
+              href="/iniciar-sesion"
+            >
+              Iniciar sesión
+            </Link>
+            <Link
+              className="rounded-xl border border-[var(--color-border)] px-5 py-3 font-bold text-[var(--color-text)]"
+              href="/registro"
+            >
+              Crear cuenta
+            </Link>
+          </div>
+        </section>
+      </main>
+    );
   const ready = Boolean(
     form.fullName &&
     form.email &&
-    form.phone.replace(/\D/g, "").length === 11 &&
+    form.phone.replace(/\D/g, "").replace(/^502/, "").length === 8 &&
     form.addressLine1 &&
     form.city &&
     form.department,
   );
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    void submit(form);
+    if (config?.accountRequired && !user) return;
+    void submit({ ...form, phone: form.phone.replace(/\D/g, "").replace(/^502/, "") });
   };
   return (
     <main className="mx-auto max-w-7xl px-5 py-10">
@@ -148,70 +236,126 @@ export function CheckoutPage() {
                 <span className="text-sm text-[var(--color-text-muted)]">Paso 1 de 3</span>
               </div>
               <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-                Ingresa la dirección donde quieres recibir tu compra. Si tienes una cuenta, podrás
-                seleccionar tus direcciones guardadas próximamente.
+                Elige una dirección guardada o indica una nueva dirección de entrega.
               </p>
-              <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                <Field
-                  label="Nombre completo"
-                  maxLength={100}
-                  value={form.fullName}
-                  onChange={(value) => setForm({ ...form, fullName: keepLettersAndSpaces(value) })}
-                />
-                <Field
-                  label="Correo electrónico (para notificaciones)"
-                  maxLength={100}
-                  type="email"
-                  value={form.email}
-                  onChange={(value) => setForm({ ...form, email: keepEmailCharacters(value) })}
-                />
-                <Field
-                  label="Teléfono"
-                  type="tel"
-                  inputMode="numeric"
-                  maxLength={13}
-                  placeholder="+502 00000000"
-                  value={form.phone}
-                  onChange={(value) => setForm({ ...form, phone: formatGuatemalaPhone(value) })}
-                />
-                <Field
-                  label="Dirección"
-                  maxLength={150}
-                  value={form.addressLine1}
-                  onChange={(value) =>
-                    setForm({ ...form, addressLine1: keepAddressCharacters(value) })
-                  }
-                />
-                <Field
-                  label="Complemento"
-                  maxLength={100}
-                  required={false}
-                  value={form.addressLine2 ?? ""}
-                  onChange={(value) => setForm({ ...form, addressLine2: keepAlphaNumeric(value) })}
-                />
-                <SelectField
-                  label="Departamento"
-                  options={departments}
-                  placeholder="Selecciona un departamento"
-                  value={form.department ?? ""}
-                  onChange={(value) => setForm({ ...form, department: value, city: "" })}
-                />
-                <SelectField
-                  disabled={!form.department}
-                  label="Municipio"
-                  options={form.department ? municipalitiesByDepartment[form.department] : []}
-                  placeholder="Selecciona un municipio"
-                  value={form.city}
-                  onChange={(value) => setForm({ ...form, city: value })}
-                />
-                <Field
-                  label="Referencias"
-                  maxLength={150}
-                  required={false}
-                  value={form.references ?? ""}
-                  onChange={(value) => setForm({ ...form, references: keepAlphaNumeric(value) })}
-                />
-              </div>
+              {savedAddresses.length > 0 ? (
+                <div className="mt-5 space-y-3">
+                  <p className="text-sm font-bold text-[var(--color-text)]">
+                    Tus direcciones guardadas
+                  </p>
+                  {savedAddresses.map((address) => (
+                    <button
+                      className={`flex w-full items-start justify-between gap-4 rounded-xl border p-4 text-left transition ${selectedAddressId === address.id ? "border-[var(--color-primary-hover)] bg-[var(--color-primary)]/10" : "border-[var(--color-border)] hover:border-[var(--color-primary)]"}`}
+                      key={address.id}
+                      onClick={() => selectSavedAddress(address)}
+                      type="button"
+                    >
+                      <span>
+                        <span className="block font-bold text-[var(--color-text)]">
+                          {address.label}
+                          {address.isDefault ? " · Predeterminada" : ""}
+                        </span>
+                        <span className="mt-1 block text-sm text-[var(--color-text-muted)]">
+                          {address.recipientName} · {address.line1}, {address.city}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-sm font-bold text-[var(--color-title)]">
+                        {selectedAddressId === address.id ? "Seleccionada" : "Seleccionar"}
+                      </span>
+                    </button>
+                  ))}
+                  <button
+                    className="text-sm font-bold text-[var(--color-title)] underline"
+                    onClick={useAnotherAddress}
+                    type="button"
+                  >
+                    Usar otra dirección
+                  </button>
+                </div>
+              ) : null}
+              {selectedAddressId !== "new" ? (
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  <Field
+                    label="Teléfono de contacto"
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={13}
+                    placeholder="+502 00000000"
+                    value={form.phone}
+                    onChange={(value) => setForm({ ...form, phone: formatGuatemalaPhone(value) })}
+                  />
+                  <div className="rounded-xl border border-[var(--color-border)] bg-slate-50 px-4 py-3 text-sm text-[var(--color-text-muted)]">
+                    Las notificaciones se enviarán a{" "}
+                    <span className="font-bold text-[var(--color-text)]">{customerEmail}</span>.
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  <Field
+                    label="Nombre completo"
+                    maxLength={100}
+                    value={form.fullName}
+                    onChange={(value) =>
+                      setForm({ ...form, fullName: keepLettersAndSpaces(value) })
+                    }
+                  />
+                  <Field
+                    label="Correo electrónico (para notificaciones)"
+                    maxLength={100}
+                    type="email"
+                    value={form.email}
+                    onChange={(value) => setForm({ ...form, email: keepEmailCharacters(value) })}
+                  />
+                  <Field
+                    label="Teléfono"
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={13}
+                    placeholder="+502 00000000"
+                    value={form.phone}
+                    onChange={(value) => setForm({ ...form, phone: formatGuatemalaPhone(value) })}
+                  />
+                  <Field
+                    label="Dirección"
+                    maxLength={150}
+                    value={form.addressLine1}
+                    onChange={(value) =>
+                      setForm({ ...form, addressLine1: keepAddressCharacters(value) })
+                    }
+                  />
+                  <Field
+                    label="Complemento"
+                    maxLength={100}
+                    required={false}
+                    value={form.addressLine2 ?? ""}
+                    onChange={(value) =>
+                      setForm({ ...form, addressLine2: keepAlphaNumeric(value) })
+                    }
+                  />
+                  <SelectField
+                    label="Departamento"
+                    options={departments}
+                    placeholder="Selecciona un departamento"
+                    value={form.department ?? ""}
+                    onChange={(value) => setForm({ ...form, department: value, city: "" })}
+                  />
+                  <SelectField
+                    disabled={!form.department}
+                    label="Municipio"
+                    options={form.department ? municipalitiesByDepartment[form.department] : []}
+                    placeholder="Selecciona un municipio"
+                    value={form.city}
+                    onChange={(value) => setForm({ ...form, city: value })}
+                  />
+                  <Field
+                    label="Referencias"
+                    maxLength={150}
+                    required={false}
+                    value={form.references ?? ""}
+                    onChange={(value) => setForm({ ...form, references: keepAlphaNumeric(value) })}
+                  />
+                </div>
+              )}
               <button
                 className="mt-6 rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)] disabled:opacity-50"
                 disabled={!ready}
