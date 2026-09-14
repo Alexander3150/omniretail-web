@@ -6,5 +6,6 @@ export { ReportsPage } from "@/modules/administration/pages/ReportsPage";
 export { EcommerceConfigPage } from "@/modules/administration/pages/EcommerceConfigPage";
 export { BranchesPage } from "@/modules/administration/pages/BranchesPage";
 export { RolesPage } from "@/modules/administration/pages/RolesPage";
+export { EmployeesPage } from "@/modules/administration/pages/EmployeesPage";
 export { BankAccountsPage } from "@/modules/administration/pages/BankAccountsPage";
 export { SuppliersPage } from "@/modules/administration/pages/SuppliersPage";

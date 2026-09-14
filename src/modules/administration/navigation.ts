@@ -38,6 +38,14 @@ export const administrationNavigation = [
         permission: "admin.roles.manage",
       },
       {
+        id: "administration-users",
+        label: "Usuarios",
+        href: "/administracion/usuarios",
+        // Mismo criterio que Roles/Sucursales: la entrada se protege con `admin.users.manage`,
+        // el permiso de la audiencia real. El service acepta ademas `admin.users.read`.
+        permission: "admin.users.manage",
+      },
+      {
         id: "administration-customers",
         label: "Clientes",
         href: "/administracion/clientes",
