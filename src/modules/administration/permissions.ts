@@ -66,6 +66,12 @@ export const administrationPermissions = [
     description: "Permite administrar cuentas bancarias simuladas.",
   },
   {
+    key: "admin.customers.read",
+    module: "administration",
+    name: "Leer clientes",
+    description: "Permite consultar el listado de clientes más frecuentes.",
+  },
+  {
     key: CASH_READ_PERMISSION,
     module: "administration",
     name: "Leer caja",

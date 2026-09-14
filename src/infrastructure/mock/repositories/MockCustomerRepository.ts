@@ -7,6 +7,9 @@ export class MockCustomerRepository extends BaseMockRepository implements Custom
   async getAll() {
     return this.read((db) => db.customers);
   }
+  async listByTenant(tenantId: string) {
+    return this.read((db) => db.customers.filter((item) => item.tenantId === tenantId));
+  }
   async getById(id: string) {
     return this.read((db) => db.customers.find((item) => item.id === id) ?? null);
   }

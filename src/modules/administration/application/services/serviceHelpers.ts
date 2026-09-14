@@ -28,6 +28,18 @@ export function ensureCanManageBusinessConfig(permissions: readonly string[]) {
   );
 }
 
+export function ensureCanReadCustomers(permissions: readonly string[]) {
+  if (permissions.includes("admin.customers.read")) return;
+
+  throw new AdministrationServiceError("No tenés permiso para consultar clientes.");
+}
+
+export function ensureCustomerTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
+}
+
 export function ensureCanReadCash(permissions: readonly string[]) {
   if (permissions.includes(CASH_READ_PERMISSION)) return;
 

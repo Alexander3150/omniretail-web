@@ -46,6 +46,10 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
     return this.read((db) => db.orders);
   }
 
+  async listByTenant(tenantId: string) {
+    return this.read((db) => db.orders.filter((item) => item.tenantId === tenantId));
+  }
+
   async getById(id: string) {
     return this.read((db) => db.orders.find((item) => item.id === id) ?? null);
   }
