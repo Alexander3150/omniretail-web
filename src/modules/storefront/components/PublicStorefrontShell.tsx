@@ -28,9 +28,13 @@ export function PublicStorefrontShell({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <StorefrontHeader />
+      <div className="print:hidden">
+        <StorefrontHeader />
+      </div>
       {children}
-      <StorefrontFooter />
+      <div className="print:hidden">
+        <StorefrontFooter />
+      </div>
     </>
   );
 }

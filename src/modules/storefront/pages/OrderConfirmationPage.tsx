@@ -5,9 +5,11 @@ import Link from "next/link";
 import { OrderStatus, PaymentStatus } from "@/core/enums";
 import { StorefrontOrderProgress } from "@/modules/storefront/components/StorefrontOrderProgress";
 import { useStorefrontCheckoutConfirmation } from "@/modules/storefront/providers/StorefrontCheckoutConfirmationProvider";
+import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
 export function OrderConfirmationPage() {
   const { result } = useStorefrontCheckoutConfirmation();
+  const { config } = usePublicTenant();
   const orderNumber = result?.orderNumber;
   const trackingToken = result?.guestTrackingEnabled ? result.trackingToken : undefined;
   const emailSent = result?.confirmationEmailSent ?? false;
@@ -39,8 +41,8 @@ export function OrderConfirmationPage() {
     );
 
   return (
-    <main className="mx-auto max-w-5xl px-5 py-10">
-      <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm sm:p-9">
+    <main className="mx-auto max-w-5xl px-5 py-10 print:max-w-none print:p-0">
+      <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm print:hidden sm:p-9">
         <div className="text-center">
           <span className="inline-grid h-14 w-14 place-items-center rounded-full border-2 border-[var(--color-primary)] bg-[var(--color-primary)]/15 text-3xl font-black text-[var(--color-primary-hover)]">
             ✓
@@ -182,6 +184,91 @@ export function OrderConfirmationPage() {
             Seguir comprando
           </Link>
         </div>
+      </section>
+      <section className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm print:mt-0 print:block print:rounded-none print:border-0 print:shadow-none">
+        <header className="grid gap-6 border-b-2 border-sky-500 bg-slate-50 px-6 py-7 sm:grid-cols-2 print:px-8 print:py-6">
+          <div>
+            <p className="text-sm font-black uppercase tracking-wide text-slate-800">
+              {config?.storeName ?? "Tienda"}
+            </p>
+            <p className="mt-2 text-xs leading-5 text-slate-600">Comprobante de compra</p>
+            <p className="text-xs leading-5 text-slate-600">Guatemala</p>
+          </div>
+          <div className="sm:text-right">
+            <h1 className="text-2xl font-black text-slate-900">Comprobante de compra</h1>
+            <p className="mt-2 text-sm font-bold text-slate-700">Pedido: {orderNumber}</p>
+            <p className="text-xs text-slate-600">
+              Fecha: {new Date().toLocaleDateString("es-GT")}
+            </p>
+            <p className="mt-1 inline-flex rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700">
+              {paymentApproved ? "Pago confirmado" : "Pago pendiente"}
+            </p>
+          </div>
+        </header>
+        <div className="grid gap-5 px-6 py-5 text-sm sm:grid-cols-2 print:px-8">
+          <div>
+            <p className="font-black uppercase tracking-wide text-slate-700">Entrega a</p>
+            <p className="mt-2 font-bold text-slate-900">{result.deliveryAddress.recipientName}</p>
+            <p className="mt-1 text-slate-600">
+              {result.deliveryAddress.line1}
+              {result.deliveryAddress.line2 ? `, ${result.deliveryAddress.line2}` : ""}
+            </p>
+            <p className="text-slate-600">
+              {result.deliveryAddress.city}
+              {result.deliveryAddress.department ? `, ${result.deliveryAddress.department}` : ""}
+            </p>
+          </div>
+          <div className="sm:text-right">
+            <p className="font-black uppercase tracking-wide text-slate-700">Método de pago</p>
+            <p className="mt-2 font-bold text-slate-900">Tarjeta de crédito o débito</p>
+            <p className="mt-1 text-slate-600">Pago simulado</p>
+          </div>
+        </div>
+        <div className="overflow-x-auto px-6 pb-5 print:px-8">
+          <table className="w-full min-w-[32rem] border-collapse text-left text-sm">
+            <thead className="bg-sky-600 text-xs font-black uppercase tracking-wide text-white">
+              <tr>
+                <th className="px-3 py-3">Descripción</th>
+                <th className="px-3 py-3 text-center">Cantidad</th>
+                <th className="px-3 py-3 text-right">Precio unit.</th>
+                <th className="px-3 py-3 text-right">Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.items.map((item) => (
+                <tr className="border-b border-slate-200" key={item.sku}>
+                  <td className="px-3 py-3 font-semibold text-slate-800">{item.name}</td>
+                  <td className="px-3 py-3 text-center text-slate-700">{item.quantity}</td>
+                  <td className="px-3 py-3 text-right text-slate-700">
+                    Q{item.unitPrice.toFixed(2)}
+                  </td>
+                  <td className="px-3 py-3 text-right font-bold text-slate-900">
+                    Q{item.subtotal.toFixed(2)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex justify-end border-t-2 border-sky-500 px-6 py-5 print:px-8">
+          <dl className="w-full max-w-xs space-y-2 text-sm">
+            <div className="flex justify-between gap-5 text-slate-700">
+              <dt>Subtotal</dt>
+              <dd>Q{result.total.toFixed(2)}</dd>
+            </div>
+            <div className="flex justify-between gap-5 text-slate-700">
+              <dt>Envío</dt>
+              <dd>Q0.00</dd>
+            </div>
+            <div className="flex justify-between gap-5 border-t border-slate-300 pt-3 text-lg font-black text-slate-900">
+              <dt>Total</dt>
+              <dd>Q{result.total.toFixed(2)}</dd>
+            </div>
+          </dl>
+        </div>
+        <footer className="border-t border-slate-200 px-6 py-4 text-center text-xs text-slate-500 print:px-8">
+          Gracias por tu compra. Este comprobante corresponde a una simulación de pedido.
+        </footer>
       </section>
     </main>
   );

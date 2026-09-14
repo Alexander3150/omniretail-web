@@ -16,7 +16,9 @@ export default function PublicLayout({ children }: Readonly<{ children: ReactNod
                 logica -- se ve en TODO (public) (catalogo, checkout,
                 cuenta, etc.), independientemente de si esa ruta trae su
                 propio header/footer o el de la tienda. */}
-            <SupportAssistantWidget />
+            <div className="print:hidden">
+              <SupportAssistantWidget />
+            </div>
           </StorefrontCheckoutConfirmationProvider>
         </StorefrontCartProvider>
       </PublicTenantProvider>
