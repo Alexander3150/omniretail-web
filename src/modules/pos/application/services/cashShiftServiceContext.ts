@@ -1,5 +1,5 @@
 import type { Branch, Role, User } from "@/core/entities";
-import { BranchStatus, UserStatus, UserType } from "@/core/enums";
+import { BranchStatus, RoleStatus, UserStatus, UserType } from "@/core/enums";
 import { canUserAccessBranch } from "@/core/scopes/userBranchAccess";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 
@@ -47,8 +47,10 @@ export async function requireCashContext(
     throw new Error("La sucursal no está disponible para este negocio.");
   }
 
-  const role = user.roleId ? await repositories.roles.getById(user.roleId) : null;
-  if (!role || role.tenantId !== context.tenantId || !role.permissions.includes(permission)) {
+  const role = user.roleId
+    ? await repositories.roles.getByIdScoped(context.tenantId, user.roleId)
+    : null;
+  if (!role || role.status !== RoleStatus.active || !role.permissions.includes(permission)) {
     throw new Error("No tienes permiso para realizar esta operación de caja.");
   }
   if (!canUserAccessBranch(user, role, branch)) {

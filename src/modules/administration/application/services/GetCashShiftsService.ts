@@ -1,3 +1,4 @@
+import { RoleStatus } from "@/core/enums";
 import { canUserAccessBranch } from "@/core/scopes/userBranchAccess";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { CashShiftDto } from "@/modules/administration/application/dto/CashShiftDto";
@@ -25,8 +26,10 @@ export class GetCashShiftsService {
     if (!actor || actor.tenantId !== tenantId) {
       throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
     }
-    const role = actor.roleId ? await this.repositories.roles.getById(actor.roleId) : null;
-    if (!role || role.tenantId !== tenantId) {
+    const role = actor.roleId
+      ? await this.repositories.roles.getByIdScoped(tenantId, actor.roleId)
+      : null;
+    if (!role || role.status !== RoleStatus.active) {
       throw new AdministrationServiceError("No se pudo resolver el rol del usuario actual.");
     }
 

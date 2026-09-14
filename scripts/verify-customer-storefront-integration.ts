@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import type { Session } from "@/core/entities";
-import { CustomerStatus, UserStatus, UserType } from "@/core/enums";
+import { CustomerStatus, RoleStatus, UserStatus, UserType } from "@/core/enums";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import { MockBranchRepository } from "@/infrastructure/mock/repositories/MockBranchRepository";
@@ -115,6 +115,7 @@ function createHarness() {
       isSystem: true,
       permissions: ["customer.account.read", "storefront.orders.read"],
       branchScope: "assigned",
+      status: RoleStatus.active,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     });

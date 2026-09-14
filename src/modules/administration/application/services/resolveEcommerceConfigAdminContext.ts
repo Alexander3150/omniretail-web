@@ -1,4 +1,4 @@
-import { TenantStatus, UserStatus } from "@/core/enums";
+import { RoleStatus, TenantStatus, UserStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import {
   AdministrationServiceError,
@@ -26,12 +26,14 @@ export async function resolveEcommerceConfigAdminContext(
 
   const [tenant, role] = await Promise.all([
     repositories.tenants.getById(actor.tenantId),
-    actor.roleId ? repositories.roles.getById(actor.roleId) : Promise.resolve(null),
+    actor.roleId
+      ? repositories.roles.getByIdScoped(actor.tenantId, actor.roleId)
+      : Promise.resolve(null),
   ]);
   if (!tenant || tenant.status !== TenantStatus.active || tenant.id !== actor.tenantId) {
     throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
   }
-  if (!role || role.tenantId !== actor.tenantId) {
+  if (!role || role.status !== RoleStatus.active) {
     throw new AdministrationServiceError("No se pudo resolver el rol del usuario actual.");
   }
 

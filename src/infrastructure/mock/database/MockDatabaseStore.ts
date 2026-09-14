@@ -7,6 +7,7 @@ import {
   LocationStatus,
   PaymentMethod,
   PromotionType,
+  RoleStatus,
   SalesChannel,
   UnitCategory,
   UnitStatus,
@@ -109,6 +110,12 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   normalized.productKitComponents = database.productKitComponents ?? base.productKitComponents;
   normalized.suppliers = (database.suppliers ?? base.suppliers).map((supplier) => ({
     ...supplier,
+  }));
+  // Backfill para datos persistidos antes de que Role.status existiera -- sin esto, un rol
+  // guardado en localStorage antes de este contrato quedaria con status undefined.
+  normalized.roles = (database.roles ?? base.roles).map((role) => ({
+    ...role,
+    status: role.status ?? RoleStatus.active,
   }));
   normalized.productSalesPriceTiers = database.productSalesPriceTiers ?? [];
   normalized.productInventorySettings = normalizeProductInventorySettings(database, normalized);

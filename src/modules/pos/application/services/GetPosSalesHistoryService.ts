@@ -4,6 +4,7 @@ import {
   DeliveryMethod,
   OrderStatus,
   PaymentMethod,
+  RoleStatus,
   SaleStatus,
   UserStatus,
   UserType,
@@ -87,12 +88,14 @@ export class GetPosSalesHistoryService {
     }
     const [branch, role] = await Promise.all([
       this.repositories.branches.getByIdScoped(user.tenantId, branchId),
-      user.roleId ? this.repositories.roles.getById(user.roleId) : Promise.resolve(null),
+      user.roleId
+        ? this.repositories.roles.getByIdScoped(user.tenantId, user.roleId)
+        : Promise.resolve(null),
     ]);
     if (!branch || branch.status !== BranchStatus.active) {
       throw new Error("La sucursal no está activa para este negocio.");
     }
-    if (!role || role.tenantId !== user.tenantId || !role.permissions.includes(POS_SALES_READ)) {
+    if (!role || role.status !== RoleStatus.active || !role.permissions.includes(POS_SALES_READ)) {
       throw new Error("No tienes permiso para consultar el historial de ventas.");
     }
     if (!canUserAccessBranch(user, role, branch)) {

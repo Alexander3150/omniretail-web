@@ -1,4 +1,4 @@
-import { UserStatus } from "@/core/enums";
+import { RoleStatus, UserStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { ReportsDataDto } from "@/modules/administration/application/dto/ReportDto";
 import {
@@ -89,8 +89,10 @@ export class GetReportsService {
       throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
     }
 
-    const role = actor.roleId ? await this.repositories.roles.getById(actor.roleId) : null;
-    if (!role || role.tenantId !== actor.tenantId) {
+    const role = actor.roleId
+      ? await this.repositories.roles.getByIdScoped(actor.tenantId, actor.roleId)
+      : null;
+    if (!role || role.status !== RoleStatus.active) {
       throw new AdministrationServiceError("No se pudo resolver el rol del usuario actual.");
     }
 

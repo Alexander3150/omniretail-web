@@ -1,5 +1,5 @@
 import type { Customer } from "@/core/entities";
-import { CustomerStatus, UserStatus, UserType } from "@/core/enums";
+import { CustomerStatus, RoleStatus, UserStatus, UserType } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 
 export class CustomerIdentityError extends Error {}
@@ -38,7 +38,7 @@ type CustomerSessionResolution =
  *   -> User.status === active -> User.type === customer
  *   -> customers.getByUserId() -> tenant coherente
  *   -> relacion User.customerId <-> Customer.id
- *   -> roles.getById() -> Role existe y pertenece al mismo tenant ->
+ *   -> roles.getByIdScoped() -> Role activo del mismo tenant ->
  *      permissions reales
  *
  * Profile, Addresses, PaymentMethods y Orders dependen TODOS de esta
@@ -118,12 +118,12 @@ async function resolveCustomerSession(
   // silenciosamente los permisos de ese Role ajeno.
   let permissions: string[] = [];
   if (user.roleId) {
-    const role = await repositories.roles.getById(user.roleId);
+    const role = await repositories.roles.getByIdScoped(user.tenantId, user.roleId);
     if (!role) {
       throw new CustomerIdentityError("El rol del usuario no existe.");
     }
-    if (role.tenantId !== user.tenantId) {
-      throw new CustomerIdentityError("El rol del usuario pertenece a otro tenant.");
+    if (role.status !== RoleStatus.active) {
+      throw new CustomerIdentityError("El rol del usuario no esta activo.");
     }
     permissions = role.permissions;
   }
