@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import type {
+  AddressRepository,
   AttributeRepository,
   AuditLogRepository,
   AuthRepository,
@@ -10,6 +11,7 @@ import type {
   BusinessConfigRepository,
   CashShiftRepository,
   CashMovementRepository,
+  CatalogImageAssetRepository,
   CategoryRepository,
   CustomerPaymentMethodRepository,
   CustomerRepository,
@@ -46,6 +48,7 @@ import type {
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import {
+  MockAddressRepository,
   MockAttributeRepository,
   MockAuditLogRepository,
   MockAuthRepository,
@@ -87,6 +90,7 @@ import {
   MockUserRepository,
 } from "@/infrastructure/mock/repositories";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
+import { IndexedDbCatalogImageAssetRepository } from "@/infrastructure/media/IndexedDbCatalogImageAssetRepository";
 
 export interface RepositoryRegistry {
   tenants: TenantRepository;
@@ -115,6 +119,7 @@ export interface RepositoryRegistry {
   customers: CustomerRepository;
   customerPaymentMethods: CustomerPaymentMethodRepository;
   savedPaymentMethods: SavedPaymentMethodRepository;
+  addresses: AddressRepository;
   orders: OrderRepository;
   orderPaymentConfirmations: OrderPaymentConfirmationRepository;
   payments: PaymentRepository;
@@ -126,6 +131,7 @@ export interface RepositoryRegistry {
   cashMovements: CashMovementRepository;
   picking: PickingRepository;
   productMedia: ProductMediaRepository;
+  catalogImageAssets: CatalogImageAssetRepository;
   dispatches: DispatchRepository;
   notifications: NotificationRepository;
   auditLogs: AuditLogRepository;
@@ -172,6 +178,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       customers: new MockCustomerRepository(store, eventBus),
       customerPaymentMethods,
       savedPaymentMethods: customerPaymentMethods,
+      addresses: new MockAddressRepository(store, eventBus),
       orders: new MockOrderRepository(store, eventBus),
       orderPaymentConfirmations: new MockOrderPaymentConfirmationRepository(store, eventBus),
       payments: new MockPaymentRepository(store, eventBus),
@@ -183,6 +190,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       cashMovements: new MockCashMovementRepository(store, eventBus),
       picking: new MockPickingRepository(store, eventBus),
       productMedia: new MockProductMediaRepository(store, eventBus),
+      catalogImageAssets: new IndexedDbCatalogImageAssetRepository(),
       dispatches: new MockDispatchRepository(store, eventBus),
       notifications: new MockNotificationRepository(store, eventBus),
       auditLogs: new MockAuditLogRepository(store, eventBus),

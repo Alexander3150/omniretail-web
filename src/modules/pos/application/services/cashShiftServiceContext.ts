@@ -51,7 +51,7 @@ export async function requireCashContext(
   if (!role || role.tenantId !== context.tenantId || !role.permissions.includes(permission)) {
     throw new Error("No tienes permiso para realizar esta operación de caja.");
   }
-  if (!canUserAccessBranch(user, role, branch.id)) {
+  if (!canUserAccessBranch(user, role, branch)) {
     throw new Error("No tienes acceso a la sucursal seleccionada.");
   }
 

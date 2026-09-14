@@ -1,5 +1,8 @@
 export { BusinessConfigPage } from "@/modules/administration/pages/BusinessConfigPage";
 export { CustomersPage } from "@/modules/administration/pages/CustomersPage";
+export { CashShiftsPage } from "@/modules/administration/pages/CashShiftsPage";
+export { DashboardPage } from "@/modules/administration/pages/DashboardPage";
+export { ReportsPage } from "@/modules/administration/pages/ReportsPage";
 export { EcommerceConfigPage } from "@/modules/administration/pages/EcommerceConfigPage";
 export { AuditLogPage } from "@/modules/administration/pages/AuditLogPage";
 export { BranchesPage } from "@/modules/administration/pages/BranchesPage";

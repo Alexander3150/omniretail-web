@@ -21,6 +21,25 @@ UI
 -> Backend
 ```
 
+## Customer En Storefront
+
+La presentacion de imagenes de Catalog y Storefront pasa por el resolver canonico de `CatalogImageSource`. Las rutas/URLs seguras se usan directamente; los `mockAsset` se recuperan de IndexedDB mediante un contrato tenant-scoped y se convierten en Object URLs efimeras. Product no absorbe multimedia, Category solo mantiene una referencia opcional y ningun Blob entra en la base mock serializada.
+
+`ResolvePublicStorefrontContextService` deriva el tenant de la tienda desde el slug configurado y valida tenant/configuracion activa sin aceptar `tenantId` del caller. `GetPublicStorefrontConfigService` construye el DTO público de configuración y ubicaciones `active + store`; `PublicTenantProvider` lo refresca ante `business-config.changed` y `branch.changed`, ignorando eventos de otros tenants. El checkout revalida el boundary autoritativo y conserva `defaultBranchId` y las reglas operacionales de fulfillment. La identidad opcional se deriva de los repositories de sesion y se vincula solamente cuando pertenece al mismo tenant publico.
+
+`EcommerceConfig.enabled` cierra exclusivamente el route group comercial del Storefront. El layout público es el único owner de `PublicTenantProvider`, Header y Footer; el layout comercial agrega únicamente `CommercialStorefrontGate`, sin montar otro shell. El grupo público accesible hereda el chrome común sin gate y conserva login, registro, recuperación, seguimiento y `/cuenta/*`, de modo que autenticación y backoffice no dependan del estado del canal de venta. `PublicTenantProvider` continúa exponiendo el tenant resuelto cuando el canal está deshabilitado; los services de compra mantienen su propio enforcement.
+
+```text
+ResolvePublicStorefrontContextService -> PublicTenantProvider
+-> CreateStorefrontCheckoutService
+-> Current Session -> active Customer User -> active Customer
+-> tenant match
+-> Order.customerId
+-> OrderRepository.getByCustomer para /cuenta/pedidos
+```
+
+Guest y sesiones de personal no producen contexto Customer. Una sesion Customer invalida o inactiva falla cerrada; una identidad valida de otro tenant no se atribuye a la Order del Storefront actual.
+
 ## Order Reservation Lifecycle
 
 `MockOrderRepository` crea o confirma una Order y todas sus reservas dentro de una sola llamada a `MockDatabaseStore.transact`. Las mutaciones de reserva sobre el draft viven en helpers de infraestructura compartidos con `MockInventoryRepository` y `MockOrderPaymentConfirmationRepository`; asi los repositorios usan el mismo algoritmo sin abrir transacciones anidadas ni duplicar la logica de allocations.
@@ -32,7 +51,7 @@ OrderRepository.create / updateStatus
 -> Order + InventoryReservation + InventoryBalance
 ```
 
-El checkout e-commerce crea primero `Order.pending` y `Payment.pending`. Para el pago mock con tarjeta, `OrderPaymentConfirmationRepository.confirm` valida Order, Payment, tenant, branch activa, relacion, importe y estados; en una unica transaccion reserva inventario y cambia ambos estados. Si la reserva falla, Payment y Order permanecen pending. Confirmar otra vez la misma pareja ya confirmada es idempotente.
+El checkout e-commerce crea primero `Order.pending` y `Payment.pending`. Cada `OrderItem.id` queda namespaced por el `idempotencyKey` estable del intento, por lo que un retry conserva identidad y Orders distintas no comparten lineas. Para el pago mock con tarjeta, `OrderPaymentConfirmationRepository.confirm` valida Order, Payment, tenant, branch activa, relacion, importe y estados; en una unica transaccion reserva inventario y cambia ambos estados. Si falta disponibilidad, la transaccion de confirmacion revierte y el boundary compensa eliminando exclusivamente la pareja inmediata `pending/pending` sin reservas ni dependencias. Confirmar otra vez la misma pareja ya confirmada es idempotente.
 
 ```text
 CreateStorefrontCheckoutService
@@ -52,6 +71,20 @@ PickingRepository.updateItem
 -> MockDatabaseStore.transact
 -> PickingItem + InventoryReservation + InventoryBalance + InventoryMovement
 ```
+
+La asignacion tambien cambia `Order.confirmed -> preparing` dentro de una sola transaccion. El primer incremento positivo agrega `Order.preparing -> picking` a la transaccion anterior, y completion cambia Picking+Order a `ready_for_dispatch` o `ready_for_pickup` sin tocar inventario.
+
+```text
+DispatchApplicationService
+-> DispatchAuthorizationContext (Session -> User -> Role -> Branch)
+-> DispatchRepository.confirm
+-> MockDatabaseStore.transact
+-> Dispatch.dispatched + Order.dispatched + Notification email simulada opcional
+```
+
+Dispatch solo verifica que Picking haya consumido las reservas stock-tracked. No actualiza `InventoryBalance`, `InventoryReservation`, `InventoryMovement`, lotes ni seriales. `Order.status` permanece como unica fuente del tracking; no se agrega timeline persistido.
+
+`DispatchRepository.markDelivered` reutiliza el mismo contexto confiable y una unica transaccion para cambiar el Dispatch canonico y su Order de `dispatched` a `delivered`, persistiendo `deliveredAt`. El retry del par ya entregado es idempotente. Esta operacion no acepta cambios de envio, no toca inventario y no vuelve a crear la notificacion de despacho.
 
 `MockSaleConfirmationRepository.confirm` valida dentro de su transaccion si `sourceOrderId` acredita ownership mediante la Order y sus reservas. Las ventas directas conservan el OUT propio; las vinculadas validas persisten Sale, Payment y CashMovement sin modificar reservas, balances ni movimientos de inventario.
 
@@ -120,8 +153,15 @@ PrivateShell
     `-- Main
 ```
 
-La sucursal actual es contexto global del shell privado y se obtiene desde
-`BranchRepository`. En una fase posterior Auth/Role/BranchScope filtrara las
-sucursales disponibles para cada empleado. Notifications queda preparado para
+La sucursal actual es contexto global del shell privado. `CurrentSessionProvider` reconstruye la
+identidad operativa y `ActiveBranchProvider` consulta primero
+`BranchRepository.getActiveByTenant(user.tenantId)`; despues aplica `Role.branchScope`. Tanto `all`
+como `selected` quedan encerrados en ese tenant y la autorizacion final exige coincidencia de tenant
+entre User, Role y Branch. Notifications queda preparado para
 conectarse al centro de notificaciones real. UserMenu queda reservado para
-Session -> User -> Profile cuando Auth/Profile este completo.
+Session -> User -> Profile.
+
+Los servicios privados de Catalog resuelven el tenant desde la sesion canonica, no desde DTOs ni
+desde el primer registro disponible. Product, Category y Unit se consultan y mutan mediante
+operaciones tenant-scoped del repository; las operaciones globales permanecen solo para callers
+legacy que aun las requieren.

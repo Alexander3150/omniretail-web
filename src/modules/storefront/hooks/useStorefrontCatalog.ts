@@ -2,10 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { Product } from "@/core/entities";
-import {
-  useDataEventBus,
-  useRepositories,
-} from "@/infrastructure/providers/RepositoryProvider";
+import { useDataEventBus, useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
 export function useStorefrontCatalog() {

@@ -38,9 +38,9 @@
 | 5   | Diseño E-commerce         | `/administracion/diseno-ecommerce`      | `EcommerceConfig`             | ✅ **Implementada** — sin branding  |
 | 6   | Clientes                  | `/administracion/clientes`              | `Customer`, `CustomerSegment` | ✅ **Implementada** — sin segmentos |
 | 7   | Auditoría                 | `/administracion/auditoria`             | `AuditLog`                    | ✅ **Implementada**                 |
-| 8   | Caja                      | `/administracion/caja`                  | `CashShift`, `CashMovement`   | ⚠️ Parcial — solo lectura           |
-| 9   | Dashboard                 | `/administracion/dashboard`             | Agregación                    | ⚠️ Necesita `KPICard`               |
-| 10  | Reportes                  | `/administracion/reportes`              | Agregación                    | ⚠️ Necesita datos de otros módulos  |
+| 8   | Caja                      | `/administracion/caja`                  | `CashShift`, `CashMovement`   | ✅ **Implementada** — solo lectura  |
+| 9   | Dashboard                 | `/administracion/dashboard`             | Agregación                    | ✅ **Implementada**                 |
+| 10  | Reportes                  | `/administracion/reportes`              | Agregación                    | ✅ **Implementada**                 |
 | 11  | Roles y permisos          | `/administracion/roles-permisos`        | `Role`, `Permission`          | ⛔ **Bloqueada** — contrato         |
 | 12  | Usuarios                  | `/administracion/usuarios`              | `User` (+ `AuthAccount`)      | ⛔ Bloqueada — depende de #11       |
 | 13  | Planes y facturación SaaS | `/administracion/planes-facturacion`    | _(sin definir)_               | ⛔ Bloqueada — modelo               |
@@ -452,10 +452,10 @@ Declarados hoy en `permissions.ts` de este módulo (9):
 
 `admin.users.read` · `admin.users.manage` · `admin.roles.read` · `admin.roles.manage` ·
 `admin.branches.read` · `admin.branches.manage` · `admin.business_config.manage` ·
-`admin.suppliers.manage` · `admin.bank_accounts.manage`
+`admin.suppliers.manage` · `admin.bank_accounts.manage` · `admin.cash.read`
 
 **No existen** y hay que declararlos al construir sus pantallas:
-`admin.customers.read/manage` · `admin.audit.read` · `admin.cash.read` ·
+`admin.customers.read/manage` · `admin.audit.read` ·
 `admin.reports.read/export` · `admin.ecommerce_config.manage` · `users.credentials.reset`
 
 La granularidad del repo es `read` / `manage`, no `create/update/archive`. Mantenerla.
@@ -471,17 +471,17 @@ El rol es una agrupación de permisos, nada más.
 
 **Disponibles** (tienen `index.tsx`):
 `Button` · `Input` · `Select` · `SearchInput` · `FormField` · `DataTable` · `Pagination` ·
-`StatusBadge` · `Modal` · `ConfirmDialog` · `PageHeader` · `Toast`
+`StatusBadge` · `Modal` · `ConfirmDialog` · `PageHeader` · `Toast` · `KPICard`
 
 **Carpeta vacía — hay que construirlos:**
 `Accordion` · `Checkbox` · `ContextPanel` · `CurrencyInput` · `DatePicker` · `Drawer` ·
-`EmptyState` · `FileUpload` · `IconButton` · `KPICard` · `LoadingState` · `NumberInput` ·
+`EmptyState` · `FileUpload` · `IconButton` · `LoadingState` · `NumberInput` ·
 `RadioGroup` · `Tabs` · `Textarea`
 
 **No existen ni como carpeta:** `SectionCard` · `FilterChip` · `Breadcrumbs`
 
-Impacto: Dashboard necesita `KPICard`; los formularios complejos necesitan `Tabs` y `Textarea`;
-los paneles de detalle necesitan `ContextPanel` o `Drawer`. Ninguno existe.
+Impacto: Dashboard agrega `KPICard`; los formularios complejos necesitan `Tabs` y `Textarea`;
+los paneles de detalle necesitan `ContextPanel` o `Drawer`. Estos últimos aún no existen.
 
 **Decisión tomada:** un componente que solo usa este módulo se construye en
 `administration/components/`. Promoverlo a `shared/` es área común: requiere
@@ -608,20 +608,21 @@ Tabla filtrable: `createdAt`, actor, `action`, `entityType`, `entityId`, `metada
 Sin campo `module`: si se necesita agrupar por módulo, se deriva de `action` o `entityType`.
 Filtrado en cliente (`getAll`). Nunca se escribe desde acá: lo emiten los demás módulos (R-P04).
 
-### 12.8 Caja
+### 12.8 Caja ✅ implementada
 
 Solo consulta y conciliación sobre `CashShift` / `CashMovement` (dueño: POS).
 Estados reales: `open`, `closed`, `closed_with_difference`.
 Reglas a reflejar, no reimplementar: conteo ciego y comparación contra lo esperado (R-PS06); toda
 diferencia requiere motivo y queda auditada (R-PS07).
-**GAP:** ¿permite ajuste con permiso superior o es 100% solo lectura? Preguntar antes de diseñar.
+**Definido:** 100% solo lectura; el ajuste queda bloqueado hasta acordar un método de contrato con
+POS (Riquelme).
 
-### 12.9 Dashboard
+### 12.9 Dashboard ✅ implementada
 
 KPIs agregados: ventas del día/mes, alertas de stock, pedidos pendientes, últimas incidencias.
-Sin reglas propias: 100% agregación vía repositorios ajenos. Necesita `KPICard`, que no existe.
+Sin reglas propias: 100% agregación vía repositorios ajenos. `KPICard` se agrega en esta rama.
 
-### 12.10 Reportes
+### 12.10 Reportes ✅ implementada
 
 Agrega `Sale`, `PurchaseOrder`, `InventoryMovement`, `Payment` vía repositorios compartidos.
 Nunca crear un almacén paralelo de reportes. Dejar para el final.
@@ -759,7 +760,8 @@ Estado actual del seed (`src/infrastructure/mock/seeds/demoSeed.ts`): tenant `te
    solo lectura?
 7. `CustomerSegmentRepository`: ¿se define o se pospone la gestión de segmentos? Delimitar por
    escrito con Andy qué es "vista comercial" (tuya) y qué es "cuenta propia del cliente" (suya).
-8. Caja: ¿admite ajuste con permiso superior o es 100% solo lectura?
+8. **Caja resuelta:** 100% solo lectura; cualquier ajuste futuro requiere coordinación contractual
+   con POS (Riquelme).
 9. Planes y facturación: ¿se define `SaasPlan`/`Subscription` o se pospone la pantalla?
 10. Sincronización: ¿mock estático o estructura mínima de nodo/integración?
 11. Filtro de permisos del Sidebar: ¿quién conecta `allowedPermissions` en `PrivateShell`?

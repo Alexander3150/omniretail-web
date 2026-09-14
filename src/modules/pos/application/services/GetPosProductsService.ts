@@ -96,7 +96,16 @@ export class GetPosProductsService {
               }))
             : balances;
         const physicalAvailableQuantity = product.tracking.stock
-          ? getCanonicalProductAvailability({ product, tenantId: input.tenantId, branchId: input.branchId, balances, lots, serials, locations, at })
+          ? getCanonicalProductAvailability({
+              product,
+              tenantId: input.tenantId,
+              branchId: input.branchId,
+              balances,
+              lots,
+              serials,
+              locations,
+              at,
+            })
           : null;
         const kitAvailableQuantity =
           product.productType === ProductType.kit && kitComponents.length > 0
@@ -119,13 +128,15 @@ export class GetPosProductsService {
                 )),
               )
             : null;
-        const availableQuantity = product.productType === ProductType.kit
-          ? (Number.isFinite(kitAvailableQuantity) ? kitAvailableQuantity : 0)
-          : physicalAvailableQuantity;
+        const availableQuantity =
+          product.productType === ProductType.kit
+            ? Number.isFinite(kitAvailableQuantity)
+              ? kitAvailableQuantity
+              : 0
+            : physicalAvailableQuantity;
         const requiresLot = product.tracking.lot;
         const requiresSerial = product.tracking.serial;
-        const requiresUnsupportedTraceability =
-          product.tracking.expiration && !requiresLot;
+        const requiresUnsupportedTraceability = product.tracking.expiration && !requiresLot;
 
         return {
           productId: product.id,
@@ -153,12 +164,16 @@ export class GetPosProductsService {
     const resolvedKitAvailability = await Promise.all(
       items.map(async (item) => {
         if (item.productType !== ProductType.kit) return item;
-        const components = await this.repositories.productKitComponents.getByKitProduct(item.productId);
+        const components = await this.repositories.productKitComponents.getByKitProduct(
+          item.productId,
+        );
         const availableQuantity = components.length
           ? Math.min(
               ...components.map((component) => {
                 const componentProduct = byProductId.get(component.componentProductId);
-                return Math.floor((componentProduct?.availableQuantity ?? 0) / component.quantityPerKit);
+                return Math.floor(
+                  (componentProduct?.availableQuantity ?? 0) / component.quantityPerKit,
+                );
               }),
             )
           : 0;

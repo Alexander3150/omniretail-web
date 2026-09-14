@@ -18,6 +18,18 @@ OrderRepository, PickingRepository, DispatchRepository, InventoryRepository
 - Usar `shared/` para componentes globales.
 - Crear DTO, Mappers y Services propios dentro del modulo cuando empiece cada feature.
 
+## Foundation Picking
+
+- `PickingApplicationService` es el boundary autoritativo para la futura Mesa de Picking; no acepta tenant, actor ni assignee desde la UI.
+- Cola y detalle se exponen como DTOs tenant+sucursal scoped, incluyendo progreso y trazabilidad.
+- Inventory conserva la formula de disponibilidad que distingue reserva propia, reservas ajenas y stock libre.
+- Assignment, release, incidencias y completion tienen persistencia/transacciones mock; completion avanza Picking y Order atomicamente.
+- Tomar una orden avanza `confirmed -> preparing`; el primer consumo real avanza `preparing -> picking`.
+- Completion usa `ready_for_dispatch` para entrega a domicilio y `ready_for_pickup` para retiro. `immediate` falla cerrado.
+- `DispatchApplicationService` reconstruye Session/User/Role/Branch, expone DTOs scoped y nunca acepta tenant o actor desde UI.
+- Confirmar Dispatch exige Picking completo y reservas consumidas, copia `Order.transportMode`, es idempotente y no muta inventario.
+- `markDelivered` es el owner atomico e idempotente de `Dispatch + Order: dispatched -> delivered`; no altera envio, inventario ni notificaciones.
+
 ## Estructura futura
 
 ```text

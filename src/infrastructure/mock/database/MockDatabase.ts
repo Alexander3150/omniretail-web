@@ -25,6 +25,7 @@ import type {
   InventoryTransfer,
   InventoryTransferItem,
   InventoryTransferRequest,
+  MfaChallenge,
   MfaEnrollment,
   Notification,
   Order,
@@ -35,6 +36,8 @@ import type {
   Permission,
   PickingItem,
   PickingItemUpdateOperation,
+  PickingAssignmentRelease,
+  PickingIncident,
   PickingOrder,
   PriceTier,
   Product,
@@ -85,6 +88,7 @@ export interface MockDatabase {
   emailVerifications: EmailVerification[];
   employeeInvitations: EmployeeInvitation[];
   mfaEnrollments: MfaEnrollment[];
+  mfaChallenges: MfaChallenge[];
   recoveryCodes: RecoveryCode[];
   products: Product[];
   productKitComponents: ProductKitComponent[];
@@ -138,6 +142,8 @@ export interface MockDatabase {
   pickingOrders: PickingOrder[];
   pickingItems: PickingItem[];
   pickingItemUpdateOperations: PickingItemUpdateOperation[];
+  pickingAssignmentReleases: PickingAssignmentRelease[];
+  pickingIncidents: PickingIncident[];
   dispatches: Dispatch[];
   packages: Package[];
   notifications: Notification[];

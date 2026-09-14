@@ -22,6 +22,7 @@ import type {
 } from "@/core/repositories";
 import { isBranchScopedResourceAvailable } from "@/core/scopes/branchScope";
 import type { CurrencyCode } from "@/core/types/common.types";
+import type { OrderNotificationContact } from "@/core/types/orderNotification.types";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { isStockLotEligible } from "@/infrastructure/mock/repositories/stockLotMutations";
 import type { CheckoutDto } from "@/modules/pos/application/dto/CheckoutDto";
@@ -44,6 +45,8 @@ export interface ConfirmPosSaleInput {
   customerId?: string;
   sourceOrderId?: string;
   orderIdempotencyKey?: string;
+  /** @deprecated POS now derives this snapshot from checkout.notificationContact. */
+  notificationContact?: OrderNotificationContact;
 }
 
 interface ValidatedSaleItem {
@@ -133,10 +136,35 @@ export class ConfirmSaleService {
     if (!idempotencyKey) throw new Error("No se pudo identificar el intento de pedido diferido.");
     if (input.checkout.deliveryMethod === DeliveryMethod.home_delivery) {
       const address = input.checkout.deliveryAddress;
-      if (!address?.recipientName.trim() || !address.line1.trim() || !address.city.trim()) {
-        throw new Error("La entrega a domicilio requiere destinatario, direccion y ciudad.");
+      if (
+        !address?.recipientName.trim() ||
+        !address.recipientPhone?.trim() ||
+        !address.line1.trim() ||
+        !address.city.trim()
+      ) {
+        throw new Error("La entrega a domicilio requiere contacto, teléfono, dirección y ciudad.");
       }
     }
+    const deliveryAddress =
+      input.checkout.deliveryMethod === DeliveryMethod.home_delivery
+        ? {
+            recipientName: input.checkout.deliveryAddress!.recipientName.trim(),
+            recipientPhone: input.checkout.deliveryAddress!.recipientPhone!.trim(),
+            line1: input.checkout.deliveryAddress!.line1.trim(),
+            city: input.checkout.deliveryAddress!.city.trim(),
+            country: "Guatemala",
+            references: input.checkout.deliveryAddress!.references?.trim() || undefined,
+          }
+        : undefined;
+    const notificationContact =
+      input.checkout.deliveryMethod === DeliveryMethod.home_delivery
+        ? input.checkout.notificationContact.emailMode === "send"
+          ? {
+              emailMode: "send" as const,
+              email: input.checkout.notificationContact.email.trim(),
+            }
+          : { emailMode: "not_applicable" as const }
+        : undefined;
     const order = await this.repositories.orders.create({
       tenantId: input.currentBranch.tenantId,
       branchId: input.currentBranch.id,
@@ -156,7 +184,8 @@ export class ConfirmSaleService {
       status: OrderStatus.confirmed,
       deliveryMethod: input.checkout.deliveryMethod,
       transportMode: input.checkout.transportMode,
-      deliveryAddress: input.checkout.deliveryAddress,
+      notificationContact,
+      deliveryAddress,
       subtotal: fromCents(totals.subtotalCents),
       discountTotal: fromCents(totals.discountTotalCents),
       shippingTotal: 0,
@@ -249,14 +278,15 @@ export class ConfirmSaleService {
         if (product.sku !== ticketItem.sku || product.name !== ticketItem.name) {
           throw new Error(`Los datos de ${ticketItem.name} cambiaron; actualiza el ticket.`);
         }
-        if (product.productType !== ProductType.kit && product.tracking.stock !== ticketItem.tracksStock) {
+        if (
+          product.productType !== ProductType.kit &&
+          product.tracking.stock !== ticketItem.tracksStock
+        ) {
           throw new Error(
             `El control de inventario de ${product.name} cambió; actualiza el ticket.`,
           );
         }
-        if (
-          product.tracking.expiration && !product.tracking.lot
-        ) {
+        if (product.tracking.expiration && !product.tracking.lot) {
           throw new Error(`${product.name} requiere trazabilidad no soportada en Terminal.`);
         }
 

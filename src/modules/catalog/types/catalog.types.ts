@@ -1,5 +1,6 @@
 import type {
   BusinessCapabilitiesConfig,
+  CatalogImageSource,
   Category,
   InventoryBalance,
   Product,
@@ -33,7 +34,7 @@ export interface ProductFiltersState {
 export interface ProductListItem {
   id: string;
   tenantId: string;
-  imageUrl: string;
+  imageSource?: CatalogImageSource;
   sku: string;
   barcode?: string;
   name: string;
@@ -53,8 +54,7 @@ export interface ProductListItem {
 
 export interface ProductDetailViewModel {
   product: Product;
-  imageUrl: string;
-  primaryImageUrl: string;
+  imageSource?: CatalogImageSource;
   category: Category | null;
   unit: Unit | null;
 }

@@ -40,10 +40,7 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
     () => (mode === "create" ? getPrefillContext(searchParams) : undefined),
     [mode, searchParams],
   );
-  const editor = usePurchaseOrderEditor(
-    mode === "edit" ? params.id : undefined,
-    prefillContext,
-  );
+  const editor = usePurchaseOrderEditor(mode === "edit" ? params.id : undefined, prefillContext);
   const [pendingSupplierId, setPendingSupplierId] = useState<string | null>(null);
   const returnPath = getReturnPath(prefillContext?.source);
 
@@ -61,7 +58,10 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
   async function handleSaveDraft() {
     try {
       await editor.saveDraft();
-      showToast({ title: mode === "edit" ? "Borrador actualizado" : "Borrador guardado", tone: "success" });
+      showToast({
+        title: mode === "edit" ? "Borrador actualizado" : "Borrador guardado",
+        tone: "success",
+      });
       router.push("/compras/ordenes");
     } catch (caughtError) {
       showToast({
@@ -75,7 +75,11 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
   async function handleCreateOrder() {
     try {
       await editor.createOrder();
-      showToast({ title: "Orden creada", description: "Quedo pendiente de aprobacion.", tone: "success" });
+      showToast({
+        title: "Orden creada",
+        description: "Quedo pendiente de aprobacion.",
+        tone: "success",
+      });
       router.push("/compras/ordenes");
     } catch (caughtError) {
       showToast({
@@ -152,7 +156,9 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
                   Entrega esperada
                 </span>
                 <p className="mt-1 flex h-10 items-center rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 text-sm font-semibold text-[var(--color-title)]">
-                  {editor.model.expectedDate ? formatDate(editor.model.expectedDate) : "No definido"}
+                  {editor.model.expectedDate
+                    ? formatDate(editor.model.expectedDate)
+                    : "No definido"}
                 </p>
                 <p className="mt-1 text-xs text-[var(--color-text-muted)]">
                   {typeof editor.expectedLeadTimeDays === "number"
@@ -160,9 +166,7 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
                     : "Sin lead time configurado"}
                 </p>
               </div>
-              {editor.selectedSupplier ? (
-                <SupplierInfo supplier={editor.selectedSupplier} />
-              ) : null}
+              {editor.selectedSupplier ? <SupplierInfo supplier={editor.selectedSupplier} /> : null}
               <label className="block md:col-span-2">
                 <span className="text-xs font-bold uppercase text-[var(--color-text-muted)]">
                   Notas
@@ -246,7 +250,10 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
                       {editor.model.lines.map((line) => {
                         const pricing = editor.pricingByLineId.get(line.id);
                         return (
-                          <tr className="border-b border-[var(--color-border)] last:border-0" key={line.id}>
+                          <tr
+                            className="border-b border-[var(--color-border)] last:border-0"
+                            key={line.id}
+                          >
                             <td className="py-2 pr-3">
                               <ProductInfoTrigger line={line} />
                             </td>
@@ -258,7 +265,10 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
                                 className="h-9"
                                 min="1"
                                 onChange={(event) =>
-                                  editor.updateLineQuantity(line.id, parseIntegerInput(event.target.value))
+                                  editor.updateLineQuantity(
+                                    line.id,
+                                    parseIntegerInput(event.target.value),
+                                  )
                                 }
                                 step="1"
                                 type="number"
@@ -273,7 +283,10 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
                                 className="h-9"
                                 min="0"
                                 onChange={(event) =>
-                                  editor.updateLineCost(line.id, parseDecimalInput(event.target.value))
+                                  editor.updateLineCost(
+                                    line.id,
+                                    parseDecimalInput(event.target.value),
+                                  )
                                 }
                                 step="0.01"
                                 type="number"
@@ -330,7 +343,10 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
           <h2 className="text-base font-bold text-[var(--color-title)]">Resumen</h2>
           <dl className="mt-3 space-y-3 text-sm">
             <SummaryItem label="Sucursal destino" value={editor.branchName} />
-            <SummaryItem label="Proveedor" value={editor.selectedSupplier?.name ?? "Sin proveedor"} />
+            <SummaryItem
+              label="Proveedor"
+              value={editor.selectedSupplier?.name ?? "Sin proveedor"}
+            />
             <SummaryItem label="Productos" value={formatNumber(editor.model.lines.length)} />
             <SummaryItem
               label="Unidades solicitadas"
@@ -340,7 +356,9 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
             />
             <SummaryItem
               label="Entrega esperada"
-              value={editor.model.expectedDate ? formatDate(editor.model.expectedDate) : "No definido"}
+              value={
+                editor.model.expectedDate ? formatDate(editor.model.expectedDate) : "No definido"
+              }
             />
             <SummaryItem
               label="Condicion de pago"
@@ -354,7 +372,12 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
             <Button onClick={() => router.push(returnPath)} type="button" variant="secondary">
               Volver
             </Button>
-            <Button disabled={editor.saving} onClick={handleSaveDraft} type="button" variant="secondary">
+            <Button
+              disabled={editor.saving}
+              onClick={handleSaveDraft}
+              type="button"
+              variant="secondary"
+            >
               {mode === "edit" ? "Guardar cambios" : "Guardar borrador"}
             </Button>
             <Button disabled={editor.saving} onClick={handleCreateOrder} type="button">
@@ -404,7 +427,9 @@ function AvailableProductRow({
         label="Escalas"
         value={
           product.tiers.length > 0
-            ? product.tiers.map((tier) => `${tier.minQuantity}+ ${formatCurrency(tier.unitCost)}`).join(", ")
+            ? product.tiers
+                .map((tier) => `${tier.minQuantity}+ ${formatCurrency(tier.unitCost)}`)
+                .join(", ")
             : "-"
         }
       />
@@ -426,14 +451,21 @@ function SupplierInfo({ supplier }: { supplier: PurchaseOrderEditorSupplier }) {
         <SmallDescription label="Nombre comercial" value={supplier.name} />
         <SmallDescription label="Razon social" value={supplier.legalName ?? "No definida"} />
         <SmallDescription label="NIT" value={supplier.taxId ?? "No definido"} />
-        <SmallDescription label="Contacto principal" value={supplier.phone ?? supplier.email ?? "No definido"} />
+        <SmallDescription
+          label="Contacto principal"
+          value={supplier.phone ?? supplier.email ?? "No definido"}
+        />
         <SmallDescription label="Telefono" value={supplier.phone ?? "No definido"} />
         <SmallDescription label="Correo" value={supplier.email ?? "No definido"} />
         <SmallDescription label="Condicion de pago" value={supplier.paymentTermsLabel} />
         <SmallDescription label="Moneda" value={supplier.currencyLabel} />
         <SmallDescription label="Plazo de entrega" value={supplier.leadTimeLabel} />
         {supplier.notes ? (
-          <SmallDescription className="sm:col-span-2 lg:col-span-3" label="Observaciones" value={supplier.notes} />
+          <SmallDescription
+            className="sm:col-span-2 lg:col-span-3"
+            label="Observaciones"
+            value={supplier.notes}
+          />
         ) : null}
       </dl>
     </section>
@@ -472,9 +504,7 @@ function ProductInfoTrigger({ line }: { line: PurchaseOrderEditorLine }) {
     const belowTop = anchor.bottom + gap;
     const placement = aboveTop >= margin ? "top" : "bottom";
     const top =
-      placement === "top"
-        ? aboveTop
-        : Math.min(belowTop, window.innerHeight - height - margin);
+      placement === "top" ? aboveTop : Math.min(belowTop, window.innerHeight - height - margin);
 
     setPosition({
       left,
@@ -614,7 +644,9 @@ function ProductInfoPopover({
         <SmallDescription label="Minimo" value={formatNumber(line.minStock)} />
         <SmallDescription
           label="Reorder point"
-          value={typeof line.reorderPoint === "number" ? formatNumber(line.reorderPoint) : "No definido"}
+          value={
+            typeof line.reorderPoint === "number" ? formatNumber(line.reorderPoint) : "No definido"
+          }
         />
         <SmallDescription label="Sugerido" value={formatNumber(line.suggestedReorder)} />
         <SmallDescription label="Faltante" value={formatNumber(line.shortage)} />
@@ -623,13 +655,19 @@ function ProductInfoPopover({
         <SmallDescription label="Proveedor SKU" value={line.supplierSku} />
         <SmallDescription label="Costo base" value={formatCurrency(line.baseCost)} />
         <SmallDescription label="Entrega" value={formatLeadTime(line.leadTimeDays)} />
-        <SmallDescription className="col-span-2" label="Disponibilidad" value={line.availabilityLabel} />
+        <SmallDescription
+          className="col-span-2"
+          label="Disponibilidad"
+          value={line.availabilityLabel}
+        />
         <SmallDescription
           className="col-span-2"
           label="Escalas"
           value={
             line.tiers.length > 0
-              ? line.tiers.map((tier) => `${tier.minQuantity}+ ${formatCurrency(tier.unitCost)}`).join(", ")
+              ? line.tiers
+                  .map((tier) => `${tier.minQuantity}+ ${formatCurrency(tier.unitCost)}`)
+                  .join(", ")
               : "Sin escalas"
           }
         />

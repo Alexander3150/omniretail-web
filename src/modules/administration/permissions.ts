@@ -5,6 +5,10 @@ import type { PermissionDefinition } from "@/shared/types/permissions.types";
  * ni desde la pantalla ni desde ningun otro consumidor del service.
  */
 export const BUSINESS_CONFIG_MANAGE_PERMISSION = "admin.business_config.manage";
+export const CASH_READ_PERMISSION = "admin.cash.read";
+export const DASHBOARD_READ_PERMISSION = "admin.dashboard.read";
+export const REPORTS_READ_PERMISSION = "admin.reports.read";
+export const REPORTS_EXPORT_PERMISSION = "admin.reports.export";
 
 export const administrationPermissions = [
   {
@@ -72,6 +76,30 @@ export const administrationPermissions = [
     module: "administration",
     name: "Gestionar clientes",
     description: "Permite crear, editar y archivar registros comerciales de clientes.",
+  },
+  {
+    key: CASH_READ_PERMISSION,
+    module: "administration",
+    name: "Leer caja",
+    description: "Permite consultar los turnos de caja y su conciliación.",
+  },
+  {
+    key: DASHBOARD_READ_PERMISSION,
+    module: "administration",
+    name: "Ver dashboard",
+    description: "Permite ver el resumen ejecutivo del negocio.",
+  },
+  {
+    key: REPORTS_READ_PERMISSION,
+    module: "administration",
+    name: "Ver reportes",
+    description: "Permite consultar los reportes agregados del negocio.",
+  },
+  {
+    key: REPORTS_EXPORT_PERMISSION,
+    module: "administration",
+    name: "Exportar reportes",
+    description: "Permite exportar reportes a CSV.",
   },
   {
     key: "admin.ecommerce_config.manage",

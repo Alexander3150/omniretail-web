@@ -8,6 +8,7 @@ export interface CustomerPaymentMethod {
   type: PaymentMethod.card;
   providerPaymentMethodId: string;
   brand: string;
+  issuingBank: string;
   last4: string;
   expirationMonth: number;
   expirationYear: number;

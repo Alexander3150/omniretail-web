@@ -281,14 +281,20 @@ export class MockSaleConfirmationRepository
               item.orderItemId === orderItem.id &&
               item.productId === demand.productId,
           );
-          if (!reservation || reservation.branchId !== input.branchId || reservation.orderId !== order.id) {
+          if (
+            !reservation ||
+            reservation.branchId !== input.branchId ||
+            reservation.orderId !== order.id
+          ) {
             throw new Error(`Kit component reservation missing: ${orderItem.id}`);
           }
           if (
             reservation.status !== InventoryReservationStatus.active &&
             reservation.status !== InventoryReservationStatus.consumed
           ) {
-            throw new Error(`Kit component reservation does not own fulfillment: ${reservation.id}`);
+            throw new Error(
+              `Kit component reservation does not own fulfillment: ${reservation.id}`,
+            );
           }
           const committed = reservation.allocations.reduce(
             (sum, allocation) => sum + allocation.reservedQuantity,
@@ -416,7 +422,8 @@ export class MockSaleConfirmationRepository
       return expandKitDemand(
         db.productKitComponents.filter(
           (component) =>
-            component.tenantId === input.tenantId && component.kitProductId === commercialProduct.id,
+            component.tenantId === input.tenantId &&
+            component.kitProductId === commercialProduct.id,
         ),
         saleItem.quantity,
       ).map((demand) => ({ ...saleItem, productId: demand.productId, quantity: demand.quantity }));

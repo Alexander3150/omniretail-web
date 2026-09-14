@@ -7,8 +7,16 @@ import {
   UserStatus,
   UserType,
 } from "@/core/enums";
-import type { AuthAccount, Customer } from "@/core/entities";
+import type {
+  AuthAccount,
+  Customer,
+  MfaChallenge,
+  MfaEnrollment,
+  MfaMethod,
+  Session,
+} from "@/core/entities";
 import type { AuthRepository } from "@/core/repositories";
+import { MfaChallengeUnavailableError } from "@/core/repositories/AuthRepository";
 import {
   EMAIL_ALREADY_REGISTERED_MESSAGE,
   EMAIL_VERIFICATION_TOKEN_MINUTES,
@@ -25,6 +33,12 @@ import {
   isPasswordRecoveryEligible,
   validatePasswordAgainstPolicy,
 } from "@/config/auth-policy";
+import {
+  MFA_CHALLENGE_EXPIRATION_MINUTES,
+  MFA_CHALLENGE_MAX_ATTEMPTS,
+  MFA_CODE_DIGITS,
+  RECOVERY_CODES_COUNT,
+} from "@/config/mfa-policy";
 import { publicStorefrontSlug } from "@/config/publicStorefront";
 import { sessionPolicy } from "@/config/session-policy";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
@@ -37,7 +51,11 @@ import { MOCK_SESSION_STORAGE_KEY } from "@/infrastructure/storage/storageKeys";
 export class MockAuthRepository extends BaseMockRepository implements AuthRepository {
   private readonly sessionStorage: LocalStorageAdapter;
 
-  constructor(store: MockDatabaseStore, eventBus: DataEventBus, sessionStorage: LocalStorageAdapter) {
+  constructor(
+    store: MockDatabaseStore,
+    eventBus: DataEventBus,
+    sessionStorage: LocalStorageAdapter,
+  ) {
     super(store, eventBus);
     this.sessionStorage = sessionStorage;
   }
@@ -45,14 +63,12 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
   async login(input: Parameters<AuthRepository["login"]>[0]) {
     const normalizedEmail = input.email.trim().toLowerCase();
     const now = new Date();
-    const windowMs = FAILED_ATTEMPTS_WINDOW_MINUTES * 60 * 1000;
-    const lockoutLookbackMs = LOCKOUT_ESCALATION_LOOKBACK_HOURS * 60 * 60 * 1000;
-    const escalationResetMs = LOCKOUT_RESET_AFTER_MINUTES * 60 * 1000;
     const expectedHash = buildPasswordHashMock(input.passwordMock);
 
     const outcome = this.store.mutate((db) => {
       const ownerOf = (account: AuthAccount) => db.users.find((user) => user.id === account.userId);
-      const matchesEmail = (account: AuthAccount) => account.email.toLowerCase() === normalizedEmail;
+      const matchesEmail = (account: AuthAccount) =>
+        account.email.toLowerCase() === normalizedEmail;
 
       // Candidatos CUSTOMER: tenant-scoped al storefront actual (R-A03: email
       // unico POR TENANT). Sin tenantId resuelto (storefront no disponible)
@@ -111,15 +127,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       const tenantId = user?.tenantId ?? "tenant-demo";
 
       // Auto-unlock if the lockout window already elapsed.
-      if (
-        account.status === AccountStatus.temporarily_locked &&
-        account.lockedUntil &&
-        new Date(account.lockedUntil) <= now
-      ) {
-        account.status = AccountStatus.active;
-        account.failedLoginAttempts = 0;
-        account.lockedUntil = undefined;
-      }
+      this.applyAutoUnlockIfExpired(account, now);
 
       if (account.status !== AccountStatus.active) {
         this.logAuthAudit(db, {
@@ -141,122 +149,82 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       const accountKindMatches = !input.expectedUserType || user?.type === input.expectedUserType;
 
       if (!passwordMatches || !accountKindMatches) {
-        // A successful login always cuts the failure streak, regardless of
-        // how recent it was: only login_failed/account_locked events that
-        // happened *after* the most recent login_success — and still within
-        // the active window (doc 4.7) — count toward the current attempt
-        // number. Older ones (before the window, or before the last
-        // success) don't carry over. Derived from auditLogs instead of a
-        // stored counter, so it self-resets with time automatically.
-        const lastSuccessAt = db.auditLogs
-          .filter(
-            (log) =>
-              log.entityType === "AuthAccount" &&
-              log.entityId === account.id &&
-              log.tenantId === tenantId &&
-              log.action === "login_success",
-          )
-          .reduce((latest, log) => Math.max(latest, new Date(log.createdAt).getTime()), 0);
-
-        const recentFailureLogs = db.auditLogs.filter(
-          (log) =>
-            log.entityType === "AuthAccount" &&
-            log.entityId === account.id &&
-            log.tenantId === tenantId &&
-            (log.action === "login_failed" || log.action === "account_locked") &&
-            new Date(log.createdAt).getTime() > lastSuccessAt &&
-            now.getTime() - new Date(log.createdAt).getTime() < windowMs,
-        );
-        const currentAttemptNumber = recentFailureLogs.length + 1;
-        // When this current streak started (the earliest failure still inside
-        // the window), or "now" if this is the first failure of a new streak.
-        // Used below to tell the escalation-reset gap apart from the normal
-        // few-seconds-to-minutes spacing between attempts within one streak.
-        const streakStartAt =
-          recentFailureLogs.length > 0
-            ? Math.min(...recentFailureLogs.map((log) => new Date(log.createdAt).getTime()))
-            : now.getTime();
-
-        const rule =
-          LOGIN_ATTEMPT_RULES.find((item) => item.attemptNumber === currentAttemptNumber) ??
-          LOGIN_ATTEMPT_RULES[LOGIN_ATTEMPT_RULES.length - 1];
-
-        // Kept for display/inspection purposes; the lockout decision above
-        // uses the windowed count, not this field.
-        account.failedLoginAttempts = currentAttemptNumber;
-
-        if (rule.triggersLockout) {
-          // Escalation (15/30/60 min) resets once LOCKOUT_RESET_AFTER_MINUTES
-          // pass without a new failure/lockout on this account — the next
-          // lockout after such a quiet period counts as a first occurrence
-          // again, independent of the login_success-based streak reset above.
-          //
-          // The gap is measured from the start of the CURRENT streak
-          // (streakStartAt), not from "now" — attempts within the same
-          // streak are only seconds/minutes apart by design (that's the
-          // failed-attempts window), so comparing against the most recent
-          // one would never detect a quiet period once a new streak is
-          // already a few attempts in.
-          const priorFailureOrLockoutTimestamps = db.auditLogs
-            .filter(
-              (log) =>
-                log.entityType === "AuthAccount" &&
-                log.entityId === account.id &&
-                log.tenantId === tenantId &&
-                (log.action === "login_failed" || log.action === "account_locked") &&
-                new Date(log.createdAt).getTime() < streakStartAt,
-            )
-            .map((log) => new Date(log.createdAt).getTime());
-          const lastFailureOrLockoutAt =
-            priorFailureOrLockoutTimestamps.length > 0
-              ? Math.max(...priorFailureOrLockoutTimestamps)
-              : null;
-          const escalationHasReset =
-            lastFailureOrLockoutAt !== null && streakStartAt - lastFailureOrLockoutAt > escalationResetMs;
-
-          const recentLockouts = escalationHasReset
-            ? 0
-            : db.auditLogs.filter(
-                (log) =>
-                  log.entityType === "AuthAccount" &&
-                  log.entityId === account.id &&
-                  log.tenantId === tenantId &&
-                  log.action === "account_locked" &&
-                  now.getTime() - new Date(log.createdAt).getTime() < lockoutLookbackMs,
-              ).length;
-          account.status = AccountStatus.temporarily_locked;
-          account.lockedUntil = new Date(
-            now.getTime() + getLockoutMinutesForOccurrence(recentLockouts + 1) * 60 * 1000,
-          ).toISOString();
-          this.logAuthAudit(db, {
-            tenantId,
-            actorUserId: account.userId,
-            accountId: account.id,
-            action: "account_locked",
-          });
-        } else {
-          this.logAuthAudit(db, {
-            tenantId,
-            actorUserId: account.userId,
-            accountId: account.id,
-            action: "login_failed",
-          });
-        }
-
-        account.updatedAt = now.toISOString();
+        this.registerFailedAuthAttempt(db, account, tenantId, "login_failed");
         return { ok: false as const };
       }
 
-      account.failedLoginAttempts = 0;
-      account.lockedUntil = undefined;
+      if (user?.type === UserType.employee && !this.isValidOperationalUser(db, user.id)) {
+        this.logAuthAudit(db, {
+          tenantId,
+          actorUserId: account.userId,
+          accountId: account.id,
+          action: "login_failed",
+        });
+        return { ok: false as const };
+      }
+
       account.lastLoginAt = now.toISOString();
       account.updatedAt = now.toISOString();
+
+      // PR13 (doc R-A16): "si la cuenta exige MFA, la contraseña correcta
+      // no crea sesión definitiva hasta completar el segundo factor" --
+      // la Session todavía no se crea, en su lugar se abre un
+      // MfaChallenge efímero.
+      const enrollment = db.mfaEnrollments.find(
+        (item) => item.userId === account.userId && item.enabled,
+      );
+      if (enrollment) {
+        // PR14 (cierre de hueco de seguridad):
+        //
+        // 1. "login_success" se registra recién en verifyMfaChallenge(),
+        //    NO acá -- si se registrara acá (como hacía antes de este
+        //    PR), cada reinicio de login() con la contraseña correcta
+        //    generaría un login_success nuevo, y registerFailedAuthAttempt
+        //    usa el login_success MÁS RECIENTE como límite para qué
+        //    fallos siguen contando ("lastSuccessAt" mas abajo) -- eso
+        //    borraría en silencio los fallos de MFA acumulados antes del
+        //    reinicio.
+        // 2. Se reutiliza un challenge ya vivo en vez de crear uno con el
+        //    contador de intentos en cero -- antes, reiniciar login()
+        //    regalaba una ventana nueva de MFA_CHALLENGE_MAX_ATTEMPTS
+        //    intentos cada vez, indefinidamente, porque
+        //    failedLoginAttempts/lockedUntil se reseteaban aca abajo
+        //    apenas la password era correcta, sin relacion con los
+        //    fallos de codigo MFA (que vivian solo en
+        //    challenge.failedAttempts, un contador completamente aparte).
+        //
+        // Ambos puntos juntos cierran el bypass: aunque el challenge se
+        // reutilice y ningun login_success interrumpa la racha, la
+        // cuenta sigue acumulando fallos compartidos
+        // (registerFailedAuthAttempt, llamado tambien desde
+        // verifyMfaChallenge) hasta el umbral de LOGIN_ATTEMPT_RULES, que
+        // bloquea la cuenta entera.
+        const liveChallenge = db.mfaChallenges.find(
+          (item) =>
+            item.userId === account.userId &&
+            !item.consumedAt &&
+            !item.invalidatedAt &&
+            now < new Date(item.expiresAt),
+        );
+        const challenge =
+          liveChallenge ??
+          this.createMfaChallenge(db, enrollment, {
+            rememberMe: Boolean(input.rememberMe),
+            deviceLabel: input.deviceLabel,
+          });
+        return { ok: true as const, kind: "mfa_challenge" as const, challenge, enrollment };
+      }
+
+      // Cuenta sin MFA: sin cambio de comportamiento -- login_success se
+      // registra y el reset sigue pasando inmediatamente, acá mismo.
       this.logAuthAudit(db, {
         tenantId,
         actorUserId: account.userId,
         accountId: account.id,
         action: "login_success",
       });
+      account.failedLoginAttempts = 0;
+      account.lockedUntil = undefined;
 
       const expires = new Date(
         now.getTime() +
@@ -276,16 +244,320 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         deviceLabel: input.deviceLabel,
       };
       db.sessions.push(created);
-      return { ok: true as const, session: created };
+      return { ok: true as const, kind: "session" as const, session: created };
     });
 
     if (!outcome.ok) {
       throw new Error(GENERIC_AUTH_ERROR_MESSAGE);
     }
 
-    this.emit("auth.changed", { entityId: outcome.session.id, action: "created" });
+    if (outcome.kind === "mfa_challenge") {
+      // Sin sesión todavía -- no se toca sessionStorage ni se emite
+      // auth.changed (desde afuera, nadie quedó autenticado todavía).
+      return {
+        status: "mfa_required" as const,
+        challengeId: outcome.challenge.id,
+        method: outcome.challenge.method,
+        demoCodeMock: outcome.enrollment.demoCodeMock,
+      };
+    }
+
+    // El puntero persistido es la fuente canonica que consumen todos los
+    // observadores de auth.changed. Debe quedar actualizado ANTES del
+    // evento; de lo contrario CurrentSessionProvider reconstruye la
+    // identidad anterior y no recibe otra senal para corregirse.
     this.sessionStorage.set(MOCK_SESSION_STORAGE_KEY, outcome.session.id);
+    this.emit("auth.changed", { entityId: outcome.session.id, action: "created" });
+    return { status: "authenticated" as const, session: outcome.session };
+  }
+  async verifyMfaChallenge(challengeId: string, codeMock: string) {
+    const outcome = this.store.mutate((db) => {
+      const now = new Date();
+      const challenge = db.mfaChallenges.find((item) => item.id === challengeId);
+      if (
+        !challenge ||
+        challenge.consumedAt ||
+        challenge.invalidatedAt ||
+        now >= new Date(challenge.expiresAt)
+      ) {
+        // No hay challenge vivo sobre el que reintentar -- distinto de un
+        // código incorrecto con intentos restantes (ver abajo).
+        return { ok: false as const, retriable: false };
+      }
+
+      const user = db.users.find((item) => item.id === challenge.userId);
+      const account = db.authAccounts.find((item) => item.userId === challenge.userId);
+      const tenantId = user?.tenantId ?? "tenant-demo";
+
+      // Hardening post-auditoria (PR14): un challenge puede seguir "vivo"
+      // (sus propios MFA_CHALLENGE_MAX_ATTEMPTS todavia no se agotaron)
+      // aunque la cuenta YA este bloqueada -- el contador compartido de
+      // registerFailedAuthAttempt (login_failed + mfa_failed juntos) puede
+      // alcanzar el umbral de lockout antes que el limite propio del
+      // challenge. Sin este chequeo, un codigo MFA o recovery code
+      // correcto completaba la autenticacion igual, evadiendo el lockout
+      // que se acababa de aplicar. account.status es la MISMA fuente de
+      // verdad que usa login() (via applyAutoUnlockIfExpired) -- no se
+      // duplica la regla de tiempo/ventana, solo se consulta aca tambien.
+      if (account) {
+        this.applyAutoUnlockIfExpired(account, now);
+        if (account.status !== AccountStatus.active) {
+          // No se toca el challenge ni se llama a consumeMfaCode: un
+          // recovery code valido NO debe consumirse en un intento que de
+          // todos modos se va a rechazar, y el codigo MFA es reutilizable
+          // (no tiene sentido "gastarlo" en un rechazo). El mensaje al
+          // usuario es el mismo "challenge ya no disponible" que cuando
+          // expira -- reintentar login() desde cero mostrara el error
+          // generico de siempre (R-A13: no revelar que la causa fue
+          // lockout).
+          return { ok: false as const, retriable: false };
+        }
+      }
+
+      if (user?.type === UserType.employee && !this.isValidOperationalUser(db, user.id)) {
+        return { ok: false as const, retriable: false };
+      }
+
+      const codeIsValid = this.consumeMfaCode(db, challenge.userId, codeMock);
+      if (!codeIsValid) {
+        // challenge.failedAttempts sigue siendo su propio contador (5 por
+        // challenge, doc 4.12) -- PERO desde PR14, ADEMAS se contabiliza
+        // en el contador compartido de la cuenta (registerFailedAuthAttempt,
+        // el mismo que usa login() para contraseñas incorrectas). Antes
+        // este fallo nunca tocaba account.failedLoginAttempts, lo que
+        // permitia reiniciar login() indefinidamente para conseguir una
+        // ventana nueva de intentos sin que la cuenta se bloqueara jamas
+        // (ver seccion 2 del spec de este PR).
+        challenge.failedAttempts += 1;
+        if (account) {
+          this.registerFailedAuthAttempt(db, account, tenantId, "mfa_failed");
+        }
+        const exceededAttempts = challenge.failedAttempts >= MFA_CHALLENGE_MAX_ATTEMPTS;
+        if (exceededAttempts) {
+          challenge.invalidatedAt = this.now();
+        }
+        // retriable=true en los intentos 1..4 (doc 4.12/QA: "challenge
+        // sigue vivo"); false en el intento que alcanza el máximo -- ahí
+        // el challenge ya quedó invalidado arriba, no hay nada que
+        // reintentar con este mismo challengeId.
+        return { ok: false as const, retriable: !exceededAttempts };
+      }
+
+      challenge.consumedAt = this.now();
+
+      // PR14 (cierre de hueco de seguridad): para cuentas con MFA,
+      // login_success recién se registra acá (no en login(), ver
+      // comentario ahí) y el reset de failedLoginAttempts/lockedUntil
+      // también se difiere hasta acá -- antes ambos pasaban apenas la
+      // contraseña era correcta, en login(), sin relación con los
+      // fallos de código MFA.
+      if (account) {
+        this.logAuthAudit(db, {
+          tenantId,
+          actorUserId: account.userId,
+          accountId: account.id,
+          action: "login_success",
+        });
+        account.status = AccountStatus.active;
+        account.failedLoginAttempts = 0;
+        account.lockedUntil = undefined;
+        account.updatedAt = this.now();
+      }
+
+      // Misma formula de vigencia que login() -- rememberMe/deviceLabel
+      // vienen del LoginInput original, capturados en el challenge porque
+      // este método solo recibe challengeId + código.
+      const expires = new Date(
+        now.getTime() +
+          (challenge.rememberMe
+            ? sessionPolicy.rememberMeDays * 24
+            : sessionPolicy.normalSessionHours) *
+            60 *
+            60 *
+            1000,
+      );
+      const session: Session = {
+        id: this.id("session"),
+        userId: challenge.userId,
+        createdAt: this.now(),
+        expiresAt: expires.toISOString(),
+        rememberMe: challenge.rememberMe,
+        deviceLabel: challenge.deviceLabel,
+      };
+      db.sessions.push(session);
+      return { ok: true as const, session };
+    });
+
+    if (!outcome.ok) {
+      if (outcome.retriable) {
+        throw new Error("El código no es correcto. Inténtalo de nuevo.");
+      }
+      // No es un caso de enumeración cross-account (R-A13 es sobre no
+      // revelar si una cuenta/correo existe) -- es solo el ciclo de vida
+      // del challenge para un usuario que YA se autenticó con
+      // contraseña. Distinguirlo de un código simplemente incorrecto es
+      // información útil, no un riesgo: le dice al usuario que reintentar
+      // con este mismo challenge ya no sirve.
+      throw new MfaChallengeUnavailableError();
+    }
+
+    this.sessionStorage.set(MOCK_SESSION_STORAGE_KEY, outcome.session.id);
+    this.emit("auth.changed", { entityId: outcome.session.id, action: "created" });
     return outcome.session;
+  }
+  async beginMfaEnrollment(sessionId: string, method: MfaMethod) {
+    return this.store.mutate((db) => {
+      const session = this.requireActiveSession(db, sessionId);
+      const now = this.now();
+      const demoCodeMock = this.generateMfaCodeMock();
+      const existing = db.mfaEnrollments.find((item) => item.userId === session.userId);
+      if (existing) {
+        // Reinicia el enrollment (mismo criterio que reenviar una
+        // invitación): un enrollment sin confirmar previamente no deja
+        // basura -- se reemplaza el método/código y se vuelve a pedir
+        // verificación.
+        existing.method = method;
+        existing.demoCodeMock = demoCodeMock;
+        existing.enabled = false;
+        existing.verifiedAt = undefined;
+        existing.updatedAt = now;
+      } else {
+        db.mfaEnrollments.push({
+          id: this.id("mfa-enrollment"),
+          userId: session.userId,
+          enabled: false,
+          method,
+          demoCodeMock,
+          verifiedAt: undefined,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      return { demoCodeMock };
+    });
+  }
+  async verifyMfaEnrollment(sessionId: string, codeMock: string) {
+    const outcome = this.store.mutate((db) => {
+      const session = this.requireActiveSession(db, sessionId);
+      const enrollment = db.mfaEnrollments.find((item) => item.userId === session.userId);
+      if (!enrollment || enrollment.enabled) {
+        throw new Error("No hay una verificación en dos pasos pendiente de confirmar.");
+      }
+      if (enrollment.demoCodeMock !== codeMock) {
+        throw new Error("El código no es correcto.");
+      }
+
+      const now = this.now();
+      enrollment.enabled = true;
+      enrollment.verifiedAt = now;
+      enrollment.updatedAt = now;
+
+      // Reemplaza cualquier lote previo -- un enrollment recién confirmado
+      // empieza con un set de recovery codes limpio, nunca mezclado con
+      // códigos de un enrollment anterior ya desactivado.
+      db.recoveryCodes = db.recoveryCodes.filter((item) => item.userId !== session.userId);
+      const recoveryCodes = Array.from({ length: RECOVERY_CODES_COUNT }, () =>
+        this.generateRecoveryCode(),
+      );
+      recoveryCodes.forEach((code) => {
+        db.recoveryCodes.push({
+          id: this.id("recovery-code"),
+          userId: session.userId,
+          code,
+          used: false,
+          createdAt: now,
+        });
+      });
+
+      const user = db.users.find((item) => item.id === session.userId);
+      const account = db.authAccounts.find((item) => item.userId === session.userId);
+      const tenantId = user?.tenantId ?? "tenant-demo";
+      this.logAuthAudit(db, {
+        tenantId,
+        actorUserId: session.userId,
+        accountId: account?.id,
+        action: "mfa_enabled",
+      });
+      db.notifications.push({
+        id: this.id("notification"),
+        tenantId,
+        userId: session.userId,
+        channel: NotificationChannel.in_app,
+        type: "mfa_enabled",
+        title: "Verificación en dos pasos activada",
+        message: "Se activó la verificación en dos pasos en tu cuenta.",
+        status: NotificationStatus.unread,
+        relatedEntityType: "AuthAccount",
+        relatedEntityId: account?.id,
+        createdAt: now,
+      });
+
+      return { recoveryCodes };
+    });
+    // "mfa.changed", NO "auth.changed" -- ver comentario en DataEventName
+    // (core/types/events.types.ts): esto no cambia identidad ni permisos,
+    // y auth.changed remontaria el subarbol autenticado a mitad del
+    // wizard de activacion.
+    this.emit("mfa.changed", { action: "updated" });
+    return outcome;
+  }
+  async disableMfa(sessionId: string, currentPasswordMock: string) {
+    this.store.mutate((db) => {
+      const session = this.requireActiveSession(db, sessionId);
+      const account = db.authAccounts.find((item) => item.userId === session.userId);
+      if (!account) throw new Error("No se encontró la cuenta.");
+      if (account.passwordHashMock !== buildPasswordHashMock(currentPasswordMock)) {
+        throw new Error("La contraseña actual no es correcta.");
+      }
+      const enrollment = db.mfaEnrollments.find((item) => item.userId === session.userId);
+      if (!enrollment || !enrollment.enabled) {
+        return undefined;
+      }
+
+      const now = this.now();
+      enrollment.enabled = false;
+      enrollment.updatedAt = now;
+
+      const user = db.users.find((item) => item.id === session.userId);
+      const tenantId = user?.tenantId ?? "tenant-demo";
+      this.logAuthAudit(db, {
+        tenantId,
+        actorUserId: session.userId,
+        accountId: account.id,
+        // No está en la lista literal de R-A30, pero omitir un evento de
+        // auditoría para un cambio de seguridad tan sensible como apagar
+        // el segundo factor sería un hueco real -- mismo criterio que ya
+        // se usó antes en este proyecto para la notificación de
+        // account_locked, que el documento tampoco pedía explícitamente.
+        action: "mfa_disabled",
+      });
+      db.notifications.push({
+        id: this.id("notification"),
+        tenantId,
+        userId: session.userId,
+        channel: NotificationChannel.in_app,
+        type: "mfa_disabled",
+        title: "Verificación en dos pasos desactivada",
+        message: "Se desactivó la verificación en dos pasos en tu cuenta.",
+        status: NotificationStatus.unread,
+        relatedEntityType: "AuthAccount",
+        relatedEntityId: account.id,
+        createdAt: now,
+      });
+      return undefined;
+    });
+    // Ver comentario en verifyMfaEnrollment: "mfa.changed", no
+    // "auth.changed".
+    this.emit("mfa.changed", { action: "updated" });
+  }
+  async getMfaStatus(sessionId: string) {
+    return this.read((db) => {
+      const session = db.sessions.find((item) => item.id === sessionId && !item.revokedAt);
+      if (!session) return null;
+      const enrollment = db.mfaEnrollments.find((item) => item.userId === session.userId);
+      if (!enrollment) return null;
+      return { enabled: enrollment.enabled, method: enrollment.method };
+    });
   }
   async logout(sessionId: string) {
     this.store.mutate((db) => {
@@ -299,9 +571,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     this.emit("auth.changed", { entityId: sessionId, action: "updated" });
   }
   async getSession(sessionId: string) {
-    const session = this.read(
-      (db) => db.sessions.find((item) => item.id === sessionId) ?? null,
-    );
+    const session = this.read((db) => db.sessions.find((item) => item.id === sessionId) ?? null);
     const isStale =
       !session || Boolean(session.revokedAt) || new Date() >= new Date(session.expiresAt);
     if (isStale) {
@@ -320,6 +590,16 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     this.emit("auth.changed", { action: "updated" });
   }
   async registerCustomer(input: Parameters<AuthRepository["registerCustomer"]>[0]) {
+    // Password policy en la capa funcional (mismo patron que
+    // resetPassword/activateEmployeeAccount/changePassword): antes de
+    // este ajuste, registerCustomer() no validaba nada de esto -- solo
+    // el formulario (register.validation.ts) lo hacia, asi que una
+    // llamada directa a este metodo podia crear una cuenta con
+    // cualquier contraseña, incluida una compuesta solo de digitos.
+    const passwordError = validatePasswordAgainstPolicy(input.passwordMock);
+    if (passwordError) {
+      throw new Error(passwordError);
+    }
     const result = this.store.mutate((db) => {
       const now = this.now();
       const normalizedEmail = input.email.trim().toLowerCase();
@@ -367,6 +647,16 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         createdAt: now,
         updatedAt: now,
       };
+      const customerRole = db.roles.find(
+        (role) =>
+          role.tenantId === tenantId &&
+          role.isSystem &&
+          role.permissions.includes("customer.account.read") &&
+          !role.permissions.some(
+            (p) => p.startsWith("admin.") || p.startsWith("pos.") || p.startsWith("inventory."),
+          ),
+      );
+
       const createdUser = {
         id: this.id("user"),
         tenantId,
@@ -376,6 +666,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         phone: input.phone,
         type: UserType.customer,
         status: UserStatus.active,
+        roleId: customerRole?.id,
         createdAt: now,
         updatedAt: now,
       };
@@ -428,7 +719,8 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     this.store.mutate((db) => {
       const normalizedEmail = input.email.trim().toLowerCase();
       const now = new Date();
-      const matchesEmail = (account: AuthAccount) => account.email.toLowerCase() === normalizedEmail;
+      const matchesEmail = (account: AuthAccount) =>
+        account.email.toLowerCase() === normalizedEmail;
       const ownerOf = (account: AuthAccount) => db.users.find((u) => u.id === account.userId);
 
       // Mismo criterio de candidatos que login(). A diferencia de login(),
@@ -775,11 +1067,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       // que un token vencido, sin revelar cual de las tres condiciones
       // fallo.
       const user = db.users.find((item) => item.id === account.userId);
-      if (
-        !user ||
-        user.type !== UserType.employee ||
-        user.tenantId !== invitation.tenantId
-      ) {
+      if (!user || user.type !== UserType.employee || user.tenantId !== invitation.tenantId) {
         throw new Error("Invalid activation token");
       }
 
@@ -816,6 +1104,109 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     });
     this.emit("auth.changed", { action: "updated" });
   }
+  async changePassword(input: Parameters<AuthRepository["changePassword"]>[0]) {
+    this.store.mutate((db) => {
+      const nowIso = this.now();
+
+      const session = this.requireActiveSession(db, input.sessionId);
+
+      const account = db.authAccounts.find((item) => item.userId === session.userId);
+      if (!account) throw new Error("No se encontró la cuenta.");
+
+      // A diferencia de login()/resetPassword() (donde revelar el motivo
+      // exacto del fallo es un riesgo real de enumeración cross-account),
+      // acá el usuario YA está autenticado como esta cuenta -- decirle que
+      // su contraseña actual es incorrecta no filtra nada que no sepa ya.
+      const currentMatches =
+        account.passwordHashMock === buildPasswordHashMock(input.currentPasswordMock);
+      if (!currentMatches) {
+        throw new Error("La contraseña actual no es correcta.");
+      }
+
+      // PR13 (doc 4.13, "reautenticar con contraseña actual/MFA"): si la
+      // cuenta tiene el segundo factor activo, cambiar la contraseña exige
+      // AMBOS factores -- currentPasswordMock (ya validado arriba) Y un
+      // código MFA/recovery code vigente. No reemplaza la verificación de
+      // contraseña ya aprobada, se suma solo cuando aplica.
+      const mfaEnrollment = db.mfaEnrollments.find(
+        (item) => item.userId === account.userId && item.enabled,
+      );
+      if (mfaEnrollment) {
+        const mfaCodeValid =
+          Boolean(input.mfaCodeMock) &&
+          this.consumeMfaCode(db, account.userId, input.mfaCodeMock as string);
+        if (!mfaCodeValid) {
+          throw new Error("El código de verificación en dos pasos no es correcto.");
+        }
+      }
+
+      // Confirmado por QA manual (Andy, cuenta demo): sin este chequeo, la
+      // pantalla permitía "cambiar" la contraseña por la misma que ya tenía
+      // -- técnicamente no rompe nada del dominio, pero no tiene sentido de
+      // producto dejarlo pasar como si fuera un cambio real. No está en el
+      // documento de arquitectura; es una regla de UX razonable agregada a
+      // pedido, igual que las demás políticas, en la capa funcional (no solo
+      // en el formulario) para que una llamada directa no pueda saltársela.
+      if (input.newPasswordMock === input.currentPasswordMock) {
+        throw new Error("La nueva contraseña debe ser diferente a la actual.");
+      }
+
+      const passwordError = validatePasswordAgainstPolicy(input.newPasswordMock);
+      if (passwordError) throw new Error(passwordError);
+
+      const user = db.users.find((item) => item.id === account.userId);
+      if (!user) throw new Error("No se encontró el usuario.");
+      const tenantId = user.tenantId;
+
+      // Todo lo de arriba es validación de solo lectura (sesión, cuenta,
+      // contraseña actual, política, usuario) -- ninguna mutación ocurre
+      // hasta este punto. Igual que en resetPassword(): cualquier fallo
+      // anterior deja passwordHashMock, sesiones, auditoría y notificación
+      // exactamente como estaban, sin cambios parciales.
+      account.passwordHashMock = buildPasswordHashMock(input.newPasswordMock);
+      account.passwordChangedAt = nowIso;
+      account.updatedAt = nowIso;
+
+      // Revoca las sesiones RESTANTES -- todas menos input.sessionId.
+      const revokedSessions = db.sessions.filter(
+        (item) => item.userId === account.userId && item.id !== input.sessionId && !item.revokedAt,
+      );
+      revokedSessions.forEach((item) => {
+        item.revokedAt = nowIso;
+      });
+
+      this.logAuthAudit(db, {
+        tenantId,
+        actorUserId: account.userId,
+        accountId: account.id,
+        action: "session_revoked",
+        metadata: { count: revokedSessions.length },
+      });
+      this.logAuthAudit(db, {
+        tenantId,
+        actorUserId: account.userId,
+        accountId: account.id,
+        action: "password_changed",
+      });
+
+      db.notifications.push({
+        id: this.id("notification"),
+        tenantId,
+        userId: account.userId,
+        channel: NotificationChannel.in_app,
+        type: "password_changed",
+        title: "Contraseña actualizada",
+        message: "Tu contraseña fue actualizada correctamente.",
+        status: NotificationStatus.unread,
+        relatedEntityType: "AuthAccount",
+        relatedEntityId: account.id,
+        createdAt: nowIso,
+      });
+
+      return undefined;
+    });
+    this.emit("auth.changed", { action: "updated" });
+  }
   private logAuthAudit(
     db: MockDatabase,
     entry: {
@@ -836,5 +1227,261 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       metadata: entry.metadata,
       createdAt: this.now(),
     });
+  }
+  private isValidOperationalUser(db: MockDatabase, userId: string): boolean {
+    const user = db.users.find((item) => item.id === userId);
+    if (!user || user.type !== UserType.employee || user.status !== UserStatus.active) return false;
+    const tenant = db.tenants.find((item) => item.id === user.tenantId);
+    if (!tenant || tenant.status !== TenantStatus.active) return false;
+    const role = user.roleId ? db.roles.find((item) => item.id === user.roleId) : null;
+    return Boolean(role && role.tenantId === user.tenantId);
+  }
+
+  /**
+   * Si el lockout ya vencio (lockedUntil <= now), restaura la cuenta a
+   * estado operable ANTES de evaluar credenciales. Unica fuente de verdad
+   * para "sigue bloqueada la cuenta" -- compartida por login() y
+   * verifyMfaChallenge() (hardening post-auditoria del PR14) para que
+   * ninguna de las dos rutas pueda desincronizarse de la otra.
+   */
+  private applyAutoUnlockIfExpired(account: AuthAccount, now: Date): void {
+    if (
+      account.status === AccountStatus.temporarily_locked &&
+      account.lockedUntil &&
+      new Date(account.lockedUntil) <= now
+    ) {
+      account.status = AccountStatus.active;
+      account.failedLoginAttempts = 0;
+      account.lockedUntil = undefined;
+    }
+  }
+  /**
+   * Contabiliza un fallo de autenticacion -- password incorrecta (login())
+   * O codigo MFA incorrecto (verifyMfaChallenge()), PR14 seccion 2:
+   * comparten el MISMO contador/ventana/escalada de LOGIN_ATTEMPT_RULES.
+   * Antes, un fallo de codigo MFA solo incrementaba
+   * MfaChallenge.failedAttempts (un contador separado, por diseño
+   * explicito de PR13) -- eso permitia reiniciar login() indefinidamente
+   * para conseguir una ventana nueva de intentos contra el codigo sin que
+   * la cuenta se bloqueara nunca, porque failedLoginAttempts nunca se
+   * enteraba de esos fallos. `failureAction` mantiene el nombre de evento
+   * de auditoria correcto para cada canal (login_failed vs mfa_failed,
+   * R-A30 exige ambos) sin duplicar la logica de ventana/escalada.
+   */
+  private registerFailedAuthAttempt(
+    db: MockDatabase,
+    account: AuthAccount,
+    tenantId: string,
+    failureAction: "login_failed" | "mfa_failed",
+  ): void {
+    const now = new Date();
+    const windowMs = FAILED_ATTEMPTS_WINDOW_MINUTES * 60 * 1000;
+    const lockoutLookbackMs = LOCKOUT_ESCALATION_LOOKBACK_HOURS * 60 * 60 * 1000;
+    const escalationResetMs = LOCKOUT_RESET_AFTER_MINUTES * 60 * 1000;
+
+    const isCountableFailure = (log: { action: string }) =>
+      log.action === "login_failed" ||
+      log.action === "mfa_failed" ||
+      log.action === "account_locked";
+
+    // A successful login always cuts the failure streak, regardless of
+    // how recent it was: only failure/lockout events that happened
+    // *after* the most recent login_success — and still within the
+    // active window (doc 4.7) — count toward the current attempt number.
+    // Older ones (before the window, or before the last success) don't
+    // carry over. Derived from auditLogs instead of a stored counter, so
+    // it self-resets with time automatically.
+    const lastSuccessAt = db.auditLogs
+      .filter(
+        (log) =>
+          log.entityType === "AuthAccount" &&
+          log.entityId === account.id &&
+          log.tenantId === tenantId &&
+          log.action === "login_success",
+      )
+      .reduce((latest, log) => Math.max(latest, new Date(log.createdAt).getTime()), 0);
+
+    const recentFailureLogs = db.auditLogs.filter(
+      (log) =>
+        log.entityType === "AuthAccount" &&
+        log.entityId === account.id &&
+        log.tenantId === tenantId &&
+        isCountableFailure(log) &&
+        new Date(log.createdAt).getTime() > lastSuccessAt &&
+        now.getTime() - new Date(log.createdAt).getTime() < windowMs,
+    );
+    const currentAttemptNumber = recentFailureLogs.length + 1;
+    // When this current streak started (the earliest failure still inside
+    // the window), or "now" if this is the first failure of a new streak.
+    // Used below to tell the escalation-reset gap apart from the normal
+    // few-seconds-to-minutes spacing between attempts within one streak.
+    const streakStartAt =
+      recentFailureLogs.length > 0
+        ? Math.min(...recentFailureLogs.map((log) => new Date(log.createdAt).getTime()))
+        : now.getTime();
+
+    const rule =
+      LOGIN_ATTEMPT_RULES.find((item) => item.attemptNumber === currentAttemptNumber) ??
+      LOGIN_ATTEMPT_RULES[LOGIN_ATTEMPT_RULES.length - 1];
+
+    // Kept for display/inspection purposes; the lockout decision above
+    // uses the windowed count, not this field.
+    account.failedLoginAttempts = currentAttemptNumber;
+
+    if (rule.triggersLockout) {
+      // Escalation (15/30/60 min) resets once LOCKOUT_RESET_AFTER_MINUTES
+      // pass without a new failure/lockout on this account — the next
+      // lockout after such a quiet period counts as a first occurrence
+      // again, independent of the login_success-based streak reset above.
+      //
+      // The gap is measured from the start of the CURRENT streak
+      // (streakStartAt), not from "now" — attempts within the same
+      // streak are only seconds/minutes apart by design (that's the
+      // failed-attempts window), so comparing against the most recent
+      // one would never detect a quiet period once a new streak is
+      // already a few attempts in.
+      const priorFailureOrLockoutTimestamps = db.auditLogs
+        .filter(
+          (log) =>
+            log.entityType === "AuthAccount" &&
+            log.entityId === account.id &&
+            log.tenantId === tenantId &&
+            isCountableFailure(log) &&
+            new Date(log.createdAt).getTime() < streakStartAt,
+        )
+        .map((log) => new Date(log.createdAt).getTime());
+      const lastFailureOrLockoutAt =
+        priorFailureOrLockoutTimestamps.length > 0
+          ? Math.max(...priorFailureOrLockoutTimestamps)
+          : null;
+      const escalationHasReset =
+        lastFailureOrLockoutAt !== null &&
+        streakStartAt - lastFailureOrLockoutAt > escalationResetMs;
+
+      const recentLockouts = escalationHasReset
+        ? 0
+        : db.auditLogs.filter(
+            (log) =>
+              log.entityType === "AuthAccount" &&
+              log.entityId === account.id &&
+              log.tenantId === tenantId &&
+              log.action === "account_locked" &&
+              now.getTime() - new Date(log.createdAt).getTime() < lockoutLookbackMs,
+          ).length;
+      account.status = AccountStatus.temporarily_locked;
+      account.lockedUntil = new Date(
+        now.getTime() + getLockoutMinutesForOccurrence(recentLockouts + 1) * 60 * 1000,
+      ).toISOString();
+      this.logAuthAudit(db, {
+        tenantId,
+        actorUserId: account.userId,
+        accountId: account.id,
+        action: "account_locked",
+      });
+      // No existia ninguna notificacion para este evento -- solo
+      // quedaba en auditLogs, invisible para el dueño de la cuenta.
+      // Mismo patron que password_changed/password_reset_completed:
+      // in-app, dirigida al propio usuario de la cuenta bloqueada
+      // (sirve igual para Customer que para Employee/Admin).
+      db.notifications.push({
+        id: this.id("notification"),
+        tenantId,
+        userId: account.userId,
+        channel: NotificationChannel.in_app,
+        type: "account_locked",
+        title: "Cuenta bloqueada temporalmente",
+        message: "Se bloqueó tu cuenta por varios intentos fallidos de inicio de sesión.",
+        status: NotificationStatus.unread,
+        relatedEntityType: "AuthAccount",
+        relatedEntityId: account.id,
+        createdAt: now.toISOString(),
+      });
+    } else {
+      this.logAuthAudit(db, {
+        tenantId,
+        actorUserId: account.userId,
+        accountId: account.id,
+        action: failureAction,
+      });
+    }
+
+    account.updatedAt = now.toISOString();
+  }
+  /**
+   * Valida que exista una sesión activa y no revocada para sessionId --
+   * mismo chequeo que changePassword() ya hacía inline, extraído (PR13)
+   * porque beginMfaEnrollment/verifyMfaEnrollment/disableMfa lo necesitan
+   * también, palabra por palabra.
+   */
+  private requireActiveSession(db: MockDatabase, sessionId: string): Session {
+    const session = db.sessions.find((item) => item.id === sessionId && !item.revokedAt);
+    if (!session || new Date() >= new Date(session.expiresAt)) {
+      throw new Error("Tu sesión ya no es válida. Vuelve a iniciar sesión.");
+    }
+    return session;
+  }
+  /**
+   * Crea el MfaChallenge efímero que login() devuelve en vez de una
+   * Session cuando la cuenta tiene MFA habilitado (R-A16).
+   */
+  private createMfaChallenge(
+    db: MockDatabase,
+    enrollment: MfaEnrollment,
+    opts: { rememberMe: boolean; deviceLabel?: string },
+  ): MfaChallenge {
+    const challenge: MfaChallenge = {
+      id: this.id("mfa-challenge"),
+      userId: enrollment.userId,
+      method: enrollment.method,
+      failedAttempts: 0,
+      createdAt: this.now(),
+      expiresAt: new Date(Date.now() + MFA_CHALLENGE_EXPIRATION_MINUTES * 60 * 1000).toISOString(),
+      rememberMe: opts.rememberMe,
+      deviceLabel: opts.deviceLabel,
+    };
+    db.mfaChallenges.push(challenge);
+    return challenge;
+  }
+  /**
+   * Verifica codeMock contra el código MFA vigente del usuario
+   * (MfaEnrollment.demoCodeMock, fase dummy no rotativo) O contra un
+   * RecoveryCode propio sin usar -- si es un recovery code, lo consume
+   * (used=true) como efecto secundario. Compartido por
+   * verifyMfaChallenge() y changePassword(): una sola fuente de verdad
+   * para "qué cuenta como un código MFA válido para este usuario", en vez
+   * de duplicar la comparación en cada llamador.
+   */
+  private consumeMfaCode(db: MockDatabase, userId: string, codeMock: string): boolean {
+    const enrollment = db.mfaEnrollments.find((item) => item.userId === userId && item.enabled);
+    if (enrollment && enrollment.demoCodeMock === codeMock) {
+      return true;
+    }
+    const recoveryCode = db.recoveryCodes.find(
+      (item) => item.userId === userId && !item.used && item.code === codeMock,
+    );
+    if (recoveryCode) {
+      recoveryCode.used = true;
+      return true;
+    }
+    return false;
+  }
+  /**
+   * Código MFA de demostración: MFA_CODE_DIGITS dígitos numéricos, con
+   * ceros a la izquierda si hace falta (mismo largo siempre, como un TOTP
+   * real).
+   */
+  private generateMfaCodeMock(): string {
+    const max = 10 ** MFA_CODE_DIGITS;
+    const value = Math.floor(Math.random() * max);
+    return String(value).padStart(MFA_CODE_DIGITS, "0");
+  }
+  /**
+   * Formato legible tipo "XXXX-XXXX" (hex mayúsculas) -- ni tan corto que
+   * colisione fácil, ni tan largo que sea incómodo de transcribir a mano
+   * si el usuario decide guardarlo en papel.
+   */
+  private generateRecoveryCode(): string {
+    const part = () => crypto.randomUUID().replace(/-/g, "").slice(0, 4).toUpperCase();
+    return `${part()}-${part()}`;
   }
 }

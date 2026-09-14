@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { ProductStatus } from "@/core/enums";
 import {
   ArchiveIcon,
@@ -112,8 +119,8 @@ export function ProductActionsMenu({
         >
           {product.status === ProductStatus.published ? (
             <MenuItem icon={<TagIcon />} onClick={() => selectAction(onPromotion)}>
-            Promoción
-          </MenuItem>
+              Promoción
+            </MenuItem>
           ) : null}
           <MenuItem icon={<HistoryIcon />} onClick={() => selectAction(onPriceHistory)}>
             Historial de precios

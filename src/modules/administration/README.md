@@ -11,7 +11,7 @@ estan en `SCOPE.md`.
 
 ## Contracts que consume
 
-UserRepository, RoleRepository, BranchRepository, BusinessConfigRepository, TenantRepository, SupplierRepository, BankAccountRepository, CustomerRepository, AuditLogRepository
+UserRepository, RoleRepository, BranchRepository, BusinessConfigRepository, TenantRepository, SupplierRepository, BankAccountRepository, CustomerRepository, AuditLogRepository, CashShiftRepository, SalesRepository, OrderRepository, InventoryRepository, ReceiptRepository, IncidentTypeRepository, PurchaseOrderRepository, PaymentRepository, ProductRepository
 
 ## Configuracion del negocio
 
@@ -235,6 +235,125 @@ La configuracion no describe al negocio: lo restringe. Los modulos consumidores 
 
 Un producto ya guardado con un tipo que despues se deshabilito conserva su tipo y puede editarse;
 lo que se bloquea es crear uno nuevo o cambiar un producto hacia un tipo deshabilitado.
+
+## Caja
+
+La pantalla `/administracion/caja` expone un visor de conciliación de turnos de caja. Se integra
+en la navegación como `administration-cash`, exige el permiso nuevo `admin.cash.read` y se
+actualiza cuando recibe el evento `cash-shift.changed`.
+
+La consulta muestra apertura, monto esperado, conteo, diferencia y estado. No abre ni cierra
+turnos, no registra movimientos, no ajusta conciliaciones y no escribe auditoría. El desglose de
+movimientos tampoco está disponible porque el contrato actual no expone lectura de
+`CashMovement`.
+
+### Contrato de integracion
+
+La feature asume:
+
+- `useCurrentSession()` para resolver `tenantId`, actor, permisos y estado de sesión. El service
+  recarga el `User` y su `Role` para aplicar el `branchScope` real mediante
+  `canUserAccessBranch()` antes de devolver resultados.
+- `RepositoryRegistry.cashShifts` como fuente principal, más `branches` y `users` únicamente
+  para resolver nombres dentro del mismo tenant.
+- `formatCurrency` y `formatDate` de `shared/utils` para presentar montos y fechas.
+
+Decisiones y coordinación:
+
+- Caja es 100% solo lectura por decisión de producto. Un eventual ajuste necesita un método nuevo
+  en `CashShiftRepository`, acordado con Riquelme como dueño del dominio de caja.
+- `GetCashShiftsService` consulta por tenant y restringe cada turno al alcance `assigned`,
+  `selected` o `all` del Role del actor. El filtrado visual nunca es la frontera de autorización.
+- El contrato actual no permite consultar el desglose de movimientos.
+- `admin.cash.read` es un permiso nuevo. Se esperan colisiones en `permissions.ts`,
+  `demoSeed.ts`, `navigation.ts`, `serviceHelpers.ts`, `README.md` y `SCOPE.md` con las ramas
+  `feature/admin-branches`, `feature/admin-bank-accounts`, `feature/admin-suppliers`,
+  `feature/admin-audit-log`, `feature/admin-ecommerce-config` y `feature/admin-customers`; al
+  integrarlas deben conservarse todas las entradas.
+
+## Dashboard
+
+La ruta `/administracion/dashboard` expone un resumen ejecutivo de solo lectura y se integra en la
+navegación como `administration-dashboard`. Requiere el permiso nuevo
+`admin.dashboard.read` y se refresca ante `sale.changed`, `order.changed`, `stock.changed` y
+`receipt.changed`.
+
+La pantalla agrega ventas del día y del mes calendario local, alertas de stock, pedidos que esperan
+atención operativa y las cinco incidencias de recepción más recientes. No expone operaciones de
+escritura. Esta rama también agrega `KPICard` como componente shared puramente presentacional;
+su API acepta etiqueta, valor, texto secundario, tono y estado de carga.
+
+### Contrato de integracion
+
+La feature asume:
+
+- `useCurrentSession()` para resolver `tenantId`, permisos y estado de sesión.
+- `RepositoryRegistry.sales`, `orders`, `branches`, `receipts` e `incidentTypes` con sus
+  contratos vigentes.
+- `formatCurrency` y `formatDate` de `shared/utils` para presentar montos y fechas.
+
+Decisiones y coordinación:
+
+- Lee contratos compartidos de Riquelme (`sales`), María (`orders`) y Melbyn (`inventory`,
+  `receipts`). Si esos contratos cambian, esta agregación debe revisarse.
+- El KPI de stock NO recalcula disponibilidad por su cuenta: instancia
+  `GetInventoryAlertsService` (módulo `inventory`, dueño de la disponibilidad canónica —
+  físico + reservas + lotes + vencimiento + seriales + kits derivados) una vez por sucursal activa
+  del tenant y suma `kpis.outOfStock`/`kpis.lowStock`. Administration no mantiene una segunda regla
+  de bajo stock.
+- El KPI de "pedidos pendientes" reutiliza `OrderRepository.getPendingForLogistics()` (la cola
+  operativa real: `confirmed`, `preparing`, `picking`, `packing`, `ready_for_dispatch`), no
+  `OrderStatus.pending` en solitario — ese estado todavía no entró a operación.
+- `KPICard` es un componente shared nuevo y presentacional; coordinar su evolución si otro equipo
+  necesita ampliar la API.
+- Con el seed actual, ventas de hoy y del mes muestran cero porque todos los `createdAt` son
+  `2026-01-01T12:00:00.000Z`. No se reemplaza el calendario real por una ventana móvil.
+- `admin.dashboard.read` es un permiso nuevo. Se esperan colisiones en `permissions.ts`,
+  `demoSeed.ts`, `navigation.ts`, `serviceHelpers.ts`, `README.md` y `SCOPE.md` con las ramas
+  previas de administration; al integrarlas deben conservarse todas las entradas.
+
+## Reportes
+
+La ruta `/administracion/reportes` expone reportes agregados de ventas, compras, movimientos de
+inventario y pagos. Se integra en la navegación como `administration-reports`, exige
+`admin.reports.read` para consultar y `admin.reports.export` para descargar el resultado visible
+como CSV. Se refresca ante `sale.changed`, `purchase-order.changed`, `inventory.changed` y
+`payment.changed`.
+
+La pantalla solo consulta contratos compartidos y agrega sus resultados en memoria. No persiste
+reportes, no modifica las fuentes y no escribe auditoría. El helper CSV vive dentro de
+`administration`; no se promovió a `shared` porque esta entrega no establece una API transversal.
+La exportación conserva BOM UTF-8, escapa la estructura CSV y neutraliza texto que Excel o Sheets
+podrían interpretar como fórmula, sin alterar valores numéricos del dominio.
+
+### Contrato de integracion
+
+La feature asume:
+
+- `useCurrentSession()` únicamente para estados visuales. `GetReportsService` vuelve a resolver la
+  sesión, el actor, su tenant y el Role mediante `auth`, `users` y `roles`; ni lectura ni exportación
+  aceptan `tenantId` o permisos declarados por el caller.
+- `RepositoryRegistry.sales`, `purchaseOrders`, `inventory`, `payments`, `branches`, `suppliers`
+  y `products` con sus contratos vigentes.
+- `formatCurrency` y `formatDate` de `shared/utils` para presentar montos y fechas.
+
+Decisiones y coordinación:
+
+- Lee contratos de Riquelme (`sales`, `payments`) y Melbyn (`purchaseOrders`, `inventory`,
+  `suppliers`, `products`). Si cambian, esta agregación debe revisarse.
+- La generación y descarga de CSV permanecen como helpers module-local.
+- Compras permite filtrar por sucursal y movimientos por producto, usando los IDs ya disponibles
+  en las entidades consultadas.
+- Los rangos y las fechas exportadas usan el mismo día calendario local que muestra la tabla.
+- Los totales de ventas incluyen únicamente ventas `completed`; los de compras excluyen
+  `draft` y `cancelled`. La UI identifica expresamente los registros excluidos y la semántica del
+  monto para no presentarlos como un total financiero indiferenciado.
+- La mayoría de fechas del seed son `2026-01-01`; hay que ajustar el rango de fechas para ver esos
+  datos en la demo.
+- `admin.reports.read` y `admin.reports.export` son permisos nuevos. Se esperan colisiones en
+  `permissions.ts`, `demoSeed.ts`, `navigation.ts`, `serviceHelpers.ts`, `README.md` y `SCOPE.md`
+  con las ocho ramas previas de administration; al integrarlas deben conservarse todas las
+  entradas.
 
 ## Sucursales
 

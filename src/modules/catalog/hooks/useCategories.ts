@@ -127,25 +127,27 @@ export function useCategories() {
     create: (dto: CategoryEditorDto) =>
       runMutation(async () => {
         const created = await saveService.create(dto);
-        return getService.execute().then(
-          (items) => items.find((item) => item.id === created.id) ?? null,
-        );
+        return getService
+          .execute()
+          .then((items) => items.find((item) => item.id === created.id) ?? null);
       }),
     update: (categoryId: string, dto: CategoryEditorDto) =>
       runMutation(async () => {
         const updated = await saveService.update(categoryId, dto);
-        return getService.execute().then(
-          (items) => items.find((item) => item.id === updated.id) ?? null,
-        );
+        return getService
+          .execute()
+          .then((items) => items.find((item) => item.id === updated.id) ?? null);
       }),
-    archive: (categoryId: string) => runMutation(async () => {
-      await saveService.archive(categoryId);
-      return null;
-    }),
-    restore: (categoryId: string) => runMutation(async () => {
-      await saveService.restore(categoryId);
-      return null;
-    }),
+    archive: (categoryId: string) =>
+      runMutation(async () => {
+        await saveService.archive(categoryId);
+        return null;
+      }),
+    restore: (categoryId: string) =>
+      runMutation(async () => {
+        await saveService.restore(categoryId);
+        return null;
+      }),
   };
 }
 
@@ -167,4 +169,3 @@ function filterCategories(
     return matchesStatus && matchesSearch;
   });
 }
-

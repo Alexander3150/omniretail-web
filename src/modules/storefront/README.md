@@ -8,7 +8,7 @@ Este modulo desarrolla su funcionalidad propia sin duplicar contratos compartido
 
 ## Contracts que consume
 
-ProductRepository, InventoryRepository, OrderRepository, OrderPaymentConfirmationRepository, CustomerRepository
+ProductRepository, ProductMediaRepository, CatalogImageAssetRepository, CategoryRepository, InventoryRepository, OrderRepository, OrderPaymentConfirmationRepository, CustomerRepository
 
 ## Reglas
 
@@ -17,6 +17,7 @@ ProductRepository, InventoryRepository, OrderRepository, OrderPaymentConfirmatio
 - Usar repositories desde `RepositoryProvider`.
 - Usar `shared/` para componentes globales.
 - Crear DTO, Mappers y Services propios dentro del modulo cuando empiece cada feature.
+- Los read models publicos entregan `CatalogImageSource`; cards, detalle, ofertas y Home comparten la seleccion principal/orden/fuente valida/fallback, y resuelven assets locales solo dentro del tenant publico.
 - El checkout con tarjeta simulada crea Order/Payment pending y usa el boundary de confirmacion para aprobar, confirmar y reservar atomicamente.
 
 ## Estructura futura

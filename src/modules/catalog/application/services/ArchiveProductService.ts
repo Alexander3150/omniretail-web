@@ -3,15 +3,17 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import {
   CatalogServiceError,
   ensureProduct,
+  resolveTenantId,
 } from "@/modules/catalog/application/services/serviceHelpers";
 
 export class ArchiveProductService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(productId: string): Promise<Product> {
-    ensureProduct(await this.repositories.products.getById(productId));
+    const tenantId = await resolveTenantId(this.repositories);
+    ensureProduct(await this.repositories.products.getByIdScoped(tenantId, productId));
     try {
-      return await this.repositories.products.archive(productId);
+      return await this.repositories.products.archiveScoped(tenantId, productId);
     } catch {
       throw new CatalogServiceError("No se pudo archivar el producto.");
     }

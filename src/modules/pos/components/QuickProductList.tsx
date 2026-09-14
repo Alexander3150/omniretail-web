@@ -42,8 +42,7 @@ export function QuickProductList({
   return (
     <ul className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
       {products.map((product) => {
-        const hasAvailableStock =
-          !product.tracksStock || (product.availableQuantity ?? 0) > 0;
+        const hasAvailableStock = !product.tracksStock || (product.availableQuantity ?? 0) > 0;
         const hasUnsupportedTraceability = product.requiresUnsupportedTraceability;
         const canAdd =
           !hasUnsupportedTraceability && hasAvailableStock && product.isAvailableForSale;

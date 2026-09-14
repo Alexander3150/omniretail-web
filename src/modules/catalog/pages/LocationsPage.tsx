@@ -604,7 +604,7 @@ function LocationPanel({
                   : "Editar ubicacion"}
             </p>
             <h2 className="mt-1 break-words text-lg font-bold text-[var(--color-title)]">
-              {mode === "create" ? "Nueva ubicacion" : location?.name ?? "Ubicacion"}
+              {mode === "create" ? "Nueva ubicacion" : (location?.name ?? "Ubicacion")}
             </h2>
           </div>
           <button
@@ -756,11 +756,7 @@ function LocationForm({
         </Button>
         <Button className="w-full sm:w-auto" disabled={busy} type="submit">
           <CheckIcon />
-          {busy
-            ? "Guardando..."
-            : mode === "create"
-              ? "Guardar ubicacion"
-              : "Guardar cambios"}
+          {busy ? "Guardando..." : mode === "create" ? "Guardar ubicacion" : "Guardar cambios"}
         </Button>
       </footer>
     </form>

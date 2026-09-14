@@ -1,6 +1,7 @@
 import type { DeliveryMethod, OrderSource, OrderStatus, TransportMode } from "@/core/enums";
 import type { ISODateString } from "@/core/types/common.types";
 import type { AddressSnapshot } from "@/core/types/address.types";
+import type { OrderNotificationContact } from "@/core/types/orderNotification.types";
 import type { OrderItem } from "@/core/entities/OrderItem";
 
 export interface GuestCustomer {
@@ -21,6 +22,8 @@ export interface Order {
   deliveryMethod: DeliveryMethod;
   transportMode: TransportMode;
   deliveryAddress?: AddressSnapshot;
+  /** Historical notification intent captured when the Order is created. Undefined is legacy. */
+  notificationContact?: OrderNotificationContact;
   subtotal: number;
   discountTotal: number;
   shippingTotal: number;

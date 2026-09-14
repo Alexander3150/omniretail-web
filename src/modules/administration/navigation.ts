@@ -1,4 +1,9 @@
-import { BUSINESS_CONFIG_MANAGE_PERMISSION } from "@/modules/administration/permissions";
+import {
+  BUSINESS_CONFIG_MANAGE_PERMISSION,
+  CASH_READ_PERMISSION,
+  DASHBOARD_READ_PERMISSION,
+  REPORTS_READ_PERMISSION,
+} from "@/modules/administration/permissions";
 import type { NavigationItem } from "@/shared/types/navigation.types";
 
 export const administrationNavigation = [
@@ -33,6 +38,24 @@ export const administrationNavigation = [
         // solo lectura -- ese rol necesitaria igual el permiso literal para ver este item, no
         // hay implicacion automatica manage -> read a nivel de navegacion/rutas.
         permission: "admin.customers.manage",
+      },
+      {
+        id: "administration-cash",
+        label: "Caja",
+        href: "/administracion/caja",
+        permission: CASH_READ_PERMISSION,
+      },
+      {
+        id: "administration-dashboard",
+        label: "Dashboard",
+        href: "/administracion/dashboard",
+        permission: DASHBOARD_READ_PERMISSION,
+      },
+      {
+        id: "administration-reports",
+        label: "Reportes",
+        href: "/administracion/reportes",
+        permission: REPORTS_READ_PERMISSION,
       },
       {
         id: "administration-ecommerce-config",

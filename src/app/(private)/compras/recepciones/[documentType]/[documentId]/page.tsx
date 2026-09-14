@@ -9,4 +9,3 @@ export default async function ReceivingDocumentRoute({
   const { documentType, documentId } = await params;
   return <ReceivingDocumentPage documentId={documentId} documentType={documentType} />;
 }
-

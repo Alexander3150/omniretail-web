@@ -1,4 +1,4 @@
-import type { Session, User } from "@/core/entities";
+import type { MfaMethod, Session, User } from "@/core/entities";
 import type { UserType } from "@/core/enums";
 
 export interface LoginInput {
@@ -54,6 +54,35 @@ export interface LoginInput {
    */
   expectedUserType?: UserType;
 }
+
+/**
+ * Resultado de login() desde PR13 (MFA, doc R-A16): "si la cuenta exige
+ * MFA, la contraseña correcta no crea sesión definitiva hasta completar
+ * el segundo factor" -- por eso login() ya NO devuelve Session
+ * directamente, sino uno de estos dos resultados. `demoCodeMock` en la
+ * rama mfa_required existe solo porque este entorno no tiene un canal
+ * real de entrega (SMS/app autenticadora) -- mismo criterio de
+ * transparencia dummy que RegisterCustomerResult.emailVerificationToken.
+ */
+export type LoginResult =
+  | { status: "authenticated"; session: Session }
+  | { status: "mfa_required"; challengeId: string; method: MfaMethod; demoCodeMock: string };
+
+/**
+ * Lanzado por verifyMfaChallenge() cuando el desafío ya no se puede
+ * reintentar (vencido, invalidado por demasiados fallos, o inexistente)
+ * -- a diferencia de un código simplemente incorrecto con intentos
+ * restantes (Error genérico común), este caso exige reiniciar el login
+ * completo. Clase propia para que la UI distinga "seguí intentando" de
+ * "volvé a empezar" sin parsear el texto del mensaje.
+ */
+export class MfaChallengeUnavailableError extends Error {
+  constructor(message = "El código no es válido o venció. Vuelve a iniciar sesión.") {
+    super(message);
+    this.name = "MfaChallengeUnavailableError";
+  }
+}
+
 export interface RegisterCustomerInput {
   name: string;
   email: string;
@@ -95,8 +124,80 @@ export interface RequestPasswordResetInput {
    */
   tenantId?: string;
 }
+export interface ChangePasswordInput {
+  /**
+   * Se resuelve la identidad desde una sesión activa y no revocada, nunca
+   * desde un userId declarado por el caller -- mismo criterio de "un dato
+   * que el cliente puede declarar nunca es autoridad por sí solo" que ya
+   * se aplicó en PR9 (EmployeeInvitation.tenantId) y PR10 (resolución de
+   * candidatos). getCurrentSessionId() ya expone esto públicamente.
+   */
+  sessionId: string;
+  currentPasswordMock: string;
+  newPasswordMock: string;
+  /**
+   * PR13: obligatorio únicamente si la cuenta tiene MfaEnrollment
+   * enabled=true -- interpretación de "reautenticar con contraseña
+   * actual/MFA" (doc 4.13) como AMBOS factores para una cuenta que ya
+   * tiene el segundo factor activo, no como alternativa que reemplace la
+   * verificación de contraseña ya aprobada en PR12. No se afloja nada de
+   * lo que ya estaba aprobado -- se agrega un requisito más, solo cuando
+   * aplica.
+   */
+  mfaCodeMock?: string;
+}
 export interface AuthRepository {
-  login(input: LoginInput): Promise<Session>;
+  /**
+   * CAMBIO DE CONTRATO (PR13, antes: Promise<Session>). Ver LoginResult.
+   */
+  login(input: LoginInput): Promise<LoginResult>;
+  /**
+   * Completa un login pausado por MFA (PR13). Igual que resetPassword/
+   * activateEmployeeAccount: revalida todo antes de mutar (challenge
+   * existe, no consumido, no invalidado, no vencido, intentos restantes)
+   * y produce el mismo error genérico para cualquier motivo de rechazo --
+   * no se distingue "código incorrecto" de "desafío vencido" hacia afuera
+   * (R-A13).
+   *
+   * Al quinto fallo consecutivo (MFA_CHALLENGE_MAX_ATTEMPTS): invalida el
+   * challenge y registra auditoría (`mfa_failed`) -- NO incrementa
+   * failedLoginAttempts/lockout de la cuenta (regla explícita de 4.12:
+   * los fallos de MFA no cuentan como contraseña fallida).
+   */
+  verifyMfaChallenge(challengeId: string, codeMock: string): Promise<Session>;
+  /**
+   * Inicia (o reinicia, si había un enrollment sin verificar) el
+   * enrolamiento de MFA para la sesión actual: genera un nuevo
+   * demoCodeMock y crea/reemplaza el MfaEnrollment con
+   * enabled=false/verifiedAt=undefined. Devuelve el código para
+   * mostrarlo en pantalla -- transparencia dummy, mismo criterio que
+   * registerCustomer.emailVerificationToken.
+   */
+  beginMfaEnrollment(sessionId: string, method: MfaMethod): Promise<{ demoCodeMock: string }>;
+  /**
+   * Confirma el código mostrado por beginMfaEnrollment. Marca
+   * verifiedAt/enabled=true y genera RECOVERY_CODES_COUNT RecoveryCode
+   * nuevos (reemplazando cualquier lote previo). Devuelve los códigos en
+   * texto plano UNA sola vez -- igual que cualquier secreto de un solo
+   * uso en este sistema, no hay un método separado para volver a
+   * consultarlos después.
+   */
+  verifyMfaEnrollment(sessionId: string, codeMock: string): Promise<{ recoveryCodes: string[] }>;
+  /**
+   * Desactiva MFA. Requiere reautenticación con la contraseña actual
+   * (mismo criterio que changePassword) -- apagar el segundo factor es
+   * al menos tan sensible como cambiarlo. No borra el MfaEnrollment ni su
+   * demoCodeMock (para que reactivar no obligue a "reescanear" nada);
+   * simplemente enabled=false.
+   */
+  disableMfa(sessionId: string, currentPasswordMock: string): Promise<void>;
+  /**
+   * Estado actual de MFA para la sesión (PR13) -- lectura pura, sin mutar
+   * nada. `null` si nunca se inició un enrollment. La UI de Seguridad lo
+   * necesita para saber si mostrar "Activar" o "Desactivar" sin adivinar
+   * a partir de otro estado.
+   */
+  getMfaStatus(sessionId: string): Promise<{ enabled: boolean; method: MfaMethod } | null>;
   logout(sessionId: string): Promise<void>;
   getSession(sessionId: string): Promise<Session | null>;
   getCurrentSessionId(): Promise<string | null>;
@@ -220,4 +321,34 @@ export interface AuthRepository {
    * estado.
    */
   activateEmployeeAccount(token: string, newPasswordMock: string): Promise<void>;
+  /**
+   * Cambia la contraseña de una cuenta YA autenticada (doc 4.1/4.13),
+   * distinto de resetPassword() (PR10, no autenticado, por token/link).
+   *
+   * Reautenticación (doc 4.13, "reautenticar con contraseña actual/MFA"):
+   * la reautenticación siempre incluye currentPasswordMock contra el hash
+   * actual. Desde PR13, si la cuenta tiene MfaEnrollment.enabled=true,
+   * ADEMÁS exige `mfaCodeMock` válido (ver ChangePasswordInput.mfaCodeMock)
+   * -- ambos factores, no uno u otro.
+   *
+   * Válida newPasswordMock contra PASSWORD_POLICY (mismo patrón que
+   * resetPassword/activateEmployeeAccount: la política se aplica en la capa
+   * funcional, no solo en el formulario), y además rechaza que
+   * newPasswordMock sea igual a currentPasswordMock -- regla de UX (no del
+   * documento de arquitectura) confirmada por QA manual, aplicada aquí y
+   * no solo en el formulario por el mismo motivo que PASSWORD_POLICY.
+   *
+   * Revoca las SESIONES RESTANTES (todas menos la que se usó para hacer este
+   * cambio) -- distinto de resetPassword(), que revoca TODAS sin excepción
+   * porque ahí no hay ninguna sesión activa legítima todavía (el reset llega
+   * por link, no por una sesión). Acá el usuario sigue en el dispositivo
+   * donde acaba de reautenticarse, y el doc dice explícitamente "revocar las
+   * demás sesiones", no todas.
+   *
+   * Genérico por diseño (sirve para cualquier AuthAccount, Customer o
+   * Employee) -- desde PR13 se conecta tanto desde "Mi Cuenta" del cliente
+   * (SeguridadPage) como desde "Mi perfil" del empleado
+   * (EmployeeSeguridadPage), sin duplicar esta lógica.
+   */
+  changePassword(input: ChangePasswordInput): Promise<void>;
 }

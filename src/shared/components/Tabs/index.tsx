@@ -21,7 +21,10 @@ export interface TabsProps {
  */
 export function Tabs({ items, value, onChange, className }: TabsProps) {
   return (
-    <div className={cn("flex gap-6 border-b border-[var(--color-border)]", className)} role="tablist">
+    <div
+      className={cn("flex gap-6 border-b border-[var(--color-border)]", className)}
+      role="tablist"
+    >
       {items.map((item) => {
         const active = item.value === value;
         return (

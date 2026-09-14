@@ -1,8 +1,5 @@
 import { UnitCategory, UnitStatus } from "@/core/enums";
-import type {
-  UnitEditorDto,
-  UnitListItem,
-} from "@/modules/catalog/application/dto/UnitEditorDto";
+import type { UnitEditorDto, UnitListItem } from "@/modules/catalog/application/dto/UnitEditorDto";
 
 export interface UnitValidationErrors {
   name?: string;

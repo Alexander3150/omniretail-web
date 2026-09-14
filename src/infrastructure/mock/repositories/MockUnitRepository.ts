@@ -6,11 +6,24 @@ export class MockUnitRepository extends BaseMockRepository implements UnitReposi
   async getAll() {
     return this.read((db) => db.units);
   }
+  async getByTenant(tenantId: string) {
+    return this.read((db) => db.units.filter((item) => item.tenantId === tenantId));
+  }
   async getById(id: string) {
     return this.read((db) => db.units.find((item) => item.id === id) ?? null);
   }
+  async getByIdScoped(tenantId: string, id: string) {
+    return this.read(
+      (db) => db.units.find((item) => item.id === id && item.tenantId === tenantId) ?? null,
+    );
+  }
   async getActive() {
     return this.read((db) => db.units.filter((item) => item.status === "active"));
+  }
+  async getActiveByTenant(tenantId: string) {
+    return this.read((db) =>
+      db.units.filter((item) => item.tenantId === tenantId && item.status === UnitStatus.active),
+    );
   }
   async getConversionsByProduct(productId: string) {
     return this.read((db) =>
@@ -18,6 +31,17 @@ export class MockUnitRepository extends BaseMockRepository implements UnitReposi
         .filter((item) => item.productId === productId)
         .sort((a, b) => a.fromUnitId.localeCompare(b.fromUnitId)),
     );
+  }
+  async getConversionsByProductScoped(tenantId: string, productId: string) {
+    return this.read((db) => {
+      const product = db.products.find(
+        (item) => item.id === productId && item.tenantId === tenantId,
+      );
+      if (!product) return [];
+      return db.unitConversions
+        .filter((item) => item.tenantId === tenantId && item.productId === productId)
+        .sort((a, b) => a.fromUnitId.localeCompare(b.fromUnitId));
+    });
   }
   async getConversion(input: Parameters<UnitRepository["getConversion"]>[0]) {
     return this.read(
@@ -139,10 +163,41 @@ export class MockUnitRepository extends BaseMockRepository implements UnitReposi
     });
     return item;
   }
+  async updateScoped(
+    tenantId: string,
+    id: string,
+    input: Parameters<UnitRepository["updateScoped"]>[2],
+  ) {
+    if ("tenantId" in input && input.tenantId !== tenantId) {
+      throw new Error("Cross-tenant unit update denied");
+    }
+    if (!(await this.getByIdScoped(tenantId, id))) throw this.missing("Unit", id);
+    return this.update(id, input);
+  }
+  async replaceConversionsForProductScoped(
+    tenantId: string,
+    productId: string,
+    conversions: Parameters<UnitRepository["replaceConversionsForProductScoped"]>[2],
+  ) {
+    if (!(await this.getByIdForProductTenant(tenantId, productId))) {
+      throw this.missing("Product", productId);
+    }
+    return this.replaceConversionsForProduct(
+      productId,
+      conversions.map((conversion) => ({ ...conversion, tenantId })),
+    );
+  }
 
   private assertValidConversion(factor: number): void {
     if (factor <= 0) {
       throw new Error("Unit conversion factor must be greater than 0");
     }
+  }
+
+  private getByIdForProductTenant(tenantId: string, productId: string) {
+    return this.read(
+      (db) =>
+        db.products.find((item) => item.id === productId && item.tenantId === tenantId) ?? null,
+    );
   }
 }

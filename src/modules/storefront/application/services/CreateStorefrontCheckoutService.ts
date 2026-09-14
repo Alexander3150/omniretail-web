@@ -7,52 +7,61 @@ import {
   PaymentStatus,
   TransportMode,
 } from "@/core/enums";
+import { InsufficientInventoryAvailabilityError } from "@/core/inventory/stockAvailability";
+import { validatePhoneNumber } from "@/config/contact-policy";
+import { normalizeEmail, validateEmail } from "@/config/email-policy";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { StorefrontCartItemDto } from "@/modules/storefront/application/dto/StorefrontCartDto";
 import type {
   StorefrontCheckoutFormDto,
   StorefrontCheckoutResultDto,
 } from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
+import { resolveOptionalCustomerAuthorizationContext } from "@/modules/customer/application/services/CustomerAuthorizationContext";
 import { GetStorefrontPublishedProductService } from "@/modules/storefront/application/services/GetStorefrontPublishedProductService";
 import { ConfirmStorefrontPaymentService } from "@/modules/storefront/application/services/ConfirmStorefrontPaymentService";
 import { StorefrontOrderEmailSimulationService } from "@/modules/storefront/application/services/StorefrontOrderEmailSimulationService";
+import { ResolvePublicStorefrontContextService } from "@/modules/storefront/application/services/ResolvePublicStorefrontContextService";
 
 export class CreateStorefrontCheckoutService {
   private readonly publishedProductService: GetStorefrontPublishedProductService;
   private readonly paymentConfirmationService: ConfirmStorefrontPaymentService;
+  private readonly publicStorefrontContextService: ResolvePublicStorefrontContextService;
   private readonly emailSimulationService = new StorefrontOrderEmailSimulationService();
 
   constructor(private readonly repositories: RepositoryRegistry) {
     this.publishedProductService = new GetStorefrontPublishedProductService(repositories);
     this.paymentConfirmationService = new ConfirmStorefrontPaymentService(repositories);
+    this.publicStorefrontContextService = new ResolvePublicStorefrontContextService(repositories);
   }
 
   async execute({
-    tenantId,
     items,
     form,
     idempotencyKey,
   }: {
-    tenantId: string;
     items: StorefrontCartItemDto[];
     form: StorefrontCheckoutFormDto;
     idempotencyKey: string;
   }): Promise<StorefrontCheckoutResultDto> {
     assertCheckoutForm(form);
-    if (!idempotencyKey.trim()) throw new Error("No se pudo inicializar el pedido.");
+    const checkoutIdentity = idempotencyKey.trim();
+    if (!checkoutIdentity) throw new Error("No se pudo inicializar el pedido.");
 
-    const [ecommerceConfig, products] = await Promise.all([
-      this.repositories.businessConfig.getEcommerceConfig(tenantId),
+    const normalizedEmail = normalizeEmail(form.email);
+    const { tenantId, ecommerceConfig } = await this.publicStorefrontContextService.execute();
+    const [products, customerContext] = await Promise.all([
       Promise.all(
         items.map(async (item) => ({
           item,
           product: await this.publishedProductService.execute(tenantId, item.productId),
         })),
       ),
+      resolveOptionalCustomerAuthorizationContext(this.repositories),
     ]);
 
-    if (!ecommerceConfig?.enabled || ecommerceConfig.requireAccountForCheckout) {
-      throw new Error("El checkout público no está disponible.");
+    const authenticatedCustomer = customerContext?.tenantId === tenantId ? customerContext : null;
+    if (ecommerceConfig.requireAccountForCheckout && !authenticatedCustomer) {
+      throw new Error("Debes iniciar sesión con una cuenta de esta tienda para comprar.");
     }
     if (!ecommerceConfig.allowedDeliveryMethods.includes(DeliveryMethod.home_delivery)) {
       throw new Error("El envío a domicilio no está disponible.");
@@ -70,6 +79,7 @@ export class CreateStorefrontCheckoutService {
       throw new Error("La sucursal de despacho no está disponible.");
     }
 
+    const checkoutToken = checkoutIdentity.replaceAll("-", "");
     const orderItems = products.map(({ item, product }, index) => {
       if (!product) throw new Error("Uno de los productos ya no está disponible para e-commerce.");
       if (
@@ -82,7 +92,7 @@ export class CreateStorefrontCheckoutService {
 
       const unitPrice = product.salePrice;
       return {
-        id: `storefront-item-${index}-${product.id}`,
+        id: `storefront-item-${checkoutIdentity}-${index}`,
         productId: product.id,
         skuSnapshot: product.sku,
         nameSnapshot: product.name,
@@ -93,7 +103,6 @@ export class CreateStorefrontCheckoutService {
       };
     });
     const subtotal = orderItems.reduce((total, item) => total + item.subtotal, 0);
-    const checkoutToken = idempotencyKey.replaceAll("-", "");
     const orderNumber = `WEB-${checkoutToken.slice(0, 10).toUpperCase()}`;
     const trackingToken = checkoutToken;
 
@@ -103,13 +112,18 @@ export class CreateStorefrontCheckoutService {
         branchId: branch.id,
         orderNumber,
         source: OrderSource.ecommerce,
-        guestCustomer: { name: form.fullName.trim(), email: form.email.trim() },
+        customerId: authenticatedCustomer?.customerId,
+        guestCustomer: authenticatedCustomer
+          ? undefined
+          : { name: form.fullName.trim(), email: normalizedEmail },
         items: orderItems,
         status: OrderStatus.pending,
         deliveryMethod: DeliveryMethod.home_delivery,
         transportMode: TransportMode.third_party,
+        notificationContact: { emailMode: "send", email: normalizedEmail },
         deliveryAddress: {
           recipientName: form.fullName.trim(),
+          recipientPhone: form.phone.trim(),
           line1: form.addressLine1.trim(),
           line2: form.addressLine2?.trim() || undefined,
           city: form.city.trim(),
@@ -122,7 +136,7 @@ export class CreateStorefrontCheckoutService {
         shippingTotal: 0,
         total: subtotal,
         trackingToken,
-        idempotencyKey,
+        idempotencyKey: checkoutIdentity,
       },
       payment: {
         tenantId,
@@ -133,13 +147,23 @@ export class CreateStorefrontCheckoutService {
         reference: `CARD-SIMULATED-${form.cardLastFour}`,
       },
     });
-    const confirmation = await this.paymentConfirmationService.execute({
-      tenantId,
-      branchId: branch.id,
-      orderId: order.id,
-      paymentId: payment.id,
-    });
-    const emailSimulation = this.emailSimulationService.simulateConfirmation(form.email);
+    let confirmation;
+    try {
+      confirmation = await this.paymentConfirmationService.execute({
+        tenantId,
+        branchId: branch.id,
+        orderId: order.id,
+        paymentId: payment.id,
+      });
+    } catch (cause) {
+      if (cause instanceof InsufficientInventoryAvailabilityError) {
+        throw new Error(
+          "No hay suficiente disponibilidad para completar tu pedido. Actualiza el carrito e inténtalo nuevamente.",
+        );
+      }
+      throw cause;
+    }
+    const emailSimulation = this.emailSimulationService.simulateConfirmation(normalizedEmail);
 
     return {
       orderNumber: confirmation.order.orderNumber,
@@ -155,16 +179,15 @@ export class CreateStorefrontCheckoutService {
 }
 
 function buildReferences(form: StorefrontCheckoutFormDto): string | undefined {
-  const values = [form.references?.trim(), `Teléfono: ${form.phone.trim()}`].filter(Boolean);
-  return values.length > 0 ? values.join(" | ") : undefined;
+  return form.references?.trim() || undefined;
 }
 
 function assertCheckoutForm(form: StorefrontCheckoutFormDto): void {
   if (!form.fullName.trim()) throw new Error("Ingresa tu nombre completo.");
-  if (!form.email.trim() || !form.email.includes("@")) {
-    throw new Error("Ingresa un correo electrónico válido.");
-  }
+  if (validateEmail(form.email)) throw new Error("Ingresa un correo electrónico válido.");
   if (!form.phone.trim()) throw new Error("Ingresa un teléfono de contacto.");
+  const phoneError = validatePhoneNumber(form.phone);
+  if (phoneError) throw new Error(phoneError);
   if (!form.addressLine1.trim()) throw new Error("Ingresa la dirección de entrega.");
   if (!form.city.trim()) throw new Error("Ingresa la ciudad de entrega.");
   if (!form.cardholderName.trim()) throw new Error("Ingresa el titular de la tarjeta.");

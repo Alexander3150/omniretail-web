@@ -1,7 +1,13 @@
 import type { BankAccount, Branch, Customer, Supplier } from "@/core/entities";
 import { BranchStatus, BranchType } from "@/core/enums";
 import type { BranchInputDto } from "@/modules/administration/application/dto/BranchDto";
-import { BUSINESS_CONFIG_MANAGE_PERMISSION } from "@/modules/administration/permissions";
+import {
+  BUSINESS_CONFIG_MANAGE_PERMISSION,
+  CASH_READ_PERMISSION,
+  DASHBOARD_READ_PERMISSION,
+  REPORTS_EXPORT_PERMISSION,
+  REPORTS_READ_PERMISSION,
+} from "@/modules/administration/permissions";
 
 export class AdministrationServiceError extends Error {
   constructor(message: string) {
@@ -45,7 +51,25 @@ export function ensureCustomerTenant(tenantId: string) {
   throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
 }
 
+export function ensureCanReadCash(permissions: readonly string[]) {
+  if (permissions.includes(CASH_READ_PERMISSION)) return;
+
+  throw new AdministrationServiceError("No tenés permiso para consultar los turnos de caja.");
+}
+
+export function ensureCashTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
+}
+
 export function ensureCustomerActor(actorUserId: string) {
+  if (actorUserId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
+}
+
+export function ensureCashActor(actorUserId: string) {
   if (actorUserId.trim()) return;
 
   throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
@@ -77,6 +101,30 @@ export function ensureUniqueCustomer(
   if (tenantCustomers.some((customer) => customer.email.trim().toLowerCase() === email)) {
     throw new AdministrationServiceError("Ya existe un cliente con ese correo electrónico.");
   }
+}
+
+export function ensureCanReadDashboard(permissions: readonly string[]) {
+  if (permissions.includes(DASHBOARD_READ_PERMISSION)) return;
+
+  throw new AdministrationServiceError("No tenés permiso para consultar el dashboard.");
+}
+
+export function ensureDashboardTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
+}
+
+export function ensureCanReadReports(permissions: readonly string[]) {
+  if (permissions.includes(REPORTS_READ_PERMISSION)) return;
+
+  throw new AdministrationServiceError("No tenés permiso para consultar los reportes.");
+}
+
+export function ensureCanExportReports(permissions: readonly string[]) {
+  if (permissions.includes(REPORTS_EXPORT_PERMISSION)) return;
+
+  throw new AdministrationServiceError("No tenés permiso para exportar reportes.");
 }
 
 export function ensureCanManageEcommerceConfig(permissions: readonly string[]) {

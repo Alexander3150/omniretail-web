@@ -38,8 +38,8 @@ export function useInventoryMovements() {
   const [type, setTypeState] = useState<MovementTypeFilter>("all");
   const [branchId, setBranchIdState] = useState(() => searchParams.get("branchId") ?? "all");
   const [productId, setProductIdState] = useState(() => searchParams.get("productId") ?? "");
-  const [filtersOpen, setFiltersOpenState] = useState(
-    () => Boolean(searchParams.get("branchId") || searchParams.get("productId")),
+  const [filtersOpen, setFiltersOpenState] = useState(() =>
+    Boolean(searchParams.get("branchId") || searchParams.get("productId")),
   );
   const [page, setPageState] = useState(1);
   const [pageSize, setPageSizeState] = useState(20);

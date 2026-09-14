@@ -6,29 +6,27 @@ import type {
   ProductEditorData,
   ProductMediaEditorValue,
   SupplierProductEditorValue,
-  ProductKitComponentEditorValue,
 } from "@/modules/catalog/application/dto/ProductEditorDto";
+import { resolveTenantId } from "@/modules/catalog/application/services/serviceHelpers";
 
 export class GetProductEditorDataService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async execute(
-    tenantId: string,
-    productId?: string,
-    branchId?: string,
-  ): Promise<ProductEditorData> {
+  async execute(productId?: string, branchId?: string): Promise<ProductEditorData> {
+    const tenantId = await resolveTenantId(this.repositories);
     const [allAttributeDefinitions, suppliers, allProducts, branch] = await Promise.all([
       this.repositories.attributes.getDefinitions(),
       this.repositories.suppliers.getActiveByTenant(tenantId),
-      this.repositories.products.getAll(),
-      branchId ? this.repositories.branches.getById(branchId) : Promise.resolve(null),
+      this.repositories.products.getByTenant(tenantId),
+      branchId
+        ? this.repositories.branches.getByIdScoped(tenantId, branchId)
+        : Promise.resolve(null),
     ]);
-    // `getDefinitions()` y `getAll()` no aceptan tenantId: son lecturas globales del repository,
-    // así que el boundary de la aplicación filtra antes de que cualquier dato cruce a la DTO.
+    // `getDefinitions()` aun es una lectura global legacy; se filtra antes de crear la DTO.
     const attributeDefinitions = allAttributeDefinitions.filter(
       (definition) => definition.tenantId === tenantId,
     );
-    const tenantProducts = allProducts.filter((product) => product.tenantId === tenantId);
+    const tenantProducts = allProducts;
     // branchId llega del cliente (selector de sucursal): no se usa para leer ubicaciones ni
     // configuracion de inventario a menos que la sucursal exista y pertenezca al tenant activo.
     const tenantBranchId = branch && branch.tenantId === tenantId ? branch.id : undefined;
@@ -36,7 +34,7 @@ export class GetProductEditorDataService {
       ? await this.repositories.inventory.getLocations(tenantBranchId)
       : [];
     const activeStorageLocations = branchLocations.filter(
-      (location) => location.status === LocationStatus.active,
+      (location) => location.tenantId === tenantId && location.status === LocationStatus.active,
     );
     const kitEligibleProducts = (excludeProductId?: string) =>
       tenantProducts.filter(
@@ -115,36 +113,34 @@ export class GetProductEditorDataService {
       supplierProducts,
       media,
       promotions,
-      inventorySettings, kitComponents,
+      inventorySettings,
+      kitComponents,
     ] = await Promise.all([
-      this.repositories.units.getConversionsByProduct(productId),
+      this.repositories.units.getConversionsByProductScoped(tenantId, productId),
       this.repositories.attributes.getValuesByProduct(productId),
       this.repositories.productSalesPriceTiers.getByProduct(productId),
       this.repositories.supplierProducts.getByProductForTenant(tenantId, productId),
       this.repositories.productMedia.getByProduct(productId),
-      this.repositories.promotions.getByProduct(productId),
+      this.repositories.promotions.getByProductScoped(tenantId, productId),
       tenantBranchId
         ? this.repositories.inventory.getProductInventorySettings(productId, tenantBranchId)
         : Promise.resolve(null),
       this.repositories.productKitComponents.getByKitProduct(productId),
     ]);
-    const currentDefaultLocation =
-      inventorySettings?.defaultLocationId
-        ? branchLocations.find((location) => location.id === inventorySettings.defaultLocationId) ??
-          null
-        : null;
+    const currentDefaultLocation = inventorySettings?.defaultLocationId
+      ? (branchLocations.find((location) => location.id === inventorySettings.defaultLocationId) ??
+        null)
+      : null;
 
     const saleUnitId = detail.product.saleUnitId ?? detail.product.baseUnitId;
     const unitConversion =
       conversions.find(
         (conversion) =>
-          conversion.fromUnitId === detail.product.baseUnitId &&
-          conversion.toUnitId === saleUnitId,
+          conversion.fromUnitId === detail.product.baseUnitId && conversion.toUnitId === saleUnitId,
       ) ??
       conversions.find(
         (conversion) =>
-          conversion.fromUnitId === saleUnitId &&
-          conversion.toUnitId === detail.product.baseUnitId,
+          conversion.fromUnitId === saleUnitId && conversion.toUnitId === detail.product.baseUnitId,
       ) ??
       null;
 
@@ -161,13 +157,13 @@ export class GetProductEditorDataService {
           minimumOrderQuantity: supplierProduct.minimumOrderQuantity,
           preferred: supplierProduct.preferred,
           active: supplierProduct.active,
-          costTiers: (await this.repositories.supplierProducts.getCostTiers(supplierProduct.id)).map(
-            (tier) => ({
-              id: tier.id,
-              minQuantity: tier.minQuantity,
-              unitCost: tier.unitCost,
-            }),
-          ),
+          costTiers: (
+            await this.repositories.supplierProducts.getCostTiers(supplierProduct.id)
+          ).map((tier) => ({
+            id: tier.id,
+            minQuantity: tier.minQuantity,
+            unitCost: tier.unitCost,
+          })),
         };
       }),
     );
@@ -187,6 +183,7 @@ export class GetProductEditorDataService {
       id: item.id,
       type: item.type,
       url: item.url,
+      source: item.source,
       alt: item.alt,
       isPrimary: item.isPrimary,
       sortOrder: item.sortOrder,

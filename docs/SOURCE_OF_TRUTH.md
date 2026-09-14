@@ -27,11 +27,17 @@ Termino visible estandar: Codigo / SKU. Diferenciar `id`, `sku`, `barcode` opcio
 
 ## Product Media
 
-`Product` y `ProductMedia` son conceptos separados. Product no contiene imagenes directamente; ProductMedia guarda referencias URL/path y permite cero, una o multiples imagenes por producto. Solo una imagen debe ser primaria y `sortOrder` define el orden visual.
+`Product` y `ProductMedia` son conceptos separados. Product no contiene imagenes directamente; ProductMedia guarda una fuente `url` o `mockAsset` y conserva `url` para compatibilidad con registros legacy. Permite cero, una o multiples imagenes por producto. Solo una imagen debe ser primaria y `sortOrder` define el orden visual.
 
-Las imagenes demo actuales viven en `public/images/products/`. Los modulos deben consultar `ProductMediaRepository`; no deben importar `demoSeed` ni resolver logica leyendo `public/` directamente. `placeholder-product.webp` se usa solo como fallback de UI.
+Las imagenes demo actuales viven en `public/images/products/`. Los modulos deben consultar `ProductMediaRepository`; no deben importar `demoSeed` ni resolver logica leyendo `public/` directamente. `placeholder-product.webp` se usa solo como fallback de UI. Los uploads mock se guardan como Blob mediante `CatalogImageAssetRepository` (IndexedDB), nunca dentro de `MockDatabaseStore`/LocalStorage. `Category.image` es presentacion opcional y usa la misma fuente.
 
-En una feature futura, Catalog / Crear-Editar Producto podra usar `FileUpload -> preview local -> ProductMediaRepository`. Durante el frontend mock no guardar imagenes grandes/base64 en LocalStorage. Con backend real el flujo sera `FileUpload -> API -> Storage/CDN -> URL -> ProductMedia`.
+El seed canonico para instalaciones mock nuevas representa Ferreteria Los Simpson con exactamente
+10 categorias y 30 productos fisicos. Sus existencias viven en `InventoryBalance`, sus minimos en
+`ProductInventorySettings`, y atributos, escalas de precio y relaciones de proveedor usan sus
+contratos propios. Cambiar `demoSeed` nunca autoriza a borrar ni reemplazar automaticamente
+`omniretail.mock.database.v1`; una base local ya persistida conserva los datos del usuario.
+
+Catalog / Crear-Editar Producto usa `FileUpload -> procesamiento/preview local -> CatalogImageAssetRepository -> ProductMediaRepository`. El asset se persiste antes de su referencia y se compensa si la referencia falla; reemplazo y borrado eliminan el Blob solo cuando ya no tiene referencias. Con backend real el adapter puede cambiar a `API -> Storage/CDN` sin cambiar el contrato de presentacion.
 
 ## Trazabilidad Adaptable
 
@@ -85,6 +91,8 @@ En recepcion de mercaderia, la cantidad rechazada se deriva de la suma de incide
 
 `Customer` puede estar asociado a `User`. Perfil y autenticacion son dominios relacionados pero distintos. Andy administra perfil, direcciones, metodos guardados y seguridad; Maria consume Customer para compras.
 
+La identidad Customer autenticada se resuelve siempre desde la sesion persistida: Session -> User activo de tipo customer -> Customer activo asociado y del mismo tenant. El checkout no acepta `customerId` ni el tenant de identidad desde la UI. Una compra en el mismo tenant del Storefront guarda `Order.customerId`; una sesion de empleado o de otro tenant no se vincula y el aislamiento de "Mis pedidos" usa el Customer resuelto desde esa misma sesion.
+
 ## Customer Payment Methods
 
 `CustomerPaymentMethod` representa un metodo de pago guardado y reutilizable del cliente. `Payment` representa un pago historico de una compra concreta; eliminar un metodo guardado no modifica pagos historicos.
@@ -95,17 +103,27 @@ Solo simulacion frontend. Nunca guardar full card number, CVV ni PIN. Guardar so
 
 ## Ecommerce
 
-Guest checkout permitido por defecto. `requireAccountForCheckout` permite al tenant decidir si exige cuenta. En compra invitado, email es obligatorio conceptualmente para seguimiento/envios; telefono no necesariamente. Guest tracking usa `trackingToken`. No existe correo real todavia.
+Guest checkout permitido por defecto. `requireAccountForCheckout` permite al tenant decidir si exige cuenta. En compra invitado, email es obligatorio conceptualmente para seguimiento/envios. Toda Order e-commerce nueva captura el email normalizado en `Order.notificationContact = { emailMode: "send", email }`, tanto para Customer autenticado como para Guest; este snapshot historico no se vuelve a resolver desde `User`, `Customer` o `GuestCustomer`. El telefono del receptor de una entrega a domicilio vive en `Order.deliveryAddress.recipientPhone`, no en `GuestCustomer` ni en referencias libres. Guest tracking usa `trackingToken`. No existe correo real todavia: Dispatch persiste solamente evidencia de entrega simulada.
 
-El checkout publico actual solo ofrece tarjeta simulada como metodo de aprobacion inmediata. `ecommercePaymentPolicy` es la fuente canonica de metodos inmediatos y el boundary valida el metodo del Payment persistido, no un valor del caller. Primero persiste `Order.pending` y `Payment.pending`; luego confirma atomica e idempotentemente la pareja como `Order.confirmed` y `Payment.approved` junto con sus reservas. Si no hay stock suficiente, la confirmacion completa se revierte y ambos registros permanecen pending. Efectivo, transferencia y mixto no deben aprobarse automaticamente sin un lifecycle explicito.
+El tenant publico continua resolviendose por `PublicTenantProvider`; una sesion Customer solo complementa ese contexto. Si ambos tenants no coinciden, la Order no se atribuye al Customer autenticado. Una sesion Customer invalida o inactiva falla cerrada, mientras que la ausencia de sesion conserva el checkout invitado cuando la configuracion lo permite.
+
+El checkout publico actual solo ofrece tarjeta simulada como metodo de aprobacion inmediata. `ecommercePaymentPolicy` es la fuente canonica de metodos inmediatos y el boundary valida el metodo del Payment persistido, no un valor del caller. Primero persiste `Order.pending` y `Payment.pending`; luego confirma atomica e idempotentemente la pareja como `Order.confirmed` y `Payment.approved` junto con sus reservas. Cada `OrderItem.id` incorpora el `idempotencyKey` normalizado del checkout: es estable al reintentar la misma Order y distinto entre Orders. Si no hay stock suficiente, la confirmacion completa se revierte y la pareja inmediata pending se elimina mediante compensacion segura para no dejar basura operacional. Efectivo, transferencia y mixto no deben aprobarse ni limpiarse automaticamente sin un lifecycle explicito.
 
 ## Order
 
 `Order` representa pedido, preparacion y entrega. Puede provenir de ecommerce o POS. Puede ser de cliente registrado o invitado. Es compartido por Storefront, POS cuando aplica, Logistics y Customer Tracking.
 
-`OrderStatus.pending` representa el estado previo a confirmacion. Una Order confirmada o en un estado posterior no puede regresar a `pending`. Crear una Order directamente como `confirmed` (incluido `createWithPayment`), o transicionar una Order `pending` a `confirmed`, reserva atomica e idempotentemente cada item cuyo Product sea `physical` y tenga `tracking.stock = true`. Servicios, productos sin stock y kits sin resolucion de componentes no crean reservas. Cancelar libera solamente el remanente de las reservas existentes, sin modificar stock fisico ni crear movimientos. Esta regla es identica para `ecommerce`, `mobileApp` y `pos`; el canal no decide la semantica de inventario.
+`OrderStatus.pending` representa el estado previo a confirmacion. Una Order confirmada o en un estado posterior no puede regresar a `pending`. La politica de estado inicial es distinta de la matriz de transiciones: `OrderRepository.create` permite solamente `pending` y `confirmed`, mientras `createWithPayment` permite solamente `pending` porque el checkout persiste primero Order+Payment pendientes y usa el boundary de confirmacion de pago. Crear mediante `create` directamente como `confirmed`, o transicionar una Order `pending` a `confirmed`, reserva atomica e idempotentemente cada item cuyo Product sea `physical` y tenga `tracking.stock = true`. Ningun metodo generico de creacion admite estados operativos avanzados, terminales o cancelados. Servicios, productos sin stock y kits sin resolucion de componentes no crean reservas. Cancelar libera solamente el remanente de las reservas existentes, sin modificar stock fisico ni crear movimientos. Esta regla es identica para `ecommerce`, `mobileApp` y `pos`; el canal no decide la semantica de inventario.
 
-La creacion de Order admite `idempotencyKey` opcional. Cuando se proporciona, la key es unica por tenant y se persiste junto con un fingerprint determinista del payload; un retry identico devuelve la misma Order y un payload diferente produce conflicto. El fingerprint incluye tenant, branch, source, identidad customer/guest, estado, entrega/transporte/direccion, snapshots de items, cantidades, importes, numero operativo y tracking token; excluye IDs y timestamps generados por el repositorio.
+La creacion de Order admite `idempotencyKey` opcional. Cuando se proporciona, la key es unica por tenant y se persiste junto con un fingerprint determinista del payload; un retry identico devuelve la misma Order y un payload diferente produce conflicto. El fingerprint incluye tenant, branch, source, identidad customer/guest, estado, entrega/transporte/direccion, `notificationContact`, snapshots de items, cantidades, importes, numero operativo y tracking token; excluye IDs y timestamps generados por el repositorio. `notificationContact` distingue `send + email` normalizado, `not_applicable` y `undefined` legacy/unknown; estos dos ultimos no son equivalentes.
+
+La maquina operativa de entrega a domicilio es `confirmed -> preparing -> picking -> ready_for_dispatch -> dispatched -> delivered`. Picking es owner de las tres primeras transiciones operativas y de `picking -> ready_for_pickup` para retiro; Dispatch es owner exclusivo de `ready_for_dispatch -> dispatched` y `dispatched -> delivered`. `packing` permanece legible para datos legacy/futuros, pero no forma parte del flujo nuevo ni es resultado normal de completion. El `updateStatus` generico solo confirma, cancela o reintenta el mismo estado; se conserva la cancelacion historicamente admitida desde `dispatched` como excepcion legacy, mientras `delivered` sigue siendo terminal.
+
+Confirmar Dispatch aplica solamente a `home_delivery` con transporte `third_party` u `own_fleet`, Picking completo, reservas stock-tracked consumidas y sin incidencias abiertas. `third_party` exige transportista y guia normalizados; `own_fleet` no exige guia. La operacion es tenant+sucursal+actor scoped, unica por `tenantId + orderId` e idempotente por `operationId` y fingerprint. Dispatch nunca cambia balances, reservas, movimientos, lotes ni seriales: esas mutaciones pertenecen exclusivamente a Picking.
+
+`DispatchRepository.markDelivered` confirma entrega solamente sobre el Dispatch canonico de una Order `home_delivery` cuando ambos agregados estan `dispatched`. Cambia atomicamente Dispatch+Order a `delivered`, persiste `Dispatch.deliveredAt`, es idempotente para el par ya entregado y emite eventos despues del commit. No acepta ni modifica carrier, tracking o transport mode; tampoco toca inventario ni crea otra notificacion.
+
+Cuando `notificationContact.emailMode = send`, la misma transaccion de Dispatch persiste exactamente una `Notification` email simulada con destinatario, Order, Dispatch, referencia, carrier/guia, deduplication key y timestamps. `Notification.status` sigue representando lectura; `deliveryStatus = simulated_sent` representa entrega simulada. `not_applicable` y `undefined` crean cero notificaciones y retornan respectivamente `not_applicable` y `legacy_unknown_skipped`.
 
 ## Sale
 
@@ -115,7 +133,7 @@ Una Sale sin `sourceOrderId` conserva la salida directa de inventario. Una Sale 
 
 ## Delivery
 
-`DeliveryMethod`: immediate, store_pickup, home_delivery. `TransportMode`: none, customer, own_fleet, third_party. No mezclar ambos conceptos.
+`DeliveryMethod`: immediate, store_pickup, home_delivery. `TransportMode`: none, customer, own_fleet, third_party. No mezclar ambos conceptos. `AddressSnapshot.recipientPhone` es opcional para compatibilidad legacy y para metodos distintos de `home_delivery`; toda creacion `home_delivery` debe incluir un valor no vacio valido segun `validatePhoneNumber`.
 
 ## POS
 
@@ -152,17 +170,32 @@ contado y nunca un expected cash arbitrario.
 
 ## Logistics
 
-Flujo: Order -> Picking -> Packing -> Dispatch -> Tracking. Productos service no pasan por Picking. Trazabilidad debe respetar `Product.tracking`.
+Flujo home delivery: `Order.confirmed -> preparing -> picking -> ready_for_dispatch -> dispatched -> delivered`; para store pickup, completion termina en `ready_for_pickup`. `packing` es solo compatibilidad legacy/futura. Productos service no pasan por Picking. Trazabilidad debe respetar `Product.tracking`.
 
-Cada incremento confirmado de `PickingItem.pickedQuantity` consume solamente el delta desde las allocations persistidas de su `InventoryReservation`, respetando su orden original. El consumo es atomico con la actualizacion del item e idempotente por `operationId`; una reserva multi-ubicacion genera un movimiento OUT por balance/ubicacion consumida. Completar el `PickingOrder` solo valida que los items fisicos y sus reservas esten completos y no vuelve a descontar inventario. Disminuir cantidades ya recogidas, reasignar ubicaciones, resolver kits y conectar lotes o seriales quedan pendientes.
+Cada incremento confirmado de `PickingItem.pickedQuantity` consume solamente el delta desde las allocations persistidas de su `InventoryReservation`, respetando su orden original. El consumo es atomico con la actualizacion del item e idempotente por `operationId`; una reserva multi-ubicacion genera un movimiento OUT por balance/ubicacion consumida y la trazabilidad existente selecciona lote/serie segun `Product.tracking`. Disminuir cantidades ya recogidas y reasignar ubicaciones siguen fuera del contrato.
+
+Toda operacion de Picking reconstruye `Session -> User activo -> Role del mismo tenant -> Branch activa autorizada -> actor`; tenant, actor y assignee nunca provienen de la UI. La cola y el detalle son read models tenant+sucursal scoped. La asignacion es atomica: el mismo actor puede reintentar y otro actor recibe conflicto. Liberar una asignacion conserva cantidades y reservas, deja `pending` sin progreso o `in_progress` con progreso, y agrega evidencia append-only con actor, motivo y fecha. Las incidencias son persistentes, tenant+sucursal scoped y deben resolverse antes de completar.
+
+La disponibilidad para Picking pertenece a Inventory y distingue reserva propia, reservas ajenas y stock libre por balance/ubicacion/lote/serie. Una Order puede utilizar su reserva y el stock libre, nunca la reserva de otra Order. Completar es un workflow atomico e idempotente que cambia `PickingOrder -> completed` y la Order a `ready_for_dispatch` para `home_delivery` o `ready_for_pickup` para `store_pickup`, en una sola transaccion y sin descontar inventario nuevamente. `immediate` falla cerrado en Picking normal.
 
 ## Auth
 
 Frontend simula auth; no es seguridad real. Diferenciar `temporarily_locked` de bloqueo/deshabilitacion administrativa. Nunca mostrar o almacenar password en texto plano. No usar preguntas de seguridad tradicionales.
 
+Despues de login, un Customer vuelve al Storefront publico (`/`) y un Employee/Admin conserva `/inicio`. Un destino de retorno para Customer solo puede apuntar a rutas publicas del Storefront o a `/cuenta` y sus subrutas; destinos operativos se ignoran. Dentro del arbol privado, Customer queda limitado a `/cuenta/*` independientemente de permisos operativos asignados por error.
+
+El header del Storefront deriva su enlace de cuenta desde la sesion existente: Guest ve `Ingresar` hacia `/iniciar-sesion`, Customer ve `Mi Cuenta` hacia `/cuenta/perfil` y Employee/Admin conserva el acceso a `/inicio` sin ser tratado como Customer.
+
+Los cambios de sesion actualizan primero el puntero persistido y despues publican `auth.changed`. `CurrentSessionProvider` reconstruye la identidad desde repositories al montar y ante eventos de auth/user; nunca conserva una reconstruccion anterior si se solapa con un login, logout o cambio de usuario mas reciente. Para Employee la cadena obligatoria es `Session -> User activo -> Tenant activo -> Role existente del mismo tenant`; login y finalizacion MFA tampoco pueden crear una sesion operativa si esa cadena falla. Customer conserva su boundary propio.
+
 ## Branch Scope
 
-Empleado puede tener assigned branch, selected branches o all branches. Branch selector solo aparece cuando puede cambiar de sucursal.
+Empleado puede tener assigned branch, selected branches o all branches. El universo inicial siempre son las branches activas de `User.tenantId`: `all` no cruza tenants y `selected` solo admite `allowedBranchIds` cuyo Branch pertenece al mismo tenant. Toda autorizacion exige `Role.tenantId === User.tenantId` y `Branch.tenantId === User.tenantId`. Branch selector solo aparece cuando puede cambiar de sucursal.
+
+Los flujos privados de Catalog derivan `tenantId` de esa sesion operativa y usan lecturas y
+mutaciones tenant-scoped para Product, Category y Unit. No se acepta `tenantId` desde la UI ni se
+consulta el dataset global para filtrarlo despues cuando el repository puede reducirlo. Un recurso
+de otro tenant se trata como inexistente y no puede editarse, archivarse ni usarse como referencia.
 
 ## Delete / Archive
 
