@@ -120,6 +120,24 @@ componente cash exige un turno abierto del actor en esa sucursal. La reversion d
 la ubicacion de los movimientos OUT historicos referenciados a la Sale. Lote, serial y kit se
 bloquean mientras no exista una huella historica por linea suficiente para reconstruirlos.
 
+## POS Sales History
+
+El historial POS es una proyeccion de solo lectura. El tenant se deriva del User autenticado y la
+sucursal activa vuelve a validarse contra User, Role y Branch antes de consultar datos. El repository
+reduce el dataset por tenant+sucursal antes de que application aplique busqueda o filtros visuales.
+
+```text
+PosTerminalPage -> PosSalesHistoryModal -> usePosSalesHistory
+-> GetPosSalesHistoryService -> RepositoryRegistry
+-> SalesRepository.listByBranch + OrderRepository.getByIdsScoped
+-> PaymentRepository.getBySaleScoped para el detalle de pagos
+```
+
+`Sale.status` conserva el estado comercial y `Order.status` el operativo. Una Sale inmediata no
+presenta un estado logistico ficticio; una referencia legacy o fuera de scope permanece visible como
+Order no disponible sin exponer datos de otro tenant o sucursal. Esta proyeccion no habilita acciones
+de devolucion/anulacion y no escribe Sale, Order, reservas, balances ni movimientos.
+
 ## Navegacion Privada
 
 Los modulos declaran sus entradas en `src/modules/*/navigation.ts`.

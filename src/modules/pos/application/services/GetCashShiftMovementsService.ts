@@ -9,7 +9,7 @@ import {
 
 type CashMovementQueryRepositories = Pick<
   RepositoryRegistry,
-  "branches" | "cashMovements" | "cashShifts" | "roles" | "users"
+  "branches" | "cashMovements" | "cashShifts" | "roles" | "sales" | "users"
 >;
 
 export interface GetCashShiftMovementsRequest extends CashShiftOperationContext {
@@ -27,6 +27,29 @@ export class GetCashShiftMovementsService {
       input.tenantId,
       input.cashShiftId,
     );
-    return movements.map(toCashMovementDto);
+    const saleIds = [
+      ...new Set(
+        movements
+          .filter((movement) => movement.referenceType === "sale")
+          .map((movement) => movement.referenceId)
+          .filter((saleId): saleId is string => Boolean(saleId)),
+      ),
+    ];
+    const sales = await Promise.all(
+      saleIds.map((saleId) =>
+        this.repositories.sales.getByIdScoped(input.tenantId, input.branchId, saleId),
+      ),
+    );
+    const saleNumbersById = new Map(
+      sales.filter((sale) => sale !== null).map((sale) => [sale.id, sale.number]),
+    );
+
+    return movements.map((movement) => ({
+      ...toCashMovementDto(movement),
+      saleNumber:
+        movement.referenceType === "sale" && movement.referenceId
+          ? saleNumbersById.get(movement.referenceId)
+          : undefined,
+    }));
   }
 }

@@ -10,6 +10,11 @@ export class MockSalesRepository extends BaseMockRepository implements SalesRepo
   async listByTenant(tenantId: string) {
     return this.read((db) => db.sales.filter((item) => item.tenantId === tenantId));
   }
+  async listByBranch(tenantId: string, branchId: string) {
+    return this.read((db) =>
+      db.sales.filter((item) => item.tenantId === tenantId && item.branchId === branchId),
+    );
+  }
   async getById(id: string) {
     return this.read((db) => db.sales.find((item) => item.id === id) ?? null);
   }
