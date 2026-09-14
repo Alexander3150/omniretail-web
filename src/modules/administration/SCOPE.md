@@ -37,7 +37,7 @@
 | 4   | Cuentas bancarias         | `/administracion/cuentas-bancarias`     | `BankAccount`                 | ✅ **Implementada**                 |
 | 5   | Diseño E-commerce         | `/administracion/diseno-ecommerce`      | `EcommerceConfig`             | ✅ **Implementada** — sin branding  |
 | 6   | Clientes                  | `/administracion/clientes`              | `Customer`, `CustomerSegment` | ✅ **Implementada** — solo lectura, ranking por frecuencia |
-| 7   | Auditoría                 | `/administracion/auditoria`             | `AuditLog`                    | ✅ **Implementada**                 |
+| 7   | Auditoría                 | `/administracion/auditoria`             | `AuditLog`                    | ⛔ Removida — riesgo de privacidad  |
 | 8   | Caja                      | `/administracion/caja`                  | `CashShift`, `CashMovement`   | ✅ **Implementada** — solo lectura  |
 | 9   | Dashboard                 | `/administracion/dashboard`             | Agregación                    | ✅ **Implementada**                 |
 | 10  | Reportes                  | `/administracion/reportes`              | Agregación                    | ✅ **Implementada**                 |
@@ -406,8 +406,10 @@ override `demoMode`) y `src/config/session-policy.ts` (`normalSessionHours: 8`,
    quedan bloqueadas. Esto **sí** es dominio de Andy.
 6. **`TenantRepository` sin `update`.** Bloquea escritura de datos del negocio.
 7. **Sin `CustomerSegmentRepository`.**
-8. **`AuditLogRepository` sin filtros funcionales ni paginacion.** La lectura esta aislada por
-   tenant en el repositorio; los filtros de la pantalla se aplican en cliente sobre ese subconjunto.
+8. **La pantalla de Auditoría se removió.** Exponía `login_success`/`login_failed` de todos los
+   usuarios (incluyendo clientes) porque `MockAuthRepository.logAuthAudit` escribe en el mismo
+   `db.auditLogs` que leía la pantalla. `AuditLogRepository.append()` sigue en uso por Sucursales,
+   Proveedores y Cuentas bancarias para su propio rastro de auditoría; eso no se tocó.
 9. **Planes y facturación / Sincronización sin entity.** No inventar; definir en equipo.
 10. **El filtro de permisos del Sidebar no está conectado.** `filterNavigationItemsByPermissions`
     existe y funciona, pero `PrivateShell` nunca pasa `allowedPermissions`, así que hoy se ve
@@ -453,11 +455,11 @@ Declarados hoy en `permissions.ts` de este módulo:
 `admin.users.read` · `admin.users.manage` · `admin.roles.read` · `admin.roles.manage` ·
 `admin.branches.read` · `admin.branches.manage` · `admin.business_config.manage` ·
 `admin.suppliers.manage` · `admin.bank_accounts.manage` · `admin.cash.read` ·
-`admin.customers.read`
+`admin.customers.read` · `admin.dashboard.read` · `admin.reports.read` ·
+`admin.reports.export` · `admin.ecommerce_config.manage`
 
 **No existen** y hay que declararlos al construir sus pantallas:
-`admin.audit.read` ·
-`admin.reports.read/export` · `admin.ecommerce_config.manage` · `users.credentials.reset`
+`users.credentials.reset`
 
 La granularidad del repo es `read` / `manage`, no `create/update/archive`. Mantenerla.
 
@@ -605,11 +607,12 @@ El self-service del cliente (registro, login, direcciones, pedidos propios) vive
 `customer` de Andy. No duplicar.
 Segmentos bloqueados hasta que exista `CustomerSegmentRepository`.
 
-### 12.7 Auditoría ✅ implementada
+### 12.7 Auditoría ⛔ removida
 
-Tabla filtrable: `createdAt`, actor, `action`, `entityType`, `entityId`, `metadata`.
-Sin campo `module`: si se necesita agrupar por módulo, se deriva de `action` o `entityType`.
-Filtrado en cliente (`getAll`). Nunca se escribe desde acá: lo emiten los demás módulos (R-P04).
+Se removió por decisión de producto: la pantalla mostraba `login_success`/`login_failed` de
+**todos** los usuarios, incluidos clientes, lo cual se consideró demasiado invasivo. El escritor
+(`AuditLogRepository.append()`, usado por otros módulos vía R-P04) sigue intacto; solo se quitó la
+pantalla de lectura, su service, su permiso (`admin.audit.read`) y su entrada de navegación.
 
 ### 12.8 Caja ✅ implementada
 

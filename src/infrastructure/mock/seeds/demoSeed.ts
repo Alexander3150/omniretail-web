@@ -208,7 +208,6 @@ const legacyDemoSeedDatabase: MockDatabase = {
         "admin.reports.export",
         "admin.cash.read",
         "admin.ecommerce_config.manage",
-        "admin.audit.read",
         "admin.branches.read",
         "admin.branches.manage",
         "admin.bank_accounts.manage",
