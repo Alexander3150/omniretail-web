@@ -29,59 +29,51 @@ Implementado en esta rama:
 
 ## Clientes
 
+Pantalla de solo lectura: la administración únicamente puede **ver** el listado de clientes
+ordenado por frecuencia de compra. No hay alta, edición ni archivado desde acá.
+
 Implementado en esta rama:
 
-- Directorio comercial de clientes aislado por el `tenantId` de la sesion, con busqueda por codigo,
-  nombre o correo y filtro por estado.
-- Enforcement de lectura en `GetCustomersService`: acepta `admin.customers.read` o
-  `admin.customers.manage`. Las mutaciones exigen `admin.customers.manage` dentro del service.
-- Navegacion y services comparten semantica: como `NavigationItem.permission` es un unico string y
-  no hay mecanismo de "cualquiera de estos permisos", la entrada del menu se protege con
-  `admin.customers.manage` (el permiso que tiene la audiencia real) -- mismo caso que Sucursales
-  (ver arriba). El camino de solo lectura del service queda como capa defensiva para un futuro rol
-  read-only, que igual necesitaria el permiso literal asignado para ver el item de navegacion.
-- Alta de registros exclusivamente comerciales mediante `CustomerRepository`; no se crea `User`,
-  `AuthAccount` ni ninguna credencial.
-- Edicion completa para clientes sin `userId`. Para clientes vinculados a una cuenta, el service
-  ignora cambios de datos personales y aplica unicamente `status`; la UI refleja el mismo limite.
-- Unicidad de codigo y correo dentro del tenant, validada sobre valores normalizados.
-- Archivado comercial mediante `update({ status: CustomerStatus.archived })`, conservando el
-  registro y cualquier cuenta vinculada.
-- Auditoria de alta, edicion y archivado, y refresco reactivo ante `customer.changed`.
-- Segmentos visibles como bloqueados porque no existe `CustomerSegmentRepository`.
-- Ruta privada `/administracion/clientes` y entrada de navegacion con `admin.customers.manage`.
+- Listado comercial de clientes aislado por el `tenantId` de la sesión, con búsqueda por código,
+  nombre o correo y filtro por estado, ordenado por cantidad de compras descendente.
+- `purchaseCount` se calcula en `GetCustomersService` sumando `Order` (e-commerce) y `Sale`
+  (mostrador) por `customerId`, excluyendo `cancelled` en ambos. Es agregación local dentro del
+  service -- no existe (ni hace falta) un contrato nuevo en `core`: `RepositoryRegistry` ya expone
+  `orders` y `sales` a Administration, mismo patrón que usan `GetDashboardSummaryService` y
+  `GetReportsService`. Ver `.ai/skills/contract-change/SKILL.md`: no se justifica un contract
+  change para una sola pantalla cuando se resuelve con agregación local.
+- Único permiso `admin.customers.read`; no existe `admin.customers.manage`. La entrada de
+  navegación usa el mismo permiso que el service, sin la ambigüedad manage-vs-read que tenían otras
+  pantallas de este módulo.
+- Sin mutaciones: no se crean, editan ni archivan clientes desde Administration, y por lo tanto no
+  hay auditoría (`customer.created/updated/archived`) que emitir desde acá.
+- Refresco reactivo ante `customer.changed`, emitido por el módulo `customer` (self-service) cuando
+  el cliente edita su propio perfil.
+- Segmentos fuera de alcance porque no existe `CustomerSegmentRepository`.
+- Ruta privada `/administracion/clientes` y entrada de navegación con `admin.customers.read`.
 
 ### Contrato de integracion
 
 Lo que esta pantalla expone al resto del sistema:
 
-- Ruta `/administracion/clientes` e item `administration-customers` en la navegacion de
-  Administracion, protegido por `admin.customers.manage`.
-- Permisos `admin.customers.read` y `admin.customers.manage`, declarados en `permissions.ts` y
-  asignados a `role-admin` en el seed demo. Los services aceptan cualquiera de los dos para
-  lectura; la navegacion se protege con `manage` (ver arriba).
-- Acciones de auditoria `customer.created`, `customer.updated` y `customer.archived`, con
-  `entityType: "Customer"`.
+- Ruta `/administracion/clientes` e item `administration-customers` en la navegación de
+  Administración, protegido por `admin.customers.read`.
+- Permiso `admin.customers.read`, declarado en `permissions.ts` y asignado a `role-admin` en el
+  seed demo.
 - Refresco reactivo ante el evento `customer.changed`.
+- No emite eventos ni acciones de auditoría propias: es solo lectura.
 
 Lo que asume de la plataforma:
 
-- `useCurrentSession()` entrega el `tenantId`, el `id` del actor y los permisos efectivos.
-- `RepositoryRegistry` expone `customers` y `auditLogs`.
-- Los flujos propietarios de identidad mantienen la relacion opcional `Customer.userId`.
+- `useCurrentSession()` entrega el `tenantId` y los permisos efectivos.
+- `RepositoryRegistry` expone `customers`, `orders` y `sales` como fuentes de lectura.
 
 Decisiones abiertas y coordinacion:
 
-- El limite entre la vista comercial de Administration y la cuenta propia del cliente debe
-  acordarse por escrito con el equipo propietario de Customer/Auth. Esta implementacion es
-  conservadora: si existe `userId`, el administrador solo cambia el estado comercial.
-- Si un cliente comercial se auto-registra luego con el mismo correo, la reconciliacion corresponde
-  al flujo de registro, no a esta pantalla.
+- Si en el futuro se necesita distinguir canal (online vs. mostrador) en el ranking, o un rango de
+  fechas, hay que ampliar `GetCustomersService` -- sigue sin requerir contrato nuevo en `core`
+  mientras la fuente siga siendo `orders`/`sales` ya expuestos.
 - Los segmentos permanecen fuera de alcance hasta contar con `CustomerSegmentRepository`.
-- Los permisos de clientes son nuevos. Se esperan colisiones en `permissions.ts`, `demoSeed.ts`,
-  `navigation.ts`, `serviceHelpers.ts`, `README.md` y `SCOPE.md` con `feature/admin-branches`,
-  `feature/admin-bank-accounts`, `feature/admin-suppliers`, `feature/admin-audit-log` y
-  `feature/admin-ecommerce-config`; deben resolverse conservando todas las entradas.
 
 ## Diseno E-commerce
 

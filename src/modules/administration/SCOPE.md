@@ -36,7 +36,7 @@
 | 3   | Proveedores               | `/administracion/proveedores`           | `Supplier`                    | ✅ **Implementada**                 |
 | 4   | Cuentas bancarias         | `/administracion/cuentas-bancarias`     | `BankAccount`                 | ✅ **Implementada**                 |
 | 5   | Diseño E-commerce         | `/administracion/diseno-ecommerce`      | `EcommerceConfig`             | ✅ **Implementada** — sin branding  |
-| 6   | Clientes                  | `/administracion/clientes`              | `Customer`, `CustomerSegment` | ✅ **Implementada** — sin segmentos |
+| 6   | Clientes                  | `/administracion/clientes`              | `Customer`, `CustomerSegment` | ✅ **Implementada** — solo lectura, ranking por frecuencia |
 | 7   | Auditoría                 | `/administracion/auditoria`             | `AuditLog`                    | ✅ **Implementada**                 |
 | 8   | Caja                      | `/administracion/caja`                  | `CashShift`, `CashMovement`   | ✅ **Implementada** — solo lectura  |
 | 9   | Dashboard                 | `/administracion/dashboard`             | Agregación                    | ✅ **Implementada**                 |
@@ -597,7 +597,9 @@ No se configura acá la trazabilidad (eso es 12.1) ni el diseño visual del stor
 
 ### 12.6 Clientes ✅ implementada
 
-Vista comercial. Tabla: `code`, `name`, `email`, segmento, `status`.
+Vista comercial de solo lectura, ranking por frecuencia de compra. Tabla: `code`, `name`, `email`,
+`purchaseCount`, `status`. `purchaseCount` agrega `Order` + `Sale` por `customerId` (lectura
+directa vía `RepositoryRegistry`, sin contrato nuevo en `core`). Sin alta, edición ni archivado.
 El self-service del cliente (registro, login, direcciones, pedidos propios) vive en el módulo
 `customer` de Andy. No duplicar.
 Segmentos bloqueados hasta que exista `CustomerSegmentRepository`.

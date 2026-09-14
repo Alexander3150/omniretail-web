@@ -1,80 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import type {
-  CustomerCreateInputDto,
-  CustomerDto,
-  CustomerUpdateInputDto,
-} from "@/modules/administration/application/dto/CustomerDto";
-import { CustomerForm } from "@/modules/administration/components/CustomerForm";
 import { CustomerTable } from "@/modules/administration/components/CustomerTable";
 import { useCustomers } from "@/modules/administration/hooks/useCustomers";
 import { Button } from "@/shared/components/Button";
-import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
-import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
-import { useToast } from "@/shared/components/Toast";
-
-type EditorState = { mode: "create" } | { mode: "edit"; customer: CustomerDto } | null;
-type CustomerFormValue = CustomerCreateInputDto | CustomerUpdateInputDto;
 
 export function CustomersPage() {
-  const { archive, busy, canManage, canRead, create, customers, error, loading, reload, update } =
-    useCustomers();
-  const { showToast } = useToast();
-  const [editor, setEditor] = useState<EditorState>(null);
-  const [archiveTarget, setArchiveTarget] = useState<CustomerDto | null>(null);
-
-  async function handleSubmit(value: CustomerFormValue) {
-    try {
-      if (editor?.mode === "edit") {
-        await update(editor.customer.id, value);
-        showToast({ title: "Cliente actualizado", tone: "success" });
-      } else {
-        await create(value);
-        showToast({ title: "Cliente creado", tone: "success" });
-      }
-      setEditor(null);
-    } catch (caughtError) {
-      showToast({
-        title: "No se pudo guardar el cliente",
-        description:
-          caughtError instanceof Error
-            ? caughtError.message
-            : "Intentá nuevamente en unos momentos.",
-        tone: "danger",
-      });
-    }
-  }
-
-  async function handleArchive() {
-    if (!archiveTarget) return;
-
-    try {
-      await archive(archiveTarget.id);
-      showToast({
-        title: "Cliente archivado",
-        description: "El registro comercial y su historial se conservaron.",
-        tone: "success",
-      });
-      setArchiveTarget(null);
-    } catch (caughtError) {
-      showToast({
-        title: "No se pudo archivar el cliente",
-        description:
-          caughtError instanceof Error
-            ? caughtError.message
-            : "Intentá nuevamente en unos momentos.",
-        tone: "danger",
-      });
-    }
-  }
+  const { canRead, customers, error, loading, reload } = useCustomers();
 
   if (!loading && !canRead) {
     return (
       <div className="min-w-0 space-y-5">
         <PageHeader
-          description="Consultá y administrá el directorio comercial de clientes."
+          description="Consultá los clientes con mayor frecuencia de compra."
           title="Clientes"
         />
         <div
@@ -86,8 +24,7 @@ export function CustomersPage() {
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             Consultar clientes requiere el permiso{" "}
-            <span className="font-medium text-[var(--color-text)]">admin.customers.read</span> o{" "}
-            <span className="font-medium text-[var(--color-text)]">admin.customers.manage</span>.
+            <span className="font-medium text-[var(--color-text)]">admin.customers.read</span>.
             Pedí acceso a un administrador.
           </p>
         </div>
@@ -98,14 +35,7 @@ export function CustomersPage() {
   return (
     <div className="min-w-0 space-y-5">
       <PageHeader
-        actions={
-          canManage ? (
-            <Button onClick={() => setEditor({ mode: "create" })} type="button">
-              Nuevo cliente
-            </Button>
-          ) : null
-        }
-        description="Consultá y administrá el directorio comercial de clientes."
+        description="Consultá los clientes con mayor frecuencia de compra."
         title="Clientes"
       />
 
@@ -133,41 +63,8 @@ export function CustomersPage() {
           Cargando clientes...
         </div>
       ) : (
-        <CustomerTable
-          canManage={canManage}
-          customers={customers}
-          onArchive={setArchiveTarget}
-          onEdit={(customer) => setEditor({ mode: "edit", customer })}
-        />
+        <CustomerTable customers={customers} />
       )}
-
-      <Modal
-        onClose={() => setEditor(null)}
-        open={Boolean(editor)}
-        size="lg"
-        subtitle="Esta pantalla administra registros comerciales, no credenciales de acceso."
-        title={editor?.mode === "edit" ? "Editar cliente" : "Nuevo cliente"}
-      >
-        {editor ? (
-          <CustomerForm
-            busy={busy}
-            customer={editor.mode === "edit" ? editor.customer : undefined}
-            key={editor.mode === "edit" ? editor.customer.id : "new"}
-            onCancel={() => setEditor(null)}
-            onSubmit={handleSubmit}
-          />
-        ) : null}
-      </Modal>
-
-      <ConfirmDialog
-        cancelLabel="Cancelar"
-        confirmLabel="Archivar"
-        message={`El cliente ${archiveTarget?.name ?? "seleccionado"} se archivará comercialmente, pero su historial se conservará.`}
-        onCancel={() => setArchiveTarget(null)}
-        onConfirm={() => void handleArchive()}
-        open={Boolean(archiveTarget)}
-        title="Archivar cliente"
-      />
     </div>
   );
 }

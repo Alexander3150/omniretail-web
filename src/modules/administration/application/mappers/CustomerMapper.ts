@@ -1,7 +1,7 @@
 import type { Customer } from "@/core/entities";
 import type { CustomerDto } from "@/modules/administration/application/dto/CustomerDto";
 
-export function toCustomerDto(customer: Customer): CustomerDto {
+export function toCustomerDto(customer: Customer, purchaseCount: number): CustomerDto {
   return {
     id: customer.id,
     userId: customer.userId,
@@ -13,5 +13,6 @@ export function toCustomerDto(customer: Customer): CustomerDto {
     status: customer.status,
     createdAt: customer.createdAt,
     updatedAt: customer.updatedAt,
+    purchaseCount,
   };
 }

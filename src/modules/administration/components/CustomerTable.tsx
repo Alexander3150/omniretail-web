@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { statusesConfig } from "@/config/statuses";
 import { CustomerStatus } from "@/core/enums";
 import type { CustomerDto } from "@/modules/administration/application/dto/CustomerDto";
-import { Button } from "@/shared/components/Button";
 import { DataTable, type DataTableColumn } from "@/shared/components/DataTable";
 import { SearchInput } from "@/shared/components/SearchInput";
 import { Select } from "@/shared/components/Select";
@@ -12,12 +11,9 @@ import { StatusBadge } from "@/shared/components/StatusBadge";
 
 interface CustomerTableProps {
   customers: CustomerDto[];
-  canManage: boolean;
-  onArchive: (customer: CustomerDto) => void;
-  onEdit: (customer: CustomerDto) => void;
 }
 
-export function CustomerTable({ customers, canManage, onArchive, onEdit }: CustomerTableProps) {
+export function CustomerTable({ customers }: CustomerTableProps) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<CustomerStatus | "all">("all");
   const filteredCustomers = useMemo(() => {
@@ -52,14 +48,12 @@ export function CustomerTable({ customers, canManage, onArchive, onEdit }: Custo
       cell: (customer) => <span className="text-[var(--color-text)]">{customer.email}</span>,
     },
     {
-      key: "segment",
-      header: "Segmento",
-      cell: () => "—",
-    },
-    {
-      key: "registration",
-      header: "Registro",
-      cell: (customer) => (customer.userId !== undefined ? "Con cuenta" : "Comercial"),
+      key: "purchaseCount",
+      header: "Compras",
+      className: "text-right",
+      cell: (customer) => (
+        <span className="font-semibold text-[var(--color-title)]">{customer.purchaseCount}</span>
+      ),
     },
     {
       key: "status",
@@ -67,36 +61,6 @@ export function CustomerTable({ customers, canManage, onArchive, onEdit }: Custo
       cell: (customer) => <StatusBadge status={customer.status} />,
     },
   ];
-
-  if (canManage) {
-    columns.push({
-      key: "actions",
-      header: <span className="sr-only">Acciones</span>,
-      className: "text-right",
-      cell: (customer) => (
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button
-            className="min-h-9 px-3 py-1.5"
-            onClick={() => onEdit(customer)}
-            type="button"
-            variant="ghost"
-          >
-            Editar
-          </Button>
-          {customer.status !== CustomerStatus.archived ? (
-            <Button
-              className="min-h-9 px-3 py-1.5"
-              onClick={() => onArchive(customer)}
-              type="button"
-              variant="danger"
-            >
-              Archivar
-            </Button>
-          ) : null}
-        </div>
-      ),
-    });
-  }
 
   return (
     <div className="space-y-4">

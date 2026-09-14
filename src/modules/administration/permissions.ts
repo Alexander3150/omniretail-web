@@ -69,13 +69,7 @@ export const administrationPermissions = [
     key: "admin.customers.read",
     module: "administration",
     name: "Leer clientes",
-    description: "Permite consultar el directorio de clientes.",
-  },
-  {
-    key: "admin.customers.manage",
-    module: "administration",
-    name: "Gestionar clientes",
-    description: "Permite crear, editar y archivar registros comerciales de clientes.",
+    description: "Permite consultar el listado de clientes más frecuentes.",
   },
   {
     key: CASH_READ_PERMISSION,
