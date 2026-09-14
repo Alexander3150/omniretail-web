@@ -104,6 +104,7 @@ export const demoSeedDatabase: MockDatabase = {
       tenantId: "tenant-demo",
       enabled: true,
       storeName: "FerrePharma Demo",
+      visibleCategoryIds: ["cat-tools", "cat-hardware"],
       requireAccountForCheckout: false,
       guestTrackingEnabled: true,
       allowedDeliveryMethods: [

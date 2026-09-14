@@ -5,6 +5,7 @@ export interface EcommerceConfig {
   tenantId: string;
   enabled: boolean;
   storeName: string;
+  visibleCategoryIds?: string[];
   requireAccountForCheckout: boolean;
   guestTrackingEnabled: boolean;
   allowedDeliveryMethods: DeliveryMethod[];

@@ -2,14 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { Product } from "@/core/entities";
-import {
-  useDataEventBus,
-  useRepositories,
-} from "@/infrastructure/providers/RepositoryProvider";
+import { useDataEventBus, useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
 export function useStorefrontCatalog() {
-  const { products } = useRepositories();
+  const { products, businessConfig } = useRepositories();
   const eventBus = useDataEventBus();
   const { tenantId, loading: tenantLoading, error: tenantError } = usePublicTenant();
 
@@ -37,8 +34,16 @@ export function useStorefrontCatalog() {
       setError(null);
 
       try {
-        const publishedProducts = await products.getPublishedForEcommerce(tenantId);
-        if (active) setItems(publishedProducts);
+        const [publishedProducts, ecommerceConfig] = await Promise.all([
+          products.getPublishedForEcommerce(tenantId),
+          businessConfig.getEcommerceConfig(tenantId),
+        ]);
+        const visibleCategoryIds = new Set(ecommerceConfig?.visibleCategoryIds ?? []);
+        const visibleProducts =
+          visibleCategoryIds.size > 0
+            ? publishedProducts.filter((product) => visibleCategoryIds.has(product.categoryId))
+            : publishedProducts;
+        if (active) setItems(visibleProducts);
       } catch {
         if (active) setError("No se pudo cargar el catálogo. Intenta nuevamente.");
       } finally {
@@ -58,7 +63,7 @@ export function useStorefrontCatalog() {
       active = false;
       unsubscribe();
     };
-  }, [eventBus, products, reloadKey, tenantError, tenantId, tenantLoading]);
+  }, [businessConfig, eventBus, products, reloadKey, tenantError, tenantId, tenantLoading]);
 
   return {
     items,

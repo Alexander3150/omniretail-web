@@ -94,9 +94,6 @@ export function BranchesPage() {
                       </p>
                     ) : null}
                   </div>
-                  <p className="mt-4 rounded-lg bg-[var(--color-primary-hover)] px-3 py-2 text-center text-sm font-bold text-white">
-                    ✓ Sucursal activa
-                  </p>
                 </article>
               ))}
             </div>

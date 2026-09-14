@@ -23,9 +23,17 @@ export class MockBusinessConfigRepository
     return updated;
   }
   async getEcommerceConfig(tenantId: string) {
-    return this.read(
-      (db) => db.ecommerceConfigs.find((item) => item.tenantId === tenantId) ?? null,
-    );
+    return this.store.mutate((db) => {
+      const config = db.ecommerceConfigs.find((item) => item.tenantId === tenantId);
+      if (!config) return null;
+      // Datos mock creados antes de la selección de categorías: aplicar la configuración
+      // inicial de ferretería una sola vez para que no expongan categorías ajenas.
+      if (config.tenantId === "tenant-demo" && !config.visibleCategoryIds) {
+        config.visibleCategoryIds = ["cat-tools", "cat-hardware"];
+        config.updatedAt = this.now();
+      }
+      return config;
+    });
   }
   async updateEcommerceConfig(
     tenantId: string,

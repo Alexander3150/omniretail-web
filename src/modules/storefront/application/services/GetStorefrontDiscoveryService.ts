@@ -8,14 +8,23 @@ export class GetStorefrontDiscoveryService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(tenantId: string): Promise<StorefrontDiscoveryDto> {
-    const [products, activeCategories] = await Promise.all([
+    const [products, activeCategories, ecommerceConfig] = await Promise.all([
       this.repositories.products.getPublishedForEcommerce(tenantId),
       this.repositories.categories.getActive(),
+      this.repositories.businessConfig.getEcommerceConfig(tenantId),
     ]);
-    const categories = activeCategories.filter((category) => category.tenantId === tenantId);
+    const visibleCategoryIds = new Set(ecommerceConfig?.visibleCategoryIds ?? []);
+    const visibleProducts =
+      visibleCategoryIds.size > 0
+        ? products.filter((product) => visibleCategoryIds.has(product.categoryId))
+        : products;
+    const publishedCategoryIds = new Set(visibleProducts.map((product) => product.categoryId));
+    const categories = activeCategories.filter(
+      (category) => category.tenantId === tenantId && publishedCategoryIds.has(category.id),
+    );
     const categoryNames = new Map(categories.map((category) => [category.id, category.name]));
     const productsWithMedia = await Promise.all(
-      products.map(async (product): Promise<StorefrontDiscoveryProductDto> => {
+      visibleProducts.map(async (product): Promise<StorefrontDiscoveryProductDto> => {
         const media = await this.repositories.productMedia.getPrimaryByProduct(product.id);
         return {
           id: product.id,
