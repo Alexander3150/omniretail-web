@@ -1,0 +1,50 @@
+name: Storefront PR validation
+
+on:
+  pull_request:
+    branches:
+      - development
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-storefront:
+    name: Storefront contracts and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate TypeScript
+        run: npx tsc --noEmit --incremental false
+
+      - name: Run lint
+        run: npm run lint
+
+      - name: Verify Storefront and Customer contracts
+        run: |
+          npx --yes --package=tsx tsx scripts/verify-storefront-public-config-contracts.ts
+          npx --yes --package=tsx tsx scripts/verify-customer-storefront-integration.ts
+          npx --yes --package=tsx tsx scripts/verify-ecommerce-payment-reservation.ts
+          npx --yes --package=tsx tsx scripts/verify-order-recipient-phone-shared.ts
+          npx --yes --package=tsx tsx scripts/verify-catalog-media.ts
+          npx --yes --package=tsx tsx scripts/verify-tenant-isolation-foundation.ts
+
+      - name: Build application
+        run: npm run build
+
+      - name: Check diff whitespace
+        run: git diff --check HEAD^ HEAD
