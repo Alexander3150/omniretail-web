@@ -51,6 +51,8 @@ export function UnitsPage() {
     loading,
     busy,
     error,
+    canRead,
+    canManage,
     units,
     filteredUnits,
     paginatedUnits,
@@ -109,6 +111,32 @@ export function UnitsPage() {
     setPanel({ mode: "detail", unit: { ...unit, status: UnitStatus.active } });
   }
 
+  if (!loading && !canRead) {
+    return (
+      <div className="min-w-0 space-y-5">
+        <header className="border-b border-[var(--color-border)] pb-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+            CONFIGURACION
+          </p>
+          <h1 className="mt-1 text-2xl font-bold text-[var(--color-title)]">Unidades</h1>
+        </header>
+        <div
+          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
+          role="alert"
+        >
+          <h2 className="text-base font-semibold text-[var(--color-title)]">
+            No tenés acceso a unidades
+          </h2>
+          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+            Consultar unidades requiere el permiso{" "}
+            <span className="font-medium text-[var(--color-text)]">catalog.units.read</span>. Pedí
+            acceso a un administrador.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-w-0 space-y-5">
       <header className="flex min-w-0 flex-col gap-4 border-b border-[var(--color-border)] pb-4 lg:flex-row lg:items-end lg:justify-between">
@@ -123,14 +151,16 @@ export function UnitsPage() {
             Administra las unidades que se usan para inventario, venta y compra de productos.
           </p>
         </div>
-        <Button
-          className="w-full sm:w-auto"
-          onClick={() => setPanel({ mode: "create" })}
-          type="button"
-        >
-          <PlusIcon />
-          Nueva unidad
-        </Button>
+        {canManage ? (
+          <Button
+            className="w-full sm:w-auto"
+            onClick={() => setPanel({ mode: "create" })}
+            type="button"
+          >
+            <PlusIcon />
+            Nueva unidad
+          </Button>
+        ) : null}
       </header>
 
       {error ? (
@@ -160,6 +190,7 @@ export function UnitsPage() {
             </p>
           ) : (
             <UnitTable
+              canManage={canManage}
               emptyMessage={
                 units.length === 0
                   ? "Aun no hay unidades registradas."
@@ -189,6 +220,7 @@ export function UnitsPage() {
         {panel ? (
           <UnitPanel
             busy={busy}
+            canManage={canManage}
             mode={panel.mode}
             onCancel={() =>
               panel.mode === "detail"
@@ -297,6 +329,7 @@ function StatusFilterButton({
 }
 
 function UnitTable({
+  canManage,
   emptyMessage,
   onArchive,
   onEdit,
@@ -304,6 +337,7 @@ function UnitTable({
   onRestore,
   units,
 }: {
+  canManage: boolean;
   emptyMessage: string;
   onArchive: (unit: UnitListItem) => void;
   onEdit: (unit: UnitListItem) => void;
@@ -353,12 +387,14 @@ function UnitTable({
                   {unit.allowsDecimals ? "Si" : "No"}
                 </td>
                 <td className="px-4 py-3">
-                  <UnitActionsMenu
-                    onArchive={onArchive}
-                    onEdit={onEdit}
-                    onRestore={onRestore}
-                    unit={unit}
-                  />
+                  {canManage ? (
+                    <UnitActionsMenu
+                      onArchive={onArchive}
+                      onEdit={onEdit}
+                      onRestore={onRestore}
+                      unit={unit}
+                    />
+                  ) : null}
                 </td>
               </tr>
             ))
@@ -575,6 +611,7 @@ function UnitTableFooter({
 
 function UnitPanel({
   busy,
+  canManage,
   mode,
   onCancel,
   onClose,
@@ -584,6 +621,7 @@ function UnitPanel({
   units,
 }: {
   busy: boolean;
+  canManage: boolean;
   mode: PanelMode;
   onCancel: () => void;
   onClose: () => void;
@@ -639,7 +677,7 @@ function UnitPanel({
               units={units}
             />
           ) : unit ? (
-            <UnitDetail onClose={onClose} onEdit={onEdit} unit={unit} />
+            <UnitDetail canManage={canManage} onClose={onClose} onEdit={onEdit} unit={unit} />
           ) : null}
         </div>
       </aside>
@@ -648,10 +686,12 @@ function UnitPanel({
 }
 
 function UnitDetail({
+  canManage,
   onClose,
   onEdit,
   unit,
 }: {
+  canManage: boolean;
   onClose: () => void;
   onEdit: () => void;
   unit: UnitListItem;
@@ -669,10 +709,12 @@ function UnitDetail({
         <Button className="w-full sm:w-auto" onClick={onClose} type="button" variant="secondary">
           Cerrar
         </Button>
-        <Button className="w-full sm:w-auto" onClick={onEdit} type="button">
-          <PencilIcon />
-          Editar
-        </Button>
+        {canManage ? (
+          <Button className="w-full sm:w-auto" onClick={onEdit} type="button">
+            <PencilIcon />
+            Editar
+          </Button>
+        ) : null}
       </div>
     </div>
   );

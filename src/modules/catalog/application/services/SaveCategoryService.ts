@@ -4,7 +4,8 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import type { CategoryEditorDto } from "@/modules/catalog/application/dto/CategoryEditorDto";
 import {
   CatalogServiceError,
-  resolveTenantId,
+  ensureCanManageCategories,
+  resolveTenantContext,
 } from "@/modules/catalog/application/services/serviceHelpers";
 import { normalizeCategoryCode } from "@/modules/catalog/validation/category.validation";
 import { removeAssetIfOrphaned } from "@/modules/catalog/application/services/productEditorHelpers";
@@ -13,7 +14,8 @@ export class SaveCategoryService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async create(dto: CategoryEditorDto): Promise<Category> {
-    const tenantId = await resolveTenantId(this.repositories);
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanManageCategories(permissions);
     if (!tenantId) throw new CatalogServiceError("No se pudo resolver el negocio activo.");
 
     await this.assertParentOwnership(tenantId, dto.parentId);
@@ -36,7 +38,8 @@ export class SaveCategoryService {
   }
 
   async update(categoryId: string, dto: CategoryEditorDto): Promise<Category> {
-    const tenantId = await resolveTenantId(this.repositories);
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanManageCategories(permissions);
     const current = await this.repositories.categories.getByIdScoped(tenantId, categoryId);
     if (!current) {
       throw new CatalogServiceError("No se pudo resolver la categoria actual.");
@@ -95,7 +98,8 @@ export class SaveCategoryService {
   }
 
   async archive(categoryId: string): Promise<Category> {
-    const tenantId = await resolveTenantId(this.repositories);
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanManageCategories(permissions);
     return this.repositories.categories.archiveScoped(tenantId, categoryId);
   }
 
@@ -110,7 +114,8 @@ export class SaveCategoryService {
   }
 
   async restore(categoryId: string): Promise<Category> {
-    const tenantId = await resolveTenantId(this.repositories);
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanManageCategories(permissions);
     return this.repositories.categories.updateScoped(tenantId, categoryId, {
       status: CategoryStatus.active,
     });
