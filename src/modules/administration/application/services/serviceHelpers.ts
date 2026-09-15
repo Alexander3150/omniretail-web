@@ -5,6 +5,7 @@ import {
   BUSINESS_CONFIG_MANAGE_PERMISSION,
   CASH_READ_PERMISSION,
   DASHBOARD_READ_PERMISSION,
+  PLANS_READ_PERMISSION,
   REPORTS_EXPORT_PERMISSION,
   REPORTS_READ_PERMISSION,
 } from "@/modules/administration/permissions";
@@ -430,6 +431,23 @@ export function ensureEmployeeBranchIds(
       );
     }
   }
+}
+
+/**
+ * La lectura de plan/suscripción pertenece a la capa de aplicación, no a la pantalla: ocultar el
+ * menú no es enforcement. Solo lectura -- esta foundation no expone mutaciones de Plan/
+ * Subscription (§16 del ticket, "NO plan change todavía").
+ */
+export function ensureCanReadPlans(permissions: readonly string[]) {
+  if (permissions.includes(PLANS_READ_PERMISSION)) return;
+
+  throw new AdministrationServiceError("No tenés permiso para consultar el plan del negocio.");
+}
+
+export function ensurePlanTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
 }
 
 export function cleanError(error: unknown): string {

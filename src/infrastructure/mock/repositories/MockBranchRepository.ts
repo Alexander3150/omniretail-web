@@ -23,6 +23,9 @@ export class MockBranchRepository extends BaseMockRepository implements BranchRe
       ),
     );
   }
+  async listByTenant(tenantId: string) {
+    return this.read((db) => db.branches.filter((item) => item.tenantId === tenantId));
+  }
   async getActiveByTenantAndType(
     tenantId: Parameters<BranchRepository["getActiveByTenantAndType"]>[0],
     type: Parameters<BranchRepository["getActiveByTenantAndType"]>[1],

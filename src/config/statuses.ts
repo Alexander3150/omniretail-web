@@ -48,4 +48,6 @@ export const statusesConfig: Record<string, StatusDefinition> = {
   ended: { label: "Finalizado", tone: "neutral" },
   unread: { label: "No leido", tone: "info" },
   read: { label: "Leido", tone: "neutral" },
+  // TenantSubscriptionStatus (saas foundation) -- active/cancelled ya existen arriba.
+  suspended: { label: "Suspendida", tone: "danger" },
 };
