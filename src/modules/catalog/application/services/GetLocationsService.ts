@@ -1,12 +1,16 @@
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { LocationListItem } from "@/modules/catalog/application/dto/LocationEditorDto";
-import { resolveTenantId } from "@/modules/catalog/application/services/serviceHelpers";
+import {
+  ensureCanReadLocations,
+  resolveTenantContext,
+} from "@/modules/catalog/application/services/serviceHelpers";
 
 export class GetLocationsService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(branchId?: string): Promise<LocationListItem[]> {
-    const tenantId = await resolveTenantId(this.repositories);
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanReadLocations(permissions);
     const [locations, products] = await Promise.all([
       this.repositories.inventory.getLocations(branchId),
       this.repositories.products.getByTenant(tenantId),

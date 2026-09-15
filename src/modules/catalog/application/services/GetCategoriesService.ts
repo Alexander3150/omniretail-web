@@ -1,13 +1,17 @@
 import type { Category } from "@/core/entities";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { CategoryListItem } from "@/modules/catalog/application/dto/CategoryEditorDto";
-import { resolveTenantId } from "@/modules/catalog/application/services/serviceHelpers";
+import {
+  ensureCanReadCategories,
+  resolveTenantContext,
+} from "@/modules/catalog/application/services/serviceHelpers";
 
 export class GetCategoriesService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(): Promise<CategoryListItem[]> {
-    const tenantId = await resolveTenantId(this.repositories);
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanReadCategories(permissions);
     const [categories, products] = await Promise.all([
       this.repositories.categories.getByTenant(tenantId),
       this.repositories.products.getByTenant(tenantId),

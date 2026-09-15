@@ -11,6 +11,7 @@ import type {
 import { GetCategoriesService } from "@/modules/catalog/application/services/GetCategoriesService";
 import { SaveCategoryService } from "@/modules/catalog/application/services/SaveCategoryService";
 import { cleanError } from "@/modules/catalog/application/services/serviceHelpers";
+import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 
 export type CategoryStatusFilter = CategoryStatus.active | CategoryStatus.archived;
 
@@ -18,6 +19,9 @@ const DEFAULT_PAGE_SIZE = 10;
 
 export function useCategories() {
   const repositories = useRepositories();
+  const { hasPermission } = useCurrentSession();
+  const canRead = hasPermission("catalog.categories.read") || hasPermission("catalog.categories.manage");
+  const canManage = hasPermission("catalog.categories.manage");
   const getService = useMemo(() => new GetCategoriesService(repositories), [repositories]);
   const saveService = useMemo(() => new SaveCategoryService(repositories), [repositories]);
   const [categories, setCategories] = useState<CategoryListItem[]>([]);
@@ -111,6 +115,8 @@ export function useCategories() {
     loading,
     busy,
     error,
+    canRead,
+    canManage,
     categories,
     filteredCategories,
     paginatedCategories,

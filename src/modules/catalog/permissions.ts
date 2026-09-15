@@ -20,16 +20,34 @@ export const catalogPermissions = [
     description: "Permite actualizar productos.",
   },
   {
+    key: "catalog.categories.read",
+    module: "catalog",
+    name: "Leer categorias",
+    description: "Permite consultar categorias.",
+  },
+  {
     key: "catalog.categories.manage",
     module: "catalog",
     name: "Gestionar categorias",
     description: "Permite administrar categorias.",
   },
   {
+    key: "catalog.locations.read",
+    module: "catalog",
+    name: "Leer ubicaciones",
+    description: "Permite consultar ubicaciones.",
+  },
+  {
     key: "catalog.locations.manage",
     module: "catalog",
     name: "Gestionar ubicaciones",
     description: "Permite administrar ubicaciones.",
+  },
+  {
+    key: "catalog.units.read",
+    module: "catalog",
+    name: "Leer unidades",
+    description: "Permite consultar unidades de medida.",
   },
   {
     key: "catalog.units.manage",

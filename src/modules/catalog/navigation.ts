@@ -15,19 +15,22 @@ export const catalogNavigationItem = {
       id: "catalog-categories",
       label: "Categorias",
       href: "/catalogo/categorias",
-      permission: "catalog.categories.manage",
+      // permission-enforcement-hardening: *.read ve la pantalla (mutaciones ocultas por
+      // GetCategoriesService/SaveCategoryService + CategoriesPage.canManage), *.manage sigue
+      // siendo lo único que habilita crear/editar/archivar.
+      anyPermission: ["catalog.categories.read", "catalog.categories.manage"],
     },
     {
       id: "catalog-locations",
       label: "Ubicaciones",
       href: "/catalogo/ubicaciones",
-      permission: "catalog.locations.manage",
+      anyPermission: ["catalog.locations.read", "catalog.locations.manage"],
     },
     {
       id: "catalog-units",
       label: "Unidades y empaques",
       href: "/catalogo/unidades",
-      permission: "catalog.units.manage",
+      anyPermission: ["catalog.units.read", "catalog.units.manage"],
     },
   ],
 } satisfies NavigationItem;
