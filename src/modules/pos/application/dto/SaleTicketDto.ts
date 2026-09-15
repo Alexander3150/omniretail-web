@@ -8,6 +8,8 @@ export interface SaleTicketItemDto {
   discount: number;
   subtotal: number;
   availableQuantity: number | null;
+  saleUnitId: string;
+  saleUnitName: string;
   tracksStock: boolean;
   requiresUnsupportedTraceability: boolean;
 }

@@ -15,6 +15,7 @@ import {
   getBranchAvailableQuantity,
 } from "@/core/inventory/stockAvailability";
 import { getCanonicalProductAvailability } from "@/core/inventory/canonicalAvailability";
+import { resolveUnitConversion } from "@/core/units";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   InventoryAlert,
@@ -121,7 +122,20 @@ export class GetInventoryAlertsService {
         }),
       ]),
     );
-    const physicalRows = branchProducts.map((product) =>
+    const productInputs = await Promise.all(
+      branchProducts.map(async (product) => ({
+        product,
+        conversions: await this.repositories.units.getConversionsByProductScoped(
+          product.tenantId,
+          product.id,
+        ),
+        supplierProducts: await this.repositories.supplierProducts.getByProductForTenant(
+          product.tenantId,
+          product.id,
+        ),
+      })),
+    );
+    const physicalRows = productInputs.map(({ product, conversions, supplierProducts }) =>
       buildRow(
         product,
         branchId,
@@ -129,6 +143,8 @@ export class GetInventoryAlertsService {
         balances,
         serials,
         availabilityByProduct.get(product.id) ?? 0,
+        conversions,
+        supplierProducts,
       ),
     );
     const kitRows = kits.map((kit, index) =>
@@ -281,6 +297,8 @@ function buildRow(
   balances: InventoryBalance[],
   serials: Awaited<ReturnType<RepositoryRegistry["inventory"]["getSerialNumbers"]>>,
   availableQuantity: number,
+  conversions: Awaited<ReturnType<RepositoryRegistry["units"]["getConversionsByProductScoped"]>>,
+  supplierProducts: Awaited<ReturnType<RepositoryRegistry["supplierProducts"]["getByProductForTenant"]>>,
 ): InventoryProductRow {
   const branchBalances = balances.filter(
     (balance) => balance.productId === product.id && balance.branchId === branchId,
@@ -300,6 +318,20 @@ function buildRow(
   const defaultLocation = settings?.defaultLocationId
     ? maps.locations.get(settings.defaultLocationId)
     : null;
+  const salePresentation = resolveDisplayPresentation(
+    product.saleUnitId ?? product.baseUnitId,
+    product.baseUnitId,
+    conversions,
+  );
+  const inventoryPresentation = resolveDisplayPresentation(
+    product.inventoryUnitId ?? product.baseUnitId,
+    product.baseUnitId,
+    conversions,
+  );
+  const saleUnitId = salePresentation.unitId;
+  const inventoryUnitId = inventoryPresentation.unitId;
+  const saleFactor = salePresentation.factor;
+  const inventoryFactor = inventoryPresentation.factor;
   const row: InventoryProductRow = {
     productId: product.id,
     tenantId: product.tenantId,
@@ -309,6 +341,17 @@ function buildRow(
     categoryName: maps.categories.get(product.categoryId)?.name ?? "Sin categoria",
     unitId: product.baseUnitId,
     unitName: maps.units.get(product.baseUnitId)?.name ?? "Sin unidad",
+    saleUnitId,
+    saleUnitName: maps.units.get(saleUnitId)?.name ?? "Sin unidad",
+    sellableQuantity: quantity / saleFactor,
+    sellableReservedQuantity: reservedQuantity / saleFactor,
+    sellableAvailableQuantity: availableQuantity / saleFactor,
+    inventoryUnitId,
+    inventoryUnitName: maps.units.get(inventoryUnitId)?.name ?? "Sin unidad",
+    inventoryPresentationQuantity: quantity / inventoryFactor,
+    inventoryPresentationAvailableQuantity: availableQuantity / inventoryFactor,
+    inventoryToBaseFactor: inventoryFactor,
+    adjustmentUnits: buildAdjustmentUnits(product, conversions, supplierProducts, maps),
     branchId,
     branchName: maps.branches.get(branchId)?.name ?? "Sucursal",
     defaultLocationId: settings?.defaultLocationId,
@@ -371,6 +414,17 @@ function buildKitRow(
     categoryName: maps.categories.get(product.categoryId)?.name ?? "Sin categoria",
     unitId: product.baseUnitId,
     unitName: "Kit",
+    saleUnitId: product.baseUnitId,
+    saleUnitName: "Kit",
+    sellableQuantity: quantity,
+    sellableReservedQuantity: 0,
+    sellableAvailableQuantity: quantity,
+    inventoryUnitId: product.baseUnitId,
+    inventoryUnitName: "Kit",
+    inventoryPresentationQuantity: quantity,
+    inventoryPresentationAvailableQuantity: quantity,
+    inventoryToBaseFactor: 1,
+    adjustmentUnits: [],
     branchId,
     branchName: maps.branches.get(branchId)?.name ?? "Sucursal",
     defaultLocationName: "Calculado por componentes",
@@ -390,6 +444,67 @@ function buildKitRow(
     otherBranchStocks: [],
     isDerivedKit: true,
   };
+}
+
+function resolveDisplayPresentation(
+  unitId: string,
+  baseUnitId: string,
+  conversions: Parameters<typeof resolveUnitConversion>[0]["conversions"],
+) {
+  try {
+    return {
+      unitId,
+      factor: resolveUnitConversion({ sourceUnitId: unitId, baseUnitId, conversions }),
+    };
+  } catch {
+    // Read models remain usable, but never label canonical stock with an unconvertible unit.
+    return { unitId: baseUnitId, factor: 1 };
+  }
+}
+
+function buildAdjustmentUnits(
+  product: Product,
+  conversions: Awaited<ReturnType<RepositoryRegistry["units"]["getConversionsByProductScoped"]>>,
+  supplierProducts: Awaited<ReturnType<RepositoryRegistry["supplierProducts"]["getByProductForTenant"]>>,
+  maps: InventoryLookupMaps,
+) {
+  const candidateUnitIds = new Set([
+    product.baseUnitId,
+    product.saleUnitId ?? product.baseUnitId,
+    product.inventoryUnitId ?? product.baseUnitId,
+  ]);
+  const supplierFactors = new Map<string, Set<number>>();
+  supplierProducts.filter((item) => item.active).forEach((item) => {
+    const factors = supplierFactors.get(item.purchaseUnitId) ?? new Set<number>();
+    factors.add(item.purchaseToBaseFactor);
+    supplierFactors.set(item.purchaseUnitId, factors);
+  });
+  supplierFactors.forEach((factors, unitId) => {
+    if (factors.size === 1) candidateUnitIds.add(unitId);
+  });
+
+  return [...candidateUnitIds].flatMap((unitId) => {
+    const factors = new Set<number>();
+    if (unitId === product.baseUnitId) factors.add(1);
+    const conversion = conversions.find(
+      (item) => item.fromUnitId === unitId && item.toUnitId === product.baseUnitId,
+    );
+    if (conversion) factors.add(conversion.factor);
+    supplierFactors.get(unitId)?.forEach((factor) => factors.add(factor));
+    // unitId alone cannot identify which supplier factor was intended.
+    if (factors.size !== 1) return [];
+    const factor = [...factors][0];
+    if (!Number.isFinite(factor) || factor <= 0) {
+      throw new Error(`Factor de presentacion invalido para ${product.name}.`);
+    }
+    const unitName = maps.units.get(unitId)?.name ?? unitId;
+    return [{
+      unitId,
+      unitName,
+      toBaseFactor: factor,
+      label: factor === 1 ? unitName : `${unitName} — ${factor} ${maps.units.get(product.baseUnitId)?.name ?? "base"}`,
+    }];
+  });
 }
 
 function buildOtherBranchStocks(

@@ -32,7 +32,7 @@ export interface ConfirmSaleInput {
   cashShiftId: string;
   customerId?: string;
   sourceOrderId?: string;
-  items: CreateSaleItemInput[];
+  items: Array<CreateSaleItemInput & { inventoryQuantity?: number }>;
   document?: SaleDocumentSnapshot;
   subtotal: number;
   discountTotal: number;

@@ -122,8 +122,9 @@ export function ProductForm({
   // Snapshot de lo YA PERSISTIDO, solo para un producto existente. Con la capacidad apagada, es lo
   // que se conserva en vez de recortarse: ver applyCapabilityRulesToEditor/resolveSaleUnitId.
   const existingCapabilityContext = detail
-    ? {
+      ? {
         saleUnitId: detail.product.saleUnitId ?? detail.product.baseUnitId,
+        inventoryUnitId: detail.product.inventoryUnitId ?? detail.product.baseUnitId,
         tracking: detail.product.tracking,
       }
     : undefined;
@@ -187,9 +188,10 @@ export function ProductForm({
           const unitId = options.units.find((unit) => unit.category === "unit")?.id;
           if (unitId) {
             next.baseUnitId = unitId;
+            next.inventoryUnitId = unitId;
             next.saleUnitId = unitId;
-            next.inventoryQuantity = 1;
-            next.saleQuantity = 1;
+            next.inventoryToBaseFactor = 1;
+            next.saleToBaseFactor = 1;
           }
           next.supplierProducts = [];
         }
@@ -201,9 +203,9 @@ export function ProductForm({
         existingCapabilityContext?.saleUnitId,
       );
       if (next.baseUnitId === next.saleUnitId) {
-        next.inventoryQuantity = 1;
-        next.saleQuantity = 1;
+        next.saleToBaseFactor = 1;
       }
+      if (next.baseUnitId === next.inventoryUnitId) next.inventoryToBaseFactor = 1;
       return next;
     });
   }
@@ -630,6 +632,7 @@ function UnitsTab({
   onChange: (value: Partial<ProductEditorDto>) => void;
 }) {
   const baseUnit = units.find((item) => item.id === value.baseUnitId);
+  const inventoryUnit = units.find((item) => item.id === value.inventoryUnitId);
   const saleUnit = units.find((item) => item.id === value.saleUnitId);
   // Sin "Unidades y empaques" un producto NUEVO trabaja con una sola unidad (baseUnitId libre,
   // saleUnitId siempre igual). Uno EXISTENTE protege TODA su configuracion de unidades — tambien
@@ -639,9 +642,8 @@ function UnitsTab({
   // blocker, capacidad OFF no es una migracion destructiva de datos historicos.
   const usesSingleUnit = !capabilities.supportsUnitsAndPackaging;
   const unitsProtected = isExistingProduct && usesSingleUnit;
-  const hasDivergentSaleUnit = value.baseUnitId !== value.saleUnitId;
-  const showConversion = hasDivergentSaleUnit;
-  const needsConversion = showConversion;
+  const needsInventoryConversion = value.baseUnitId !== value.inventoryUnitId;
+  const needsSaleConversion = value.baseUnitId !== value.saleUnitId;
 
   return (
     <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
@@ -651,7 +653,7 @@ function UnitsTab({
             ? "El negocio opera con una unica unidad para productos nuevos; la configuracion de unidades de este producto quedo protegida mientras la capacidad este desactivada."
             : usesSingleUnit
               ? "El negocio opera con una unica unidad por producto."
-              : "Unidad base para inventario y presentacion normal de venta."
+              : "La unidad base es la unidad minima canonica; inventario y venta son presentaciones convertibles."
         }
         title="Unidades"
       />
@@ -662,10 +664,10 @@ function UnitsTab({
           empaques&rdquo;. No se borra ni se modifica al guardar otros campos.
         </p>
       ) : null}
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-3">
         <FormField
           id="baseUnitId"
-          label="Unidad de inventario *"
+          label="Unidad base canonica *"
           error={errors.baseUnitId}
           hint={unitsProtected ? "Protegida mientras la capacidad este desactivada." : undefined}
         >
@@ -675,11 +677,31 @@ function UnitsTab({
             onChange={(event) =>
               onChange({
                 baseUnitId: event.target.value,
-                inventoryQuantity: 1,
-                saleQuantity: event.target.value === value.saleUnitId ? 1 : "",
+                inventoryToBaseFactor: event.target.value === value.inventoryUnitId ? 1 : "",
+                saleToBaseFactor: event.target.value === value.saleUnitId ? 1 : "",
               })
             }
             value={value.baseUnitId}
+          >
+            <option value="">Selecciona una unidad</option>
+            {units.map((unit) => (
+              <option key={unit.id} value={unit.id}>
+                {unit.name} ({unit.symbol})
+              </option>
+            ))}
+          </Select>
+        </FormField>
+        <FormField id="inventoryUnitId" label="Presentacion de inventario *">
+          <Select
+            disabled={usesSingleUnit}
+            id="inventoryUnitId"
+            onChange={(event) =>
+              onChange({
+                inventoryUnitId: event.target.value,
+                inventoryToBaseFactor: event.target.value === value.baseUnitId ? 1 : "",
+              })
+            }
+            value={value.inventoryUnitId}
           >
             <option value="">Selecciona una unidad</option>
             {units.map((unit) => (
@@ -707,8 +729,7 @@ function UnitsTab({
             onChange={(event) =>
               onChange({
                 saleUnitId: event.target.value,
-                inventoryQuantity: 1,
-                saleQuantity: event.target.value === value.baseUnitId ? 1 : "",
+                saleToBaseFactor: event.target.value === value.baseUnitId ? 1 : "",
               })
             }
             value={value.saleUnitId}
@@ -722,55 +743,30 @@ function UnitsTab({
           </Select>
         </FormField>
       </div>
-      {needsConversion ? (
-        <div className="rounded-md border border-[var(--color-border)] p-4">
-          <FormField id="saleQuantity" label="Equivalencia inventario -> venta">
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
-              <div className="grid gap-2 sm:grid-cols-[120px_1fr]">
-                <Input
-                  disabled={unitsProtected}
-                  id="inventoryQuantity"
-                  min="0.0001"
-                  onChange={(event) =>
-                    onChange({ inventoryQuantity: parseDecimalInput(event.target.value) })
-                  }
-                  step="0.0001"
-                  type="number"
-                  value={value.inventoryQuantity}
-                />
-                <div className="flex min-h-11 items-center rounded-md bg-[var(--color-app-background)] px-3 text-sm font-semibold text-[var(--color-title)]">
-                  {baseUnit?.name ?? "unidad de inventario"}
-                </div>
+      {needsInventoryConversion || needsSaleConversion ? (
+        <div className="grid gap-4 rounded-md border border-[var(--color-border)] p-4 md:grid-cols-2">
+          {needsInventoryConversion ? (
+            <FormField id="inventoryToBaseFactor" label={`1 ${inventoryUnit?.name ?? "presentacion"} equivale a`}>
+              <div className="flex items-center gap-2">
+                <Input disabled={unitsProtected} id="inventoryToBaseFactor" min="0.0001" step="0.0001" type="number" value={value.inventoryToBaseFactor} onChange={(event) => onChange({ inventoryToBaseFactor: parseDecimalInput(event.target.value) })} />
+                <span className="text-sm font-semibold">{baseUnit?.name ?? "base"}</span>
               </div>
-              <div className="flex min-h-8 items-center justify-center text-sm font-bold text-[var(--color-title)] sm:min-h-11">
-                =
+            </FormField>
+          ) : null}
+          {needsSaleConversion ? (
+            <FormField id="saleToBaseFactor" label={`1 ${saleUnit?.name ?? "venta"} equivale a`}>
+              <div className="flex items-center gap-2">
+                <Input disabled={unitsProtected} id="saleToBaseFactor" min="0.0001" step="0.0001" type="number" value={value.saleToBaseFactor} onChange={(event) => onChange({ saleToBaseFactor: parseDecimalInput(event.target.value) })} />
+                <span className="text-sm font-semibold">{baseUnit?.name ?? "base"}</span>
               </div>
-              <div className="grid gap-2 sm:grid-cols-[120px_1fr]">
-                <Input
-                  disabled={unitsProtected}
-                  id="saleQuantity"
-                  min="0.0001"
-                  onChange={(event) =>
-                    onChange({
-                      saleQuantity: parseDecimalInput(event.target.value),
-                    })
-                  }
-                  step="0.0001"
-                  type="number"
-                  value={value.saleQuantity}
-                />
-                <div className="flex min-h-11 items-center rounded-md bg-[var(--color-app-background)] px-3 text-sm font-semibold text-[var(--color-title)]">
-                  {saleUnit?.name ?? "unidad de venta"}
-                </div>
-              </div>
-            </div>
-          </FormField>
+            </FormField>
+          ) : null}
         </div>
       ) : (
         <p className="rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text)]">
           {usesSingleUnit
             ? "El negocio no maneja unidades y empaques: la venta usa la unidad de inventario y no se habilitan equivalencias ni presentaciones distintas."
-            : "Venta e inventario usan la misma unidad; no se requiere conversion adicional."}
+            : "Las presentaciones usan la unidad base; no se requiere conversion adicional."}
         </p>
       )}
     </section>
@@ -2263,10 +2259,11 @@ function validatePromotionForm(state: PromotionFormState, salePrice: number) {
 
 function validateEditor(value: ProductEditorDto, editorData: ProductEditorData) {
   if (
-    value.baseUnitId !== value.saleUnitId &&
-    (!isPositiveNumber(value.inventoryQuantity) || !isPositiveNumber(value.saleQuantity))
+    (value.baseUnitId !== value.inventoryUnitId &&
+      !isPositiveNumber(value.inventoryToBaseFactor)) ||
+    (value.baseUnitId !== value.saleUnitId && !isPositiveNumber(value.saleToBaseFactor))
   ) {
-    return "La equivalencia de venta debe tener cantidades mayores a 0.";
+    return "Cada presentacion debe equivaler a un multiplo positivo de la unidad base.";
   }
   const salesQuantities = new Set<number>();
   for (const tier of value.salesPriceTiers) {
@@ -2404,14 +2401,15 @@ function buildInitialValue(
   };
   if (detail) {
     const saleUnitId = detail.product.saleUnitId ?? detail.product.baseUnitId;
-    const sameUnit = detail.product.baseUnitId === saleUnitId;
-    const conversion = editorData.unitConversion;
-    const conversionQuantities: Pick<ProductEditorDto, "inventoryQuantity" | "saleQuantity"> =
-      sameUnit || !conversion
-        ? { inventoryQuantity: 1, saleQuantity: sameUnit ? 1 : "" }
-        : conversion.fromUnitId === detail.product.baseUnitId && conversion.toUnitId === saleUnitId
-          ? { inventoryQuantity: 1, saleQuantity: conversion.factor }
-          : { inventoryQuantity: conversion.factor, saleQuantity: 1 };
+    const inventoryUnitId = detail.product.inventoryUnitId ?? detail.product.baseUnitId;
+    const factorFor = (unitId: string) =>
+      unitId === detail.product.baseUnitId
+        ? 1
+        : (editorData.unitConversions.find(
+            (conversion) =>
+              conversion.fromUnitId === unitId &&
+              conversion.toUnitId === detail.product.baseUnitId,
+          )?.factor ?? "");
     const editedDraft: ProductEditorDto = {
       sku: detail.product.sku,
       barcode: detail.product.barcode,
@@ -2421,9 +2419,10 @@ function buildInitialValue(
       productType: detail.product.productType,
       categoryId: detail.product.categoryId,
       baseUnitId: detail.product.baseUnitId,
+      inventoryUnitId,
       saleUnitId,
-      inventoryQuantity: conversionQuantities.inventoryQuantity,
-      saleQuantity: conversionQuantities.saleQuantity,
+      inventoryToBaseFactor: factorFor(inventoryUnitId),
+      saleToBaseFactor: factorFor(saleUnitId),
       salePrice: detail.product.salePrice,
       status: detail.product.status,
       // Se carga el tracking TAL CUAL esta persistido, sin recortar: applyCapabilityRulesToEditor
@@ -2439,6 +2438,7 @@ function buildInitialValue(
     };
     return applyCapabilityRulesToEditor(editedDraft, options.businessCapabilities, {
       saleUnitId,
+      inventoryUnitId,
       tracking: detail.product.tracking,
     });
   }
@@ -2453,9 +2453,10 @@ function buildInitialValue(
     productType: ProductType.physical,
     categoryId: options.categories[0]?.id ?? "",
     baseUnitId: unitId,
+    inventoryUnitId: unitId,
     saleUnitId: unitId,
-    inventoryQuantity: 1,
-    saleQuantity: 1,
+    inventoryToBaseFactor: 1,
+    saleToBaseFactor: 1,
     salePrice: 0,
     status: ProductStatus.published,
     tracking: getDefaultTracking(options.businessCapabilities, ProductType.physical),

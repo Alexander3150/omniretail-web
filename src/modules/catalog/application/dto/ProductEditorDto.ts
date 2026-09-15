@@ -81,9 +81,10 @@ export interface ProductKitComponentEditorValue {
 }
 
 export interface ProductEditorDto extends Omit<CreateProductDto, "primaryImageUrl" | "salePrice"> {
+  inventoryUnitId: string;
   salePrice: NumericInputValue;
-  inventoryQuantity: NumericInputValue;
-  saleQuantity: NumericInputValue;
+  inventoryToBaseFactor: NumericInputValue;
+  saleToBaseFactor: NumericInputValue;
   inventorySettings: ProductInventorySettingsEditorValue;
   attributes: ProductAttributeEditorValue[];
   salesPriceTiers: ProductSalesPriceTierEditorValue[];
@@ -95,6 +96,7 @@ export interface ProductEditorDto extends Omit<CreateProductDto, "primaryImageUr
 export interface ProductEditorData {
   detail: ProductDetailViewModel | null;
   unitConversion: UnitConversion | null;
+  unitConversions: UnitConversion[];
   inventorySettings: ProductInventorySettings | null;
   storageLocations: StorageLocation[];
   currentDefaultLocation: StorageLocation | null;

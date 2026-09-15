@@ -113,6 +113,8 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   normalized.storePickupDeliveries = database.storePickupDeliveries ?? [];
   normalized.products = (database.products ?? base.products).map((product) => ({
     ...product,
+    // Safe legacy backfill only: no stock quantity is reinterpreted or rescaled.
+    inventoryUnitId: product.inventoryUnitId ?? product.baseUnitId,
     saleUnitId: product.saleUnitId ?? product.baseUnitId,
     channels: {
       ecommerce: product.channels.ecommerce,
@@ -243,8 +245,13 @@ function resolveLegacyPurchaseFactor(
       entry.fromUnitId === item.unitId &&
       entry.toUnitId === product.baseUnitId,
   );
-  const factor = supplierProduct?.purchaseToBaseFactor ?? conversion?.factor ?? 1;
-  return Number.isFinite(factor) && factor > 0 ? factor : 1;
+  const factor = supplierProduct?.purchaseToBaseFactor ?? conversion?.factor;
+  if (!Number.isFinite(factor) || (factor ?? 0) <= 0) {
+    throw new Error(
+      `Legacy purchase item ${item.id} has no unambiguous conversion to canonical base unit`,
+    );
+  }
+  return factor!;
 }
 
 function normalizeInventoryAdjustments(

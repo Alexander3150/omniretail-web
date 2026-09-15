@@ -2,6 +2,7 @@ import type { InventoryMovement } from "@/core/entities";
 import { InventoryAdjustmentType } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { AdjustStockDto } from "@/modules/inventory/application/dto/InventoryAlertsDto";
+import { toBaseQuantity } from "@/core/units";
 
 export interface RegisterInventoryAdjustmentResult {
   adjustmentNumber: string;
@@ -20,6 +21,48 @@ export class RegisterInventoryAdjustmentService {
     if (!Number.isFinite(dto.quantity) || dto.quantity < 0) {
       throw new Error("Ingresa una cantidad valida.");
     }
+    const conversions = await this.repositories.units.getConversionsByProductScoped(
+      product.tenantId,
+      product.id,
+    );
+    const supplierProducts = await this.repositories.supplierProducts.getByProductForTenant(
+      product.tenantId,
+      product.id,
+    );
+    const permittedUnitIds = new Set([
+      product.baseUnitId,
+      product.saleUnitId ?? product.baseUnitId,
+      product.inventoryUnitId ?? product.baseUnitId,
+      ...supplierProducts.filter((item) => item.active).map((item) => item.purchaseUnitId),
+    ]);
+    if (!permittedUnitIds.has(dto.unitId)) {
+      throw new Error("La unidad seleccionada no pertenece al producto.");
+    }
+    const candidateFactors = new Set(
+      supplierProducts
+        .filter((item) => item.active && item.purchaseUnitId === dto.unitId)
+        .map((item) => item.purchaseToBaseFactor),
+    );
+    if (dto.unitId === product.baseUnitId) candidateFactors.add(1);
+    const configuredConversion = conversions.find(
+      (item) => item.fromUnitId === dto.unitId && item.toUnitId === product.baseUnitId,
+    );
+    if (configuredConversion) candidateFactors.add(configuredConversion.factor);
+    if (candidateFactors.size !== 1) {
+      throw new Error("La presentacion de proveedor es ambigua y no puede usarse para ajustar.");
+    }
+    const effectiveConversions = [{
+      fromUnitId: dto.unitId,
+      toUnitId: product.baseUnitId,
+      factor: [...candidateFactors][0],
+    }];
+    const canonicalQuantity = toBaseQuantity(dto.quantity, {
+      sourceUnitId: dto.unitId,
+      baseUnitId: product.baseUnitId,
+      conversions: effectiveConversions,
+      requireInteger: product.tracking.serial,
+    });
+    const canonicalDto = { ...dto, quantity: canonicalQuantity };
 
     const balances = await this.repositories.inventory.getBalanceByProduct(
       dto.productId,
@@ -29,12 +72,12 @@ export class RegisterInventoryAdjustmentService {
     const locationQuantity = balances
       .filter((balance) => balance.locationId === dto.locationId)
       .reduce((total, balance) => total + balance.quantity, 0);
-    const quantityAfter = this.getQuantityAfter(dto, quantityBefore);
+    const quantityAfter = this.getQuantityAfter(canonicalDto, quantityBefore);
     const delta = quantityAfter - quantityBefore;
 
-    this.assertValidDelta(dto, delta, quantityAfter, locationQuantity);
+    this.assertValidDelta(canonicalDto, delta, quantityAfter, locationQuantity);
 
-    const adjustmentType = getInventoryAdjustmentType(dto.movementKind);
+    const adjustmentType = getInventoryAdjustmentType(canonicalDto.movementKind);
     const result = await this.repositories.inventoryAdjustments.registerStockAdjustment({
       tenantId: product.tenantId,
       branchId: dto.branchId,

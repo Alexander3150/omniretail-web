@@ -46,7 +46,9 @@ application services de Roles y permisos; el contrato compartido ya impide corro
 
 `ProductPriceHistoryRepository` es el contrato compartido para leer y registrar cambios de precio base de producto. El mock debe escribir historial cuando cambia `Product.salePrice` desde el flujo comun de `ProductRepository.update`.
 
-`Product.baseUnitId` representa la unidad base de inventario. `Product.saleUnitId` representa la unidad/presentacion normal de venta; los datos legados sin `saleUnitId` se normalizan a `baseUnitId`.
+`Product.baseUnitId` representa la unidad minima indivisible/canonica. `InventoryBalance`, `InventoryMovement`, reservas, lotes y seriales usan exclusivamente esa unidad. `Product.inventoryUnitId` es una presentacion preferida de inventario (display/input) y no crea otra fuente de stock; los datos legados sin este campo usan `baseUnitId` sin reescalar cantidades. `Product.saleUnitId` representa la presentacion de venta. `UnitConversion.factor` se define en direccion `fromUnitId` (presentacion) -> `toUnitId` (`baseUnitId`), por lo que `cantidadPresentacion * factor = cantidadBase`. Las operaciones fallan si falta la conversion o si el factor no es finito y positivo.
+
+No se migra automaticamente un producto legacy cuya `baseUnitId` pueda haber representado un empaque grande: la direccion historica puede ser ambigua y reescalar balances, movimientos, reservas o lotes cambiaria su significado. Si ademas existen seriales, nunca se generan seriales sinteticos. Esa data debe corregirse mediante una migracion de dominio verificada o un reset explicito del entorno demo; hasta entonces, las operaciones que requieran la conversion fallan cerradas.
 
 `UnitRepository` administra `Unit` y expone operaciones de consulta/reemplazo de `UnitConversion` por producto. `Unit.category` es la clasificacion canonica de la unidad (`unit`, `weight`, `length`, `volume`, `other`) y no depende de `code`, `name` ni `symbol`. `UnitConversion` no debe duplicarse en entidades de producto o proveedor.
 

@@ -75,7 +75,7 @@ export function QuickProductList({
               ) : null}
               <p className="mt-2 text-xs text-[var(--color-text-muted)]">
                 {product.tracksStock
-                  ? `Disponible: ${product.availableQuantity ?? 0}`
+                  ? `Disponible: ${product.availableQuantity ?? 0} ${product.saleUnitName}`
                   : "Sin control de existencia"}
               </p>
               {hasUnsupportedTraceability ? (

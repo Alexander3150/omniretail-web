@@ -6,13 +6,27 @@ import {
   ReceiptStatus,
 } from "@/core/enums";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
+import { fromBaseQuantity, toBaseQuantity } from "@/core/units";
+import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import {
   MockInventoryAdjustmentRepository,
+  MockBusinessConfigRepository,
+  MockCategoryRepository,
+  MockInventoryRepository,
+  MockProductRepository,
+  MockProductMediaRepository,
+  MockProductKitComponentRepository,
+  MockPromotionRepository,
   MockPurchaseOrderRepository,
   MockReceiptRepository,
+  MockSupplierProductRepository,
+  MockUnitRepository,
 } from "@/infrastructure/mock/repositories";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
+import { RegisterInventoryAdjustmentService } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
+import { GetPosProductsService } from "@/modules/pos/application/services/GetPosProductsService";
+import { GetStorefrontDiscoveryService } from "@/modules/storefront/application/services/GetStorefrontDiscoveryService";
 
 class MemoryStorageAdapter extends LocalStorageAdapter {
   private readonly values = new Map<string, string>();
@@ -33,6 +47,19 @@ const events = new DataEventBus();
 const purchaseOrders = new MockPurchaseOrderRepository(store, events);
 const receipts = new MockReceiptRepository(store, events);
 const adjustments = new MockInventoryAdjustmentRepository(store, events);
+const repositories = {
+  products: new MockProductRepository(store, events),
+  inventory: new MockInventoryRepository(store, events),
+  inventoryAdjustments: adjustments,
+  supplierProducts: new MockSupplierProductRepository(store, events),
+  units: new MockUnitRepository(store, events),
+  productKitComponents: new MockProductKitComponentRepository(store, events),
+  promotions: new MockPromotionRepository(store, events),
+  businessConfig: new MockBusinessConfigRepository(store, events),
+  categories: new MockCategoryRepository(store, events),
+  productMedia: new MockProductMediaRepository(store, events),
+} as unknown as RepositoryRegistry;
+const adjustmentService = new RegisterInventoryAdjustmentService(repositories);
 
 async function main() {
   store.mutate((db) => {
@@ -50,7 +77,7 @@ async function main() {
       supplierId: "supplier-tools",
       productId: "prod-drill",
       purchaseUnitId: "unit-box",
-      purchaseToBaseFactor: 10,
+      purchaseToBaseFactor: 5,
       lastCost: 100,
       leadTimeDays: 1,
       minimumOrderQuantity: 1,
@@ -71,18 +98,18 @@ async function main() {
     items: [
       {
         productId: "prod-drill",
-        quantity: 6,
+        quantity: 5,
         unitId: "unit-box",
-        purchaseToBaseFactor: 10,
+        purchaseToBaseFactor: 5,
         unitCost: 100,
         subtotal: 600,
       },
     ],
   });
-  assert.equal(order.items?.[0]?.purchaseToBaseFactor, 10);
+  assert.equal(order.items?.[0]?.purchaseToBaseFactor, 5);
   assert.equal(
     (order.items?.[0]?.quantity ?? 0) * (order.items?.[0]?.purchaseToBaseFactor ?? 0),
-    60,
+    25,
   );
 
   store.mutate((db) => {
@@ -90,7 +117,7 @@ async function main() {
     assert.ok(association);
     association.purchaseToBaseFactor = 12;
   });
-  assert.equal((await purchaseOrders.getById(order.id))?.items?.[0]?.purchaseToBaseFactor, 10);
+  assert.equal((await purchaseOrders.getById(order.id))?.items?.[0]?.purchaseToBaseFactor, 5);
 
   const receipt = await receipts.create({
     tenantId: "tenant-demo",
@@ -101,7 +128,7 @@ async function main() {
     status: ReceiptStatus.in_progress,
     receivedByUserId: "user-admin",
   });
-  const serials = Array.from({ length: 10 }, (_, index) => `SN-RECEIPT-${index + 1}`);
+  const serials = Array.from({ length: 25 }, (_, index) => `SN-RECEIPT-${index + 1}`);
   await receipts.confirmReceiptInventory({
     tenantId: "tenant-demo",
     receiptId: receipt.id,
@@ -113,9 +140,9 @@ async function main() {
     lines: [
       {
         productId: "prod-drill",
-        orderedQuantity: 6,
-        receivedQuantity: 1,
-        inventoryQuantity: 10,
+        orderedQuantity: 5,
+        receivedQuantity: 5,
+        inventoryQuantity: 25,
         rejectedQuantity: 0,
         status: ReceiptLineStatus.partial,
         locationId: "loc-centro-b",
@@ -124,8 +151,8 @@ async function main() {
     ],
   });
   const confirmedLine = (await receipts.getLinesByReceipt(receipt.id))[0];
-  assert.equal(confirmedLine.inventoryQuantity, 10);
-  assert.equal(confirmedLine.serialNumbers?.length, 10);
+  assert.equal(confirmedLine.inventoryQuantity, 25);
+  assert.equal(confirmedLine.serialNumbers?.length, 25);
 
   const duplicateReceipt = await receipts.create({
     tenantId: "tenant-demo",
@@ -277,7 +304,146 @@ async function main() {
   });
   assert.equal(normal.movements[0]?.quantity, 3);
 
-  console.log("Inventory/receiving traceability harness passed (10 scenarios).");
+  store.mutate((db) => {
+    const screws = db.products.find((item) => item.id === "prod-screws");
+    assert.ok(screws);
+    screws.baseUnitId = "unit-unit";
+    screws.saleUnitId = "unit-unit";
+    screws.inventoryUnitId = "unit-box";
+    db.unitConversions = db.unitConversions.filter((item) => item.productId !== screws.id);
+    db.unitConversions.push({
+      id: "conversion-harness-box-five",
+      tenantId: screws.tenantId,
+      productId: screws.id,
+      fromUnitId: "unit-box",
+      toUnitId: "unit-unit",
+      factor: 5,
+      createdAt: new Date().toISOString(),
+    });
+    db.supplierProducts = db.supplierProducts.filter((item) => item.productId !== screws.id);
+    db.inventoryBalances
+      .filter((item) => item.productId === screws.id && item.branchId === "branch-centro")
+      .forEach((balance, index) => {
+        balance.quantity = index === 0 ? 25 : 0;
+        balance.reservedQuantity = 0;
+      });
+  });
+  const conversions = await repositories.units.getConversionsByProductScoped(
+    "tenant-demo",
+    "prod-screws",
+  );
+  assert.equal(
+    fromBaseQuantity(25, {
+      targetUnitId: "unit-box",
+      baseUnitId: "unit-unit",
+      conversions,
+    }),
+    5,
+  );
+  await adjustmentService.execute({
+    productId: "prod-screws",
+    branchId: "branch-centro",
+    locationId: "loc-centro-a",
+    unitId: "unit-box",
+    movementKind: "in",
+    quantity: 1,
+    reason: "Caja x5",
+    notes: "",
+  });
+  await adjustmentService.execute({
+    productId: "prod-screws",
+    branchId: "branch-centro",
+    locationId: "loc-centro-a",
+    unitId: "unit-unit",
+    movementKind: "in",
+    quantity: 1,
+    reason: "Unidad base",
+    notes: "",
+  });
+  await adjustmentService.execute({
+    productId: "prod-screws",
+    branchId: "branch-centro",
+    locationId: "loc-centro-a",
+    unitId: "unit-box",
+    movementKind: "out",
+    quantity: 1,
+    reason: "Salida caja x5",
+    notes: "",
+  });
+  const screwsAfterConversions = store.getSnapshot().inventoryBalances
+    .filter((item) => item.productId === "prod-screws" && item.branchId === "branch-centro")
+    .reduce((sum, item) => sum + item.quantity, 0);
+  assert.equal(screwsAfterConversions, 26);
+  store.mutate((db) => {
+    const screws = db.products.find((item) => item.id === "prod-screws");
+    assert.ok(screws);
+    screws.saleUnitId = "unit-box";
+  });
+  const posProducts = await new GetPosProductsService(repositories).execute({
+    tenantId: "tenant-demo",
+    branchId: "branch-centro",
+  });
+  const posScrews = posProducts.find((item) => item.productId === "prod-screws");
+  assert.equal(posScrews?.availableQuantity, 5.2);
+  assert.equal(posScrews?.saleUnitId, "unit-box");
+  const storefront = await new GetStorefrontDiscoveryService(repositories).execute("tenant-demo");
+  const storefrontScrews = storefront.products.find((item) => item.id === "prod-screws");
+  assert.equal(storefrontScrews?.availableQuantity, 5.2);
+  assert.equal(storefrontScrews?.saleUnitId, "unit-box");
+
+  store.mutate((db) => {
+    const drill = db.products.find((item) => item.id === "prod-drill");
+    assert.ok(drill);
+    drill.baseUnitId = "unit-unit";
+    drill.inventoryUnitId = "unit-box";
+    db.unitConversions = db.unitConversions.filter((item) => item.productId !== drill.id);
+    db.unitConversions.push({
+      id: "conversion-harness-serial-five",
+      tenantId: drill.tenantId,
+      productId: drill.id,
+      fromUnitId: "unit-box",
+      toUnitId: "unit-unit",
+      factor: 5,
+      createdAt: new Date().toISOString(),
+    });
+    db.supplierProducts = db.supplierProducts.filter((item) => item.productId !== drill.id);
+  });
+  const fiveSerials = Array.from({ length: 5 }, (_, index) => `SN-BOX-FIVE-${index + 1}`);
+  const serialAdjustment = await adjustmentService.execute({
+    productId: "prod-drill",
+    branchId: "branch-centro",
+    locationId: "loc-centro-b",
+    unitId: "unit-box",
+    movementKind: "in",
+    quantity: 1,
+    reason: "Caja serial x5",
+    notes: "",
+    serialNumbers: fiveSerials,
+  });
+  assert.equal(serialAdjustment.movement.quantity, 1);
+  assert.equal(
+    store.getSnapshot().serialNumbers.filter((item) => fiveSerials.includes(item.serialNumber)).length,
+    5,
+  );
+
+  assert.throws(
+    () => toBaseQuantity(1, {
+      sourceUnitId: "unit-pack",
+      baseUnitId: "unit-unit",
+      conversions: [],
+    }),
+    /No existe conversion/,
+  );
+  assert.throws(
+    () => toBaseQuantity(1, {
+      sourceUnitId: "unit-box",
+      baseUnitId: "unit-unit",
+      conversions: [{ fromUnitId: "unit-box", toUnitId: "unit-unit", factor: 0 }],
+    }),
+    /mayor que cero/,
+  );
+
+  console.log("Inventory/receiving traceability harness passed (20 scenarios).");
 }
 
 void main().catch((error) => {

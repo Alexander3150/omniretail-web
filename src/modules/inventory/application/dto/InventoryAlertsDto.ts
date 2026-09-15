@@ -23,6 +23,17 @@ export interface InventoryProductRow {
   categoryName: string;
   unitId: string;
   unitName: string;
+  saleUnitId: string;
+  saleUnitName: string;
+  sellableQuantity: number;
+  sellableReservedQuantity: number;
+  sellableAvailableQuantity: number;
+  inventoryUnitId: string;
+  inventoryUnitName: string;
+  inventoryPresentationQuantity: number;
+  inventoryPresentationAvailableQuantity: number;
+  inventoryToBaseFactor: number;
+  adjustmentUnits: InventoryAdjustmentUnitOption[];
   branchId: string;
   branchName: string;
   defaultLocationId?: string | null;
@@ -129,6 +140,7 @@ export interface AdjustStockDto {
   productId: string;
   branchId: string;
   locationId: string;
+  unitId: string;
   movementKind: "in" | "out" | "waste" | "count";
   quantity: number;
   reason: string;
@@ -138,6 +150,13 @@ export interface AdjustStockDto {
   expirationDate?: string;
   serialNumbers?: string[];
   performedByUserId?: string;
+}
+
+export interface InventoryAdjustmentUnitOption {
+  unitId: string;
+  unitName: string;
+  toBaseFactor: number;
+  label: string;
 }
 
 export interface TransferRequestDto {

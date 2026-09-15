@@ -703,15 +703,20 @@ function InventoryTable({
                   </td>
                   <td className="px-4 py-4 text-right">
                     <p className="text-base font-bold text-[var(--color-title)]">
-                      {row.quantity} {row.unitName}
+                      {row.sellableQuantity} {row.saleUnitName}
                     </p>
                     <StockLevelBar row={row} />
                   </td>
                   <td className="px-4 py-4 text-right font-semibold text-[var(--color-text)]">
-                    {row.reservedQuantity} {row.unitName}
+                    {row.sellableReservedQuantity} {row.saleUnitName}
                   </td>
                   <td className="px-4 py-4 text-right font-bold text-[var(--color-title)]">
-                    {row.availableQuantity} {row.unitName}
+                    <p>{row.sellableAvailableQuantity} {row.saleUnitName}</p>
+                    {row.inventoryUnitId !== row.saleUnitId ? (
+                      <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
+                        {row.inventoryPresentationAvailableQuantity} {row.inventoryUnitName}
+                      </p>
+                    ) : null}
                   </td>
                   <td className="hidden px-4 py-4 text-right font-semibold text-[var(--color-text)] md:table-cell">
                     {row.minStock}
@@ -1346,13 +1351,19 @@ function ProductPanel({
             <InventoryStatusBadge label={row.statusLabel} status={row.status} />
           </div>
           <dl className="mt-4 grid gap-4 sm:grid-cols-2">
-            <DetailTile label="Existencia actual" value={`${row.quantity} ${row.unitName}`} />
-            <DetailTile label="Reservado" value={`${row.reservedQuantity} ${row.unitName}`} />
-            <DetailTile label="Disponible" value={`${row.availableQuantity} ${row.unitName}`} />
+            <DetailTile label="Existencia para venta" value={`${row.sellableQuantity} ${row.saleUnitName}`} />
+            <DetailTile label="Reservado" value={`${row.sellableReservedQuantity} ${row.saleUnitName}`} />
+            <DetailTile label="Disponible para venta" value={`${row.sellableAvailableQuantity} ${row.saleUnitName}`} />
+            {row.inventoryUnitId !== row.saleUnitId ? (
+              <DetailTile
+                label="Equivalente de inventario"
+                value={`${row.inventoryPresentationAvailableQuantity} ${row.inventoryUnitName} · 1 = ${row.inventoryToBaseFactor} ${row.unitName}`}
+              />
+            ) : null}
             <DetailTile label="Nivel minimo" value={String(row.minStock)} />
             <DetailTile label="Ubicacion" value={row.defaultLocationName} />
             <DetailTile label="Categoria" value={row.categoryName} />
-            <DetailTile label="Unidad" value={row.unitName} />
+            <DetailTile label="Unidad base canonica" value={row.unitName} />
             <DetailTile label="Sucursal" value={activeBranchName} />
           </dl>
           <div className="mt-4 rounded-md border border-blue-100 bg-blue-50 px-3 py-2">
@@ -1432,6 +1443,7 @@ function AdjustStockModal({
     productId: row.productId,
     branchId: row.branchId,
     locationId: defaultLocationId,
+    unitId: row.unitId,
     movementKind: "in",
     quantity: 1,
     reason: "",
@@ -1443,12 +1455,16 @@ function AdjustStockModal({
     () => row.locationQuantities[value.locationId] ?? 0,
     [row.locationQuantities, value.locationId],
   );
+  const selectedUnit =
+    row.adjustmentUnits.find((option) => option.unitId === value.unitId) ??
+    row.adjustmentUnits[0];
+  const canonicalInputQuantity = toFiniteNumber(value.quantity) * (selectedUnit?.toBaseFactor ?? 1);
   const finalQuantity =
     value.movementKind === "in"
-      ? row.quantity + toFiniteNumber(value.quantity)
+      ? row.quantity + canonicalInputQuantity
       : value.movementKind === "out" || value.movementKind === "waste"
-        ? row.quantity - toFiniteNumber(value.quantity)
-        : toFiniteNumber(value.quantity);
+        ? row.quantity - canonicalInputQuantity
+        : canonicalInputQuantity;
   const delta = finalQuantity - row.quantity;
   const traceQuantity = Math.abs(delta);
   const isEntry = delta > 0;
@@ -1467,7 +1483,11 @@ function AdjustStockModal({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const dto = toAdjustStockDto(value);
-    const nextErrors = validateAdjustment(dto, row, locationQuantity);
+    const nextErrors = validateAdjustment(
+      { ...dto, quantity: canonicalInputQuantity },
+      row,
+      locationQuantity,
+    );
     setErrors(nextErrors);
     if (hasValidationErrors(nextErrors)) return;
     setSubmitError(null);
@@ -1545,6 +1565,19 @@ function AdjustStockModal({
             <option value="out">Salida manual</option>
             <option value="waste">Merma</option>
             <option value="count">Conteo / Correccion exacta</option>
+          </Select>
+        </Field>
+        <Field id="adjust-unit" label="Unidad">
+          <Select
+            id="adjust-unit"
+            onChange={(event) => update({ unitId: event.target.value, serialNumbersText: "" })}
+            value={value.unitId}
+          >
+            {row.adjustmentUnits.map((option) => (
+              <option key={option.unitId} value={option.unitId}>
+                {option.label}
+              </option>
+            ))}
           </Select>
         </Field>
         {row.tracking.lot && traceQuantity > 0 ? (
@@ -1644,6 +1677,11 @@ function AdjustStockModal({
             value={value.quantity}
           />
         </Field>
+        {selectedUnit && selectedUnit.toBaseFactor !== 1 ? (
+          <p className="rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-title)]">
+            {toFiniteNumber(value.quantity)} {selectedUnit.unitName} = {canonicalInputQuantity} {row.unitName}
+          </p>
+        ) : null}
         <Field id="adjust-reason" label="Motivo *" error={errors.reason}>
           <textarea
             className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"

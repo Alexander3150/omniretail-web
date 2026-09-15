@@ -98,6 +98,7 @@ export function resolveSaleUnitId(
  */
 export interface ExistingProductCapabilityContext {
   saleUnitId: string;
+  inventoryUnitId: string;
   tracking: ProductTrackingConfig;
 }
 
@@ -127,8 +128,11 @@ export function applyCapabilityRulesToEditor(
   return {
     ...dto,
     saleUnitId,
-    inventoryQuantity: usesSingleUnit ? 1 : dto.inventoryQuantity,
-    saleQuantity: usesSingleUnit ? 1 : dto.saleQuantity,
+    inventoryUnitId: usesSingleUnit
+      ? (current?.inventoryUnitId ?? dto.baseUnitId)
+      : dto.inventoryUnitId,
+    inventoryToBaseFactor: usesSingleUnit ? 1 : dto.inventoryToBaseFactor,
+    saleToBaseFactor: usesSingleUnit ? 1 : dto.saleToBaseFactor,
     tracking: applyTrackingRules(dto.productType, dto.tracking, capabilities, current?.tracking),
     // Los atributos de un producto existente no se tocan aqui: syncAttributes es el punto real de
     // enforcement (omite la escritura por completo cuando la capacidad esta apagada), asi que este
