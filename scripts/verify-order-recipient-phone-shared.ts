@@ -112,6 +112,7 @@ async function verifyRecipientPhoneContract() {
   const pickup = await orders.create(
     createOrderInput("pickup", {
       deliveryMethod: DeliveryMethod.store_pickup,
+      source: OrderSource.pos,
       includeDeliveryAddress: false,
     }),
   );

@@ -29,6 +29,10 @@ OrderRepository, PickingRepository, DispatchRepository, InventoryRepository
 - `DispatchApplicationService` reconstruye Session/User/Role/Branch, expone DTOs scoped y nunca acepta tenant o actor desde UI.
 - Confirmar Dispatch exige Picking completo y reservas consumidas, copia `Order.transportMode`, es idempotente y no muta inventario.
 - `markDelivered` es el owner atomico e idempotente de `Dispatch + Order: dispatched -> delivered`; no altera envio, inventario ni notificaciones.
+- `OrderRepository.listByBranch` permite colas Logistics sin cargar Orders globales ni de otras sucursales.
+- `StorePickupDeliveryRepository.confirm` posee `ready_for_pickup -> delivered`, registra evidencia autoritativa y no vuelve a descontar inventario. La conexion a UI/application authorization queda pendiente de la key canonica de permiso.
+- `GetLogisticsItemTraceService` expone DTOs tenant+sucursal scoped desde movimientos y reservas reales, incluyendo allocations multiubicacion, lote/vencimiento y serie.
+- Ecommerce/App solo pueden crear Orders domiciliarias; POS conserva inmediata, retiro y domicilio. `immediate` no entra a Logistics.
 
 ## Estructura futura
 

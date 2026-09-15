@@ -6,6 +6,7 @@ import {
   assertAllowedInitialOrderStatus,
   assertOrderStatusTransition,
 } from "@/core/orders/orderStatusTransitions";
+import { assertOrderDeliveryMethodAllowed } from "@/core/orders/orderDeliveryPolicy";
 import type {
   CreateOrderInput,
   CreateOrderWithPaymentInput,
@@ -48,6 +49,17 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
 
   async listByTenant(tenantId: string) {
     return this.read((db) => db.orders.filter((item) => item.tenantId === tenantId));
+  }
+
+  async listByBranch(tenantId: string, branchId: string) {
+    if (!tenantId.trim() || !branchId.trim()) {
+      throw new Error("Order tenantId and branchId are required");
+    }
+    return this.read((db) => {
+      const branch = db.branches.find((item) => item.id === branchId && item.tenantId === tenantId);
+      if (!branch) throw new Error(`Branch not found for tenant: ${branchId}`);
+      return db.orders.filter((item) => item.tenantId === tenantId && item.branchId === branchId);
+    });
   }
 
   async getByIdsScoped(tenantId: string, branchId: string, ids: string[]) {
@@ -359,6 +371,7 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
       throw new Error("Order idempotencyKey cannot be blank");
     }
     if (input.items.length === 0) throw new Error("Order requires at least one item");
+    assertOrderDeliveryMethodAllowed(input.source, input.deliveryMethod);
     if (input.deliveryMethod === DeliveryMethod.home_delivery) {
       const recipientPhone = input.deliveryAddress?.recipientPhone;
       if (recipientPhone === undefined || !recipientPhone.trim()) {
@@ -428,6 +441,8 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
     this.emitSafely("order.changed", {
       entityId: result.order.id,
       tenantId: result.order.tenantId,
+      branchId: result.order.branchId,
+      orderId: result.order.id,
       action: orderAction,
     });
   }

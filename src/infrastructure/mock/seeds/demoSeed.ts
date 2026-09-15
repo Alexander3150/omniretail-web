@@ -1462,8 +1462,19 @@ const legacyDemoSeedDatabase: MockDatabase = {
         },
       ],
       status: OrderStatus.picking,
-      deliveryMethod: DeliveryMethod.store_pickup,
-      transportMode: TransportMode.customer,
+      deliveryMethod: DeliveryMethod.home_delivery,
+      transportMode: TransportMode.own_fleet,
+      deliveryAddress: {
+        recipientName: "Invitado Demo",
+        recipientPhone: "55550000",
+        line1: "Zona 1",
+        city: "Guatemala",
+        country: "Guatemala",
+      },
+      notificationContact: {
+        emailMode: "send",
+        email: "guest@example.com",
+      },
       subtotal: 649.5,
       discountTotal: 0,
       shippingTotal: 0,
@@ -1586,6 +1597,7 @@ const legacyDemoSeedDatabase: MockDatabase = {
       updatedAt: now,
     },
   ],
+  storePickupDeliveries: [],
   packages: [
     {
       id: "package-001",

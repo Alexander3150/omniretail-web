@@ -39,6 +39,7 @@ import type {
   SaleReversalRepository,
   SalesRepository,
   SavedPaymentMethodRepository,
+  StorePickupDeliveryRepository,
   SupplierProductRepository,
   SupplierRepository,
   TenantRepository,
@@ -83,6 +84,7 @@ import {
   MockSaleConfirmationRepository,
   MockSaleReversalRepository,
   MockSalesRepository,
+  MockStorePickupDeliveryRepository,
   MockSupplierProductRepository,
   MockSupplierRepository,
   MockTenantRepository,
@@ -133,6 +135,7 @@ export interface RepositoryRegistry {
   productMedia: ProductMediaRepository;
   catalogImageAssets: CatalogImageAssetRepository;
   dispatches: DispatchRepository;
+  storePickupDeliveries: StorePickupDeliveryRepository;
   notifications: NotificationRepository;
   auditLogs: AuditLogRepository;
 }
@@ -192,6 +195,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       productMedia: new MockProductMediaRepository(store, eventBus),
       catalogImageAssets: new IndexedDbCatalogImageAssetRepository(),
       dispatches: new MockDispatchRepository(store, eventBus),
+      storePickupDeliveries: new MockStorePickupDeliveryRepository(store, eventBus),
       notifications: new MockNotificationRepository(store, eventBus),
       auditLogs: new MockAuditLogRepository(store, eventBus),
     };

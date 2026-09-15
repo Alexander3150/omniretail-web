@@ -625,7 +625,8 @@ function orderInput(
     tenantId,
     branchId,
     orderNumber: `WEB-DISPATCH-${suffix}`,
-    source: OrderSource.ecommerce,
+    source:
+      deliveryMethod === DeliveryMethod.home_delivery ? OrderSource.ecommerce : OrderSource.pos,
     customerId: "customer-ana",
     items: [
       {

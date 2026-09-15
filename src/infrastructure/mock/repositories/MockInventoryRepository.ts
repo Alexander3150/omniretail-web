@@ -1,4 +1,4 @@
-import { InventoryMovementType, LocationStatus } from "@/core/enums";
+import { InventoryMovementType, LocationStatus, ProductType } from "@/core/enums";
 import type {
   InventoryBalance,
   InventoryMovement,
@@ -14,6 +14,8 @@ import type {
   ReleaseInventoryReservationInput,
   ReserveOrderItemInput,
   GetPickingInventoryAvailabilityInput,
+  GetPickingFulfillmentTraceInput,
+  PickingFulfillmentItemTrace,
 } from "@/core/repositories";
 import { buildPickingInventoryAvailability } from "@/core/inventory/pickingAvailability";
 import type { DataEventName, DataEventPayload } from "@/core/types/events.types";
@@ -120,6 +122,160 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
         locations: db.storageLocations,
         at: input.at ?? this.now(),
       });
+    });
+  }
+  async getPickingFulfillmentTrace(
+    input: GetPickingFulfillmentTraceInput,
+  ): Promise<PickingFulfillmentItemTrace[]> {
+    if (
+      !input.tenantId.trim() ||
+      !input.branchId.trim() ||
+      !input.orderId.trim() ||
+      !input.pickingOrderId.trim()
+    ) {
+      throw new Error("Picking fulfillment trace scope is required");
+    }
+    return this.read((db) => {
+      const order = db.orders.find(
+        (item) =>
+          item.id === input.orderId &&
+          item.tenantId === input.tenantId &&
+          item.branchId === input.branchId,
+      );
+      if (!order) throw new Error(`Order not found for fulfillment trace: ${input.orderId}`);
+      const pickingOrder = db.pickingOrders.find(
+        (item) =>
+          item.id === input.pickingOrderId &&
+          item.orderId === order.id &&
+          item.tenantId === input.tenantId &&
+          item.branchId === input.branchId,
+      );
+      if (!pickingOrder) {
+        throw new Error(`PickingOrder not found for fulfillment trace: ${input.pickingOrderId}`);
+      }
+
+      return db.pickingItems
+        .filter((item) => item.pickingOrderId === pickingOrder.id)
+        .map((item): PickingFulfillmentItemTrace => {
+          const product = db.products.find(
+            (candidate) => candidate.id === item.productId && candidate.tenantId === input.tenantId,
+          );
+          if (!product)
+            throw new Error(`Product not found for fulfillment trace: ${item.productId}`);
+          const reservations = db.inventoryReservations.filter(
+            (reservation) =>
+              reservation.tenantId === input.tenantId &&
+              reservation.branchId === input.branchId &&
+              reservation.orderId === order.id &&
+              reservation.orderItemId === item.orderItemId &&
+              reservation.productId === item.productId,
+          );
+          if (reservations.length > 1) {
+            throw new Error(`Duplicate reservations for PickingItem: ${item.id}`);
+          }
+          const reservation = reservations[0];
+          const movements = reservation
+            ? db.inventoryMovements
+                .filter(
+                  (movement) =>
+                    movement.tenantId === input.tenantId &&
+                    movement.branchId === input.branchId &&
+                    movement.productId === item.productId &&
+                    movement.type === InventoryMovementType.out &&
+                    movement.referenceType === "inventoryReservation" &&
+                    movement.referenceId === reservation.id,
+                )
+                .sort(
+                  (left, right) =>
+                    left.createdAt.localeCompare(right.createdAt) ||
+                    left.id.localeCompare(right.id),
+                )
+            : [];
+          if (
+            product.productType === ProductType.physical &&
+            product.tracking.stock &&
+            item.pickedQuantity > 0 &&
+            !reservation
+          ) {
+            throw new Error(`Reservation evidence not found for PickingItem: ${item.id}`);
+          }
+          const allocations = movements.map((movement) => {
+            const location = movement.fromLocationId
+              ? db.storageLocations.find(
+                  (candidate) =>
+                    candidate.id === movement.fromLocationId &&
+                    candidate.tenantId === input.tenantId &&
+                    candidate.branchId === input.branchId,
+                )
+              : undefined;
+            if (movement.fromLocationId && !location) {
+              throw new Error(`Location evidence not found for InventoryMovement: ${movement.id}`);
+            }
+            const lot = movement.lotId
+              ? db.stockLots.find(
+                  (candidate) =>
+                    candidate.id === movement.lotId &&
+                    candidate.tenantId === input.tenantId &&
+                    candidate.branchId === input.branchId &&
+                    candidate.productId === item.productId &&
+                    (candidate.locationId ?? null) === (movement.fromLocationId ?? null),
+                )
+              : undefined;
+            if (movement.lotId && !lot) {
+              throw new Error(`Lot evidence not found for InventoryMovement: ${movement.id}`);
+            }
+            const serial = movement.serialNumberId
+              ? db.serialNumbers.find(
+                  (candidate) =>
+                    candidate.id === movement.serialNumberId &&
+                    candidate.tenantId === input.tenantId &&
+                    candidate.branchId === input.branchId &&
+                    candidate.productId === item.productId &&
+                    (candidate.locationId ?? null) === (movement.fromLocationId ?? null) &&
+                    (candidate.lotId ?? null) === (movement.lotId ?? null),
+                )
+              : undefined;
+            if (movement.serialNumberId && !serial) {
+              throw new Error(`Serial evidence not found for InventoryMovement: ${movement.id}`);
+            }
+            return {
+              inventoryMovementId: movement.id,
+              reservationId: reservation!.id,
+              quantity: movement.quantity,
+              location: location
+                ? { id: location.id, code: location.code, name: location.name }
+                : undefined,
+              lot: lot
+                ? {
+                    id: lot.id,
+                    number: lot.lotNumber,
+                    expiresAt: lot.expirationDate,
+                  }
+                : undefined,
+              serial: serial ? { id: serial.id, number: serial.serialNumber } : undefined,
+              consumedAt: movement.createdAt,
+            };
+          });
+          const tracedQuantity = allocations.reduce(
+            (total, allocation) => total + allocation.quantity,
+            0,
+          );
+          if (
+            product.productType === ProductType.physical &&
+            product.tracking.stock &&
+            tracedQuantity !== item.pickedQuantity
+          ) {
+            throw new Error(`Picking trace quantity conflict for PickingItem: ${item.id}`);
+          }
+          return {
+            pickingItemId: item.id,
+            orderItemId: item.orderItemId,
+            productId: item.productId,
+            requestedQuantity: item.requestedQuantity,
+            pickedQuantity: item.pickedQuantity,
+            allocations,
+          };
+        });
     });
   }
   async getBalanceByProduct(productId: string, branchId?: string) {

@@ -65,6 +65,7 @@ import type {
   Session,
   StockLot,
   StorageLocation,
+  StorePickupDelivery,
   Supplier,
   SupplierCostTier,
   SupplierProduct,
@@ -145,6 +146,7 @@ export interface MockDatabase {
   pickingAssignmentReleases: PickingAssignmentRelease[];
   pickingIncidents: PickingIncident[];
   dispatches: Dispatch[];
+  storePickupDeliveries: StorePickupDelivery[];
   packages: Package[];
   notifications: Notification[];
   auditLogs: AuditLog[];
