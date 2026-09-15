@@ -13,23 +13,25 @@ import {
   CatalogServiceError,
   ensureActiveCategory,
   ensureActiveUnit,
+  ensureCanCreateProducts,
   ensureProductTypeAllowed,
   requireCapabilities,
-  resolveTenantId,
+  resolveTenantContext,
 } from "@/modules/catalog/application/services/serviceHelpers";
 
 export class CreateProductService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(dto: CreateProductDto): Promise<Product> {
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanCreateProducts(permissions);
+
     const baseErrors = validateProductDto(dto);
     if (hasValidationErrors(baseErrors)) {
       throw new CatalogServiceError(
         Object.values(baseErrors)[0] ?? "Revisa los datos del producto.",
       );
     }
-
-    const tenantId = await resolveTenantId(this.repositories);
     const normalizedSku = normalizeSku(dto.sku);
     const duplicateSku = await this.repositories.products.getBySkuScoped(tenantId, normalizedSku);
     if (duplicateSku) throw new CatalogServiceError("Ya existe un producto con este Codigo / SKU.");

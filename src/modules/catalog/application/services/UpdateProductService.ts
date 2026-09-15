@@ -13,25 +13,27 @@ import {
   CatalogServiceError,
   ensureActiveCategory,
   ensureActiveUnit,
+  ensureCanUpdateProducts,
   ensureProduct,
   ensureProductTypeAllowed,
   ensureUnitConfigUnchanged,
   requireCapabilities,
-  resolveTenantId,
+  resolveTenantContext,
 } from "@/modules/catalog/application/services/serviceHelpers";
 
 export class UpdateProductService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(productId: string, dto: UpdateProductDto): Promise<Product> {
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanUpdateProducts(permissions);
+
     const baseErrors = validateProductDto(dto);
     if (hasValidationErrors(baseErrors)) {
       throw new CatalogServiceError(
         Object.values(baseErrors)[0] ?? "Revisa los datos del producto.",
       );
     }
-
-    const tenantId = await resolveTenantId(this.repositories);
     const current = ensureProduct(
       await this.repositories.products.getByIdScoped(tenantId, productId),
     );

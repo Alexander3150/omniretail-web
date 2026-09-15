@@ -5,7 +5,10 @@ import { ProductStatus, PromotionStatus, PromotionType } from "@/core/enums";
 import type { Promotion } from "@/core/entities";
 import { calculateEffectivePrice } from "@/core/pricing";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
-import { resolveTenantId } from "@/modules/catalog/application/services/serviceHelpers";
+import {
+  ensureCanReadProducts,
+  resolveTenantContext,
+} from "@/modules/catalog/application/services/serviceHelpers";
 
 function getCurrentPromotion(
   productId: string,
@@ -42,7 +45,8 @@ export class GetProductsService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(): Promise<ProductListItem[]> {
-    const tenantId = await resolveTenantId(this.repositories);
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanReadProducts(permissions);
     const [products, categories, promotions] = await Promise.all([
       this.repositories.products.getByTenant(tenantId),
       this.repositories.categories.getByTenant(tenantId),

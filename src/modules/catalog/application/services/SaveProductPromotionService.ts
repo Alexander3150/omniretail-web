@@ -3,8 +3,9 @@ import { ProductStatus, PromotionStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import {
   CatalogServiceError,
+  ensureCanUpdateProducts,
   ensureProduct,
-  resolveTenantId,
+  resolveTenantContext,
 } from "@/modules/catalog/application/services/serviceHelpers";
 
 export type SaveProductPromotionInput = Pick<
@@ -21,7 +22,8 @@ export class SaveProductPromotionService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(input: SaveProductPromotionInput): Promise<Promotion> {
-    const tenantId = await resolveTenantId(this.repositories);
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanUpdateProducts(permissions);
     const product = ensureProduct(
       await this.repositories.products.getByIdScoped(tenantId, input.productId),
     );

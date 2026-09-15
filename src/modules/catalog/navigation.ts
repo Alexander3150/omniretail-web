@@ -9,7 +9,10 @@ export const catalogNavigationItem = {
       id: "catalog-products",
       label: "Productos",
       href: "/catalogo/productos",
-      permission: "catalog.products.read",
+      // permission-enforcement-hardening-products: .create/.update implican poder ver el
+      // listado (mismo criterio que ensureCanReadProducts) -- un rol con solo .create no
+      // quedaría sin forma de llegar a la pantalla donde arranca el flujo de alta.
+      anyPermission: ["catalog.products.read", "catalog.products.create", "catalog.products.update"],
     },
     {
       id: "catalog-categories",

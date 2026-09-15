@@ -1,13 +1,17 @@
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { getProductMediaSource, selectPrimaryProductMedia } from "@/core/media/catalogImage";
 import type { ProductDetailViewModel } from "@/modules/catalog/types/catalog.types";
-import { resolveTenantId } from "@/modules/catalog/application/services/serviceHelpers";
+import {
+  ensureCanReadProducts,
+  resolveTenantContext,
+} from "@/modules/catalog/application/services/serviceHelpers";
 
 export class GetProductDetailService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(productId: string): Promise<ProductDetailViewModel | null> {
-    const tenantId = await resolveTenantId(this.repositories);
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanReadProducts(permissions);
     const product = await this.repositories.products.getByIdScoped(tenantId, productId);
     if (!product) return null;
 
