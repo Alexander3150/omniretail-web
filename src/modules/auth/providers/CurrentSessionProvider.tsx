@@ -12,6 +12,7 @@ import {
 } from "react";
 import type { Role, User } from "@/core/entities";
 import { isBranchIdInUserScope } from "@/core/scopes/userBranchAccess";
+import type { DataEventPayloadFor } from "@/core/types/events.types";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/services/resolveCurrentSessionSnapshot";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
@@ -29,6 +30,47 @@ interface CurrentSessionContextValue {
 
 const CurrentSessionContext = createContext<CurrentSessionContextValue | null>(null);
 
+/**
+ * Pura y exportada para poder testearse sin renderizar React. Un role.changed de un role
+ * DISTINTO al de la sesion actual (incluido role.created, que nunca trae el roleId de esta
+ * sesion) no debe revalidar -- revalidar ahi dispara reload() -> loading=true ->
+ * RequireSession desmonta el subarbol autenticado por una mutacion que no le afecta. Sin
+ * sesion resuelta todavia (currentRoleId undefined) no hay nada que comparar: se ignora.
+ */
+export function shouldRevalidateSessionOnRoleChanged(
+  payload: DataEventPayloadFor<"role.changed">,
+  currentRoleId: string | undefined,
+): boolean {
+  if (!currentRoleId) return false;
+  if (payload.entityId && payload.entityId !== currentRoleId) return false;
+  return true;
+}
+
+/**
+ * Pura y exportada, mismo criterio que shouldRevalidateSessionOnRoleChanged pero para
+ * auth.changed/user.changed. El bus de eventos es un singleton por pestaña/instancia de la
+ * app -- solo recibe eventos de acciones disparadas DESDE esta misma pestaña -- asi que un
+ * entityId que no coincide ni con el userId ni con el sessionId actual es, por construccion,
+ * otra identidad (ej. `inviteEmployee`/`revokeAllSessionsByUserId` sobre OTRO empleado, o
+ * `user.changed` al crear/editar a alguien mas): revalidar ahi solo desmontaria
+ * RequireSession/PrivateShell sin necesidad. `entityId` identifica un userId en la mayoria de
+ * los eventos (create/update/inviteEmployee/revokeAllSessionsByUserId) pero un sessionId en
+ * login/logout -- por eso se compara contra ambos. Sin sesion/identidad resuelta todavia
+ * (currentUserId undefined: pre-login, o justo despues de un logout) o sin entityId
+ * (evento ambiguo: registerCustomer/requestPasswordReset/resetPassword/verifyEmail/
+ * activateEmployeeAccount/changePassword/clearLocalSession) se revalida siempre (fail-open),
+ * porque no hay forma segura de probar que el evento es ajeno.
+ */
+export function shouldRevalidateSessionOnIdentityChanged(
+  payload: DataEventPayloadFor<"auth.changed"> | DataEventPayloadFor<"user.changed">,
+  currentUserId: string | undefined,
+  currentSessionId: string | undefined,
+): boolean {
+  if (!currentUserId) return true;
+  if (!payload.entityId) return true;
+  return payload.entityId === currentUserId || payload.entityId === currentSessionId;
+}
+
 export function CurrentSessionProvider({ children }: { children: ReactNode }) {
   const repositories = useRepositories();
   const [user, setUser] = useState<User | null>(null);
@@ -36,6 +78,9 @@ export function CurrentSessionProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>();
   const reloadVersion = useRef(0);
+  const currentUserRoleIdRef = useRef<string | undefined>(undefined);
+  const currentUserIdRef = useRef<string | undefined>(undefined);
+  const currentSessionIdRef = useRef<string | undefined>(undefined);
 
   const reload = useCallback(async () => {
     const version = ++reloadVersion.current;
@@ -51,11 +96,17 @@ export function CurrentSessionProvider({ children }: { children: ReactNode }) {
       setUser(snapshot.user);
       setRole(snapshot.role);
       setError(snapshot.error);
+      currentUserRoleIdRef.current = snapshot.user?.roleId;
+      currentUserIdRef.current = snapshot.user?.id;
+      currentSessionIdRef.current = snapshot.sessionId ?? undefined;
     } catch {
       if (version !== reloadVersion.current) return;
       setUser(null);
       setRole(null);
       setError("No se pudo cargar la sesion actual.");
+      currentUserRoleIdRef.current = undefined;
+      currentUserIdRef.current = undefined;
+      currentSessionIdRef.current = undefined;
     } finally {
       if (version === reloadVersion.current) {
         setLoading(false);
@@ -74,9 +125,33 @@ export function CurrentSessionProvider({ children }: { children: ReactNode }) {
     };
   }, [reload]);
 
-  useDataEvent("auth.changed", reload);
-  useDataEvent("user.changed", reload);
-  useDataEvent("role.changed", reload);
+  const handleRoleChanged = useCallback(
+    (payload: DataEventPayloadFor<"role.changed">) => {
+      if (shouldRevalidateSessionOnRoleChanged(payload, currentUserRoleIdRef.current)) {
+        void reload();
+      }
+    },
+    [reload],
+  );
+
+  const handleIdentityChanged = useCallback(
+    (payload: DataEventPayloadFor<"auth.changed"> | DataEventPayloadFor<"user.changed">) => {
+      if (
+        shouldRevalidateSessionOnIdentityChanged(
+          payload,
+          currentUserIdRef.current,
+          currentSessionIdRef.current,
+        )
+      ) {
+        void reload();
+      }
+    },
+    [reload],
+  );
+
+  useDataEvent("auth.changed", handleIdentityChanged);
+  useDataEvent("user.changed", handleIdentityChanged);
+  useDataEvent("role.changed", handleRoleChanged);
 
   const permissions = useMemo(() => role?.permissions ?? [], [role]);
   const permissionSet = useMemo(() => new Set(permissions), [permissions]);

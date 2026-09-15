@@ -16,11 +16,10 @@ export const administrationNavigation = [
         id: "administration-branches",
         label: "Sucursales",
         href: "/administracion/sucursales",
-        // Navegacion y services comparten semantica: `NavigationItem.permission` es un unico
-        // string y no existe un mecanismo de "cualquiera de estos permisos", asi que la entrada
-        // se protege con `admin.branches.manage`, el permiso que tiene la audiencia real de la
-        // pantalla. Los services siguen aceptando ademas `admin.branches.read` de forma defensiva.
-        permission: "admin.branches.manage",
+        // *.read habilita VER la pantalla (datos visibles, mutaciones ocultas -- BranchesPage ya
+        // distingue canRead/canManage); *.manage sigue siendo lo unico que habilita crear/editar/
+        // archivar, sin cambios en los services.
+        anyPermission: ["admin.branches.read", "admin.branches.manage"],
       },
       {
         id: "administration-business-config",
@@ -32,18 +31,17 @@ export const administrationNavigation = [
         id: "administration-roles",
         label: "Roles y permisos",
         href: "/administracion/roles-permisos",
-        // Mismo criterio que Sucursales: NavigationItem.permission es un unico string, asi que la
-        // entrada se protege con `admin.roles.manage`, el permiso de la audiencia real. El service
-        // acepta ademas `admin.roles.read` de forma defensiva.
-        permission: "admin.roles.manage",
+        // Mismo criterio que Sucursales: *.read ve la pantalla, *.manage sigue siendo lo unico
+        // que habilita mutaciones (RolesPage ya distingue canRead/canManage).
+        anyPermission: ["admin.roles.read", "admin.roles.manage"],
       },
       {
         id: "administration-users",
         label: "Usuarios",
         href: "/administracion/usuarios",
-        // Mismo criterio que Roles/Sucursales: la entrada se protege con `admin.users.manage`,
-        // el permiso de la audiencia real. El service acepta ademas `admin.users.read`.
-        permission: "admin.users.manage",
+        // Mismo criterio que Roles/Sucursales: *.read ve la pantalla, *.manage sigue siendo lo
+        // unico que habilita mutaciones (EmployeesPage ya distingue canRead/canManage).
+        anyPermission: ["admin.users.read", "admin.users.manage"],
       },
       {
         id: "administration-customers",
