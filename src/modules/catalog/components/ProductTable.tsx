@@ -12,6 +12,7 @@ import { cn } from "@/shared/utils/cn";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
 
 interface ProductTableProps {
+  canUpdate: boolean;
   products: ProductListItem[];
   emptyMessage: string;
   onOpenQuickView: (product: ProductListItem) => void;
@@ -23,6 +24,7 @@ interface ProductTableProps {
 }
 
 export function ProductTable({
+  canUpdate,
   products,
   emptyMessage,
   onOpenQuickView,
@@ -142,6 +144,7 @@ export function ProductTable({
                   </td>
                   <td className="px-4 py-3">
                     <ProductActionsMenu
+                      canUpdate={canUpdate}
                       onArchive={onArchive}
                       onPriceHistory={onPriceHistory}
                       onPromotion={onPromotion}

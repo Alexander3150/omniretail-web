@@ -5,6 +5,7 @@ import { SearchInput } from "@/shared/components/SearchInput";
 import { FilterIcon, PlusIcon } from "@/modules/catalog/components/CatalogIcons";
 
 interface ProductToolbarProps {
+  canCreate: boolean;
   search: string;
   filtersOpen: boolean;
   activeFiltersCount: number;
@@ -13,6 +14,7 @@ interface ProductToolbarProps {
 }
 
 export function ProductToolbar({
+  canCreate,
   search,
   filtersOpen,
   activeFiltersCount,
@@ -53,10 +55,12 @@ export function ProductToolbar({
             </span>
           ) : null}
         </Button>
-        <Button className="w-full md:w-auto" href="/catalogo/productos/nuevo">
-          <PlusIcon />
-          Nuevo producto
-        </Button>
+        {canCreate ? (
+          <Button className="w-full md:w-auto" href="/catalogo/productos/nuevo">
+            <PlusIcon />
+            Nuevo producto
+          </Button>
+        ) : null}
       </div>
     </header>
   );
