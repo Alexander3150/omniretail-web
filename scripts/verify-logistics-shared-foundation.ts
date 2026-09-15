@@ -799,8 +799,6 @@ function orderInput(
 
 function prepareStorePickupFixtures(store: MockDatabaseStore) {
   store.transact((db) => {
-    const template = db.orders.find((order) => order.id === "order-002") ?? db.orders[0];
-    assert.ok(template);
     const fixtures = [
       ["order-pickup-ready", DeliveryMethod.store_pickup, OrderStatus.ready_for_pickup],
       ["order-pickup-ready-two", DeliveryMethod.store_pickup, OrderStatus.ready_for_pickup],
@@ -810,14 +808,13 @@ function prepareStorePickupFixtures(store: MockDatabaseStore) {
       ["order-pickup-rollback", DeliveryMethod.store_pickup, OrderStatus.ready_for_pickup],
     ] as const;
     fixtures.forEach(([id, deliveryMethod, status]) => {
+      const input = orderInput(id, OrderSource.pos, deliveryMethod);
       db.orders.push({
-        ...template,
+        ...input,
         id,
         orderNumber: id,
-        source: OrderSource.pos,
-        deliveryMethod,
         status,
-        items: template.items.map((item) => ({ ...item, id: `${id}-item`, orderId: id })),
+        items: input.items.map((item) => ({ ...item, id: `${id}-item`, orderId: id })),
         createdAt: now,
         updatedAt: now,
       });

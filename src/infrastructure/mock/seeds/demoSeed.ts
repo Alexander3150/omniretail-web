@@ -1446,7 +1446,7 @@ const legacyDemoSeedDatabase: MockDatabase = {
       tenantId: "tenant-demo",
       branchId: "branch-centro",
       orderNumber: "WEB-002",
-      source: OrderSource.pos,
+      source: OrderSource.ecommerce,
       guestCustomer: { name: "Invitado Demo", email: "guest@example.com" },
       items: [
         {
@@ -1462,8 +1462,19 @@ const legacyDemoSeedDatabase: MockDatabase = {
         },
       ],
       status: OrderStatus.picking,
-      deliveryMethod: DeliveryMethod.store_pickup,
-      transportMode: TransportMode.customer,
+      deliveryMethod: DeliveryMethod.home_delivery,
+      transportMode: TransportMode.own_fleet,
+      deliveryAddress: {
+        recipientName: "Invitado Demo",
+        recipientPhone: "55550000",
+        line1: "Zona 1",
+        city: "Guatemala",
+        country: "Guatemala",
+      },
+      notificationContact: {
+        emailMode: "send",
+        email: "guest@example.com",
+      },
       subtotal: 649.5,
       discountTotal: 0,
       shippingTotal: 0,
