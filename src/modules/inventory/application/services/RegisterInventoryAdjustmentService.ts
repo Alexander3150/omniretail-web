@@ -1,5 +1,5 @@
 import type { InventoryMovement } from "@/core/entities";
-import { InventoryAdjustmentType, InventoryMovementType } from "@/core/enums";
+import { InventoryAdjustmentType } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { AdjustStockDto } from "@/modules/inventory/application/dto/InventoryAlertsDto";
 
@@ -14,10 +14,6 @@ export class RegisterInventoryAdjustmentService {
   async execute(dto: AdjustStockDto): Promise<RegisterInventoryAdjustmentResult> {
     const product = await this.repositories.products.getById(dto.productId);
     if (!product) throw new Error("Producto no encontrado.");
-    if (product.tracking.lot || product.tracking.serial) {
-      throw new Error("Los ajustes con trazabilidad requieren un flujo dedicado.");
-    }
-
     const reason = dto.reason.trim();
     if (!reason) throw new Error("El motivo es requerido.");
     if (!dto.locationId) throw new Error("Selecciona una ubicacion.");
@@ -39,10 +35,7 @@ export class RegisterInventoryAdjustmentService {
     this.assertValidDelta(dto, delta, quantityAfter, locationQuantity);
 
     const adjustmentType = getInventoryAdjustmentType(dto.movementKind);
-    const movementType = delta > 0 ? InventoryMovementType.in : InventoryMovementType.out;
-    const movementQuantity = Math.abs(delta);
-
-    const adjustment = await this.repositories.inventoryAdjustments.create({
+    const result = await this.repositories.inventoryAdjustments.registerStockAdjustment({
       tenantId: product.tenantId,
       branchId: dto.branchId,
       productId: dto.productId,
@@ -53,26 +46,12 @@ export class RegisterInventoryAdjustmentService {
       quantityBefore,
       quantityAfter,
       performedByUserId: dto.performedByUserId,
+      lotId: dto.lotId,
+      lotNumber: dto.lotNumber,
+      expirationDate: dto.expirationDate,
+      serialNumbers: dto.serialNumbers,
     });
-
-    // Backend real: adjustment + movement + balance update must be committed in one transaction.
-    const movement = await this.repositories.inventory.registerMovement({
-      tenantId: product.tenantId,
-      branchId: dto.branchId,
-      productId: dto.productId,
-      type: movementType,
-      quantity: movementQuantity,
-      reason,
-      quantityBefore,
-      quantityAfter,
-      fromLocationId: delta < 0 ? dto.locationId : undefined,
-      toLocationId: delta > 0 ? dto.locationId : undefined,
-      referenceType: "inventoryAdjustment",
-      referenceId: adjustment.id,
-      performedByUserId: dto.performedByUserId,
-    });
-
-    return { adjustmentNumber: adjustment.number, movement };
+    return { adjustmentNumber: result.adjustment.number, movement: result.movements[0] };
   }
 
   private getQuantityAfter(dto: AdjustStockDto, quantityBefore: number): number {

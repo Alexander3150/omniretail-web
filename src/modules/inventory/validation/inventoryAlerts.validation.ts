@@ -8,6 +8,10 @@ export interface AdjustmentValidationErrors {
   quantity?: string;
   reason?: string;
   locationId?: string;
+  lotId?: string;
+  lotNumber?: string;
+  expirationDate?: string;
+  serialNumbers?: string;
 }
 
 export interface TransferValidationErrors {
@@ -38,6 +42,27 @@ export function validateAdjustment(
     errors.quantity = "El conteo coincide con el stock actual.";
   }
   if (!dto.reason.trim()) errors.reason = "El motivo es requerido.";
+  const delta =
+    dto.movementKind === "count"
+      ? dto.quantity - row.quantity
+      : dto.movementKind === "in"
+        ? dto.quantity
+        : -dto.quantity;
+  const isEntry = delta > 0;
+  const required = Math.abs(delta);
+  if (row.tracking.lot && required > 0) {
+    if (isEntry && !dto.lotNumber?.trim()) errors.lotNumber = "Ingresa el lote.";
+    if (!isEntry && !dto.lotId) errors.lotId = "Selecciona el lote existente que sale.";
+  }
+  if (row.tracking.expiration && isEntry && required > 0 && !dto.expirationDate) {
+    errors.expirationDate = "Ingresa la fecha de vencimiento.";
+  }
+  if (row.tracking.serial && required > 0) {
+    const serials = dto.serialNumbers ?? [];
+    if (serials.length !== required || new Set(serials).size !== serials.length) {
+      errors.serialNumbers = `Registra exactamente ${required} series unicas.`;
+    }
+  }
   return errors;
 }
 

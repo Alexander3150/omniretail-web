@@ -1,4 +1,9 @@
-import { InventoryTransferRequestStatus, ProductStatus, ProductType } from "@/core/enums";
+import {
+  InventoryTransferRequestStatus,
+  ProductStatus,
+  ProductType,
+  SerialStatus,
+} from "@/core/enums";
 import type {
   InventoryBalance,
   InventoryTransferRequest,
@@ -117,7 +122,14 @@ export class GetInventoryAlertsService {
       ]),
     );
     const physicalRows = branchProducts.map((product) =>
-      buildRow(product, branchId, maps, balances, availabilityByProduct.get(product.id) ?? 0),
+      buildRow(
+        product,
+        branchId,
+        maps,
+        balances,
+        serials,
+        availabilityByProduct.get(product.id) ?? 0,
+      ),
     );
     const kitRows = kits.map((kit, index) =>
       buildKitRow(kit, kitComponents[index], availabilityByProduct, branchId, maps),
@@ -267,6 +279,7 @@ function buildRow(
   branchId: string,
   maps: InventoryLookupMaps,
   balances: InventoryBalance[],
+  serials: Awaited<ReturnType<RepositoryRegistry["inventory"]["getSerialNumbers"]>>,
   availableQuantity: number,
 ): InventoryProductRow {
   const branchBalances = balances.filter(
@@ -301,6 +314,20 @@ function buildRow(
     defaultLocationId: settings?.defaultLocationId,
     defaultLocationName: defaultLocation?.name ?? "Sin ubicacion habitual",
     locationQuantities: buildLocationQuantities(branchBalances),
+    tracking: product.tracking,
+    availableLots: (maps.lotsByProduct.get(product.id) ?? []).filter((lot) => lot.quantity > 0),
+    availableSerials: serials
+      .filter(
+        (serial) =>
+          serial.productId === product.id &&
+          serial.branchId === branchId &&
+          serial.status === SerialStatus.available,
+      )
+      .map((serial) => ({
+        serialNumber: serial.serialNumber,
+        lotId: serial.lotId,
+        locationId: serial.locationId,
+      })),
     quantity,
     reservedQuantity,
     availableQuantity,
@@ -348,6 +375,9 @@ function buildKitRow(
     branchName: maps.branches.get(branchId)?.name ?? "Sucursal",
     defaultLocationName: "Calculado por componentes",
     locationQuantities: {},
+    tracking: product.tracking,
+    availableLots: [],
+    availableSerials: [],
     quantity,
     reservedQuantity: 0,
     availableQuantity: quantity,

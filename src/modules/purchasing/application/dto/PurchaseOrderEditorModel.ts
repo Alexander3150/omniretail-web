@@ -23,6 +23,7 @@ export interface PurchaseOrderEditorLine {
   supplierSku: string;
   unitId: string;
   unitLabel: string;
+  purchaseToBaseFactor: number;
   quantity: NumericInputValue;
   baseCost: number;
   suggestedCost: number;
@@ -49,6 +50,7 @@ export interface PurchaseOrderAvailableProduct {
   categoryName: string;
   unitId: string;
   unitLabel: string;
+  purchaseToBaseFactor: number;
   configuredCost: number;
   minimumOrderQuantity: number;
   leadTimeDays?: number;

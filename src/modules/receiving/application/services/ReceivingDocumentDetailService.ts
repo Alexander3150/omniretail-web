@@ -8,7 +8,6 @@ import type {
   ReceiptIncident,
   ReceiptLine,
   StorageLocation,
-  SupplierProduct,
   Unit,
 } from "@/core/entities";
 import {
@@ -179,7 +178,6 @@ export class ReceivingDocumentDetailService {
       )
     ).flat();
     const incidents = await this.repositories.receipts.getIncidents();
-    const supplierProducts = await this.getSupplierProducts(order);
     const settings = await this.getInventorySettings(order);
     const productById = new Map(products.map((product) => [product.id, product]));
     const unitById = new Map(units.map((unit) => [unit.id, unit]));
@@ -231,7 +229,6 @@ export class ReceivingDocumentDetailService {
             baseUnitById: unitById,
             inProgressLine: inProgressLines.find((line) => line.productId === item.productId),
             confirmedLines: confirmedLines.filter((line) => line.productId === item.productId),
-            supplierProducts,
             settingsDefaultLocationId: settings.get(item.productId)?.defaultLocationId ?? undefined,
           }),
         ),
@@ -326,7 +323,6 @@ export class ReceivingDocumentDetailService {
     baseUnitById: Map<string, Unit>;
     inProgressLine?: ReceiptLine;
     confirmedLines: ReceiptLine[];
-    supplierProducts: SupplierProduct[];
     settingsDefaultLocationId?: string | null;
   }): Promise<ReceivingDocumentLine> {
     const product = input.product;
@@ -336,11 +332,7 @@ export class ReceivingDocumentDetailService {
       0,
     );
     const receivedNow = input.inProgressLine ? input.inProgressLine.receivedQuantity : "";
-    const purchaseToBaseFactor = await this.resolvePurchaseToBaseFactor(
-      product,
-      input.item.unitId,
-      input.supplierProducts,
-    );
+    const purchaseToBaseFactor = input.item.purchaseToBaseFactor;
     return {
       id: input.item.id,
       sourceLineId: input.item.id,
@@ -444,18 +436,6 @@ export class ReceivingDocumentDetailService {
     return capabilities;
   }
 
-  private async getSupplierProducts(order: PurchaseOrder) {
-    const productIds = new Set((order.items ?? []).map((item) => item.productId));
-    const supplierProducts = await Promise.all(
-      [...productIds].map((productId) =>
-        this.repositories.supplierProducts.getByProduct(productId),
-      ),
-    );
-    return supplierProducts
-      .flat()
-      .filter((item) => item.supplierId === order.supplierId && item.active);
-  }
-
   private async getInventorySettings(order: PurchaseOrder) {
     const entries = await Promise.all(
       (order.items ?? []).map(
@@ -470,25 +450,6 @@ export class ReceivingDocumentDetailService {
       ),
     );
     return new Map(entries);
-  }
-
-  private async resolvePurchaseToBaseFactor(
-    product: Product | undefined,
-    purchaseUnitId: string,
-    supplierProducts: SupplierProduct[],
-  ) {
-    if (!product || product.baseUnitId === purchaseUnitId) return 1;
-    const supplierProduct = supplierProducts.find(
-      (item) => item.productId === product.id && item.purchaseUnitId === purchaseUnitId,
-    );
-    if (supplierProduct) return supplierProduct.purchaseToBaseFactor;
-    const conversion = await this.repositories.units.getConversion({
-      tenantId: product.tenantId,
-      productId: product.id,
-      fromUnitId: purchaseUnitId,
-      toUnitId: product.baseUnitId,
-    });
-    return conversion?.factor ?? 1;
   }
 }
 
@@ -606,6 +567,9 @@ export function validateLines(
         const expectedSerials = toBaseQuantity(line, acceptedNow);
         if (serials.length !== expectedSerials) {
           errors.push(`${line.productName}: registra ${expectedSerials} numeros de serie.`);
+        }
+        if (new Set(serials).size !== serials.length) {
+          errors.push(`${line.productName}: los numeros de serie no pueden repetirse.`);
         }
       }
       return errors;

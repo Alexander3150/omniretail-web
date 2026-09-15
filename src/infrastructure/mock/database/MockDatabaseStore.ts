@@ -21,6 +21,7 @@ import type {
   InventoryTransferItem,
   ProductInventorySettings,
   Unit,
+  PurchaseOrderItem,
 } from "@/core/entities";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { createMockDatabase } from "@/infrastructure/mock/database/createMockDatabase";
@@ -42,6 +43,9 @@ type PersistedInventoryTransferRequest = Partial<InventoryTransferRequest>;
 type PersistedInventoryTransfer = Partial<InventoryTransfer>;
 type PersistedInventoryTransferItem = Partial<InventoryTransferItem>;
 type PersistedUnit = Partial<Unit>;
+type PersistedPurchaseOrderItem = Omit<PurchaseOrderItem, "purchaseToBaseFactor"> & {
+  purchaseToBaseFactor?: number;
+};
 
 type PersistedMockDatabase = Partial<
   Omit<
@@ -53,6 +57,7 @@ type PersistedMockDatabase = Partial<
     | "inventoryTransferRequests"
     | "inventoryTransfers"
     | "productInventorySettings"
+    | "purchaseOrderItems"
     | "units"
   >
 > & {
@@ -63,6 +68,7 @@ type PersistedMockDatabase = Partial<
   inventoryTransferRequests?: PersistedInventoryTransferRequest[];
   inventoryTransfers?: PersistedInventoryTransfer[];
   productInventorySettings?: PersistedProductInventorySettings[];
+  purchaseOrderItems?: PersistedPurchaseOrderItem[];
   savedPaymentMethods?: PersistedCustomerPaymentMethod[];
   units?: PersistedUnit[];
 };
@@ -148,6 +154,12 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
       };
     },
   );
+  normalized.purchaseOrderItems = (database.purchaseOrderItems ?? base.purchaseOrderItems).map(
+    (item) => ({
+      ...item,
+      purchaseToBaseFactor: resolveLegacyPurchaseFactor(item, normalized),
+    }),
+  );
   synchronizeSupplierLeadTimeDays(
     normalized,
     normalized.suppliers.map((supplier) => supplier.id),
@@ -207,6 +219,32 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   }));
 
   return normalized;
+}
+
+function resolveLegacyPurchaseFactor(
+  item: PersistedPurchaseOrderItem,
+  database: MockDatabase,
+): number {
+  if (typeof item.purchaseToBaseFactor === "number" && item.purchaseToBaseFactor > 0) {
+    return item.purchaseToBaseFactor;
+  }
+  const order = database.purchaseOrders.find((entry) => entry.id === item.purchaseOrderId);
+  const product = database.products.find((entry) => entry.id === item.productId);
+  if (!product || product.baseUnitId === item.unitId) return 1;
+  const supplierProduct = database.supplierProducts.find(
+    (entry) =>
+      entry.supplierId === order?.supplierId &&
+      entry.productId === item.productId &&
+      entry.purchaseUnitId === item.unitId,
+  );
+  const conversion = database.unitConversions.find(
+    (entry) =>
+      entry.productId === item.productId &&
+      entry.fromUnitId === item.unitId &&
+      entry.toUnitId === product.baseUnitId,
+  );
+  const factor = supplierProduct?.purchaseToBaseFactor ?? conversion?.factor ?? 1;
+  return Number.isFinite(factor) && factor > 0 ? factor : 1;
 }
 
 function normalizeInventoryAdjustments(

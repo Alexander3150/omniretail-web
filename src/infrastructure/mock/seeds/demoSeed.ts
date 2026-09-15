@@ -1327,6 +1327,7 @@ const legacyDemoSeedDatabase: MockDatabase = {
       productId: "prod-drill",
       quantity: 1,
       unitId: "unit-unit",
+      purchaseToBaseFactor: 1,
       unitCost: 420,
       subtotal: 420,
     },

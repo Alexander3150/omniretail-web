@@ -51,8 +51,9 @@ import {
 type ActionMode =
   "adjust" | "other-branches" | "request-transfer" | "transfer-request-detail" | null;
 
-type EditableAdjustStockDto = Omit<AdjustStockDto, "quantity"> & {
+type EditableAdjustStockDto = Omit<AdjustStockDto, "quantity" | "serialNumbers"> & {
   quantity: NumericInputValue;
+  serialNumbersText: string;
 };
 
 type EditableTransferRequestDto = Omit<TransferRequestDto, "quantity"> & {
@@ -1435,6 +1436,7 @@ function AdjustStockModal({
     quantity: 1,
     reason: "",
     notes: "",
+    serialNumbersText: "",
   }));
   const [errors, setErrors] = useState<AdjustmentValidationErrors>({});
   const locationQuantity = useMemo(
@@ -1448,6 +1450,19 @@ function AdjustStockModal({
         ? row.quantity - toFiniteNumber(value.quantity)
         : toFiniteNumber(value.quantity);
   const delta = finalQuantity - row.quantity;
+  const traceQuantity = Math.abs(delta);
+  const isEntry = delta > 0;
+  const parsedSerials = parseSerialNumbers(value.serialNumbersText);
+  const availableLots = row.availableLots.filter(
+    (lot) => !value.locationId || lot.locationId === value.locationId,
+  );
+  const selectedLot = availableLots.find((lot) => lot.id === value.lotId);
+  const availableSerials = row.availableSerials.filter(
+    (serial) =>
+      (!value.locationId || serial.locationId === value.locationId) &&
+      (!value.lotId || serial.lotId === value.lotId),
+  );
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1455,11 +1470,19 @@ function AdjustStockModal({
     const nextErrors = validateAdjustment(dto, row, locationQuantity);
     setErrors(nextErrors);
     if (hasValidationErrors(nextErrors)) return;
-    await onSubmit(dto);
+    setSubmitError(null);
+    try {
+      await onSubmit(dto);
+    } catch (caughtError) {
+      setSubmitError(
+        caughtError instanceof Error ? caughtError.message : "No se pudo registrar el ajuste.",
+      );
+    }
   }
 
   function update(patch: Partial<EditableAdjustStockDto>) {
     setValue((current) => ({ ...current, ...patch }));
+    setSubmitError(null);
   }
 
   return (
@@ -1492,7 +1515,9 @@ function AdjustStockModal({
         <Field id="adjust-location" label="Ubicacion" error={errors.locationId}>
           <Select
             id="adjust-location"
-            onChange={(event) => update({ locationId: event.target.value })}
+            onChange={(event) =>
+              update({ locationId: event.target.value, lotId: undefined, serialNumbersText: "" })
+            }
             value={value.locationId}
           >
             {locations.map((location) => (
@@ -1506,7 +1531,13 @@ function AdjustStockModal({
           <Select
             id="adjust-kind"
             onChange={(event) =>
-              update({ movementKind: event.target.value as AdjustStockDto["movementKind"] })
+              update({
+                movementKind: event.target.value as AdjustStockDto["movementKind"],
+                lotId: undefined,
+                lotNumber: "",
+                expirationDate: "",
+                serialNumbersText: "",
+              })
             }
             value={value.movementKind}
           >
@@ -1516,6 +1547,93 @@ function AdjustStockModal({
             <option value="count">Conteo / Correccion exacta</option>
           </Select>
         </Field>
+        {row.tracking.lot && traceQuantity > 0 ? (
+          isEntry ? (
+            <Field id="adjust-lot-number" label="Lote *" error={errors.lotNumber}>
+              <Input
+                id="adjust-lot-number"
+                onChange={(event) => update({ lotNumber: event.target.value })}
+                value={value.lotNumber ?? ""}
+              />
+            </Field>
+          ) : (
+            <Field id="adjust-lot" label="Lote existente *" error={errors.lotId}>
+              <Select
+                id="adjust-lot"
+                onChange={(event) => update({ lotId: event.target.value, serialNumbersText: "" })}
+                value={value.lotId ?? ""}
+              >
+                <option value="">Seleccionar lote</option>
+                {availableLots.map((lot) => (
+                  <option key={lot.id} value={lot.id}>
+                    {lot.lotNumber} - {lot.quantity} disponibles
+                    {lot.expirationDate ? ` - vence ${lot.expirationDate}` : ""}
+                  </option>
+                ))}
+              </Select>
+              {selectedLot && selectedLot.quantity < traceQuantity ? (
+                <p className="mt-1 text-xs font-semibold text-[var(--color-danger)]">
+                  El lote no tiene suficientes unidades.
+                </p>
+              ) : null}
+            </Field>
+          )
+        ) : null}
+        {row.tracking.expiration && isEntry && traceQuantity > 0 ? (
+          <Field
+            id="adjust-expiration"
+            label="Fecha de vencimiento *"
+            error={errors.expirationDate}
+          >
+            <Input
+              id="adjust-expiration"
+              type="date"
+              onChange={(event) => update({ expirationDate: event.target.value })}
+              value={value.expirationDate ?? ""}
+            />
+          </Field>
+        ) : null}
+        {row.tracking.serial && traceQuantity > 0 ? (
+          <Field
+            id="adjust-serials"
+            label={isEntry ? "Numeros de serie nuevos *" : "Series existentes que salen *"}
+            error={errors.serialNumbers}
+          >
+            {isEntry ? (
+              <textarea
+                id="adjust-serials"
+                className="min-h-32 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm"
+                placeholder="Una serie por linea"
+                onChange={(event) => update({ serialNumbersText: event.target.value })}
+                value={value.serialNumbersText}
+              />
+            ) : (
+              <select
+                id="adjust-serials"
+                className="min-h-36 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm"
+                multiple
+                onChange={(event) =>
+                  update({
+                    serialNumbersText: [...event.target.selectedOptions]
+                      .map((option) => option.value)
+                      .join("\n"),
+                  })
+                }
+                value={parsedSerials}
+              >
+                {availableSerials.map((serial) => (
+                  <option key={serial.serialNumber} value={serial.serialNumber}>
+                    {serial.serialNumber}
+                  </option>
+                ))}
+              </select>
+            )}
+            <p className="mt-1 text-sm font-semibold text-[var(--color-text-muted)]">
+              Cantidad del ajuste: {traceQuantity} {row.unitName}. Seriales requeridos:{" "}
+              {traceQuantity}. Registrados: {parsedSerials.length} / {traceQuantity}.
+            </p>
+          </Field>
+        ) : null}
         <Field id="adjust-quantity" label="Cantidad" error={errors.quantity}>
           <Input
             id="adjust-quantity"
@@ -1543,6 +1661,14 @@ function AdjustStockModal({
           />
         </Field>
         <AdjustmentSummary delta={delta} finalQuantity={finalQuantity} row={row} value={value} />
+        {submitError ? (
+          <p
+            role="alert"
+            className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-[var(--color-danger)]"
+          >
+            {submitError}
+          </p>
+        ) : null}
       </form>
     </Modal>
   );
@@ -2097,7 +2223,15 @@ function toAdjustStockDto(value: EditableAdjustStockDto): AdjustStockDto {
   return {
     ...value,
     quantity: toFiniteNumber(value.quantity),
+    serialNumbers: parseSerialNumbers(value.serialNumbersText),
   };
+}
+
+function parseSerialNumbers(value: string) {
+  return value
+    .split(/\r?\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function toTransferRequestDto(value: EditableTransferRequestDto): TransferRequestDto {

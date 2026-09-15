@@ -130,7 +130,7 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
         </p>
       ) : null}
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-5">
           <section className="rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm">
             <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
@@ -222,124 +222,213 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
               {editor.model.lines.length === 0 ? (
                 <EmptyState message="Agrega productos asociados al proveedor." />
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[980px] table-fixed border-collapse text-left text-sm">
-                    <colgroup>
-                      <col className="w-[23%]" />
-                      <col className="w-[9%]" />
-                      <col className="w-[11%]" />
-                      <col className="w-[12%]" />
-                      <col className="w-[13%]" />
-                      <col className="w-[12%]" />
-                      <col className="w-[13%]" />
-                      <col className="w-[7%]" />
-                    </colgroup>
-                    <thead className="border-b border-[var(--color-border)] text-xs uppercase text-[var(--color-text-muted)]">
-                      <tr>
-                        <th className="py-2 pr-3 font-bold">Producto</th>
-                        <th className="px-2 py-2 font-bold">Unidad</th>
-                        <th className="px-2 py-2 font-bold">Cantidad</th>
-                        <th className="px-2 py-2 text-right font-bold">Precio base</th>
-                        <th className="px-2 py-2 font-bold">Precio aplicado</th>
-                        <th className="px-2 py-2 text-right font-bold">Ahorro</th>
-                        <th className="px-2 py-2 text-right font-bold">Subtotal</th>
-                        <th className="py-2 pl-2 text-center font-bold">Accion</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {editor.model.lines.map((line) => {
-                        const pricing = editor.pricingByLineId.get(line.id);
-                        return (
-                          <tr
-                            className="border-b border-[var(--color-border)] last:border-0"
-                            key={line.id}
-                          >
-                            <td className="py-2 pr-3">
-                              <ProductInfoTrigger line={line} />
-                            </td>
-                            <td className="px-2 py-2 font-semibold text-[var(--color-text)]">
-                              {line.unitLabel}
-                            </td>
-                            <td className="px-2 py-2">
-                              <Input
-                                className="h-9"
-                                min="1"
-                                onChange={(event) =>
-                                  editor.updateLineQuantity(
-                                    line.id,
-                                    parseIntegerInput(event.target.value),
-                                  )
-                                }
-                                step="1"
-                                type="number"
-                                value={line.quantity}
-                              />
-                            </td>
-                            <td className="px-2 py-2 text-right font-semibold text-[var(--color-text)]">
-                              {formatCurrency(line.baseCost)}
-                            </td>
-                            <td className="px-2 py-2">
-                              <Input
-                                className="h-9"
-                                min="0"
-                                onChange={(event) =>
-                                  editor.updateLineCost(
-                                    line.id,
-                                    parseDecimalInput(event.target.value),
-                                  )
-                                }
-                                step="0.01"
-                                type="number"
-                                value={line.agreedCost}
-                              />
-                              <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
-                                {line.manualCost
-                                  ? "Precio acordado manual"
-                                  : pricing?.tierLabel
-                                    ? `Escala ${pricing.tierLabel}`
-                                    : "Precio base"}
+                <>
+                  <div className="space-y-3 xl:hidden">
+                    {editor.model.lines.map((line) => {
+                      const pricing = editor.pricingByLineId.get(line.id);
+                      const expectedBase =
+                        toFiniteNumber(line.quantity) * line.purchaseToBaseFactor;
+                      return (
+                        <article
+                          className="space-y-3 rounded-lg border border-[var(--color-border)] p-3"
+                          key={line.id}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="font-bold text-[var(--color-title)]">
+                                {line.productName}
                               </p>
-                            </td>
-                            <td className="px-2 py-2 text-right text-xs font-semibold text-[var(--color-text-muted)]">
-                              {pricing && pricing.totalSavings > 0 ? (
-                                <>
-                                  <span className="block text-emerald-700">
-                                    {formatCurrency(pricing.unitSavings)}/u
-                                  </span>
-                                  <span>{formatCurrency(pricing.totalSavings)}</span>
-                                </>
-                              ) : (
-                                "-"
-                              )}
-                            </td>
-                            <td className="px-2 py-2 text-right font-bold text-[var(--color-title)]">
-                              {formatCurrency(
+                              <p className="text-xs text-[var(--color-text-muted)]">
+                                SKU {line.sku}
+                              </p>
+                            </div>
+                            <button
+                              aria-label={`Quitar ${line.productName}`}
+                              className="shrink-0 rounded-md px-2 py-1 font-bold text-[var(--color-danger)]"
+                              onClick={() => editor.removeLine(line.id)}
+                              type="button"
+                            >
+                              Quitar
+                            </button>
+                          </div>
+                          <dl className="grid grid-cols-2 gap-2 text-sm">
+                            <SmallDescription label="Unidad de compra" value={line.unitLabel} />
+                            <SmallDescription
+                              label="Equivalencia"
+                              value={`1 ${line.unitLabel} = ${formatNumber(line.purchaseToBaseFactor)} unidades base`}
+                            />
+                          </dl>
+                          <label className="block text-sm font-bold text-[var(--color-text)]">
+                            Cantidad
+                            <Input
+                              className="mt-1 w-full"
+                              min="1"
+                              step="1"
+                              type="number"
+                              value={line.quantity}
+                              onChange={(event) =>
+                                editor.updateLineQuantity(
+                                  line.id,
+                                  parseIntegerInput(event.target.value),
+                                )
+                              }
+                            />
+                          </label>
+                          <label className="block text-sm font-bold text-[var(--color-text)]">
+                            Costo acordado
+                            <Input
+                              className="mt-1 w-full"
+                              min="0"
+                              step="0.01"
+                              type="number"
+                              value={line.agreedCost}
+                              onChange={(event) =>
+                                editor.updateLineCost(
+                                  line.id,
+                                  parseDecimalInput(event.target.value),
+                                )
+                              }
+                            />
+                          </label>
+                          <dl className="grid grid-cols-2 gap-2 text-sm">
+                            <SmallDescription
+                              label="Total esperado"
+                              value={`${formatNumber(expectedBase)} unidades base`}
+                            />
+                            <SmallDescription
+                              label="Subtotal"
+                              value={formatCurrency(
                                 pricing?.subtotal ??
                                   toFiniteNumber(line.quantity) * toFiniteNumber(line.agreedCost),
                               )}
-                            </td>
-                            <td className="py-2 pl-2 text-center">
-                              <button
-                                aria-label={`Quitar ${line.productName}`}
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[var(--color-danger)] transition hover:bg-rose-50"
-                                onClick={() => editor.removeLine(line.id)}
-                                type="button"
-                              >
-                                x
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                            />
+                          </dl>
+                        </article>
+                      );
+                    })}
+                  </div>
+                  <div className="hidden overflow-x-auto xl:block">
+                    <table className="w-full min-w-[980px] table-fixed border-collapse text-left text-sm">
+                      <colgroup>
+                        <col className="w-[23%]" />
+                        <col className="w-[9%]" />
+                        <col className="w-[11%]" />
+                        <col className="w-[12%]" />
+                        <col className="w-[13%]" />
+                        <col className="w-[12%]" />
+                        <col className="w-[13%]" />
+                        <col className="w-[7%]" />
+                      </colgroup>
+                      <thead className="border-b border-[var(--color-border)] text-xs uppercase text-[var(--color-text-muted)]">
+                        <tr>
+                          <th className="py-2 pr-3 font-bold">Producto</th>
+                          <th className="px-2 py-2 font-bold">Unidad</th>
+                          <th className="px-2 py-2 font-bold">Cantidad</th>
+                          <th className="px-2 py-2 text-right font-bold">Precio base</th>
+                          <th className="px-2 py-2 font-bold">Precio aplicado</th>
+                          <th className="px-2 py-2 text-right font-bold">Ahorro</th>
+                          <th className="px-2 py-2 text-right font-bold">Subtotal</th>
+                          <th className="py-2 pl-2 text-center font-bold">Accion</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {editor.model.lines.map((line) => {
+                          const pricing = editor.pricingByLineId.get(line.id);
+                          return (
+                            <tr
+                              className="border-b border-[var(--color-border)] last:border-0"
+                              key={line.id}
+                            >
+                              <td className="py-2 pr-3">
+                                <ProductInfoTrigger line={line} />
+                              </td>
+                              <td className="px-2 py-2 font-semibold text-[var(--color-text)]">
+                                {line.unitLabel}
+                                <span className="mt-1 block text-[11px] font-medium text-[var(--color-text-muted)]">
+                                  1 = {formatNumber(line.purchaseToBaseFactor)} base
+                                </span>
+                              </td>
+                              <td className="px-2 py-2">
+                                <Input
+                                  className="h-9"
+                                  min="1"
+                                  onChange={(event) =>
+                                    editor.updateLineQuantity(
+                                      line.id,
+                                      parseIntegerInput(event.target.value),
+                                    )
+                                  }
+                                  step="1"
+                                  type="number"
+                                  value={line.quantity}
+                                />
+                              </td>
+                              <td className="px-2 py-2 text-right font-semibold text-[var(--color-text)]">
+                                {formatCurrency(line.baseCost)}
+                              </td>
+                              <td className="px-2 py-2">
+                                <Input
+                                  className="h-9"
+                                  min="0"
+                                  onChange={(event) =>
+                                    editor.updateLineCost(
+                                      line.id,
+                                      parseDecimalInput(event.target.value),
+                                    )
+                                  }
+                                  step="0.01"
+                                  type="number"
+                                  value={line.agreedCost}
+                                />
+                                <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                                  {line.manualCost
+                                    ? "Precio acordado manual"
+                                    : pricing?.tierLabel
+                                      ? `Escala ${pricing.tierLabel}`
+                                      : "Precio base"}
+                                </p>
+                              </td>
+                              <td className="px-2 py-2 text-right text-xs font-semibold text-[var(--color-text-muted)]">
+                                {pricing && pricing.totalSavings > 0 ? (
+                                  <>
+                                    <span className="block text-emerald-700">
+                                      {formatCurrency(pricing.unitSavings)}/u
+                                    </span>
+                                    <span>{formatCurrency(pricing.totalSavings)}</span>
+                                  </>
+                                ) : (
+                                  "-"
+                                )}
+                              </td>
+                              <td className="px-2 py-2 text-right font-bold text-[var(--color-title)]">
+                                {formatCurrency(
+                                  pricing?.subtotal ??
+                                    toFiniteNumber(line.quantity) * toFiniteNumber(line.agreedCost),
+                                )}
+                              </td>
+                              <td className="py-2 pl-2 text-center">
+                                <button
+                                  aria-label={`Quitar ${line.productName}`}
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[var(--color-danger)] transition hover:bg-rose-50"
+                                  onClick={() => editor.removeLine(line.id)}
+                                  type="button"
+                                >
+                                  x
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
           </section>
         </div>
 
-        <aside className="h-fit rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm xl:sticky xl:top-5">
+        <aside className="h-fit rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm 2xl:sticky 2xl:top-5">
           <h2 className="text-base font-bold text-[var(--color-title)]">Resumen</h2>
           <dl className="mt-3 space-y-3 text-sm">
             <SummaryItem label="Sucursal destino" value={editor.branchName} />
@@ -408,32 +497,39 @@ function AvailableProductRow({
   onAdd: () => void;
 }) {
   return (
-    <article className="grid gap-3 rounded-md border border-[var(--color-border)] px-3 py-2.5 lg:grid-cols-[minmax(0,1.5fr)_80px_90px_80px_90px_130px_minmax(120px,1fr)_auto] lg:items-center">
-      <div className="min-w-0">
-        <p className="truncate font-bold text-[var(--color-title)]">{product.productName}</p>
+    <article className="flex min-w-0 flex-col gap-3 rounded-md border border-[var(--color-border)] px-3 py-3 2xl:flex-row 2xl:items-center">
+      <div className="min-w-0 2xl:flex-[1.2]">
+        <p className="font-bold leading-5 text-[var(--color-title)]">{product.productName}</p>
         <p className="text-xs text-[var(--color-text-muted)]">
           {product.sku} · Prov. {product.supplierSku}
         </p>
       </div>
-      <SmallField label="Unidad" value={product.unitLabel} />
-      <SmallField label="Costo" value={formatCurrency(product.configuredCost)} />
-      <SmallField label="Minimo" value={formatNumber(product.minimumOrderQuantity)} />
-      <SmallField label="Entrega" value={formatLeadTime(product.leadTimeDays)} />
-      <SmallField
-        label="Stock"
-        value={`${formatNumber(product.stockQuantity)} · ${product.availabilityLabel}`}
-      />
-      <SmallField
-        label="Escalas"
-        value={
-          product.tiers.length > 0
-            ? product.tiers
-                .map((tier) => `${tier.minQuantity}+ ${formatCurrency(tier.unitCost)}`)
-                .join(", ")
-            : "-"
-        }
-      />
-      <Button className="min-h-9 px-3 py-1.5" onClick={onAdd} type="button" variant="secondary">
+      <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 text-sm md:grid-cols-3 xl:grid-cols-4 2xl:flex-[2] 2xl:grid-cols-6">
+        <SmallField label="Unidad" value={product.unitLabel} />
+        <SmallField label="Costo" value={formatCurrency(product.configuredCost)} />
+        <SmallField label="Minimo" value={formatNumber(product.minimumOrderQuantity)} />
+        <SmallField label="Entrega" value={formatLeadTime(product.leadTimeDays)} />
+        <SmallField
+          label="Stock"
+          value={`${formatNumber(product.stockQuantity)} · ${product.availabilityLabel}`}
+        />
+        <SmallField
+          label="Escalas"
+          value={
+            product.tiers.length > 0
+              ? product.tiers
+                  .map((tier) => `${tier.minQuantity}+ ${formatCurrency(tier.unitCost)}`)
+                  .join(", ")
+              : "-"
+          }
+        />
+      </dl>
+      <Button
+        className="min-h-10 w-full shrink-0 px-3 py-1.5 md:w-auto"
+        onClick={onAdd}
+        type="button"
+        variant="secondary"
+      >
         <PlusIcon />
         Agregar
       </Button>

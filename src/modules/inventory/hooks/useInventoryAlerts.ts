@@ -173,7 +173,7 @@ export function useInventoryAlerts() {
       const message =
         caughtError instanceof Error ? caughtError.message : "No se pudo registrar el ajuste.";
       setError(message);
-      throw new Error(message);
+      throw caughtError;
     } finally {
       setBusy(false);
     }

@@ -129,6 +129,7 @@ export class PurchaseOrderEditorService {
             categoryName,
             unitId: supplierProduct.purchaseUnitId,
             unitLabel: unit?.symbol ?? unit?.name ?? supplierProduct.purchaseUnitId,
+            purchaseToBaseFactor: supplierProduct.purchaseToBaseFactor,
             configuredCost: supplierProduct.lastCost,
             minimumOrderQuantity: supplierProduct.minimumOrderQuantity,
             leadTimeDays: supplierProduct.leadTimeDays,
@@ -296,6 +297,7 @@ export function getPricingDetails(line: PurchaseOrderEditorLine) {
       categoryName: "",
       unitId: line.unitId,
       unitLabel: line.unitLabel,
+      purchaseToBaseFactor: line.purchaseToBaseFactor,
       configuredCost: line.baseCost,
       minimumOrderQuantity: line.minimumOrderQuantity,
       leadTimeDays: line.leadTimeDays,
@@ -348,6 +350,7 @@ function toPurchaseOrderPayload(input: SavePurchaseOrderInput, status: PurchaseO
     productId: line.productId,
     quantity: toFiniteNumber(line.quantity),
     unitId: line.unitId,
+    purchaseToBaseFactor: line.purchaseToBaseFactor,
     unitCost: toFiniteNumber(line.agreedCost),
     subtotal: toFiniteNumber(line.quantity) * toFiniteNumber(line.agreedCost),
   }));
@@ -384,6 +387,9 @@ function validateOrderLineNumbers(input: SavePurchaseOrderInput) {
   if (input.lines.some((line) => !isPositiveNumber(line.agreedCost))) {
     throw new Error("Todos los costos acordados deben ser mayores a cero.");
   }
+  if (input.lines.some((line) => !isPositiveNumber(line.purchaseToBaseFactor))) {
+    throw new Error("Todas las conversiones de compra deben ser mayores a cero.");
+  }
 }
 
 function toEditorLine(
@@ -398,6 +404,7 @@ function toEditorLine(
     supplierSku: availableProduct?.supplierSku ?? "-",
     unitId: item.unitId,
     unitLabel: availableProduct?.unitLabel ?? item.unitId,
+    purchaseToBaseFactor: item.purchaseToBaseFactor,
     quantity: item.quantity,
     baseCost: availableProduct?.configuredCost ?? item.unitCost,
     suggestedCost: availableProduct ? getTierCost(availableProduct, item.quantity) : item.unitCost,
