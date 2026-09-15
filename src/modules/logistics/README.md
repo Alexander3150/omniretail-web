@@ -25,7 +25,7 @@ OrderRepository, PickingRepository, DispatchRepository, InventoryRepository
 - Inventory conserva la formula de disponibilidad que distingue reserva propia, reservas ajenas y stock libre.
 - Assignment, release, incidencias y completion tienen persistencia/transacciones mock; completion avanza Picking y Order atomicamente.
 - Tomar una orden avanza `confirmed -> preparing`; el primer consumo real avanza `preparing -> picking`.
-- Completion usa `ready_for_dispatch` para entrega a domicilio y `ready_for_pickup` para retiro. `immediate` falla cerrado.
+- Completion crea Packing persistente y mueve la Order a `packing`. Packing finaliza en `ready_for_dispatch` para domicilio o `ready_for_pickup` para retiro. `immediate` falla cerrado.
 - `DispatchApplicationService` reconstruye Session/User/Role/Branch, expone DTOs scoped y nunca acepta tenant o actor desde UI.
 - Confirmar Dispatch exige Picking completo y reservas consumidas, copia `Order.transportMode`, es idempotente y no muta inventario.
 - `markDelivered` es el owner atomico e idempotente de `Dispatch + Order: dispatched -> delivered`; no altera envio, inventario ni notificaciones.
@@ -37,9 +37,17 @@ OrderRepository, PickingRepository, DispatchRepository, InventoryRepository
 ## Packing y Despacho
 
 - `/logistica/despachos` consume la cola scoped de `DispatchApplicationService` para pedidos domiciliarios `ready_for_dispatch`.
-- Packing es preparacion visual y no agrega un estado operativo intermedio ni consume inventario.
-- La confirmacion persiste Dispatch y sus Packages en una sola transaccion; conteo y peso se derivan de los Packages.
+- Packing persiste checklist, peso/bultos y evidencia de etiqueta; no consume inventario.
+- La confirmacion persiste Dispatch y materializa sus Packages desde la Packing finalizada en una sola transaccion.
 - El Trace es read-only y se obtiene de `GetLogisticsItemTraceService` sobre evidencia canonica de Picking e InventoryMovement.
+
+## Mesa de Picking
+
+- `/logistica/picking` consume exclusivamente `PickingApplicationService` con contexto confiable de tenant y sucursal.
+- La cola muestra pedidos pendientes, asignados y en progreso, con cliente, modalidad de entrega y progreso autoritativo.
+- La UI registra cantidades objetivo y series canonicas; las allocations, FEFO, reservas y movimientos permanecen bajo autoridad del repository.
+- Assignment, incidencias, liberacion y completion conservan permisos, idempotencia y transiciones del dominio existentes.
+- Completar una entrega domiciliaria la deja disponible automaticamente para `/logistica/despachos`.
 
 ## Estructura futura
 

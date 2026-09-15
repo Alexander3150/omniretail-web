@@ -4,6 +4,7 @@ import type {
   Order,
   PickingIncident,
   PickingItem,
+  PickingOrder,
 } from "@/core/entities";
 import {
   DeliveryMethod,
@@ -27,6 +28,7 @@ import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import type { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import { assertOrderStatusTransition } from "@/core/orders/orderStatusTransitions";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
+import { createPackingInDatabase } from "@/infrastructure/mock/repositories/MockPackingRepository";
 import {
   consumeInventoryReservationInDatabase,
   getInventoryReservationAllocationRemaining,
@@ -47,6 +49,83 @@ interface PickingItemMutationResult {
 
 export interface MockPickingRepositoryTestHooks {
   afterPickingCompleted?: () => void;
+}
+
+interface PickingCreationDependencies {
+  id(prefix: string): string;
+  now(): string;
+}
+
+export function createPickingOrderInDatabase(
+  db: MockDatabase,
+  input: Parameters<PickingRepository["create"]>[0],
+  dependencies: PickingCreationDependencies,
+): { pickingOrder: PickingOrder; created: boolean } {
+  const existing = db.pickingOrders.find(
+    (entry) =>
+      entry.tenantId === input.tenantId &&
+      entry.branchId === input.branchId &&
+      entry.orderId === input.orderId,
+  );
+  if (existing) return { pickingOrder: existing, created: false };
+  const order = db.orders.find(
+    (entry) =>
+      entry.id === input.orderId &&
+      entry.tenantId === input.tenantId &&
+      entry.branchId === input.branchId,
+  );
+  if (!order) throw new Error(`Order not found for PickingOrder: ${input.orderId}`);
+  const now = dependencies.now();
+  const created: PickingOrder = {
+    ...input,
+    id: dependencies.id("picking"),
+    status: PickingStatus.pending,
+    createdAt: now,
+    updatedAt: now,
+  };
+  db.pickingOrders.push(created);
+  order.items.forEach((orderItem) => {
+    const demands = orderItem.fulfillmentComponents ?? [
+      { productId: orderItem.productId, quantity: orderItem.quantity },
+    ];
+    demands.forEach((demand) => {
+      const product = db.products.find(
+        (entry) => entry.id === demand.productId && entry.tenantId === input.tenantId,
+      );
+      if (!product) throw new Error(`Product not found for PickingItem: ${demand.productId}`);
+      if (product.productType !== ProductType.physical) return;
+      if (
+        db.pickingItems.some(
+          (entry) =>
+            entry.pickingOrderId === created.id &&
+            entry.orderItemId === orderItem.id &&
+            entry.productId === demand.productId,
+        )
+      ) {
+        return;
+      }
+      const reservation = db.inventoryReservations.find(
+        (entry) =>
+          entry.tenantId === input.tenantId &&
+          entry.orderItemId === orderItem.id &&
+          entry.productId === demand.productId,
+      );
+      if (product.tracking.stock && !reservation) {
+        throw new Error(`Reservation not found for PickingItem: ${orderItem.id}`);
+      }
+      db.pickingItems.push({
+        id: dependencies.id("picking-item"),
+        pickingOrderId: created.id,
+        orderItemId: orderItem.id,
+        productId: demand.productId,
+        requestedQuantity: demand.quantity,
+        pickedQuantity: 0,
+        locationId: reservation?.allocations[0]?.locationId,
+        status: PickingItemStatus.pending,
+      });
+    });
+  });
+  return { pickingOrder: created, created: true };
 }
 
 export class MockPickingRepository extends BaseMockRepository implements PickingRepository {
@@ -103,75 +182,14 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
   }
 
   async create(input: Parameters<PickingRepository["create"]>[0]) {
-    const item = this.store.transact((db) => {
-      const existing = db.pickingOrders.find(
-        (entry) =>
-          entry.tenantId === input.tenantId &&
-          entry.branchId === input.branchId &&
-          entry.orderId === input.orderId,
-      );
-      if (existing) return existing;
-      const order = db.orders.find(
-        (entry) =>
-          entry.id === input.orderId &&
-          entry.tenantId === input.tenantId &&
-          entry.branchId === input.branchId,
-      );
-      if (!order) throw new Error(`Order not found for PickingOrder: ${input.orderId}`);
-      const now = this.now();
-      const created = {
-        ...input,
-        id: this.id("picking"),
-        status: PickingStatus.pending,
-        createdAt: now,
-        updatedAt: now,
-      };
-      db.pickingOrders.push(created);
-      order.items.forEach((orderItem) => {
-        const demands = orderItem.fulfillmentComponents ?? [
-          { productId: orderItem.productId, quantity: orderItem.quantity },
-        ];
-        demands.forEach((demand) => {
-          const product = db.products.find(
-            (entry) => entry.id === demand.productId && entry.tenantId === input.tenantId,
-          );
-          if (!product) throw new Error(`Product not found for PickingItem: ${demand.productId}`);
-          if (product.productType !== ProductType.physical) return;
-          if (
-            db.pickingItems.some(
-              (entry) =>
-                entry.pickingOrderId === created.id &&
-                entry.orderItemId === orderItem.id &&
-                entry.productId === demand.productId,
-            )
-          ) {
-            return;
-          }
-          const reservation = db.inventoryReservations.find(
-            (entry) =>
-              entry.tenantId === input.tenantId &&
-              entry.orderItemId === orderItem.id &&
-              entry.productId === demand.productId,
-          );
-          if (product.tracking.stock && !reservation) {
-            throw new Error(`Reservation not found for PickingItem: ${orderItem.id}`);
-          }
-          db.pickingItems.push({
-            id: this.id("picking-item"),
-            pickingOrderId: created.id,
-            orderItemId: orderItem.id,
-            productId: demand.productId,
-            requestedQuantity: demand.quantity,
-            pickedQuantity: 0,
-            locationId: reservation?.allocations[0]?.locationId,
-            status: PickingItemStatus.pending,
-          });
-        });
-      });
-      return created;
-    });
-    this.emitPickingChanged(item, "created");
-    return item;
+    const result = this.store.transact((db) =>
+      createPickingOrderInDatabase(db, input, {
+        id: (prefix) => this.id(prefix),
+        now: () => this.now(),
+      }),
+    );
+    this.emitPickingChanged(result.pickingOrder, "created");
+    return result.pickingOrder;
   }
 
   async assign(input: Parameters<PickingRepository["assign"]>[0]) {
@@ -370,16 +388,33 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
           item.branchId === input.branchId,
       );
       if (!order) throw new Error(`Order not found for PickingOrder: ${pickingOrder.id}`);
-      const completedOrderStatus = getCompletedOrderStatus(order.deliveryMethod);
       if (
-        pickingOrder.status === PickingStatus.completed ||
-        order.status === completedOrderStatus
+        order.deliveryMethod !== DeliveryMethod.home_delivery &&
+        order.deliveryMethod !== DeliveryMethod.store_pickup
       ) {
+        throw new Error(`Picking cannot complete delivery method: ${order.deliveryMethod}`);
+      }
+      if (pickingOrder.status === PickingStatus.completed || order.status === OrderStatus.packing) {
+        const existingPacking = db.packings.find(
+          (item) =>
+            item.tenantId === input.tenantId &&
+            item.branchId === input.branchId &&
+            item.orderId === order.id &&
+            item.pickingOrderId === pickingOrder.id,
+        );
         if (
           pickingOrder.status === PickingStatus.completed &&
-          order.status === completedOrderStatus
+          order.status === OrderStatus.packing &&
+          existingPacking
         ) {
-          return { pickingOrder, order, idempotent: true, changed: false };
+          return {
+            pickingOrder,
+            order,
+            packing: existingPacking,
+            idempotent: true,
+            changed: false,
+            packingCreated: false,
+          };
         }
         throw new Error(`Picking completion state conflict: ${pickingOrder.id}`);
       }
@@ -407,18 +442,49 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
       pickingOrder.completedAt = now;
       pickingOrder.updatedAt = now;
       this.testHooks.afterPickingCompleted?.();
-      assertOrderStatusTransition(order.status, completedOrderStatus, "picking");
-      order.status = completedOrderStatus;
+      assertOrderStatusTransition(order.status, OrderStatus.packing, "picking");
+      order.status = OrderStatus.packing;
       order.updatedAt = now;
-      return { pickingOrder, order, idempotent: false, changed: true };
+      const packingResult = createPackingInDatabase(
+        db,
+        {
+          tenantId: input.tenantId,
+          branchId: input.branchId,
+          orderId: order.id,
+          pickingOrderId: pickingOrder.id,
+          actorUserId: input.actorUserId,
+        },
+        { id: (prefix) => this.id(prefix), now: () => now },
+      );
+      if (!packingResult.created)
+        throw new Error(`Packing already exists before completion: ${order.id}`);
+      return {
+        pickingOrder,
+        order,
+        packing: packingResult.packing,
+        idempotent: false,
+        changed: true,
+        packingCreated: true,
+      };
     });
     if (result.changed) {
       this.emitPickingChanged(result.pickingOrder, "status_changed");
       this.emitOrderChanged(result.order, result.pickingOrder.id);
+      if (result.packingCreated) {
+        this.emitSafely("packing.changed", {
+          entityId: result.packing.id,
+          tenantId: result.packing.tenantId,
+          branchId: result.packing.branchId,
+          packingId: result.packing.id,
+          orderId: result.packing.orderId,
+          action: "created",
+        });
+      }
     }
     return {
       pickingOrder: result.pickingOrder,
       order: result.order,
+      packing: result.packing,
       idempotent: result.idempotent,
     };
   }
@@ -912,12 +978,6 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
       // The transaction is already committed; listener failures cannot roll it back.
     }
   }
-}
-
-function getCompletedOrderStatus(deliveryMethod: DeliveryMethod): OrderStatus {
-  if (deliveryMethod === DeliveryMethod.home_delivery) return OrderStatus.ready_for_dispatch;
-  if (deliveryMethod === DeliveryMethod.store_pickup) return OrderStatus.ready_for_pickup;
-  throw new Error(`Picking cannot complete delivery method: ${deliveryMethod}`);
 }
 
 function getPickingItemStatus(

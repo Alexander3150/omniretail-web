@@ -261,9 +261,13 @@ const legacyDemoSeedDatabase: MockDatabase = {
       name: "Bodeguero",
       isSystem: true,
       permissions: [
+        "logistics.history.read",
         "logistics.picking.read",
         "logistics.picking.start",
         "logistics.picking.complete",
+        "logistics.packing.read",
+        "logistics.packing.prepare",
+        "logistics.packing.finalize",
         "logistics.dispatch.read",
         "logistics.dispatch.confirm",
         "receiving.receipts.confirm",
@@ -1586,6 +1590,8 @@ const legacyDemoSeedDatabase: MockDatabase = {
   pickingItemUpdateOperations: [],
   pickingAssignmentReleases: [],
   pickingIncidents: [],
+  packings: [],
+  packingOperations: [],
   dispatches: [
     {
       id: "dispatch-001",

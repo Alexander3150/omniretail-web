@@ -694,6 +694,30 @@ export function usePosTerminal() {
     [invalidateConfirmationAttempt],
   );
 
+  const updateStorePickupContact = useCallback(
+    (patch: Partial<NonNullable<CheckoutDto["storePickupContact"]>>) => {
+      invalidateConfirmationAttempt();
+      setCheckoutState((current) => ({
+        ...current,
+        value: {
+          ...current.value,
+          storePickupContact: {
+            recipientName: "",
+            recipientPhone: "",
+            ...current.value.storePickupContact,
+            ...patch,
+          },
+        },
+        errors: {},
+        validated: false,
+        readyToConfirm: false,
+        hasOperationalBlock: false,
+        message: null,
+      }));
+    },
+    [invalidateConfirmationAttempt],
+  );
+
   const validateCheckout = useCallback(() => {
     setCheckoutState((current) => {
       const amounts = calculateCheckoutAmounts(current.value, ticket.total);
@@ -896,6 +920,7 @@ export function usePosTerminal() {
     processCardPayment,
     updateInvoiceData,
     updateDeliveryAddress,
+    updateStorePickupContact,
     validateCheckout,
     confirmSale,
   };

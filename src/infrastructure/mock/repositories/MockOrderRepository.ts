@@ -379,6 +379,21 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
       }
       const phoneError = validatePhoneNumber(recipientPhone);
       if (phoneError) throw new Error(phoneError);
+    } else if (input.deliveryAddress !== undefined) {
+      throw new Error("Only home delivery can persist a delivery address");
+    }
+    if (input.deliveryMethod === DeliveryMethod.store_pickup) {
+      const contact = input.storePickupContact;
+      if (!contact?.recipientName?.trim()) {
+        throw new Error("Store pickup recipientName is required");
+      }
+      if (!contact.recipientPhone?.trim()) {
+        throw new Error("Store pickup recipientPhone is required");
+      }
+      const phoneError = validatePhoneNumber(contact.recipientPhone);
+      if (phoneError) throw new Error(phoneError);
+    } else if (input.storePickupContact !== undefined) {
+      throw new Error("Only store pickup can persist storePickupContact");
     }
     if (input.notificationContact) {
       if (input.notificationContact.emailMode === "send") {
@@ -493,6 +508,14 @@ function getOrderCreationFingerprint(input: CreateOrderInput): string {
           references: input.deliveryAddress.references ?? null,
         }
       : null,
+    ...(input.storePickupContact
+      ? {
+          storePickupContact: {
+            recipientName: input.storePickupContact.recipientName,
+            recipientPhone: input.storePickupContact.recipientPhone,
+          },
+        }
+      : {}),
     notificationContact:
       input.notificationContact === undefined
         ? null
@@ -520,12 +543,20 @@ function getOrderCreationFingerprint(input: CreateOrderInput): string {
 }
 
 function normalizeOrderCreationInput(input: CreateOrderInput): CreateOrderInput {
-  if (input.notificationContact?.emailMode !== "send") return input;
   return {
     ...input,
-    notificationContact: {
-      emailMode: "send",
-      email: normalizeEmail(input.notificationContact.email),
-    },
+    storePickupContact: input.storePickupContact
+      ? {
+          recipientName: input.storePickupContact.recipientName.trim(),
+          recipientPhone: input.storePickupContact.recipientPhone.trim(),
+        }
+      : undefined,
+    notificationContact:
+      input.notificationContact?.emailMode === "send"
+        ? {
+            emailMode: "send",
+            email: normalizeEmail(input.notificationContact.email),
+          }
+        : input.notificationContact,
   };
 }

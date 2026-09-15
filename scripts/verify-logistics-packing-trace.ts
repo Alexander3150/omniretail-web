@@ -4,7 +4,7 @@ import { DeliveryMethod, NotificationChannel, NotificationStatus, OrderSource, O
 import { isOrderDeliveryMethodAllowed } from "@/core/orders/orderDeliveryPolicy";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
-import { MockBranchRepository, MockDispatchRepository, MockInventoryRepository, MockNotificationRepository, MockOrderRepository, MockPickingRepository, MockProductRepository, MockRoleRepository, MockUserRepository } from "@/infrastructure/mock/repositories";
+import { MockBranchRepository, MockDispatchRepository, MockInventoryRepository, MockNotificationRepository, MockOrderRepository, MockPackingRepository, MockPickingRepository, MockProductRepository, MockRoleRepository, MockUserRepository } from "@/infrastructure/mock/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import { DispatchApplicationService } from "@/modules/logistics/application/services/DispatchApplicationService";
@@ -20,6 +20,7 @@ async function main() {
   const eventBus = new DataEventBus();
   const orders = new MockOrderRepository(store, eventBus);
   const picking = new MockPickingRepository(store, eventBus);
+  const packings = new MockPackingRepository(store, eventBus);
   const dispatches = new MockDispatchRepository(store, eventBus);
   const repositories = {
     auth: {
@@ -31,6 +32,7 @@ async function main() {
     inventory: new MockInventoryRepository(store, eventBus),
     notifications: new MockNotificationRepository(store, eventBus),
     orders,
+    packings,
     picking,
     products: new MockProductRepository(store, eventBus),
     roles: new MockRoleRepository(store, eventBus),
@@ -39,9 +41,9 @@ async function main() {
   const service = new DispatchApplicationService(repositories);
   const traceService = new GetLogisticsItemTraceService(repositories);
 
-  const primary = await prepareOrder(orders, picking, "primary", TransportMode.own_fleet);
-  const thirdParty = await prepareOrder(orders, picking, "third-party", TransportMode.third_party);
-  const pickup = await prepareOrder(orders, picking, "pickup", TransportMode.customer, DeliveryMethod.store_pickup);
+  const primary = await prepareOrder(orders, picking, packings, "primary", TransportMode.own_fleet);
+  const thirdParty = await prepareOrder(orders, picking, packings, "third-party", TransportMode.third_party);
+  const pickup = await prepareOrder(orders, picking, packings, "pickup", TransportMode.customer, DeliveryMethod.store_pickup);
   const nonEligible = await orders.create(orderInput("not-ready", TransportMode.own_fleet, DeliveryMethod.home_delivery));
   addQueueContaminants(store, primary.orderId, primary.pickingOrderId);
 
@@ -72,7 +74,8 @@ async function main() {
   assert.equal(persisted?.packageCount, 2);
   assert.equal(persisted?.weight, 3.75);
   const packages = await dispatches.getPackagesByDispatch({ tenantId, branchId }, confirmed.dispatchId);
-  assert.deepEqual(packages.map((item) => item.number), ["BOX-001", "BOX-002"]);
+  assert.equal(packages.length, 2);
+  assert.ok(packages.every((item) => item.number.startsWith("LBL-LOG-PACK-primary-")));
   assert.ok(packages.every((item) => item.dispatchId === confirmed.dispatchId));
   assert.deepEqual(await dispatches.getPackagesByDispatch({ tenantId, branchId: "branch-norte" }, confirmed.dispatchId), []);
   assert.deepEqual(await dispatches.getPackagesByDispatch({ tenantId: "tenant-foreign", branchId }, confirmed.dispatchId), []);
@@ -89,13 +92,14 @@ async function main() {
   assert.equal(retry.idempotent, true);
   assert.equal((await dispatches.getPackagesByDispatch({ tenantId, branchId }, confirmed.dispatchId)).length, 2);
   await assert.rejects(
-    service.confirm(branchId, { orderId: primary.orderId, operationId: "packing-primary-confirm", packages: [{ number: "CHANGED" }] }),
+    service.confirm(branchId, { orderId: primary.orderId, operationId: "packing-primary-confirm", carrierName: "Changed" }),
     /operation conflict/,
   );
 
   const rollbackOrder = await prepareOrder(
     orders,
     picking,
+    packings,
     "rollback",
     TransportMode.own_fleet,
     DeliveryMethod.home_delivery,
@@ -139,6 +143,7 @@ async function main() {
 async function prepareOrder(
   orders: MockOrderRepository,
   picking: MockPickingRepository,
+  packings: MockPackingRepository,
   suffix: string,
   transportMode: TransportMode,
   deliveryMethod = DeliveryMethod.home_delivery,
@@ -151,6 +156,33 @@ async function prepareOrder(
   assert.ok(line);
   await picking.updateItem({ tenantId, branchId, pickingOrderId: pickingOrder.id, pickingItemId: line.id, pickedQuantity: line.requestedQuantity, operationId: `pick-${suffix}`, performedByUserId: actorUserId });
   const completed = await picking.complete({ tenantId, branchId, pickingOrderId: pickingOrder.id, actorUserId });
+  const packing = completed.packing;
+  let prepared = await packings.savePreparation({
+    tenantId,
+    branchId,
+    actorUserId,
+    packingId: packing.id,
+    operationId: `packing-prepare-${suffix}`,
+    expectedVersion: packing.version,
+    checklist: { packageProtectionChecked: true, documentIncludedChecked: true, recipientVerifiedChecked: true },
+    totalWeight: deliveryMethod === DeliveryMethod.home_delivery ? (suffix === "primary" ? 3.75 : 1) : undefined,
+    packageCount: deliveryMethod === DeliveryMethod.home_delivery ? (suffix === "primary" ? 2 : 1) : undefined,
+  });
+  if (deliveryMethod === DeliveryMethod.home_delivery) {
+    const generated = await packings.generateLabel({
+      tenantId, branchId, actorUserId, packingId: packing.id,
+      operationId: `packing-label-${suffix}`, expectedVersion: prepared.packing.version,
+    });
+    prepared = await packings.registerLabelPrint({
+      tenantId, branchId, actorUserId, packingId: packing.id,
+      labelGenerationId: generated.packing.labelGenerationId!,
+      operationId: `packing-print-${suffix}`, expectedVersion: generated.packing.version,
+    });
+  }
+  await packings.finalize({
+    tenantId, branchId, actorUserId, packingId: packing.id,
+    operationId: `packing-finalize-${suffix}`, expectedVersion: prepared.packing.version,
+  });
   return { orderId: completed.order.id, pickingOrderId: pickingOrder.id };
 }
 
@@ -171,6 +203,10 @@ function orderInput(
     deliveryMethod,
     transportMode,
     deliveryAddress: deliveryMethod === DeliveryMethod.home_delivery ? { recipientName: "Packing Recipient", recipientPhone: "55550000", line1: "Zona 1", city: "Guatemala", country: "Guatemala" } : undefined,
+    storePickupContact:
+      deliveryMethod === DeliveryMethod.store_pickup
+        ? { recipientName: "Packing Pickup", recipientPhone: "55550001" }
+        : undefined,
     notificationContact,
     subtotal: 24.99,
     discountTotal: 0,
@@ -299,6 +335,8 @@ function prepareDatabase(store: MockDatabaseStore) {
     db.pickingItemUpdateOperations = [];
     db.pickingIncidents = [];
     db.pickingAssignmentReleases = [];
+    db.packings = [];
+    db.packingOperations = [];
     db.dispatches = [];
     db.packages = [];
     db.notifications = [];
@@ -311,7 +349,7 @@ function prepareDatabase(store: MockDatabaseStore) {
     });
     const role = db.roles.find((item) => item.id === "role-warehouse");
     assert.ok(role);
-    role.permissions = ["logistics.picking.read", "logistics.picking.start", "logistics.picking.complete", "logistics.dispatch.read", "logistics.dispatch.confirm"];
+    role.permissions = ["logistics.picking.read", "logistics.picking.start", "logistics.picking.complete", "logistics.packing.read", "logistics.packing.prepare", "logistics.packing.finalize", "logistics.dispatch.read", "logistics.dispatch.confirm"];
   });
 }
 

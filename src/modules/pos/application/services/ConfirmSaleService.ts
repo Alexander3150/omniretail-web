@@ -2,8 +2,6 @@ import type { Branch, CashShift, SaleDocumentSnapshot, User } from "@/core/entit
 import {
   CashShiftStatus,
   DeliveryMethod,
-  OrderSource,
-  OrderStatus,
   PaymentMethod,
   PaymentStatus,
   ProductType,
@@ -17,6 +15,7 @@ import {
 import { calculateEffectivePrice } from "@/core/pricing";
 import type {
   ConfirmSaleResult,
+  SaleConfirmationDeferredOrderInput,
   SaleConfirmationPaymentMethod,
   SaleConfirmationPaymentInput,
 } from "@/core/repositories";
@@ -97,8 +96,7 @@ export class ConfirmSaleService {
 
     const document = createDocumentSnapshot(input.checkout);
     const currentShift = await this.requireCurrentCashShift(input);
-    const sourceOrderId =
-      input.sourceOrderId ?? (await this.createDeferredOrder(input, items, totals));
+    const deferredOrder = input.sourceOrderId ? undefined : this.createDeferredOrderInput(input);
 
     return this.repositories.saleConfirmations.confirm({
       confirmationId,
@@ -107,7 +105,8 @@ export class ConfirmSaleService {
       cashierUserId: input.user.id,
       cashShiftId: currentShift.id,
       customerId: input.customerId,
-      sourceOrderId,
+      sourceOrderId: input.sourceOrderId,
+      deferredOrder,
       items: items.map((item) => ({
         productId: item.productId,
         skuSnapshot: item.skuSnapshot,
@@ -126,11 +125,9 @@ export class ConfirmSaleService {
     });
   }
 
-  private async createDeferredOrder(
+  private createDeferredOrderInput(
     input: ConfirmPosSaleInput,
-    items: ValidatedSaleItem[],
-    totals: ReturnType<typeof calculateValidatedTotals>,
-  ): Promise<string | undefined> {
+  ): SaleConfirmationDeferredOrderInput | undefined {
     if (input.checkout.deliveryMethod === DeliveryMethod.immediate) return undefined;
     const idempotencyKey = input.orderIdempotencyKey?.trim();
     if (!idempotencyKey) throw new Error("No se pudo identificar el intento de pedido diferido.");
@@ -143,6 +140,12 @@ export class ConfirmSaleService {
         !address.city.trim()
       ) {
         throw new Error("La entrega a domicilio requiere contacto, teléfono, dirección y ciudad.");
+      }
+    }
+    if (input.checkout.deliveryMethod === DeliveryMethod.store_pickup) {
+      const contact = input.checkout.storePickupContact;
+      if (!contact?.recipientName?.trim() || !contact.recipientPhone?.trim()) {
+        throw new Error("El retiro en tienda requiere nombre y teléfono de quien retira.");
       }
     }
     const deliveryAddress =
@@ -165,35 +168,21 @@ export class ConfirmSaleService {
             }
           : { emailMode: "not_applicable" as const }
         : undefined;
-    const order = await this.repositories.orders.create({
-      tenantId: input.currentBranch.tenantId,
-      branchId: input.currentBranch.id,
-      orderNumber: `POS-${idempotencyKey}`,
-      source: OrderSource.pos,
-      customerId: input.customerId,
-      items: items.map((item) => ({
-        id: `order-item-${idempotencyKey}-${item.productId}`,
-        productId: item.productId,
-        skuSnapshot: item.skuSnapshot,
-        nameSnapshot: item.nameSnapshot,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        discount: item.discount,
-        subtotal: item.subtotal,
-      })),
-      status: OrderStatus.confirmed,
+    const storePickupContact =
+      input.checkout.deliveryMethod === DeliveryMethod.store_pickup
+        ? {
+            recipientName: input.checkout.storePickupContact!.recipientName.trim(),
+            recipientPhone: input.checkout.storePickupContact!.recipientPhone.trim(),
+          }
+        : undefined;
+    return {
+      idempotencyKey,
       deliveryMethod: input.checkout.deliveryMethod,
       transportMode: input.checkout.transportMode,
       notificationContact,
       deliveryAddress,
-      subtotal: fromCents(totals.subtotalCents),
-      discountTotal: fromCents(totals.discountTotalCents),
-      shippingTotal: 0,
-      total: fromCents(totals.totalCents),
-      trackingToken: `pos-${idempotencyKey}`,
-      idempotencyKey,
-    });
-    return order.id;
+      storePickupContact,
+    };
   }
 
   private validateOperationalContext(input: ConfirmPosSaleInput) {

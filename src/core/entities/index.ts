@@ -67,6 +67,7 @@ export type * from "./PickingOrder";
 export type * from "./PickingItem";
 export type * from "./PickingAssignmentRelease";
 export type * from "./PickingIncident";
+export type * from "./Packing";
 export type * from "./Dispatch";
 export type * from "./StorePickupDelivery";
 export type * from "./Package";

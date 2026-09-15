@@ -122,6 +122,20 @@ export function validateCheckout(checkout: CheckoutDto, total: number): Checkout
 }
 
 function validateDelivery(checkout: CheckoutDto, errors: CheckoutValidationErrors) {
+  if (checkout.deliveryMethod === DeliveryMethod.store_pickup) {
+    const contact = checkout.storePickupContact;
+    if (!contact?.recipientName.trim()) {
+      errors.recipientName = "El nombre de quien retira es obligatorio.";
+    }
+    const phone = contact?.recipientPhone?.trim() ?? "";
+    if (!phone) {
+      errors.recipientPhone = "El teléfono es obligatorio.";
+    } else {
+      const phoneError = validatePhoneNumber(phone);
+      if (phoneError) errors.recipientPhone = phoneError;
+    }
+    return;
+  }
   if (checkout.deliveryMethod !== DeliveryMethod.home_delivery) return;
 
   const address = checkout.deliveryAddress;

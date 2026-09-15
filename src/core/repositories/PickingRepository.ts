@@ -4,6 +4,7 @@ import type {
   PickingIncident,
   PickingItem,
   PickingOrder,
+  Packing,
 } from "@/core/entities";
 import type { PickingIncidentType, PickingItemStatus, PickingPriority } from "@/core/enums";
 
@@ -76,6 +77,7 @@ export type CompletePickingOrderInput = AssignPickingOrderInput;
 export interface CompletePickingOrderResult {
   pickingOrder: PickingOrder;
   order: Order;
+  packing: Packing;
   idempotent: boolean;
 }
 

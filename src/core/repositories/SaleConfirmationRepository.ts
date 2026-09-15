@@ -1,13 +1,18 @@
 import type {
   CashMovement,
   InventoryMovement,
+  Order,
   Payment,
+  PickingOrder,
   Sale,
   SaleDocumentSnapshot,
 } from "@/core/entities";
-import type { PaymentMethod, PaymentStatus } from "@/core/enums";
+import type { DeliveryMethod, PaymentMethod, PaymentStatus, TransportMode } from "@/core/enums";
 import type { CreateSaleItemInput } from "@/core/repositories/SalesRepository";
+import type { AddressSnapshot } from "@/core/types/address.types";
 import type { CurrencyCode } from "@/core/types/common.types";
+import type { OrderNotificationContact } from "@/core/types/orderNotification.types";
+import type { StorePickupContactSnapshot } from "@/core/types/storePickupContact.types";
 
 export type SaleConfirmationPaymentMethod = Exclude<PaymentMethod, "mixed">;
 
@@ -24,6 +29,15 @@ export interface SaleConfirmationPaymentInput {
   };
 }
 
+export interface SaleConfirmationDeferredOrderInput {
+  idempotencyKey: string;
+  deliveryMethod: DeliveryMethod;
+  transportMode: TransportMode;
+  deliveryAddress?: AddressSnapshot;
+  storePickupContact?: StorePickupContactSnapshot;
+  notificationContact?: OrderNotificationContact;
+}
+
 export interface ConfirmSaleInput {
   confirmationId: string;
   tenantId: string;
@@ -32,6 +46,7 @@ export interface ConfirmSaleInput {
   cashShiftId: string;
   customerId?: string;
   sourceOrderId?: string;
+  deferredOrder?: SaleConfirmationDeferredOrderInput;
   items: CreateSaleItemInput[];
   document?: SaleDocumentSnapshot;
   subtotal: number;
@@ -46,6 +61,8 @@ export interface ConfirmSaleResult {
   payments: Payment[];
   inventoryMovements: InventoryMovement[];
   cashMovement?: CashMovement;
+  order?: Order;
+  pickingOrder?: PickingOrder;
   idempotent: boolean;
 }
 
