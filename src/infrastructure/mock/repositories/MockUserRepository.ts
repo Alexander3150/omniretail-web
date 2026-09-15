@@ -13,6 +13,14 @@ export class MockUserRepository extends BaseMockRepository implements UserReposi
       (db) => db.users.find((item) => item.email.toLowerCase() === email.toLowerCase()) ?? null,
     );
   }
+  async listByTenant(tenantId: string) {
+    return this.read((db) => db.users.filter((item) => item.tenantId === tenantId));
+  }
+  async getByIdScoped(tenantId: string, id: string) {
+    return this.read(
+      (db) => db.users.find((item) => item.id === id && item.tenantId === tenantId) ?? null,
+    );
+  }
   async create(input: Parameters<UserRepository["create"]>[0]) {
     const item = this.store.mutate((db) => {
       const now = this.now();
@@ -25,6 +33,22 @@ export class MockUserRepository extends BaseMockRepository implements UserReposi
   }
   async update(id: string, input: Parameters<UserRepository["update"]>[1]) {
     const item = this.store.mutate((db) => this.updateById(db.users, id, input, "User"));
+    this.emit("user.changed", { entityId: item.id, tenantId: item.tenantId, action: "updated" });
+    return item;
+  }
+  async updateScoped(
+    tenantId: string,
+    id: string,
+    input: Parameters<UserRepository["updateScoped"]>[2],
+  ) {
+    const item = this.store.mutate((db) => {
+      const index = db.users.findIndex((user) => user.id === id && user.tenantId === tenantId);
+      if (index < 0) throw this.missing("User", id);
+      const current = db.users[index];
+      const updated = { ...current, ...input, updatedAt: this.now() };
+      db.users[index] = updated;
+      return updated;
+    });
     this.emit("user.changed", { entityId: item.id, tenantId: item.tenantId, action: "updated" });
     return item;
   }

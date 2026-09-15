@@ -40,11 +40,25 @@ import {
   UserStatus,
   UserType,
 } from "@/core/enums";
+import { permissionsConfig } from "@/config/permissions";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { buildPasswordHashMock } from "@/infrastructure/mock/shared/passwordHashMock";
 import { hardwareCatalogSeed } from "@/infrastructure/mock/seeds/hardwareCatalogSeed";
 
 const now = "2026-01-01T12:00:00.000Z";
+
+/**
+ * Ticket "FIXES FOCALIZADOS" §4: role-admin (demo/bootstrap, admin@ferrepharma.demo) necesita
+ * poder ejercer la app completa durante desarrollo/demo. Se deriva del catálogo canónico real
+ * (`src/config/permissions.ts`) en vez de mantener una segunda lista hardcodeada que se desincroniza
+ * cada vez que se agrega un permiso nuevo -- exactamente el problema que tenía la lista fija de
+ * abajo. Esto es DELIBERADAMENTE solo seed/demo: no crea ningún concepto de "super admin"/bypass
+ * en el código de producción (ensureDelegatablePermissions/ensureDelegatableRole siguen sin
+ * excepción alguna, ver role.validation.ts/employee.validation.ts) -- role-admin simplemente nace
+ * con `permissions` = TODAS las keys del catálogo, así que delega válidamente cualquier permiso
+ * porque literalmente los tiene todos, no porque haya un atajo que lo exima de la regla.
+ */
+const DEMO_ADMIN_ROLE_PERMISSIONS = permissionsConfig.map((permission) => permission.key);
 
 const legacyDemoSeedDatabase: MockDatabase = {
   tenants: [
@@ -199,21 +213,7 @@ const legacyDemoSeedDatabase: MockDatabase = {
       tenantId: "tenant-demo",
       name: "Administrador",
       isSystem: true,
-      permissions: [
-        "admin.users.manage",
-        "admin.roles.manage",
-        "admin.business_config.manage",
-        "admin.customers.read",
-        "admin.dashboard.read",
-        "admin.reports.read",
-        "admin.reports.export",
-        "admin.cash.read",
-        "admin.ecommerce_config.manage",
-        "admin.branches.read",
-        "admin.branches.manage",
-        "admin.bank_accounts.manage",
-        "admin.suppliers.manage",
-      ],
+      permissions: DEMO_ADMIN_ROLE_PERMISSIONS,
       branchScope: "all",
       status: RoleStatus.active,
       createdAt: now,

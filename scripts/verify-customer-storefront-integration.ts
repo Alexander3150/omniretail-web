@@ -199,7 +199,7 @@ function createSessionReactivityHarness() {
     customers,
   } as unknown as RepositoryRegistry;
 
-  let snapshot: CurrentSessionSnapshot = { user: null, role: null };
+  let snapshot: CurrentSessionSnapshot = { user: null, role: null, sessionId: null };
   let reloadVersion = 0;
   let pendingReload: Promise<void> = Promise.resolve();
   let pointerChecks: Promise<void>[] = [];

@@ -140,6 +140,10 @@ export function useRoles() {
     roles,
     canRead,
     canManage,
+    // Permisos efectivos del actor -- RoleForm los necesita para deshabilitar (no ocultar, ticket
+    // "FIXES FOCALIZADOS" §2) los checkboxes de permisos que el actor no puede delegar. El service
+    // (`ensureDelegatablePermissions`) sigue siendo la autoridad real; esto es solo UX.
+    actorPermissions: permissions,
     create,
     update,
     archive,

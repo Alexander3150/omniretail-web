@@ -47,6 +47,12 @@ export function validateRoleInput(dto: RoleInputDto) {
  * igual. No hay excepción de "super admin"/"isSystem" -- no existe hoy un concepto autoritativo
  * de eso en el código (se buscó explícitamente, ver PR #88); inventar un bypass sería la brecha
  * de seguridad que esta regla existe para cerrar.
+ *
+ * Mensaje deliberadamente genérico (ticket "FIXES FOCALIZADOS" §3): las permission keys crudas
+ * (`auth.profile.read`, `admin.users.read`, ...) son vocabulario interno, no algo que un usuario
+ * de negocio deba leer en un toast. El detalle completo (`nonDelegable`) sigue disponible para
+ * quien lea el código/debuggee -- ver el parámetro que arma este array -- pero no viaja en el
+ * mensaje que llega a la UI.
  */
 export function ensureDelegatablePermissions(
   actorPermissions: readonly string[],
@@ -56,7 +62,7 @@ export function ensureDelegatablePermissions(
   const nonDelegable = requestedPermissions.filter((key) => !actorPermissionSet.has(key));
   if (nonDelegable.length > 0) {
     throw new AdministrationServiceError(
-      `No podés otorgar permisos que vos mismo no tenés: ${nonDelegable.join(", ")}.`,
+      "El rol contiene permisos que tu cuenta no puede asignar. Revisa los permisos seleccionados e inténtalo nuevamente.",
     );
   }
 }

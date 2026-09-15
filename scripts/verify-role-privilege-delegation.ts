@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { permissionsConfig } from "@/config/permissions";
 import { RoleStatus } from "@/core/enums";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import { MockAuditLogRepository, MockRoleRepository } from "@/infrastructure/mock/repositories";
+import { demoSeedDatabase } from "@/infrastructure/mock/seeds/demoSeed";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { RoleInputDto } from "@/modules/administration/application/dto/RoleDto";
 import { ArchiveRoleService } from "@/modules/administration/application/services/ArchiveRoleService";
@@ -118,6 +120,9 @@ async function verifyPrivilegeDelegation(harness: ReturnType<typeof createHarnes
   // E / F. El mismo actor NO puede delegar un permiso que él mismo no tiene -- ya sea "desde la
   // UI" o por una llamada directa al service (acá no hay una UI separada del service: el service
   // ES el boundary, así que esta es literalmente la llamada directa).
+  //
+  // Ticket "FIXES FOCALIZADOS" §3: el mensaje debe ser amigable y NUNCA exponer las permission
+  // keys crudas que el actor no puede delegar -- se verifica ambas cosas explícitamente acá.
   await assert.rejects(
     () =>
       createService.execute(
@@ -128,9 +133,27 @@ async function verifyPrivilegeDelegation(harness: ReturnType<typeof createHarnes
         actorPermissions,
         ACTOR_ID,
       ),
-    /no podés otorgar permisos/i,
+    /permisos que tu cuenta no puede asignar/i,
     "Un actor no debe poder crear un rol con permisos que él mismo no posee",
   );
+  try {
+    await createService.execute(
+      TENANT,
+      baseRoleInput({
+        permissions: [MANAGE_PERMISSION, "admin.reports.export", "pos.sales.create"],
+      }),
+      actorPermissions,
+      ACTOR_ID,
+    );
+    assert.fail("se esperaba que la creación fallara por permisos no delegables");
+  } catch (caughtError) {
+    const message = caughtError instanceof Error ? caughtError.message : String(caughtError);
+    assert.equal(
+      /admin\.reports\.export|pos\.sales\.create/.test(message),
+      false,
+      "El mensaje de error no debe exponer permission keys crudas al usuario",
+    );
+  }
 
   await assert.rejects(
     () =>
@@ -141,7 +164,7 @@ async function verifyPrivilegeDelegation(harness: ReturnType<typeof createHarnes
         actorPermissions,
         ACTOR_ID,
       ),
-    /no podés otorgar permisos/i,
+    /permisos que tu cuenta no puede asignar/i,
     "UpdateRoleService debe aplicar la misma regla de delegación que CreateRoleService",
   );
 
@@ -274,6 +297,91 @@ function verifySourceInvariants() {
     false,
     "El formulario no debe ofrecer 'archived' como estado seleccionable",
   );
+
+  // Ticket §5: RoleTable ya no presenta branchScope como responsabilidad del Rol (columna
+  // "Alcance" removida). branchScope puede seguir existiendo en el dominio/DTO -- eso no se toca
+  // acá, solo su presentación en la UI de Roles.
+  const roleTable = read("src/modules/administration/components/RoleTable.tsx");
+  assert.equal(
+    /branchScope|branchScopeLabels|header:\s*"Alcance"/.test(roleTable),
+    false,
+    "RoleTable no debe volver a presentar branchScope como columna/dato de la UI de Roles",
+  );
+
+  // Ticket §2: RoleForm debe conocer los permisos delegables del actor (`actorPermissionSet`) y
+  // deshabilitar -- no ocultar -- los checkboxes que el actor no puede otorgar, con una pista
+  // visible en vez de solo un atributo `disabled` silencioso.
+  assert.ok(
+    /actorPermissionSet/.test(roleForm),
+    "RoleForm debe calcular qué permisos puede delegar el actor (actorPermissionSet)",
+  );
+  assert.ok(
+    /disabled=\{disabled\}/.test(roleForm) || /disabled\s*=\s*busy\s*\|\|/.test(roleForm),
+    "RoleForm debe deshabilitar el checkbox de un permiso no delegable, no solo mostrarlo",
+  );
+  assert.ok(
+    /No disponible para tu cuenta/.test(roleForm),
+    "RoleForm debe mostrar una pista visible para permisos fuera del alcance del actor (no solo ocultarlos)",
+  );
+}
+
+/**
+ * Ticket §4: el seed de demo (role-admin, admin@ferrepharma.demo) debe derivar SUS permisos del
+ * catálogo canónico real (`src/config/permissions.ts`), nunca de una segunda lista hardcodeada
+ * que se desincroniza. Se verifica en runtime contra `demoSeedDatabase` (el resultado final que
+ * consume `createMockDatabase()`, ya con el override de hardwareCatalogSeed aplicado) y también a
+ * nivel de código fuente, para que agregar un permiso nuevo al catálogo sin tocar demoSeed.ts siga
+ * dejando a role-admin con el permiso completo automáticamente.
+ */
+function verifyDemoAdminHasAllCanonicalPermissions() {
+  const roleAdmin = demoSeedDatabase.roles.find((role) => role.id === "role-admin");
+  assert.ok(roleAdmin, "El seed de demo debe seguir teniendo role-admin");
+  assert.equal(roleAdmin!.isSystem, true, "role-admin debe seguir siendo isSystem");
+  assert.equal(roleAdmin!.status, RoleStatus.active, "role-admin debe seguir activo");
+
+  const canonicalKeys = new Set(permissionsConfig.map((permission) => permission.key));
+  const roleAdminKeys = new Set(roleAdmin!.permissions);
+  assert.equal(
+    roleAdminKeys.size,
+    canonicalKeys.size,
+    "role-admin debe tener EXACTAMENTE la cantidad de permisos del catálogo canónico, ni más ni menos",
+  );
+  for (const key of canonicalKeys) {
+    assert.ok(roleAdminKeys.has(key), `role-admin debe incluir el permiso canónico ${key}`);
+  }
+
+  const source = readFileSync(
+    join(process.cwd(), "src/infrastructure/mock/seeds/demoSeed.ts"),
+    "utf8",
+  );
+  assert.ok(
+    /permissionsConfig\.map/.test(source),
+    "demoSeed.ts debe derivar los permisos de role-admin de permissionsConfig, no de una lista hardcodeada",
+  );
+
+  const admin = demoSeedDatabase.users.find((user) => user.email === "admin@ferrepharma.demo");
+  assert.ok(admin, "admin@ferrepharma.demo debe seguir existiendo en el seed");
+  assert.equal(admin!.roleId, "role-admin", "admin@ferrepharma.demo debe seguir apuntando a role-admin");
+}
+
+/**
+ * Ticket §4: "no bypass de producción" -- el seed de demo puede darle a role-admin todos los
+ * permisos, pero el mecanismo tiene que seguir siendo "tiene la key", nunca un atajo de
+ * super-admin/isSystem en la validación real. verifyNoSuperAdminBypass() ya cubre
+ * role.validation.ts; esto además confirma que employee.validation.ts tampoco lo tiene.
+ */
+function verifyNoSuperAdminBypassInEmployeeValidation() {
+  const source = stripComments(
+    readFileSync(
+      join(process.cwd(), "src/modules/administration/validation/employee.validation.ts"),
+      "utf8",
+    ),
+  );
+  assert.equal(
+    /SUPER_ADMIN|\bbypass\b|isSystem\s*\?\s*true/i.test(source),
+    false,
+    "No debe existir un bypass hardcodeado de super admin en la validación de empleados",
+  );
 }
 
 async function main() {
@@ -281,8 +389,10 @@ async function main() {
   await verifyReadVsManage(createHarness());
   await verifyPrivilegeDelegation(harness);
   await verifyNoSuperAdminBypass();
+  await verifyNoSuperAdminBypassInEmployeeValidation();
   await verifyCatalogAndSystemRoleInvariants(createHarness());
   verifySourceInvariants();
+  verifyDemoAdminHasAllCanonicalPermissions();
   console.log("role privilege delegation verification: PASS");
 }
 
