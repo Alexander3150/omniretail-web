@@ -10,6 +10,7 @@ import type {
 } from "@/modules/administration/application/dto/EmployeeDto";
 import { CreateEmployeeService } from "@/modules/administration/application/services/CreateEmployeeService";
 import { GetEmployeesService } from "@/modules/administration/application/services/GetEmployeesService";
+import { ResendInvitationService } from "@/modules/administration/application/services/ResendInvitationService";
 import { cleanError } from "@/modules/administration/application/services/serviceHelpers";
 import { UpdateEmployeeService } from "@/modules/administration/application/services/UpdateEmployeeService";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
@@ -37,6 +38,10 @@ export function useEmployees() {
   const getService = useMemo(() => new GetEmployeesService(repositories), [repositories]);
   const createService = useMemo(() => new CreateEmployeeService(repositories), [repositories]);
   const updateService = useMemo(() => new UpdateEmployeeService(repositories), [repositories]);
+  const resendInvitationService = useMemo(
+    () => new ResendInvitationService(repositories),
+    [repositories],
+  );
   const [employees, setEmployees] = useState<EmployeeDto[]>([]);
   const [roleOptions, setRoleOptions] = useState<RoleOption[]>([]);
   const [roleNames, setRoleNames] = useState<Map<string, string>>(new Map());
@@ -100,6 +105,9 @@ export function useEmployees() {
   useDataEvent("user.changed", reload);
   useDataEvent("role.changed", reload);
   useDataEvent("branch.changed", reload);
+  // inviteEmployee (alta o reintento de invitación) emite esto -- sin esta suscripción, "Estado
+  // cuenta" en la tabla quedaría desactualizado hasta la próxima acción no relacionada.
+  useDataEvent("auth.changed", reload);
 
   useEffect(() => {
     let active = true;
@@ -114,7 +122,7 @@ export function useEmployees() {
   }, [tenantId, sessionLoading]);
 
   const runMutation = useCallback(
-    async (action: (tenantId: string, actorUserId: string) => Promise<EmployeeDto>) => {
+    async <T>(action: (tenantId: string, actorUserId: string) => Promise<T>): Promise<T> => {
       if (!tenantId || !actorUserId) {
         const message = "No se pudo resolver la sesión actual.";
         setError(message);
@@ -152,6 +160,19 @@ export function useEmployees() {
     [permissions, runMutation, updateService],
   );
 
+  const resendInvitation = useCallback(
+    (employeeId: string) =>
+      runMutation((currentTenantId, currentActorUserId) =>
+        resendInvitationService.execute(
+          currentTenantId,
+          employeeId,
+          permissions,
+          currentActorUserId,
+        ),
+      ),
+    [permissions, resendInvitationService, runMutation],
+  );
+
   return {
     loading: loading || sessionLoading,
     busy,
@@ -165,6 +186,7 @@ export function useEmployees() {
     canManage,
     create,
     update,
+    resendInvitation,
     reload,
   };
 }

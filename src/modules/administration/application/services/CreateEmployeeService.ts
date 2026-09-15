@@ -1,6 +1,9 @@
 import { UserStatus, UserType } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
-import type { EmployeeDto, EmployeeInputDto } from "@/modules/administration/application/dto/EmployeeDto";
+import type {
+  EmployeeInputDto,
+  EmployeeInvitationResult,
+} from "@/modules/administration/application/dto/EmployeeDto";
 import { toEmployeeDto } from "@/modules/administration/application/mappers/EmployeeMapper";
 import {
   ensureCanManageEmployees,
@@ -43,7 +46,7 @@ export class CreateEmployeeService {
     dto: EmployeeInputDto,
     permissions: readonly string[],
     actorUserId: string,
-  ): Promise<EmployeeDto> {
+  ): Promise<EmployeeInvitationResult> {
     // 1. permiso del actor
     ensureCanManageEmployees(permissions);
     // 2. tenant confiable (llega ya resuelto por el caller, no por el DTO)
@@ -87,11 +90,15 @@ export class CreateEmployeeService {
       allowedBranchIds: normalizedInput.allowedBranchIds,
     });
 
-    // 9. invitación -- reutiliza Auth existente, nunca crea AuthAccount/token a mano
+    // 9. invitación -- reutiliza Auth existente, nunca crea AuthAccount/token a mano. El token se
+    // captura del resultado de ESTA llamada (invitation-scoped, ver EmployeeInvitationResult) --
+    // nunca se vuelve a pedir después ni se guarda en el User.
     let invited = true;
+    let invitationToken: string | null = null;
     let invitationError: string | undefined;
     try {
-      await this.repositories.auth.inviteEmployee(user.id);
+      const inviteResult = await this.repositories.auth.inviteEmployee(user.id);
+      invitationToken = inviteResult.invitationToken;
     } catch (caughtError) {
       invited = false;
       invitationError = caughtError instanceof Error ? caughtError.message : "error desconocido";
@@ -122,6 +129,6 @@ export class CreateEmployeeService {
     }
 
     // 11. user.changed ya lo emite MockUserRepository.create() -- no hace falta duplicarlo acá.
-    return toEmployeeDto(user, undefined);
+    return { employee: toEmployeeDto(user, undefined), invitationToken };
   }
 }

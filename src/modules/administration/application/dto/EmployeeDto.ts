@@ -34,3 +34,18 @@ export interface EmployeeInputDto {
   allowedBranchIds: string[];
   status: UserStatus;
 }
+
+/**
+ * Resultado de una acción puntual de invitación (`CreateEmployeeService`/`ResendInvitationService`).
+ * `invitationToken` viaja SOLO como parte de ESTA acción -- igual criterio invitation-scoped que
+ * `AuthRepository.inviteEmployee` (ver `InviteEmployeeResult`): nunca se agrega a `EmployeeDto`
+ * (que sí viaja en listados/eventos persistentes -- ver el comentario de esa interfaz) ni queda
+ * recuperable después por otro medio. Sugerencia de scrum: "Crear empleado -> Invitación generada
+ * correctamente -> [copiar invitación]" -- la UI (`EmployeesPage`) lo usa una única vez para
+ * ofrecer copiar el enlace y lo descarta al cerrar el modal; no se persiste en localStorage ni en
+ * ninguna tabla nueva.
+ */
+export interface EmployeeInvitationResult {
+  employee: EmployeeDto;
+  invitationToken: string | null;
+}

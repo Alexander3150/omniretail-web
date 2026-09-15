@@ -55,6 +55,10 @@ export function normalizeEmployeeInput(dto: EmployeeInputDto): EmployeeInputDto 
  * actorEffectivePermissions`), sin importar si el Role es `isSystem` o no. Misma filosofía: no
  * existe (se buscó explícitamente en PR #88 y de nuevo acá) un concepto autoritativo de "super
  * admin"/bypass en el código, así que no se inventa ninguno -- ni siquiera para asignar roles.
+ *
+ * Mensaje deliberadamente genérico (ticket "FIXES FOCALIZADOS" §3, mismo criterio que
+ * `ensureDelegatablePermissions` en role.validation.ts): las permission keys crudas no son
+ * vocabulario de negocio -- no viajan en el mensaje que llega a la UI.
  */
 export function ensureDelegatableRole(
   actorPermissions: readonly string[],
@@ -64,7 +68,7 @@ export function ensureDelegatableRole(
   const nonDelegable = targetRole.permissions.filter((key) => !actorPermissionSet.has(key));
   if (nonDelegable.length > 0) {
     throw new AdministrationServiceError(
-      `No podés asignar un rol con permisos que vos mismo no tenés: ${nonDelegable.join(", ")}.`,
+      "El rol seleccionado otorga permisos que tu cuenta no puede asignar. Elegí otro rol o pedí que ajusten tus permisos.",
     );
   }
 }

@@ -27,12 +27,23 @@ export function EmployeesPage() {
     error,
     loading,
     reload,
+    resendInvitation,
     roleNames,
     roleOptions,
     update,
   } = useEmployees();
   const { showToast } = useToast();
   const [editor, setEditor] = useState<EditorState>(null);
+  /**
+   * Invitación recién generada por ESTA acción (crear o reenviar) -- estado puramente local, nunca
+   * se persiste (ni localStorage ni una tabla nueva): al cerrar el modal o navegar fuera de la
+   * página, se pierde para siempre (mismo criterio invitation-scoped que `EmployeeInvitationResult`
+   * / `AuthRepository.inviteEmployee`). Sugerencia de scrum: "Crear empleado -> Invitación generada
+   * correctamente -> [copiar invitación]".
+   */
+  const [invitationLink, setInvitationLink] = useState<{ employeeName: string; token: string } | null>(
+    null,
+  );
 
   async function handleSubmit(value: EmployeeInputDto) {
     try {
@@ -40,17 +51,44 @@ export function EmployeesPage() {
         await update(editor.employee.id, value);
         showToast({ title: "Empleado actualizado", tone: "success" });
       } else {
-        await create(value);
+        const result = await create(value);
         showToast({
           title: "Empleado creado",
           description: "Se envió la invitación para que active su cuenta.",
           tone: "success",
         });
+        if (result.invitationToken) {
+          setInvitationLink({ employeeName: result.employee.name, token: result.invitationToken });
+        }
       }
       setEditor(null);
     } catch (caughtError) {
       showToast({
         title: "No se pudo guardar el empleado",
+        description:
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Intentá nuevamente en unos momentos.",
+        tone: "danger",
+      });
+    }
+  }
+
+  async function handleResendInvitation(employee: EmployeeDto) {
+    try {
+      const result = await resendInvitation(employee.id);
+      showToast({
+        title:
+          employee.authStatus === undefined ? "Invitación enviada" : "Invitación reenviada",
+        description: `${employee.name} puede activar su cuenta con el nuevo enlace.`,
+        tone: "success",
+      });
+      if (result.invitationToken) {
+        setInvitationLink({ employeeName: employee.name, token: result.invitationToken });
+      }
+    } catch (caughtError) {
+      showToast({
+        title: "No se pudo enviar la invitación",
         description:
           caughtError instanceof Error
             ? caughtError.message
@@ -121,9 +159,11 @@ export function EmployeesPage() {
       ) : (
         <EmployeeTable
           branchNames={branchNames}
+          busy={busy}
           canManage={canManage}
           employees={employees}
           onEdit={(employee) => setEditor({ mode: "edit", employee })}
+          onResendInvitation={(employee) => void handleResendInvitation(employee)}
           roleNames={roleNames}
         />
       )}
@@ -147,6 +187,68 @@ export function EmployeesPage() {
           />
         ) : null}
       </Modal>
+
+      <InvitationLinkModal
+        invitation={invitationLink}
+        onClose={() => setInvitationLink(null)}
+      />
     </div>
+  );
+}
+
+/**
+ * Muestra el enlace de invitación UNA sola vez, recién generado por create/resend -- nunca lo lee
+ * de ningún store persistente (ver el comentario de `invitationLink` en `EmployeesPage`). Cerrarlo
+ * lo descarta: no hay forma de volver a verlo desde acá, coherente con "no mostrar el token como
+ * información permanente".
+ */
+function InvitationLinkModal({
+  invitation,
+  onClose,
+}: {
+  invitation: { employeeName: string; token: string } | null;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const link = invitation ? `${window.location.origin}/activar-cuenta/${invitation.token}` : "";
+
+  async function handleCopy() {
+    if (!invitation) return;
+    await navigator.clipboard.writeText(link);
+    setCopied(true);
+  }
+
+  function handleClose() {
+    setCopied(false);
+    onClose();
+  }
+
+  return (
+    <Modal
+      onClose={handleClose}
+      open={Boolean(invitation)}
+      size="md"
+      subtitle="Compartilo solo con la persona invitada -- no queda guardado en ningún lado, esta es la única vez que se muestra."
+      title="Invitación generada correctamente"
+    >
+      {invitation ? (
+        <div className="space-y-4">
+          <p className="text-sm text-[var(--color-text-muted)]">
+            {invitation.employeeName} puede activar su cuenta con este enlace.
+          </p>
+          <div className="break-all rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 text-xs text-[var(--color-text)]">
+            {link}
+          </div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button onClick={handleClose} type="button" variant="secondary">
+              Cerrar
+            </Button>
+            <Button onClick={() => void handleCopy()} type="button">
+              {copied ? "Copiado ✓" : "Copiar invitación"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </Modal>
   );
 }

@@ -290,9 +290,20 @@ async function verifyCreateEmployee(harness: ReturnType<typeof createHarness>) {
   );
   const account = harness.store
     .getSnapshot()
-    .authAccounts.find((item) => item.userId === created.id);
+    .authAccounts.find((item) => item.userId === created.employee.id);
   assert.ok(account, "inviteEmployee debe haber creado un AuthAccount para el nuevo empleado");
   assert.equal(account?.status, AccountStatus.password_reset_required);
+
+  // Sugerencia de scrum "copiar invitación": CreateEmployeeService debe devolver el token de ESTA
+  // invitación (para que la UI lo ofrezca una sola vez), pero jamás como parte de EmployeeDto --
+  // ese nunca debe volver a exponer tokens (ver el comentario de EmployeeDto.ts).
+  assert.equal(typeof created.invitationToken, "string");
+  assert.ok((created.invitationToken as string).length > 0);
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(created.employee, "invitationToken"),
+    false,
+    "EmployeeDto no debe cargar invitationToken -- viaja solo en el resultado de la acción puntual",
+  );
 
   // duplicate email rejected según la política real de Auth (global, misma fuente que login()).
   await assert.rejects(
@@ -319,11 +330,23 @@ async function verifyCreateEmployee(harness: ReturnType<typeof createHarness>) {
   );
 
   // privilege escalation Role denied + direct service bypass denied (misma llamada: no hay una
-  // "UI" separada del service en esta arquitectura, el service ES el boundary).
+  // "UI" separada del service en esta arquitectura, el service ES el boundary). Mensaje amigable
+  // (ticket §3): ni "no podés asignar un rol" ni las permission keys crudas viajan al usuario.
   await assert.rejects(
     () => service.execute(TENANT_A, baseInput({ roleId: "au-role-escalation" }), ACTOR_PERMISSIONS, ACTOR_ID),
-    /no podés asignar un rol/i,
+    /permisos que tu cuenta no puede asignar/i,
   );
+  try {
+    await service.execute(TENANT_A, baseInput({ roleId: "au-role-escalation" }), ACTOR_PERMISSIONS, ACTOR_ID);
+    assert.fail("se esperaba que la asignación fallara por permisos no delegables");
+  } catch (caughtError) {
+    const message = caughtError instanceof Error ? caughtError.message : String(caughtError);
+    assert.equal(
+      /admin\.reports\.export/.test(message),
+      false,
+      "El mensaje de error no debe exponer permission keys crudas al usuario",
+    );
+  }
 
   // isSystem role SÍ es asignable si es delegable, activo, mismo tenant.
   const withSystemRole = await service.execute(
@@ -332,7 +355,7 @@ async function verifyCreateEmployee(harness: ReturnType<typeof createHarness>) {
     ACTOR_PERMISSIONS,
     ACTOR_ID,
   );
-  assert.equal(withSystemRole.roleId, "au-role-system-ok");
+  assert.equal(withSystemRole.employee.roleId, "au-role-system-ok");
 
   // Branch same tenant accepted (ya probado en baseInput). cross-tenant Branch denied:
   await assert.rejects(
