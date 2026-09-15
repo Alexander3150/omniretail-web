@@ -1,4 +1,4 @@
-import type { Notification, Order, PickingOrder } from "@/core/entities";
+import type { Notification, Order, Package, PickingOrder } from "@/core/entities";
 import { DeliveryMethod, OrderStatus, PickingStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
@@ -65,6 +65,9 @@ export class DispatchApplicationService {
     }
     const picking = await this.requireCompletedPicking(context, order.id);
     const dispatch = await this.repositories.dispatches.getByOrder(context, order.id);
+    const packages = dispatch
+      ? await this.repositories.dispatches.getPackagesByDispatch(context, dispatch.id)
+      : [];
     const notification = dispatch
       ? await this.repositories.notifications.getByDispatch(context.tenantId, dispatch.id)
       : null;
@@ -84,6 +87,7 @@ export class DispatchApplicationService {
           }
         : null,
       notification: toNotificationDto(notification),
+      packages: packages.map(toPackageDto),
     };
   }
 
@@ -100,6 +104,7 @@ export class DispatchApplicationService {
       operationId: command.operationId,
       carrierName: command.carrierName,
       trackingNumber: command.trackingNumber,
+      packages: command.packages,
     });
     if (!result.dispatch.dispatchedAt) throw new Error("Confirmed Dispatch has no dispatchedAt");
     return {
@@ -113,6 +118,7 @@ export class DispatchApplicationService {
       dispatchedAt: result.dispatch.dispatchedAt,
       notificationStatus: result.notificationStatus,
       notification: toNotificationDto(result.notification ?? null),
+      packages: result.packages.map(toPackageDto),
       idempotent: result.idempotent,
     };
   }
@@ -249,5 +255,14 @@ function toNotificationDto(notification: Notification | null): DispatchNotificat
     recipientEmail: notification.recipientEmail,
     deliveryStatus: notification.deliveryStatus,
     sentAt: notification.sentAt,
+  };
+}
+
+function toPackageDto(item: Package) {
+  return {
+    id: item.id,
+    number: item.number,
+    weight: item.weight ?? null,
+    description: item.description ?? null,
   };
 }

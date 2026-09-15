@@ -34,6 +34,13 @@ OrderRepository, PickingRepository, DispatchRepository, InventoryRepository
 - `GetLogisticsItemTraceService` expone DTOs tenant+sucursal scoped desde movimientos y reservas reales, incluyendo allocations multiubicacion, lote/vencimiento y serie.
 - Ecommerce/App solo pueden crear Orders domiciliarias; POS conserva inmediata, retiro y domicilio. `immediate` no entra a Logistics.
 
+## Packing y Despacho
+
+- `/logistica/despachos` consume la cola scoped de `DispatchApplicationService` para pedidos domiciliarios `ready_for_dispatch`.
+- Packing es preparacion visual y no agrega un estado operativo intermedio ni consume inventario.
+- La confirmacion persiste Dispatch y sus Packages en una sola transaccion; conteo y peso se derivan de los Packages.
+- El Trace es read-only y se obtiene de `GetLogisticsItemTraceService` sobre evidencia canonica de Picking e InventoryMovement.
+
 ## Estructura futura
 
 ```text
