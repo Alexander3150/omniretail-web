@@ -2,6 +2,7 @@ import {
   BUSINESS_CONFIG_MANAGE_PERMISSION,
   CASH_READ_PERMISSION,
   DASHBOARD_READ_PERMISSION,
+  PLANS_READ_PERMISSION,
   REPORTS_READ_PERMISSION,
 } from "@/modules/administration/permissions";
 import type { NavigationItem } from "@/shared/types/navigation.types";
@@ -26,6 +27,15 @@ export const administrationNavigation = [
         label: "Configuración del negocio",
         href: "/administracion/configuracion-negocio",
         permission: BUSINESS_CONFIG_MANAGE_PERMISSION,
+      },
+      {
+        id: "administration-plan",
+        label: "Plan y suscripción",
+        href: "/administracion/plan",
+        // Solo lectura a propósito -- esta foundation no expone mutaciones de Plan/Subscription
+        // (upgrade/downgrade/addons quedan fuera de este PR), así que no existe un
+        // `admin.plans.manage` que agregar acá.
+        permission: PLANS_READ_PERMISSION,
       },
       {
         id: "administration-roles",

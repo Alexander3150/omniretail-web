@@ -9,6 +9,12 @@ export const CASH_READ_PERMISSION = "admin.cash.read";
 export const DASHBOARD_READ_PERMISSION = "admin.dashboard.read";
 export const REPORTS_READ_PERMISSION = "admin.reports.read";
 export const REPORTS_EXPORT_PERMISSION = "admin.reports.export";
+/**
+ * Solo lectura a propósito: esta foundation no expone ninguna mutación de Plan/Subscription
+ * desde la UI todavía (upgrade/downgrade/addons quedan fuera de este PR), así que no existe un
+ * `admin.plans.manage` que proteger.
+ */
+export const PLANS_READ_PERMISSION = "admin.plans.read";
 
 export const administrationPermissions = [
   {
@@ -94,6 +100,12 @@ export const administrationPermissions = [
     module: "administration",
     name: "Exportar reportes",
     description: "Permite exportar reportes a CSV.",
+  },
+  {
+    key: PLANS_READ_PERMISSION,
+    module: "administration",
+    name: "Leer plan y suscripción",
+    description: "Permite consultar el plan contratado, capabilities y uso del negocio.",
   },
   {
     key: "admin.ecommerce_config.manage",

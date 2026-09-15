@@ -21,6 +21,8 @@ import {
   PickingPriority,
   PickingItemStatus,
   PickingStatus,
+  PlanCode,
+  PlanStatus,
   ProductStatus,
   ProductType,
   PromotionStatus,
@@ -29,11 +31,13 @@ import {
   ReceiptLineStatus,
   ReceiptStatus,
   RoleStatus,
+  SaasCapabilityKey,
   SaleStatus,
   SalesChannel,
   SerialStatus,
   SupplierStatus,
   TenantStatus,
+  TenantSubscriptionStatus,
   TransportMode,
   UnitCategory,
   UnitStatus,
@@ -136,6 +140,65 @@ const legacyDemoSeedDatabase: MockDatabase = {
         PaymentMethod.mixed,
       ],
       defaultBranchId: "branch-centro",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ],
+  /**
+   * SaaS plans foundation. `plan-enterprise` incluye TODAS las capabilities del catálogo a
+   * propósito -- FerrePharma demo ya ejercita prácticamente todo el sistema (e-commerce, lotes,
+   * vencimiento, series, kits), así que es "el plan de mayor capacidad disponible" (§11 del
+   * ticket), nunca un tenant no reconocido elevado a Enterprise por default (ver
+   * ResolveTenantEntitlementsService: fail-closed sin Subscription). `limits` queda vacío en
+   * ambos planes -- no hay números de negocio aprobados todavía (§12/§22: reportado en la salida
+   * final, no inventado acá).
+   */
+  planDefinitions: [
+    {
+      id: "plan-basic",
+      code: PlanCode.basic,
+      name: "Basic",
+      description: "Operación core: inventario, compras, recepción y punto de venta.",
+      status: PlanStatus.active,
+      capabilities: [
+        SaasCapabilityKey.inventory,
+        SaasCapabilityKey.purchasing,
+        SaasCapabilityKey.receiving,
+        SaasCapabilityKey.pos,
+      ],
+      limits: {},
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "plan-enterprise",
+      code: PlanCode.enterprise,
+      name: "Enterprise",
+      description: "Todo Basic más e-commerce, trazabilidad avanzada (lotes, vencimiento, series) y kits.",
+      status: PlanStatus.active,
+      capabilities: [
+        SaasCapabilityKey.inventory,
+        SaasCapabilityKey.purchasing,
+        SaasCapabilityKey.receiving,
+        SaasCapabilityKey.pos,
+        SaasCapabilityKey.ecommerce,
+        SaasCapabilityKey.traceabilityLots,
+        SaasCapabilityKey.traceabilityExpiration,
+        SaasCapabilityKey.traceabilitySerials,
+        SaasCapabilityKey.catalogKits,
+      ],
+      limits: {},
+      createdAt: now,
+      updatedAt: now,
+    },
+  ],
+  tenantSubscriptions: [
+    {
+      id: "tenant-subscription-demo",
+      tenantId: "tenant-demo",
+      planId: "plan-enterprise",
+      status: TenantSubscriptionStatus.active,
+      startedAt: now,
       createdAt: now,
       updatedAt: now,
     },

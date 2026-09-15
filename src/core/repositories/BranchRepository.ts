@@ -6,6 +6,13 @@ export interface BranchRepository {
   getByIdScoped(tenantId: string, id: string): Promise<Branch | null>;
   getActive(): Promise<Branch[]>;
   getActiveByTenant(tenantId: string): Promise<Branch[]>;
+  /**
+   * Todas las branches del tenant sin filtrar por status (a diferencia de
+   * `getActiveByTenant`) -- pensado para usage/conteos donde una sucursal `inactive`
+   * todavía cuenta contra el límite del plan y solo `archived` deja de contar (mismo
+   * patrón que `UserRepository.listByTenant`).
+   */
+  listByTenant(tenantId: string): Promise<Branch[]>;
   getActiveByTenantAndType(tenantId: string, type: BranchType): Promise<Branch[]>;
   create(input: Omit<Branch, "id" | "createdAt" | "updatedAt">): Promise<Branch>;
   update(
