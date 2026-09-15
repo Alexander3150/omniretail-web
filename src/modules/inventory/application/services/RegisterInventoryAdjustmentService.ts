@@ -1,7 +1,13 @@
 import type { InventoryMovement } from "@/core/entities";
-import { InventoryAdjustmentType, InventoryMovementType } from "@/core/enums";
+import { InventoryAdjustmentType } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { AdjustStockDto } from "@/modules/inventory/application/dto/InventoryAlertsDto";
+import { toBaseQuantity } from "@/core/units";
+import {
+  EXPIRATION_BEFORE_ENTRY_MESSAGE,
+  getLocalCalendarDate,
+  isExpirationBeforeOperationDate,
+} from "@/core/inventory/expirationDate";
 
 export interface RegisterInventoryAdjustmentResult {
   adjustmentNumber: string;
@@ -14,16 +20,54 @@ export class RegisterInventoryAdjustmentService {
   async execute(dto: AdjustStockDto): Promise<RegisterInventoryAdjustmentResult> {
     const product = await this.repositories.products.getById(dto.productId);
     if (!product) throw new Error("Producto no encontrado.");
-    if (product.tracking.lot || product.tracking.serial) {
-      throw new Error("Los ajustes con trazabilidad requieren un flujo dedicado.");
-    }
-
     const reason = dto.reason.trim();
     if (!reason) throw new Error("El motivo es requerido.");
     if (!dto.locationId) throw new Error("Selecciona una ubicacion.");
     if (!Number.isFinite(dto.quantity) || dto.quantity < 0) {
       throw new Error("Ingresa una cantidad valida.");
     }
+    const conversions = await this.repositories.units.getConversionsByProductScoped(
+      product.tenantId,
+      product.id,
+    );
+    const supplierProducts = await this.repositories.supplierProducts.getByProductForTenant(
+      product.tenantId,
+      product.id,
+    );
+    const permittedUnitIds = new Set([
+      product.baseUnitId,
+      product.saleUnitId ?? product.baseUnitId,
+      product.inventoryUnitId ?? product.baseUnitId,
+      ...supplierProducts.filter((item) => item.active).map((item) => item.purchaseUnitId),
+    ]);
+    if (!permittedUnitIds.has(dto.unitId)) {
+      throw new Error("La unidad seleccionada no pertenece al producto.");
+    }
+    const candidateFactors = new Set(
+      supplierProducts
+        .filter((item) => item.active && item.purchaseUnitId === dto.unitId)
+        .map((item) => item.purchaseToBaseFactor),
+    );
+    if (dto.unitId === product.baseUnitId) candidateFactors.add(1);
+    const configuredConversion = conversions.find(
+      (item) => item.fromUnitId === dto.unitId && item.toUnitId === product.baseUnitId,
+    );
+    if (configuredConversion) candidateFactors.add(configuredConversion.factor);
+    if (candidateFactors.size !== 1) {
+      throw new Error("La presentacion de proveedor es ambigua y no puede usarse para ajustar.");
+    }
+    const effectiveConversions = [{
+      fromUnitId: dto.unitId,
+      toUnitId: product.baseUnitId,
+      factor: [...candidateFactors][0],
+    }];
+    const canonicalQuantity = toBaseQuantity(dto.quantity, {
+      sourceUnitId: dto.unitId,
+      baseUnitId: product.baseUnitId,
+      conversions: effectiveConversions,
+      requireInteger: product.tracking.serial,
+    });
+    const canonicalDto = { ...dto, quantity: canonicalQuantity };
 
     const balances = await this.repositories.inventory.getBalanceByProduct(
       dto.productId,
@@ -33,16 +77,21 @@ export class RegisterInventoryAdjustmentService {
     const locationQuantity = balances
       .filter((balance) => balance.locationId === dto.locationId)
       .reduce((total, balance) => total + balance.quantity, 0);
-    const quantityAfter = this.getQuantityAfter(dto, quantityBefore);
+    const quantityAfter = this.getQuantityAfter(canonicalDto, quantityBefore);
     const delta = quantityAfter - quantityBefore;
 
-    this.assertValidDelta(dto, delta, quantityAfter, locationQuantity);
+    this.assertValidDelta(canonicalDto, delta, quantityAfter, locationQuantity);
+    if (
+      product.tracking.expiration &&
+      delta > 0 &&
+      dto.expirationDate &&
+      isExpirationBeforeOperationDate(dto.expirationDate, getLocalCalendarDate())
+    ) {
+      throw new Error(EXPIRATION_BEFORE_ENTRY_MESSAGE);
+    }
 
-    const adjustmentType = getInventoryAdjustmentType(dto.movementKind);
-    const movementType = delta > 0 ? InventoryMovementType.in : InventoryMovementType.out;
-    const movementQuantity = Math.abs(delta);
-
-    const adjustment = await this.repositories.inventoryAdjustments.create({
+    const adjustmentType = getInventoryAdjustmentType(canonicalDto.movementKind);
+    const result = await this.repositories.inventoryAdjustments.registerStockAdjustment({
       tenantId: product.tenantId,
       branchId: dto.branchId,
       productId: dto.productId,
@@ -53,26 +102,12 @@ export class RegisterInventoryAdjustmentService {
       quantityBefore,
       quantityAfter,
       performedByUserId: dto.performedByUserId,
+      lotId: dto.lotId,
+      lotNumber: dto.lotNumber,
+      expirationDate: dto.expirationDate,
+      serialNumbers: dto.serialNumbers,
     });
-
-    // Backend real: adjustment + movement + balance update must be committed in one transaction.
-    const movement = await this.repositories.inventory.registerMovement({
-      tenantId: product.tenantId,
-      branchId: dto.branchId,
-      productId: dto.productId,
-      type: movementType,
-      quantity: movementQuantity,
-      reason,
-      quantityBefore,
-      quantityAfter,
-      fromLocationId: delta < 0 ? dto.locationId : undefined,
-      toLocationId: delta > 0 ? dto.locationId : undefined,
-      referenceType: "inventoryAdjustment",
-      referenceId: adjustment.id,
-      performedByUserId: dto.performedByUserId,
-    });
-
-    return { adjustmentNumber: adjustment.number, movement };
+    return { adjustmentNumber: result.adjustment.number, movement: result.movements[0] };
   }
 
   private getQuantityAfter(dto: AdjustStockDto, quantityBefore: number): number {

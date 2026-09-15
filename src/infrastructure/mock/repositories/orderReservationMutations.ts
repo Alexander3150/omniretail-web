@@ -34,7 +34,10 @@ export function reserveStockTrackedOrderItemsInDatabase(
     const demands =
       orderItem.fulfillmentComponents ??
       (product.productType === ProductType.physical && product.tracking.stock
-        ? [{ productId: orderItem.productId, quantity: orderItem.quantity }]
+        ? [{
+            productId: orderItem.productId,
+            quantity: orderItem.inventoryQuantity ?? orderItem.quantity,
+          }]
         : []);
 
     return demands.map((demand) =>

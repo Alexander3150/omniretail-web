@@ -52,6 +52,7 @@ export class GetProductEditorDataService {
       return {
         detail: null,
         unitConversion: null,
+        unitConversions: [],
         inventorySettings: null,
         storageLocations: activeStorageLocations,
         currentDefaultLocation: null,
@@ -75,6 +76,7 @@ export class GetProductEditorDataService {
       return {
         detail: null,
         unitConversion: null,
+        unitConversions: [],
         inventorySettings: null,
         storageLocations: activeStorageLocations,
         currentDefaultLocation: null,
@@ -95,6 +97,7 @@ export class GetProductEditorDataService {
       return {
         detail: null,
         unitConversion: null,
+        unitConversions: [],
         inventorySettings: null,
         storageLocations: activeStorageLocations,
         currentDefaultLocation: null,
@@ -196,6 +199,7 @@ export class GetProductEditorDataService {
     return {
       detail,
       unitConversion,
+      unitConversions: conversions,
       inventorySettings,
       storageLocations: activeStorageLocations,
       currentDefaultLocation,

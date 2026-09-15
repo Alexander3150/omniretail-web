@@ -14,6 +14,7 @@ import { MockProductRepository } from "@/infrastructure/mock/repositories/MockPr
 import { MockRoleRepository } from "@/infrastructure/mock/repositories/MockRoleRepository";
 import { MockTenantRepository } from "@/infrastructure/mock/repositories/MockTenantRepository";
 import { MockUserRepository } from "@/infrastructure/mock/repositories/MockUserRepository";
+import { MockUnitRepository } from "@/infrastructure/mock/repositories/MockUnitRepository";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import {
@@ -170,6 +171,7 @@ function createHarness() {
     roles: new MockRoleRepository(store, eventBus),
     tenants: new MockTenantRepository(store, eventBus),
     users: new MockUserRepository(store, eventBus),
+    units: new MockUnitRepository(store, eventBus),
   } as unknown as RepositoryRegistry;
 
   return {

@@ -8,7 +8,6 @@ import type {
   ReceiptIncident,
   ReceiptLine,
   StorageLocation,
-  SupplierProduct,
   Unit,
 } from "@/core/entities";
 import {
@@ -18,6 +17,11 @@ import {
   ReceiptLineStatus,
   ReceiptStatus,
 } from "@/core/enums";
+import {
+  EXPIRATION_BEFORE_ENTRY_MESSAGE,
+  getLocalCalendarDate,
+  isExpirationBeforeOperationDate,
+} from "@/core/inventory/expirationDate";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   ConfirmReceivingInput,
@@ -78,14 +82,15 @@ export class ReceivingDocumentDetailService {
       return existingConfirmation;
     }
     const detail = await this.getPurchaseOrderDocument(input.documentId);
-    const validationErrors = validateLines(input.lines, input.incidents, detail);
+    const now = new Date().toISOString();
+    const operationDate = getLocalCalendarDate();
+    const validationErrors = validateLines(input.lines, input.incidents, detail, operationDate);
     if (validationErrors.length > 0) {
       throw new Error(validationErrors[0]);
     }
     const receipt = await this.ensureInProgressReceipt(order, input.userId);
     const receiptLines = input.lines.map((line) => toReceiptLineInput(line, input.incidents));
     const receiptIncidents = toReceiptIncidentInputs(input, detail);
-    const now = new Date().toISOString();
     const totalOrdered = detail.lines.reduce((sum, line) => sum + line.orderedQuantity, 0);
     const acceptedNow = input.lines.reduce((sum, line) => sum + getAcceptedNow(line), 0);
     const acceptedPreviously = detail.lines.reduce((sum, line) => sum + line.acceptedPreviously, 0);
@@ -179,7 +184,6 @@ export class ReceivingDocumentDetailService {
       )
     ).flat();
     const incidents = await this.repositories.receipts.getIncidents();
-    const supplierProducts = await this.getSupplierProducts(order);
     const settings = await this.getInventorySettings(order);
     const productById = new Map(products.map((product) => [product.id, product]));
     const unitById = new Map(units.map((unit) => [unit.id, unit]));
@@ -231,7 +235,6 @@ export class ReceivingDocumentDetailService {
             baseUnitById: unitById,
             inProgressLine: inProgressLines.find((line) => line.productId === item.productId),
             confirmedLines: confirmedLines.filter((line) => line.productId === item.productId),
-            supplierProducts,
             settingsDefaultLocationId: settings.get(item.productId)?.defaultLocationId ?? undefined,
           }),
         ),
@@ -326,7 +329,6 @@ export class ReceivingDocumentDetailService {
     baseUnitById: Map<string, Unit>;
     inProgressLine?: ReceiptLine;
     confirmedLines: ReceiptLine[];
-    supplierProducts: SupplierProduct[];
     settingsDefaultLocationId?: string | null;
   }): Promise<ReceivingDocumentLine> {
     const product = input.product;
@@ -336,11 +338,7 @@ export class ReceivingDocumentDetailService {
       0,
     );
     const receivedNow = input.inProgressLine ? input.inProgressLine.receivedQuantity : "";
-    const purchaseToBaseFactor = await this.resolvePurchaseToBaseFactor(
-      product,
-      input.item.unitId,
-      input.supplierProducts,
-    );
+    const purchaseToBaseFactor = input.item.purchaseToBaseFactor;
     return {
       id: input.item.id,
       sourceLineId: input.item.id,
@@ -444,18 +442,6 @@ export class ReceivingDocumentDetailService {
     return capabilities;
   }
 
-  private async getSupplierProducts(order: PurchaseOrder) {
-    const productIds = new Set((order.items ?? []).map((item) => item.productId));
-    const supplierProducts = await Promise.all(
-      [...productIds].map((productId) =>
-        this.repositories.supplierProducts.getByProduct(productId),
-      ),
-    );
-    return supplierProducts
-      .flat()
-      .filter((item) => item.supplierId === order.supplierId && item.active);
-  }
-
   private async getInventorySettings(order: PurchaseOrder) {
     const entries = await Promise.all(
       (order.items ?? []).map(
@@ -470,25 +456,6 @@ export class ReceivingDocumentDetailService {
       ),
     );
     return new Map(entries);
-  }
-
-  private async resolvePurchaseToBaseFactor(
-    product: Product | undefined,
-    purchaseUnitId: string,
-    supplierProducts: SupplierProduct[],
-  ) {
-    if (!product || product.baseUnitId === purchaseUnitId) return 1;
-    const supplierProduct = supplierProducts.find(
-      (item) => item.productId === product.id && item.purchaseUnitId === purchaseUnitId,
-    );
-    if (supplierProduct) return supplierProduct.purchaseToBaseFactor;
-    const conversion = await this.repositories.units.getConversion({
-      tenantId: product.tenantId,
-      productId: product.id,
-      fromUnitId: purchaseUnitId,
-      toUnitId: product.baseUnitId,
-    });
-    return conversion?.factor ?? 1;
   }
 }
 
@@ -553,6 +520,7 @@ export function validateLines(
   lines: ReceivingDocumentLine[],
   incidents: ReceivingDocumentIncident[],
   detail: ReceivingDocumentDetail,
+  operationDate = getLocalCalendarDate(),
 ) {
   const unitAllowsDecimals = new Map(
     detail.lines.map((line) => [line.id, line.unitAllowsDecimals]),
@@ -601,11 +569,23 @@ export function validateLines(
       ) {
         errors.push(`${line.productName}: fecha de vencimiento requerida.`);
       }
+      if (
+        line.tracking.expiration &&
+        detail.capabilities.supportsExpiration &&
+        acceptedNow > 0 &&
+        line.expirationDate &&
+        isExpirationBeforeOperationDate(line.expirationDate, operationDate)
+      ) {
+        errors.push(`${line.productName}: ${EXPIRATION_BEFORE_ENTRY_MESSAGE}`);
+      }
       if (line.tracking.serial && detail.capabilities.supportsSerials && acceptedNow > 0) {
         const serials = parseSerialNumbers(line.serialNumbersText);
         const expectedSerials = toBaseQuantity(line, acceptedNow);
         if (serials.length !== expectedSerials) {
           errors.push(`${line.productName}: registra ${expectedSerials} numeros de serie.`);
+        }
+        if (new Set(serials).size !== serials.length) {
+          errors.push(`${line.productName}: los numeros de serie no pueden repetirse.`);
         }
       }
       return errors;

@@ -923,6 +923,8 @@ function createTicketItem(product: PosProductDto, quantity: number): SaleTicketI
     discount: product.discount,
     subtotal: fromCents(toCents(product.effectivePrice) * quantity),
     availableQuantity: product.availableQuantity,
+    saleUnitId: product.saleUnitId,
+    saleUnitName: product.saleUnitName,
     tracksStock: product.tracksStock,
     requiresUnsupportedTraceability: product.requiresUnsupportedTraceability,
   };

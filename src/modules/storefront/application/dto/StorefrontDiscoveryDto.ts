@@ -21,6 +21,8 @@ export interface StorefrontDiscoveryProductDto {
   imageAlt?: string;
   /** null means the product does not consume tracked stock (for example a service). */
   availableQuantity: number | null;
+  saleUnitId: string;
+  saleUnitName: string;
 }
 
 export interface StorefrontDiscoveryDto {

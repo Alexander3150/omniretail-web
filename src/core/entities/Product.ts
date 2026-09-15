@@ -18,7 +18,10 @@ export interface Product {
   brand?: string;
   productType: ProductType;
   categoryId: string;
+  /** Smallest indivisible unit used by stock, movements, reservations, lots and serials. */
   baseUnitId: string;
+  /** Preferred input/display presentation. It never changes the stored stock unit. */
+  inventoryUnitId?: string;
   saleUnitId?: string;
   salePrice: number;
   status: ProductStatus;
