@@ -11,9 +11,11 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import {
   MockInventoryAdjustmentRepository,
+  MockBranchRepository,
   MockBusinessConfigRepository,
   MockCategoryRepository,
   MockInventoryRepository,
+  MockInventoryTransferRequestRepository,
   MockProductRepository,
   MockProductMediaRepository,
   MockProductKitComponentRepository,
@@ -27,6 +29,14 @@ import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapte
 import { RegisterInventoryAdjustmentService } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
 import { GetPosProductsService } from "@/modules/pos/application/services/GetPosProductsService";
 import { GetStorefrontDiscoveryService } from "@/modules/storefront/application/services/GetStorefrontDiscoveryService";
+import { GetInventoryAlertsService } from "@/modules/inventory/application/services/GetInventoryAlertsService";
+import {
+  validateLines,
+} from "@/modules/receiving/application/services/ReceivingDocumentDetailService";
+import type {
+  ReceivingDocumentDetail,
+  ReceivingDocumentLine,
+} from "@/modules/receiving/application/dto/ReceivingDocumentDetailDto";
 
 class MemoryStorageAdapter extends LocalStorageAdapter {
   private readonly values = new Map<string, string>();
@@ -58,10 +68,51 @@ const repositories = {
   businessConfig: new MockBusinessConfigRepository(store, events),
   categories: new MockCategoryRepository(store, events),
   productMedia: new MockProductMediaRepository(store, events),
+  branches: new MockBranchRepository(store, events),
+  inventoryTransferRequests: new MockInventoryTransferRequestRepository(store, events),
 } as unknown as RepositoryRegistry;
 const adjustmentService = new RegisterInventoryAdjustmentService(repositories);
 
 async function main() {
+  const receivingDetail = {
+    capabilities: {
+      supportsInventory: true,
+      supportsLots: true,
+      supportsExpiration: true,
+      supportsSerials: true,
+      supportsMultipleLocations: true,
+      supportsUnitsAndPackaging: true,
+    },
+    lines: [{ id: "expiration-line", unitAllowsDecimals: false }],
+    incidentTypes: [],
+  } as unknown as ReceivingDocumentDetail;
+  const receivingLine = {
+    id: "expiration-line",
+    productId: "expiration-product",
+    productName: "Producto con vencimiento",
+    orderedQuantity: 1,
+    acceptedPreviously: 0,
+    receivedNow: 1,
+    locationId: "loc-centro-a",
+    lotNumber: "LOT-EXP",
+    expirationDate: "2026-09-14",
+    serialNumbersText: "",
+    tracking: { stock: true, lot: true, expiration: true, serial: false },
+  } as ReceivingDocumentLine;
+  assert.match(
+    validateLines([receivingLine], [], receivingDetail, "2026-09-15T10:00:00.000Z")[0] ?? "",
+    /no puede ser anterior/,
+  );
+  assert.equal(
+    validateLines(
+      [{ ...receivingLine, expirationDate: "2026-09-15" }],
+      [],
+      receivingDetail,
+      "2026-09-15T10:00:00.000Z",
+    ).length,
+    0,
+  );
+
   store.mutate((db) => {
     const normalProduct = db.products.find((item) => item.id === "prod-screws");
     assert.ok(normalProduct);
@@ -255,6 +306,43 @@ async function main() {
     expirationDate: "2027-12-31",
   });
   assert.equal(lotAdjustment.movements[0]?.quantity, 2);
+  const lotProduct = store.getSnapshot().products.find((item) => item.id === "prod-lot-harness");
+  assert.ok(lotProduct);
+  await assert.rejects(
+    () => adjustmentService.execute({
+      productId: lotProduct.id,
+      branchId: "branch-centro",
+      locationId: "loc-centro-a",
+      unitId: lotProduct.baseUnitId,
+      movementKind: "in",
+      quantity: 1,
+      reason: "Fecha anterior",
+      notes: "",
+      lotNumber: "LOT-PAST",
+      expirationDate: "2000-01-01",
+    }),
+    /no puede ser anterior/,
+  );
+  const historicalLot = store
+    .getSnapshot()
+    .stockLots.find((item) => item.productId === lotProduct.id && item.lotNumber === "LOT-HARNESS");
+  assert.ok(historicalLot);
+  store.mutate((db) => {
+    const lot = db.stockLots.find((item) => item.id === historicalLot.id);
+    assert.ok(lot);
+    lot.expirationDate = "2000-01-01";
+  });
+  await adjustmentService.execute({
+    productId: lotProduct.id,
+    branchId: "branch-centro",
+    locationId: "loc-centro-a",
+    unitId: lotProduct.baseUnitId,
+    movementKind: "out",
+    quantity: 1,
+    reason: "Consumir lote historico vencido",
+    notes: "",
+    lotId: historicalLot.id,
+  });
   await assert.rejects(
     () =>
       adjustments.registerStockAdjustment({
@@ -264,8 +352,8 @@ async function main() {
         locationId: "loc-centro-a",
         type: InventoryAdjustmentType.manualDecrease,
         reason: "Unknown lot",
-        quantityBefore: adhesiveBefore + 2,
-        quantityAfter: adhesiveBefore + 1,
+        quantityBefore: adhesiveBefore + 1,
+        quantityAfter: adhesiveBefore,
         lotId: "missing-lot",
       }),
     /Selected lot is not available/,
@@ -324,7 +412,7 @@ async function main() {
     db.inventoryBalances
       .filter((item) => item.productId === screws.id && item.branchId === "branch-centro")
       .forEach((balance, index) => {
-        balance.quantity = index === 0 ? 25 : 0;
+        balance.quantity = index === 0 ? 11 : 0;
         balance.reservedQuantity = 0;
       });
   });
@@ -333,13 +421,38 @@ async function main() {
     "prod-screws",
   );
   assert.equal(
-    fromBaseQuantity(25, {
+    fromBaseQuantity(11, {
       targetUnitId: "unit-box",
       baseUnitId: "unit-unit",
       conversions,
     }),
-    5,
+    2.2,
   );
+  store.mutate((db) => {
+    const conversion = db.unitConversions.find((item) => item.id === "conversion-harness-box-five");
+    assert.ok(conversion);
+    conversion.factor = 10;
+  });
+  const inventoryData = await new GetInventoryAlertsService(repositories).execute("branch-centro");
+  const inventoryScrews = inventoryData.rows.find((item) => item.productId === "prod-screws");
+  assert.equal(inventoryScrews?.quantity, 11);
+  assert.equal(inventoryScrews?.inventoryPresentationQuantity, 1.1);
+  assert.notEqual(inventoryScrews?.inventoryUnitId, inventoryScrews?.unitId);
+  store.mutate((db) => {
+    const screws = db.products.find((item) => item.id === "prod-screws");
+    assert.ok(screws);
+    screws.inventoryUnitId = screws.baseUnitId;
+  });
+  const singleUnitInventory = await new GetInventoryAlertsService(repositories).execute(
+    "branch-centro",
+  );
+  const singleUnitScrews = singleUnitInventory.rows.find((item) => item.productId === "prod-screws");
+  assert.equal(singleUnitScrews?.inventoryUnitId, singleUnitScrews?.unitId);
+  store.mutate((db) => {
+    const screws = db.products.find((item) => item.id === "prod-screws");
+    assert.ok(screws);
+    screws.inventoryUnitId = "unit-box";
+  });
   await adjustmentService.execute({
     productId: "prod-screws",
     branchId: "branch-centro",
@@ -347,7 +460,7 @@ async function main() {
     unitId: "unit-box",
     movementKind: "in",
     quantity: 1,
-    reason: "Caja x5",
+    reason: "Caja x10",
     notes: "",
   });
   await adjustmentService.execute({
@@ -367,13 +480,13 @@ async function main() {
     unitId: "unit-box",
     movementKind: "out",
     quantity: 1,
-    reason: "Salida caja x5",
+    reason: "Salida caja x10",
     notes: "",
   });
   const screwsAfterConversions = store.getSnapshot().inventoryBalances
     .filter((item) => item.productId === "prod-screws" && item.branchId === "branch-centro")
     .reduce((sum, item) => sum + item.quantity, 0);
-  assert.equal(screwsAfterConversions, 26);
+  assert.equal(screwsAfterConversions, 12);
   store.mutate((db) => {
     const screws = db.products.find((item) => item.id === "prod-screws");
     assert.ok(screws);
@@ -384,11 +497,11 @@ async function main() {
     branchId: "branch-centro",
   });
   const posScrews = posProducts.find((item) => item.productId === "prod-screws");
-  assert.equal(posScrews?.availableQuantity, 5.2);
+  assert.equal(posScrews?.availableQuantity, 1.2);
   assert.equal(posScrews?.saleUnitId, "unit-box");
   const storefront = await new GetStorefrontDiscoveryService(repositories).execute("tenant-demo");
   const storefrontScrews = storefront.products.find((item) => item.id === "prod-screws");
-  assert.equal(storefrontScrews?.availableQuantity, 5.2);
+  assert.equal(storefrontScrews?.availableQuantity, 1.2);
   assert.equal(storefrontScrews?.saleUnitId, "unit-box");
 
   store.mutate((db) => {
@@ -443,7 +556,7 @@ async function main() {
     /mayor que cero/,
   );
 
-  console.log("Inventory/receiving traceability harness passed (20 scenarios).");
+  console.log("Inventory/receiving traceability harness passed (26 scenarios).");
 }
 
 void main().catch((error) => {

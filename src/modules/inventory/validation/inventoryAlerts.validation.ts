@@ -3,6 +3,11 @@ import type {
   InventoryProductRow,
   TransferRequestDto,
 } from "@/modules/inventory/application/dto/InventoryAlertsDto";
+import {
+  EXPIRATION_BEFORE_ENTRY_MESSAGE,
+  getLocalCalendarDate,
+  isExpirationBeforeOperationDate,
+} from "@/core/inventory/expirationDate";
 
 export interface AdjustmentValidationErrors {
   quantity?: string;
@@ -24,6 +29,7 @@ export function validateAdjustment(
   dto: AdjustStockDto,
   row: InventoryProductRow,
   locationQuantity: number,
+  operationDate = getLocalCalendarDate(),
 ): AdjustmentValidationErrors {
   const errors: AdjustmentValidationErrors = {};
   if (!dto.locationId) errors.locationId = "Selecciona una ubicacion.";
@@ -56,6 +62,14 @@ export function validateAdjustment(
   }
   if (row.tracking.expiration && isEntry && required > 0 && !dto.expirationDate) {
     errors.expirationDate = "Ingresa la fecha de vencimiento.";
+  } else if (
+    row.tracking.expiration &&
+    isEntry &&
+    required > 0 &&
+    dto.expirationDate &&
+    isExpirationBeforeOperationDate(dto.expirationDate, operationDate)
+  ) {
+    errors.expirationDate = EXPIRATION_BEFORE_ENTRY_MESSAGE;
   }
   if (row.tracking.serial && required > 0) {
     const serials = dto.serialNumbers ?? [];

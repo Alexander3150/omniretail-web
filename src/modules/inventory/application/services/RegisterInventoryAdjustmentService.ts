@@ -3,6 +3,11 @@ import { InventoryAdjustmentType } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { AdjustStockDto } from "@/modules/inventory/application/dto/InventoryAlertsDto";
 import { toBaseQuantity } from "@/core/units";
+import {
+  EXPIRATION_BEFORE_ENTRY_MESSAGE,
+  getLocalCalendarDate,
+  isExpirationBeforeOperationDate,
+} from "@/core/inventory/expirationDate";
 
 export interface RegisterInventoryAdjustmentResult {
   adjustmentNumber: string;
@@ -76,6 +81,14 @@ export class RegisterInventoryAdjustmentService {
     const delta = quantityAfter - quantityBefore;
 
     this.assertValidDelta(canonicalDto, delta, quantityAfter, locationQuantity);
+    if (
+      product.tracking.expiration &&
+      delta > 0 &&
+      dto.expirationDate &&
+      isExpirationBeforeOperationDate(dto.expirationDate, getLocalCalendarDate())
+    ) {
+      throw new Error(EXPIRATION_BEFORE_ENTRY_MESSAGE);
+    }
 
     const adjustmentType = getInventoryAdjustmentType(canonicalDto.movementKind);
     const result = await this.repositories.inventoryAdjustments.registerStockAdjustment({

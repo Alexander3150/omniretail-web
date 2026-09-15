@@ -13,6 +13,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import type { StorageLocation } from "@/core/entities";
+import { getLocalCalendarDate } from "@/core/inventory/expirationDate";
 import { InventoryTransferReason, InventoryTransferRequestStatus } from "@/core/enums";
 import { Button } from "@/shared/components/Button";
 import { Input } from "@/shared/components/Input";
@@ -705,6 +706,11 @@ function InventoryTable({
                     <p className="text-base font-bold text-[var(--color-title)]">
                       {row.sellableQuantity} {row.saleUnitName}
                     </p>
+                    {row.inventoryUnitId !== row.unitId ? (
+                      <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
+                        Equivale a {row.inventoryPresentationQuantity} {row.inventoryUnitName}
+                      </p>
+                    ) : null}
                     <StockLevelBar row={row} />
                   </td>
                   <td className="px-4 py-4 text-right font-semibold text-[var(--color-text)]">
@@ -1363,7 +1369,7 @@ function ProductPanel({
             <DetailTile label="Nivel minimo" value={String(row.minStock)} />
             <DetailTile label="Ubicacion" value={row.defaultLocationName} />
             <DetailTile label="Categoria" value={row.categoryName} />
-            <DetailTile label="Unidad base canonica" value={row.unitName} />
+            <DetailTile label="Unidad minima" value={row.unitName} />
             <DetailTile label="Sucursal" value={activeBranchName} />
           </dl>
           <div className="mt-4 rounded-md border border-blue-100 bg-blue-50 px-3 py-2">
@@ -1620,6 +1626,7 @@ function AdjustStockModal({
           >
             <Input
               id="adjust-expiration"
+              min={getLocalCalendarDate()}
               type="date"
               onChange={(event) => update({ expirationDate: event.target.value })}
               value={value.expirationDate ?? ""}

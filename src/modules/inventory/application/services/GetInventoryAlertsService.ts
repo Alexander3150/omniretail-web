@@ -15,7 +15,7 @@ import {
   getBranchAvailableQuantity,
 } from "@/core/inventory/stockAvailability";
 import { getCanonicalProductAvailability } from "@/core/inventory/canonicalAvailability";
-import { resolveUnitConversion } from "@/core/units";
+import { fromBaseQuantity, resolveUnitConversion } from "@/core/units";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   InventoryAlert,
@@ -348,8 +348,16 @@ function buildRow(
     sellableAvailableQuantity: availableQuantity / saleFactor,
     inventoryUnitId,
     inventoryUnitName: maps.units.get(inventoryUnitId)?.name ?? "Sin unidad",
-    inventoryPresentationQuantity: quantity / inventoryFactor,
-    inventoryPresentationAvailableQuantity: availableQuantity / inventoryFactor,
+    inventoryPresentationQuantity: fromBaseQuantity(quantity, {
+      targetUnitId: inventoryUnitId,
+      baseUnitId: product.baseUnitId,
+      conversions,
+    }),
+    inventoryPresentationAvailableQuantity: fromBaseQuantity(availableQuantity, {
+      targetUnitId: inventoryUnitId,
+      baseUnitId: product.baseUnitId,
+      conversions,
+    }),
     inventoryToBaseFactor: inventoryFactor,
     adjustmentUnits: buildAdjustmentUnits(product, conversions, supplierProducts, maps),
     branchId,

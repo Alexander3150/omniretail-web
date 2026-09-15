@@ -653,7 +653,7 @@ function UnitsTab({
             ? "El negocio opera con una unica unidad para productos nuevos; la configuracion de unidades de este producto quedo protegida mientras la capacidad este desactivada."
             : usesSingleUnit
               ? "El negocio opera con una unica unidad por producto."
-              : "La unidad base es la unidad minima canonica; inventario y venta son presentaciones convertibles."
+              : "Define como se cuenta el producto y como se presenta en inventario y venta."
         }
         title="Unidades"
       />
@@ -667,9 +667,13 @@ function UnitsTab({
       <div className="grid gap-4 md:grid-cols-3">
         <FormField
           id="baseUnitId"
-          label="Unidad base canonica *"
+          label="Unidad minima *"
           error={errors.baseUnitId}
-          hint={unitsProtected ? "Protegida mientras la capacidad este desactivada." : undefined}
+          hint={
+            unitsProtected
+              ? "Protegida mientras la capacidad este desactivada."
+              : "Es la unidad mas pequena con la que se controla el producto."
+          }
         >
           <Select
             disabled={unitsProtected}

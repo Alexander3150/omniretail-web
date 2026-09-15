@@ -17,6 +17,11 @@ import {
   ReceiptLineStatus,
   ReceiptStatus,
 } from "@/core/enums";
+import {
+  EXPIRATION_BEFORE_ENTRY_MESSAGE,
+  getLocalCalendarDate,
+  isExpirationBeforeOperationDate,
+} from "@/core/inventory/expirationDate";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   ConfirmReceivingInput,
@@ -77,14 +82,15 @@ export class ReceivingDocumentDetailService {
       return existingConfirmation;
     }
     const detail = await this.getPurchaseOrderDocument(input.documentId);
-    const validationErrors = validateLines(input.lines, input.incidents, detail);
+    const now = new Date().toISOString();
+    const operationDate = getLocalCalendarDate();
+    const validationErrors = validateLines(input.lines, input.incidents, detail, operationDate);
     if (validationErrors.length > 0) {
       throw new Error(validationErrors[0]);
     }
     const receipt = await this.ensureInProgressReceipt(order, input.userId);
     const receiptLines = input.lines.map((line) => toReceiptLineInput(line, input.incidents));
     const receiptIncidents = toReceiptIncidentInputs(input, detail);
-    const now = new Date().toISOString();
     const totalOrdered = detail.lines.reduce((sum, line) => sum + line.orderedQuantity, 0);
     const acceptedNow = input.lines.reduce((sum, line) => sum + getAcceptedNow(line), 0);
     const acceptedPreviously = detail.lines.reduce((sum, line) => sum + line.acceptedPreviously, 0);
@@ -514,6 +520,7 @@ export function validateLines(
   lines: ReceivingDocumentLine[],
   incidents: ReceivingDocumentIncident[],
   detail: ReceivingDocumentDetail,
+  operationDate = getLocalCalendarDate(),
 ) {
   const unitAllowsDecimals = new Map(
     detail.lines.map((line) => [line.id, line.unitAllowsDecimals]),
@@ -561,6 +568,15 @@ export function validateLines(
         !line.expirationDate
       ) {
         errors.push(`${line.productName}: fecha de vencimiento requerida.`);
+      }
+      if (
+        line.tracking.expiration &&
+        detail.capabilities.supportsExpiration &&
+        acceptedNow > 0 &&
+        line.expirationDate &&
+        isExpirationBeforeOperationDate(line.expirationDate, operationDate)
+      ) {
+        errors.push(`${line.productName}: ${EXPIRATION_BEFORE_ENTRY_MESSAGE}`);
       }
       if (line.tracking.serial && detail.capabilities.supportsSerials && acceptedNow > 0) {
         const serials = parseSerialNumbers(line.serialNumbersText);

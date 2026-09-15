@@ -11,6 +11,11 @@ import { useToast } from "@/shared/components/Toast";
 import { cn } from "@/shared/utils/cn";
 import { parseDecimalInput, parseIntegerInput, toFiniteNumber } from "@/shared/utils/numberInput";
 import type { ReceiptIncidentEvidence } from "@/core/entities";
+import {
+  EXPIRATION_BEFORE_ENTRY_MESSAGE,
+  getLocalCalendarDate,
+  isExpirationBeforeOperationDate,
+} from "@/core/inventory/expirationDate";
 import type {
   ReceivingDocumentDetailType,
   ReceivingDocumentIncident,
@@ -606,15 +611,26 @@ function TrackingFields({
     );
   }
   if (line.tracking.expiration && capabilities.supportsExpiration) {
+    const operationDate = getLocalCalendarDate();
+    const expirationIsBeforeEntry =
+      line.expirationDate &&
+      isExpirationBeforeOperationDate(line.expirationDate, operationDate);
     fields.push(
-      <Input
-        disabled={readOnly}
-        key="expiration"
-        className="h-9 px-2 text-xs"
-        onChange={(event) => onUpdateLine(line.id, { expirationDate: event.target.value })}
-        type="date"
-        value={line.expirationDate}
-      />,
+      <div key="expiration" className="space-y-1">
+        <Input
+          disabled={readOnly}
+          className="h-9 px-2 text-xs"
+          min={operationDate}
+          onChange={(event) => onUpdateLine(line.id, { expirationDate: event.target.value })}
+          type="date"
+          value={line.expirationDate}
+        />
+        {expirationIsBeforeEntry ? (
+          <p className="text-xs font-semibold text-[var(--color-danger)]">
+            {EXPIRATION_BEFORE_ENTRY_MESSAGE}
+          </p>
+        ) : null}
+      </div>,
     );
   }
   if (line.tracking.serial && capabilities.supportsSerials) {
