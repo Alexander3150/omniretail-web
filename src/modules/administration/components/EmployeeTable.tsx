@@ -1,8 +1,13 @@
+"use client";
+
+import { useMemo, useState } from "react";
 import { AccountStatus } from "@/core/enums";
 import type { EmployeeDto } from "@/modules/administration/application/dto/EmployeeDto";
 import { Button } from "@/shared/components/Button";
 import { DataTable, type DataTableColumn } from "@/shared/components/DataTable";
+import { SearchInput } from "@/shared/components/SearchInput";
 import { StatusBadge } from "@/shared/components/StatusBadge";
+import { TablePagination, type TablePageSize } from "@/shared/components/TablePagination";
 import { formatDate } from "@/shared/utils/formatDate";
 
 interface EmployeeTableProps {
@@ -13,6 +18,7 @@ interface EmployeeTableProps {
   busy: boolean;
   onEdit: (employee: EmployeeDto) => void;
   onResendInvitation: (employee: EmployeeDto) => void;
+  onCopyInvitation: (employee: EmployeeDto) => void;
 }
 
 /**
@@ -35,7 +41,38 @@ export function EmployeeTable({
   busy,
   onEdit,
   onResendInvitation,
+  onCopyInvitation,
 }: EmployeeTableProps) {
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<TablePageSize>(10);
+
+  const filteredEmployees = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return employees;
+
+    return employees.filter((employee) =>
+      [employee.name, employee.email, employee.employeeCode ?? ""].some((value) =>
+        value.toLowerCase().includes(query),
+      ),
+    );
+  }, [employees, search]);
+
+  const paginatedEmployees = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredEmployees.slice(start, start + pageSize);
+  }, [filteredEmployees, page, pageSize]);
+
+  function handleSearchChange(event: React.ChangeEvent<HTMLInputElement>) {
+    setSearch(event.target.value);
+    setPage(1);
+  }
+
+  function handlePageSizeChange(nextPageSize: TablePageSize) {
+    setPageSize(nextPageSize);
+    setPage(1);
+  }
+
   const columns: DataTableColumn<EmployeeDto>[] = [
     {
       key: "name",
@@ -118,7 +155,17 @@ export function EmployeeTable({
       className: "text-right",
       cell: (employee) => (
         <div className="flex flex-wrap justify-end gap-2">
-          {canResendInvitation(employee.authStatus) ? (
+          {employee.authStatus === AccountStatus.password_reset_required ? (
+            <Button
+              className="min-h-9 px-3 py-1.5"
+              disabled={busy}
+              onClick={() => onCopyInvitation(employee)}
+              type="button"
+              variant="ghost"
+            >
+              Copiar enlace
+            </Button>
+          ) : canResendInvitation(employee.authStatus) ? (
             <Button
               className="min-h-9 px-3 py-1.5"
               disabled={busy}
@@ -126,9 +173,7 @@ export function EmployeeTable({
               type="button"
               variant="ghost"
             >
-              {employee.authStatus === AccountStatus.password_reset_required
-                ? "Reenviar invitación"
-                : "Enviar invitación"}
+              Enviar invitación
             </Button>
           ) : null}
           <Button
@@ -145,11 +190,33 @@ export function EmployeeTable({
   }
 
   return (
-    <DataTable
-      columns={columns}
-      data={employees}
-      emptyMessage="Aún no hay empleados registrados."
-      rowKey={(employee) => employee.id}
-    />
+    <div className="space-y-4">
+      <section className="grid gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
+        <SearchInput
+          aria-label="Buscar empleados"
+          onChange={handleSearchChange}
+          placeholder="Buscar por nombre, correo o código"
+          value={search}
+        />
+      </section>
+
+      <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
+        <DataTable
+          columns={columns}
+          data={paginatedEmployees}
+          emptyMessage="No hay empleados para los filtros actuales."
+          rowKey={(employee) => employee.id}
+        />
+        <TablePagination
+          ariaLabel="Paginación de empleados"
+          itemLabel="empleados"
+          page={page}
+          pageSize={pageSize}
+          totalItems={filteredEmployees.length}
+          onPageChange={setPage}
+          onPageSizeChange={handlePageSizeChange}
+        />
+      </div>
+    </div>
   );
 }

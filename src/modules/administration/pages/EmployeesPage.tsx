@@ -78,8 +78,7 @@ export function EmployeesPage() {
     try {
       const result = await resendInvitation(employee.id);
       showToast({
-        title:
-          employee.authStatus === undefined ? "Invitación enviada" : "Invitación reenviada",
+        title: "Invitación enviada",
         description: `${employee.name} puede activar su cuenta con el nuevo enlace.`,
         tone: "success",
       });
@@ -89,6 +88,30 @@ export function EmployeesPage() {
     } catch (caughtError) {
       showToast({
         title: "No se pudo enviar la invitación",
+        description:
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Intentá nuevamente en unos momentos.",
+        tone: "danger",
+      });
+    }
+  }
+
+  async function handleCopyInvitation(employee: EmployeeDto) {
+    try {
+      const result = await resendInvitation(employee.id);
+      if (result.invitationToken) {
+        const link = `${window.location.origin}/activar-cuenta/${result.invitationToken}`;
+        await navigator.clipboard.writeText(link);
+        showToast({
+          title: "Enlace copiado",
+          description: `El enlace de activación de ${employee.name} se copió al portapapeles.`,
+          tone: "success",
+        });
+      }
+    } catch (caughtError) {
+      showToast({
+        title: "No se pudo copiar el enlace",
         description:
           caughtError instanceof Error
             ? caughtError.message
@@ -164,6 +187,7 @@ export function EmployeesPage() {
           employees={employees}
           onEdit={(employee) => setEditor({ mode: "edit", employee })}
           onResendInvitation={(employee) => void handleResendInvitation(employee)}
+          onCopyInvitation={(employee) => void handleCopyInvitation(employee)}
           roleNames={roleNames}
         />
       )}
@@ -243,8 +267,11 @@ function InvitationLinkModal({
             <Button onClick={handleClose} type="button" variant="secondary">
               Cerrar
             </Button>
-            <Button onClick={() => void handleCopy()} type="button">
-              {copied ? "Copiado ✓" : "Copiar invitación"}
+            <Button onClick={() => void handleCopy()} type="button" variant="secondary">
+              {copied ? "Copiado ✓" : "Copiar enlace"}
+            </Button>
+            <Button href={link} rel="noopener noreferrer" target="_blank">
+              Abrir activación
             </Button>
           </div>
         </div>
