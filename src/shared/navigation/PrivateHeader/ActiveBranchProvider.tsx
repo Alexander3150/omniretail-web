@@ -34,6 +34,31 @@ interface ActiveBranchProviderProps {
 
 const ActiveBranchContext = createContext<ActiveBranchContextValue | null>(null);
 
+/**
+ * Pura y exportada para poder testearse sin renderizar React: dado el set de branches
+ * accesibles para el User/tenant actual y la seleccion previa, decide cual queda activa.
+ * Conserva la seleccion previa SOLO si sigue siendo accesible (evita que una sucursal de OTRO
+ * User/tenant -- ej. tras un cambio de sesion -- sobreviva a la reconstruccion); si no, cae a
+ * la primera accesible o a null si no hay ninguna ("Sin sucursales", nunca un fallback a todas).
+ */
+export function selectNextActiveBranchId(
+  accessibleBranches: Branch[],
+  currentActiveBranchId: string | null,
+): string | null {
+  if (
+    currentActiveBranchId &&
+    accessibleBranches.some((branch) => branch.id === currentActiveBranchId)
+  ) {
+    return currentActiveBranchId;
+  }
+  return accessibleBranches[0]?.id ?? null;
+}
+
+/** Pura y exportada: defensa en profundidad para setActiveBranchId (ver su uso mas abajo). */
+export function isBranchIdSelectable(branches: Branch[], branchId: string): boolean {
+  return branches.some((branch) => branch.id === branchId);
+}
+
 export function ActiveBranchProvider({
   tenantId,
   canAccessBranch,
@@ -50,10 +75,7 @@ export function ActiveBranchProvider({
         ? activeBranches.filter((branch) => canAccessBranch(branch))
         : activeBranches;
       setBranches(accessibleBranches);
-      setActiveBranchId((current) => {
-        if (current && accessibleBranches.some((branch) => branch.id === current)) return current;
-        return accessibleBranches[0]?.id ?? null;
-      });
+      setActiveBranchId((current) => selectNextActiveBranchId(accessibleBranches, current));
       setLoading(false);
     },
     [canAccessBranch],
@@ -90,14 +112,25 @@ export function ActiveBranchProvider({
     [activeBranchId, branches],
   );
 
+  // Defensa en profundidad: aunque hoy el unico consumidor (BranchSelector) solo ofrece
+  // branches ya presentes en `branches` (ya filtradas por canAccessBranch), esta funcion es
+  // parte del contrato publico del context -- un branchId fuera de `branches` (manipulado o
+  // de otro alcance) se ignora en vez de aceptarse silenciosamente.
+  const selectActiveBranch = useCallback(
+    (branchId: string) => {
+      setActiveBranchId((current) => (isBranchIdSelectable(branches, branchId) ? branchId : current));
+    },
+    [branches],
+  );
+
   const value = useMemo<ActiveBranchContextValue>(
     () => ({
       branches,
       currentBranch,
       loading,
-      setActiveBranchId,
+      setActiveBranchId: selectActiveBranch,
     }),
-    [branches, currentBranch, loading],
+    [branches, currentBranch, loading, selectActiveBranch],
   );
 
   return <ActiveBranchContext.Provider value={value}>{children}</ActiveBranchContext.Provider>;

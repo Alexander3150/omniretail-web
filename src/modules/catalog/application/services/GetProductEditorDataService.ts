@@ -7,13 +7,17 @@ import type {
   ProductMediaEditorValue,
   SupplierProductEditorValue,
 } from "@/modules/catalog/application/dto/ProductEditorDto";
-import { resolveTenantId } from "@/modules/catalog/application/services/serviceHelpers";
+import {
+  ensureCanReadProducts,
+  resolveTenantContext,
+} from "@/modules/catalog/application/services/serviceHelpers";
 
 export class GetProductEditorDataService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(productId?: string, branchId?: string): Promise<ProductEditorData> {
-    const tenantId = await resolveTenantId(this.repositories);
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanReadProducts(permissions);
     const [allAttributeDefinitions, suppliers, allProducts, branch] = await Promise.all([
       this.repositories.attributes.getDefinitions(),
       this.repositories.suppliers.getActiveByTenant(tenantId),

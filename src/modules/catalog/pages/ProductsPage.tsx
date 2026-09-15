@@ -20,11 +20,13 @@ import {
 } from "@/modules/catalog/components/CatalogIcons";
 import { useProductFormOptions } from "@/modules/catalog/hooks/useProductFormOptions";
 import { useProductMutations } from "@/modules/catalog/hooks/useProductMutations";
+import { useProductPermissions } from "@/modules/catalog/hooks/useProductPermissions";
 import { useProducts } from "@/modules/catalog/hooks/useProducts";
 import type { ProductListItem } from "@/modules/catalog/types/catalog.types";
 
 export function ProductsPage() {
   const { showToast } = useToast();
+  const { canRead, canCreate, canUpdate } = useProductPermissions();
   const {
     loading,
     error,
@@ -88,10 +90,37 @@ export function ProductsPage() {
     if (categoryId) updateFilters({ categoryId });
   }, [updateFilters]);
 
+  if (!loading && !canRead) {
+    return (
+      <div className="min-w-0 space-y-5">
+        <header className="border-b border-[var(--color-border)] pb-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+            CATÁLOGO
+          </p>
+          <h1 className="mt-1 text-2xl font-bold text-[var(--color-title)]">Catálogo y precios</h1>
+        </header>
+        <div
+          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
+          role="alert"
+        >
+          <h2 className="text-base font-semibold text-[var(--color-title)]">
+            No tenés acceso a productos
+          </h2>
+          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+            Consultar productos requiere el permiso{" "}
+            <span className="font-medium text-[var(--color-text)]">catalog.products.read</span>.
+            Pedí acceso a un administrador.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-w-0 space-y-5">
       <ProductToolbar
         activeFiltersCount={activeFiltersCount}
+        canCreate={canCreate}
         filtersOpen={filtersOpen}
         onSearchChange={(search) => updateFilters({ search })}
         onToggleFilters={() => setFiltersOpen((current) => !current)}
@@ -116,6 +145,7 @@ export function ProductsPage() {
       ) : (
         <>
           <ProductTable
+            canUpdate={canUpdate}
             emptyMessage={emptyMessage}
             footer={
               filteredProducts.length > 0 ? (
@@ -138,7 +168,7 @@ export function ProductsPage() {
             onRestore={restoreProduct}
             products={paginatedProducts}
           />
-          {products.length === 0 ? (
+          {products.length === 0 && canCreate ? (
             <div className="flex justify-center">
               <Button href="/catalogo/productos/nuevo">
                 <PlusIcon />

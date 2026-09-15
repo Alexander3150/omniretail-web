@@ -11,6 +11,11 @@ export const statusesConfig: Record<string, StatusDefinition> = {
   inactive: { label: "Inactivo", tone: "neutral" },
   archived: { label: "Archivado", tone: "neutral" },
   blocked: { label: "Bloqueado", tone: "danger" },
+  // AccountStatus (auth) -- distinto de UserStatus, ver admin-users / SCOPE.md 12.12.
+  pending_verification: { label: "Pendiente de verificación", tone: "warning" },
+  temporarily_locked: { label: "Bloqueada temporalmente", tone: "danger" },
+  password_reset_required: { label: "Pendiente de activación", tone: "warning" },
+  disabled: { label: "Deshabilitada", tone: "danger" },
   published: { label: "Publicado", tone: "success" },
   pending: { label: "Pendiente", tone: "warning" },
   confirmed: { label: "Confirmado", tone: "info", storefrontOrderProgress: "confirmed" },
@@ -43,4 +48,6 @@ export const statusesConfig: Record<string, StatusDefinition> = {
   ended: { label: "Finalizado", tone: "neutral" },
   unread: { label: "No leido", tone: "info" },
   read: { label: "Leido", tone: "neutral" },
+  // TenantSubscriptionStatus (saas foundation) -- active/cancelled ya existen arriba.
+  suspended: { label: "Suspendida", tone: "danger" },
 };

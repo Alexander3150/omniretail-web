@@ -1208,6 +1208,61 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     });
     this.emit("auth.changed", { action: "updated" });
   }
+  async getEmployeeAuthSummariesByUserIds(tenantId: string, userIds: readonly string[]) {
+    return this.read((db) => {
+      const uniqueIds = [...new Set(userIds)];
+      const summaries: Array<{
+        userId: string;
+        status: AccountStatus;
+        mfaEnabled: boolean;
+        lastLoginAt?: string;
+      }> = [];
+      for (const userId of uniqueIds) {
+        // Mismo criterio que el resto de las lecturas administrativas tenant-scoped
+        // (RoleRepository.getByIdScoped, BranchRepository.getByIdScoped): el tenant se valida
+        // ANTES de resolver nada más. Un userId de otro tenant, inexistente, o sin AuthAccount
+        // todavía simplemente no aparece en el resultado -- las tres causas se ven igual desde
+        // afuera.
+        const user = db.users.find((item) => item.id === userId && item.tenantId === tenantId);
+        if (!user) continue;
+        const account = db.authAccounts.find((item) => item.userId === userId);
+        if (!account) continue;
+        const enrollment = db.mfaEnrollments.find((item) => item.userId === userId);
+        summaries.push({
+          userId,
+          status: account.status,
+          mfaEnabled: Boolean(enrollment?.enabled),
+          lastLoginAt: account.lastLoginAt,
+        });
+      }
+      return summaries;
+    });
+  }
+  async revokeAllSessionsByUserId(tenantId: string, userId: string) {
+    this.store.mutate((db) => {
+      const user = db.users.find((item) => item.id === userId && item.tenantId === tenantId);
+      // Cross-tenant o userId inexistente: no revoca nada, no distingue el motivo (mismo
+      // criterio que el resto del contrato) -- pero tampoco lanza, porque es idempotente por
+      // diseño: revocar "de nuevo" nunca debe ser un error para el caller.
+      if (!user) return undefined;
+
+      const nowIso = this.now();
+      const activeSessions = db.sessions.filter(
+        (item) => item.userId === userId && !item.revokedAt,
+      );
+      activeSessions.forEach((item) => {
+        item.revokedAt = nowIso;
+      });
+      return undefined;
+    });
+    // No se audita acá con this.logAuthAudit: este método no recibe la identidad del actor
+    // administrativo que dispara la revocación (mismo tipo de límite ya documentado en
+    // inviteEmployee -- ver su docstring), así que auditarlo acá misatribuiría la acción. El
+    // caller administrativo (administration) SÍ conoce al actor real y deja su propia entrada de
+    // auditoría (`employee.status_changed`/`employee.role_changed`/etc.) con una nota de que
+    // también revocó sesiones -- ese es el registro atribuible correctamente.
+    this.emit("auth.changed", { entityId: userId, action: "updated" });
+  }
   private logAuthAudit(
     db: MockDatabase,
     entry: {

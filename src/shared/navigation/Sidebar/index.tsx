@@ -70,6 +70,24 @@ export function getRenderableNavigationItems(items: NavigationItem[]): Navigatio
   return filterNavigationItemsByPermissions(items);
 }
 
+/**
+ * Unica fuente de verdad para "este NavigationItem es visible/accesible con estos permisos" --
+ * la usan tanto Sidebar (filterNavigationItemsByPermissions) como RequirePermission (guard de
+ * ruta), para que sidebar y autorizacion nunca puedan desincronizarse en el criterio de OR de
+ * `anyPermission`. `anyPermission`, cuando esta presente, reemplaza la verificacion de
+ * `permission` (no se exigen ambas).
+ */
+export function isNavigationItemPermitted(
+  item: Pick<NavigationItem, "permission" | "anyPermission">,
+  allowedPermissions?: ReadonlySet<string>,
+): boolean {
+  if (!allowedPermissions) return true;
+  if (item.anyPermission && item.anyPermission.length > 0) {
+    return item.anyPermission.some((permission) => allowedPermissions.has(permission));
+  }
+  return !item.permission || allowedPermissions.has(item.permission);
+}
+
 export function filterNavigationItemsByPermissions(
   items: NavigationItem[],
   allowedPermissions?: ReadonlySet<string>,
@@ -79,8 +97,7 @@ export function filterNavigationItemsByPermissions(
       ? filterNavigationItemsByPermissions(item.children, allowedPermissions)
       : undefined;
     const hasChildren: boolean = Boolean(children?.length);
-    const hasPermission =
-      !item.permission || !allowedPermissions || allowedPermissions.has(item.permission);
+    const hasPermission = isNavigationItemPermitted(item, allowedPermissions);
     const hasAccessibleHref = Boolean(item.href && hasPermission);
 
     if (!hasAccessibleHref && !hasChildren) {

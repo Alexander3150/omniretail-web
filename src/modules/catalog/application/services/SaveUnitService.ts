@@ -4,14 +4,16 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import type { UnitEditorDto } from "@/modules/catalog/application/dto/UnitEditorDto";
 import {
   CatalogServiceError,
-  resolveTenantId,
+  ensureCanManageUnits,
+  resolveTenantContext,
 } from "@/modules/catalog/application/services/serviceHelpers";
 
 export class SaveUnitService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async create(dto: UnitEditorDto): Promise<Unit> {
-    const tenantId = await resolveTenantId(this.repositories);
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanManageUnits(permissions);
     if (!tenantId) throw new CatalogServiceError("No se pudo resolver el negocio activo.");
 
     return this.repositories.units.create({
@@ -26,7 +28,8 @@ export class SaveUnitService {
   }
 
   async update(unitId: string, dto: UnitEditorDto): Promise<Unit> {
-    const tenantId = await resolveTenantId(this.repositories);
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanManageUnits(permissions);
     return this.repositories.units.updateScoped(tenantId, unitId, {
       name: dto.name.trim(),
       symbol: dto.symbol.trim(),
@@ -37,14 +40,16 @@ export class SaveUnitService {
   }
 
   async archive(unitId: string): Promise<Unit> {
-    const tenantId = await resolveTenantId(this.repositories);
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanManageUnits(permissions);
     return this.repositories.units.updateScoped(tenantId, unitId, {
       status: UnitStatus.archived,
     });
   }
 
   async restore(unitId: string): Promise<Unit> {
-    const tenantId = await resolveTenantId(this.repositories);
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanManageUnits(permissions);
     return this.repositories.units.updateScoped(tenantId, unitId, {
       status: UnitStatus.active,
     });

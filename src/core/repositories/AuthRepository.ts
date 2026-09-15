@@ -1,5 +1,22 @@
 import type { MfaMethod, Session, User } from "@/core/entities";
-import type { UserType } from "@/core/enums";
+import type { AccountStatus, UserType } from "@/core/enums";
+import type { ISODateString } from "@/core/types/common.types";
+
+/**
+ * Lectura administrativa MÍNIMA del estado de cuenta de un empleado (admin-users, módulo
+ * administration). Nunca incluye `passwordHashMock`, historial de contraseñas,
+ * `failedLoginAttempts`, secretos de MFA, recovery codes, `MfaChallenge` ni tokens de invitación
+ * -- esos siguen siendo territorio exclusivo de Auth, ninguno de ellos tiene motivo para viajar
+ * fuera de este módulo. `mfaEnabled` es el único booleano autoritativo (deriva de
+ * `MfaEnrollment.enabled`, nunca de si existe un enrollment sin verificar). `lastLoginAt` viene
+ * tal cual de `AuthAccount`.
+ */
+export interface EmployeeAuthSummary {
+  userId: string;
+  status: AccountStatus;
+  mfaEnabled: boolean;
+  lastLoginAt?: ISODateString;
+}
 
 export interface LoginInput {
   /**
@@ -351,4 +368,30 @@ export interface AuthRepository {
    * (EmployeeSeguridadPage), sin duplicar esta lógica.
    */
   changePassword(input: ChangePasswordInput): Promise<void>;
+  /**
+   * Lectura batch para la tabla de administración de empleados (admin-users) -- NUNCA
+   * `getById`-en-loop desde el caller (N+1). `tenantId` llega ya resuelto/autorizado por la
+   * sesión administrativa activa, nunca de un valor declarado por el caller (mismo criterio que
+   * `RoleRepository.getByIdScoped`/`BranchRepository.getByIdScoped`). `userIds` se deduplica
+   * internamente. Cada `userId` que no pertenece a `tenantId`, no existe, o no tiene todavía un
+   * `AuthAccount` (invitación nunca aceptada) simplemente NO aparece en el resultado -- no hay
+   * forma de distinguir esos tres motivos desde afuera, mismo principio de no-oráculo que el
+   * resto de estos contratos.
+   */
+  getEmployeeAuthSummariesByUserIds(
+    tenantId: string,
+    userIds: readonly string[],
+  ): Promise<EmployeeAuthSummary[]>;
+  /**
+   * Revoca TODAS las sesiones activas de `userId` (no solo la que hizo el pedido) -- para
+   * cambios de seguridad disparados por administration: inactivar el empleado, cambiarle el Role
+   * o las sucursales asignadas. Idempotente: revocar sesiones ya revocadas o inexistentes no
+   * falla, simplemente no cambia nada más. Nunca toca sesiones de otro `userId`. Verifica que
+   * `userId` pertenezca a `tenantId` antes de tocar nada -- un intento cross-tenant no revoca
+   * nada y no distingue "otro tenant" de "no existe" (mismo criterio que el resto del contrato).
+   * Solo marca `Session.revokedAt`, igual que `logout()` -- `getSession()` ya trata cualquier
+   * sesión con `revokedAt` como inválida, así que esto es efectivo de inmediato sin depender de
+   * que ninguna UI se entere primero.
+   */
+  revokeAllSessionsByUserId(tenantId: string, userId: string): Promise<void>;
 }

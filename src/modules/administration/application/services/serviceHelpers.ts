@@ -1,10 +1,11 @@
-import type { BankAccount, Branch, Role, Supplier } from "@/core/entities";
-import { BranchStatus, BranchType } from "@/core/enums";
+import type { BankAccount, Branch, Role, Supplier, User } from "@/core/entities";
+import { BranchStatus, BranchType, UserType } from "@/core/enums";
 import type { BranchInputDto } from "@/modules/administration/application/dto/BranchDto";
 import {
   BUSINESS_CONFIG_MANAGE_PERMISSION,
   CASH_READ_PERMISSION,
   DASHBOARD_READ_PERMISSION,
+  PLANS_READ_PERMISSION,
   REPORTS_EXPORT_PERMISSION,
   REPORTS_READ_PERMISSION,
 } from "@/modules/administration/permissions";
@@ -355,6 +356,98 @@ export function ensureRoleNotSystem(role: Role) {
   if (role.isSystem) {
     throw new AdministrationServiceError("Los roles del sistema no se pueden editar ni archivar.");
   }
+}
+
+/**
+ * Leer empleados acepta `admin.users.read` o `admin.users.manage`, mismo criterio defensivo que
+ * Roles/Sucursales. La navegación se protege con `manage` (audiencia real de la pantalla).
+ */
+export function ensureCanReadEmployees(permissions: readonly string[]) {
+  if (permissions.includes("admin.users.read") || permissions.includes("admin.users.manage")) {
+    return;
+  }
+
+  throw new AdministrationServiceError("No tenés permiso para consultar empleados.");
+}
+
+export function ensureCanManageEmployees(permissions: readonly string[]) {
+  if (permissions.includes("admin.users.manage")) return;
+
+  throw new AdministrationServiceError("No tenés permiso para gestionar empleados.");
+}
+
+export function ensureEmployeeTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
+}
+
+export function ensureEmployeeActor(actorUserId: string) {
+  if (actorUserId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
+}
+
+/**
+ * admin-users administra EMPLOYEES, nunca Customers -- ni para leerlos ni, mucho menos, para
+ * asignarles un Role operacional. Un `userId` que resuelve a un Customer se trata como
+ * inexistente para esta pantalla (mismo criterio "no distinguir el motivo" que el resto del
+ * módulo), no como un error especial que revele que existe pero es del tipo equivocado.
+ */
+export function ensureEmployeeBelongsToTenant(user: User | null, tenantId: string): User {
+  if (user?.tenantId === tenantId && user.type === UserType.employee) return user;
+
+  throw new AdministrationServiceError("El empleado no está disponible para el negocio activo.");
+}
+
+/**
+ * Mismo patrón que `ensureBankAccountBranchIds`: las sucursales ya asignadas se conservan aunque
+ * hoy estén inactivas (`previousBranchIds`), las nuevas deben existir, pertenecer al tenant y
+ * estar activas. Un array vacío es válido y conserva su semántica ya existente en `User`: sin
+ * `branchScope` (eso quedó en el Role hasta admin-users, y ahora esto ES admin-users) la
+ * autorización por sucursal de un Employee todavía depende de `Role.branchScope` combinado con
+ * `user.branchId`/`allowedBranchIds` (`core/scopes/userBranchAccess.ts`) -- no se inventa acá un
+ * significado nuevo de "acceso a todas las sucursales" para un array vacío de
+ * `allowedBranchIds`; se preserva el que ya tenía `isBranchIdInUserScope` antes de esta feature.
+ */
+export function ensureEmployeeBranchIds(
+  branchIds: readonly string[],
+  tenantBranches: readonly Branch[],
+  previousBranchIds: readonly string[] = [],
+) {
+  const branchById = new Map(tenantBranches.map((branch) => [branch.id, branch]));
+  const alreadyAssigned = new Set(previousBranchIds);
+
+  for (const branchId of branchIds) {
+    const branch = branchById.get(branchId);
+    if (!branch) {
+      throw new AdministrationServiceError(
+        "Alguna de las sucursales asignadas no existe o no pertenece al negocio.",
+      );
+    }
+    if (!alreadyAssigned.has(branchId) && branch.status !== BranchStatus.active) {
+      throw new AdministrationServiceError(
+        "No se puede asignar una sucursal inactiva a un empleado nuevo.",
+      );
+    }
+  }
+}
+
+/**
+ * La lectura de plan/suscripción pertenece a la capa de aplicación, no a la pantalla: ocultar el
+ * menú no es enforcement. Solo lectura -- esta foundation no expone mutaciones de Plan/
+ * Subscription (§16 del ticket, "NO plan change todavía").
+ */
+export function ensureCanReadPlans(permissions: readonly string[]) {
+  if (permissions.includes(PLANS_READ_PERMISSION)) return;
+
+  throw new AdministrationServiceError("No tenés permiso para consultar el plan del negocio.");
+}
+
+export function ensurePlanTenant(tenantId: string) {
+  if (tenantId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
 }
 
 export function cleanError(error: unknown): string {

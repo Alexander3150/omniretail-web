@@ -293,3 +293,45 @@ export enum BusinessPreset {
   services = "services",
   custom = "custom",
 }
+export enum PlanCode {
+  basic = "basic",
+  enterprise = "enterprise",
+}
+export enum PlanStatus {
+  active = "active",
+  archived = "archived",
+}
+export enum TenantSubscriptionStatus {
+  active = "active",
+  suspended = "suspended",
+  cancelled = "cancelled",
+}
+/**
+ * Catalogo canonico de capabilities SaaS comerciales -- lo que el Tenant CONTRATO, nunca lo que
+ * un Employee puede hacer (eso es Role.permissions) ni en que sucursal puede operar (eso es
+ * User.allowedBranchIds). Deliberadamente NO incluye auth/roles/permissions/tenant
+ * isolation/security/banking config: esas no son capabilities comerciales, son la plataforma
+ * base disponible para cualquier Tenant. Multiples sucursales tampoco es una capability -- ver
+ * SaasLimitKey.maxBranches.
+ */
+export enum SaasCapabilityKey {
+  inventory = "inventory",
+  purchasing = "purchasing",
+  receiving = "receiving",
+  pos = "pos",
+  ecommerce = "ecommerce",
+  traceabilityLots = "traceability.lots",
+  traceabilityExpiration = "traceability.expiration",
+  traceabilitySerials = "traceability.serials",
+  catalogKits = "catalog.kits",
+}
+/**
+ * Catalogo canonico de limites numericos por plan. Una key ausente en PlanDefinition.limits
+ * significa "sin limite definido para este plan" (nunca "0" ni "ilimitado" implicito por
+ * default) -- ver ResolveTenantEntitlementsService. No incluye products/orders/sales/revenue ni
+ * maxPosTerminals (no existe dominio persistente PosTerminal todavia) sin un requerimiento real.
+ */
+export enum SaasLimitKey {
+  maxEmployees = "maxEmployees",
+  maxBranches = "maxBranches",
+}

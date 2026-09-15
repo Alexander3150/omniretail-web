@@ -11,7 +11,35 @@ estan en `SCOPE.md`.
 
 ## Contracts que consume
 
-UserRepository, RoleRepository, BranchRepository, BusinessConfigRepository, TenantRepository, SupplierRepository, BankAccountRepository, CustomerRepository, AuditLogRepository, CashShiftRepository, SalesRepository, OrderRepository, InventoryRepository, ReceiptRepository, IncidentTypeRepository, PurchaseOrderRepository, PaymentRepository, ProductRepository
+UserRepository, RoleRepository, BranchRepository, BusinessConfigRepository, TenantRepository, SupplierRepository, BankAccountRepository, CustomerRepository, AuditLogRepository, CashShiftRepository, SalesRepository, OrderRepository, InventoryRepository, ReceiptRepository, IncidentTypeRepository, PurchaseOrderRepository, PaymentRepository, ProductRepository, AuthRepository
+
+## Usuarios (admin-users)
+
+Implementado en esta rama (`feature/admin-users`):
+
+- Administracion de Employees (nunca Customers) reutilizando el Auth existente de Andy --
+  `inviteEmployee`/`activateEmployeeAccount` ya existian, este modulo nunca crea `AuthAccount`
+  directamente.
+- Dos contratos Auth nuevos, chicos y aditivos (autorizados para esta misma rama):
+  `getEmployeeAuthSummariesByUserIds` (lectura batch, nunca N+1) y `revokeAllSessionsByUserId`
+  (se dispara solo cuando cambia `status`/`roleId`/`allowedBranchIds`, nunca en updates de solo
+  nombre/telefono).
+- `UserRepository` gana `listByTenant`/`getByIdScoped`/`updateScoped` (mismo patron que
+  `RoleRepository` de PR #88) sin tocar los metodos existentes.
+- Delegacion de privilegios al asignar Role: mismo `ensureDelegatablePermissions` de PR #88,
+  ahora tambien sobre el Role completo (`ensureDelegatableRole`) -- un actor no puede asignar un
+  Role con permisos que el mismo no tiene, sin excepcion de "super admin"/`isSystem` (no existe
+  ese concepto en el codigo, se busco explicitamente de nuevo).
+- Branch access vive en `User.allowedBranchIds`, no en `Role.branchScope` (PR #88 ya saco esa
+  responsabilidad del Role).
+- Email unico globalmente para Employees, misma politica que ya usa `login()`
+  (`UserRepository.getByEmail`, sin `tenantId` a proposito).
+- `User.status` (laboral) vs `AuthAccount.status` (tecnico) vs `Role.status` (disponibilidad del
+  rol) nunca se mezclan en la UI.
+- Ruta privada `/administracion/usuarios` y entrada de navegacion con `admin.users.manage`.
+
+Detalle completo (justificacion de cada decision, seccion por seccion del ticket original) en
+`SCOPE.md`, seccion 12.12.
 
 ## Roles y permisos
 

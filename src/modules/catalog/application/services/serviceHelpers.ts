@@ -22,6 +22,103 @@ export async function resolveTenantId(repositories: RepositoryRegistry) {
   return snapshot.user.tenantId;
 }
 
+/**
+ * Igual que `resolveTenantId`, pero además expone `permissions` -- pensado para los services que
+ * necesitan verificar un permiso (`ensureCanReadCategories`/`ensureCanManageCategories` y
+ * equivalentes de Locations/Units) sin agregar un parámetro `permissions` al `execute()` público
+ * de cada service (que hubiera obligado a tocar cada call site en los hooks). Mismo patrón de
+ * resolución interna que ya usaba `resolveTenantId`, solo que además devuelve
+ * `snapshot.role.permissions`.
+ */
+export async function resolveTenantContext(repositories: RepositoryRegistry) {
+  const snapshot = await resolveCurrentSessionSnapshot(repositories);
+  if (!snapshot.user || !snapshot.role) {
+    throw new CatalogServiceError("No se pudo resolver el negocio activo.");
+  }
+  return { tenantId: snapshot.user.tenantId, permissions: snapshot.role.permissions };
+}
+
+/**
+ * Permission hardening (feature/permission-enforcement-hardening): Categorías/Ubicaciones/
+ * Unidades no tenían NINGUNA verificación de permiso a nivel de aplicación -- la única barrera
+ * era el nav (`RequirePermission`), y no existía ningún permiso `.read` para estas 3 pantallas.
+ * Mismo criterio que Administration (Employees/Roles/Branches, #92): el permiso se verifica en
+ * la capa de aplicación, no solo ocultando el botón.
+ */
+export function ensureCanReadCategories(permissions: readonly string[]) {
+  if (
+    permissions.includes("catalog.categories.read") ||
+    permissions.includes("catalog.categories.manage")
+  ) {
+    return;
+  }
+  throw new CatalogServiceError("No tenés permiso para consultar categorías.");
+}
+
+export function ensureCanManageCategories(permissions: readonly string[]) {
+  if (permissions.includes("catalog.categories.manage")) return;
+  throw new CatalogServiceError("No tenés permiso para gestionar categorías.");
+}
+
+export function ensureCanReadLocations(permissions: readonly string[]) {
+  if (
+    permissions.includes("catalog.locations.read") ||
+    permissions.includes("catalog.locations.manage")
+  ) {
+    return;
+  }
+  throw new CatalogServiceError("No tenés permiso para consultar ubicaciones.");
+}
+
+export function ensureCanManageLocations(permissions: readonly string[]) {
+  if (permissions.includes("catalog.locations.manage")) return;
+  throw new CatalogServiceError("No tenés permiso para gestionar ubicaciones.");
+}
+
+export function ensureCanReadUnits(permissions: readonly string[]) {
+  if (permissions.includes("catalog.units.read") || permissions.includes("catalog.units.manage")) {
+    return;
+  }
+  throw new CatalogServiceError("No tenés permiso para consultar unidades.");
+}
+
+export function ensureCanManageUnits(permissions: readonly string[]) {
+  if (permissions.includes("catalog.units.manage")) return;
+  throw new CatalogServiceError("No tenés permiso para gestionar unidades.");
+}
+
+/**
+ * Permission hardening fase 2 (Products, feature/permission-enforcement-hardening-products):
+ * mismo criterio que Categorías/Ubicaciones/Unidades -- el permiso se verifica en la capa de
+ * aplicación, nunca solo ocultando el botón. Products usa 3 keys canónicas separadas (no un
+ * `.manage` único): `catalog.products.read`, `.create`, `.update`. Tener `.create` o `.update`
+ * implica poder leer (no tiene sentido poder crear/editar un producto que no podés consultar) --
+ * mismo criterio que `.manage` implicando `.read` en Categorías/Ubicaciones/Unidades.
+ * `.update` cubre editar, archivar, restaurar y promoción (§1/§7 del ticket): ninguna de esas
+ * acciones tiene su propia key canónica hoy, y el ticket pide explícitamente no inventar una
+ * nueva salvo que una acción real no pueda representarse con las 3 existentes.
+ */
+export function ensureCanReadProducts(permissions: readonly string[]) {
+  if (
+    permissions.includes("catalog.products.read") ||
+    permissions.includes("catalog.products.create") ||
+    permissions.includes("catalog.products.update")
+  ) {
+    return;
+  }
+  throw new CatalogServiceError("No tenés permiso para consultar productos.");
+}
+
+export function ensureCanCreateProducts(permissions: readonly string[]) {
+  if (permissions.includes("catalog.products.create")) return;
+  throw new CatalogServiceError("No tenés permiso para crear productos.");
+}
+
+export function ensureCanUpdateProducts(permissions: readonly string[]) {
+  if (permissions.includes("catalog.products.update")) return;
+  throw new CatalogServiceError("No tenés permiso para editar productos.");
+}
+
 export async function requireCapabilities(
   repositories: RepositoryRegistry,
   tenantId: string,

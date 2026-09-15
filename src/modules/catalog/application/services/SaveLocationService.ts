@@ -4,7 +4,8 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import type { LocationEditorDto } from "@/modules/catalog/application/dto/LocationEditorDto";
 import {
   CatalogServiceError,
-  resolveTenantId,
+  ensureCanManageLocations,
+  resolveTenantContext,
 } from "@/modules/catalog/application/services/serviceHelpers";
 import { normalizeLocationCode } from "@/modules/catalog/validation/location.validation";
 
@@ -12,7 +13,8 @@ export class SaveLocationService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async create(dto: LocationEditorDto): Promise<StorageLocation> {
-    const tenantId = await resolveTenantId(this.repositories);
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanManageLocations(permissions);
     if (!tenantId) throw new CatalogServiceError("No se pudo resolver el negocio activo.");
 
     return this.repositories.inventory.createLocation({
@@ -28,6 +30,8 @@ export class SaveLocationService {
   }
 
   async update(locationId: string, dto: LocationEditorDto): Promise<StorageLocation> {
+    const { permissions } = await resolveTenantContext(this.repositories);
+    ensureCanManageLocations(permissions);
     return this.repositories.inventory.updateLocation(locationId, {
       branchId: dto.branchId,
       parentId: dto.parentId || undefined,
@@ -39,12 +43,16 @@ export class SaveLocationService {
   }
 
   async archive(locationId: string): Promise<StorageLocation> {
+    const { permissions } = await resolveTenantContext(this.repositories);
+    ensureCanManageLocations(permissions);
     return this.repositories.inventory.updateLocation(locationId, {
       status: LocationStatus.archived,
     });
   }
 
   async restore(locationId: string): Promise<StorageLocation> {
+    const { permissions } = await resolveTenantContext(this.repositories);
+    ensureCanManageLocations(permissions);
     return this.repositories.inventory.updateLocation(locationId, {
       status: LocationStatus.active,
     });

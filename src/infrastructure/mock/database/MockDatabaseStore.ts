@@ -92,6 +92,12 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
         PaymentMethod.transfer,
       ],
   }));
+  // Mismo criterio que businessCapabilities/ecommerceConfigs: fallback al seed, NO a []. Un
+  // storage persistido antes de esta feature no tiene la key -- sin este fallback, tenant-demo
+  // quedaría sin PlanDefinition/TenantSubscription y el resolver fallaría fail-closed para una
+  // cuenta que sí las tiene disponibles en el seed. Nunca se borra storage para lograr esto.
+  normalized.planDefinitions = database.planDefinitions ?? base.planDefinitions;
+  normalized.tenantSubscriptions = database.tenantSubscriptions ?? base.tenantSubscriptions;
   normalized.productPriceHistory = database.productPriceHistory ?? [];
   normalized.inventoryReservations = database.inventoryReservations ?? [];
   normalized.inventoryReservationConsumeOperations =

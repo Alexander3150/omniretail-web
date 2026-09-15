@@ -10,6 +10,7 @@ import type { ProductEditorDto } from "@/modules/catalog/application/dto/Product
 import { useProductEditorData } from "@/modules/catalog/hooks/useProductEditorData";
 import { useProductFormOptions } from "@/modules/catalog/hooks/useProductFormOptions";
 import { useProductMutations } from "@/modules/catalog/hooks/useProductMutations";
+import { useProductPermissions } from "@/modules/catalog/hooks/useProductPermissions";
 
 interface ProductFormPageProps {
   mode: "create" | "edit";
@@ -21,6 +22,7 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
   const router = useRouter();
   const { showToast } = useToast();
   const isEdit = mode === "edit";
+  const { canCreate, canUpdate } = useProductPermissions();
   const { currentBranch, loading: branchLoading } = useActiveBranch();
   const optionsState = useProductFormOptions();
   const editorState = useProductEditorData(
@@ -71,6 +73,31 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
         tone: "danger",
       });
     }
+  }
+
+  // permission-enforcement-hardening-products (§5/§6 del ticket): RequirePermission solo valida
+  // el nav a nivel de sub-árbol (/catalogo/productos/*), no distingue crear de editar -- sin este
+  // guard, un usuario con SOLO catalog.products.read llegaría a un formulario editable con solo
+  // esconder el botón "Nuevo producto"/"Editar" en las pantallas anteriores. No alcanza con
+  // ocultar el botón: la ruta en sí debe denegar.
+  if ((mode === "create" && !canCreate) || (mode === "edit" && !canUpdate)) {
+    return (
+      <div
+        className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
+        role="alert"
+      >
+        <h2 className="text-base font-semibold text-[var(--color-title)]">
+          No tenés acceso a {mode === "create" ? "crear productos" : "editar productos"}
+        </h2>
+        <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+          Esta acción requiere el permiso{" "}
+          <span className="font-medium text-[var(--color-text)]">
+            {mode === "create" ? "catalog.products.create" : "catalog.products.update"}
+          </span>
+          . Pedí acceso a un administrador.
+        </p>
+      </div>
+    );
   }
 
   if (branchLoading || optionsState.loading || editorState.loading) {

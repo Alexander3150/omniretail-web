@@ -47,6 +47,8 @@ export function LocationsPage() {
     loading,
     busy,
     error,
+    canRead,
+    canManage,
     currentBranch,
     locations,
     filteredLocations,
@@ -105,6 +107,32 @@ export function LocationsPage() {
     setPanel({ mode: "detail", location: { ...location, status: LocationStatus.active } });
   }
 
+  if (!loading && !canRead) {
+    return (
+      <div className="min-w-0 space-y-5">
+        <header className="border-b border-[var(--color-border)] pb-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+            INVENTARIO
+          </p>
+          <h1 className="mt-1 text-2xl font-bold text-[var(--color-title)]">Ubicaciones</h1>
+        </header>
+        <div
+          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
+          role="alert"
+        >
+          <h2 className="text-base font-semibold text-[var(--color-title)]">
+            No tenés acceso a ubicaciones
+          </h2>
+          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+            Consultar ubicaciones requiere el permiso{" "}
+            <span className="font-medium text-[var(--color-text)]">catalog.locations.read</span>.
+            Pedí acceso a un administrador.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-w-0 space-y-5">
       <header className="flex min-w-0 flex-col gap-4 border-b border-[var(--color-border)] pb-4 lg:flex-row lg:items-end lg:justify-between">
@@ -119,15 +147,17 @@ export function LocationsPage() {
             Define lugares fisicos donde normalmente se almacenan productos.
           </p>
         </div>
-        <Button
-          className="w-full sm:w-auto"
-          disabled={!currentBranch}
-          onClick={() => setPanel({ mode: "create" })}
-          type="button"
-        >
-          <PlusIcon />
-          Nueva ubicacion
-        </Button>
+        {canManage ? (
+          <Button
+            className="w-full sm:w-auto"
+            disabled={!currentBranch}
+            onClick={() => setPanel({ mode: "create" })}
+            type="button"
+          >
+            <PlusIcon />
+            Nueva ubicacion
+          </Button>
+        ) : null}
       </header>
 
       {error ? (
@@ -155,6 +185,7 @@ export function LocationsPage() {
             </p>
           ) : (
             <LocationTable
+              canManage={canManage}
               emptyMessage={
                 locations.length === 0
                   ? "Aun no hay ubicaciones registradas."
@@ -184,6 +215,7 @@ export function LocationsPage() {
         {panel ? (
           <LocationPanel
             busy={busy}
+            canManage={canManage}
             currentBranchId={currentBranch?.id ?? ""}
             location={panelLocation}
             locations={locations}
@@ -281,6 +313,7 @@ function StatusFilterButton({
 }
 
 function LocationTable({
+  canManage,
   emptyMessage,
   locations,
   onArchive,
@@ -288,6 +321,7 @@ function LocationTable({
   onOpen,
   onRestore,
 }: {
+  canManage: boolean;
   emptyMessage: string;
   locations: LocationListItem[];
   onArchive: (location: LocationListItem) => void;
@@ -339,12 +373,14 @@ function LocationTable({
                   {location.productCount}
                 </td>
                 <td className="px-4 py-3">
-                  <LocationActionsMenu
-                    location={location}
-                    onArchive={onArchive}
-                    onEdit={onEdit}
-                    onRestore={onRestore}
-                  />
+                  {canManage ? (
+                    <LocationActionsMenu
+                      location={location}
+                      onArchive={onArchive}
+                      onEdit={onEdit}
+                      onRestore={onRestore}
+                    />
+                  ) : null}
                 </td>
               </tr>
             ))
@@ -561,6 +597,7 @@ function LocationTableFooter({
 
 function LocationPanel({
   busy,
+  canManage,
   currentBranchId,
   location,
   locations,
@@ -571,6 +608,7 @@ function LocationPanel({
   onSubmit,
 }: {
   busy: boolean;
+  canManage: boolean;
   currentBranchId: string;
   location?: LocationListItem;
   locations: LocationListItem[];
@@ -628,7 +666,12 @@ function LocationPanel({
               onSubmit={onSubmit}
             />
           ) : location ? (
-            <LocationDetail location={location} onClose={onClose} onEdit={onEdit} />
+            <LocationDetail
+              canManage={canManage}
+              location={location}
+              onClose={onClose}
+              onEdit={onEdit}
+            />
           ) : null}
         </div>
       </aside>
@@ -637,10 +680,12 @@ function LocationPanel({
 }
 
 function LocationDetail({
+  canManage,
   location,
   onClose,
   onEdit,
 }: {
+  canManage: boolean;
   location: LocationListItem;
   onClose: () => void;
   onEdit: () => void;
@@ -658,10 +703,12 @@ function LocationDetail({
         <Button className="w-full sm:w-auto" onClick={onClose} type="button" variant="secondary">
           Cerrar
         </Button>
-        <Button className="w-full sm:w-auto" onClick={onEdit} type="button">
-          <PencilIcon />
-          Editar
-        </Button>
+        {canManage ? (
+          <Button className="w-full sm:w-auto" onClick={onEdit} type="button">
+            <PencilIcon />
+            Editar
+          </Button>
+        ) : null}
       </div>
     </div>
   );

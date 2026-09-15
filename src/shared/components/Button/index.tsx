@@ -5,6 +5,8 @@ import { cn } from "@/shared/utils/cn";
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   children: ReactNode;
   href?: string;
+  rel?: string;
+  target?: string;
   variant?: "primary" | "secondary" | "danger" | "ghost";
 };
 
@@ -21,12 +23,20 @@ const variantClassNames: Record<NonNullable<ButtonProps["variant"]>, string> = {
     "border-transparent bg-transparent text-[var(--color-title)] hover:bg-[var(--color-app-background)]",
 };
 
-export function Button({ children, href, className, variant = "primary", ...props }: ButtonProps) {
+export function Button({
+  children,
+  href,
+  rel,
+  target,
+  className,
+  variant = "primary",
+  ...props
+}: ButtonProps) {
   const classes = cn(baseClassName, variantClassNames[variant], className);
 
   if (href) {
     return (
-      <Link className={classes} href={href}>
+      <Link className={classes} href={href} rel={rel} target={target}>
         {children}
       </Link>
     );

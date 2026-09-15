@@ -19,8 +19,17 @@ export function isCustomerAccountPath(pathname: string): boolean {
   return isRouteWithin(pathname, "/cuenta");
 }
 
+/**
+ * Simetrico por diseno: un Customer solo entra a /cuenta/*, y un Employee/Admin nunca entra a
+ * /cuenta/* -- incluso si su Role tuviera, por error de configuracion, algun permiso
+ * `customer.*` (posible si el catalogo de permisos se deriva completo para un role admin, ver
+ * demoSeed). La navegacion Customer respeta User.type, no solo el permission set: un permiso
+ * customer.* accidental en un Role de Employee nunca debe traducirse en acceso a /cuenta.
+ */
 export function canUserEnterPrivateRoute(user: User | null, pathname: string): boolean {
-  return user?.type !== UserType.customer || isCustomerAccountPath(pathname);
+  if (!user) return true;
+  const isCustomerRoute = isCustomerAccountPath(pathname);
+  return user.type === UserType.customer ? isCustomerRoute : !isCustomerRoute;
 }
 
 export function isSafeCustomerReturnUrl(returnUrl: string): boolean {

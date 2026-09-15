@@ -27,6 +27,7 @@ import type {
   PaymentRepository,
   PackingRepository,
   PickingRepository,
+  PlanRepository,
   ProductMediaRepository,
   ProductKitComponentRepository,
   ProductPriceHistoryRepository,
@@ -44,6 +45,7 @@ import type {
   SupplierProductRepository,
   SupplierRepository,
   TenantRepository,
+  TenantSubscriptionRepository,
   UnitRepository,
   UserRepository,
 } from "@/core/repositories";
@@ -74,6 +76,7 @@ import {
   MockPaymentRepository,
   MockPackingRepository,
   MockPickingRepository,
+  MockPlanRepository,
   MockProductMediaRepository,
   MockProductKitComponentRepository,
   MockProductPriceHistoryRepository,
@@ -90,6 +93,7 @@ import {
   MockSupplierProductRepository,
   MockSupplierRepository,
   MockTenantRepository,
+  MockTenantSubscriptionRepository,
   MockUnitRepository,
   MockUserRepository,
 } from "@/infrastructure/mock/repositories";
@@ -99,6 +103,8 @@ import { IndexedDbCatalogImageAssetRepository } from "@/infrastructure/media/Ind
 export interface RepositoryRegistry {
   tenants: TenantRepository;
   businessConfig: BusinessConfigRepository;
+  plans: PlanRepository;
+  tenantSubscriptions: TenantSubscriptionRepository;
   auth: AuthRepository;
   users: UserRepository;
   roles: RoleRepository;
@@ -160,6 +166,8 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     const repositories: RepositoryRegistry = {
       tenants: new MockTenantRepository(store, eventBus),
       businessConfig: new MockBusinessConfigRepository(store, eventBus),
+      plans: new MockPlanRepository(store, eventBus),
+      tenantSubscriptions: new MockTenantSubscriptionRepository(store, eventBus),
       auth: new MockAuthRepository(store, eventBus, storage),
       users: new MockUserRepository(store, eventBus),
       roles: new MockRoleRepository(store, eventBus),
