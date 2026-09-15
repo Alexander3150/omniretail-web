@@ -1,4 +1,4 @@
-import type { Dispatch, Notification } from "@/core/entities";
+import type { Dispatch, Notification, Package } from "@/core/entities";
 import {
   DispatchStatus,
   InventoryReservationStatus,
@@ -68,11 +68,25 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
     );
   }
 
+  async getPackagesByDispatch(scope: DispatchReadScope, dispatchId: string) {
+    return this.read((db) => {
+      const dispatch = db.dispatches.find(
+        (item) =>
+          item.id === dispatchId &&
+          item.tenantId === scope.tenantId &&
+          (scope.branchId === undefined || item.branchId === scope.branchId),
+      );
+      if (!dispatch) return [];
+      return db.packages.filter((item) => item.dispatchId === dispatch.id);
+    });
+  }
+
   async confirm(input: ConfirmDispatchInput): Promise<ConfirmDispatchResult> {
     const operationId = input.operationId.trim();
     if (!operationId) throw new Error("Dispatch operationId is required");
     const carrierName = normalizeOptional(input.carrierName);
     const trackingNumber = normalizeOptional(input.trackingNumber);
+    const packages = input.packages ? normalizePackages(input.packages) : undefined;
 
     const result = this.store.transact<DispatchMutationResult>((db) => {
       this.assertActor(input, db);
@@ -101,6 +115,7 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
         transportMode: order.transportMode,
         carrierName,
         trackingNumber,
+        packages: packages ?? [],
       });
       const operationConflict = db.dispatches.find(
         (item) =>
@@ -132,6 +147,15 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
         }
         if (!dispatchDataMatches(dispatch, order.transportMode, carrierName, trackingNumber)) {
           throw new Error(`Dispatch data conflict for already dispatched Order: ${order.id}`);
+        }
+        if (
+          packages &&
+          !packageDataMatches(
+            db.packages.filter((item) => item.dispatchId === dispatch.id),
+            packages,
+          )
+        ) {
+          throw new Error(`Dispatch Package data conflict for already dispatched Order: ${order.id}`);
         }
         return this.buildRetryResult(order, dispatch, db);
       }
@@ -176,6 +200,8 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
           dispatchedByUserId: input.actorUserId,
           confirmationOperationId: operationId,
           confirmationFingerprint: fingerprint,
+          packageCount: packages?.length ?? 0,
+          weight: sumPackageWeight(packages ?? []),
           dispatchedAt: now,
           createdAt: now,
           updatedAt: now,
@@ -193,10 +219,29 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
           dispatchedByUserId: input.actorUserId,
           confirmationOperationId: operationId,
           confirmationFingerprint: fingerprint,
+          packageCount: packages?.length ?? dispatch.packageCount,
+          weight: packages ? sumPackageWeight(packages) : dispatch.weight,
           dispatchedAt: now,
           updatedAt: now,
         });
       }
+
+      if (packages) {
+        db.packages = db.packages.filter((item) => item.dispatchId !== dispatch.id);
+        db.packages.push(
+          ...packages.map<Package>((item) => ({
+            id: this.id("package"),
+            dispatchId: dispatch.id,
+            number: item.number,
+            weight: item.weight,
+            description: item.description,
+            createdAt: now,
+          })),
+        );
+      }
+      const persistedPackages = db.packages.filter((item) => item.dispatchId === dispatch.id);
+      dispatch.packageCount = persistedPackages.length;
+      dispatch.weight = sumPackageWeight(persistedPackages);
 
       assertOrderStatusTransition(order.status, OrderStatus.dispatched, "dispatch");
       order.status = OrderStatus.dispatched;
@@ -208,6 +253,7 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
         order,
         notification,
         notificationStatus,
+        packages: persistedPackages,
         idempotent: false,
         dispatchChanged,
         orderChanged: true,
@@ -247,6 +293,7 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
       order: result.order,
       notification: result.notification,
       notificationStatus: result.notificationStatus,
+      packages: result.packages,
       idempotent: result.idempotent,
     };
   }
@@ -476,6 +523,7 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
       order,
       notification,
       notificationStatus: getNotificationStatus(order.notificationContact),
+      packages: db.packages.filter((item) => item.dispatchId === dispatch.id),
       idempotent: true,
       dispatchChanged: false,
       orderChanged: false,
@@ -502,6 +550,7 @@ function getDispatchFingerprint(input: {
   transportMode: TransportMode;
   carrierName?: string;
   trackingNumber?: string;
+  packages: Array<{ number: string; weight?: number; description?: string }>;
 }): string {
   return JSON.stringify({
     tenantId: input.tenantId,
@@ -509,7 +558,43 @@ function getDispatchFingerprint(input: {
     transportMode: input.transportMode,
     carrierName: input.carrierName ?? null,
     trackingNumber: input.trackingNumber ?? null,
+    packages: input.packages.map((item) => ({
+      number: item.number,
+      weight: item.weight ?? null,
+      description: item.description ?? null,
+    })),
   });
+}
+
+function normalizePackages(
+  packages: NonNullable<ConfirmDispatchInput["packages"]>,
+): NonNullable<ConfirmDispatchInput["packages"]> {
+  if (packages.length === 0) throw new Error("At least one Package is required");
+  const normalized = packages.map((item) => {
+    const number = item.number.trim();
+    if (!number) throw new Error("Package number is required");
+    if (number.length > 80) throw new Error("Package number is too long");
+    if (item.weight !== undefined && (!Number.isFinite(item.weight) || item.weight <= 0)) {
+      throw new Error("Package weight must be positive");
+    }
+    const description = normalizeOptional(item.description);
+    if (description && description.length > 500) {
+      throw new Error("Package description is too long");
+    }
+    return { number, weight: item.weight, description };
+  });
+  const numbers = new Set<string>();
+  normalized.forEach((item) => {
+    const key = item.number.toLocaleLowerCase();
+    if (numbers.has(key)) throw new Error(`Duplicate Package number: ${item.number}`);
+    numbers.add(key);
+  });
+  return normalized;
+}
+
+function sumPackageWeight(packages: Array<{ weight?: number }>): number | undefined {
+  const weights = packages.flatMap((item) => (item.weight === undefined ? [] : [item.weight]));
+  return weights.length > 0 ? weights.reduce((total, weight) => total + weight, 0) : undefined;
 }
 
 function dispatchDataMatches(
@@ -522,6 +607,25 @@ function dispatchDataMatches(
     dispatch.transportMode === transportMode &&
     normalizeOptional(dispatch.carrierName) === carrierName &&
     normalizeOptional(dispatch.trackingNumber) === trackingNumber
+  );
+}
+
+function packageDataMatches(
+  persisted: Package[],
+  requested: NonNullable<ConfirmDispatchInput["packages"]>,
+): boolean {
+  return JSON.stringify(
+    persisted.map((item) => ({
+      number: item.number,
+      weight: item.weight ?? null,
+      description: item.description ?? null,
+    })),
+  ) === JSON.stringify(
+    requested.map((item) => ({
+      number: item.number,
+      weight: item.weight ?? null,
+      description: item.description ?? null,
+    })),
   );
 }
 

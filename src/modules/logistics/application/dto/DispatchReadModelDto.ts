@@ -43,6 +43,19 @@ export interface DispatchNotificationDto {
   sentAt: string;
 }
 
+export interface DispatchPackageDto {
+  id: string;
+  number: string;
+  weight: number | null;
+  description: string | null;
+}
+
+export interface ConfirmDispatchPackageDto {
+  number: string;
+  weight?: number;
+  description?: string;
+}
+
 export interface DispatchDetailDto extends PreparedOrderDetailDto {
   dispatch: {
     id: string;
@@ -54,6 +67,7 @@ export interface DispatchDetailDto extends PreparedOrderDetailDto {
     dispatchedByUserId: string | null;
   } | null;
   notification: DispatchNotificationDto | null;
+  packages: DispatchPackageDto[];
 }
 
 export interface ConfirmDispatchCommand {
@@ -61,6 +75,7 @@ export interface ConfirmDispatchCommand {
   operationId: string;
   carrierName?: string;
   trackingNumber?: string;
+  packages?: ConfirmDispatchPackageDto[];
 }
 
 export interface ConfirmDispatchResultDto {
@@ -74,6 +89,7 @@ export interface ConfirmDispatchResultDto {
   dispatchedAt: string;
   notificationStatus: DispatchNotificationStatus;
   notification: DispatchNotificationDto | null;
+  packages: DispatchPackageDto[];
   idempotent: boolean;
 }
 

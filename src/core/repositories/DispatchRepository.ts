@@ -1,4 +1,4 @@
-import type { Dispatch, Notification, Order } from "@/core/entities";
+import type { Dispatch, Notification, Order, Package } from "@/core/entities";
 
 export interface DispatchReadScope {
   tenantId: string;
@@ -13,6 +13,13 @@ export interface ConfirmDispatchInput {
   operationId: string;
   carrierName?: string;
   trackingNumber?: string;
+  packages?: ConfirmDispatchPackageInput[];
+}
+
+export interface ConfirmDispatchPackageInput {
+  number: string;
+  weight?: number;
+  description?: string;
 }
 
 export type DispatchNotificationStatus =
@@ -23,6 +30,7 @@ export interface ConfirmDispatchResult {
   order: Order;
   notification?: Notification;
   notificationStatus: DispatchNotificationStatus;
+  packages: Package[];
   idempotent: boolean;
 }
 
@@ -43,6 +51,7 @@ export interface DispatchRepository {
   getAll(scope: DispatchReadScope): Promise<Dispatch[]>;
   getById(scope: DispatchReadScope, id: string): Promise<Dispatch | null>;
   getByOrder(scope: DispatchReadScope, orderId: string): Promise<Dispatch | null>;
+  getPackagesByDispatch(scope: DispatchReadScope, dispatchId: string): Promise<Package[]>;
   confirm(input: ConfirmDispatchInput): Promise<ConfirmDispatchResult>;
   markDelivered(input: MarkDispatchDeliveredInput): Promise<MarkDispatchDeliveredResult>;
 }

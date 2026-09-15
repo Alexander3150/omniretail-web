@@ -264,6 +264,8 @@ const legacyDemoSeedDatabase: MockDatabase = {
         "logistics.picking.read",
         "logistics.picking.start",
         "logistics.picking.complete",
+        "logistics.dispatch.read",
+        "logistics.dispatch.confirm",
         "receiving.receipts.confirm",
       ],
       branchScope: "assigned",
