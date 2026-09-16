@@ -4,6 +4,7 @@ import { useCallback, useMemo, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
+import { EntitlementProvider } from "@/shared/providers/EntitlementProvider";
 import { PrivateShell } from "@/shared/navigation/PrivateShell";
 import type { NavigationItem } from "@/shared/types/navigation.types";
 
@@ -27,6 +28,15 @@ interface CustomerAccountShellProps {
  * sucursales" en Mi Cuenta daba la impresion de que al cliente le
  * faltaba configurar algo. PrivateHeader mantiene el default true, asi
  * que Employee/Admin (AuthorizedPrivateShell) no se ve afectado.
+ *
+ * EntitlementProvider: Sidebar (compartido) ahora filtra items via
+ * useEntitlementContext() (feature/saas-entitlement-enforcement) -- fuera
+ * de (private)/layout.tsx (que ya lo provee para Employee/Admin) nadie
+ * mas lo monta, y Mi Cuenta vive en (public)/(accessible), asi que sin
+ * este wrapper CUALQUIER pantalla de Mi Cuenta tira "useEntitlement must
+ * be used inside EntitlementProvider" apenas Sidebar intenta renderizar.
+ * Funciona igual para Customer que para Employee: resuelve por
+ * User.tenantId (ResolveTenantEntitlementsService), no depende de Role.
  */
 export function CustomerAccountShell({ children, navigationItems }: CustomerAccountShellProps) {
   const { permissions, user } = useCurrentSession();
@@ -51,17 +61,19 @@ export function CustomerAccountShell({ children, navigationItems }: CustomerAcco
   }, [repositories, router]);
 
   return (
-    <PrivateShell
-      allowedPermissions={allowedPermissions}
-      homeHref="/"
-      homeLabel="Volver al inicio"
-      navigationItems={navigationItems}
-      onLogout={handleLogout}
-      showBranchSelector={false}
-      userMenuDescription={user?.email}
-      userMenuLabel={user?.name}
-    >
-      {children}
-    </PrivateShell>
+    <EntitlementProvider>
+      <PrivateShell
+        allowedPermissions={allowedPermissions}
+        homeHref="/"
+        homeLabel="Volver al inicio"
+        navigationItems={navigationItems}
+        onLogout={handleLogout}
+        showBranchSelector={false}
+        userMenuDescription={user?.email}
+        userMenuLabel={user?.name}
+      >
+        {children}
+      </PrivateShell>
+    </EntitlementProvider>
   );
 }
