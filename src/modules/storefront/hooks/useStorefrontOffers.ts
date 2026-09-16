@@ -7,6 +7,7 @@ import { BranchStatus, PromotionStatus, SalesChannel } from "@/core/enums";
 import { calculateEffectivePrice } from "@/core/pricing";
 import { isBranchScopedResourceAvailable } from "@/core/scopes/branchScope";
 import { useDataEventBus, useRepositories } from "@/infrastructure/providers/RepositoryProvider";
+import { ensurePublicStorefrontTenant } from "@/modules/storefront/application/services/ResolvePublicStorefrontContextService";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
 export interface StorefrontOfferItem {
@@ -78,6 +79,9 @@ export function useStorefrontOffers() {
       setLoading(true);
       setError(null);
       try {
+        // Auditoría §15/§30 (BLOCKER): esta lectura pública lee productos/precios directo del
+        // repositorio (sin pasar por Discovery/ProductDetail) -- mismo bypass, mismo guard.
+        await ensurePublicStorefrontTenant(repositories, tenantId);
         const ecommerceConfig = await repositories.businessConfig.getEcommerceConfig(tenantId);
         if (!ecommerceConfig?.enabled || !ecommerceConfig.defaultBranchId)
           throw new Error("E-commerce branch is not configured");

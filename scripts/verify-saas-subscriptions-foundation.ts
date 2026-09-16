@@ -25,9 +25,10 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import { GetTenantSubscriptionDetailsService } from "@/modules/administration/application/services/GetTenantSubscriptionDetailsService";
 import { GetTenantUsageService } from "@/modules/administration/application/services/GetTenantUsageService";
-import { ResolveTenantEntitlementsService } from "@/modules/administration/application/services/ResolveTenantEntitlementsService";
 import { AdministrationServiceError } from "@/modules/administration/application/services/serviceHelpers";
 import { PLANS_READ_PERMISSION } from "@/modules/administration/permissions";
+import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
+import { SaasEntitlementError } from "@/shared/application/services/entitlementGuards";
 
 const NOW = "2026-09-15T12:00:00.000Z";
 const TENANT_DEMO = "tenant-demo";
@@ -316,7 +317,7 @@ async function verifyFailClosedWithoutSubscription() {
   // 6. Tenant sin Subscription: fail-closed / error esperado -- nunca asume Enterprise.
   await assert.rejects(
     new ResolveTenantEntitlementsService(repositories).execute(TENANT_NO_SUB),
-    AdministrationServiceError,
+    SaasEntitlementError,
     "6: un tenant sin Subscription debe fallar, no resolver ningún plan por default",
   );
   await assert.rejects(

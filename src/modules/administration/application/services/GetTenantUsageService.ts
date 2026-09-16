@@ -1,8 +1,8 @@
 import { BranchStatus, SaasLimitKey, UserStatus, UserType } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { TenantUsageDto } from "@/modules/administration/application/dto/SubscriptionDto";
-import { ResolveTenantEntitlementsService } from "@/modules/administration/application/services/ResolveTenantEntitlementsService";
 import { ensurePlanTenant } from "@/modules/administration/application/services/serviceHelpers";
+import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
 
 /**
  * Consumo real tenant-scoped -- nunca `getAll()` + filtrado en la UI. Employees: `User.type ==

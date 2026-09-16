@@ -63,22 +63,35 @@ export async function downloadStorefrontReceiptPdf({ storeName, result }: Receip
   };
 
   drawHeader();
+  const address = result.deliveryAddress;
+  const columnWidth = CONTENT_WIDTH / 2 - 8;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  const deliveryLines = doc.splitTextToSize(
+    [
+      address.recipientName,
+      `${address.line1}${address.line2 ? `, ${address.line2}` : ""}`,
+      `${address.city}${address.department ? `, ${address.department}` : ""}`,
+    ].join("\n"),
+    columnWidth,
+  ) as string[];
+  const paymentLines = doc.splitTextToSize(
+    "Tarjeta de crédito o débito\nPago simulado · datos protegidos",
+    columnWidth,
+  ) as string[];
+  const deliveryBoxHeight = Math.max(30, 16 + Math.max(deliveryLines.length, paymentLines.length) * 4.2);
   doc.setFillColor(244, 247, 251);
-  doc.roundedRect(MARGIN, y, CONTENT_WIDTH, 30, 2, 2, "F");
+  doc.roundedRect(MARGIN, y, CONTENT_WIDTH, deliveryBoxHeight, 2, 2, "F");
   doc.setTextColor(20, 36, 58);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
   text("ENTREGA A", MARGIN + 4, y + 7);
   text("MÉTODO DE PAGO", MARGIN + CONTENT_WIDTH / 2 + 4, y + 7);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  const address = result.deliveryAddress;
-  text(address.recipientName, MARGIN + 4, y + 13);
-  text(`${address.line1}${address.line2 ? `, ${address.line2}` : ""}`, MARGIN + 4, y + 18);
-  text(`${address.city}${address.department ? `, ${address.department}` : ""}`, MARGIN + 4, y + 23);
-  text("Tarjeta de crédito o débito", MARGIN + CONTENT_WIDTH / 2 + 4, y + 13);
-  text("Pago simulado · datos protegidos", MARGIN + CONTENT_WIDTH / 2 + 4, y + 18);
-  y += 38;
+  doc.setFontSize(8.5);
+  doc.text(deliveryLines, MARGIN + 4, y + 13);
+  doc.text(paymentLines, MARGIN + CONTENT_WIDTH / 2 + 4, y + 13);
+  y += deliveryBoxHeight + 8;
 
   const drawTableHeader = () => {
     ensureSpace(12);

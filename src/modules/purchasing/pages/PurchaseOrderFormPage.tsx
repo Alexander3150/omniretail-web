@@ -18,6 +18,8 @@ import { Select } from "@/shared/components/Select";
 import { useToast } from "@/shared/components/Toast";
 import { cn } from "@/shared/utils/cn";
 import { parseDecimalInput, parseIntegerInput, toFiniteNumber } from "@/shared/utils/numberInput";
+import { SaasCapabilityKey } from "@/core/enums";
+import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import type { PurchaseOrderAvailableProduct } from "@/modules/purchasing/application/dto/PurchaseOrderEditorModel";
 import type {
   PurchaseOrderEditorLine,
@@ -41,6 +43,8 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
     [mode, searchParams],
   );
   const editor = usePurchaseOrderEditor(mode === "edit" ? params.id : undefined, prefillContext);
+  const { hasCapability } = useEntitlement();
+  const canUsePurchasing = hasCapability(SaasCapabilityKey.purchasing);
   const [pendingSupplierId, setPendingSupplierId] = useState<string | null>(null);
   const returnPath = getReturnPath(prefillContext?.source);
 
@@ -462,14 +466,14 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
               Volver
             </Button>
             <Button
-              disabled={editor.saving}
+              disabled={editor.saving || !canUsePurchasing}
               onClick={handleSaveDraft}
               type="button"
               variant="secondary"
             >
               {mode === "edit" ? "Guardar cambios" : "Guardar borrador"}
             </Button>
-            <Button disabled={editor.saving} onClick={handleCreateOrder} type="button">
+            <Button disabled={editor.saving || !canUsePurchasing} onClick={handleCreateOrder} type="button">
               Crear orden
             </Button>
           </div>

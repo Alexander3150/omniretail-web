@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CashShift } from "@/core/entities";
-import { CashShiftStatus, DeliveryMethod, PaymentMethod, TransportMode } from "@/core/enums";
+import {
+  CashShiftStatus,
+  DeliveryMethod,
+  PaymentMethod,
+  SaasCapabilityKey,
+  TransportMode,
+} from "@/core/enums";
 import type { ConfirmSaleResult, SaleConfirmationPaymentMethod } from "@/core/repositories";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
@@ -25,6 +31,7 @@ import {
 } from "@/modules/pos/validation/checkout.validation";
 import { validateTicketQuantity } from "@/modules/pos/validation/ticket.validation";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
+import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 
 interface TicketState {
@@ -60,6 +67,7 @@ export function usePosTerminal() {
     loading: sessionLoading,
     error: sessionError,
   } = useCurrentSession();
+  const { hasCapability } = useEntitlement();
   const productService = useMemo(() => new GetPosProductsService(repositories), [repositories]);
   const confirmationService = useMemo(() => new ConfirmSaleService(repositories), [repositories]);
   const bankAccountsService = useMemo(
@@ -423,7 +431,11 @@ export function usePosTerminal() {
     user.tenantId === currentBranch.tenantId &&
     canAccessBranch(currentBranch.id),
   );
-  const hasPosSalesPermission = hasPermission("pos.sales.create");
+  // UI action gating (feature/saas-entitlement-enforcement §7/§11): confirmar venta es la unica
+  // operacion mutable de este hook -- Sales History vive en usePosSalesHistory (no tocado, sigue
+  // sin gatear por capability). El backend (ConfirmSaleService) sigue siendo la autoridad final.
+  const hasPosSalesPermission =
+    hasPermission("pos.sales.create") && hasCapability(SaasCapabilityKey.pos);
   const hasOpenCashShift = Boolean(
     !cashShiftLoading &&
     !cashShiftError &&

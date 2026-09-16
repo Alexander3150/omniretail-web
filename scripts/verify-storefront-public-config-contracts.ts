@@ -17,8 +17,10 @@ import { MockBranchRepository } from "@/infrastructure/mock/repositories/MockBra
 import { MockBusinessConfigRepository } from "@/infrastructure/mock/repositories/MockBusinessConfigRepository";
 import { MockCustomerRepository } from "@/infrastructure/mock/repositories/MockCustomerRepository";
 import { MockOrderRepository } from "@/infrastructure/mock/repositories/MockOrderRepository";
+import { MockPlanRepository } from "@/infrastructure/mock/repositories/MockPlanRepository";
 import { MockRoleRepository } from "@/infrastructure/mock/repositories/MockRoleRepository";
 import { MockTenantRepository } from "@/infrastructure/mock/repositories/MockTenantRepository";
+import { MockTenantSubscriptionRepository } from "@/infrastructure/mock/repositories/MockTenantSubscriptionRepository";
 import { MockUserRepository } from "@/infrastructure/mock/repositories/MockUserRepository";
 import { buildPasswordHashMock } from "@/infrastructure/mock/shared/passwordHashMock";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
@@ -90,6 +92,8 @@ async function main() {
   const customers = new MockCustomerRepository(store, eventBus);
   const orders = new MockOrderRepository(store, eventBus);
   const auditLogs = new MockAuditLogRepository(store, eventBus);
+  const plans = new MockPlanRepository(store, eventBus);
+  const tenantSubscriptions = new MockTenantSubscriptionRepository(store, eventBus);
   let currentUserId: string | null = "user-admin";
   const session: Session = {
     id: "session-public-config-verification",
@@ -110,8 +114,10 @@ async function main() {
     businessConfig,
     customers,
     orders,
+    plans,
     roles,
     tenants,
+    tenantSubscriptions,
     users,
   } as unknown as RepositoryRegistry;
   const adminGet = new GetEcommerceConfigService(repositories);

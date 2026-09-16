@@ -19,6 +19,7 @@ import { buildIncidentListItems } from "@/modules/receiving/application/services
 import {
   ensureCanManageIncidentTypes,
   ensureCanReadReceiving,
+  ensureTenantCanUseReceiving,
   ensureUserCanOperateBranch,
   ReceivingServiceError,
   resolveReceivingContext,
@@ -128,6 +129,7 @@ export class ReceivingDocumentsService {
   async createIncidentType(name: string) {
     const { tenantId, permissions } = await resolveReceivingContext(this.repositories);
     ensureCanManageIncidentTypes(permissions);
+    await ensureTenantCanUseReceiving(this.repositories, tenantId);
     const trimmedName = name.trim();
     if (!trimmedName) throw new ReceivingServiceError("Ingresa el nombre del tipo de incidencia.");
     return this.repositories.incidentTypes.create({
@@ -141,6 +143,7 @@ export class ReceivingDocumentsService {
   async archiveIncidentType(id: string) {
     const { tenantId, permissions } = await resolveReceivingContext(this.repositories);
     ensureCanManageIncidentTypes(permissions);
+    await ensureTenantCanUseReceiving(this.repositories, tenantId);
     await this.ensureIncidentTypeBelongsToTenant(tenantId, id);
     return this.repositories.incidentTypes.update(id, { active: false });
   }
@@ -148,6 +151,7 @@ export class ReceivingDocumentsService {
   async deleteIncidentType(id: string) {
     const { tenantId, permissions } = await resolveReceivingContext(this.repositories);
     ensureCanManageIncidentTypes(permissions);
+    await ensureTenantCanUseReceiving(this.repositories, tenantId);
     await this.ensureIncidentTypeBelongsToTenant(tenantId, id);
     const incidents = await this.getReceiptIncidents();
     if (incidents.some((incident) => incident.incidentTypeId === id)) {

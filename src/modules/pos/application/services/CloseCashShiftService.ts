@@ -8,7 +8,7 @@ import {
 
 type CloseCashShiftRepositories = Pick<
   RepositoryRegistry,
-  "branches" | "cashShifts" | "roles" | "users"
+  "branches" | "cashShifts" | "roles" | "users" | "plans" | "tenantSubscriptions"
 >;
 
 export interface CloseCashShiftRequest extends CashShiftOperationContext {

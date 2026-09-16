@@ -8,16 +8,21 @@ import {
   CashMovementType,
   CashShiftStatus,
   DeliveryMethod,
+  PlanCode,
+  PlanStatus,
   ProductStatus,
   ProductType,
   RoleStatus,
+  SaasCapabilityKey,
   TenantStatus,
+  TenantSubscriptionStatus,
   TransportMode,
   UserStatus,
   UserType,
 } from "@/core/enums";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
+import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import {
   MockBankAccountRepository,
   MockBranchRepository,
@@ -27,11 +32,13 @@ import {
   MockCustomerRepository,
   MockInventoryRepository,
   MockOrderRepository,
+  MockPlanRepository,
   MockProductRepository,
   MockPromotionRepository,
   MockRoleRepository,
   MockSaleConfirmationRepository,
   MockTenantRepository,
+  MockTenantSubscriptionRepository,
   MockUnitRepository,
   MockUserRepository,
 } from "@/infrastructure/mock/repositories";
@@ -66,6 +73,35 @@ class MemoryStorageAdapter extends LocalStorageAdapter {
 }
 
 const NOW = "2026-01-01T12:00:00.000Z";
+
+/**
+ * feature/saas-entitlement-enforcement agregó un guard de entitlement SaaS delante de las
+ * mutaciones de POS -- este harness prueba permisos/tenant/branch, no entitlements (eso vive en
+ * verify-saas-entitlement-enforcement.ts), así que TENANT_B necesita un Plan "full" para no
+ * quedar bloqueado por una capa que este script no está probando.
+ */
+function seedFullEntitlementPlan(db: MockDatabase, tenantId: string) {
+  const planId = `plan-full-${tenantId}`;
+  db.planDefinitions.push({
+    id: planId,
+    code: PlanCode.enterprise,
+    name: `Plan full (fixture ${tenantId})`,
+    status: PlanStatus.active,
+    capabilities: Object.values(SaasCapabilityKey),
+    limits: {},
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
+  db.tenantSubscriptions.push({
+    id: `tenant-subscription-${tenantId}`,
+    tenantId,
+    planId,
+    status: TenantSubscriptionStatus.active,
+    startedAt: NOW,
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
+}
 const TENANT_A = "tenant-demo";
 const TENANT_B = "pos-hardening-tenant-b";
 const BRANCH_CENTRO = "branch-centro";
@@ -130,6 +166,7 @@ function createHarness(initialUserId = USER_AUTHORIZED) {
       createdAt: NOW,
       updatedAt: NOW,
     });
+    seedFullEntitlementPlan(db, TENANT_B);
     db.branches.push({
       id: BRANCH_B,
       tenantId: TENANT_B,
@@ -225,6 +262,8 @@ function createHarness(initialUserId = USER_AUTHORIZED) {
     saleConfirmations: new MockSaleConfirmationRepository(store, eventBus),
     cashShifts: new MockCashShiftRepository(store, eventBus),
     cashMovements: new MockCashMovementRepository(store, eventBus),
+    plans: new MockPlanRepository(store, eventBus),
+    tenantSubscriptions: new MockTenantSubscriptionRepository(store, eventBus),
   } as unknown as RepositoryRegistry;
 
   return {

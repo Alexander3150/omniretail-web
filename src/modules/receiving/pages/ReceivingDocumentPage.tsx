@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState, type SVGProps } from "react";
+import { SaasCapabilityKey } from "@/core/enums";
+import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { Input } from "@/shared/components/Input";
@@ -51,6 +53,8 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
     saveIncident,
     removeIncident,
   } = useReceivingDocumentDetail(documentType, documentId);
+  const { hasCapability } = useEntitlement();
+  const canUseReceiving = hasCapability(SaasCapabilityKey.receiving);
   const [incidentEditorOpen, setIncidentEditorOpen] = useState(false);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
   const [deleteIncidentId, setDeleteIncidentId] = useState<string | null>(null);
@@ -137,7 +141,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
               {!readOnly ? (
                 <>
                   <Button
-                    disabled={saving}
+                    disabled={saving || !canUseReceiving}
                     onClick={handleSaveProgress}
                     type="button"
                     variant="secondary"
@@ -145,7 +149,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
                     <SaveIcon />
                     Guardar avance
                   </Button>
-                  <Button disabled={saving} onClick={handleConfirm} type="button">
+                  <Button disabled={saving || !canUseReceiving} onClick={handleConfirm} type="button">
                     <CheckIcon />
                     Confirmar recepcion
                   </Button>

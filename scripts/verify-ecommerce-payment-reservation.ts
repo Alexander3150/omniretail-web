@@ -15,9 +15,11 @@ import { MockBranchRepository } from "@/infrastructure/mock/repositories/MockBra
 import { MockBusinessConfigRepository } from "@/infrastructure/mock/repositories/MockBusinessConfigRepository";
 import { MockOrderPaymentConfirmationRepository } from "@/infrastructure/mock/repositories/MockOrderPaymentConfirmationRepository";
 import { MockOrderRepository } from "@/infrastructure/mock/repositories/MockOrderRepository";
+import { MockPlanRepository } from "@/infrastructure/mock/repositories/MockPlanRepository";
 import { MockProductRepository } from "@/infrastructure/mock/repositories/MockProductRepository";
 import { MockSaleConfirmationRepository } from "@/infrastructure/mock/repositories/MockSaleConfirmationRepository";
 import { MockTenantRepository } from "@/infrastructure/mock/repositories/MockTenantRepository";
+import { MockTenantSubscriptionRepository } from "@/infrastructure/mock/repositories/MockTenantSubscriptionRepository";
 import { MockUnitRepository } from "@/infrastructure/mock/repositories/MockUnitRepository";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
@@ -133,9 +135,11 @@ function createHarness(physicalQuantity: number, reservedQuantity = 0) {
     customers: {},
     orderPaymentConfirmations: confirmations,
     orders,
+    plans: new MockPlanRepository(store, eventBus),
     products: new MockProductRepository(store, eventBus),
     roles: {},
     tenants: new MockTenantRepository(store, eventBus),
+    tenantSubscriptions: new MockTenantSubscriptionRepository(store, eventBus),
     users: {},
     units: new MockUnitRepository(store, eventBus),
   } as unknown as RepositoryRegistry;

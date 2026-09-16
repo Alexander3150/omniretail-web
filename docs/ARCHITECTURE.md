@@ -1,6 +1,27 @@
 # Arquitectura OmniRetail
 
-`app/` contiene rutas y layouts de Next.js. `core/` define entities, enums, types y repository contracts sin React. `infrastructure/` implementa persistencia mock, LocalStorage encapsulado, repositories mock y eventos. `modules/` contiene las features por integrante. `shared/` contiene UI, hooks y utilidades comunes. `config/` centraliza navegacion, permisos, estados y politicas.
+`app/` contiene rutas y layouts de Next.js. `core/` define entities, enums, types y repository contracts sin React. `infrastructure/` implementa persistencia mock, LocalStorage encapsulado, repositories mock y eventos. `modules/` contiene las features por integrante. `shared/` contiene UI, hooks y utilidades comunes; desde feature/saas-entitlement-enforcement tambien `shared/application/` (services/dto), la unica capa Application neutral de la que cualquier modulo puede depender sin invertir el sentido de las dependencias -- mismo criterio que `auth` (nadie depende de `auth` "hacia atras"). `config/` centraliza navegacion, permisos, estados y politicas.
+
+## SaaS Entitlement Enforcement
+
+`ResolveTenantEntitlementsService` vivia en `administration`; se movio a `shared/application/services/` porque Inventory/Purchasing/Receiving/POS/Storefront/Catalog necesitaban resolver entitlements y una dependencia `inventory -> administration` hubiera sido incorrecta (administration es un modulo de dominio, no una capa base). `administration` reimporta el mismo service para sus propias pantallas (`GetTenantUsageService`), sin un segundo resolver paralelo.
+
+Cada modulo compone el nuevo guard de entitlement (`ensureTenantCapability`/`ensureTenantLimit`, ambos en `shared/application/services/entitlementGuards.ts`) ADEMAS de sus guards de permiso/tenant/branch existentes (`ensureCanXxx(permissions)`, `resolveXxxContext`), nunca en su lugar -- ver el patron ya establecido en cada `serviceHelpers.ts` de modulo (`ensureTenantCanUseInventory`, `ensureTenantCanUsePurchasing`, `ensureTenantCanUseReceiving`, `ensureTenantCanUsePos`, `ensureTenantCanUseKits`, `ensureTenantCanCreateEmployee`/`ensureTenantCanCreateBranch`).
+
+```text
+Application Service.execute()
+-> resolveXxxContext(repositories)      // tenant/actor/permissions desde la sesion, como siempre
+-> ensureCanXxx(permissions)            // permiso de Role, sin cambios
+-> ensureTenantCanUseXxx(repositories, tenantId)
+   -> ResolveTenantEntitlementsService.execute(tenantId)
+   -> ensureTenantCapability(entitlements, SaasCapabilityKey.xxx)
+-> ... validaciones de negocio existentes (branch, ownership, factor, lote/serie) ...
+-> repository write
+```
+
+`EntitlementProvider` (`src/shared/providers/EntitlementProvider.tsx`) sigue el mismo patron que `CurrentSessionProvider`: `reloadVersion` ref como guarda de carrera, carga inicial diferida con `window.queueMicrotask`, revalidacion via `useDataEvent("auth.changed"/"user.changed", ...)` con un predicado puro exportado y testeable. Montado en `src/app/(private)/layout.tsx` dentro de `RequireSession` (necesita sesion resuelta) y antes de `AuthorizedPrivateShell`/`RequirePermission`.
+
+Storefront/Customer publico no usa este flujo modular -- el unico punto de entrada realmente enforced es `ResolvePublicStorefrontContextService.execute()` (modo estricto, sin `allowDisabled`), que ademas de Tenant activo + `EcommerceConfig.enabled` (ya existente) ahora exige Subscription active + Plan active + capability `ecommerce`. Cubre `CreateStorefrontCheckoutService` (el unico escritor comercial real). Los 4 read services de discovery/detalle/tracking siguen aceptando `tenantId` como parametro ya resuelto por el caller sin re-validarlo -- gap preexistente a esta PR, documentado como follow-up (retrofitarlos rompia harnesses no relacionados que los invocan con fixtures minimos).
 
 Flujo actual:
 

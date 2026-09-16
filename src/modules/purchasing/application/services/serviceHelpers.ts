@@ -1,7 +1,10 @@
 import type { Branch, PurchaseOrder, User } from "@/core/entities";
+import { SaasCapabilityKey } from "@/core/enums";
 import { canUserOperateBranch } from "@/core/scopes/userBranchAccess";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/services/resolveCurrentSessionSnapshot";
+import { ensureTenantCapability } from "@/shared/application/services/entitlementGuards";
+import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
 
 export class PurchasingServiceError extends Error {
   constructor(message: string) {
@@ -122,4 +125,19 @@ export function cleanError(error: unknown): string {
   if (error instanceof PurchasingServiceError) return error.message;
   if (error instanceof Error) return error.message;
   return "No se pudo completar la operación. Inténtalo de nuevo.";
+}
+
+/**
+ * Capa de entitlement SaaS (feature/saas-entitlement-enforcement, auditoría §12) -- se suma a
+ * `ensureCanCreatePurchaseOrders`/`ensureCanApprovePurchaseOrders`, nunca los sustituye. Solo
+ * gatea mutaciones (crear/guardar borrador/enviar a aprobación/aprobar/cancelar); el read model
+ * histórico (`GetPurchaseOrdersReadModelService`) sigue gobernado únicamente por
+ * `ensureCanReadPurchaseOrders` (auditoría §10/§12: preservar lectura histórica).
+ */
+export async function ensureTenantCanUsePurchasing(
+  repositories: RepositoryRegistry,
+  tenantId: string,
+): Promise<void> {
+  const entitlements = await new ResolveTenantEntitlementsService(repositories).execute(tenantId);
+  ensureTenantCapability(entitlements, SaasCapabilityKey.purchasing);
 }

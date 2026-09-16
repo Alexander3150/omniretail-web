@@ -7,7 +7,7 @@ import {
 
 type OpenCashShiftRepositories = Pick<
   RepositoryRegistry,
-  "branches" | "cashShifts" | "roles" | "users"
+  "branches" | "cashShifts" | "roles" | "users" | "plans" | "tenantSubscriptions"
 >;
 
 export interface OpenCashShiftRequest extends CashShiftOperationContext {

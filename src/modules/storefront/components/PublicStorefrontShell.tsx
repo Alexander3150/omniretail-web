@@ -27,14 +27,14 @@ export function PublicStorefrontShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <>
+    <div className="flex min-h-screen flex-col">
       <div className="print:hidden">
         <StorefrontHeader />
       </div>
-      {children}
+      <div className="flex-1">{children}</div>
       <div className="print:hidden">
         <StorefrontFooter />
       </div>
-    </>
+    </div>
   );
 }

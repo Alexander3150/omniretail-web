@@ -13,12 +13,18 @@ import type {
   StorefrontDiscoveryDto,
   StorefrontDiscoveryProductDto,
 } from "@/modules/storefront/application/dto/StorefrontDiscoveryDto";
+import { ensurePublicStorefrontTenant } from "@/modules/storefront/application/services/ResolvePublicStorefrontContextService";
 import { fromBaseQuantity } from "@/core/units";
 
 export class GetStorefrontDiscoveryService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(tenantId: string): Promise<StorefrontDiscoveryDto> {
+    // Auditoría §15/§30 (BLOCKER): el `tenantId` llega ya resuelto por el caller (hook via
+    // `usePublicTenant`, que usa el modo `allowDisabled` -- NO exige entitlement); sin esta
+    // revalidación, discovery seguía sirviendo catálogo aunque Subscription/Plan/capability
+    // `ecommerce` ya no lo permitieran.
+    await ensurePublicStorefrontTenant(this.repositories, tenantId);
     const [products, activeCategories, ecommerceConfig, allProducts, balances, locations, lots, serials, units] = await Promise.all([
       this.repositories.products.getPublishedForEcommerce(tenantId),
       this.repositories.categories.getActive(),

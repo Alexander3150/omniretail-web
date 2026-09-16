@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { LocationStatus } from "@/core/enums";
+import { LocationStatus, SaasCapabilityKey } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
+import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 import type {
   AdjustStockDto,
@@ -49,6 +50,7 @@ const EMPTY_DATA: InventoryAlertsData = {
 export function useInventoryAlerts() {
   const repositories = useRepositories();
   const { hasPermission, loading: sessionLoading } = useCurrentSession();
+  const { hasCapability } = useEntitlement();
   const { currentBranch, branches: headerBranches, loading: branchLoading } = useActiveBranch();
   const getService = useMemo(() => new GetInventoryAlertsService(repositories), [repositories]);
   const adjustmentService = useMemo(
@@ -76,8 +78,15 @@ export function useInventoryAlerts() {
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [loadedBranchId, setLoadedBranchId] = useState("");
   const effectiveBranchId = branchId || currentBranch?.id || "";
-  const canAdjustStock = hasPermission(INVENTORY_ADJUSTMENT_CREATE_PERMISSION);
-  const canManageTransfers = hasPermission(INVENTORY_TRANSFERS_MANAGE_PERMISSION);
+  // UI action gating (feature/saas-entitlement-enforcement §7/§8): el permiso de Role sigue
+  // siendo obligatorio, la capability SaaS se suma -- nunca lo sustituye. El backend
+  // (RegisterInventoryAdjustmentService/TransferRequestServices) sigue siendo la autoridad final.
+  const canAdjustStock =
+    hasPermission(INVENTORY_ADJUSTMENT_CREATE_PERMISSION) &&
+    hasCapability(SaasCapabilityKey.inventory);
+  const canManageTransfers =
+    hasPermission(INVENTORY_TRANSFERS_MANAGE_PERMISSION) &&
+    hasCapability(SaasCapabilityKey.inventory);
 
   const reload = useCallback(async () => {
     if (!effectiveBranchId || branchLoading || sessionLoading) return;

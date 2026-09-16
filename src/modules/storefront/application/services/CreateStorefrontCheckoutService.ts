@@ -11,6 +11,12 @@ import { InsufficientInventoryAvailabilityError } from "@/core/inventory/stockAv
 import { toBaseQuantity } from "@/core/units";
 import { validatePhoneNumber } from "@/config/contact-policy";
 import { normalizeEmail, validateEmail } from "@/config/email-policy";
+import {
+  DELIVERY_ADDRESS_LIMITS,
+  isValidDeliveryAddress,
+  isValidDeliveryNotificationEmail,
+  isValidRecipientName,
+} from "@/config/delivery-address-policy";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { StorefrontCartItemDto } from "@/modules/storefront/application/dto/StorefrontCartDto";
 import type {
@@ -211,11 +217,25 @@ function buildReferences(form: StorefrontCheckoutFormDto): string | undefined {
 
 function assertCheckoutForm(form: StorefrontCheckoutFormDto): void {
   if (!form.fullName.trim()) throw new Error("Ingresa tu nombre completo.");
-  if (validateEmail(form.email)) throw new Error("Ingresa un correo electrónico válido.");
+  if (!isValidRecipientName(form.fullName)) {
+    throw new Error("El nombre contiene caracteres no permitidos o supera el límite permitido.");
+  }
+  if (validateEmail(form.email) || !isValidDeliveryNotificationEmail(form.email)) {
+    throw new Error("Ingresa un correo electrónico válido.");
+  }
   if (!form.phone.trim()) throw new Error("Ingresa un teléfono de contacto.");
   const phoneError = validatePhoneNumber(form.phone);
   if (phoneError) throw new Error(phoneError);
   if (!form.addressLine1.trim()) throw new Error("Ingresa la dirección de entrega.");
+  if (!isValidDeliveryAddress(form.addressLine1, "line1")) {
+    throw new Error(`La dirección permite letras, números, puntos y guiones; máximo ${DELIVERY_ADDRESS_LIMITS.line1} caracteres.`);
+  }
+  if (form.addressLine2 && !isValidDeliveryAddress(form.addressLine2, "line2")) {
+    throw new Error(`El complemento permite solo letras, números y espacios; máximo ${DELIVERY_ADDRESS_LIMITS.line2} caracteres.`);
+  }
+  if (form.references && !isValidDeliveryAddress(form.references, "references")) {
+    throw new Error(`Las referencias permiten letras, números, espacios y comas; máximo ${DELIVERY_ADDRESS_LIMITS.references} caracteres.`);
+  }
   if (!form.city.trim()) throw new Error("Ingresa la ciudad de entrega.");
   if (!form.cardholderName.trim()) throw new Error("Ingresa el titular de la tarjeta.");
   if (!/^\d{4}$/.test(form.cardLastFour)) {

@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CashShift } from "@/core/entities";
-import type { CashMovementType } from "@/core/enums";
+import { SaasCapabilityKey, type CashMovementType } from "@/core/enums";
 import type { DataEventPayload } from "@/core/types/events.types";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
+import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import type { CashMovementDto } from "@/modules/pos/application/dto/CashMovementDto";
 import type { CashShiftSummaryDto } from "@/modules/pos/application/dto/CashShiftSummaryDto";
 import { CloseCashShiftService } from "@/modules/pos/application/services/CloseCashShiftService";
@@ -38,6 +39,8 @@ export function usePosCashShift() {
     loading: sessionLoading,
     error: sessionError,
   } = useCurrentSession();
+  const { hasCapability } = useEntitlement();
+  const canUsePos = hasCapability(SaasCapabilityKey.pos);
   const services = useMemo(
     () => ({
       close: new CloseCashShiftService(repositories),
@@ -218,10 +221,14 @@ export function usePosCashShift() {
     error,
     successMessage,
     hasBranchAccess,
-    canOpen: hasPermission("pos.cash.open"),
+    // UI action gating (feature/saas-entitlement-enforcement §7/§11): "Sales History" (canRead)
+    // NUNCA se gatea por capability -- historico read-only debe seguir visible aunque el plan
+    // pierda POS. El backend (OpenCashShiftService/RegisterCashMovementService/
+    // CloseCashShiftService) sigue siendo la autoridad final.
+    canOpen: hasPermission("pos.cash.open") && canUsePos,
     canRead: hasPermission("pos.cash.read"),
-    canRegisterMovement: hasPermission("pos.cash.movement.create"),
-    canClose: hasPermission("pos.cash.close"),
+    canRegisterMovement: hasPermission("pos.cash.movement.create") && canUsePos,
+    canClose: hasPermission("pos.cash.close") && canUsePos,
     reload,
     openCashShift,
     registerMovement,

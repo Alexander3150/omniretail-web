@@ -37,6 +37,7 @@ import {
   ensureCanConfirmReceiving,
   ensureCanReadReceiving,
   ensureCanSaveReceivingProgress,
+  ensureTenantCanUseReceiving,
   ensureUserCanOperateBranch,
   ReceivingServiceError,
   resolveReceivingContext,
@@ -69,6 +70,7 @@ export class ReceivingDocumentDetailService {
       this.repositories,
     );
     ensureCanSaveReceivingProgress(permissions);
+    await ensureTenantCanUseReceiving(this.repositories, tenantId);
     const order = await this.requirePurchaseOrder(tenantId, user, input.documentId);
     const detail = await this.getPurchaseOrderDocument(tenantId, user, input.documentId);
     const validationErrors = validateIncidentQuantities(input.lines, input.incidents, detail);
@@ -88,6 +90,7 @@ export class ReceivingDocumentDetailService {
       this.repositories,
     );
     ensureCanConfirmReceiving(permissions);
+    await ensureTenantCanUseReceiving(this.repositories, tenantId);
     const order = await this.requirePurchaseOrder(tenantId, user, input.documentId);
     const confirmationId = input.confirmationId.trim();
     if (!confirmationId) {
