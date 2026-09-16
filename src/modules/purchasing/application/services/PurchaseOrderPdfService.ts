@@ -1,6 +1,11 @@
 import type { PurchaseOrder, ReceiptIncidentEvidence, ReceiptLine } from "@/core/entities";
 import { PurchaseOrderStatus, ReceiptStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import {
+  ensureCanReadPurchaseOrders,
+  ensurePurchaseOrderBelongsToTenant,
+  resolvePurchasingContext,
+} from "@/modules/purchasing/application/services/serviceHelpers";
 
 type PdfKind = "purchase-order" | "receiving-report";
 type PdfDocument = Awaited<ReturnType<typeof createDocument>>;
@@ -94,15 +99,23 @@ export class PurchaseOrderPdfService {
   }
 
   async getSupplierEmail(orderId: string) {
-    const order = await this.repositories.purchaseOrders.getById(orderId);
-    if (!order) throw new Error("Orden de compra no encontrada.");
+    const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
+    ensureCanReadPurchaseOrders(permissions);
+    const order = ensurePurchaseOrderBelongsToTenant(
+      await this.repositories.purchaseOrders.getByIdScoped(tenantId, orderId),
+      tenantId,
+    );
     const supplier = await this.repositories.suppliers.getById(order.supplierId);
     return supplier?.email?.trim() || "";
   }
 
   private async getPdfData(orderId: string): Promise<PdfData> {
-    const order = await this.repositories.purchaseOrders.getById(orderId);
-    if (!order) throw new Error("Orden de compra no encontrada.");
+    const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
+    ensureCanReadPurchaseOrders(permissions);
+    const order = ensurePurchaseOrderBelongsToTenant(
+      await this.repositories.purchaseOrders.getByIdScoped(tenantId, orderId),
+      tenantId,
+    );
     const [
       tenant,
       supplier,

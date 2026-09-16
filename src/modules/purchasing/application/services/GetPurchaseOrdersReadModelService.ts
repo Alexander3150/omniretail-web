@@ -18,18 +18,25 @@ import type {
   ReorderSuggestionReadModel,
 } from "@/modules/purchasing/application/dto/PurchaseOrderReadModel";
 import { getPurchaseOrderActions } from "@/modules/purchasing/application/services/purchaseOrderActions";
+import {
+  ensureCanReadPurchaseOrders,
+  resolvePurchasingContext,
+} from "@/modules/purchasing/application/services/serviceHelpers";
 
 export class GetPurchaseOrdersReadModelService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(activeBranchId?: string): Promise<PurchaseOrdersReadModel> {
+    const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
+    ensureCanReadPurchaseOrders(permissions);
+
     const [orders, suppliers, products, units, branches, receipts] = await Promise.all([
-      this.repositories.purchaseOrders.getAll(),
+      this.repositories.purchaseOrders.listByTenant(tenantId),
       this.repositories.suppliers.getAll(),
       this.repositories.products.getAll(),
       this.repositories.units.getAll(),
       this.repositories.branches.getAll(),
-      this.repositories.receipts.getAll(),
+      this.repositories.receipts.listByTenant(tenantId),
     ]);
     const productById = new Map(products.map((product) => [product.id, product]));
     const unitById = new Map(units.map((unit) => [unit.id, unit]));

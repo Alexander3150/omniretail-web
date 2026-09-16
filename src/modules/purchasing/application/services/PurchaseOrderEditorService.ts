@@ -1,4 +1,4 @@
-import type { PurchaseOrder, PurchaseOrderItem } from "@/core/entities";
+import type { PurchaseOrder, PurchaseOrderItem, User } from "@/core/entities";
 import { PurchaseOrderStatus } from "@/core/enums";
 import type { PurchaseOrderItemInput } from "@/core/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
@@ -11,11 +11,20 @@ import type {
   PurchaseOrderPrefillContext,
   PurchaseOrderPrefillResolution,
 } from "@/modules/purchasing/application/dto/PurchaseOrderEditorModel";
+import {
+  ensureCanCreatePurchaseOrders,
+  ensurePurchaseOrderBelongsToTenant,
+  ensureUserCanOperateBranch,
+  PurchasingServiceError,
+  resolvePurchasingContext,
+} from "@/modules/purchasing/application/services/serviceHelpers";
 
 export class PurchaseOrderEditorService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async getActiveSuppliers(tenantId: string): Promise<PurchaseOrderEditorSupplier[]> {
+  async getActiveSuppliers(): Promise<PurchaseOrderEditorSupplier[]> {
+    const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
+    ensureCanCreatePurchaseOrders(permissions);
     const suppliers = await this.repositories.suppliers.getActiveByTenant(tenantId);
     return suppliers
       .map((supplier) => ({
@@ -37,19 +46,19 @@ export class PurchaseOrderEditorService {
       .sort((left, right) => left.name.localeCompare(right.name));
   }
 
-  async getOrderForEdit(
-    tenantId: string,
-    id: string,
-    branchId?: string,
-  ): Promise<PurchaseOrderEditorModel> {
-    const order = await this.repositories.purchaseOrders.getById(id);
-    // El id llega desde la URL/estado del cliente: una orden de otro tenant se trata igual que
-    // una inexistente, mismo mensaje, para no confirmar su existencia.
-    if (!order || order.tenantId !== tenantId) throw new Error("Orden de compra no encontrada.");
+  async getOrderForEdit(id: string, branchId?: string): Promise<PurchaseOrderEditorModel> {
+    const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
+    ensureCanCreatePurchaseOrders(permissions);
+    // El id llega desde la URL/estado del cliente: `getByIdScoped` trata una orden de otro
+    // tenant igual que una inexistente, sin confirmar su existencia.
+    const order = ensurePurchaseOrderBelongsToTenant(
+      await this.repositories.purchaseOrders.getByIdScoped(tenantId, id),
+      tenantId,
+    );
     if (order.status !== PurchaseOrderStatus.draft) {
-      throw new Error("Solo las ordenes en borrador se pueden editar.");
+      throw new PurchasingServiceError("Solo las ordenes en borrador se pueden editar.");
     }
-    const availableProducts = await this.getAvailableProducts(tenantId, order.supplierId, branchId);
+    const availableProducts = await this.getAvailableProducts(order.supplierId, branchId);
     const availableByProductId = new Map(availableProducts.map((item) => [item.productId, item]));
 
     return {
@@ -66,10 +75,11 @@ export class PurchaseOrderEditorService {
   }
 
   async getAvailableProducts(
-    tenantId: string,
     supplierId: string,
     branchId?: string,
   ): Promise<PurchaseOrderAvailableProduct[]> {
+    const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
+    ensureCanCreatePurchaseOrders(permissions);
     if (!supplierId) return [];
     // El supplierId llega desde un dropdown en el cliente: no confiar en el valor sin verificar
     // que el proveedor exista y pertenezca al tenant activo antes de exponer su catálogo.
@@ -155,9 +165,10 @@ export class PurchaseOrderEditorService {
   }
 
   async resolvePrefillContext(
-    tenantId: string,
     context: PurchaseOrderPrefillContext,
   ): Promise<PurchaseOrderPrefillResolution | null> {
+    const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
+    ensureCanCreatePurchaseOrders(permissions);
     if (!context.productId) return null;
     const product = await this.repositories.products.getById(context.productId);
     // El productId puede venir de un enlace externo (alerta de inventario, sugerencia de
@@ -213,63 +224,73 @@ export class PurchaseOrderEditorService {
   }
 
   async saveDraft(input: SavePurchaseOrderInput): Promise<PurchaseOrder> {
-    await this.ensureSaveInputTenantSafe(input);
-    const payload = toPurchaseOrderPayload(input, PurchaseOrderStatus.draft);
+    const { tenantId, actorUserId, user, permissions } = await resolvePurchasingContext(
+      this.repositories,
+    );
+    ensureCanCreatePurchaseOrders(permissions);
+    await this.ensureSaveInputTenantSafe(tenantId, user, input);
+    const payload = toPurchaseOrderPayload(input, PurchaseOrderStatus.draft, tenantId, actorUserId);
     if (input.orderId) {
-      await this.ensureOrderBelongsToTenant(input.tenantId, input.orderId);
-      return this.repositories.purchaseOrders.update(input.orderId, payload);
+      const order = ensurePurchaseOrderBelongsToTenant(
+        await this.repositories.purchaseOrders.getByIdScoped(tenantId, input.orderId),
+        tenantId,
+      );
+      return this.repositories.purchaseOrders.updateScoped(tenantId, order.id, payload);
     }
     return this.repositories.purchaseOrders.create(payload);
   }
 
   async createOrder(input: SavePurchaseOrderInput): Promise<PurchaseOrder> {
     validateCompleteOrder(input);
-    await this.ensureSaveInputTenantSafe(input);
-    const payload = toPurchaseOrderPayload(input, PurchaseOrderStatus.pending_approval);
+    const { tenantId, actorUserId, user, permissions } = await resolvePurchasingContext(
+      this.repositories,
+    );
+    ensureCanCreatePurchaseOrders(permissions);
+    await this.ensureSaveInputTenantSafe(tenantId, user, input);
+    const payload = toPurchaseOrderPayload(
+      input,
+      PurchaseOrderStatus.pending_approval,
+      tenantId,
+      actorUserId,
+    );
     if (input.orderId) {
-      await this.ensureOrderBelongsToTenant(input.tenantId, input.orderId);
-      return this.repositories.purchaseOrders.update(input.orderId, payload);
+      const order = ensurePurchaseOrderBelongsToTenant(
+        await this.repositories.purchaseOrders.getByIdScoped(tenantId, input.orderId),
+        tenantId,
+      );
+      return this.repositories.purchaseOrders.updateScoped(tenantId, order.id, payload);
     }
     return this.repositories.purchaseOrders.create(payload);
-  }
-
-  // El orderId llega del cliente (edicion de un borrador existente): una orden de otro tenant se
-  // trata igual que una inexistente, mismo mensaje que getOrderForEdit, y se valida ANTES de
-  // delegar la escritura al repository (que actualiza por id sin conocer tenant).
-  private async ensureOrderBelongsToTenant(tenantId: string, orderId: string): Promise<void> {
-    const order = await this.repositories.purchaseOrders.getById(orderId);
-    if (!order || order.tenantId !== tenantId) {
-      throw new Error("Orden de compra no encontrada.");
-    }
   }
 
   // supplierId/branchId/cada productId de las lineas llegan del cliente: la validacion de branch
   // (arriba, en getAvailableProducts) no sustituye esta -- se revisan de nuevo aca porque el
   // guardado es un boundary de escritura independiente y no puede confiar en lo que el formulario
-  // dice haber usado para construir las lineas.
-  private async ensureSaveInputTenantSafe(input: SavePurchaseOrderInput): Promise<void> {
-    const [supplier, branch, products] = await Promise.all([
+  // dice haber usado para construir las lineas. `branchId` ahora ademas se valida contra
+  // `User.allowedBranchIds` (permission-hardening): antes solo se comprobaba que la sucursal
+  // perteneciera al tenant, nunca que el empleado realmente pudiera operar en ella.
+  private async ensureSaveInputTenantSafe(
+    tenantId: string,
+    user: User,
+    input: SavePurchaseOrderInput,
+  ): Promise<void> {
+    const [supplier, , products] = await Promise.all([
       this.repositories.suppliers.getById(input.supplierId),
-      this.repositories.branches.getById(input.branchId),
+      ensureUserCanOperateBranch(this.repositories, user, input.branchId),
       Promise.all(input.lines.map((line) => this.repositories.products.getById(line.productId))),
     ]);
-    if (!supplier || supplier.tenantId !== input.tenantId) {
-      throw new Error("El proveedor seleccionado no está disponible para este negocio.");
+    if (!supplier || supplier.tenantId !== tenantId) {
+      throw new PurchasingServiceError("El proveedor seleccionado no está disponible para este negocio.");
     }
-    if (!branch || branch.tenantId !== input.tenantId) {
-      throw new Error("La sucursal seleccionada no está disponible para este negocio.");
-    }
-    if (products.some((product) => !product || product.tenantId !== input.tenantId)) {
-      throw new Error("Alguno de los productos no está disponible para este negocio.");
+    if (products.some((product) => !product || product.tenantId !== tenantId)) {
+      throw new PurchasingServiceError("Alguno de los productos no está disponible para este negocio.");
     }
   }
 }
 
 export interface SavePurchaseOrderInput {
   orderId?: string;
-  tenantId: string;
   branchId: string;
-  createdByUserId: string;
   supplierId: string;
   expectedDate: string;
   notes: string;
@@ -344,7 +365,12 @@ export function getExpectedLeadTime(
   return maxLeadTime;
 }
 
-function toPurchaseOrderPayload(input: SavePurchaseOrderInput, status: PurchaseOrderStatus) {
+function toPurchaseOrderPayload(
+  input: SavePurchaseOrderInput,
+  status: PurchaseOrderStatus,
+  tenantId: string,
+  createdByUserId: string,
+) {
   validateOrderLineNumbers(input);
   const items = input.lines.map<PurchaseOrderItemInput>((line) => ({
     productId: line.productId,
@@ -357,7 +383,7 @@ function toPurchaseOrderPayload(input: SavePurchaseOrderInput, status: PurchaseO
   const total = items.reduce((sum, item) => sum + item.subtotal, 0);
 
   return {
-    tenantId: input.tenantId,
+    tenantId,
     branchId: input.branchId,
     supplierId: input.supplierId,
     status,
@@ -367,7 +393,7 @@ function toPurchaseOrderPayload(input: SavePurchaseOrderInput, status: PurchaseO
     notes: input.notes.trim() || undefined,
     subtotal: total,
     total,
-    createdByUserId: input.createdByUserId,
+    createdByUserId,
     items,
   };
 }
