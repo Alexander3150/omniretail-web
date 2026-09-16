@@ -11,6 +11,11 @@ import {
 } from "@/config/guatemala-locations";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
+import {
+  DELIVERY_ADDRESS_LIMITS,
+  isValidDeliveryAddress,
+  isValidRecipientName,
+} from "@/config/delivery-address-policy";
 
 const UPDATE_ALLOWED_KEYS = new Set<keyof UpdateAddressInput>([
   "label",
@@ -178,6 +183,8 @@ export class MockAddressRepository extends BaseMockRepository implements Address
     stateOrDepartment?: string;
     postalCode?: string;
     country: string;
+    line2?: string;
+    references?: string;
   }): void {
     const required: Array<[string, string | undefined]> = [
       ["label", input.label],
@@ -191,6 +198,21 @@ export class MockAddressRepository extends BaseMockRepository implements Address
       if (!value || !value.trim()) {
         throw new Error(`Address ${field} is required`);
       }
+    }
+    if (input.label.length > DELIVERY_ADDRESS_LIMITS.label) {
+      throw new Error(`Address label cannot exceed ${DELIVERY_ADDRESS_LIMITS.label} characters`);
+    }
+    if (!isValidRecipientName(input.recipientName)) {
+      throw new Error("Address recipientName contains invalid characters or exceeds its limit");
+    }
+    if (!isValidDeliveryAddress(input.line1, "line1")) {
+      throw new Error("Address line1 contains invalid characters or exceeds its limit");
+    }
+    if (input.line2 && !isValidDeliveryAddress(input.line2, "line2")) {
+      throw new Error("Address line2 contains invalid characters or exceeds its limit");
+    }
+    if (input.references && !isValidDeliveryAddress(input.references, "references")) {
+      throw new Error("Address references contains invalid characters or exceeds its limit");
     }
     // Departamento dejo de ser opcional: Municipio (el campo `city`)
     // depende de el para saber que opciones son validas -- un municipio

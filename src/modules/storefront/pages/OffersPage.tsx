@@ -6,14 +6,24 @@ import { useStorefrontOffers } from "@/modules/storefront/hooks/useStorefrontOff
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
 import { useToast } from "@/shared/components/Toast";
 import { StorefrontCatalogImage } from "@/modules/storefront/components/StorefrontCatalogImage";
+import { StorefrontUnavailableQuantityModal } from "@/modules/storefront/components/StorefrontUnavailableQuantityModal";
+import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
 
 export function OffersPage() {
   const { items, loading, error } = useStorefrontOffers();
-  const { addProduct } = useStorefrontCart();
+  const { addProduct, items: cartItems } = useStorefrontCart();
+  const { products } = useStorefrontDiscovery();
   const { showToast } = useToast();
   const [addedProductId, setAddedProductId] = useState<string | null>(null);
+  const [unavailableQuantityModalOpen, setUnavailableQuantityModalOpen] = useState(false);
 
   const addOffer = async (productId: string, name: string) => {
+    const availableQuantity = products.find((product) => product.id === productId)?.availableQuantity;
+    const quantityInCart = cartItems.find((item) => item.productId === productId)?.quantity ?? 0;
+    if (availableQuantity !== undefined && availableQuantity !== null && quantityInCart >= availableQuantity) {
+      setUnavailableQuantityModalOpen(true);
+      return;
+    }
     await addProduct(productId);
     setAddedProductId(productId);
     showToast({
@@ -134,6 +144,10 @@ export function OffersPage() {
           </div>
         </section>
       ) : null}
+      <StorefrontUnavailableQuantityModal
+        onClose={() => setUnavailableQuantityModalOpen(false)}
+        open={unavailableQuantityModalOpen}
+      />
     </main>
   );
 }
