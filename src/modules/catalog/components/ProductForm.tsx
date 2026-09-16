@@ -7,6 +7,7 @@ import {
   ProductType,
   PromotionStatus,
   PromotionType,
+  SaasCapabilityKey,
   SalesChannel,
 } from "@/core/enums";
 import { calculateEffectivePrice } from "@/core/pricing";
@@ -16,6 +17,7 @@ import { Input } from "@/shared/components/Input";
 import { Select } from "@/shared/components/Select";
 import { cn } from "@/shared/utils/cn";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
+import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { processCatalogImage } from "@/modules/catalog/application/services/processCatalogImage";
 import { CatalogImage } from "@/modules/catalog/components/CatalogImage";
@@ -112,6 +114,7 @@ export function ProductForm({
   const [errors, setErrors] = useState<ProductValidationErrors>({});
   const [editorError, setEditorError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ProductFormTab>("general");
+  const { hasCapability } = useEntitlement();
   const isEdit = mode === "edit";
   const detail = editorData.detail;
   const categoryName =
@@ -262,7 +265,14 @@ export function ProductForm({
             </Button>
             <Button
               className="w-full sm:w-auto"
-              disabled={busy}
+              disabled={
+                busy ||
+                // UI action gating (feature/saas-entitlement-enforcement §7/§12): SOLO Kits se
+                // gatea por capability -- Catalog/Products general nunca. El backend
+                // (ensureTenantCanUseKits en productEditorHelpers) sigue siendo la autoridad final.
+                (value.productType === ProductType.kit &&
+                  !hasCapability(SaasCapabilityKey.catalogKits))
+              }
               form="catalog-product-form"
               type="submit"
             >
