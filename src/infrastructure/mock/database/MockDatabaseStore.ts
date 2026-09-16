@@ -12,6 +12,7 @@ import {
   UnitCategory,
   UnitStatus,
 } from "@/core/enums";
+import { permissionsConfig } from "@/config/permissions";
 import type {
   Address,
   CustomerPaymentMethod,
@@ -131,13 +132,17 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   // Backfill para datos persistidos antes de que Role.status existiera -- sin esto, un rol
   // guardado en localStorage antes de este contrato quedaria con status undefined.
   normalized.roles = (database.roles ?? base.roles).map((role) => {
+    const isCanonicalDemoAdmin =
+      role.id === "role-admin" && role.tenantId === "tenant-demo" && role.isSystem;
     const packingPermissions =
       role.id === "role-warehouse"
         ? ["logistics.packing.read", "logistics.packing.prepare", "logistics.packing.finalize"]
         : [];
     return {
       ...role,
-      permissions: [...new Set([...role.permissions, ...packingPermissions])],
+      permissions: isCanonicalDemoAdmin
+        ? permissionsConfig.map((permission) => permission.key)
+        : [...new Set([...role.permissions, ...packingPermissions])],
       status: role.status ?? RoleStatus.active,
     };
   });

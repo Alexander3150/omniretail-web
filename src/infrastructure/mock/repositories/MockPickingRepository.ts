@@ -54,6 +54,7 @@ export interface MockPickingRepositoryTestHooks {
 interface PickingCreationDependencies {
   id(prefix: string): string;
   now(): string;
+  canonicalFulfillmentOnly?: boolean;
 }
 
 export function createPickingOrderInDatabase(
@@ -85,9 +86,11 @@ export function createPickingOrderInDatabase(
   };
   db.pickingOrders.push(created);
   order.items.forEach((orderItem) => {
-    const demands = orderItem.fulfillmentComponents ?? [
-      { productId: orderItem.productId, quantity: orderItem.quantity },
-    ];
+    const demands =
+      orderItem.fulfillmentComponents ??
+      (dependencies.canonicalFulfillmentOnly
+        ? []
+        : [{ productId: orderItem.productId, quantity: orderItem.quantity }]);
     demands.forEach((demand) => {
       const product = db.products.find(
         (entry) => entry.id === demand.productId && entry.tenantId === input.tenantId,

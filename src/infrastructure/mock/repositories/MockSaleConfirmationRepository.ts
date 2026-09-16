@@ -18,7 +18,6 @@ import {
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
-  PickingPriority,
   ProductType,
   SaleStatus,
 } from "@/core/enums";
@@ -43,8 +42,7 @@ import {
   findInventoryReservationBalance,
   getInventoryReservationAllocationRemaining,
 } from "@/infrastructure/mock/repositories/inventoryReservationMutations";
-import { reserveStockTrackedOrderItemsInDatabase } from "@/infrastructure/mock/repositories/orderReservationMutations";
-import { createPickingOrderInDatabase } from "@/infrastructure/mock/repositories/MockPickingRepository";
+import { scheduleDeferredFulfillmentInTransaction } from "@/infrastructure/mock/repositories/orderFulfillmentMutations";
 import {
   consumePlannedStockLots,
   getLotAwareBalances,
@@ -324,7 +322,10 @@ export class MockSaleConfirmationRepository
       if (!product) throw new Error(`Product not found for tenant: ${item.productId}`);
       const fulfillmentComponents =
         product.productType === ProductType.physical && product.tracking.stock
-          ? [{ productId: item.productId, quantity: item.quantity }]
+          ? [{
+              productId: item.productId,
+              quantity: item.inventoryQuantity ?? item.quantity,
+            }]
           : product.productType === ProductType.kit
             ? expandKitDemand(
                 db.productKitComponents.filter(
@@ -332,7 +333,7 @@ export class MockSaleConfirmationRepository
                     component.tenantId === input.tenantId &&
                     component.kitProductId === item.productId,
                 ),
-                item.quantity,
+                item.inventoryQuantity ?? item.quantity,
               )
             : undefined;
       return {
@@ -394,25 +395,22 @@ export class MockSaleConfirmationRepository
       updatedAt: now,
     };
     db.orders.push(order);
-    const reservationChanges = reserveStockTrackedOrderItemsInDatabase(order, db, {
+    const fulfillment = scheduleDeferredFulfillmentInTransaction(order, db, {
       id: (prefix) => this.id(prefix),
       now: () => now,
     });
-    const picking = createPickingOrderInDatabase(
-      db,
-      {
-        tenantId: input.tenantId,
-        branchId: input.branchId,
-        orderId: order.id,
-        priority: PickingPriority.normal,
-      },
-      { id: (prefix) => this.id(prefix), now: () => now },
-    );
-    if (!picking.created) {
+    if (!fulfillment.pickingOrder) {
+      throw new Error(`Deferred Order has no physical fulfillment: ${order.id}`);
+    }
+    if (!fulfillment.pickingCreated) {
       throw new Error(`PickingOrder already exists for new Order: ${order.id}`);
     }
     this.testHooks.afterDeferredPickingCreated?.();
-    return { order, pickingOrder: picking.pickingOrder, reservationChanges };
+    return {
+      order,
+      pickingOrder: fulfillment.pickingOrder,
+      reservationChanges: fulfillment.reservationChanges,
+    };
   }
 
   private assertBasicInput(input: ConfirmSaleInput): void {
@@ -628,7 +626,7 @@ export class MockSaleConfirmationRepository
           (ownedRemainingByBalance.get(allocation.balanceId) ?? 0) + remaining,
         );
       });
-      if (committedQuantity !== orderItem.quantity) {
+      if (committedQuantity !== (orderItem.inventoryQuantity ?? orderItem.quantity)) {
         throw new Error(`InventoryReservation quantity conflict for OrderItem: ${orderItem.id}`);
       }
       if (
