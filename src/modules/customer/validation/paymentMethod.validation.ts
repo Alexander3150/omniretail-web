@@ -1,9 +1,13 @@
 import { CARD_BRANDS, MAX_EXPIRATION_YEARS_AHEAD } from "@/config/card-brands";
 import { GUATEMALA_BANKS } from "@/config/guatemala-banks";
+import { TEXT_FIELD_POLICY, validateMaxLength } from "@/config/text-field-policy";
 import type { PaymentMethodFormDto } from "@/modules/customer/application/dto/PaymentMethodFormDto";
 
 export type PaymentMethodValidationErrors = Partial<
-  Record<"brand" | "issuingBank" | "last4" | "expirationMonth" | "expirationYear", string>
+  Record<
+    "brand" | "issuingBank" | "last4" | "expirationMonth" | "expirationYear" | "cardholderName",
+    string
+  >
 >;
 
 /**
@@ -59,6 +63,15 @@ export function validatePaymentMethodForm(
     errors.expirationYear = "La tarjeta está vencida.";
   } else if (year > maxYear) {
     errors.expirationYear = `El año de expiración no puede ser mayor a ${maxYear}.`;
+  }
+
+  if (dto.cardholderName.trim()) {
+    const lengthError = validateMaxLength(
+      dto.cardholderName,
+      TEXT_FIELD_POLICY.NAME_MAX_LENGTH,
+      "El nombre en la tarjeta",
+    );
+    if (lengthError) errors.cardholderName = lengthError;
   }
 
   return errors;

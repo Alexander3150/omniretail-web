@@ -22,10 +22,11 @@ interface CustomerAccountShellProps {
  * viceversa) aunque el resultado visual sea identico -- ese resultado
  * visual es intencional, es el diseño que el negocio ya aprobo.
  *
- * BranchSelector (dentro de PrivateHeader) ya esta pensado para una
- * sesion sin sucursal operacional (ver ScopedActiveBranchProvider): un
- * Customer simplemente ve "Sin sucursales" en vez de romper o mostrar una
- * sucursal arbitraria.
+ * showBranchSelector=false: Customer nunca tiene contexto de sucursal
+ * operacional (ver ScopedActiveBranchProvider) -- mostrar "Sin
+ * sucursales" en Mi Cuenta daba la impresion de que al cliente le
+ * faltaba configurar algo. PrivateHeader mantiene el default true, asi
+ * que Employee/Admin (AuthorizedPrivateShell) no se ve afectado.
  */
 export function CustomerAccountShell({ children, navigationItems }: CustomerAccountShellProps) {
   const { permissions, user } = useCurrentSession();
@@ -56,6 +57,7 @@ export function CustomerAccountShell({ children, navigationItems }: CustomerAcco
       homeLabel="Volver al inicio"
       navigationItems={navigationItems}
       onLogout={handleLogout}
+      showBranchSelector={false}
       userMenuDescription={user?.email}
       userMenuLabel={user?.name}
     >

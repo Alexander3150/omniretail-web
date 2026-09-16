@@ -11,6 +11,7 @@ import {
 } from "@/modules/customer/validation/changePassword.validation";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
+import { LockIcon } from "@/shared/components/icons";
 import { Input } from "@/shared/components/Input";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { PasswordInput } from "@/shared/components/PasswordInput";
@@ -55,20 +56,30 @@ export function SeguridadPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full max-w-lg space-y-5">
       <PageHeader
         description="Cambia tu contraseña. Al confirmar, se cerrarán tus demás sesiones activas."
         title="Seguridad"
       />
 
       <form
-        className="max-w-lg space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
+        className="space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
           void handleSubmit();
         }}
       >
+        <div className="flex items-center gap-2.5">
+          <span
+            aria-hidden="true"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-structure)]"
+          >
+            <LockIcon className="h-5 w-5" />
+          </span>
+          <h2 className="font-semibold text-[var(--color-title)]">Cambiar contraseña</h2>
+        </div>
+
         <FormField error={fieldErrors.currentPassword} id="security-current-password" label="Contraseña actual">
           <PasswordInput
             autoComplete="current-password"

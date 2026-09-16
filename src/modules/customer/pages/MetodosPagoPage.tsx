@@ -11,9 +11,11 @@ import {
 } from "@/modules/customer/validation/paymentMethod.validation";
 import { CARD_BRANDS } from "@/config/card-brands";
 import { GUATEMALA_BANKS } from "@/config/guatemala-banks";
+import { TEXT_FIELD_POLICY } from "@/config/text-field-policy";
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { FormField } from "@/shared/components/FormField";
+import { CreditCardIcon } from "@/shared/components/icons";
 import { Input } from "@/shared/components/Input";
 import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
@@ -154,11 +156,19 @@ export function MetodosPagoPage() {
               key={method.id}
             >
               <div className="flex items-start justify-between gap-2">
-                <h2 className="font-semibold capitalize text-[var(--color-title)]">
-                  {method.brand} •••• {method.last4}
-                </h2>
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    aria-hidden="true"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-structure)]"
+                  >
+                    <CreditCardIcon className="h-4 w-4" />
+                  </span>
+                  <h2 className="truncate font-semibold capitalize text-[var(--color-title)]">
+                    {method.brand} •••• {method.last4}
+                  </h2>
+                </div>
                 {method.isDefault ? (
-                  <span className="rounded-md bg-[var(--color-primary)]/10 px-2 py-1 text-xs font-semibold text-[var(--color-primary)]">
+                  <span className="shrink-0 rounded-md bg-[var(--color-success)]/10 px-2 py-1 text-xs font-semibold text-[var(--color-success)]">
                     Predeterminada
                   </span>
                 ) : null}
@@ -291,10 +301,16 @@ export function MetodosPagoPage() {
             </FormField>
           </div>
 
-          <FormField hint="Opcional" id="payment-cardholder" label="Nombre en la tarjeta">
+          <FormField
+            error={fieldErrors.cardholderName}
+            hint="Opcional"
+            id="payment-cardholder"
+            label="Nombre en la tarjeta"
+          >
             <Input
               disabled={busy}
               id="payment-cardholder"
+              maxLength={TEXT_FIELD_POLICY.NAME_MAX_LENGTH}
               onChange={(event) =>
                 setForm((prev) => ({ ...prev, cardholderName: event.target.value }))
               }

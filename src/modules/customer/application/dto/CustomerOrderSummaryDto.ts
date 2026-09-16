@@ -1,11 +1,13 @@
 import type { Order } from "@/core/entities";
-import type { OrderStatus } from "@/core/enums";
+import type { DeliveryMethod, OrderStatus } from "@/core/enums";
 
 /**
  * Vista de solo lectura para "Mis pedidos": expone unicamente lo que la
  * pantalla necesita. Order trae campos internos (idempotencyKey/
  * idempotencyFingerprint, branchId, trackingToken, etc.) que no tienen
- * razon de llegar a este boundary de cliente.
+ * razon de llegar a este boundary de cliente. `deliveryMethod` si viaja
+ * -- ya viene en el Order que este mapper recibe, no agrega ningun
+ * fetch nuevo.
  */
 export interface CustomerOrderSummaryDto {
   id: string;
@@ -14,6 +16,7 @@ export interface CustomerOrderSummaryDto {
   itemCount: number;
   total: number;
   createdAt: string;
+  deliveryMethod: DeliveryMethod;
 }
 
 export function toCustomerOrderSummaryDto(order: Order): CustomerOrderSummaryDto {
@@ -24,5 +27,6 @@ export function toCustomerOrderSummaryDto(order: Order): CustomerOrderSummaryDto
     itemCount: order.items.length,
     total: order.total,
     createdAt: order.createdAt,
+    deliveryMethod: order.deliveryMethod,
   };
 }

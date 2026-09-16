@@ -18,6 +18,13 @@ type PrivateHeaderProps = {
   homeLabel?: string;
   onLogout?: () => void;
   onOpenSidebar: () => void;
+  /**
+   * El selector de sucursal operativa no aplica a Customer (nunca tiene
+   * contexto de sucursal propio) -- por defecto true para no alterar
+   * Employee/Admin. CustomerAccountShell es el unico caller que lo pasa
+   * en false.
+   */
+  showBranchSelector?: boolean;
   sidebarId: string;
   sidebarOpen: boolean;
   userMenuDescription?: string;
@@ -29,6 +36,7 @@ export function PrivateHeader({
   homeLabel,
   onLogout,
   onOpenSidebar,
+  showBranchSelector = true,
   sidebarId,
   sidebarOpen,
   userMenuDescription,
@@ -55,9 +63,11 @@ export function PrivateHeader({
             {homeLabel ?? "Volver al inicio"}
           </Link>
         ) : null}
-        <div className="flex min-w-0 flex-1 justify-end">
-          <BranchSelector />
-        </div>
+        {showBranchSelector ? (
+          <div className="flex min-w-0 flex-1 justify-end">
+            <BranchSelector />
+          </div>
+        ) : null}
         <NotificationButton />
         <UserMenu description={userMenuDescription} label={userMenuLabel} onLogout={onLogout} />
       </div>

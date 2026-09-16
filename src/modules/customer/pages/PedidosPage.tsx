@@ -1,9 +1,17 @@
 "use client";
 
+import { DeliveryMethod } from "@/core/enums";
 import { useCustomerOrders } from "@/modules/customer/hooks/useCustomerOrders";
+import { PackageIcon } from "@/shared/components/icons";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import Link from "next/link";
+
+const DELIVERY_METHOD_LABELS: Record<DeliveryMethod, string> = {
+  [DeliveryMethod.home_delivery]: "Entrega a domicilio",
+  [DeliveryMethod.store_pickup]: "Recoger en tienda",
+  [DeliveryMethod.immediate]: "Entrega inmediata",
+};
 
 /**
  * Solo lectura -- cualquier accion sobre un pedido (cancelar, ver detalle
@@ -46,23 +54,32 @@ export function PedidosPage() {
           {orders.map((order) => (
             <Link
               href={`/cuenta/pedidos/${order.id}`}
-              className="flex flex-col gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+              className="flex flex-col gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm transition hover:border-[var(--color-structure)] sm:flex-row sm:items-center sm:justify-between"
               key={order.id}
             >
-              <div>
-                <p className="font-semibold text-[var(--color-title)]">
-                  Pedido {order.orderNumber}
-                </p>
-                <p className="text-sm text-[var(--color-text-muted)]">
-                  {new Date(order.createdAt).toLocaleDateString("es-GT", {
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric",
-                  })}{" "}
-                  · {order.itemCount} {order.itemCount === 1 ? "producto" : "productos"}
-                </p>
+              <div className="flex min-w-0 items-center gap-3">
+                <span
+                  aria-hidden="true"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-structure)]"
+                >
+                  <PackageIcon className="h-5 w-5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-[var(--color-title)]">
+                    Pedido {order.orderNumber}
+                  </p>
+                  <p className="text-sm text-[var(--color-text-muted)]">
+                    {new Date(order.createdAt).toLocaleDateString("es-GT", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    })}{" "}
+                    · {order.itemCount} {order.itemCount === 1 ? "producto" : "productos"} ·{" "}
+                    {DELIVERY_METHOD_LABELS[order.deliveryMethod]}
+                  </p>
+                </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex shrink-0 items-center gap-3">
                 <StatusBadge status={order.status} />
                 <span className="font-semibold text-[var(--color-title)]">
                   Q{order.total.toFixed(2)}

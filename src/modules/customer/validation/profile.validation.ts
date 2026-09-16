@@ -1,4 +1,5 @@
 import { validatePhoneNumber } from "@/config/contact-policy";
+import { TEXT_FIELD_POLICY, validateMaxLength } from "@/config/text-field-policy";
 import type { ProfileFormDto } from "@/modules/customer/application/dto/ProfileFormDto";
 
 export type ProfileValidationErrors = Partial<Record<"name" | "phone", string>>;
@@ -14,6 +15,9 @@ export function validateProfileForm(dto: ProfileFormDto): ProfileValidationError
 
   if (!dto.name.trim()) {
     errors.name = "El nombre es obligatorio.";
+  } else {
+    const lengthError = validateMaxLength(dto.name, TEXT_FIELD_POLICY.NAME_MAX_LENGTH, "El nombre");
+    if (lengthError) errors.name = lengthError;
   }
 
   const phoneError = validatePhoneNumber(dto.phone);

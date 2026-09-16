@@ -4,10 +4,12 @@ import { useState } from "react";
 import type { MfaMethod } from "@/core/entities";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
+import { ShieldIcon } from "@/shared/components/icons";
 import { Input } from "@/shared/components/Input";
 import { Modal } from "@/shared/components/Modal";
 import { PasswordInput } from "@/shared/components/PasswordInput";
 import { Select } from "@/shared/components/Select";
+import { StatusBadge } from "@/shared/components/StatusBadge";
 
 export interface TwoFactorAuthSectionProps {
   status: { enabled: boolean; method: MfaMethod } | null;
@@ -98,11 +100,25 @@ export function TwoFactorAuthSection({
 
   return (
     <div className="max-w-lg space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
-      <div>
-        <h2 className="font-semibold text-[var(--color-title)]">Verificación en dos pasos</h2>
-        <p className="text-sm text-[var(--color-text-muted)]">
-          Agrega un segundo paso al iniciar sesión, además de tu contraseña.
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <span
+            aria-hidden="true"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-structure)]"
+          >
+            <ShieldIcon className="h-5 w-5" />
+          </span>
+          <div>
+            <h2 className="font-semibold text-[var(--color-title)]">Verificación en dos pasos</h2>
+            <p className="text-sm text-[var(--color-text-muted)]">
+              Agrega un segundo paso al iniciar sesión, además de tu contraseña.
+            </p>
+          </div>
+        </div>
+        <StatusBadge
+          status={status?.enabled ? "Activado" : "Desactivado"}
+          tone={status?.enabled ? "success" : "neutral"}
+        />
       </div>
 
       {error ? <p className="text-sm text-[var(--color-danger)]">{error}</p> : null}
