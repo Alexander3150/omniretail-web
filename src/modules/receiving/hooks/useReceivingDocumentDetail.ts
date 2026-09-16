@@ -84,7 +84,6 @@ export function useReceivingDocumentDetail(
       await service.saveProgress({
         documentType,
         documentId,
-        userId: currentBranch ? "user-warehouse" : undefined,
         lines,
         incidents,
       });
@@ -92,7 +91,7 @@ export function useReceivingDocumentDetail(
     } finally {
       setSaving(false);
     }
-  }, [currentBranch, documentId, documentType, incidents, lines, reload, service]);
+  }, [documentId, documentType, incidents, lines, reload, service]);
 
   const confirm = useCallback(async () => {
     setSaving(true);
@@ -100,7 +99,6 @@ export function useReceivingDocumentDetail(
       await service.confirm({
         documentType,
         documentId,
-        userId: currentBranch ? "user-warehouse" : undefined,
         lines,
         incidents,
         confirmationId,
@@ -110,7 +108,7 @@ export function useReceivingDocumentDetail(
     } finally {
       setSaving(false);
     }
-  }, [confirmationId, currentBranch, documentId, documentType, incidents, lines, reload, service]);
+  }, [confirmationId, documentId, documentType, incidents, lines, reload, service]);
 
   const saveIncident = useCallback(
     (input: {

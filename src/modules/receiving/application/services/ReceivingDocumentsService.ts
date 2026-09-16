@@ -16,28 +16,40 @@ import type {
   ReceivingStatus,
 } from "@/modules/receiving/application/dto/ReceivingDocumentsDto";
 import { buildIncidentListItems } from "@/modules/receiving/application/services/buildIncidentListItems";
+import {
+  ensureCanManageIncidentTypes,
+  ensureCanReadReceiving,
+  ensureUserCanOperateBranch,
+  ReceivingServiceError,
+  resolveReceivingContext,
+} from "@/modules/receiving/application/services/serviceHelpers";
 
 export class ReceivingDocumentsService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(activeBranchId?: string): Promise<ReceivingReadModel> {
+    const { tenantId, user, permissions } = await resolveReceivingContext(this.repositories);
+    ensureCanReadReceiving(permissions);
     if (!activeBranchId) return { documents: [], incidents: [], incidentTypes: [] };
+    // La sucursal activa llega del cliente (selector de header): validada contra
+    // User.allowedBranchIds antes de usarse para filtrar cualquier dato, no solo contra el
+    // tenant -- permission-hardening.
+    await ensureUserCanOperateBranch(this.repositories, user, activeBranchId);
 
     const [purchaseOrders, suppliers, branches, transfers, receipts, incidentTypes, users] =
       await Promise.all([
-        this.repositories.purchaseOrders.getAll(),
+        this.repositories.purchaseOrders.listByTenant(tenantId),
         this.repositories.suppliers.getAll(),
         this.repositories.branches.getAll(),
-        this.repositories.inventoryTransfers.query({ destinationBranchId: activeBranchId }),
-        this.repositories.receipts.getAll(),
+        this.repositories.inventoryTransfers.query({
+          tenantId,
+          destinationBranchId: activeBranchId,
+        }),
+        this.repositories.receipts.listByTenant(tenantId),
         this.repositories.incidentTypes.getAll(),
         this.repositories.users.getAll(),
       ]);
-    const tenantId = branches.find((branch) => branch.id === activeBranchId)?.tenantId;
-    const activeReceipts = receipts.filter(
-      (receipt) =>
-        receipt.branchId === activeBranchId && (!tenantId || receipt.tenantId === tenantId),
-    );
+    const activeReceipts = receipts.filter((receipt) => receipt.branchId === activeBranchId);
     const [products, receiptLines, allReceiptIncidents] = await Promise.all([
       this.repositories.products.getAll(),
       this.getReceiptLines(activeReceipts),
@@ -55,7 +67,6 @@ export class ReceivingDocumentsService {
     const receiptLinesByReceiptId = groupReceiptLinesByReceiptId(receiptLines);
     const purchaseOrderRows = purchaseOrders
       .filter((order) => order.branchId === activeBranchId)
-      .filter((order) => !tenantId || order.tenantId === tenantId)
       .filter((order) => isPurchaseOrderRelevantForReceiving(order.status))
       .map((order) => {
         const orderReceipts = receiptsByOrderId.get(order.id) ?? [];
@@ -82,7 +93,6 @@ export class ReceivingDocumentsService {
       });
     const transferRows = transfers
       .filter((transfer) => transfer.transfer.destinationBranchId === activeBranchId)
-      .filter((transfer) => !tenantId || transfer.transfer.tenantId === tenantId)
       .filter((transfer) => isTransferRelevantForReceiving(transfer.transfer.status))
       .map((transfer) =>
         toTransferRow(
@@ -109,35 +119,50 @@ export class ReceivingDocumentsService {
         users,
       }),
       incidentTypes: buildIncidentTypeRows(
-        tenantId
-          ? incidentTypes.filter((incidentType) => incidentType.tenantId === tenantId)
-          : incidentTypes,
+        incidentTypes.filter((incidentType) => incidentType.tenantId === tenantId),
         receiptIncidents,
       ),
     };
   }
 
-  async createIncidentType(input: { tenantId: string; name: string }) {
-    const name = input.name.trim();
-    if (!name) throw new Error("Ingresa el nombre del tipo de incidencia.");
+  async createIncidentType(name: string) {
+    const { tenantId, permissions } = await resolveReceivingContext(this.repositories);
+    ensureCanManageIncidentTypes(permissions);
+    const trimmedName = name.trim();
+    if (!trimmedName) throw new ReceivingServiceError("Ingresa el nombre del tipo de incidencia.");
     return this.repositories.incidentTypes.create({
-      tenantId: input.tenantId,
-      name,
-      code: toCode(name),
+      tenantId,
+      name: trimmedName,
+      code: toCode(trimmedName),
       active: true,
     });
   }
 
   async archiveIncidentType(id: string) {
+    const { tenantId, permissions } = await resolveReceivingContext(this.repositories);
+    ensureCanManageIncidentTypes(permissions);
+    await this.ensureIncidentTypeBelongsToTenant(tenantId, id);
     return this.repositories.incidentTypes.update(id, { active: false });
   }
 
   async deleteIncidentType(id: string) {
+    const { tenantId, permissions } = await resolveReceivingContext(this.repositories);
+    ensureCanManageIncidentTypes(permissions);
+    await this.ensureIncidentTypeBelongsToTenant(tenantId, id);
     const incidents = await this.getReceiptIncidents();
     if (incidents.some((incident) => incident.incidentTypeId === id)) {
-      throw new Error("Este tipo tiene historial y debe archivarse.");
+      throw new ReceivingServiceError("Este tipo tiene historial y debe archivarse.");
     }
     await this.repositories.incidentTypes.delete(id);
+  }
+
+  // El id de tipo de incidencia llega del cliente: uno de otro tenant se trata igual que uno
+  // inexistente, mismo criterio que ensurePurchaseOrderBelongsToTenant en Purchasing.
+  private async ensureIncidentTypeBelongsToTenant(tenantId: string, id: string) {
+    const incidentType = await this.repositories.incidentTypes.getById(id);
+    if (!incidentType || incidentType.tenantId !== tenantId) {
+      throw new ReceivingServiceError("Tipo de incidencia no encontrado.");
+    }
   }
 
   private async getReceiptLines(receipts: Receipt[]) {

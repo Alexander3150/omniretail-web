@@ -129,7 +129,6 @@ export interface ReceivingCapabilityFlags {
 export interface SaveReceivingProgressInput {
   documentType: ReceivingDocumentDetailType;
   documentId: string;
-  userId?: string;
   lines: ReceivingDocumentLine[];
   incidents: ReceivingDocumentIncident[];
 }

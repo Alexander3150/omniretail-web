@@ -18,18 +18,25 @@ import type {
   ReorderSuggestionReadModel,
 } from "@/modules/purchasing/application/dto/PurchaseOrderReadModel";
 import { getPurchaseOrderActions } from "@/modules/purchasing/application/services/purchaseOrderActions";
+import {
+  ensureCanReadPurchaseOrders,
+  resolvePurchasingContext,
+} from "@/modules/purchasing/application/services/serviceHelpers";
 
 export class GetPurchaseOrdersReadModelService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(activeBranchId?: string): Promise<PurchaseOrdersReadModel> {
+    const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
+    ensureCanReadPurchaseOrders(permissions);
+
     const [orders, suppliers, products, units, branches, receipts] = await Promise.all([
-      this.repositories.purchaseOrders.getAll(),
-      this.repositories.suppliers.getAll(),
+      this.repositories.purchaseOrders.listByTenant(tenantId),
+      this.repositories.suppliers.listByTenant(tenantId),
       this.repositories.products.getAll(),
       this.repositories.units.getAll(),
       this.repositories.branches.getAll(),
-      this.repositories.receipts.getAll(),
+      this.repositories.receipts.listByTenant(tenantId),
     ]);
     const productById = new Map(products.map((product) => [product.id, product]));
     const unitById = new Map(units.map((unit) => [unit.id, unit]));
@@ -49,6 +56,7 @@ export class GetPurchaseOrdersReadModelService {
           unitById,
           receipts: receiptsByOrderId.get(order.id) ?? [],
           receiptLines: receiptLinesByOrderId.get(order.id) ?? [],
+          permissions,
         }),
       )
       .sort(
@@ -84,6 +92,7 @@ export class GetPurchaseOrdersReadModelService {
     unitById,
     receipts,
     receiptLines,
+    permissions,
   }: {
     order: PurchaseOrder;
     supplier?: Supplier;
@@ -92,6 +101,7 @@ export class GetPurchaseOrdersReadModelService {
     unitById: Map<string, Unit>;
     receipts: Receipt[];
     receiptLines: ReceiptLine[];
+    permissions: readonly string[];
   }): PurchaseOrderRowReadModel {
     const receivedByProductId = groupReceivedQuantityByProductId(receiptLines);
     const lines = (order.items ?? []).map((item) =>
@@ -116,7 +126,7 @@ export class GetPurchaseOrdersReadModelService {
       productCount: lines.length,
       lines,
       reception,
-      actions: getPurchaseOrderActions(order.status),
+      actions: getPurchaseOrderActions(order.status, permissions),
       searchText: [
         order.number,
         supplier?.name,
