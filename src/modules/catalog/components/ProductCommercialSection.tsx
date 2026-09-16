@@ -9,6 +9,7 @@ import type { ProductEditorDto } from "@/modules/catalog/application/dto/Product
 import type { ProductValidationErrors } from "@/modules/catalog/validation/product.validation";
 import { productTypeLabels } from "@/modules/catalog/components/productLabels";
 import { parseDecimalInput } from "@/shared/utils/numberInput";
+import { MONEY_DECIMAL_PLACES } from "@/shared/utils/inputLimits";
 
 interface ProductCommercialSectionProps {
   value: ProductEditorDto;
@@ -73,10 +74,14 @@ export function ProductCommercialSection({
         <FormField id="salePrice" label="Precio de venta *" error={errors.salePrice}>
           <Input
             id="salePrice"
-            min="0"
-            onChange={(event) => onChange({ salePrice: parseDecimalInput(event.target.value) })}
-            step="0.01"
-            type="number"
+            inputMode="decimal"
+            maxLength={11}
+            onChange={(event) =>
+              onChange({
+                salePrice: parseDecimalInput(event.target.value, MONEY_DECIMAL_PLACES),
+              })
+            }
+            type="text"
             value={value.salePrice}
           />
         </FormField>

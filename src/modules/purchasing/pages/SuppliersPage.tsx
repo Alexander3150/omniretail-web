@@ -5,6 +5,7 @@ import { useMemo, useState, type ComponentType, type SVGProps } from "react";
 import type { ReceiptIncidentEvidence } from "@/core/entities";
 import { Button } from "@/shared/components/Button";
 import { Input } from "@/shared/components/Input";
+import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
 import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
@@ -94,6 +95,7 @@ export function SuppliersPage() {
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <Input
             aria-label="Buscar proveedores"
+            maxLength={TEXT_LIMITS.search}
             onChange={(event) => handleSearchChange(event.target.value)}
             placeholder="Buscar por nombre, razon social, NIT, contacto, telefono o correo..."
             type="search"

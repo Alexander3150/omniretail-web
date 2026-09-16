@@ -3,10 +3,12 @@ import type {
   LocationEditorDto,
   LocationListItem,
 } from "@/modules/catalog/application/dto/LocationEditorDto";
+import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
 
 export interface LocationValidationErrors {
   name?: string;
   code?: string;
+  description?: string;
 }
 
 export function normalizeLocationCode(value: string) {
@@ -45,9 +47,15 @@ export function validateLocationDto(
   const code = normalizeLocationCode(dto.code || dto.name);
 
   if (!name) errors.name = "El nombre es requerido.";
+  else if (dto.name.length > TEXT_LIMITS.locationName)
+    errors.name = "El nombre admite hasta 60 caracteres.";
   if (code && !/^[A-Z0-9][A-Z0-9-]*$/.test(code)) {
     errors.code = "Usa letras, numeros y guiones; debe iniciar con letra o numero.";
   }
+  if (dto.code.length > TEXT_LIMITS.locationCode)
+    errors.code = "El codigo admite hasta 30 caracteres.";
+  if (dto.description.length > 500)
+    errors.description = "La descripcion admite hasta 500 caracteres.";
 
   const duplicate = locations.find(
     (location) =>

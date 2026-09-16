@@ -11,7 +11,13 @@ import { PageHeader } from "@/shared/components/PageHeader";
 import { Select } from "@/shared/components/Select";
 import { useToast } from "@/shared/components/Toast";
 import { cn } from "@/shared/utils/cn";
-import { parseDecimalInput, parseIntegerInput, toFiniteNumber } from "@/shared/utils/numberInput";
+import {
+  isQuantityCompatibleWithUnit,
+  parseUnitQuantityInput,
+  toFiniteNumber,
+  type NumericInputValue,
+} from "@/shared/utils/numberInput";
+import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
 import type { ReceiptIncidentEvidence } from "@/core/entities";
 import {
   EXPIRATION_BEFORE_ENTRY_MESSAGE,
@@ -29,6 +35,8 @@ import {
   getAcceptedNow,
   getRejectedNow,
   toBaseQuantity,
+  validateIncidentQuantities,
+  validateLines,
 } from "@/modules/receiving/application/services/ReceivingDocumentDetailService";
 import { useReceivingDocumentDetail } from "@/modules/receiving/hooks/useReceivingDocumentDetail";
 
@@ -72,6 +80,10 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
     (incident) => incident.id === selectedHistoricalIncidentId,
   );
   const summary = useMemo(() => getSummary(lines, incidents), [incidents, lines]);
+  const saveProgressInvalid = detail
+    ? validateIncidentQuantities(lines, incidents, detail).length > 0
+    : true;
+  const confirmationInvalid = detail ? validateLines(lines, incidents, detail).length > 0 : true;
 
   async function handleSaveProgress() {
     try {
@@ -141,7 +153,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
               {!readOnly ? (
                 <>
                   <Button
-                    disabled={saving || !canUseReceiving}
+                    disabled={saving || !canUseReceiving || saveProgressInvalid}
                     onClick={handleSaveProgress}
                     type="button"
                     variant="secondary"
@@ -149,7 +161,11 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
                     <SaveIcon />
                     Guardar avance
                   </Button>
-                  <Button disabled={saving || !canUseReceiving} onClick={handleConfirm} type="button">
+                  <Button
+                    disabled={saving || !canUseReceiving || confirmationInvalid}
+                    onClick={handleConfirm}
+                    type="button"
+                  >
                     <CheckIcon />
                     Confirmar recepcion
                   </Button>
@@ -339,7 +355,7 @@ function ReceivingLinesTable({
   incidents: ReceivingDocumentIncident[];
   lines: ReceivingDocumentLine[];
   readOnly: boolean;
-  onQuantityChange: (lineId: string, value: number | "") => void;
+  onQuantityChange: (lineId: string, value: NumericInputValue) => void;
   onUpdateLine: (lineId: string, patch: Partial<ReceivingDocumentLine>) => void;
 }) {
   return (
@@ -565,24 +581,22 @@ function QuantityInput({
   disabled: boolean;
   line: ReceivingDocumentLine;
   maximum: number;
-  value: number | "";
-  onChange: (value: number | "") => void;
+  value: NumericInputValue;
+  onChange: (value: NumericInputValue) => void;
 }) {
   return (
     <Input
+      aria-label={`Cantidad, maximo ${maximum}`}
       className="min-w-0 px-2 text-right font-semibold"
       disabled={disabled}
-      min={0}
-      max={maximum}
+      inputMode={line.unitAllowsDecimals ? "decimal" : "numeric"}
+      maxLength={12}
       onChange={(event) =>
         onChange(
-          line.unitAllowsDecimals
-            ? parseDecimalInput(event.target.value)
-            : parseIntegerInput(event.target.value),
+          parseUnitQuantityInput(event.target.value, line.unitAllowsDecimals),
         )
       }
-      step={line.unitAllowsDecimals ? "0.01" : "1"}
-      type="number"
+      type="text"
       value={value}
     />
   );
@@ -608,6 +622,7 @@ function TrackingFields({
         disabled={readOnly}
         key="lot"
         className="h-9 px-2 text-xs"
+        maxLength={TEXT_LIMITS.lotNumber}
         onChange={(event) => onUpdateLine(line.id, { lotNumber: event.target.value })}
         placeholder="Lote"
         value={line.lotNumber}
@@ -617,8 +632,7 @@ function TrackingFields({
   if (line.tracking.expiration && capabilities.supportsExpiration) {
     const operationDate = getLocalCalendarDate();
     const expirationIsBeforeEntry =
-      line.expirationDate &&
-      isExpirationBeforeOperationDate(line.expirationDate, operationDate);
+      line.expirationDate && isExpirationBeforeOperationDate(line.expirationDate, operationDate);
     fields.push(
       <div key="expiration" className="space-y-1">
         <Input
@@ -655,6 +669,7 @@ function TrackingFields({
         <textarea
           className="min-h-16 w-full resize-y rounded-md border border-[var(--color-border)] bg-white px-2 py-1.5 text-xs text-[var(--color-text)] outline-none transition focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={readOnly}
+          maxLength={TEXT_LIMITS.serialNumbers}
           onChange={(event) => onUpdateLine(line.id, { serialNumbersText: event.target.value })}
           placeholder="Serie por linea"
           value={line.serialNumbersText}
@@ -699,7 +714,7 @@ function IncidentForm({
   const [incidentTypeId, setIncidentTypeId] = useState(
     incident?.incidentTypeId ?? detail.incidentTypes[0]?.id ?? "",
   );
-  const [quantity, setQuantity] = useState<number | "">(incident?.quantityAffected ?? 1);
+  const [quantity, setQuantity] = useState<NumericInputValue>(incident?.quantityAffected ?? 1);
   const [description, setDescription] = useState(incident?.description ?? "");
   const [evidence, setEvidence] = useState<ReceiptIncidentEvidence[]>(incident?.evidence ?? []);
   const selectedLine = lines.find((line) => line.productId === productId);
@@ -713,6 +728,15 @@ function IncidentForm({
       toFiniteNumber(selectedLine?.receivedNow ?? 0) -
       affectedByOtherIncidents,
   );
+  const incidentInvalid =
+    !productId ||
+    !incidentTypeId ||
+    !description.trim() ||
+    typeof quantity !== "number" ||
+    !Number.isFinite(quantity) ||
+    quantity <= 0 ||
+    quantity > maximumQuantity ||
+    !isQuantityCompatibleWithUnit(quantity, selectedLine?.unitAllowsDecimals ?? false);
 
   async function handleFiles(files: FileList | null) {
     if (!files) return;
@@ -797,17 +821,17 @@ function IncidentForm({
         </Field>
         <Field label="Cantidad">
           <Input
-            min={0}
-            max={maximumQuantity}
+            inputMode={selectedLine?.unitAllowsDecimals ? "decimal" : "numeric"}
+            maxLength={12}
             onChange={(event) =>
               setQuantity(
-                selectedLine?.unitAllowsDecimals
-                  ? parseDecimalInput(event.target.value)
-                  : parseIntegerInput(event.target.value),
+                parseUnitQuantityInput(
+                  event.target.value,
+                  selectedLine?.unitAllowsDecimals ?? false,
+                ),
               )
             }
-            step={selectedLine?.unitAllowsDecimals ? "0.01" : "1"}
-            type="number"
+            type="text"
             value={quantity}
           />
           <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
@@ -817,9 +841,13 @@ function IncidentForm({
         <Field label="Observacion">
           <textarea
             className="min-h-24 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
+            maxLength={TEXT_LIMITS.notes}
             onChange={(event) => setDescription(event.target.value)}
             value={description}
           />
+          <p className="text-right text-xs text-[var(--color-text-muted)]">
+            {description.length} / {TEXT_LIMITS.notes}
+          </p>
         </Field>
         <Field label="Evidencia fotografica">
           <label className="flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-[var(--color-primary)] bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-title)] hover:bg-blue-50">
@@ -898,7 +926,12 @@ function IncidentForm({
               <XIcon />
               Cancelar
             </Button>
-            <Button className="justify-center px-3" onClick={handleSave} type="button">
+            <Button
+              className="justify-center px-3"
+              disabled={incidentInvalid}
+              onClick={handleSave}
+              type="button"
+            >
               <SaveIcon />
               {incident ? "Guardar cambios" : "Guardar incidencia"}
             </Button>

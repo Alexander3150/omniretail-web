@@ -15,6 +15,7 @@ import type { PurchaseOrderStatus } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { Button } from "@/shared/components/Button";
 import { Input } from "@/shared/components/Input";
+import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { Select } from "@/shared/components/Select";
 import { TablePagination, type TablePageSize } from "@/shared/components/TablePagination";
@@ -328,6 +329,7 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
         <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_220px_220px]">
           <Input
             aria-label="Buscar ordenes"
+            maxLength={TEXT_LIMITS.search}
             className="h-10"
             onChange={(event) => handleSearchChange(event.target.value)}
             placeholder="Buscar por numero, proveedor o producto..."

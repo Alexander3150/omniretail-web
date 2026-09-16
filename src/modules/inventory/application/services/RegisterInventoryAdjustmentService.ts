@@ -17,6 +17,8 @@ import {
   getLocalCalendarDate,
   isExpirationBeforeOperationDate,
 } from "@/core/inventory/expirationDate";
+import { MAX_SAFE_INVENTORY_QUANTITY, TEXT_LIMITS } from "@/shared/utils/inputLimits";
+import { isQuantityCompatibleWithUnit } from "@/shared/utils/numberInput";
 
 export interface RegisterInventoryAdjustmentResult {
   adjustmentNumber: string;
@@ -43,6 +45,15 @@ export class RegisterInventoryAdjustmentService {
     await ensureUserCanOperateInventoryBranch(this.repositories, user, dto.branchId);
     const reason = dto.reason.trim();
     if (!reason) throw new Error("El motivo es requerido.");
+    if (reason.length > TEXT_LIMITS.reason)
+      throw new Error("El motivo admite hasta 200 caracteres.");
+    if ((dto.notes?.length ?? 0) > TEXT_LIMITS.notes)
+      throw new Error("Las observaciones admiten hasta 500 caracteres.");
+    if ((dto.lotNumber?.length ?? 0) > TEXT_LIMITS.lotNumber)
+      throw new Error("El lote admite hasta 50 caracteres.");
+    if ((dto.serialNumbers?.join("\n").length ?? 0) > TEXT_LIMITS.serialNumbers) {
+      throw new Error("Los numeros de serie admiten hasta 5,000 caracteres.");
+    }
     if (!dto.locationId) throw new Error("Selecciona una ubicacion.");
     const branchLocations = await this.repositories.inventory.getLocations(dto.branchId);
     const location = branchLocations.find((item) => item.id === dto.locationId);
@@ -51,17 +62,16 @@ export class RegisterInventoryAdjustmentService {
         "La ubicación seleccionada no está disponible para esta sucursal.",
       );
     }
-    if (!Number.isFinite(dto.quantity) || dto.quantity < 0) {
-      throw new Error("Ingresa una cantidad valida.");
+    const [conversions, supplierProducts, selectedUnit, baseUnit] = await Promise.all([
+      this.repositories.units.getConversionsByProductScoped(product.tenantId, product.id),
+      this.repositories.supplierProducts.getByProductForTenant(product.tenantId, product.id),
+      this.repositories.units.getByIdScoped(tenantId, dto.unitId),
+      this.repositories.units.getByIdScoped(tenantId, product.baseUnitId),
+    ]);
+    if (!selectedUnit || !baseUnit) {
+      throw new InventoryServiceError("La unidad seleccionada no esta disponible.");
     }
-    const conversions = await this.repositories.units.getConversionsByProductScoped(
-      product.tenantId,
-      product.id,
-    );
-    const supplierProducts = await this.repositories.supplierProducts.getByProductForTenant(
-      product.tenantId,
-      product.id,
-    );
+    assertValidInventoryQuantity(dto.quantity, selectedUnit.allowsDecimals);
     const permittedUnitIds = new Set([
       product.baseUnitId,
       product.saleUnitId ?? product.baseUnitId,
@@ -84,17 +94,22 @@ export class RegisterInventoryAdjustmentService {
     if (candidateFactors.size !== 1) {
       throw new Error("La presentacion de proveedor es ambigua y no puede usarse para ajustar.");
     }
-    const effectiveConversions = [{
-      fromUnitId: dto.unitId,
-      toUnitId: product.baseUnitId,
-      factor: [...candidateFactors][0],
-    }];
+    const effectiveConversions = [
+      {
+        fromUnitId: dto.unitId,
+        toUnitId: product.baseUnitId,
+        factor: [...candidateFactors][0],
+      },
+    ];
     const canonicalQuantity = toBaseQuantity(dto.quantity, {
       sourceUnitId: dto.unitId,
       baseUnitId: product.baseUnitId,
       conversions: effectiveConversions,
-      requireInteger: product.tracking.serial,
+      requireInteger: product.tracking.serial || !baseUnit.allowsDecimals,
     });
+    if (!Number.isFinite(canonicalQuantity) || canonicalQuantity > MAX_SAFE_INVENTORY_QUANTITY) {
+      throw new Error("La cantidad convertida no puede superar 999,999.99 unidades base.");
+    }
     const canonicalDto = { ...dto, quantity: canonicalQuantity };
 
     const balances = await this.repositories.inventory.getBalanceByProduct(
@@ -131,7 +146,7 @@ export class RegisterInventoryAdjustmentService {
       quantityAfter,
       performedByUserId: actorUserId,
       lotId: dto.lotId,
-      lotNumber: dto.lotNumber,
+      lotNumber: dto.lotNumber?.trim() || undefined,
       expirationDate: dto.expirationDate,
       serialNumbers: dto.serialNumbers,
     });
@@ -170,6 +185,22 @@ export class RegisterInventoryAdjustmentService {
         "La correccion no puede descontar mas stock del disponible en la ubicacion seleccionada.",
       );
     }
+  }
+}
+
+export function assertValidInventoryQuantity(quantity: number, unitAllowsDecimals: boolean) {
+  if (!Number.isFinite(quantity) || quantity < 0) {
+    throw new InventoryServiceError("Ingresa una cantidad valida.");
+  }
+  if (quantity > MAX_SAFE_INVENTORY_QUANTITY) {
+    throw new InventoryServiceError("La cantidad no puede superar 999,999.99.");
+  }
+  if (!isQuantityCompatibleWithUnit(quantity, unitAllowsDecimals)) {
+    throw new InventoryServiceError(
+      unitAllowsDecimals
+        ? "La cantidad admite hasta 3 decimales."
+        : "La unidad seleccionada no admite fracciones.",
+    );
   }
 }
 

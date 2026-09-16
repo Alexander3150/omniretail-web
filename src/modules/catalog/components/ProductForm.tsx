@@ -24,10 +24,26 @@ import { CatalogImage } from "@/modules/catalog/components/CatalogImage";
 import {
   isPositiveInteger,
   isPositiveNumber,
+  isDecimalInputText,
+  hasAtMostDecimalPlaces,
+  isConversionFactorCompatibleWithBaseUnit,
   parseDecimalInput,
   parseIntegerInput,
+  parseUnitQuantityInput,
   toFiniteNumber,
 } from "@/shared/utils/numberInput";
+import {
+  MAX_KIT_COMPONENT_QUANTITY,
+  CONVERSION_FACTOR_DECIMAL_PLACES,
+  MAX_PERCENTAGE,
+  MAX_SAFE_CONVERSION_FACTOR,
+  MAX_SAFE_CURRENCY,
+  MAX_SAFE_INTEGER_COUNT,
+  MONEY_DECIMAL_PLACES,
+  PERCENTAGE_DECIMAL_PLACES,
+  QUANTITY_DECIMAL_PLACES,
+  TEXT_LIMITS,
+} from "@/shared/utils/inputLimits";
 import type {
   ProductAttributeEditorValue,
   ProductEditorData,
@@ -125,7 +141,7 @@ export function ProductForm({
   // Snapshot de lo YA PERSISTIDO, solo para un producto existente. Con la capacidad apagada, es lo
   // que se conserva en vez de recortarse: ver applyCapabilityRulesToEditor/resolveSaleUnitId.
   const existingCapabilityContext = detail
-      ? {
+    ? {
         saleUnitId: detail.product.saleUnitId ?? detail.product.baseUnitId,
         inventoryUnitId: detail.product.inventoryUnitId ?? detail.product.baseUnitId,
         tracking: detail.product.tracking,
@@ -226,7 +242,7 @@ export function ProductForm({
       salePrice: toFiniteNumber(nextValue.salePrice),
       primaryImageUrl: nextValue.media.find((item) => item.isPrimary)?.url,
     });
-    const nextEditorError = validateEditor(nextValue, editorData);
+    const nextEditorError = validateEditor(nextValue, editorData, options.units);
     setErrors(nextErrors);
     setEditorError(nextEditorError);
     if (hasValidationErrors(nextErrors) || nextEditorError) {
@@ -342,6 +358,7 @@ export function ProductForm({
               editorData={editorData}
               error={editorError}
               onChange={updateValue}
+              units={options.units}
               value={value}
             />
           ) : null}
@@ -527,6 +544,7 @@ function GeneralTab({
       <FormField id="name" label="Nombre *" error={errors.name}>
         <Input
           id="name"
+          maxLength={TEXT_LIMITS.productName}
           onChange={(event) => onChange({ name: event.target.value })}
           value={value.name}
         />
@@ -535,6 +553,7 @@ function GeneralTab({
         <FormField id="sku" label="Codigo / SKU *" error={errors.sku}>
           <Input
             id="sku"
+            maxLength={TEXT_LIMITS.sku}
             onChange={(event) => onChange({ sku: event.target.value })}
             value={value.sku}
           />
@@ -542,6 +561,7 @@ function GeneralTab({
         <FormField id="barcode" label="Codigo de barras" error={errors.barcode}>
           <Input
             id="barcode"
+            maxLength={TEXT_LIMITS.barcode}
             onChange={(event) => onChange({ barcode: event.target.value })}
             value={value.barcode ?? ""}
           />
@@ -549,6 +569,7 @@ function GeneralTab({
         <FormField id="brand" label="Marca" error={errors.brand}>
           <Input
             id="brand"
+            maxLength={TEXT_LIMITS.brand}
             onChange={(event) => onChange({ brand: event.target.value })}
             value={value.brand ?? ""}
           />
@@ -572,8 +593,13 @@ function GeneralTab({
         <textarea
           className="min-h-24 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
           id="description"
+          maxLength={TEXT_LIMITS.description}
           onChange={(event) => onChange({ description: event.target.value })}
           value={value.description ?? ""}
+        />
+        <CharacterCount
+          current={value.description?.length ?? 0}
+          maximum={TEXT_LIMITS.description}
         />
       </FormField>
       <ChannelsControl value={value} onChange={onChange} />
@@ -760,9 +786,27 @@ function UnitsTab({
       {needsInventoryConversion || needsSaleConversion ? (
         <div className="grid gap-4 rounded-md border border-[var(--color-border)] p-4 md:grid-cols-2">
           {needsInventoryConversion ? (
-            <FormField id="inventoryToBaseFactor" label={`1 ${inventoryUnit?.name ?? "presentacion"} equivale a`}>
+            <FormField
+              id="inventoryToBaseFactor"
+              label={`1 ${inventoryUnit?.name ?? "presentacion"} equivale a`}
+            >
               <div className="flex items-center gap-2">
-                <Input disabled={unitsProtected} id="inventoryToBaseFactor" min="0.0001" step="0.0001" type="number" value={value.inventoryToBaseFactor} onChange={(event) => onChange({ inventoryToBaseFactor: parseDecimalInput(event.target.value) })} />
+                <Input
+                  disabled={unitsProtected}
+                  id="inventoryToBaseFactor"
+                  inputMode="decimal"
+                  maxLength={12}
+                  type="text"
+                  value={value.inventoryToBaseFactor}
+                  onChange={(event) =>
+                    onChange({
+                      inventoryToBaseFactor: parseDecimalInput(
+                        event.target.value,
+                        CONVERSION_FACTOR_DECIMAL_PLACES,
+                      ),
+                    })
+                  }
+                />
                 <span className="text-sm font-semibold">{baseUnit?.name ?? "base"}</span>
               </div>
             </FormField>
@@ -770,7 +814,22 @@ function UnitsTab({
           {needsSaleConversion ? (
             <FormField id="saleToBaseFactor" label={`1 ${saleUnit?.name ?? "venta"} equivale a`}>
               <div className="flex items-center gap-2">
-                <Input disabled={unitsProtected} id="saleToBaseFactor" min="0.0001" step="0.0001" type="number" value={value.saleToBaseFactor} onChange={(event) => onChange({ saleToBaseFactor: parseDecimalInput(event.target.value) })} />
+                <Input
+                  disabled={unitsProtected}
+                  id="saleToBaseFactor"
+                  inputMode="decimal"
+                  maxLength={12}
+                  type="text"
+                  value={value.saleToBaseFactor}
+                  onChange={(event) =>
+                    onChange({
+                      saleToBaseFactor: parseDecimalInput(
+                        event.target.value,
+                        CONVERSION_FACTOR_DECIMAL_PLACES,
+                      ),
+                    })
+                  }
+                />
                 <span className="text-sm font-semibold">{baseUnit?.name ?? "base"}</span>
               </div>
             </FormField>
@@ -792,12 +851,14 @@ function TrackingTab({
   capabilities,
   editorData,
   error,
+  units,
   onChange,
 }: {
   value: ProductEditorDto;
   capabilities: ProductFormOptions["businessCapabilities"];
   editorData: ProductEditorData;
   error: string | null;
+  units: ProductFormOptions["units"];
   onChange: (value: Partial<ProductEditorDto>) => void;
 }) {
   const isService = value.productType === ProductType.service;
@@ -863,6 +924,7 @@ function TrackingTab({
       {isKit ? (
         <KitComponentsEditor
           eligibleProducts={editorData.kitEligibleProducts}
+          units={units}
           value={value.kitComponents}
           onChange={(kitComponents) => onChange({ kitComponents })}
         />
@@ -872,7 +934,8 @@ function TrackingTab({
           <FormField id="inventory-min-stock" label="Stock minimo">
             <Input
               id="inventory-min-stock"
-              min={0}
+              inputMode="numeric"
+              maxLength={6}
               onChange={(event) =>
                 onChange({
                   inventorySettings: {
@@ -881,7 +944,7 @@ function TrackingTab({
                   },
                 })
               }
-              type="number"
+              type="text"
               value={value.inventorySettings.minStock}
             />
             {error?.includes("stock minimo") ? (
@@ -986,10 +1049,12 @@ function TrackingTab({
 
 function KitComponentsEditor({
   eligibleProducts,
+  units,
   value,
   onChange,
 }: {
   eligibleProducts: ProductEditorData["kitEligibleProducts"];
+  units: ProductFormOptions["units"];
   value: ProductEditorDto["kitComponents"];
   onChange: (value: ProductEditorDto["kitComponents"]) => void;
 }) {
@@ -1004,6 +1069,7 @@ function KitComponentsEditor({
       </p>
       {value.map((component, index) => {
         const product = eligibleProducts.find((item) => item.id === component.componentProductId);
+        const unit = units.find((item) => item.id === product?.baseUnitId);
         return (
           <div
             className="grid gap-2 sm:grid-cols-[1fr_110px_auto]"
@@ -1013,15 +1079,21 @@ function KitComponentsEditor({
               {product ? `${product.sku} — ${product.name}` : "Componente no disponible"}
             </div>
             <Input
-              min="0.0001"
-              step="0.0001"
-              type="number"
+              inputMode={unit?.allowsDecimals ? "decimal" : "numeric"}
+              maxLength={7}
+              type="text"
               value={component.quantityPerKit}
               onChange={(event) =>
                 onChange(
                   value.map((item, itemIndex) =>
                     itemIndex === index
-                      ? { ...item, quantityPerKit: parseDecimalInput(event.target.value) }
+                      ? {
+                          ...item,
+                          quantityPerKit: parseUnitQuantityInput(
+                            event.target.value,
+                            unit?.allowsDecimals ?? false,
+                          ),
+                        }
                       : item,
                   ),
                 )
@@ -1104,6 +1176,7 @@ function AttributesTab({
               <Input
                 aria-label="Nombre del atributo"
                 disabled={readOnly}
+                maxLength={TEXT_LIMITS.attributeName}
                 onChange={(event) => update(index, { name: event.target.value })}
                 placeholder="Nombre"
                 value={attribute.name}
@@ -1111,6 +1184,7 @@ function AttributesTab({
               <Input
                 aria-label="Valor del atributo"
                 disabled={readOnly}
+                maxLength={TEXT_LIMITS.attributeValue}
                 onChange={(event) => update(index, { value: event.target.value })}
                 placeholder="Valor"
                 value={attribute.value}
@@ -1167,10 +1241,14 @@ function PricesTab({
       <FormField id="salePrice" label="Precio normal *" error={errors.salePrice}>
         <Input
           id="salePrice"
-          min="0"
-          onChange={(event) => onChange({ salePrice: parseDecimalInput(event.target.value) })}
-          step="0.01"
-          type="number"
+          inputMode="decimal"
+          maxLength={11}
+          onChange={(event) =>
+            onChange({
+              salePrice: parseDecimalInput(event.target.value, MONEY_DECIMAL_PLACES),
+            })
+          }
+          type="text"
           value={value.salePrice}
         />
       </FormField>
@@ -1209,21 +1287,24 @@ function PricesTab({
                 >
                   <Input
                     aria-label="Cantidad minima"
-                    min="2"
+                    inputMode="numeric"
+                    maxLength={6}
                     onChange={(event) =>
                       updateTier(index, { minQuantity: parseIntegerInput(event.target.value) })
                     }
-                    type="number"
+                    type="text"
                     value={tier.minQuantity}
                   />
                   <Input
                     aria-label="Precio unitario"
-                    min="0"
+                    inputMode="decimal"
+                    maxLength={11}
                     onChange={(event) =>
-                      updateTier(index, { unitPrice: parseDecimalInput(event.target.value) })
+                      updateTier(index, {
+                        unitPrice: parseDecimalInput(event.target.value, MONEY_DECIMAL_PLACES),
+                      })
                     }
-                    step="0.01"
-                    type="number"
+                    type="text"
                     value={tier.unitPrice}
                   />
                   <Button
@@ -1517,10 +1598,12 @@ function PromotionEditor({
         <NativeField label="Valor">
           <input
             className={inputClassName}
-            min="0"
-            onChange={(event) => update({ value: event.target.value })}
-            step="0.01"
-            type="number"
+            inputMode="decimal"
+            maxLength={11}
+            onChange={(event) => {
+              if (isDecimalInputText(event.target.value)) update({ value: event.target.value });
+            }}
+            type="text"
             value={state.value}
           />
         </NativeField>
@@ -1730,6 +1813,7 @@ function SuppliersTab({
                   <NativeField label="Codigo proveedor">
                     <input
                       className={inputClassName}
+                      maxLength={TEXT_LIMITS.supplierCode}
                       onChange={(event) =>
                         updateSupplier(index, { supplierSku: event.target.value })
                       }
@@ -1758,15 +1842,18 @@ function SuppliersTab({
                     <NativeField label="Contenido en inventario">
                       <input
                         className={inputClassName}
-                        min="0.0001"
+                        inputMode="decimal"
+                        maxLength={12}
                         onChange={(event) =>
                           updateSupplier(index, {
-                            purchaseToBaseFactor: parseDecimalInput(event.target.value),
+                            purchaseToBaseFactor: parseDecimalInput(
+                              event.target.value,
+                              CONVERSION_FACTOR_DECIMAL_PLACES,
+                            ),
                           })
                         }
                         placeholder="Cantidad"
-                        step="0.0001"
-                        type="number"
+                        type="text"
                         value={item.purchaseToBaseFactor}
                       />
                     </NativeField>
@@ -1778,38 +1865,42 @@ function SuppliersTab({
                   <NativeField label="Costo">
                     <input
                       className={inputClassName}
-                      min="0"
+                      inputMode="decimal"
+                      maxLength={11}
                       onChange={(event) =>
-                        updateSupplier(index, { lastCost: parseDecimalInput(event.target.value) })
+                        updateSupplier(index, {
+                          lastCost: parseDecimalInput(event.target.value, MONEY_DECIMAL_PLACES),
+                        })
                       }
-                      step="0.01"
-                      type="number"
+                      type="text"
                       value={item.lastCost}
                     />
                   </NativeField>
                   <NativeField label="Pedido minimo">
                     <input
                       className={inputClassName}
-                      min="1"
+                      inputMode="numeric"
+                      maxLength={6}
                       onChange={(event) =>
                         updateSupplier(index, {
                           minimumOrderQuantity: parseIntegerInput(event.target.value),
                         })
                       }
-                      type="number"
+                      type="text"
                       value={item.minimumOrderQuantity}
                     />
                   </NativeField>
                   <NativeField label="Plazo de entrega (días)">
                     <input
                       className={inputClassName}
-                      min="0"
+                      inputMode="numeric"
+                      maxLength={6}
                       onChange={(event) =>
                         updateSupplier(index, {
                           leadTimeDays: parseIntegerInput(event.target.value),
                         })
                       }
-                      type="number"
+                      type="text"
                       value={item.leadTimeDays}
                     />
                   </NativeField>
@@ -1846,26 +1937,30 @@ function SuppliersTab({
                           <input
                             aria-label="Cantidad minima proveedor"
                             className={inputClassName}
-                            min="1"
+                            inputMode="numeric"
+                            maxLength={6}
                             onChange={(event) =>
                               updateCostTier(index, tierIndex, {
                                 minQuantity: parseIntegerInput(event.target.value),
                               })
                             }
-                            type="number"
+                            type="text"
                             value={tier.minQuantity}
                           />
                           <input
                             aria-label="Costo unitario proveedor"
                             className={inputClassName}
-                            min="0"
+                            inputMode="decimal"
+                            maxLength={11}
                             onChange={(event) =>
                               updateCostTier(index, tierIndex, {
-                                unitCost: parseDecimalInput(event.target.value),
+                                unitCost: parseDecimalInput(
+                                  event.target.value,
+                                  MONEY_DECIMAL_PLACES,
+                                ),
                               })
                             }
-                            step="0.01"
-                            type="number"
+                            type="text"
                             value={tier.unitCost}
                           />
                           <Button
@@ -2186,6 +2281,14 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
+function CharacterCount({ current, maximum }: { current: number; maximum: number }) {
+  return (
+    <p className="text-right text-xs text-[var(--color-text-muted)]">
+      {current} / {maximum}
+    </p>
+  );
+}
+
 function FieldError({ children }: { children: ReactNode }) {
   return (
     <p className="rounded-md border border-[var(--color-danger)] bg-white p-3 text-sm font-medium text-[var(--color-danger)]">
@@ -2254,8 +2357,18 @@ function enabledProductChannels(product: PromotionProduct): SalesChannel[] {
 function validatePromotionForm(state: PromotionFormState, salePrice: number) {
   const value = Number(state.value);
   if (!Number.isFinite(value) || value <= 0) return "Ingresa un valor mayor a 0.";
-  if (state.type === PromotionType.percentage && value >= 100) {
-    return "El porcentaje debe ser menor a 100.";
+  const maximumDecimalPlaces =
+    state.type === PromotionType.percentage
+      ? PERCENTAGE_DECIMAL_PLACES
+      : MONEY_DECIMAL_PLACES;
+  if (!hasAtMostDecimalPlaces(state.value, maximumDecimalPlaces)) {
+    return `El valor admite hasta ${maximumDecimalPlaces} decimales.`;
+  }
+  if (state.type === PromotionType.percentage && value > MAX_PERCENTAGE) {
+    return "El porcentaje no puede superar 100.";
+  }
+  if (state.type !== PromotionType.percentage && value > MAX_SAFE_CURRENCY) {
+    return "El valor no puede superar Q9,999,999.99.";
   }
   if (
     (state.type === PromotionType.fixedDiscount || state.type === PromotionType.fixedPrice) &&
@@ -2271,7 +2384,14 @@ function validatePromotionForm(state: PromotionFormState, salePrice: number) {
   return null;
 }
 
-function validateEditor(value: ProductEditorDto, editorData: ProductEditorData) {
+function validateEditor(
+  value: ProductEditorDto,
+  editorData: ProductEditorData,
+  units: ProductFormOptions["units"],
+) {
+  if (!hasAtMostDecimalPlaces(value.salePrice, MONEY_DECIMAL_PLACES)) {
+    return "El precio de venta admite hasta 2 decimales.";
+  }
   if (
     (value.baseUnitId !== value.inventoryUnitId &&
       !isPositiveNumber(value.inventoryToBaseFactor)) ||
@@ -2279,13 +2399,57 @@ function validateEditor(value: ProductEditorDto, editorData: ProductEditorData) 
   ) {
     return "Cada presentacion debe equivaler a un multiplo positivo de la unidad base.";
   }
+  if (
+    toFiniteNumber(value.inventoryToBaseFactor) > MAX_SAFE_CONVERSION_FACTOR ||
+    toFiniteNumber(value.saleToBaseFactor) > MAX_SAFE_CONVERSION_FACTOR
+  ) {
+    return "El factor de conversion no puede superar 999,999.99.";
+  }
+  if (
+    !hasAtMostDecimalPlaces(
+      value.inventoryToBaseFactor,
+      CONVERSION_FACTOR_DECIMAL_PLACES,
+    ) ||
+    !hasAtMostDecimalPlaces(value.saleToBaseFactor, CONVERSION_FACTOR_DECIMAL_PLACES)
+  ) {
+    return "El factor de conversion admite hasta 4 decimales.";
+  }
+  const baseUnit = units.find((unit) => unit.id === value.baseUnitId);
+  if (
+    baseUnit &&
+    [
+      ...(value.inventoryUnitId === value.baseUnitId ? [] : [value.inventoryToBaseFactor]),
+      ...(value.saleUnitId === value.baseUnitId ? [] : [value.saleToBaseFactor]),
+    ].some(
+      (factor) => !isConversionFactorCompatibleWithBaseUnit(factor, baseUnit.allowsDecimals),
+    )
+  ) {
+    return baseUnit.allowsDecimals
+      ? "El factor de conversion admite hasta 4 decimales."
+      : "La conversion debe producir una cantidad entera de la unidad base.";
+  }
+  if (
+    value.kitComponents.some(
+      (component) =>
+        !isPositiveNumber(component.quantityPerKit) ||
+        !hasAtMostDecimalPlaces(component.quantityPerKit, QUANTITY_DECIMAL_PLACES) ||
+        toFiniteNumber(component.quantityPerKit) > MAX_KIT_COMPONENT_QUANTITY,
+    )
+  ) {
+    return "Cada componente del kit debe estar entre 0 y 9,999.";
+  }
   const salesQuantities = new Set<number>();
   for (const tier of value.salesPriceTiers) {
     const minQuantity = toFiniteNumber(tier.minQuantity);
     if (!isPositiveInteger(tier.minQuantity) || minQuantity <= 1) {
       return "La cantidad minima mayorista debe ser un entero mayor a 1.";
     }
+    if (minQuantity > MAX_SAFE_INTEGER_COUNT) return "La cantidad minima no puede superar 999,999.";
     if (!isPositiveNumber(tier.unitPrice)) return "El precio mayorista debe ser mayor a 0.";
+    if (!hasAtMostDecimalPlaces(tier.unitPrice, MONEY_DECIMAL_PLACES))
+      return "El precio mayorista admite hasta 2 decimales.";
+    if (toFiniteNumber(tier.unitPrice) > MAX_SAFE_CURRENCY)
+      return "El precio mayorista no puede superar Q9,999,999.99.";
     if (salesQuantities.has(minQuantity)) return "No repitas cantidades mayoristas.";
     salesQuantities.add(minQuantity);
   }
@@ -2295,8 +2459,31 @@ function validateEditor(value: ProductEditorDto, editorData: ProductEditorData) 
     supplierIds.add(supplierProduct.supplierId);
     if (!isPositiveNumber(supplierProduct.purchaseToBaseFactor))
       return "El contenido de compra debe ser mayor a 0.";
+    if (toFiniteNumber(supplierProduct.purchaseToBaseFactor) > MAX_SAFE_CONVERSION_FACTOR)
+      return "El contenido de compra no puede superar 999,999.99.";
+    if (
+      !hasAtMostDecimalPlaces(
+        supplierProduct.purchaseToBaseFactor,
+        CONVERSION_FACTOR_DECIMAL_PLACES,
+      )
+    )
+      return "El contenido de compra admite hasta 4 decimales.";
+    if (
+      baseUnit &&
+      !isConversionFactorCompatibleWithBaseUnit(
+        supplierProduct.purchaseToBaseFactor,
+        baseUnit.allowsDecimals,
+      )
+    )
+      return baseUnit.allowsDecimals
+        ? "El contenido de compra admite hasta 4 decimales."
+        : "El contenido de compra debe producir unidades base enteras.";
     if (toFiniteNumber(supplierProduct.lastCost, -1) < 0)
       return "El costo del proveedor debe ser mayor o igual a 0.";
+    if (toFiniteNumber(supplierProduct.lastCost) > MAX_SAFE_CURRENCY)
+      return "El costo del proveedor no puede superar Q9,999,999.99.";
+    if (!hasAtMostDecimalPlaces(supplierProduct.lastCost, MONEY_DECIMAL_PLACES))
+      return "El costo del proveedor admite hasta 2 decimales.";
     if (!isPositiveInteger(supplierProduct.minimumOrderQuantity)) {
       return "El pedido minimo debe ser un entero mayor a 0.";
     }
@@ -2305,8 +2492,14 @@ function validateEditor(value: ProductEditorDto, editorData: ProductEditorData) 
       const minQuantity = toFiniteNumber(tier.minQuantity);
       if (!isPositiveInteger(tier.minQuantity))
         return "La cantidad minima de costo debe ser un entero mayor a 0.";
+      if (minQuantity > MAX_SAFE_INTEGER_COUNT)
+        return "La cantidad minima de costo no puede superar 999,999.";
       if (toFiniteNumber(tier.unitCost, -1) < 0)
         return "El costo por volumen debe ser mayor o igual a 0.";
+      if (toFiniteNumber(tier.unitCost) > MAX_SAFE_CURRENCY)
+        return "El costo por volumen no puede superar Q9,999,999.99.";
+      if (!hasAtMostDecimalPlaces(tier.unitCost, MONEY_DECIMAL_PLACES))
+        return "El costo por volumen admite hasta 2 decimales.";
       if (costQuantities.has(minQuantity)) return "No repitas cantidades de costo.";
       costQuantities.add(minQuantity);
     }
@@ -2331,6 +2524,9 @@ function validateEditor(value: ProductEditorDto, editorData: ProductEditorData) 
       toFiniteNumber(value.inventorySettings.minStock) < 0)
   ) {
     return "El stock minimo debe ser mayor o igual a 0.";
+  }
+  if (toFiniteNumber(value.inventorySettings.minStock) > MAX_SAFE_INTEGER_COUNT) {
+    return "El stock minimo no puede superar 999,999.";
   }
   if (
     value.tracking.stock &&
@@ -2421,8 +2617,7 @@ function buildInitialValue(
         ? 1
         : (editorData.unitConversions.find(
             (conversion) =>
-              conversion.fromUnitId === unitId &&
-              conversion.toUnitId === detail.product.baseUnitId,
+              conversion.fromUnitId === unitId && conversion.toUnitId === detail.product.baseUnitId,
           )?.factor ?? "");
     const editedDraft: ProductEditorDto = {
       sku: detail.product.sku,

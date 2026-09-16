@@ -1,8 +1,22 @@
-import type { PurchaseOrder, PurchaseOrderItem, User } from "@/core/entities";
+import type { Product, PurchaseOrder, PurchaseOrderItem, Unit, User } from "@/core/entities";
 import { PurchaseOrderStatus } from "@/core/enums";
 import type { PurchaseOrderItemInput } from "@/core/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
-import { isPositiveInteger, isPositiveNumber, toFiniteNumber } from "@/shared/utils/numberInput";
+import {
+  hasAtMostDecimalPlaces,
+  isPositiveNumber,
+  isQuantityCompatibleWithUnit,
+  toFiniteNumber,
+  type NumericInputValue,
+} from "@/shared/utils/numberInput";
+import {
+  MAX_SAFE_CONVERSION_FACTOR,
+  CONVERSION_FACTOR_DECIMAL_PLACES,
+  MAX_SAFE_CURRENCY,
+  MAX_SAFE_INVENTORY_QUANTITY,
+  MONEY_DECIMAL_PLACES,
+  TEXT_LIMITS,
+} from "@/shared/utils/inputLimits";
 import type {
   PurchaseOrderAvailableProduct,
   PurchaseOrderEditorLine,
@@ -61,6 +75,14 @@ export class PurchaseOrderEditorService {
     }
     const availableProducts = await this.getAvailableProducts(order.supplierId, branchId);
     const availableByProductId = new Map(availableProducts.map((item) => [item.productId, item]));
+    const orderUnits = await Promise.all(
+      (order.items ?? []).map((item) =>
+        this.repositories.units.getByIdScoped(tenantId, item.unitId),
+      ),
+    );
+    const unitById = new Map(
+      orderUnits.flatMap((unit) => (unit ? ([[unit.id, unit]] as const) : [])),
+    );
 
     return {
       id: order.id,
@@ -70,7 +92,11 @@ export class PurchaseOrderEditorService {
       notes: order.notes ?? "",
       status: order.status,
       lines: (order.items ?? []).map((item) =>
-        toEditorLine(item, availableByProductId.get(item.productId)),
+        toEditorLine(
+          item,
+          availableByProductId.get(item.productId),
+          unitById.get(item.unitId)?.allowsDecimals ?? false,
+        ),
       ),
     };
   }
@@ -94,7 +120,7 @@ export class PurchaseOrderEditorService {
     const [supplierProducts, products, units, categories] = await Promise.all([
       this.repositories.supplierProducts.getBySupplierForTenant(tenantId, supplierId),
       this.repositories.products.getAll(),
-      this.repositories.units.getAll(),
+      this.repositories.units.getByTenant(tenantId),
       this.repositories.categories.getAll(),
     ]);
     const productById = new Map(products.map((product) => [product.id, product]));
@@ -140,6 +166,7 @@ export class PurchaseOrderEditorService {
             categoryName,
             unitId: supplierProduct.purchaseUnitId,
             unitLabel: unit?.symbol ?? unit?.name ?? supplierProduct.purchaseUnitId,
+            unitAllowsDecimals: unit?.allowsDecimals ?? false,
             purchaseToBaseFactor: supplierProduct.purchaseToBaseFactor,
             configuredCost: supplierProduct.lastCost,
             minimumOrderQuantity: supplierProduct.minimumOrderQuantity,
@@ -230,7 +257,8 @@ export class PurchaseOrderEditorService {
     );
     ensureCanCreatePurchaseOrders(permissions);
     await ensureTenantCanUsePurchasing(this.repositories, tenantId);
-    await this.ensureSaveInputTenantSafe(tenantId, user, input);
+    const authoritativeContext = await this.ensureSaveInputTenantSafe(tenantId, user, input);
+    validateOrderQuantities(input.lines, authoritativeContext);
     const payload = toPurchaseOrderPayload(input, PurchaseOrderStatus.draft, tenantId, actorUserId);
     if (input.orderId) {
       const order = ensurePurchaseOrderBelongsToTenant(
@@ -249,7 +277,8 @@ export class PurchaseOrderEditorService {
     );
     ensureCanCreatePurchaseOrders(permissions);
     await ensureTenantCanUsePurchasing(this.repositories, tenantId);
-    await this.ensureSaveInputTenantSafe(tenantId, user, input);
+    const authoritativeContext = await this.ensureSaveInputTenantSafe(tenantId, user, input);
+    validateOrderQuantities(input.lines, authoritativeContext);
     const payload = toPurchaseOrderPayload(
       input,
       PurchaseOrderStatus.pending_approval,
@@ -276,19 +305,128 @@ export class PurchaseOrderEditorService {
     tenantId: string,
     user: User,
     input: SavePurchaseOrderInput,
-  ): Promise<void> {
-    const [supplier, , products] = await Promise.all([
+  ): Promise<AuthoritativePurchaseContext> {
+    const [supplier, , products, purchaseUnits] = await Promise.all([
       this.repositories.suppliers.getById(input.supplierId),
       ensureUserCanOperateBranch(this.repositories, user, input.branchId),
       Promise.all(input.lines.map((line) => this.repositories.products.getById(line.productId))),
+      Promise.all(
+        input.lines.map((line) => this.repositories.units.getByIdScoped(tenantId, line.unitId)),
+      ),
     ]);
     if (!supplier || supplier.tenantId !== tenantId) {
-      throw new PurchasingServiceError("El proveedor seleccionado no está disponible para este negocio.");
+      throw new PurchasingServiceError(
+        "El proveedor seleccionado no está disponible para este negocio.",
+      );
     }
     if (products.some((product) => !product || product.tenantId !== tenantId)) {
-      throw new PurchasingServiceError("Alguno de los productos no está disponible para este negocio.");
+      throw new PurchasingServiceError(
+        "Alguno de los productos no está disponible para este negocio.",
+      );
     }
+    if (purchaseUnits.some((unit) => !unit)) {
+      throw new PurchasingServiceError(
+        "Alguna unidad de compra no está disponible para este negocio.",
+      );
+    }
+    const resolvedProducts = products as Product[];
+    const resolvedPurchaseUnits = purchaseUnits as Unit[];
+    const baseUnits = await Promise.all(
+      resolvedProducts.map((product) =>
+        this.repositories.units.getByIdScoped(tenantId, product.baseUnitId),
+      ),
+    );
+    if (baseUnits.some((unit) => !unit)) {
+      throw new PurchasingServiceError("Alguna unidad base no está disponible para este negocio.");
+    }
+    return {
+      productById: new Map(resolvedProducts.map((product) => [product.id, product])),
+      purchaseUnitById: new Map(resolvedPurchaseUnits.map((unit) => [unit.id, unit])),
+      baseUnitById: new Map((baseUnits as Unit[]).map((unit) => [unit.id, unit])),
+    };
   }
+}
+
+interface AuthoritativePurchaseContext {
+  productById: Map<string, Product>;
+  purchaseUnitById: Map<string, Unit>;
+  baseUnitById: Map<string, Unit>;
+}
+
+function validateOrderQuantities(
+  lines: PurchaseOrderEditorLine[],
+  context: AuthoritativePurchaseContext,
+) {
+  for (const line of lines) {
+    const product = context.productById.get(line.productId);
+    const purchaseUnit = context.purchaseUnitById.get(line.unitId);
+    const baseUnit = product ? context.baseUnitById.get(product.baseUnitId) : undefined;
+    if (!product || !purchaseUnit || !baseUnit) {
+      throw new PurchasingServiceError(
+        "No se pudo validar la unidad de compra de uno de los productos.",
+      );
+    }
+    assertValidPurchaseOrderQuantity({
+      quantity: line.quantity,
+      purchaseToBaseFactor: line.purchaseToBaseFactor,
+      purchaseUnitAllowsDecimals: purchaseUnit.allowsDecimals,
+      baseUnitAllowsDecimals: baseUnit.allowsDecimals,
+      serialTracked: product.tracking.serial,
+    });
+  }
+}
+
+export interface PurchaseOrderQuantityValidationInput {
+  quantity: NumericInputValue;
+  purchaseToBaseFactor: number;
+  purchaseUnitAllowsDecimals: boolean;
+  baseUnitAllowsDecimals: boolean;
+  serialTracked: boolean;
+}
+
+export function assertValidPurchaseOrderQuantity(
+  input: PurchaseOrderQuantityValidationInput,
+): number {
+  if (typeof input.quantity !== "number" || !Number.isFinite(input.quantity)) {
+    throw new PurchasingServiceError("Ingresa una cantidad de compra valida.");
+  }
+  if (input.quantity <= 0) {
+    throw new PurchasingServiceError("La cantidad de compra debe ser mayor que cero.");
+  }
+  if (input.quantity > MAX_SAFE_INVENTORY_QUANTITY) {
+    throw new PurchasingServiceError("La cantidad de compra no puede superar 999,999.99.");
+  }
+  if (!isQuantityCompatibleWithUnit(input.quantity, input.purchaseUnitAllowsDecimals)) {
+    throw new PurchasingServiceError(
+      input.purchaseUnitAllowsDecimals
+        ? "La cantidad de compra admite hasta 3 decimales."
+        : "La unidad de compra seleccionada no admite fracciones.",
+    );
+  }
+  if (
+    !Number.isFinite(input.purchaseToBaseFactor) ||
+    input.purchaseToBaseFactor <= 0 ||
+    input.purchaseToBaseFactor > MAX_SAFE_CONVERSION_FACTOR ||
+    !hasAtMostDecimalPlaces(
+      input.purchaseToBaseFactor,
+      CONVERSION_FACTOR_DECIMAL_PLACES,
+    )
+  ) {
+    throw new PurchasingServiceError("La conversion de compra debe ser finita y mayor que cero.");
+  }
+  const baseQuantity = input.quantity * input.purchaseToBaseFactor;
+  if (!Number.isFinite(baseQuantity) || baseQuantity <= 0) {
+    throw new PurchasingServiceError("La cantidad convertida a unidad base no es valida.");
+  }
+  if (
+    (!input.baseUnitAllowsDecimals || input.serialTracked) &&
+    !Number.isSafeInteger(baseQuantity)
+  ) {
+    throw new PurchasingServiceError(
+      "La cantidad de compra debe producir una cantidad entera de unidades base.",
+    );
+  }
+  return baseQuantity;
 }
 
 export interface SavePurchaseOrderInput {
@@ -300,7 +438,10 @@ export interface SavePurchaseOrderInput {
   lines: PurchaseOrderEditorLine[];
 }
 
-export function getTierCost(product: PurchaseOrderAvailableProduct, quantity: number | ""): number {
+export function getTierCost(
+  product: PurchaseOrderAvailableProduct,
+  quantity: NumericInputValue,
+): number {
   const comparableQuantity = toFiniteNumber(quantity);
   const tier = [...product.tiers]
     .filter((item) => item.minQuantity <= comparableQuantity)
@@ -321,6 +462,7 @@ export function getPricingDetails(line: PurchaseOrderEditorLine) {
       categoryName: "",
       unitId: line.unitId,
       unitLabel: line.unitLabel,
+      unitAllowsDecimals: line.unitAllowsDecimals,
       purchaseToBaseFactor: line.purchaseToBaseFactor,
       configuredCost: line.baseCost,
       minimumOrderQuantity: line.minimumOrderQuantity,
@@ -406,24 +548,38 @@ function validateCompleteOrder(input: SavePurchaseOrderInput) {
   if (!input.branchId) throw new Error("Selecciona una sucursal destino.");
   if (!input.expectedDate) throw new Error("Selecciona una fecha esperada.");
   if (input.lines.length === 0) throw new Error("Agrega al menos un producto.");
-  validateOrderLineNumbers(input);
 }
 
 function validateOrderLineNumbers(input: SavePurchaseOrderInput) {
-  if (input.lines.some((line) => !isPositiveInteger(line.quantity))) {
-    throw new Error("Todas las cantidades deben ser enteros positivos.");
+  if (
+    input.lines.some(
+      (line) =>
+        !Number.isFinite(toFiniteNumber(line.agreedCost, Number.NaN)) ||
+        toFiniteNumber(line.agreedCost, -1) < 0 ||
+        toFiniteNumber(line.agreedCost) > MAX_SAFE_CURRENCY ||
+        !hasAtMostDecimalPlaces(line.agreedCost, MONEY_DECIMAL_PLACES),
+    )
+  ) {
+    throw new Error("Todos los costos deben estar entre Q0 y Q9,999,999.99.");
   }
-  if (input.lines.some((line) => !isPositiveNumber(line.agreedCost))) {
-    throw new Error("Todos los costos acordados deben ser mayores a cero.");
-  }
-  if (input.lines.some((line) => !isPositiveNumber(line.purchaseToBaseFactor))) {
+  if (
+    input.lines.some(
+      (line) =>
+        !isPositiveNumber(line.purchaseToBaseFactor) ||
+        line.purchaseToBaseFactor > MAX_SAFE_CONVERSION_FACTOR,
+    )
+  ) {
     throw new Error("Todas las conversiones de compra deben ser mayores a cero.");
+  }
+  if (input.notes.length > TEXT_LIMITS.notes) {
+    throw new Error("Las notas admiten hasta 500 caracteres.");
   }
 }
 
 function toEditorLine(
   item: PurchaseOrderItem,
   availableProduct?: PurchaseOrderAvailableProduct,
+  unitAllowsDecimals = false,
 ): PurchaseOrderEditorLine {
   return {
     id: `${item.productId}-${item.id}`,
@@ -433,6 +589,7 @@ function toEditorLine(
     supplierSku: availableProduct?.supplierSku ?? "-",
     unitId: item.unitId,
     unitLabel: availableProduct?.unitLabel ?? item.unitId,
+    unitAllowsDecimals,
     purchaseToBaseFactor: item.purchaseToBaseFactor,
     quantity: item.quantity,
     baseCost: availableProduct?.configuredCost ?? item.unitCost,

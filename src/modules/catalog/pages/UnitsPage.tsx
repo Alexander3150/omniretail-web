@@ -17,6 +17,7 @@ import { Select } from "@/shared/components/Select";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { useToast } from "@/shared/components/Toast";
 import { cn } from "@/shared/utils/cn";
+import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
 import type { UnitEditorDto, UnitListItem } from "@/modules/catalog/application/dto/UnitEditorDto";
 import { UNIT_CATEGORY_LABELS } from "@/modules/catalog/application/services/GetUnitsService";
 import {
@@ -267,6 +268,7 @@ function UnitFilters({
     <div className="grid gap-3 p-4 xl:grid-cols-[minmax(0,1fr)_220px_auto] xl:items-center">
       <Input
         aria-label="Buscar unidades"
+        maxLength={TEXT_LIMITS.search}
         onChange={(event) => onSearchChange(event.target.value)}
         placeholder="Buscar por nombre o simbolo..."
         type="search"
@@ -766,6 +768,7 @@ function UnitForm({
       <Field error={errors.name} id="unit-name" label="Nombre *">
         <Input
           id="unit-name"
+          maxLength={TEXT_LIMITS.unitName}
           onChange={(event) => update({ name: event.target.value })}
           value={value.name}
         />
@@ -773,6 +776,7 @@ function UnitForm({
       <Field error={errors.symbol} id="unit-symbol" label="Simbolo *">
         <Input
           id="unit-symbol"
+          maxLength={TEXT_LIMITS.unitSymbol}
           onChange={(event) => update({ symbol: event.target.value })}
           placeholder="kg"
           value={value.symbol}
