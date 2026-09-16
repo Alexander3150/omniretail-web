@@ -5,6 +5,7 @@ export interface CustomerOrderDetailDto {
   orderNumber: string;
   status: OrderStatus;
   createdAt: string;
+  trackingToken: string;
   subtotal: number;
   shippingTotal: number;
   total: number;
@@ -27,6 +28,7 @@ export function toCustomerOrderDetailDto(order: Order, payment?: Payment): Custo
     orderNumber: order.orderNumber,
     status: order.status,
     createdAt: order.createdAt,
+    trackingToken: order.trackingToken,
     subtotal: order.subtotal,
     shippingTotal: order.shippingTotal,
     total: order.total,

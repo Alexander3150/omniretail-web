@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useVerifyEmail } from "@/modules/auth/hooks/useVerifyEmail";
+import { BrandMark } from "@/shared/components/BrandMark";
 import { Button } from "@/shared/components/Button";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 
@@ -11,7 +12,7 @@ export function VerifyEmailPage({ token }: { token: string }) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[var(--color-app-background)] px-6 py-10">
       <section className="w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center">
-        <p className="text-sm font-semibold uppercase text-[var(--color-text-muted)]">OmniRetail</p>
+        <BrandMark className="justify-center" />
 
         {state === "loading" ? (
           <p className="mt-4 text-sm text-[var(--color-text-muted)]">Verificando tu cuenta...</p>

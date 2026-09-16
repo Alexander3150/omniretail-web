@@ -8,6 +8,7 @@ import {
   validateProfileForm,
   type ProfileValidationErrors,
 } from "@/modules/customer/validation/profile.validation";
+import { TEXT_FIELD_POLICY } from "@/config/text-field-policy";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
@@ -15,6 +16,12 @@ import { PageHeader } from "@/shared/components/PageHeader";
 import { useToast } from "@/shared/components/Toast";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useRouter } from "next/navigation";
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "");
+  return initials.join("") || "?";
+}
 
 export function PerfilPage() {
   const { customer, email, loading, saving, error, update } = useCustomerProfile();
@@ -77,7 +84,7 @@ export function PerfilPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full max-w-lg space-y-5">
       <PageHeader
         description="Actualiza tu nombre y teléfono de contacto."
         title="Datos personales"
@@ -104,7 +111,22 @@ export function PerfilPage() {
           Cargando perfil...
         </div>
       ) : (
-        <div className="max-w-lg space-y-8">
+        <div className="space-y-6">
+          <div className="flex items-center gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-primary)]/5 p-5 shadow-sm">
+            <span
+              aria-hidden="true"
+              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[var(--color-structure)] text-lg font-bold text-white"
+            >
+              {getInitials(customer?.name ?? "")}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate font-semibold text-[var(--color-title)]">
+                {customer?.name || "Tu perfil"}
+              </p>
+              <p className="truncate text-sm text-[var(--color-text-muted)]">{email}</p>
+            </div>
+          </div>
+
           <form
             className="space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
             noValidate
@@ -129,6 +151,7 @@ export function PerfilPage() {
               <Input
                 disabled={saving}
                 id="profile-name"
+                maxLength={TEXT_FIELD_POLICY.NAME_MAX_LENGTH}
                 onChange={(event) => setName(event.target.value)}
                 readOnly={!isEditing}
                 value={name}

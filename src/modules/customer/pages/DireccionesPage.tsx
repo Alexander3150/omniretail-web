@@ -17,6 +17,7 @@ import {
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { FormField } from "@/shared/components/FormField";
+import { MapPinIcon } from "@/shared/components/icons";
 import { Input } from "@/shared/components/Input";
 import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
@@ -165,9 +166,17 @@ export function DireccionesPage() {
               key={address.id}
             >
               <div className="flex items-start justify-between gap-2">
-                <h2 className="font-semibold text-[var(--color-title)]">{address.label}</h2>
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    aria-hidden="true"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-structure)]"
+                  >
+                    <MapPinIcon className="h-4 w-4" />
+                  </span>
+                  <h2 className="truncate font-semibold text-[var(--color-title)]">{address.label}</h2>
+                </div>
                 {address.isDefault ? (
-                  <span className="rounded-md bg-[var(--color-primary)]/10 px-2 py-1 text-xs font-semibold text-[var(--color-primary)]">
+                  <span className="shrink-0 rounded-md bg-[var(--color-success)]/10 px-2 py-1 text-xs font-semibold text-[var(--color-success)]">
                     Predeterminada
                   </span>
                 ) : null}
@@ -238,10 +247,10 @@ export function DireccionesPage() {
             <Input
               disabled={busy}
               id="address-recipient"
+              maxLength={DELIVERY_ADDRESS_LIMITS.recipientName}
               onChange={(event) =>
                 setForm((prev) => ({ ...prev, recipientName: sanitizeRecipientName(event.target.value) }))
               }
-              maxLength={DELIVERY_ADDRESS_LIMITS.recipientName}
               value={form.recipientName}
             />
           </FormField>
