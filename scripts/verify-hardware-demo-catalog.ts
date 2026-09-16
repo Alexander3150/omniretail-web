@@ -13,6 +13,7 @@ import { MockInventoryRepository } from "@/infrastructure/mock/repositories/Mock
 import { MockProductKitComponentRepository } from "@/infrastructure/mock/repositories/MockProductKitComponentRepository";
 import { MockProductMediaRepository } from "@/infrastructure/mock/repositories/MockProductMediaRepository";
 import { MockProductRepository } from "@/infrastructure/mock/repositories/MockProductRepository";
+import { MockUnitRepository } from "@/infrastructure/mock/repositories/MockUnitRepository";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import { GetStorefrontDiscoveryService } from "@/modules/storefront/application/services/GetStorefrontDiscoveryService";
@@ -174,6 +175,7 @@ async function main(): Promise<void> {
     businessConfig: new MockBusinessConfigRepository(store, eventBus),
     inventory: new MockInventoryRepository(store, eventBus),
     productKitComponents: new MockProductKitComponentRepository(store, eventBus),
+    units: new MockUnitRepository(store, eventBus),
   } as unknown as RepositoryRegistry;
 
   assert.equal(db.categories.length, 10, "A: deben existir 10 categorías");
@@ -310,10 +312,32 @@ async function main(): Promise<void> {
   );
 
   const storefront = new GetStorefrontDiscoveryService(repositories);
+  const tenantUnits = await repositories.units.getByTenant(TENANT_ID);
+  const expectedTenantUnits = db.units.filter((unit) => unit.tenantId === TENANT_ID);
+  assert.deepEqual(
+    tenantUnits.map(({ id }) => id),
+    expectedTenantUnits.map(({ id }) => id),
+    "V: Storefront debe cargar todas y solo las unidades del tenant",
+  );
+  assert.ok(
+    tenantUnits.length > 0 && tenantUnits.every((unit) => unit.tenantId === TENANT_ID),
+    "V: Storefront debe cargar unidades del tenant correcto",
+  );
   const discovery = await storefront.execute(TENANT_ID);
   assert.equal(discovery.products.length, 30, "V: Ecommerce debe descubrir los 30 productos Web");
   assert.equal(discovery.categories.length, 10, "W: Ecommerce debe descubrir las 10 categorías");
   assert.ok(discovery.products.every(({ imageSource }) => imageSource?.kind === "url"));
+  const tenantUnitsById = new Map(tenantUnits.map((unit) => [unit.id, unit]));
+  const productsBySku = new Map(db.products.map((product) => [product.sku, product]));
+  discovery.products.forEach((product) => {
+    const sourceProduct = productsBySku.get(product.sku);
+    assert.ok(sourceProduct, `V: producto Storefront sin origen ${product.sku}`);
+    const expectedSaleUnitId = sourceProduct.saleUnitId ?? sourceProduct.baseUnitId;
+    const expectedSaleUnit = tenantUnitsById.get(expectedSaleUnitId);
+    assert.ok(expectedSaleUnit, `V: unidad de venta fuera del tenant ${product.sku}`);
+    assert.equal(product.saleUnitId, expectedSaleUnit.id, `V: unit mapping ${product.sku}`);
+    assert.equal(product.saleUnitName, expectedSaleUnit.name, `V: unit name ${product.sku}`);
+  });
   const soldOutGrinder = discovery.products.find((item) => item.sku === "HER-ELE-002");
   assert.ok(soldOutGrinder, "V: Producto agotado debe continuar visible en ecommerce");
   assert.equal(soldOutGrinder.availableQuantity, 0, "V: Producto agotado debe informar disponibilidad cero");
