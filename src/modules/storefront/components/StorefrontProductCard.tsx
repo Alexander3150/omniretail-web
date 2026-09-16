@@ -6,22 +6,31 @@ import { useToast } from "@/shared/components/Toast";
 import type { StorefrontDiscoveryProductDto } from "@/modules/storefront/application/dto/StorefrontDiscoveryDto";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
 import { StorefrontCatalogImage } from "@/modules/storefront/components/StorefrontCatalogImage";
+import { StorefrontUnavailableQuantityModal } from "@/modules/storefront/components/StorefrontUnavailableQuantityModal";
 
 export function StorefrontProductCard({
   product,
   compact = false,
+  uniformHeight = false,
   offer,
 }: {
   product: StorefrontDiscoveryProductDto;
   compact?: boolean;
+  uniformHeight?: boolean;
   offer?: { originalPrice: number; promotionName: string };
 }) {
-  const { addProduct } = useStorefrontCart();
+  const { addProduct, items } = useStorefrontCart();
   const [added, setAdded] = useState(false);
+  const [unavailableQuantityModalOpen, setUnavailableQuantityModalOpen] = useState(false);
   const { showToast } = useToast();
   const isOutOfStock = product.availableQuantity !== null && product.availableQuantity <= 0;
   const add = async () => {
     if (isOutOfStock) return;
+    const quantityInCart = items.find((item) => item.productId === product.id)?.quantity ?? 0;
+    if (product.availableQuantity !== null && quantityInCart >= product.availableQuantity) {
+      setUnavailableQuantityModalOpen(true);
+      return;
+    }
     await addProduct(product.id);
     setAdded(true);
     showToast({
@@ -32,8 +41,9 @@ export function StorefrontProductCard({
     window.setTimeout(() => setAdded(false), 1400);
   };
   return (
-    <article className="group overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-[var(--color-title)]/10">
-      <Link className="block text-left" href={`/catalogo/${product.id}`}>
+    <>
+    <article className={`group overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-[var(--color-title)]/10 ${uniformHeight ? "flex h-full min-h-[31rem] flex-col" : ""}`}>
+      <Link className={uniformHeight ? "flex min-h-0 flex-1 flex-col text-left" : "block text-left"} href={`/catalogo/${product.id}`}>
         <div className="relative">
           <StorefrontCatalogImage
             alt={product.imageAlt ?? product.name}
@@ -51,7 +61,7 @@ export function StorefrontProductCard({
             </span>
           ) : null}
         </div>
-        <div className={`${compact ? "p-4 pb-2" : "p-5 pb-3"}`}>
+        <div className={`${uniformHeight ? "flex flex-1 flex-col " : ""}${compact ? "p-4 pb-2" : "p-5 pb-3"}`}>
           {product.categoryName ? (
             <p className="text-xs font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">
               {product.categoryName}
@@ -65,11 +75,11 @@ export function StorefrontProductCard({
             </div>
           ) : null}
           <p className="mt-1 text-xs text-[var(--color-text-muted)]">Código · {product.sku}</p>
-          <h2 className="mt-2 line-clamp-2 text-lg font-bold text-[var(--color-text)]">
+          <h2 className={`mt-2 line-clamp-2 text-lg font-bold text-[var(--color-text)] ${uniformHeight ? "min-h-[3.5rem] leading-7" : ""}`}>
             {product.name}
           </h2>
           {!compact ? (
-            <p className="mt-2 line-clamp-2 text-sm leading-5 text-[var(--color-text-muted)]">
+            <p className={`mt-2 line-clamp-2 text-sm leading-5 text-[var(--color-text-muted)] ${uniformHeight ? "min-h-10" : ""}`}>
               {product.description ?? "Sin descripción disponible."}
             </p>
           ) : null}
@@ -102,5 +112,10 @@ export function StorefrontProductCard({
         </button>
       </div>
     </article>
+    <StorefrontUnavailableQuantityModal
+      onClose={() => setUnavailableQuantityModalOpen(false)}
+      open={unavailableQuantityModalOpen}
+    />
+    </>
   );
 }

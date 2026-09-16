@@ -4,9 +4,14 @@ import {
   POSTAL_CODE_PATTERN,
 } from "@/config/guatemala-locations";
 import type { AddressFormDto } from "@/modules/customer/application/dto/AddressFormDto";
+import {
+  DELIVERY_ADDRESS_LIMITS,
+  isValidDeliveryAddress,
+  isValidRecipientName,
+} from "@/config/delivery-address-policy";
 
 export type AddressValidationErrors = Partial<
-  Record<"label" | "recipientName" | "line1" | "city" | "stateOrDepartment" | "postalCode", string>
+  Record<"label" | "recipientName" | "line1" | "line2" | "references" | "city" | "stateOrDepartment" | "postalCode", string>
 >;
 
 /**
@@ -27,12 +32,24 @@ export function validateAddressForm(dto: AddressFormDto): AddressValidationError
 
   if (!dto.label.trim()) {
     errors.label = "El nombre de la dirección es obligatorio.";
+  } else if (dto.label.trim().length > DELIVERY_ADDRESS_LIMITS.label) {
+    errors.label = `El nombre de la dirección no puede superar ${DELIVERY_ADDRESS_LIMITS.label} caracteres.`;
   }
   if (!dto.recipientName.trim()) {
     errors.recipientName = "El destinatario es obligatorio.";
+  } else if (!isValidRecipientName(dto.recipientName)) {
+    errors.recipientName = `El destinatario permite letras, espacios, apóstrofes y guiones; máximo ${DELIVERY_ADDRESS_LIMITS.recipientName} caracteres.`;
   }
   if (!dto.line1.trim()) {
     errors.line1 = "La dirección es obligatoria.";
+  } else if (!isValidDeliveryAddress(dto.line1, "line1")) {
+    errors.line1 = `La dirección permite letras, números, puntos y guiones; máximo ${DELIVERY_ADDRESS_LIMITS.line1} caracteres.`;
+  }
+  if (dto.line2 && !isValidDeliveryAddress(dto.line2, "line2")) {
+    errors.line2 = `El complemento permite solo letras, números y espacios; máximo ${DELIVERY_ADDRESS_LIMITS.line2} caracteres.`;
+  }
+  if (dto.references && !isValidDeliveryAddress(dto.references, "references")) {
+    errors.references = `Las referencias permiten letras, números, espacios y comas; máximo ${DELIVERY_ADDRESS_LIMITS.references} caracteres.`;
   }
 
   const stateOrDepartment = dto.stateOrDepartment.trim();

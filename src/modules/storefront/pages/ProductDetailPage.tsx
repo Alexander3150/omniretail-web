@@ -6,15 +6,19 @@ import { StorefrontAvailability } from "@/modules/storefront/components/Storefro
 import { useStorefrontProductDetail } from "@/modules/storefront/hooks/useStorefrontProductDetail";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
 import { useToast } from "@/shared/components/Toast";
+import { StorefrontUnavailableQuantityModal } from "@/modules/storefront/components/StorefrontUnavailableQuantityModal";
 import { StorefrontCatalogImage } from "@/modules/storefront/components/StorefrontCatalogImage";
 import { ProductType } from "@/core/enums";
+import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
 
 export function ProductDetailPage({ productId }: { productId: string }) {
   const { data, loading, error, reload } = useStorefrontProductDetail(productId);
-  const { addProduct } = useStorefrontCart();
+  const { addProduct, items } = useStorefrontCart();
+  const { products } = useStorefrontDiscovery();
   const { showToast } = useToast();
   const [quantity, setQuantity] = useState(1);
   const [addedQuantity, setAddedQuantity] = useState<number | null>(null);
+  const [unavailableQuantityModalOpen, setUnavailableQuantityModalOpen] = useState(false);
   if (loading)
     return (
       <main className="mx-auto max-w-5xl px-5 py-12 text-[var(--color-text-muted)]">
@@ -46,10 +50,36 @@ export function ProductDetailPage({ productId }: { productId: string }) {
       </main>
     );
   const { product, availability, categoryName, media, attributes } = data;
+  const availableQuantity = products.find((item) => item.id === product.id)?.availableQuantity;
+  const quantityAlreadyInCart = items.find((item) => item.productId === product.id)?.quantity ?? 0;
   const isOutOfStock =
-    product.productType !== ProductType.service && Boolean(availability?.length) && !availability!.some((branch) => branch.available);
+    availableQuantity === 0 ||
+    (availableQuantity === undefined &&
+      product.productType !== ProductType.service &&
+      Boolean(availability?.length) &&
+      !availability!.some((branch) => branch.available));
+  const notifyUnavailableQuantity = () => setUnavailableQuantityModalOpen(true);
+  const increaseQuantity = () => {
+    if (
+      availableQuantity !== undefined &&
+      availableQuantity !== null &&
+      quantityAlreadyInCart + quantity >= availableQuantity
+    ) {
+      notifyUnavailableQuantity();
+      return;
+    }
+    setQuantity((current) => current + 1);
+  };
   const addToCart = async () => {
     if (isOutOfStock) return;
+    if (
+      availableQuantity !== undefined &&
+      availableQuantity !== null &&
+      quantityAlreadyInCart + quantity > availableQuantity
+    ) {
+      notifyUnavailableQuantity();
+      return;
+    }
     await Promise.all(Array.from({ length: quantity }, () => addProduct(product.id)));
     setAddedQuantity(quantity);
     showToast({
@@ -120,7 +150,7 @@ export function ProductDetailPage({ productId }: { productId: string }) {
                   aria-label="Aumentar cantidad"
                   className="px-4 text-xl font-bold text-[var(--color-title)] disabled:opacity-40"
                   disabled={isOutOfStock}
-                  onClick={() => setQuantity((current) => current + 1)}
+                  onClick={increaseQuantity}
                   type="button"
                 >
                   +
@@ -174,6 +204,10 @@ export function ProductDetailPage({ productId }: { productId: string }) {
         </details>
       ) : null}
       {availability ? <StorefrontAvailability branches={availability} /> : null}
+      <StorefrontUnavailableQuantityModal
+        onClose={() => setUnavailableQuantityModalOpen(false)}
+        open={unavailableQuantityModalOpen}
+      />
     </main>
   );
 }
