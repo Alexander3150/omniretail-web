@@ -4,6 +4,13 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import type { AdjustStockDto } from "@/modules/inventory/application/dto/InventoryAlertsDto";
 import { toBaseQuantity } from "@/core/units";
 import {
+  ensureCanCreateAdjustment,
+  ensureProductBelongsToTenant,
+  ensureUserCanOperateInventoryBranch,
+  InventoryServiceError,
+  resolveInventoryContext,
+} from "@/modules/inventory/application/services/serviceHelpers";
+import {
   EXPIRATION_BEFORE_ENTRY_MESSAGE,
   getLocalCalendarDate,
   isExpirationBeforeOperationDate,
@@ -18,11 +25,25 @@ export class RegisterInventoryAdjustmentService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(dto: AdjustStockDto): Promise<RegisterInventoryAdjustmentResult> {
-    const product = await this.repositories.products.getById(dto.productId);
-    if (!product) throw new Error("Producto no encontrado.");
+    const { tenantId, actorUserId, user, permissions } = await resolveInventoryContext(
+      this.repositories,
+    );
+    ensureCanCreateAdjustment(permissions);
+    const product = ensureProductBelongsToTenant(
+      await this.repositories.products.getById(dto.productId),
+      tenantId,
+    );
+    await ensureUserCanOperateInventoryBranch(this.repositories, user, dto.branchId);
     const reason = dto.reason.trim();
     if (!reason) throw new Error("El motivo es requerido.");
     if (!dto.locationId) throw new Error("Selecciona una ubicacion.");
+    const branchLocations = await this.repositories.inventory.getLocations(dto.branchId);
+    const location = branchLocations.find((item) => item.id === dto.locationId);
+    if (!location || location.tenantId !== tenantId) {
+      throw new InventoryServiceError(
+        "La ubicación seleccionada no está disponible para esta sucursal.",
+      );
+    }
     if (!Number.isFinite(dto.quantity) || dto.quantity < 0) {
       throw new Error("Ingresa una cantidad valida.");
     }
@@ -92,7 +113,7 @@ export class RegisterInventoryAdjustmentService {
 
     const adjustmentType = getInventoryAdjustmentType(canonicalDto.movementKind);
     const result = await this.repositories.inventoryAdjustments.registerStockAdjustment({
-      tenantId: product.tenantId,
+      tenantId,
       branchId: dto.branchId,
       productId: dto.productId,
       locationId: dto.locationId,
@@ -101,7 +122,7 @@ export class RegisterInventoryAdjustmentService {
       notes: dto.notes?.trim() || undefined,
       quantityBefore,
       quantityAfter,
-      performedByUserId: dto.performedByUserId,
+      performedByUserId: actorUserId,
       lotId: dto.lotId,
       lotNumber: dto.lotNumber,
       expirationDate: dto.expirationDate,

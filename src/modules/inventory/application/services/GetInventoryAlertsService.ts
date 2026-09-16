@@ -16,6 +16,7 @@ import {
 } from "@/core/inventory/stockAvailability";
 import { getCanonicalProductAvailability } from "@/core/inventory/canonicalAvailability";
 import { fromBaseQuantity, resolveUnitConversion } from "@/core/units";
+import { canUserOperateBranch } from "@/core/scopes/userBranchAccess";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   InventoryAlert,
@@ -26,6 +27,11 @@ import type {
   InventoryTransferRequestRow,
   ProductWithStock,
 } from "@/modules/inventory/application/dto/InventoryAlertsDto";
+import {
+  ensureCanReadStock,
+  ensureUserCanOperateInventoryBranch,
+  resolveInventoryContext,
+} from "@/modules/inventory/application/services/serviceHelpers";
 
 const EXPIRING_SOON_DAYS = 30;
 const NEAR_MINIMUM_RATIO = 1.25;
@@ -35,12 +41,16 @@ export class GetInventoryAlertsService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(branchId: string): Promise<InventoryAlertsData> {
+    const { tenantId, user, permissions } = await resolveInventoryContext(this.repositories);
+    ensureCanReadStock(permissions);
+    await ensureUserCanOperateInventoryBranch(this.repositories, user, branchId);
+
     const [
       products,
       branches,
       categories,
       units,
-      locations,
+      allLocations,
       balances,
       receivedTransferRequests,
       approvedTransferResponses,
@@ -54,31 +64,32 @@ export class GetInventoryAlertsService {
       this.repositories.inventory.getLocations(),
       this.repositories.inventory.getBalances(),
       this.repositories.inventoryTransferRequests.getRequests({
+        tenantId,
         sourceBranchId: branchId,
         status: InventoryTransferRequestStatus.requested,
       }),
       this.repositories.inventoryTransferRequests.getRequests({
+        tenantId,
         requestingBranchId: branchId,
         status: InventoryTransferRequestStatus.approved,
       }),
       this.repositories.inventoryTransferRequests.getRequests({
+        tenantId,
         requestingBranchId: branchId,
         status: InventoryTransferRequestStatus.rejected,
       }),
       this.repositories.inventory.getSerialNumbers(),
     ]);
-    const activeBranch = branches.find((branch) => branch.id === branchId);
-    const tenantProducts = activeBranch
-      ? products.filter((product) => product.tenantId === activeBranch.tenantId)
-      : products;
+    const tenantBranches = branches.filter((branch) => branch.tenantId === tenantId);
+    const visibleBranches = tenantBranches.filter((branch) => canUserOperateBranch(user, branch));
+    const tenantLocations = allLocations.filter((location) => location.tenantId === tenantId);
+    const tenantProducts = products.filter((product) => product.tenantId === tenantId);
     const branchProducts = tenantProducts.filter(isOperationalStockProduct);
     const kits = tenantProducts.filter(
       (product) =>
         product.status === ProductStatus.published && product.productType === ProductType.kit,
     );
-    const capabilities = activeBranch
-      ? await this.repositories.businessConfig.getCapabilities(activeBranch.tenantId)
-      : null;
+    const capabilities = await this.repositories.businessConfig.getCapabilities(tenantId);
     const visibility = getVisibilityFlags(
       capabilities?.supportsExpiration ?? false,
       tenantProducts,
@@ -98,10 +109,10 @@ export class GetInventoryAlertsService {
       ),
     );
     const maps: InventoryLookupMaps = {
-      branches: new Map(branches.map((branch) => [branch.id, branch])),
+      branches: new Map(tenantBranches.map((branch) => [branch.id, branch])),
       categories: new Map(categories.map((category) => [category.id, category])),
       units: new Map(units.map((unit) => [unit.id, unit])),
-      locations: new Map(locations.map((location) => [location.id, location])),
+      locations: new Map(tenantLocations.map((location) => [location.id, location])),
       settingsByProduct: new Map(settingsEntries),
       lotsByProduct: groupLotsByProduct(lots.filter((lot) => lot.branchId === branchId)),
     };
@@ -117,7 +128,7 @@ export class GetInventoryAlertsService {
           balances,
           lots,
           serials,
-          locations,
+          locations: tenantLocations,
           at: availabilityAt,
         }),
       ]),
@@ -175,9 +186,9 @@ export class GetInventoryAlertsService {
         ),
       ],
       visibility,
-      branches,
+      branches: visibleBranches,
       categories,
-      locations,
+      locations: tenantLocations,
       kpis: {
         activeProducts: rows.length,
         lowStock: rows.filter((row) => row.status === "critical" || row.status === "near_minimum")

@@ -20,6 +20,12 @@ export const inventoryPermissions = [
     description: "Permite consultar movimientos.",
   },
   {
+    key: "inventory.transfers.manage",
+    module: "inventory",
+    name: "Gestionar traslados",
+    description: "Permite solicitar, aprobar y rechazar traslados de inventario.",
+  },
+  {
     key: "inventory.locations.manage",
     module: "inventory",
     name: "Gestionar ubicaciones",

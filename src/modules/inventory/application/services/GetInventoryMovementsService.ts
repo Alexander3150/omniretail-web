@@ -1,19 +1,31 @@
 import type { InventoryAdjustment, InventoryMovement } from "@/core/entities";
 import { InventoryAdjustmentType, InventoryMovementType } from "@/core/enums";
 import type { InventoryTransferWithItems } from "@/core/repositories";
+import { canUserOperateBranch } from "@/core/scopes/userBranchAccess";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   InventoryMovementRow,
   InventoryMovementsData,
 } from "@/modules/inventory/application/dto/InventoryMovementsDto";
+import {
+  ensureCanReadMovements,
+  ensureUserCanOperateInventoryBranch,
+  resolveInventoryContext,
+} from "@/modules/inventory/application/services/serviceHelpers";
 
 export class GetInventoryMovementsService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(activeBranchId?: string): Promise<InventoryMovementsData> {
+    const { tenantId, user, permissions } = await resolveInventoryContext(this.repositories);
+    ensureCanReadMovements(permissions);
     const branches = await this.repositories.branches.getAll();
-    const activeBranch = branches.find((branch) => branch.id === activeBranchId);
-    const tenantId = activeBranch?.tenantId;
+    const tenantBranches = branches.filter((branch) => branch.tenantId === tenantId);
+    const visibleBranches = tenantBranches.filter((branch) => canUserOperateBranch(user, branch));
+    const visibleBranchIds = new Set(visibleBranches.map((branch) => branch.id));
+    if (activeBranchId && activeBranchId !== "all") {
+      await ensureUserCanOperateInventoryBranch(this.repositories, user, activeBranchId);
+    }
     const [
       movements,
       products,
@@ -35,7 +47,7 @@ export class GetInventoryMovementsService {
       this.repositories.users.getAll(),
       this.repositories.purchaseOrders.getAll(),
       this.repositories.receipts.getAll(),
-      this.repositories.dispatches.getAll({ tenantId: tenantId ?? "" }),
+      this.repositories.dispatches.getAll({ tenantId }),
       this.repositories.orders.getAll(),
       this.repositories.sales.getAll(),
       this.repositories.inventoryAdjustments.query(),
@@ -62,7 +74,12 @@ export class GetInventoryMovementsService {
     const transferById = new Map(inventoryTransfers.map((entry) => [entry.transfer.id, entry]));
 
     const rows = movements
-      .filter((movement) => !tenantId || movement.tenantId === tenantId)
+      .filter((movement) => movement.tenantId === tenantId)
+      .filter((movement) =>
+        activeBranchId && activeBranchId !== "all"
+          ? movement.branchId === activeBranchId
+          : visibleBranchIds.has(movement.branchId),
+      )
       .map<InventoryMovementRow>((movement) => {
         const product = productById.get(movement.productId);
         const branch = branchById.get(movement.branchId);
@@ -122,8 +139,7 @@ export class GetInventoryMovementsService {
 
     return {
       rows,
-      branches: branches
-        .filter((branch) => !tenantId || branch.tenantId === tenantId)
+      branches: visibleBranches
         .map((branch) => ({ id: branch.id, name: branch.name }))
         .sort((left, right) => left.name.localeCompare(right.name)),
     };
