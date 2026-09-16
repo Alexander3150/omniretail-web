@@ -1,5 +1,5 @@
 import type { Notification, Order, Package, PickingOrder } from "@/core/entities";
-import { DeliveryMethod, OrderStatus, PickingStatus } from "@/core/enums";
+import { DeliveryMethod, OrderStatus, PackingStatus, PickingStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   ConfirmDispatchCommand,
@@ -20,7 +20,7 @@ const DISPATCH_CONFIRM = "logistics.dispatch.confirm";
 
 type DispatchRepositories = Pick<
   RepositoryRegistry,
-  "auth" | "users" | "roles" | "branches" | "orders" | "picking" | "dispatches" | "notifications"
+  "auth" | "users" | "roles" | "branches" | "orders" | "picking" | "packings" | "dispatches" | "notifications"
 >;
 
 export class DispatchApplicationService {
@@ -64,6 +64,7 @@ export class DispatchApplicationService {
       throw new Error(`Order is not available in dispatch detail: ${order.id}`);
     }
     const picking = await this.requireCompletedPicking(context, order.id);
+    await this.requireFinalizedPacking(context, order.id);
     const dispatch = await this.repositories.dispatches.getByOrder(context, order.id);
     const packages = dispatch
       ? await this.repositories.dispatches.getPackagesByDispatch(context, dispatch.id)
@@ -104,7 +105,6 @@ export class DispatchApplicationService {
       operationId: command.operationId,
       carrierName: command.carrierName,
       trackingNumber: command.trackingNumber,
-      packages: command.packages,
     });
     if (!result.dispatch.dispatchedAt) throw new Error("Confirmed Dispatch has no dispatchedAt");
     return {
@@ -199,8 +199,20 @@ export class DispatchApplicationService {
     context: { tenantId: string; branchId: string },
     order: Order,
   ): Promise<PreparedOrderQueueItemDto> {
+    await this.requireFinalizedPacking(context, order.id);
     const picking = await this.requireCompletedPicking(context, order.id);
     return toPreparedItem(order, picking);
+  }
+
+  private async requireFinalizedPacking(
+    context: { tenantId: string; branchId: string },
+    orderId: string,
+  ) {
+    const packing = await this.repositories.packings.getByOrder(context, orderId);
+    if (!packing || packing.status !== PackingStatus.finalized || !packing.finalizedAt) {
+      throw new Error(`Packing is not finalized for Order: ${orderId}`);
+    }
+    return packing;
   }
 }
 

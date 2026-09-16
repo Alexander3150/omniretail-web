@@ -1,4 +1,5 @@
-import type { PickingIncidentType, PickingItemStatus } from "@/core/enums";
+import { DeliveryMethod, type PickingIncidentType, type PickingItemStatus } from "@/core/enums";
+import type { Order } from "@/core/entities";
 import type { UpdatePickingItemInput } from "@/core/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
@@ -18,7 +19,15 @@ const PICKING_COMPLETE = "logistics.picking.complete";
 
 type PickingRepositories = Pick<
   RepositoryRegistry,
-  "auth" | "users" | "roles" | "branches" | "picking" | "orders" | "products" | "inventory"
+  | "auth"
+  | "users"
+  | "roles"
+  | "branches"
+  | "customers"
+  | "picking"
+  | "orders"
+  | "products"
+  | "inventory"
 >;
 
 export type PickingLineUpdateCommand = {
@@ -57,10 +66,14 @@ export class PickingApplicationService {
         if (!order || order.tenantId !== context.tenantId || order.branchId !== context.branchId) {
           throw new Error(`Order context conflict for PickingOrder: ${pickingOrder.id}`);
         }
+        const customerName = await this.resolveCustomerName(order, context.tenantId);
         return {
           pickingOrderId: pickingOrder.id,
           orderId: order.id,
           orderReference: order.orderNumber,
+          customerName,
+          storePickupContact: getStorePickupContact(order),
+          deliveryMethod: order.deliveryMethod,
           branchId: pickingOrder.branchId,
           status: pickingOrder.status,
           priority: pickingOrder.priority,
@@ -223,6 +236,7 @@ export class PickingApplicationService {
     if (!order || order.tenantId !== scope.tenantId || order.branchId !== scope.branchId) {
       throw new Error(`Order context conflict for PickingOrder: ${pickingOrderId}`);
     }
+    const customerName = await this.resolveCustomerName(order, scope.tenantId);
     const detailLines = await Promise.all(
       lines.map(async (line): Promise<PickingDetailLineDto> => {
         const product = await this.repositories.products.getById(line.productId);
@@ -281,8 +295,12 @@ export class PickingApplicationService {
       pickingOrderId: pickingOrder.id,
       orderId: order.id,
       orderReference: order.orderNumber,
+      customerName,
+      storePickupContact: getStorePickupContact(order),
+      deliveryMethod: order.deliveryMethod,
       branchId: pickingOrder.branchId,
       status: pickingOrder.status,
+      priority: pickingOrder.priority,
       assignedUserId: pickingOrder.assignedUserId ?? null,
       progress: getProgress(lines),
       startedAt: pickingOrder.startedAt ?? null,
@@ -294,6 +312,24 @@ export class PickingApplicationService {
       releases: releases.map(toReleaseDto),
     };
   }
+
+  private async resolveCustomerName(order: Order, tenantId: string): Promise<string> {
+    if (order.deliveryMethod === DeliveryMethod.store_pickup && order.storePickupContact) {
+      return order.storePickupContact.recipientName.trim();
+    }
+    const guestName = order.guestCustomer?.name.trim();
+    if (guestName) return guestName;
+    if (!order.customerId) return "Consumidor final";
+    const customer = await this.repositories.customers.getById(order.customerId);
+    if (!customer || customer.tenantId !== tenantId) return "Cliente no disponible";
+    return customer.name.trim() || "Cliente no disponible";
+  }
+}
+
+function getStorePickupContact(order: Order) {
+  return order.deliveryMethod === DeliveryMethod.store_pickup && order.storePickupContact
+    ? { ...order.storePickupContact }
+    : null;
 }
 
 function getProgress(

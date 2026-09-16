@@ -1,7 +1,7 @@
 import { OrderStatus } from "@/core/enums";
 
 export type OrderCreationMethod = "create" | "createWithPayment";
-export type OrderTransitionOwner = "generic" | "picking" | "dispatch" | "storePickup";
+export type OrderTransitionOwner = "generic" | "picking" | "packing" | "dispatch" | "storePickup";
 
 const allowedInitialStatuses: Record<OrderCreationMethod, ReadonlySet<OrderStatus>> = {
   create: new Set([OrderStatus.pending, OrderStatus.confirmed]),
@@ -18,8 +18,11 @@ const transitions: Record<OrderTransitionOwner, ReadonlySet<string>> = {
   picking: new Set([
     transition(OrderStatus.confirmed, OrderStatus.preparing),
     transition(OrderStatus.preparing, OrderStatus.picking),
-    transition(OrderStatus.picking, OrderStatus.ready_for_dispatch),
-    transition(OrderStatus.picking, OrderStatus.ready_for_pickup),
+    transition(OrderStatus.picking, OrderStatus.packing),
+  ]),
+  packing: new Set([
+    transition(OrderStatus.packing, OrderStatus.ready_for_dispatch),
+    transition(OrderStatus.packing, OrderStatus.ready_for_pickup),
   ]),
   dispatch: new Set([
     transition(OrderStatus.ready_for_dispatch, OrderStatus.dispatched),

@@ -7,6 +7,7 @@ import {
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  PackingStatus,
   PickingPriority,
   PickingStatus,
   TransportMode,
@@ -19,6 +20,7 @@ import {
   MockDispatchRepository,
   MockNotificationRepository,
   MockOrderRepository,
+  MockPackingRepository,
   MockPickingRepository,
   MockRoleRepository,
   MockUserRepository,
@@ -44,6 +46,7 @@ async function main() {
   prepareDatabase(store);
   const orders = new MockOrderRepository(store, eventBus);
   const picking = new MockPickingRepository(store, eventBus);
+  const packings = new MockPackingRepository(store, eventBus);
   const dispatches = new MockDispatchRepository(store, eventBus);
   const notifications = new MockNotificationRepository(store, eventBus);
   const auth = {
@@ -63,6 +66,7 @@ async function main() {
     dispatches,
     notifications,
     orders,
+    packings,
     picking,
     roles: new MockRoleRepository(store, eventBus),
     users: new MockUserRepository(store, eventBus),
@@ -146,7 +150,7 @@ async function main() {
   );
 
   // E-H, I. Taking and first physical pick update Order in the same repository transaction.
-  const thirdParty = await prepareOrder(orders, picking, "third", {
+  const thirdParty = await prepareOrder(orders, picking, packings, "third", {
     deliveryMethod: DeliveryMethod.home_delivery,
     transportMode: TransportMode.third_party,
     notificationContact: { emailMode: "send", email: "shipment@example.com" },
@@ -160,7 +164,7 @@ async function main() {
     OrderStatus.ready_for_dispatch,
   );
 
-  const pickup = await prepareOrder(orders, picking, "pickup", {
+  const pickup = await prepareOrder(orders, picking, packings, "pickup", {
     deliveryMethod: DeliveryMethod.store_pickup,
     transportMode: TransportMode.customer,
     notificationContact: { emailMode: "not_applicable" },
@@ -344,7 +348,7 @@ async function main() {
     DispatchAuthorizationError,
   );
 
-  const notDispatched = await prepareOrder(orders, picking, "delivery-not-dispatched", {
+  const notDispatched = await prepareOrder(orders, picking, packings, "delivery-not-dispatched", {
     transportMode: TransportMode.own_fleet,
   });
   await assert.rejects(
@@ -372,7 +376,7 @@ async function main() {
     /Dispatch is not dispatched/,
   );
 
-  const ownFleet = await prepareOrder(orders, picking, "fleet", {
+  const ownFleet = await prepareOrder(orders, picking, packings, "fleet", {
     transportMode: TransportMode.own_fleet,
     notificationContact: { emailMode: "not_applicable" },
   });
@@ -385,9 +389,15 @@ async function main() {
   assert.equal(fleetResult.notification, null);
 
   for (const transportMode of [TransportMode.none, TransportMode.customer]) {
-    const unsupported = await prepareOrder(orders, picking, `unsupported-${transportMode}`, {
-      transportMode,
-    });
+    const unsupported = await prepareOrder(
+      orders,
+      picking,
+      packings,
+      `unsupported-${transportMode}`,
+      {
+        transportMode,
+      },
+    );
     await assert.rejects(
       service.confirm(branchId, {
         orderId: unsupported.completed.id,
@@ -397,7 +407,7 @@ async function main() {
     );
   }
 
-  const legacy = await prepareOrder(orders, picking, "legacy", {
+  const legacy = await prepareOrder(orders, picking, packings, "legacy", {
     transportMode: TransportMode.own_fleet,
   });
   const legacyResult = await service.confirm(branchId, {
@@ -422,13 +432,39 @@ async function main() {
   });
   await assert.rejects(
     service.confirm(branchId, { orderId: beforePicking.id, operationId: "too-early" }),
-    /Picking is not completed/,
+    /Packing not found/,
   );
   store.transact((db) => {
     const record = db.pickingOrders.find((item) => item.id === beforePickingRecord.id);
     assert.ok(record);
     record.status = PickingStatus.completed;
     record.completedAt = "2026-09-13T00:00:00.000Z";
+    db.packings.push({
+      id: "packing-pending-reservation",
+      tenantId,
+      branchId,
+      orderId: beforePicking.id,
+      pickingOrderId: record.id,
+      status: PackingStatus.finalized,
+      checklist: {
+        packageProtectionChecked: true,
+        documentIncludedChecked: true,
+        recipientVerifiedChecked: true,
+      },
+      totalWeight: 1,
+      packageCount: 1,
+      labelGenerationId: "pending-reservation-label",
+      labelCode: "PENDING-RESERVATION",
+      labelGeneratedAt: "2026-09-13T00:00:00.000Z",
+      labelPrintedAt: "2026-09-13T00:00:00.000Z",
+      startedByUserId: actorId,
+      finalizedByUserId: actorId,
+      startedAt: "2026-09-13T00:00:00.000Z",
+      finalizedAt: "2026-09-13T00:00:00.000Z",
+      version: 1,
+      createdAt: "2026-09-13T00:00:00.000Z",
+      updatedAt: "2026-09-13T00:00:00.000Z",
+    });
   });
   await assert.rejects(
     service.confirm(branchId, { orderId: beforePicking.id, operationId: "pending-reservation" }),
@@ -503,6 +539,8 @@ function prepareDatabase(store: MockDatabaseStore) {
     db.inventoryReservations = [];
     db.inventoryReservationConsumeOperations = [];
     db.inventoryMovements = [];
+    db.packings = [];
+    db.packingOperations = [];
     db.inventoryBalances.forEach((balance) => {
       balance.reservedQuantity = 0;
       if (balance.id === "bal-screws") balance.quantity = 100;
@@ -513,6 +551,9 @@ function prepareDatabase(store: MockDatabaseStore) {
       "logistics.picking.read",
       "logistics.picking.start",
       "logistics.picking.complete",
+      "logistics.packing.read",
+      "logistics.packing.prepare",
+      "logistics.packing.finalize",
       "logistics.dispatch.read",
       "logistics.dispatch.confirm",
     ];
@@ -522,6 +563,7 @@ function prepareDatabase(store: MockDatabaseStore) {
 async function prepareOrder(
   orders: MockOrderRepository,
   picking: MockPickingRepository,
+  packings: MockPackingRepository,
   suffix: string,
   options: {
     deliveryMethod?: DeliveryMethod;
@@ -536,7 +578,49 @@ async function prepareOrder(
     pickingOrderId: picked.pickingId,
     actorUserId: actorId,
   });
-  return { ...picked, completed: completed.order };
+  let prepared = await packings.savePreparation({
+    tenantId,
+    branchId,
+    actorUserId: actorId,
+    packingId: completed.packing.id,
+    operationId: `dispatch-packing-prepare-${suffix}`,
+    expectedVersion: completed.packing.version,
+    checklist: {
+      packageProtectionChecked: true,
+      documentIncludedChecked: true,
+      recipientVerifiedChecked: true,
+    },
+    totalWeight: completed.order.deliveryMethod === DeliveryMethod.home_delivery ? 1 : undefined,
+    packageCount: completed.order.deliveryMethod === DeliveryMethod.home_delivery ? 1 : undefined,
+  });
+  if (completed.order.deliveryMethod === DeliveryMethod.home_delivery) {
+    const generated = await packings.generateLabel({
+      tenantId,
+      branchId,
+      actorUserId: actorId,
+      packingId: completed.packing.id,
+      operationId: `dispatch-packing-label-${suffix}`,
+      expectedVersion: prepared.packing.version,
+    });
+    prepared = await packings.registerLabelPrint({
+      tenantId,
+      branchId,
+      actorUserId: actorId,
+      packingId: completed.packing.id,
+      labelGenerationId: generated.packing.labelGenerationId!,
+      operationId: `dispatch-packing-print-${suffix}`,
+      expectedVersion: generated.packing.version,
+    });
+  }
+  const finalized = await packings.finalize({
+    tenantId,
+    branchId,
+    actorUserId: actorId,
+    packingId: completed.packing.id,
+    operationId: `dispatch-packing-finalize-${suffix}`,
+    expectedVersion: prepared.packing.version,
+  });
+  return { ...picked, completed: finalized.order };
 }
 
 async function createTrackingProgressOrder(
@@ -651,6 +735,13 @@ function orderInput(
             line1: "Zona 1",
             city: "Guatemala",
             country: "Guatemala",
+          }
+        : undefined,
+    storePickupContact:
+      deliveryMethod === DeliveryMethod.store_pickup
+        ? {
+            recipientName: "Dispatch Pickup",
+            recipientPhone: "55550001",
           }
         : undefined,
     notificationContact: options.notificationContact,

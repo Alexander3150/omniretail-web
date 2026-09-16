@@ -39,6 +39,7 @@ export type * from "./SaleReversalRepository";
 export type * from "./CashShiftRepository";
 export type * from "./CashMovementRepository";
 export type * from "./PickingRepository";
+export type * from "./PackingRepository";
 export type * from "./DispatchRepository";
 export type * from "./StorePickupDeliveryRepository";
 export type * from "./NotificationRepository";

@@ -249,6 +249,16 @@ export enum PickingIncidentStatus {
   open = "open",
   resolved = "resolved",
 }
+export enum PackingStatus {
+  in_progress = "in_progress",
+  finalized = "finalized",
+}
+export enum PackingOperationType {
+  save_preparation = "save_preparation",
+  generate_label = "generate_label",
+  register_label_print = "register_label_print",
+  finalize = "finalize",
+}
 export enum DispatchStatus {
   pending = "pending",
   ready = "ready",

@@ -110,6 +110,8 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
     database.inventoryReservationConsumeOperations ?? [];
   normalized.pickingAssignmentReleases = database.pickingAssignmentReleases ?? [];
   normalized.pickingIncidents = database.pickingIncidents ?? [];
+  normalized.packings = database.packings ?? [];
+  normalized.packingOperations = database.packingOperations ?? [];
   normalized.storePickupDeliveries = database.storePickupDeliveries ?? [];
   normalized.products = (database.products ?? base.products).map((product) => ({
     ...product,
@@ -128,10 +130,17 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   }));
   // Backfill para datos persistidos antes de que Role.status existiera -- sin esto, un rol
   // guardado en localStorage antes de este contrato quedaria con status undefined.
-  normalized.roles = (database.roles ?? base.roles).map((role) => ({
-    ...role,
-    status: role.status ?? RoleStatus.active,
-  }));
+  normalized.roles = (database.roles ?? base.roles).map((role) => {
+    const packingPermissions =
+      role.id === "role-warehouse"
+        ? ["logistics.packing.read", "logistics.packing.prepare", "logistics.packing.finalize"]
+        : [];
+    return {
+      ...role,
+      permissions: [...new Set([...role.permissions, ...packingPermissions])],
+      status: role.status ?? RoleStatus.active,
+    };
+  });
   normalized.productSalesPriceTiers = database.productSalesPriceTiers ?? [];
   normalized.productInventorySettings = normalizeProductInventorySettings(database, normalized);
   normalized.inventoryAdjustments = normalizeInventoryAdjustments(database, normalized);

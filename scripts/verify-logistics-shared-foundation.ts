@@ -789,6 +789,13 @@ function orderInput(
           country: "Guatemala",
         }
       : undefined,
+    storePickupContact:
+      deliveryMethod === DeliveryMethod.store_pickup
+        ? {
+            recipientName: "Cliente que retira",
+            recipientPhone: "55550001",
+          }
+        : undefined,
     subtotal: 1,
     discountTotal: 0,
     shippingTotal: 0,

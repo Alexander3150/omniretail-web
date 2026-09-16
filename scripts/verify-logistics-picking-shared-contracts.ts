@@ -225,11 +225,12 @@ async function main() {
   }
   const completion = await service.complete(branchId, pickingA.id);
   assert.equal(completion.status, PickingStatus.completed);
-  assert.equal(completion.orderStatus, OrderStatus.ready_for_dispatch);
+  assert.equal(completion.orderStatus, OrderStatus.packing);
   assert.equal(completion.idempotent, false);
   const completionRetry = await service.complete(branchId, pickingA.id);
   assert.equal(completionRetry.idempotent, true);
-  assert.equal((await orders.getById(orderA.id))?.status, OrderStatus.ready_for_dispatch);
+  assert.equal((await orders.getById(orderA.id))?.status, OrderStatus.packing);
+  assert.equal(store.getSnapshot().packings.filter((item) => item.orderId === orderA.id).length, 1);
 
   // M. An injected mid-transaction failure rolls both aggregate changes back.
   const orderC = await createOrder(orders, "C", [["prod-screws", 1]]);
@@ -270,13 +271,18 @@ async function main() {
     PickingStatus.in_progress,
   );
   assert.equal((await orders.getById(orderC.id))?.status, OrderStatus.picking);
+  assert.equal(
+    store.getSnapshot().packings.some((item) => item.orderId === orderC.id),
+    false,
+  );
   const completedC = await picking.complete({
     tenantId,
     branchId,
     pickingOrderId: pickingC.id,
     actorUserId: loserId,
   });
-  assert.equal(completedC.order.status, OrderStatus.ready_for_dispatch);
+  assert.equal(completedC.order.status, OrderStatus.packing);
+  assert.equal(completedC.packing.orderId, orderC.id);
   assert.equal(
     (
       await picking.complete({
@@ -379,6 +385,8 @@ function prepareDatabase(store: MockDatabaseStore) {
     db.pickingItemUpdateOperations = [];
     db.pickingAssignmentReleases = [];
     db.pickingIncidents = [];
+    db.packings = [];
+    db.packingOperations = [];
     db.inventoryReservations = [];
     db.inventoryReservationConsumeOperations = [];
     db.inventoryMovements = [];

@@ -13,6 +13,7 @@ import { MockInventoryRepository } from "@/infrastructure/mock/repositories/Mock
 import { MockProductKitComponentRepository } from "@/infrastructure/mock/repositories/MockProductKitComponentRepository";
 import { MockProductMediaRepository } from "@/infrastructure/mock/repositories/MockProductMediaRepository";
 import { MockProductRepository } from "@/infrastructure/mock/repositories/MockProductRepository";
+import { MockUnitRepository } from "@/infrastructure/mock/repositories/MockUnitRepository";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import { GetStorefrontDiscoveryService } from "@/modules/storefront/application/services/GetStorefrontDiscoveryService";
@@ -174,6 +175,7 @@ async function main(): Promise<void> {
     businessConfig: new MockBusinessConfigRepository(store, eventBus),
     inventory: new MockInventoryRepository(store, eventBus),
     productKitComponents: new MockProductKitComponentRepository(store, eventBus),
+    units: new MockUnitRepository(store, eventBus),
   } as unknown as RepositoryRegistry;
 
   assert.equal(db.categories.length, 10, "A: deben existir 10 categorías");
