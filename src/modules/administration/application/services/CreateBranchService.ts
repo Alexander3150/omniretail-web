@@ -6,6 +6,7 @@ import {
   ensureBranchActor,
   ensureBranchTenant,
   ensureCanManageBranches,
+  ensureTenantCanCreateBranch,
   ensureValidBranchInput,
   normalizeBranchInput,
 } from "@/modules/administration/application/services/serviceHelpers";
@@ -23,6 +24,9 @@ export class CreateBranchService {
     ensureBranchTenant(tenantId);
     ensureBranchActor(actorUserId);
     ensureValidBranchInput(dto);
+    // límite SaaS del Plan (auditoría §24) -- antes de la unicidad de código, mismo criterio que
+    // CreateEmployeeService.
+    await ensureTenantCanCreateBranch(this.repositories, tenantId);
 
     const input = normalizeBranchInput(dto);
     await this.ensureUniqueCode(tenantId, input.code);

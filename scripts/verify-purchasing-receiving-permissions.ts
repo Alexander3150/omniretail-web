@@ -3,24 +3,30 @@ import {
   BranchStatus,
   BranchType,
   BusinessPreset,
+  PlanCode,
+  PlanStatus,
   ProductStatus,
   ProductType,
   PurchaseOrderStatus,
   ReceiptStatus,
   RoleStatus,
+  SaasCapabilityKey,
   SupplierStatus,
   TenantStatus,
+  TenantSubscriptionStatus,
   UserStatus,
   UserType,
 } from "@/core/enums";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
+import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import {
   MockBranchRepository,
   MockBusinessConfigRepository,
   MockCategoryRepository,
   MockIncidentTypeRepository,
   MockInventoryRepository,
+  MockPlanRepository,
   MockProductRepository,
   MockPurchaseOrderRepository,
   MockReceiptRepository,
@@ -28,6 +34,7 @@ import {
   MockSupplierRepository,
   MockSupplierProductRepository,
   MockTenantRepository,
+  MockTenantSubscriptionRepository,
   MockUnitRepository,
   MockUserRepository,
 } from "@/infrastructure/mock/repositories";
@@ -43,6 +50,37 @@ import { ReceivingServiceError } from "@/modules/receiving/application/services/
 
 const TENANT_A = "tenant-demo";
 const TENANT_B = "tenant-purchasing-receiving-b";
+
+/**
+ * feature/saas-entitlement-enforcement agregó un guard de entitlement SaaS (Plan/Subscription)
+ * delante de las mutaciones de Purchasing/Receiving/Inventory/POS -- este harness prueba
+ * permisos/tenant/branch, no entitlements (eso vive en verify-saas-entitlement-enforcement.ts),
+ * así que TENANT_B necesita un Plan "full" (todas las capabilities, sin límites) para no quedar
+ * bloqueado por una capa que este script no está probando. TENANT_A reusa tenant-demo, cuya
+ * Subscription real ya es Enterprise (todas las capabilities).
+ */
+function seedFullEntitlementPlan(db: MockDatabase, tenantId: string) {
+  const planId = `plan-full-${tenantId}`;
+  db.planDefinitions.push({
+    id: planId,
+    code: PlanCode.enterprise,
+    name: `Plan full (fixture ${tenantId})`,
+    status: PlanStatus.active,
+    capabilities: Object.values(SaasCapabilityKey),
+    limits: {},
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
+  db.tenantSubscriptions.push({
+    id: `tenant-subscription-${tenantId}`,
+    tenantId,
+    planId,
+    status: TenantSubscriptionStatus.active,
+    startedAt: NOW,
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
+}
 const NOW = "2026-09-15T12:00:00.000Z";
 
 class MemoryStorageAdapter extends LocalStorageAdapter {
@@ -93,6 +131,7 @@ function createHarness() {
       createdAt: NOW,
       updatedAt: NOW,
     });
+    seedFullEntitlementPlan(db, TENANT_B);
     db.businessCapabilities.push({
       tenantId: TENANT_B,
       preset: BusinessPreset.custom,
@@ -228,6 +267,8 @@ function createHarness() {
       incidentTypes: new MockIncidentTypeRepository(store, eventBus),
       inventory: new MockInventoryRepository(store, eventBus),
       businessConfig: new MockBusinessConfigRepository(store, eventBus),
+      plans: new MockPlanRepository(store, eventBus),
+      tenantSubscriptions: new MockTenantSubscriptionRepository(store, eventBus),
     } as unknown as RepositoryRegistry;
   }
 

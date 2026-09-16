@@ -14,6 +14,7 @@ import type {
 import {
   ensureCanCreatePurchaseOrders,
   ensurePurchaseOrderBelongsToTenant,
+  ensureTenantCanUsePurchasing,
   ensureUserCanOperateBranch,
   PurchasingServiceError,
   resolvePurchasingContext,
@@ -228,6 +229,7 @@ export class PurchaseOrderEditorService {
       this.repositories,
     );
     ensureCanCreatePurchaseOrders(permissions);
+    await ensureTenantCanUsePurchasing(this.repositories, tenantId);
     await this.ensureSaveInputTenantSafe(tenantId, user, input);
     const payload = toPurchaseOrderPayload(input, PurchaseOrderStatus.draft, tenantId, actorUserId);
     if (input.orderId) {
@@ -246,6 +248,7 @@ export class PurchaseOrderEditorService {
       this.repositories,
     );
     ensureCanCreatePurchaseOrders(permissions);
+    await ensureTenantCanUsePurchasing(this.repositories, tenantId);
     await this.ensureSaveInputTenantSafe(tenantId, user, input);
     const payload = toPurchaseOrderPayload(
       input,

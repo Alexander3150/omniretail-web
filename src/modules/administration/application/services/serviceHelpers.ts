@@ -1,5 +1,6 @@
 import type { BankAccount, Branch, Role, Supplier, User } from "@/core/entities";
-import { BranchStatus, BranchType, UserType } from "@/core/enums";
+import { BranchStatus, BranchType, SaasLimitKey, UserStatus, UserType } from "@/core/enums";
+import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { BranchInputDto } from "@/modules/administration/application/dto/BranchDto";
 import {
   BUSINESS_CONFIG_MANAGE_PERMISSION,
@@ -9,6 +10,8 @@ import {
   REPORTS_EXPORT_PERMISSION,
   REPORTS_READ_PERMISSION,
 } from "@/modules/administration/permissions";
+import { ensureTenantLimit } from "@/shared/application/services/entitlementGuards";
+import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
 
 export class AdministrationServiceError extends Error {
   constructor(message: string) {
@@ -453,4 +456,44 @@ export function ensurePlanTenant(tenantId: string) {
 export function cleanError(error: unknown): string {
   if (error instanceof AdministrationServiceError) return error.message;
   return "No se pudo completar la operación. Inténtalo de nuevo.";
+}
+
+/**
+ * Límites SaaS (feature/saas-entitlement-enforcement, auditoría §23/§32) -- Administration NO
+ * tiene una capability general (sigue gobernado por `admin.*` permissions), pero SÍ aplica los
+ * límites numéricos del Plan en sus dos creation services. Uso existente, mismo criterio que
+ * `GetTenantUsageService`: `User.type === employee && status !== archived` cuenta contra
+ * `maxEmployees` (un empleado `inactive`/`blocked` sigue contando; solo `archived` no).
+ * `undefined` en el límite del Plan significa sin límite (nunca 0 implícito) -- ver
+ * `ensureTenantLimit`. No archiva empleados existentes si un downgrade deja al Tenant por encima
+ * del límite -- solo bloquea la PRÓXIMA alta.
+ */
+export async function ensureTenantCanCreateEmployee(
+  repositories: RepositoryRegistry,
+  tenantId: string,
+): Promise<void> {
+  const [entitlements, users] = await Promise.all([
+    new ResolveTenantEntitlementsService(repositories).execute(tenantId),
+    repositories.users.listByTenant(tenantId),
+  ]);
+  const currentEmployees = users.filter(
+    (user) => user.type === UserType.employee && user.status !== UserStatus.archived,
+  ).length;
+  ensureTenantLimit(entitlements, SaasLimitKey.maxEmployees, currentEmployees);
+}
+
+/**
+ * Mismo criterio que `ensureTenantCanCreateEmployee`, para `maxBranches`. Uso existente: `Branch.
+ * status !== archived` cuenta (una sucursal `inactive` sigue contando; solo `archived` no).
+ */
+export async function ensureTenantCanCreateBranch(
+  repositories: RepositoryRegistry,
+  tenantId: string,
+): Promise<void> {
+  const [entitlements, branches] = await Promise.all([
+    new ResolveTenantEntitlementsService(repositories).execute(tenantId),
+    repositories.branches.listByTenant(tenantId),
+  ]);
+  const currentBranches = branches.filter((branch) => branch.status !== BranchStatus.archived).length;
+  ensureTenantLimit(entitlements, SaasLimitKey.maxBranches, currentBranches);
 }

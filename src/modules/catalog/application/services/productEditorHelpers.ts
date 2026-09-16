@@ -1,4 +1,5 @@
 import type { BusinessCapabilitiesConfig, Product, ProductMedia } from "@/core/entities";
+import { ProductType } from "@/core/enums";
 import { getProductMediaSource, isSafeCatalogImageUrl } from "@/core/media/catalogImage";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { normalizeSku } from "@/shared/utils/normalizeSku";
@@ -22,6 +23,7 @@ import {
   ensureActiveCategory,
   ensureActiveUnit,
   ensureProductTypeAllowed,
+  ensureTenantCanUseKits,
   ensureUnitConfigUnchanged,
   requireCapabilities,
 } from "@/modules/catalog/application/services/serviceHelpers";
@@ -35,6 +37,9 @@ export async function validateEditorProduct(
   const capabilities = await requireCapabilities(repositories, tenantId);
   ensureProductTypeAllowed(dto.productType, capabilities, current?.productType);
   ensureUnitConfigUnchanged(dto, capabilities, current);
+  if (dto.productType === ProductType.kit) {
+    await ensureTenantCanUseKits(repositories, tenantId);
+  }
 
   // El borrador se normaliza ANTES de validar y de persistir: lo que la configuracion deshabilita
   // no llega ni al producto ni a sus datos relacionados, venga de la pantalla o de otro consumidor.

@@ -11,6 +11,12 @@ import {
   hasBusinessConfigValidationErrors,
   validateBusinessConfigDto,
 } from "@/modules/administration/validation/businessConfig.validation";
+import {
+  BUSINESS_CAPABILITY_TO_SAAS_CAPABILITY,
+  type MappedBusinessCapabilityKey,
+} from "@/shared/application/services/businessCapabilityEntitlement";
+import { hasTenantCapability, SaasEntitlementError } from "@/shared/application/services/entitlementGuards";
+import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
 
 export class SaveBusinessConfigService {
   constructor(private readonly repositories: RepositoryRegistry) {}
@@ -22,6 +28,7 @@ export class SaveBusinessConfigService {
   ): Promise<BusinessConfigDto> {
     ensureCanManageBusinessConfig(permissions);
     ensureCoherentDto(dto);
+    await this.ensureNoUnentitledCapabilityEnabled(tenantId, dto);
 
     const config = await this.repositories.businessConfig.updateCapabilities(tenantId, {
       ...dto,
@@ -30,6 +37,40 @@ export class SaveBusinessConfigService {
     });
 
     return toBusinessConfigDto(config);
+  }
+
+  /**
+   * Auditoría §18: habilitar (false -> true) una business capability cuyo SaaS Plan NO incluye
+   * la capability equivalente => DENY. Deshabilitar (cualquier transición a false, o quedarse en
+   * false) SIEMPRE se permite -- evita dejar al Tenant sin forma de apagar algo que ya no puede
+   * prender (lockout). Comparar contra el valor YA PERSISTIDO, no asumir `false`: si la config
+   * previa no existe todavía (alta inicial), toda capability pedida en `true` cuenta como "se
+   * está habilitando".
+   */
+  private async ensureNoUnentitledCapabilityEnabled(
+    tenantId: string,
+    dto: BusinessConfigDto,
+  ): Promise<void> {
+    const keysBeingEnabled = (
+      Object.keys(BUSINESS_CAPABILITY_TO_SAAS_CAPABILITY) as MappedBusinessCapabilityKey[]
+    ).filter((key) => dto[key]);
+    if (keysBeingEnabled.length === 0) return;
+
+    const current = await this.repositories.businessConfig.getCapabilities(tenantId);
+    const newlyEnabledKeys = keysBeingEnabled.filter((key) => !current?.[key]);
+    if (newlyEnabledKeys.length === 0) return;
+
+    const entitlements = await new ResolveTenantEntitlementsService(this.repositories).execute(
+      tenantId,
+    );
+    for (const key of newlyEnabledKeys) {
+      if (!hasTenantCapability(entitlements, BUSINESS_CAPABILITY_TO_SAAS_CAPABILITY[key])) {
+        throw new SaasEntitlementError(
+          "CAPABILITY_REQUIRED",
+          "Tu plan actual no incluye esta funcionalidad. Actualiza tu plan para habilitarla.",
+        );
+      }
+    }
   }
 }
 

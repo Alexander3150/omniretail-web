@@ -7,6 +7,7 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import type { StorefrontProductDetailDto } from "@/modules/storefront/application/dto/StorefrontProductDetailDto";
 import { getProductMediaSource, sortProductMediaForDisplay } from "@/core/media/catalogImage";
 import { GetStorefrontPublishedProductService } from "@/modules/storefront/application/services/GetStorefrontPublishedProductService";
+import { ensurePublicStorefrontTenant } from "@/modules/storefront/application/services/ResolvePublicStorefrontContextService";
 
 export class GetStorefrontProductDetailService {
   private readonly publishedProductService: GetStorefrontPublishedProductService;
@@ -16,6 +17,9 @@ export class GetStorefrontProductDetailService {
   }
 
   async execute(tenantId: string, productId: string): Promise<StorefrontProductDetailDto | null> {
+    // Auditoría §15/§30 (BLOCKER): cierra el bypass donde discovery deniega pero `/product/:id`
+    // seguía devolviendo datos -- mismo `tenantId` sin revalidar que llegaba desde el hook.
+    await ensurePublicStorefrontTenant(this.repositories, tenantId);
     const [
       product,
       allProducts,

@@ -2,14 +2,27 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AuthRepository } from "@/core/repositories";
-import { AccountStatus, BranchStatus, BranchType, RoleStatus, UserStatus } from "@/core/enums";
+import {
+  AccountStatus,
+  BranchStatus,
+  BranchType,
+  PlanCode,
+  PlanStatus,
+  RoleStatus,
+  SaasCapabilityKey,
+  TenantSubscriptionStatus,
+  UserStatus,
+} from "@/core/enums";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
+import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import {
   MockAuditLogRepository,
   MockAuthRepository,
   MockBranchRepository,
+  MockPlanRepository,
   MockRoleRepository,
+  MockTenantSubscriptionRepository,
   MockUserRepository,
 } from "@/infrastructure/mock/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
@@ -50,6 +63,34 @@ function stripComments(source: string): string {
 }
 
 const NOW = "2026-01-01T00:00:00.000Z";
+
+/**
+ * feature/saas-entitlement-enforcement agregó un límite SaaS delante de CreateEmployeeService --
+ * este harness prueba el ciclo de invitación/recuperación, no entitlements, así que cada tenant
+ * fixture necesita un Plan "full" para no quedar bloqueado.
+ */
+function seedFullEntitlementPlan(db: MockDatabase, tenantId: string) {
+  const planId = `plan-full-${tenantId}`;
+  db.planDefinitions.push({
+    id: planId,
+    code: PlanCode.enterprise,
+    name: `Plan full (fixture ${tenantId})`,
+    status: PlanStatus.active,
+    capabilities: Object.values(SaasCapabilityKey),
+    limits: {},
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
+  db.tenantSubscriptions.push({
+    id: `tenant-subscription-${tenantId}`,
+    tenantId,
+    planId,
+    status: TenantSubscriptionStatus.active,
+    startedAt: NOW,
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
+}
 const TENANT_A = "invite-recovery-tenant-a";
 const TENANT_B = "invite-recovery-tenant-b";
 const ACTOR_ID = "invite-recovery-actor";
@@ -94,6 +135,8 @@ function createHarness() {
   const eventBus = new DataEventBus();
 
   store.mutate((db) => {
+    seedFullEntitlementPlan(db, TENANT_A);
+    seedFullEntitlementPlan(db, TENANT_B);
     db.branches = [
       ...db.branches,
       {
@@ -128,6 +171,8 @@ function createHarness() {
   const users = new MockUserRepository(store, eventBus);
   const realAuth = new MockAuthRepository(store, eventBus, new MemoryStorageAdapter());
   const auditLogs = new MockAuditLogRepository(store, eventBus);
+  const plans = new MockPlanRepository(store, eventBus);
+  const tenantSubscriptions = new MockTenantSubscriptionRepository(store, eventBus);
   const { auth, triggerNextInviteFailure } = withOneShotInviteFailure(realAuth);
 
   return {
@@ -137,6 +182,8 @@ function createHarness() {
       users,
       auth,
       auditLogs,
+      plans,
+      tenantSubscriptions,
     } as unknown as RepositoryRegistry,
     store,
     triggerNextInviteFailure,

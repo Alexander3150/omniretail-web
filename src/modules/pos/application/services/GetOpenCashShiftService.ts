@@ -8,7 +8,7 @@ import {
 
 type OpenCashShiftQueryRepositories = Pick<
   RepositoryRegistry,
-  "branches" | "cashShifts" | "roles" | "users"
+  "branches" | "cashShifts" | "roles" | "users" | "plans" | "tenantSubscriptions"
 >;
 
 export class GetOpenCashShiftService {

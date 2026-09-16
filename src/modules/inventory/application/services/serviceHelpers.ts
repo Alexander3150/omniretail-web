@@ -1,7 +1,13 @@
 import type { Branch, Product, User } from "@/core/entities";
+import { SaasCapabilityKey } from "@/core/enums";
 import { canUserOperateBranch } from "@/core/scopes/userBranchAccess";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/services/resolveCurrentSessionSnapshot";
+import type { MappedBusinessCapabilityKey } from "@/shared/application/services/businessCapabilityEntitlement";
+import { isEffectiveBusinessCapabilityEnabled } from "@/shared/application/services/businessCapabilityEntitlement";
+import type { TenantEntitlementsDto } from "@/shared/application/dto/EntitlementDto";
+import { ensureTenantCapability, SaasEntitlementError } from "@/shared/application/services/entitlementGuards";
+import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
 
 export const INVENTORY_STOCK_READ_PERMISSION = "inventory.stock.read";
 export const INVENTORY_MOVEMENTS_READ_PERMISSION = "inventory.movements.read";
@@ -94,4 +100,52 @@ export function cleanInventoryError(error: unknown, fallback = "No se pudo compl
   if (error instanceof InventoryServiceError) return error.message;
   if (error instanceof Error) return error.message;
   return fallback;
+}
+
+/**
+ * Capa de entitlement SaaS (feature/saas-entitlement-enforcement, auditoría §11) -- se suma a
+ * `ensureCanCreateAdjustment`/`ensureCanManageTransfers`, nunca los sustituye: Plan sin
+ * `inventory` + Role con el permiso = DENIED igual. Devuelve los entitlements resueltos para que
+ * el caller pueda además chequear traceability (`ensureTenantCanUseTracking`) sin resolver dos
+ * veces.
+ */
+export async function ensureTenantCanUseInventory(
+  repositories: RepositoryRegistry,
+  tenantId: string,
+): Promise<TenantEntitlementsDto> {
+  const entitlements = await new ResolveTenantEntitlementsService(repositories).execute(tenantId);
+  ensureTenantCapability(entitlements, SaasCapabilityKey.inventory);
+  return entitlements;
+}
+
+/**
+ * Trazabilidad adaptable (auditoría §20-22): solo exige la capability SaaS
+ * (`traceability.lots`/`.expiration`/`.serials`) cuando el PRODUCTO efectivamente la necesita
+ * (`product.tracking.lot/expiration/serial`) -- un producto sin esa trazabilidad nunca queda
+ * bloqueado por un Plan que no la incluye. Compone AND con `BusinessCapabilitiesConfig.supportsX`
+ * (config operativa) vía `isEffectiveBusinessCapabilityEnabled`: ambos ejes son independientes,
+ * ninguno sustituye al otro (auditoría §17).
+ */
+export function ensureTenantCanUseTracking(
+  entitlements: TenantEntitlementsDto,
+  businessCapabilities: Pick<
+    Parameters<typeof isEffectiveBusinessCapabilityEnabled>[1],
+    MappedBusinessCapabilityKey
+  >,
+  product: Pick<Product, "tracking">,
+): void {
+  const checks: Array<[boolean, MappedBusinessCapabilityKey]> = [
+    [product.tracking.lot, "supportsLots"],
+    [product.tracking.expiration, "supportsExpiration"],
+    [product.tracking.serial, "supportsSerials"],
+  ];
+  for (const [required, key] of checks) {
+    if (!required) continue;
+    if (!isEffectiveBusinessCapabilityEnabled(entitlements, businessCapabilities, key)) {
+      throw new SaasEntitlementError(
+        "CAPABILITY_REQUIRED",
+        "Esta operación requiere trazabilidad que no está disponible en tu plan o configuración actual.",
+      );
+    }
+  }
 }

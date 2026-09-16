@@ -9,9 +9,11 @@ import {
   MockCustomerRepository,
   MockOrderPaymentConfirmationRepository,
   MockOrderRepository,
+  MockPlanRepository,
   MockProductRepository,
   MockRoleRepository,
   MockTenantRepository,
+  MockTenantSubscriptionRepository,
   MockUserRepository,
 } from "@/infrastructure/mock/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
@@ -118,9 +120,11 @@ async function main() {
     customers: new MockCustomerRepository(store, eventBus),
     orderPaymentConfirmations: new MockOrderPaymentConfirmationRepository(store, eventBus),
     orders,
+    plans: new MockPlanRepository(store, eventBus),
     products: new MockProductRepository(store, eventBus),
     roles: new MockRoleRepository(store, eventBus),
     tenants: new MockTenantRepository(store, eventBus),
+    tenantSubscriptions: new MockTenantSubscriptionRepository(store, eventBus),
     users: new MockUserRepository(store, eventBus),
   } as unknown as RepositoryRegistry;
   const checkout = new CreateStorefrontCheckoutService(repositories);

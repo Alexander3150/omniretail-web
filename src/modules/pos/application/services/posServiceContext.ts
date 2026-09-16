@@ -1,8 +1,10 @@
 import type { Branch, CashShift, Role, Tenant, User } from "@/core/entities";
-import { BranchStatus, CashShiftStatus } from "@/core/enums";
+import { BranchStatus, CashShiftStatus, SaasCapabilityKey } from "@/core/enums";
 import { canUserOperateBranch } from "@/core/scopes/userBranchAccess";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/services/resolveCurrentSessionSnapshot";
+import { ensureTenantCapability } from "@/shared/application/services/entitlementGuards";
+import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
 
 export const POS_SALES_CREATE_PERMISSION = "pos.sales.create";
 
@@ -81,6 +83,19 @@ export async function ensureOwnedOpenCashShift(
     throw new PosServiceError("No hay un turno de caja abierto y vigente para esta sucursal.");
   }
   return shift;
+}
+
+/**
+ * Capa de entitlement SaaS (feature/saas-entitlement-enforcement, auditoría §14) -- se suma a
+ * `ensurePosPermission`, nunca lo sustituye. `pos.sales.read` (historial) sigue sin requerir esta
+ * capability -- solo las mutaciones reales (venta, caja) la exigen.
+ */
+export async function ensureTenantCanUsePos(
+  repositories: RepositoryRegistry,
+  tenantId: string,
+): Promise<void> {
+  const entitlements = await new ResolveTenantEntitlementsService(repositories).execute(tenantId);
+  ensureTenantCapability(entitlements, SaasCapabilityKey.pos);
 }
 
 export function cleanPosError(error: unknown, fallback: string) {

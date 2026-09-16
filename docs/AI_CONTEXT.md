@@ -58,7 +58,10 @@ UI
 - Shared no contiene logica de negocio;
 - navegacion/permisos estan distribuidos por modulo;
 - `config/navigation.ts` agrega la navegacion y el shell privado la entrega a `Sidebar`;
-- feature branches nacen de development.
+- feature branches nacen de development;
+- Authentication != Entitlement != Role Permission != Branch Scope: ninguna capa sustituye a las demas; una mutacion Employee exige TENANT ENTITLEMENT AND ROLE PERMISSION AND BRANCH ACCESS AND RESOURCE OWNERSHIP;
+- `BusinessCapabilitiesConfig` (config operativa) != SaaS capability (derecho comercial del Plan) -- `effectiveFeatureEnabled = planHasCapability AND businessConfigSetting`;
+- `ResolveTenantEntitlementsService` vive en `shared/application/` (nunca en `administration`) para que cualquier modulo lo consuma sin invertir dependencias.
 
 Para decisiones completas consultar:
 

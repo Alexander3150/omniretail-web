@@ -6,9 +6,11 @@ import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseSt
 import {
   MockBranchRepository,
   MockCategoryRepository,
+  MockPlanRepository,
   MockProductRepository,
   MockRoleRepository,
   MockTenantRepository,
+  MockTenantSubscriptionRepository,
   MockUserRepository,
 } from "@/infrastructure/mock/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
@@ -90,6 +92,8 @@ function createHarness() {
     users: new MockUserRepository(store, eventBus),
     roles: new MockRoleRepository(store, eventBus),
     branches: new MockBranchRepository(store, eventBus),
+    plans: new MockPlanRepository(store, eventBus),
+    tenantSubscriptions: new MockTenantSubscriptionRepository(store, eventBus),
   } as unknown as RepositoryRegistry;
 
   return { repositories, cashierRole, branchCentro, branchNorte, newEmployee, legacyEmployee };

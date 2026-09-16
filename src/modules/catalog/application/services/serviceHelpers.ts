@@ -1,4 +1,4 @@
-import { CategoryStatus, ProductType, UnitStatus } from "@/core/enums";
+import { CategoryStatus, ProductType, SaasCapabilityKey, UnitStatus } from "@/core/enums";
 import type { BusinessCapabilitiesConfig, Category, Product, Unit } from "@/core/entities";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/services/resolveCurrentSessionSnapshot";
@@ -6,6 +6,8 @@ import {
   getDisabledProductTypeMessage,
   isProductTypeAllowed,
 } from "@/modules/catalog/validation/product.validation";
+import { ensureTenantCapability } from "@/shared/application/services/entitlementGuards";
+import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
 
 export class CatalogServiceError extends Error {
   constructor(message: string) {
@@ -182,6 +184,23 @@ export function ensureUnitConfigUnchanged(
 export function ensureProduct(product: Product | null) {
   if (!product) throw new CatalogServiceError("El producto solicitado no existe.");
   return product;
+}
+
+/**
+ * Capa de entitlement SaaS (feature/saas-entitlement-enforcement, auditoría §16) -- se suma a
+ * `ensureProductTypeAllowed`/`supportsKits` (business config), nunca los sustituye: crear un Kit
+ * nuevo o modificar sus componentes (`ProductKitComponentRepository.replaceForKit`) exige la
+ * capability `catalog.kits`, a diferencia de `ensureProductTypeAllowed` NO se exceptúa para un
+ * Kit ya existente -- "modificar" el kit también requiere la capability (auditoría §16: "Crear/
+ * modificar/ensamblar/usar funcionalidad Kit"). El resto de Catalog (productos no-kit) permanece
+ * sin ninguna capability SaaS -- auditoría §2: no se gatea Catalog completo.
+ */
+export async function ensureTenantCanUseKits(
+  repositories: RepositoryRegistry,
+  tenantId: string,
+): Promise<void> {
+  const entitlements = await new ResolveTenantEntitlementsService(repositories).execute(tenantId);
+  ensureTenantCapability(entitlements, SaasCapabilityKey.catalogKits);
 }
 
 export function cleanError(error: unknown) {
