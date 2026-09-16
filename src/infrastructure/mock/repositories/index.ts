@@ -39,6 +39,7 @@ export * from "./MockSavedPaymentMethodRepository";
 export * from "./MockSupplierRepository";
 export * from "./MockSupplierProductRepository";
 export * from "./MockTenantRepository";
+export * from "./MockTenantOnboardingRepository";
 export * from "./MockTenantSubscriptionRepository";
 export * from "./MockUnitRepository";
 export * from "./MockUserRepository";

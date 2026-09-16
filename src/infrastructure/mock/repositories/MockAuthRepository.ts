@@ -957,6 +957,40 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     });
     this.emit("auth.changed", { action: "updated" });
   }
+  /**
+   * Boundary estrecho exclusivo de onboarding -- ver docstring en `AuthRepository.ts`. Crea el
+   * AuthAccount YA `active` (nunca `password_reset_required`, a diferencia de `inviteEmployee`)
+   * con la contraseña real elegida durante el alta. No se usa desde el flujo atómico real de
+   * onboarding (`MockTenantOnboardingRepository` reproduce esta misma lógica DENTRO de su único
+   * `store.transact()` para poder garantizar rollback real -- ver esa clase); existe igual como
+   * capacidad mínima e independiente del boundary, verificable por separado.
+   */
+  async bootstrapEmployeeAccount(userId: string, passwordMock: string) {
+    const account = this.store.mutate((db) => {
+      const user = db.users.find((item) => item.id === userId);
+      if (!user || user.type !== UserType.employee) {
+        throw new Error("No se encontró un empleado con ese id.");
+      }
+      if (db.authAccounts.some((item) => item.userId === userId)) {
+        throw new Error("Este empleado ya tiene un AuthAccount.");
+      }
+      const now = this.now();
+      const created = {
+        id: this.id("auth"),
+        userId,
+        email: user.email,
+        passwordHashMock: buildPasswordHashMock(passwordMock),
+        status: AccountStatus.active,
+        failedLoginAttempts: 0,
+        createdAt: now,
+        updatedAt: now,
+      };
+      db.authAccounts.push(created);
+      return created;
+    });
+    this.emit("auth.changed", { entityId: account.userId, action: "created" });
+    return account;
+  }
   async inviteEmployee(userId: string) {
     const result = this.store.mutate((db) => {
       const user = db.users.find((item) => item.id === userId);

@@ -1,4 +1,4 @@
-import type { MfaMethod, Session, User } from "@/core/entities";
+import type { AuthAccount, MfaMethod, Session, User } from "@/core/entities";
 import type { AccountStatus, UserType } from "@/core/enums";
 import type { ISODateString } from "@/core/types/common.types";
 
@@ -319,6 +319,29 @@ export interface AuthRepository {
    * se le atribuye el evento a nadie (ni siquiera al propio empleado
    * invitado, que sería una atribución falsa).
    */
+  /**
+   * Boundary ESTRECHO exclusivo para el onboarding de un nuevo Tenant (feature/tenant-onboarding,
+   * auditoría §5): crea un AuthAccount ya `active` (inmediatamente utilizable, contraseña real
+   * elegida por el caller) para un User que ya existe -- a diferencia de `inviteEmployee`, que
+   * deja la cuenta en `password_reset_required` con una contraseña inutilizable pensada para un
+   * flujo de invitación por token. El primer admin de un Tenant nuevo necesita poder loguearse de
+   * inmediato con la contraseña que se le asignó durante el alta, no completar una invitación.
+   *
+   * NUNCA se expone a la UI directamente -- el único consumidor autorizado es
+   * `TenantOnboardingService`. No genera sesión (nunca hace login por sí mismo) ni usa ningún
+   * fallback de tenant: recibe el `userId` de un User ya persistido y correcto.
+   *
+   * Nota de atomicidad: el flujo REAL de onboarding no invoca este método como una llamada de
+   * repositorio separada -- `MockAuthRepository.bootstrapEmployeeAccount` abre su propio
+   * `store.mutate()` independiente, igual que cualquier otro método de este repositorio, así que
+   * llamarlo desde otro repositorio no comparte su draft (ver docstring de
+   * `MockTenantOnboardingRepository`, que reproduce esta misma lógica de creación de cuenta
+   * DENTRO de su único `store.transact()` para poder garantizar rollback real). Este método
+   * existe igual como capacidad mínima e independientemente verificable del boundary de
+   * bootstrap, y como pieza reutilizable fuera del onboarding atómico si alguna vez hiciera falta
+   * (p.ej. rehidratar una cuenta de bootstrap perdida sin repetir todo el alta del Tenant).
+   */
+  bootstrapEmployeeAccount(userId: string, passwordMock: string): Promise<AuthAccount>;
   inviteEmployee(userId: string): Promise<InviteEmployeeResult>;
   /**
    * Completa una invitación vigente: establece la contraseña elegida por
