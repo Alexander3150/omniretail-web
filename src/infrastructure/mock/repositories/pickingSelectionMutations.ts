@@ -1,6 +1,7 @@
 import type { InventoryReservation, PickingItem, Product } from "@/core/entities";
 import { OrderStatus, PickingStatus, SerialStatus } from "@/core/enums";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
+import { getAvailableSerials } from "@/infrastructure/mock/repositories/serialNumberMutations";
 import { getEligibleStockLots } from "@/infrastructure/mock/repositories/stockLotMutations";
 
 type PickedAllocation = NonNullable<PickingItem["pickedAllocations"]>[number];
@@ -76,6 +77,9 @@ export function planPickedAllocations(
     throw new Error(`Persisted Picking selections are incomplete: ${item.id}`);
   }
   const allPicks = activePicks(db);
+  const claimedSerials = product.tracking.lot && product.tracking.serial
+    ? getClaimedPickingSerialNumbers(db, reservation)
+    : undefined;
   let remaining = targetQuantity - item.pickedQuantity;
   const planned: PickedAllocation[] = existing.map((entry) => ({ ...entry,
     serialNumbers: entry.serialNumbers ? [...entry.serialNumbers] : undefined }));
@@ -102,7 +106,13 @@ export function planPickedAllocations(
       const claimed = allPicks.reduce((total, picked) => total +
         (picked.pickedAllocations ?? []).filter((entry) => entry.lotId === lot.id)
           .reduce((sum, entry) => sum + entry.quantity, 0), 0);
-      const available = Math.max(0, lot.quantity - claimed);
+      const unclaimedLotQuantity = Math.max(0, lot.quantity - claimed);
+      const available = claimedSerials
+        ? Math.min(unclaimedLotQuantity, getAvailableSerials(db, {
+            tenantId: reservation.tenantId, branchId: reservation.branchId,
+            productId: reservation.productId, locationId: allocation.locationId, lotId: lot.id,
+          }).filter((serial) => !claimedSerials.has(serial.serialNumber)).length)
+        : unclaimedLotQuantity;
       const lotQuantity = Math.min(available, locationRemaining);
       if (lotQuantity <= 0) continue;
       planned.push({ balanceId: allocation.balanceId, locationId: allocation.locationId,

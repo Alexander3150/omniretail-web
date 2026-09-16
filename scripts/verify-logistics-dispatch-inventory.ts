@@ -93,6 +93,30 @@ async function main() {
         serialNumber: `SER-LOT-${id.toUpperCase()}`, status: SerialStatus.available,
         createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
     }
+    for (const [scenario, earlyQuantity, lateQuantity, earlySerials, lateSerials] of [
+      ["gap", 1, 1, [], ["SER-GAP-LATE"]],
+      ["split", 2, 2, ["SER-SPLIT-EARLY"], ["SER-SPLIT-LATE"]],
+    ] as const) {
+      const productId = `dispatch-fefo-${scenario}-product`;
+      db.products.push({ ...analgesic, id: productId, sku: `DISPATCH-FEFO-${scenario}`,
+        tracking: { stock: true, lot: true, expiration: true, serial: true } });
+      db.inventoryBalances.push({ id: `dispatch-fefo-${scenario}-balance`, tenantId, branchId,
+        productId, locationId, quantity: earlyQuantity + lateQuantity, reservedQuantity: 0,
+        updatedAt: new Date().toISOString() });
+      for (const [lotName, quantity, expiry, serials] of [
+        ["early", earlyQuantity, "2027-01-01", earlySerials],
+        ["late", lateQuantity, "2027-12-01", lateSerials],
+      ] as const) {
+        const lotId = `dispatch-fefo-${scenario}-${lotName}`;
+        db.stockLots.push({ id: lotId, tenantId, branchId, productId, locationId,
+          lotNumber: lotName, expirationDate: expiry, quantity,
+          createdAt: new Date().toISOString() });
+        serials.forEach((number) => db.serialNumbers.push({ id: `dispatch-${number}`, tenantId,
+          branchId, productId, locationId, lotId, serialNumber: number,
+          status: SerialStatus.available, createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString() }));
+      }
+    }
   });
   const events = new DataEventBus();
   const orders = new MockOrderRepository(store, events);
@@ -278,11 +302,46 @@ async function main() {
     pickingItemId: lotSerialPick.line.id, pickedQuantity: 1,
     serialNumbers: ["SER-LOT-EARLY"], operationId: "correct-fefo-serial",
     performedByUserId: actorUserId });
+  assert.deepEqual(store.getSnapshot().pickingItems.find((item) => item.id === lotSerialPick.line.id)
+    ?.pickedAllocations?.map((item) => item.lotId), ["dispatch-lot-serial-early"]);
   await orders.updateStatus(lotSerialOrder.id, OrderStatus.cancelled);
   assert.equal(store.getSnapshot().serialNumbers.find((item) =>
     item.serialNumber === "SER-LOT-EARLY")?.status, SerialStatus.available);
 
-  // FEFO choice survives Picking and is consumed unchanged by Dispatch.
+  // An earlier lot with no selectable serial is skipped; its later FEFO sibling is usable.
+  const gapOrder = await createOrder("FEFO-GAP", "dispatch-fefo-gap-product", 1);
+  const gapPick = await startPicking(gapOrder.id);
+  await picking.updateItem({ tenantId, branchId, pickingOrderId: gapPick.record.id,
+    pickingItemId: gapPick.line.id, pickedQuantity: 1, serialNumbers: ["SER-GAP-LATE"],
+    operationId: "pick-fefo-gap", performedByUserId: actorUserId });
+  assert.deepEqual(store.getSnapshot().pickingItems.find((item) => item.id === gapPick.line.id)
+    ?.pickedAllocations?.map((item) => item.lotId), ["dispatch-fefo-gap-late"]);
+  await finishPacking(gapPick.record.id, "fefo-gap");
+  await dispatch.confirm({ tenantId, branchId, orderId: gapOrder.id,
+    actorUserId, operationId: "dispatch-fefo-gap" });
+  assert.equal(store.getSnapshot().stockLots.find((item) => item.id === "dispatch-fefo-gap-early")?.quantity, 1);
+  assert.equal(store.getSnapshot().stockLots.find((item) => item.id === "dispatch-fefo-gap-late")?.quantity, 0);
+
+  // A partial serial capacity in the first FEFO lot continues into the next lot.
+  const splitOrder = await createOrder("FEFO-SPLIT", "dispatch-fefo-split-product", 2);
+  const splitPick = await startPicking(splitOrder.id);
+  await picking.updateItem({ tenantId, branchId, pickingOrderId: splitPick.record.id,
+    pickingItemId: splitPick.line.id, pickedQuantity: 2,
+    serialNumbers: ["SER-SPLIT-EARLY", "SER-SPLIT-LATE"],
+    operationId: "pick-fefo-split", performedByUserId: actorUserId });
+  assert.deepEqual(store.getSnapshot().pickingItems.find((item) => item.id === splitPick.line.id)
+    ?.pickedAllocations?.map(({ lotId, quantity }) => ({ lotId, quantity })), [
+    { lotId: "dispatch-fefo-split-early", quantity: 1 },
+    { lotId: "dispatch-fefo-split-late", quantity: 1 },
+  ]);
+  await finishPacking(splitPick.record.id, "fefo-split");
+  const beforeSplitDispatch = movements().length;
+  await dispatch.confirm({ tenantId, branchId, orderId: splitOrder.id,
+    actorUserId, operationId: "dispatch-fefo-split" });
+  assert.deepEqual(movements().slice(beforeSplitDispatch).map((item) => item.lotId),
+    ["dispatch-fefo-split-early", "dispatch-fefo-split-late"]);
+
+  // The existing lot-only path still chooses FEFO without needing serials.
   const lotOrder = await createOrder("LOT", "dispatch-lot-product", 2);
   const lotPick = await startPicking(lotOrder.id);
   await picking.updateItem({ tenantId, branchId, pickingOrderId: lotPick.record.id,
