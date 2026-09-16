@@ -22,8 +22,11 @@ import {
   MockPromotionRepository,
   MockPurchaseOrderRepository,
   MockReceiptRepository,
+  MockRoleRepository,
   MockSupplierProductRepository,
+  MockTenantRepository,
   MockUnitRepository,
+  MockUserRepository,
 } from "@/infrastructure/mock/repositories";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import { RegisterInventoryAdjustmentService } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
@@ -58,6 +61,16 @@ const purchaseOrders = new MockPurchaseOrderRepository(store, events);
 const receipts = new MockReceiptRepository(store, events);
 const adjustments = new MockInventoryAdjustmentRepository(store, events);
 const repositories = {
+  auth: {
+    getCurrentSessionId: async () => "session-inventory-traceability",
+    getSession: async (sessionId: string) =>
+      sessionId === "session-inventory-traceability"
+        ? { id: sessionId, userId: "user-inventory" }
+        : null,
+  },
+  users: new MockUserRepository(store, events),
+  roles: new MockRoleRepository(store, events),
+  tenants: new MockTenantRepository(store, events),
   products: new MockProductRepository(store, events),
   inventory: new MockInventoryRepository(store, events),
   inventoryAdjustments: adjustments,
