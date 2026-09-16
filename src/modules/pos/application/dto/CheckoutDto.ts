@@ -40,16 +40,14 @@ export interface CheckoutDto {
 }
 
 /**
- * Datos estructurados de una cuenta bancaria disponible para el checkout de POS. A propósito NO
- * es un `label` único concatenado -- cada campo llega por separado para que la UI decida cómo
- * mostrarlos (y para que `accountNumber` completo, el único consumidor autorizado a recibirlo,
- * no termine escondido dentro de un string que también viaja a otros lugares).
+ * Datos estructurados de una cuenta bancaria disponible para el checkout de POS. La UI no necesita
+ * el número completo: la confirmación usa `bankAccountId` y revalida la cuenta internamente.
  */
 export interface CheckoutBankAccountDto {
   id: string;
   bankName: string;
   accountType: BankAccountType;
   holderName: string;
-  accountNumber: string;
+  accountNumberMasked: string;
   currency: CurrencyCode;
 }
