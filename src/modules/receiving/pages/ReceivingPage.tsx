@@ -8,6 +8,7 @@ import { PageHeader } from "@/shared/components/PageHeader";
 import { TablePagination, type TablePageSize } from "@/shared/components/TablePagination";
 import { useToast } from "@/shared/components/Toast";
 import { cn } from "@/shared/utils/cn";
+import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
 import type { ReceiptIncidentEvidence } from "@/core/entities";
 import type {
   IncidentTypeReadModel,
@@ -136,6 +137,7 @@ export function ReceivingPage() {
               <Input
                 aria-label="Buscar recepciones"
                 className="h-10"
+                maxLength={TEXT_LIMITS.search}
                 onChange={(event) => handleSearchChange(event.target.value)}
                 placeholder="Buscar por orden, proveedor o producto..."
                 type="search"
@@ -631,6 +633,7 @@ function IncidentTypesModal({
           <Input
             aria-label="Nombre del tipo de incidencia"
             disabled={saving}
+            maxLength={TEXT_LIMITS.incidentName}
             onChange={(event) => setName(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") void handleCreate();

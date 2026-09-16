@@ -352,6 +352,7 @@ function buildRow(
     categoryName: maps.categories.get(product.categoryId)?.name ?? "Sin categoria",
     unitId: product.baseUnitId,
     unitName: maps.units.get(product.baseUnitId)?.name ?? "Sin unidad",
+    unitAllowsDecimals: maps.units.get(product.baseUnitId)?.allowsDecimals ?? false,
     saleUnitId,
     saleUnitName: maps.units.get(saleUnitId)?.name ?? "Sin unidad",
     sellableQuantity: quantity / saleFactor,
@@ -433,6 +434,7 @@ function buildKitRow(
     categoryName: maps.categories.get(product.categoryId)?.name ?? "Sin categoria",
     unitId: product.baseUnitId,
     unitName: "Kit",
+    unitAllowsDecimals: false,
     saleUnitId: product.baseUnitId,
     saleUnitName: "Kit",
     sellableQuantity: quantity,
@@ -516,10 +518,12 @@ function buildAdjustmentUnits(
     if (!Number.isFinite(factor) || factor <= 0) {
       throw new Error(`Factor de presentacion invalido para ${product.name}.`);
     }
-    const unitName = maps.units.get(unitId)?.name ?? unitId;
+    const unit = maps.units.get(unitId);
+    const unitName = unit?.name ?? unitId;
     return [{
       unitId,
       unitName,
+      unitAllowsDecimals: unit?.allowsDecimals ?? false,
       toBaseFactor: factor,
       label: factor === 1 ? unitName : `${unitName} — ${factor} ${maps.units.get(product.baseUnitId)?.name ?? "base"}`,
     }];

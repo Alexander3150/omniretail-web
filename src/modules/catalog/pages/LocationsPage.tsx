@@ -17,6 +17,7 @@ import { Select } from "@/shared/components/Select";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { useToast } from "@/shared/components/Toast";
 import { cn } from "@/shared/utils/cn";
+import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
 import type {
   LocationEditorDto,
   LocationListItem,
@@ -263,6 +264,7 @@ function LocationFilters({
     <div className="grid gap-3 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
       <Input
         aria-label="Buscar ubicaciones"
+        maxLength={TEXT_LIMITS.search}
         onChange={(event) => onSearchChange(event.target.value)}
         placeholder="Buscar por nombre, codigo o descripcion..."
         type="search"
@@ -767,6 +769,7 @@ function LocationForm({
       <Field id="location-name" label="Nombre *" error={errors.name}>
         <Input
           id="location-name"
+          maxLength={TEXT_LIMITS.locationName}
           onChange={(event) => update({ name: event.target.value })}
           value={value.name}
         />
@@ -774,18 +777,23 @@ function LocationForm({
       <Field id="location-code" label="Codigo">
         <Input
           id="location-code"
+          maxLength={TEXT_LIMITS.locationCode}
           onChange={(event) => update({ code: event.target.value })}
           placeholder="BOD-CENTRO"
           value={value.code}
         />
       </Field>
-      <Field id="location-description" label="Descripcion">
+      <Field id="location-description" label="Descripcion" error={errors.description}>
         <textarea
           className="min-h-24 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
           id="location-description"
+          maxLength={500}
           onChange={(event) => update({ description: event.target.value })}
           value={value.description}
         />
+        <p className="text-right text-xs text-[var(--color-text-muted)]">
+          {value.description.length} / 500
+        </p>
       </Field>
       <Field id="location-status" label="Estado">
         <Select

@@ -8,6 +8,8 @@ import {
   getLocalCalendarDate,
   isExpirationBeforeOperationDate,
 } from "@/core/inventory/expirationDate";
+import { MAX_SAFE_INVENTORY_QUANTITY, TEXT_LIMITS } from "@/shared/utils/inputLimits";
+import { isQuantityCompatibleWithUnit } from "@/shared/utils/numberInput";
 
 export interface AdjustmentValidationErrors {
   quantity?: string;
@@ -17,12 +19,14 @@ export interface AdjustmentValidationErrors {
   lotNumber?: string;
   expirationDate?: string;
   serialNumbers?: string;
+  notes?: string;
 }
 
 export interface TransferValidationErrors {
   providerBranchId?: string;
   quantity?: string;
   reason?: string;
+  notes?: string;
 }
 
 export function validateAdjustment(
@@ -35,6 +39,10 @@ export function validateAdjustment(
   if (!dto.locationId) errors.locationId = "Selecciona una ubicacion.";
   if (!Number.isFinite(dto.quantity) || dto.quantity < 0) {
     errors.quantity = "Ingresa una cantidad valida.";
+  } else if (dto.quantity > MAX_SAFE_INVENTORY_QUANTITY) {
+    errors.quantity = "La cantidad no puede superar 999,999.99.";
+  } else if (row.tracking.serial && !Number.isInteger(dto.quantity)) {
+    errors.quantity = "Los productos con series requieren una cantidad entera.";
   } else if (dto.movementKind !== "count" && dto.quantity <= 0) {
     errors.quantity = "La cantidad debe ser mayor que cero.";
   } else if (
@@ -48,6 +56,12 @@ export function validateAdjustment(
     errors.quantity = "El conteo coincide con el stock actual.";
   }
   if (!dto.reason.trim()) errors.reason = "El motivo es requerido.";
+  else if (dto.reason.length > TEXT_LIMITS.reason)
+    errors.reason = "El motivo admite hasta 200 caracteres.";
+  if ((dto.notes?.length ?? 0) > TEXT_LIMITS.notes)
+    errors.notes = "Las observaciones admiten hasta 500 caracteres.";
+  if ((dto.lotNumber?.length ?? 0) > TEXT_LIMITS.lotNumber)
+    errors.lotNumber = "El lote admite hasta 50 caracteres.";
   const delta =
     dto.movementKind === "count"
       ? dto.quantity - row.quantity
@@ -95,10 +109,18 @@ export function validateTransfer(
       ?.availableQuantity ?? 0;
   if (!Number.isFinite(dto.quantity) || dto.quantity <= 0) {
     errors.quantity = "La cantidad debe ser mayor que cero.";
+  } else if (dto.quantity > MAX_SAFE_INVENTORY_QUANTITY) {
+    errors.quantity = "La cantidad no puede superar 999,999.99.";
+  } else if (!isQuantityCompatibleWithUnit(dto.quantity, row.unitAllowsDecimals)) {
+    errors.quantity = row.unitAllowsDecimals
+      ? "La cantidad admite hasta 3 decimales."
+      : "La unidad del producto no admite fracciones.";
   } else if (dto.quantity > providerStock) {
     errors.quantity = "La cantidad excede la existencia conocida de la sucursal.";
   }
   if (!dto.reason.trim()) errors.reason = "El motivo del traslado es requerido.";
+  if ((dto.notes?.length ?? 0) > TEXT_LIMITS.notes)
+    errors.notes = "Las observaciones admiten hasta 500 caracteres.";
   return errors;
 }
 

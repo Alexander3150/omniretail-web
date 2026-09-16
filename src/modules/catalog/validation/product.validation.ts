@@ -3,6 +3,8 @@ import type { BusinessCapabilitiesConfig } from "@/core/entities";
 import type { ProductTrackingConfig } from "@/core/types/tracking.types";
 import type { CreateProductDto } from "@/modules/catalog/application/dto/CreateProductDto";
 import type { ProductEditorDto } from "@/modules/catalog/application/dto/ProductEditorDto";
+import { MAX_SAFE_CURRENCY, MONEY_DECIMAL_PLACES, TEXT_LIMITS } from "@/shared/utils/inputLimits";
+import { hasAtMostDecimalPlaces } from "@/shared/utils/numberInput";
 
 /**
  * No se reutiliza `productTypeLabels` de components: la capa de validacion no depende de la UI.
@@ -132,8 +134,7 @@ export function applyCapabilityRulesToEditor(
     ...dto,
     saleUnitId,
     inventoryUnitId,
-    inventoryToBaseFactor:
-      inventoryUnitId === dto.baseUnitId ? 1 : dto.inventoryToBaseFactor,
+    inventoryToBaseFactor: inventoryUnitId === dto.baseUnitId ? 1 : dto.inventoryToBaseFactor,
     saleToBaseFactor: saleUnitId === dto.baseUnitId ? 1 : dto.saleToBaseFactor,
     tracking: applyTrackingRules(dto.productType, dto.tracking, capabilities, current?.tracking),
     // Los atributos de un producto existente no se tocan aqui: syncAttributes es el punto real de
@@ -154,13 +155,26 @@ export function validateProductDto(dto: CreateProductDto): ProductValidationErro
   const errors: ProductValidationErrors = {};
 
   if (!dto.sku.trim()) errors.sku = "El Codigo / SKU es requerido.";
+  else if (dto.sku.length > TEXT_LIMITS.sku) errors.sku = "El SKU admite hasta 50 caracteres.";
   if (!dto.name.trim()) errors.name = "El nombre es requerido.";
+  else if (dto.name.length > TEXT_LIMITS.productName)
+    errors.name = "El nombre admite hasta 120 caracteres.";
+  if ((dto.description?.length ?? 0) > TEXT_LIMITS.description)
+    errors.description = "La descripcion admite hasta 1,000 caracteres.";
+  if ((dto.brand?.length ?? 0) > TEXT_LIMITS.brand)
+    errors.brand = "La marca admite hasta 80 caracteres.";
+  if ((dto.barcode?.length ?? 0) > TEXT_LIMITS.barcode)
+    errors.barcode = "El codigo de barras admite hasta 80 caracteres.";
   if (!dto.productType) errors.productType = "El tipo de producto es requerido.";
   if (!dto.categoryId) errors.categoryId = "La categoria es requerida.";
   if (!dto.baseUnitId) errors.baseUnitId = "La unidad base es requerida.";
   if (!dto.saleUnitId) errors.saleUnitId = "La unidad de venta es requerida.";
   if (!Number.isFinite(dto.salePrice) || dto.salePrice < 0) {
     errors.salePrice = "El precio debe ser mayor o igual a 0.";
+  } else if (dto.salePrice > MAX_SAFE_CURRENCY) {
+    errors.salePrice = "El precio no puede superar Q9,999,999.99.";
+  } else if (!hasAtMostDecimalPlaces(dto.salePrice, MONEY_DECIMAL_PLACES)) {
+    errors.salePrice = "El precio admite hasta 2 decimales.";
   }
   if (dto.primaryImageUrl?.trim() && !isValidProductImageUrl(dto.primaryImageUrl.trim())) {
     errors.primaryImageUrl = "Ingresa una ruta que inicie con / o una URL http(s).";

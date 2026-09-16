@@ -23,6 +23,7 @@ export interface PurchaseOrderEditorLine {
   supplierSku: string;
   unitId: string;
   unitLabel: string;
+  unitAllowsDecimals: boolean;
   purchaseToBaseFactor: number;
   quantity: NumericInputValue;
   baseCost: number;
@@ -50,6 +51,7 @@ export interface PurchaseOrderAvailableProduct {
   categoryName: string;
   unitId: string;
   unitLabel: string;
+  unitAllowsDecimals: boolean;
   purchaseToBaseFactor: number;
   configuredCost: number;
   minimumOrderQuantity: number;

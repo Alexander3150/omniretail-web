@@ -3,14 +3,27 @@ import { ProductType } from "@/core/enums";
 import { getProductMediaSource, isSafeCatalogImageUrl } from "@/core/media/catalogImage";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { normalizeSku } from "@/shared/utils/normalizeSku";
+import {
+  MAX_KIT_COMPONENT_QUANTITY,
+  MAX_SAFE_CONVERSION_FACTOR,
+  MAX_SAFE_CURRENCY,
+  MAX_SAFE_INTEGER_COUNT,
+  MONEY_DECIMAL_PLACES,
+  QUANTITY_DECIMAL_PLACES,
+  TEXT_LIMITS,
+} from "@/shared/utils/inputLimits";
 import type {
   ProductEditorDto,
   ProductMediaEditorValue,
 } from "@/modules/catalog/application/dto/ProductEditorDto";
 import {
+  hasAtMostDecimalPlaces,
+  isConversionFactorCompatibleWithBaseUnit,
+  isQuantityCompatibleWithUnit,
   isPositiveInteger,
   isPositiveNumber as isPositiveNumericInput,
   toFiniteNumber,
+  type NumericInputValue,
 } from "@/shared/utils/numberInput";
 import { ProductMapper } from "@/modules/catalog/application/mappers/ProductMapper";
 import {
@@ -32,7 +45,10 @@ export async function validateEditorProduct(
   repositories: RepositoryRegistry,
   dto: ProductEditorDto,
   tenantId: string,
-  current?: Pick<Product, "id" | "productType" | "baseUnitId" | "inventoryUnitId" | "saleUnitId" | "tracking">,
+  current?: Pick<
+    Product,
+    "id" | "productType" | "baseUnitId" | "inventoryUnitId" | "saleUnitId" | "tracking"
+  >,
 ) {
   const capabilities = await requireCapabilities(repositories, tenantId);
   ensureProductTypeAllowed(dto.productType, capabilities, current?.productType);
@@ -54,6 +70,12 @@ export async function validateEditorProduct(
     : undefined;
   const normalizedDto = applyCapabilityRulesToEditor(dto, capabilities, capabilityContext);
   const currentProductId = current?.id;
+  if (
+    typeof normalizedDto.salePrice !== "number" ||
+    !hasAtMostDecimalPlaces(normalizedDto.salePrice, MONEY_DECIMAL_PLACES)
+  ) {
+    throw new CatalogServiceError("El precio admite hasta 2 decimales.");
+  }
   const baseErrors = validateProductDto(toProductDto(normalizedDto));
   if (hasValidationErrors(baseErrors)) {
     throw new CatalogServiceError(Object.values(baseErrors)[0] ?? "Revisa los datos del producto.");
@@ -62,15 +84,16 @@ export async function validateEditorProduct(
     if (normalizedDto.kitComponents.length === 0) {
       throw new CatalogServiceError("Un kit publicado requiere al menos un componente físico.");
     }
-    if (
-      normalizedDto.kitComponents.some(
-        (component) =>
-          !Number.isFinite(toFiniteNumber(component.quantityPerKit)) ||
-          toFiniteNumber(component.quantityPerKit) <= 0,
-      )
-    ) {
-      throw new CatalogServiceError("Cada componente del kit requiere una cantidad mayor a 0.");
-    }
+  }
+  if (
+    normalizedDto.productType === "kit" &&
+    normalizedDto.kitComponents.some(
+      (component) =>
+        !isPositiveNumericInput(component.quantityPerKit) ||
+        toFiniteNumber(component.quantityPerKit) > MAX_KIT_COMPONENT_QUANTITY,
+    )
+  ) {
+    throw new CatalogServiceError("Cada componente del kit debe estar entre 0 y 9,999.");
   }
 
   if (
@@ -79,7 +102,24 @@ export async function validateEditorProduct(
     (normalizedDto.saleUnitId !== normalizedDto.baseUnitId &&
       !isPositiveNumber(normalizedDto.saleToBaseFactor))
   ) {
-    throw new CatalogServiceError("Cada presentacion debe equivaler a un multiplo positivo de la unidad base.");
+    throw new CatalogServiceError(
+      "Cada presentacion debe equivaler a un multiplo positivo de la unidad base.",
+    );
+  }
+  if (
+    toFiniteNumber(normalizedDto.inventoryToBaseFactor) > MAX_SAFE_CONVERSION_FACTOR ||
+    toFiniteNumber(normalizedDto.saleToBaseFactor) > MAX_SAFE_CONVERSION_FACTOR
+  ) {
+    throw new CatalogServiceError("El factor de conversion no puede superar 999,999.99.");
+  }
+  if (
+    normalizedDto.attributes.some(
+      (attribute) =>
+        attribute.name.length > TEXT_LIMITS.attributeName ||
+        attribute.value.length > TEXT_LIMITS.attributeValue,
+    )
+  ) {
+    throw new CatalogServiceError("Los atributos admiten 50 caracteres en nombre y 100 en valor.");
   }
   if (
     normalizedDto.inventoryUnitId === normalizedDto.saleUnitId &&
@@ -99,7 +139,6 @@ export async function validateEditorProduct(
   }
 
   assertUniquePositiveSalesTiers(normalizedDto.salesPriceTiers);
-  assertSupplierProducts(normalizedDto.supplierProducts);
   assertInventorySettings(normalizedDto);
 
   const normalizedSku = normalizeSku(normalizedDto.sku);
@@ -129,6 +168,55 @@ export async function validateEditorProduct(
   ensureActiveUnit(baseUnit);
   ensureActiveUnit(inventoryUnit);
   ensureActiveUnit(saleUnit);
+  if (!baseUnit) throw new CatalogServiceError("La unidad base no esta disponible.");
+
+  const conversionValues = [
+    ...(normalizedDto.inventoryUnitId === normalizedDto.baseUnitId
+      ? []
+      : [normalizedDto.inventoryToBaseFactor]),
+    ...(normalizedDto.saleUnitId === normalizedDto.baseUnitId
+      ? []
+      : [normalizedDto.saleToBaseFactor]),
+  ];
+  if (
+    conversionValues.some(
+      (factor) => !isConversionFactorCompatibleWithBaseUnit(factor, baseUnit.allowsDecimals),
+    )
+  ) {
+    throw new CatalogServiceError(
+      baseUnit.allowsDecimals
+        ? "El factor de conversion admite hasta 4 decimales."
+        : "La conversion debe producir una cantidad entera de la unidad base.",
+    );
+  }
+  assertSupplierProducts(normalizedDto.supplierProducts, baseUnit.allowsDecimals);
+
+  if (normalizedDto.productType === ProductType.kit) {
+    const componentProducts = await Promise.all(
+      normalizedDto.kitComponents.map((component) =>
+        repositories.products.getByIdScoped(tenantId, component.componentProductId),
+      ),
+    );
+    if (componentProducts.some((product) => !product)) {
+      throw new CatalogServiceError("Uno de los componentes del kit no esta disponible.");
+    }
+    const componentUnits = await Promise.all(
+      componentProducts.map((product) =>
+        product ? repositories.units.getByIdScoped(tenantId, product.baseUnitId) : null,
+      ),
+    );
+    normalizedDto.kitComponents.forEach((component, index) => {
+      const unit = componentUnits[index];
+      if (!unit) throw new CatalogServiceError("La unidad de un componente no esta disponible.");
+      if (!isQuantityCompatibleWithUnit(component.quantityPerKit, unit.allowsDecimals)) {
+        throw new CatalogServiceError(
+          unit.allowsDecimals
+            ? `La cantidad del componente admite hasta ${QUANTITY_DECIMAL_PLACES} decimales.`
+            : "La unidad del componente no admite fracciones.",
+        );
+      }
+    });
+  }
 
   return {
     normalizedDto,
@@ -203,7 +291,12 @@ export async function syncEditorRelatedData(
 function assertInventorySettings(dto: ProductEditorDto) {
   if (!dto.tracking.stock) return;
   const minStock = toFiniteNumber(dto.inventorySettings.minStock);
-  if (dto.inventorySettings.minStock === "" || !Number.isSafeInteger(minStock) || minStock < 0) {
+  if (
+    dto.inventorySettings.minStock === "" ||
+    !Number.isSafeInteger(minStock) ||
+    minStock < 0 ||
+    minStock > MAX_SAFE_INTEGER_COUNT
+  ) {
     throw new CatalogServiceError("El stock minimo debe ser mayor o igual a 0.");
   }
 }
@@ -236,26 +329,26 @@ async function syncUnitConversion(
   // lo que pase con los factores del borrador (evita confiar en esos numeros).
   if (!context.capabilities.supportsUnitsAndPackaging && !context.isNewProduct) return;
 
-  await repositories.units.replaceConversionsForProductScoped(
-    product.tenantId,
-    product.id,
-    [
-      ...(dto.inventoryUnitId === dto.baseUnitId
-        ? []
-        : [{
+  await repositories.units.replaceConversionsForProductScoped(product.tenantId, product.id, [
+    ...(dto.inventoryUnitId === dto.baseUnitId
+      ? []
+      : [
+          {
             fromUnitId: dto.inventoryUnitId,
             toUnitId: dto.baseUnitId,
             factor: toFiniteNumber(dto.inventoryToBaseFactor),
-          }]),
-      ...(dto.saleUnitId === dto.baseUnitId || dto.saleUnitId === dto.inventoryUnitId
-        ? []
-        : [{
+          },
+        ]),
+    ...(dto.saleUnitId === dto.baseUnitId || dto.saleUnitId === dto.inventoryUnitId
+      ? []
+      : [
+          {
             fromUnitId: dto.saleUnitId,
             toUnitId: dto.baseUnitId,
             factor: toFiniteNumber(dto.saleToBaseFactor),
-          }]),
-    ],
-  );
+          },
+        ]),
+  ]);
 }
 
 async function syncAttributes(
@@ -496,8 +589,17 @@ function assertUniquePositiveSalesTiers(tiers: ProductEditorDto["salesPriceTiers
     if (!isPositiveInteger(tier.minQuantity) || minQuantity <= 1) {
       throw new CatalogServiceError("La cantidad minima mayorista debe ser mayor a 1.");
     }
+    if (minQuantity > MAX_SAFE_INTEGER_COUNT) {
+      throw new CatalogServiceError("La cantidad minima no puede superar 999,999.");
+    }
     if (!isPositiveNumericInput(tier.unitPrice)) {
       throw new CatalogServiceError("El precio mayorista debe ser mayor a 0.");
+    }
+    if (toFiniteNumber(tier.unitPrice) > MAX_SAFE_CURRENCY) {
+      throw new CatalogServiceError("El precio mayorista no puede superar Q9,999,999.99.");
+    }
+    if (!hasAtMostDecimalPlaces(tier.unitPrice, MONEY_DECIMAL_PLACES)) {
+      throw new CatalogServiceError("El precio mayorista admite hasta 2 decimales.");
     }
     if (quantities.has(minQuantity)) {
       throw new CatalogServiceError("No repitas cantidades minimas en precios mayoristas.");
@@ -506,7 +608,10 @@ function assertUniquePositiveSalesTiers(tiers: ProductEditorDto["salesPriceTiers
   }
 }
 
-function assertSupplierProducts(supplierProducts: ProductEditorDto["supplierProducts"]) {
+function assertSupplierProducts(
+  supplierProducts: ProductEditorDto["supplierProducts"],
+  baseUnitAllowsDecimals: boolean,
+) {
   const normalizedSupplierProducts = normalizePreferredSupplier(supplierProducts);
   const suppliers = new Set<string>();
   for (const supplierProduct of normalizedSupplierProducts) {
@@ -517,14 +622,41 @@ function assertSupplierProducts(supplierProducts: ProductEditorDto["supplierProd
     if (!isPositiveNumber(supplierProduct.purchaseToBaseFactor)) {
       throw new CatalogServiceError("El contenido de compra debe ser mayor a 0.");
     }
+    if (toFiniteNumber(supplierProduct.purchaseToBaseFactor) > MAX_SAFE_CONVERSION_FACTOR) {
+      throw new CatalogServiceError("El contenido de compra no puede superar 999,999.99.");
+    }
+    if (
+      !isConversionFactorCompatibleWithBaseUnit(
+        supplierProduct.purchaseToBaseFactor,
+        baseUnitAllowsDecimals,
+      )
+    ) {
+      throw new CatalogServiceError(
+        baseUnitAllowsDecimals
+          ? "El contenido de compra admite hasta 4 decimales."
+          : "El contenido de compra debe producir unidades base enteras.",
+      );
+    }
     if (toFiniteNumber(supplierProduct.lastCost, -1) < 0) {
       throw new CatalogServiceError("El costo del proveedor debe ser mayor o igual a 0.");
     }
-    if (!isPositiveNumericInput(supplierProduct.minimumOrderQuantity)) {
-      throw new CatalogServiceError("El pedido minimo debe ser mayor a 0.");
+    if (toFiniteNumber(supplierProduct.lastCost) > MAX_SAFE_CURRENCY) {
+      throw new CatalogServiceError("El costo del proveedor no puede superar Q9,999,999.99.");
+    }
+    if (!hasAtMostDecimalPlaces(supplierProduct.lastCost, MONEY_DECIMAL_PLACES)) {
+      throw new CatalogServiceError("El costo del proveedor admite hasta 2 decimales.");
+    }
+    if (
+      !isPositiveInteger(supplierProduct.minimumOrderQuantity) ||
+      toFiniteNumber(supplierProduct.minimumOrderQuantity) > MAX_SAFE_INTEGER_COUNT
+    ) {
+      throw new CatalogServiceError("El pedido minimo debe ser un entero entre 1 y 999,999.");
     }
     if (!isNonNegativeInteger(supplierProduct.leadTimeDays)) {
       throw new CatalogServiceError("El plazo de entrega debe ser un entero mayor o igual a 0.");
+    }
+    if (toFiniteNumber(supplierProduct.leadTimeDays) > MAX_SAFE_INTEGER_COUNT) {
+      throw new CatalogServiceError("El plazo de entrega no puede superar 999,999 dias.");
     }
     const quantities = new Set<number>();
     for (const tier of supplierProduct.costTiers) {
@@ -532,8 +664,17 @@ function assertSupplierProducts(supplierProducts: ProductEditorDto["supplierProd
       if (!isPositiveInteger(tier.minQuantity)) {
         throw new CatalogServiceError("La cantidad minima de costo debe ser mayor a 0.");
       }
+      if (minQuantity > MAX_SAFE_INTEGER_COUNT) {
+        throw new CatalogServiceError("La cantidad minima de costo no puede superar 999,999.");
+      }
       if (toFiniteNumber(tier.unitCost, -1) < 0) {
         throw new CatalogServiceError("El costo por volumen debe ser mayor o igual a 0.");
+      }
+      if (toFiniteNumber(tier.unitCost) > MAX_SAFE_CURRENCY) {
+        throw new CatalogServiceError("El costo por volumen no puede superar Q9,999,999.99.");
+      }
+      if (!hasAtMostDecimalPlaces(tier.unitCost, MONEY_DECIMAL_PLACES)) {
+        throw new CatalogServiceError("El costo por volumen admite hasta 2 decimales.");
       }
       if (quantities.has(minQuantity)) {
         throw new CatalogServiceError("No repitas cantidades minimas en costos por proveedor.");
@@ -543,11 +684,11 @@ function assertSupplierProducts(supplierProducts: ProductEditorDto["supplierProd
   }
 }
 
-function isPositiveNumber(value: number | "") {
+function isPositiveNumber(value: NumericInputValue) {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
-function isNonNegativeInteger(value: number | "") {
+function isNonNegativeInteger(value: NumericInputValue) {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
