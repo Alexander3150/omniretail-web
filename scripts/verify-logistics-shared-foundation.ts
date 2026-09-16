@@ -311,7 +311,7 @@ async function verifyFulfillmentTrace() {
     lot.allocations.map((item) => item.lot?.expiresAt),
     ["2026-10-01", "2026-12-01"],
   );
-  assert.ok(lot.allocations.every((item) => item.inventoryMovementId.startsWith("movement-trace")));
+  assert.ok(lot.allocations.every((item) => item.inventoryMovementId?.startsWith("movement-trace")));
 
   const serial = requiredTrace(trace, "trace-serial");
   assert.equal(serial.allocations[0]?.serial?.number, "TRACE-SERIAL-001");
@@ -595,23 +595,13 @@ async function verifyCanonicalMultiAllocationTrace() {
     performedByUserId: actorUserId,
     pickedQuantity: 10,
     operationId: "trace-canonical-consumption",
-    lotId: "trace-canonical-expired-lot",
   });
-  assert.equal(consumedItem.lotId, "trace-canonical-expired-lot");
+  assert.equal(consumedItem.pickedAllocations?.length, 2);
 
   const afterConsumption = store.getSnapshot();
-  const consumeOperation = afterConsumption.inventoryReservationConsumeOperations.find(
-    (operation) => operation.operationId === "trace-canonical-consumption",
-  );
-  assert.ok(consumeOperation);
-  const canonicalMovements = afterConsumption.inventoryMovements.filter((movement) =>
-    consumeOperation.inventoryMovementIds.includes(movement.id),
-  );
-  assert.equal(canonicalMovements.length, 2);
-  assert.equal(
-    afterConsumption.inventoryMovements.length - movementsBeforeConsumption,
-    canonicalMovements.length,
-  );
+  assert.equal(afterConsumption.inventoryMovements.length, movementsBeforeConsumption);
+  assert.equal(afterConsumption.inventoryReservationConsumeOperations.some(
+    (operation) => operation.operationId === "trace-canonical-consumption"), false);
 
   const trace = await inventory.getPickingFulfillmentTrace({
     tenantId,
@@ -652,21 +642,10 @@ async function verifyCanonicalMultiAllocationTrace() {
     allocations.reduce((total, allocation) => total + allocation.quantity, 0),
     itemTrace.pickedQuantity,
   );
-  assert.ok(
-    allocations.every((allocation) =>
-      canonicalMovements.some(
-        (movement) =>
-          movement.id === allocation.inventoryMovementId &&
-          movement.fromLocationId === allocation.location?.id &&
-          movement.lotId === allocation.lot?.id &&
-          movement.quantity === allocation.quantity,
-      ),
-    ),
-  );
-  assert.equal(
-    allocations.some((allocation) => allocation.lot?.id === consumedItem.lotId),
-    false,
-  );
+  assert.ok(allocations.every((allocation) => allocation.inventoryMovementId === undefined));
+  assert.ok(allocations.every((allocation) => consumedItem.pickedAllocations?.some((selected) =>
+    selected.locationId === allocation.location?.id && selected.lotId === allocation.lot?.id &&
+    selected.quantity === allocation.quantity)));
 
   const traceService = new GetLogisticsItemTraceService({
     auth: {
@@ -691,8 +670,8 @@ async function verifyCanonicalMultiAllocationTrace() {
   });
   assert.equal(projected.length, 1);
   assert.deepEqual(
-    projected[0]?.allocations.map((allocation) => allocation.inventoryMovementId).sort(),
-    itemTrace.allocations.map((allocation) => allocation.inventoryMovementId).sort(),
+    projected[0]?.allocations.map((allocation) => allocation.lot?.id).sort(),
+    itemTrace.allocations.map((allocation) => allocation.lot?.id).sort(),
   );
   assert.equal(
     store.getSnapshot().inventoryMovements.length,

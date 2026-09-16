@@ -276,7 +276,7 @@ async function main() {
     operationId: "picking-ui-basic-3",
   });
 
-  // J-K. Reservation allocations and FEFO drive real multi-location/lot movements.
+  // J-K. Reservation allocations and FEFO are recorded without physical consumption.
   const lotReservation = store
     .getSnapshot()
     .inventoryReservations.find(
@@ -293,26 +293,19 @@ async function main() {
     pickedQuantity: 10,
     operationId: "picking-ui-lot-complete",
   });
-  const lotOperation = store
-    .getSnapshot()
-    .inventoryReservationConsumeOperations.find(
-      (item) => item.operationId === "picking-ui-lot-complete",
-    );
-  assert.ok(lotOperation);
-  const lotMovements = store
-    .getSnapshot()
-    .inventoryMovements.filter((item) => lotOperation.inventoryMovementIds.includes(item.id));
-  assert.equal(lotMovements.length, 2);
+  const lotSelections = store.getSnapshot().pickingItems.find(
+    (item) => item.id === lotLine.pickingLineId)?.pickedAllocations ?? [];
+  assert.equal(lotSelections.length, 2);
   assert.deepEqual(
-    lotMovements.map((item) => item.lotId),
+    lotSelections.map((item) => item.lotId),
     ["picking-ui-lot-a", "picking-ui-lot-b"],
   );
   assert.deepEqual(
-    lotMovements.map((item) => item.fromLocationId),
+    lotSelections.map((item) => item.locationId),
     ["loc-centro-a", "loc-centro-b"],
   );
   assert.equal(
-    lotMovements.reduce((total, item) => total + item.quantity, 0),
+    lotSelections.reduce((total, item) => total + item.quantity, 0),
     10,
   );
 
@@ -325,7 +318,7 @@ async function main() {
       operationId: "picking-ui-serial-arbitrary",
       serialNumbers: ["SERIAL-INVENTADA", "PICK-UI-SERIAL-1"],
     }),
-    /serial numbers do not match reservation locations/,
+    /Serial number is not available for Picking/,
   );
 
   const firstSerialSelection = ["PICK-UI-SERIAL-2", "PICK-UI-SERIAL-1"];
@@ -352,24 +345,11 @@ async function main() {
     serialNumbers: retryCanonicalPayload,
   });
   assert.equal(store.getSnapshot().inventoryMovements.length, movementCountBeforeSerialRetry);
-  const serialOperation = store
-    .getSnapshot()
-    .inventoryReservationConsumeOperations.find(
-      (item) => item.operationId === "picking-ui-serial-canonical",
-    );
-  assert.ok(serialOperation);
-  const serialMovements = store
-    .getSnapshot()
-    .inventoryMovements.filter((item) => serialOperation.inventoryMovementIds.includes(item.id));
-  assert.equal(serialMovements.length, 2);
+  const serialSelections = store.getSnapshot().pickingItems.find(
+    (item) => item.id === serialLine.pickingLineId)?.pickedAllocations ?? [];
+  assert.equal(serialSelections.reduce((total, item) => total + (item.serialNumbers?.length ?? 0), 0), 2);
   assert.deepEqual(
-    serialMovements
-      .map(
-        (movement) =>
-          store.getSnapshot().serialNumbers.find((item) => item.id === movement.serialNumberId)
-            ?.serialNumber,
-      )
-      .sort(),
+    serialSelections.flatMap((item) => item.serialNumbers ?? []).sort(),
     firstCanonicalPayload,
   );
 
@@ -392,9 +372,9 @@ async function main() {
     PickingIncidentStatus.resolved,
   );
 
-  // T, W and X. Home-delivery completion is atomic/idempotent; inventory changed only through Picking.
-  assert.ok(store.getSnapshot().inventoryMovements.length > movementsBeforePicking);
-  assert.notDeepEqual(balanceQuantities(store), balancesBeforePicking);
+  // T, W and X. Picking completion is atomic/idempotent and leaves physical stock reserved.
+  assert.equal(store.getSnapshot().inventoryMovements.length, movementsBeforePicking);
+  assert.deepEqual(balanceQuantities(store), balancesBeforePicking);
   const homeCompletion = await service.complete(branchId, mainPicking.id);
   assert.equal(homeCompletion.orderStatus, OrderStatus.packing);
   assert.equal(homeCompletion.idempotent, false);

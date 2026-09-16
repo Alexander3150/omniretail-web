@@ -37,7 +37,7 @@ export function PickingLineList({ disabled, editable, incidents, lines, onUpdate
           disabled={disabled}
           editable={editable}
           incidents={incidents.filter((incident) => incident.pickingLineId === line.pickingLineId)}
-          key={`${line.pickingLineId}-${line.pickedQuantity}`}
+          key={`${line.pickingLineId}-${line.pickedQuantity}-${line.serialNumbers.join(",")}`}
           line={line}
           onUpdate={onUpdate}
         />
@@ -57,6 +57,8 @@ interface PickingLineCardProps {
 function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: PickingLineCardProps) {
   const [targetText, setTargetText] = useState(String(line.pickedQuantity));
   const [selectedSerials, setSelectedSerials] = useState<string[]>([]);
+  const [replacementSerials, setReplacementSerials] = useState<string[]>(line.serialNumbers);
+  const [serialEntry, setSerialEntry] = useState("");
   const [error, setError] = useState<string | null>(null);
   const targetQuantity = Number(targetText);
   const serialDelta = Number.isFinite(targetQuantity)
@@ -73,6 +75,33 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
     const saved = await onUpdate(line, targetQuantity, selectedSerials);
     if (!saved) return;
     setError(null);
+  };
+
+  const addScannedSerial = () => {
+    const number = serialEntry.trim();
+    if (!line.availableSerialNumbers.includes(number) || selectedSerials.includes(number)) {
+      setError("Selecciona una serie disponible para esta reserva.");
+      return;
+    }
+    if (selectedSerials.length >= serialDelta) {
+      setError("Ya se seleccionó la cantidad requerida de series.");
+      return;
+    }
+    setSelectedSerials((current) => [...current, number]);
+    setSerialEntry("");
+    setError(null);
+  };
+
+  const replaceSerials = async () => {
+    if (replacementSerials.length !== line.pickedQuantity) {
+      setError(`Selecciona exactamente ${line.pickedQuantity} serie(s).`);
+      return;
+    }
+    if (new Set(replacementSerials).size !== replacementSerials.length) {
+      setError("No puedes seleccionar una serie más de una vez.");
+      return;
+    }
+    if (await onUpdate(line, line.pickedQuantity, replacementSerials)) setError(null);
   };
 
   return (
@@ -158,8 +187,14 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
           {line.tracking.serial ? (
             <fieldset className="space-y-2" disabled={disabled}>
               <legend className="text-sm font-semibold text-[var(--color-text)]">
-                Series disponibles · selecciona {serialDelta}
+                Series disponibles · seleccionadas {selectedSerials.length} / requeridas {serialDelta}
               </legend>
+              <div className="flex max-w-sm gap-2">
+                <Input aria-label="Escanear o escribir serie" onChange={(event) => setSerialEntry(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addScannedSerial(); } }}
+                  placeholder="Escanear o escribir serie" value={serialEntry} />
+                <Button disabled={disabled || !serialEntry.trim()} onClick={addScannedSerial} type="button" variant="secondary">Agregar</Button>
+              </div>
               {line.availableSerialNumbers.length ? (
                 <div className="flex flex-wrap gap-2">
                   {line.availableSerialNumbers.map((serial) => {
@@ -184,9 +219,30 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
               ) : <InlineAlert description="No hay series disponibles en la reserva actual." title="Series no disponibles" tone="warning" />}
             </fieldset>
           ) : null}
-          {error ? <InlineAlert description={error} title="Revisa el progreso" tone="warning" /> : null}
         </div>
       ) : null}
+      {editable && line.tracking.serial && line.pickedQuantity > 0 ? (
+        <div className="mt-3 space-y-2 border-t border-[var(--color-border)] pt-3 text-sm">
+          <p className="font-semibold">Corregir series recogidas · {replacementSerials.length} / {line.pickedQuantity}</p>
+          <div className="flex flex-wrap gap-2">
+            {[...new Set([...line.serialNumbers, ...line.availableSerialNumbers])].map((serial) => (
+              <label className="flex items-center gap-2 rounded-md border border-[var(--color-border)] px-3 py-2" key={serial}>
+                <input checked={replacementSerials.includes(serial)} disabled={disabled ||
+                  (!replacementSerials.includes(serial) && replacementSerials.length >= line.pickedQuantity)}
+                  onChange={() => setReplacementSerials((current) => current.includes(serial)
+                    ? current.filter((item) => item !== serial) : [...current, serial])} type="checkbox" />
+                {serial}
+              </label>
+            ))}
+          </div>
+          <Button disabled={disabled || replacementSerials.length !== line.pickedQuantity ||
+            replacementSerials.every((serial) => line.serialNumbers.includes(serial))}
+            onClick={() => void replaceSerials()} type="button" variant="secondary">
+            Guardar selección de series
+          </Button>
+        </div>
+      ) : null}
+      {error ? <InlineAlert description={error} title="Revisa el progreso" tone="warning" /> : null}
     </article>
   );
 }

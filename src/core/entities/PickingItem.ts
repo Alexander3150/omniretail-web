@@ -11,6 +11,14 @@ export interface PickingItem {
   locationId?: string;
   lotId?: string;
   serialNumbers?: string[];
+  /** Physical picks retained until final fulfillment; no stock is consumed here. */
+  pickedAllocations?: Array<{
+    balanceId: string;
+    locationId?: string;
+    lotId?: string;
+    quantity: number;
+    serialNumbers?: string[];
+  }>;
   status: PickingItemStatus;
 }
 

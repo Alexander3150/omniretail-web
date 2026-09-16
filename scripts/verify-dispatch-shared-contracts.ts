@@ -29,6 +29,8 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import { DispatchApplicationService } from "@/modules/logistics/application/services/DispatchApplicationService";
 import { DispatchAuthorizationError } from "@/modules/logistics/application/services/DispatchAuthorizationContext";
+import { toCustomerOrderSummaryDto } from "@/modules/customer/application/dto/CustomerOrderSummaryDto";
+import { toCustomerOrderDetailDto } from "@/modules/customer/application/dto/CustomerOrderDetailDto";
 import { GetStorefrontOrderTrackingService } from "@/modules/storefront/application/services/GetStorefrontOrderTrackingService";
 
 const tenantId = "tenant-demo";
@@ -73,17 +75,25 @@ async function main() {
   } as unknown as RepositoryRegistry;
   const service = new DispatchApplicationService(repositories);
   const trackingService = new GetStorefrontOrderTrackingService(repositories);
+  const assertPublicStatus = async (orderId: string, expected: string) => {
+    const order = await orders.getById(orderId);
+    assert.ok(order);
+    assert.equal((await trackingService.execute(tenantId, order.trackingToken))?.tracking.status, expected);
+    assert.equal(toCustomerOrderSummaryDto(order).status, expected);
+    assert.equal(toCustomerOrderDetailDto(order).status, expected);
+  };
 
   // Initial status policy is distinct from lifecycle transition ownership.
   assert.equal(
     (await orders.create(orderInput("initial-pending", { status: OrderStatus.pending }))).status,
     OrderStatus.pending,
   );
-  assert.equal(
-    (await orders.create(orderInput("initial-confirmed", { status: OrderStatus.confirmed })))
-      .status,
-    OrderStatus.confirmed,
-  );
+  const initialConfirmed = await orders.create(orderInput("initial-confirmed", { status: OrderStatus.confirmed }));
+  assert.equal(initialConfirmed.status, OrderStatus.confirmed);
+  await assertPublicStatus(initialConfirmed.id, "confirmed");
+  const unassigned = await orders.create(orderInput("unassigned-picking", {}));
+  await picking.create({ tenantId, branchId, orderId: unassigned.id, priority: PickingPriority.normal });
+  await assertPublicStatus(unassigned.id, "confirmed");
   const initialPayment = await orders.createWithPayment({
     order: orderInput("initial-payment", { status: OrderStatus.pending }),
     payment: {
@@ -131,6 +141,9 @@ async function main() {
   assert.deepEqual(creationSnapshot(store), beforeRejectedCreation);
 
   const trackingProgress = await createTrackingProgressOrder(orders, picking);
+  const trackingOrder = await orders.getByTrackingToken(tenantId, trackingProgress.trackingToken);
+  assert.ok(trackingOrder);
+  await assertPublicStatus(trackingOrder.id, "preparing");
   assert.equal(
     (await trackingService.execute(tenantId, trackingProgress.trackingToken))?.tracking.status,
     OrderStatus.preparing,
@@ -144,9 +157,10 @@ async function main() {
     operationId: "tracking-first-pick",
     performedByUserId: actorId,
   });
+  await assertPublicStatus(trackingOrder.id, "preparing");
   assert.equal(
     (await trackingService.execute(tenantId, trackingProgress.trackingToken))?.tracking.status,
-    OrderStatus.picking,
+    OrderStatus.preparing,
   );
 
   // E-H, I. Taking and first physical pick update Order in the same repository transaction.
@@ -159,9 +173,10 @@ async function main() {
   assert.equal(thirdParty.assignmentRetryIdempotent, true);
   assert.equal(thirdParty.statusAfterFirstPick, OrderStatus.picking);
   assert.equal(thirdParty.completed.status, OrderStatus.ready_for_dispatch);
+  await assertPublicStatus(thirdParty.completed.id, "preparing");
   assert.equal(
     (await trackingService.execute(tenantId, thirdParty.completed.trackingToken))?.tracking.status,
-    OrderStatus.ready_for_dispatch,
+    OrderStatus.preparing,
   );
 
   const pickup = await prepareOrder(orders, picking, packings, "pickup", {
@@ -263,11 +278,15 @@ async function main() {
   assert.equal(confirmed.trackingNumber, "TRACK-001");
   assert.equal(confirmed.notificationStatus, "simulated_sent");
   assert.equal(confirmed.notification?.recipientEmail, "shipment@example.com");
+  await assertPublicStatus(thirdParty.completed.id, "sent");
   assert.equal(
     (await trackingService.execute(tenantId, thirdParty.completed.trackingToken))?.tracking.status,
-    OrderStatus.dispatched,
+    "sent",
   );
-  assert.deepEqual(inventorySnapshot(store), inventoryBefore);
+  const inventoryAfter = inventorySnapshot(store);
+  assert.equal(inventoryAfter.movementCount, inventoryBefore.movementCount + 1);
+  assert.equal(inventoryAfter.balances.find((item) => item.id === "bal-screws")?.quantity,
+    (inventoryBefore.balances.find((item) => item.id === "bal-screws")?.quantity ?? 0) - 1);
   const retry = await service.confirm(branchId, {
     orderId: thirdParty.completed.id,
     operationId: "dispatch-third-party",
@@ -468,7 +487,7 @@ async function main() {
   });
   await assert.rejects(
     service.confirm(branchId, { orderId: beforePicking.id, operationId: "pending-reservation" }),
-    /reservation is not consumed/,
+    /Picking item is incomplete/,
   );
 
   assert.equal(await notifications.getByDispatch("tenant-foreign", confirmed.dispatchId), null);
@@ -504,7 +523,7 @@ async function main() {
 
   console.log("verify-dispatch-shared-contracts: PASS");
   console.log(
-    "initial-state policy, picking, dispatch, delivery, scope, notification and zero inventory mutation: PASS",
+    "initial-state policy, public status, picking, atomic dispatch inventory, delivery, scope and notification: PASS",
   );
 }
 

@@ -1,5 +1,5 @@
-import type { StorePickupDelivery } from "@/core/entities";
-import { BranchStatus, DeliveryMethod, OrderStatus, UserStatus, UserType } from "@/core/enums";
+import type { InventoryMovement, StorePickupDelivery } from "@/core/entities";
+import { BranchStatus, DeliveryMethod, OrderStatus, PickingStatus, ProductType, UserStatus, UserType } from "@/core/enums";
 import { assertOrderStatusTransition } from "@/core/orders/orderStatusTransitions";
 import type {
   ConfirmStorePickupDeliveryInput,
@@ -9,6 +9,7 @@ import type {
 } from "@/core/repositories";
 import type { DataEventArguments, DataEventName } from "@/core/types/events.types";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
+import { commitPickedOrderInventoryInDatabase } from "@/infrastructure/mock/repositories/commitPickedOrderInventoryInDatabase";
 
 export interface MockStorePickupDeliveryRepositoryTestHooks {
   afterDeliveryCreated?: () => void;
@@ -46,7 +47,7 @@ export class MockStorePickupDeliveryRepository
     const operationId = input.operationId.trim();
     if (!operationId) throw new Error("Store pickup operationId is required");
 
-    const result = this.store.transact<ConfirmStorePickupDeliveryResult & { changed: boolean }>(
+    const result = this.store.transact<ConfirmStorePickupDeliveryResult & { changed: boolean; inventoryMovements?: InventoryMovement[] }>(
       (db) => {
         const branch = db.branches.find(
           (item) =>
@@ -114,6 +115,28 @@ export class MockStorePickupDeliveryRepository
           throw new Error(`Order is not ready for store pickup delivery: ${order.id}`);
         }
 
+        const picking = db.pickingOrders.find((item) => item.orderId === order.id &&
+          item.tenantId === input.tenantId && item.branchId === input.branchId &&
+          item.status === PickingStatus.completed);
+        const hasReservations = db.inventoryReservations.some((entry) =>
+          entry.tenantId === input.tenantId && entry.branchId === input.branchId && entry.orderId === order.id);
+        const requiresPhysicalCommit = order.items.some((item) => {
+          const product = db.products.find((entry) => entry.id === item.productId &&
+            entry.tenantId === input.tenantId);
+          if (!product) throw new Error(`Product not found for store pickup: ${item.productId}`);
+          return product.productType === ProductType.physical && product.tracking.stock;
+        });
+        if ((hasReservations || requiresPhysicalCommit) && !picking) {
+          throw new Error(`Completed Picking not found for store pickup: ${order.id}`);
+        }
+        const inventoryMovements = picking
+          ? commitPickedOrderInventoryInDatabase(db, {
+              order, picking, actorUserId: actor.id, operationId,
+              referenceType: "order", referenceId: order.id,
+              reason: `Entrega de pedido ${order.orderNumber}`,
+            }, { id: (prefix) => this.id(prefix), now: () => this.now() })
+          : [];
+
         assertOrderStatusTransition(order.status, OrderStatus.delivered, "storePickup");
         const now = this.now();
         const delivery: StorePickupDelivery = {
@@ -131,11 +154,17 @@ export class MockStorePickupDeliveryRepository
         this.testHooks.afterDeliveryCreated?.();
         order.status = OrderStatus.delivered;
         order.updatedAt = now;
-        return { order, delivery, idempotent: false, changed: true };
+        return { order, delivery, idempotent: false, changed: true, inventoryMovements };
       },
     );
 
     if (result.changed) {
+      result.inventoryMovements?.forEach((movement) => {
+        const payload = { entityId: movement.id, tenantId: movement.tenantId,
+          branchId: movement.branchId, productId: movement.productId, action: "created" as const };
+        this.emitSafely("inventory.changed", payload);
+        this.emitSafely("stock.changed", payload);
+      });
       this.emitSafely("order.changed", {
         entityId: result.order.id,
         tenantId: result.order.tenantId,

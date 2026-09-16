@@ -73,13 +73,13 @@ export interface PickingFulfillmentTraceSerial {
 }
 
 export interface PickingFulfillmentTraceAllocation {
-  inventoryMovementId: string;
+  inventoryMovementId?: string;
   reservationId: string;
   quantity: number;
   location?: PickingFulfillmentTraceLocation;
   lot?: PickingFulfillmentTraceLot;
   serial?: PickingFulfillmentTraceSerial;
-  consumedAt: string;
+  consumedAt?: string;
 }
 
 export interface PickingFulfillmentItemTrace {

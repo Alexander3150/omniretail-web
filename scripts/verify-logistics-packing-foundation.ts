@@ -247,7 +247,13 @@ async function main() {
     store.getSnapshot().storePickupDeliveries.filter((item) => item.orderId === pickup.order.id).length,
     1,
   );
-  assert.deepEqual(inventorySnapshot(store), inventoryBeforePickupDelivery);
+  const inventoryAfterPickupDelivery = inventorySnapshot(store);
+  const beforePickupBalance = inventoryBeforePickupDelivery.balances.find((item) => item.id === "bal-screws");
+  const afterPickupBalance = inventoryAfterPickupDelivery.balances.find((item) => item.id === "bal-screws");
+  assert.equal(afterPickupBalance?.quantity, (beforePickupBalance?.quantity ?? 0) - 1);
+  assert.equal(afterPickupBalance?.reservedQuantity, (beforePickupBalance?.reservedQuantity ?? 0) - 1);
+  assert.equal(inventoryAfterPickupDelivery.movements.length,
+    inventoryBeforePickupDelivery.movements.length + 1);
 
   const concurrent = await completePicking(
     runtime.orders,
@@ -355,7 +361,12 @@ async function main() {
   assert.ok(
     dispatch.packages.every((item) => item.number.startsWith(finalizedHome.packing.labelCode!)),
   );
-  assert.deepEqual(inventorySnapshot(store), inventoryBeforeDispatch);
+  const inventoryAfterDispatch = inventorySnapshot(store);
+  const beforeDispatchBalance = inventoryBeforeDispatch.balances.find((item) => item.id === "bal-screws");
+  const afterDispatchBalance = inventoryAfterDispatch.balances.find((item) => item.id === "bal-screws");
+  assert.equal(afterDispatchBalance?.quantity, (beforeDispatchBalance?.quantity ?? 0) - 1);
+  assert.equal(afterDispatchBalance?.reservedQuantity, (beforeDispatchBalance?.reservedQuantity ?? 0) - 1);
+  assert.equal(inventoryAfterDispatch.movements.length, inventoryBeforeDispatch.movements.length + 1);
   const finalizedDetail = await runtime.packingService.getDetail(branchId, home.packing.id);
   const reprintAfterDispatch = await runtime.packingService.registerLabelPrint(branchId, {
     packingId: home.packing.id,

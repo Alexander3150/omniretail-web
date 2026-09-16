@@ -1,11 +1,11 @@
 import { OrderSource } from "@/core/enums";
-import type { OrderStatus } from "@/core/enums";
+import { mapOrderStatusToCustomerStatus, type CustomerOrderStatus } from "@/core/orders/mapOrderStatusToCustomerStatus";
 import type { BusinessConfigRepository, OrderRepository } from "@/core/repositories";
 
 export interface GuestOrderTrackingView {
   orderId: string;
   orderNumber: string;
-  status: OrderStatus;
+  status: CustomerOrderStatus;
   total: number;
 }
 
@@ -39,7 +39,7 @@ export async function resolveGuestOrderTracking(
   return {
     orderId: order.id,
     orderNumber: order.orderNumber,
-    status: order.status,
+    status: mapOrderStatusToCustomerStatus(order.status),
     total: order.total,
   };
 }

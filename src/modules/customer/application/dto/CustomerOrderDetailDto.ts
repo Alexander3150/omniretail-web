@@ -1,9 +1,9 @@
 import type { Order, Payment } from "@/core/entities";
-import type { OrderStatus } from "@/core/enums";
+import { mapOrderStatusToCustomerStatus, type CustomerOrderStatus } from "@/core/orders/mapOrderStatusToCustomerStatus";
 
 export interface CustomerOrderDetailDto {
   orderNumber: string;
-  status: OrderStatus;
+  status: CustomerOrderStatus;
   createdAt: string;
   subtotal: number;
   shippingTotal: number;
@@ -25,7 +25,7 @@ export interface CustomerOrderDetailDto {
 export function toCustomerOrderDetailDto(order: Order, payment?: Payment): CustomerOrderDetailDto {
   return {
     orderNumber: order.orderNumber,
-    status: order.status,
+    status: mapOrderStatusToCustomerStatus(order.status),
     createdAt: order.createdAt,
     subtotal: order.subtotal,
     shippingTotal: order.shippingTotal,

@@ -10,6 +10,7 @@ export type MovementDisplayType =
   | "manual_in"
   | "manual_out"
   | "sale"
+  | "dispatch"
   | "in"
   | "out"
   | "adjustment"

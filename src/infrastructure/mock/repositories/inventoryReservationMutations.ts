@@ -17,6 +17,7 @@ import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import {
   consumePlannedStockLots,
   getLotAwareBalances,
+  isStockLotEligible,
   planStockLotConsumption,
 } from "@/infrastructure/mock/repositories/stockLotMutations";
 import {
@@ -26,6 +27,11 @@ import {
   planLotSerialConsumption,
   planSerialConsumption,
 } from "@/infrastructure/mock/repositories/serialNumberMutations";
+
+interface ReservationConsumptionOptions {
+  pickedLots?: Array<{ balanceId: string; lotId: string; quantity: number }>;
+  movement?: { reason: string; referenceType: string; referenceId: string };
+}
 
 interface InventoryReservationMutationDependencies {
   id(prefix: string): string;
@@ -168,6 +174,7 @@ export function consumeInventoryReservationInDatabase(
   db: MockDatabase,
   input: ConsumeInventoryReservationInput,
   dependencies: InventoryReservationMutationDependencies,
+  options: ReservationConsumptionOptions = {},
 ): InventoryReservationConsumeMutationResult {
   assertConsumeInput(input);
   const fingerprint = getConsumeFingerprint(input);
@@ -233,9 +240,42 @@ export function consumeInventoryReservationInDatabase(
     if (balance.reservedQuantity < consumed.quantity) {
       throw new Error(`Insufficient reserved stock in balance: ${balance.id}`);
     }
+    const selectedLots = options.pickedLots?.filter((item) => item.balanceId === consumed.balanceId);
+    if (selectedLots && product.tracking.lot &&
+      selectedLots.reduce((total, item) => total + item.quantity, 0) !== consumed.quantity) {
+      throw new Error("Picked lot allocations do not match reserved balance quantity");
+    }
+    const exactLots = selectedLots?.map((selected) => {
+      const lot = db.stockLots.find((item) => item.id === selected.lotId &&
+        item.tenantId === reservation.tenantId && item.branchId === reservation.branchId &&
+        item.productId === reservation.productId &&
+        (item.locationId ?? null) === (allocation.locationId ?? null));
+      if (!lot || lot.quantity < selected.quantity || selected.quantity <= 0 ||
+        !isStockLotEligible(lot, product.tracking.expiration, dependencies.now())) {
+        throw new Error(`Picked lot is no longer available: ${selected.lotId}`);
+      }
+      return { lot, quantity: selected.quantity };
+    });
     const lotSerialAllocations =
       product.tracking.lot && product.tracking.serial
-        ? planLotSerialConsumption(
+        ? exactLots
+          ? exactLots.map((lotAllocation) => {
+              const selectedSerials = requestedSerialNumbers?.filter((number) =>
+                db.serialNumbers.some((serial) => serial.tenantId === reservation.tenantId &&
+                  serial.serialNumber === number && serial.lotId === lotAllocation.lot.id));
+              if (selectedSerials?.length !== lotAllocation.quantity) {
+                throw new Error("Picked serials do not match the selected lot");
+              }
+              return {
+                lotAllocation,
+                serialNumbers: planSerialConsumption(db, {
+                  tenantId: reservation.tenantId, branchId: reservation.branchId,
+                  productId: reservation.productId, locationId: allocation.locationId,
+                  lotId: lotAllocation.lot.id,
+                }, lotAllocation.quantity, selectedSerials),
+              };
+            })
+          : planLotSerialConsumption(
             db,
             {
               tenantId: reservation.tenantId,
@@ -251,7 +291,7 @@ export function consumeInventoryReservationInDatabase(
         : [];
     const lotAllocations =
       product.tracking.lot && !product.tracking.serial
-        ? planStockLotConsumption(
+        ? exactLots ?? planStockLotConsumption(
             db,
             {
               tenantId: reservation.tenantId,
@@ -398,13 +438,13 @@ export function consumeInventoryReservationInDatabase(
           lotId,
           serialNumberId,
           type: InventoryMovementType.out,
-          reason: `Consumo de reserva ${reservation.id}`,
+          reason: options.movement?.reason ?? `Consumo de reserva ${reservation.id}`,
           quantity: movementQuantity,
           quantityBefore: movementQuantityBefore,
           quantityAfter: movementQuantityAfter,
           fromLocationId: allocation.locationId,
-          referenceType: "inventoryReservation",
-          referenceId: reservation.id,
+          referenceType: options.movement?.referenceType ?? "inventoryReservation",
+          referenceId: options.movement?.referenceId ?? reservation.id,
           performedByUserId: input.performedByUserId,
           createdAt: now,
         };

@@ -353,7 +353,7 @@ async function main() {
   assert.ok(store.getSnapshot().inventoryMovements.every((movement) => movement.type === "out"));
   assert.equal(
     store.getSnapshot().serialNumbers.find((serial) => serial.serialNumber === "SENSOR-A1")?.status,
-    SerialStatus.sold,
+    SerialStatus.available,
   );
   assert.equal(
     store.getSnapshot().sales.find((sale) => sale.id === "sale-001")?.status,

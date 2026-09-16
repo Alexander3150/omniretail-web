@@ -79,7 +79,13 @@ async function main() {
   assert.ok(packages.every((item) => item.dispatchId === confirmed.dispatchId));
   assert.deepEqual(await dispatches.getPackagesByDispatch({ tenantId, branchId: "branch-norte" }, confirmed.dispatchId), []);
   assert.deepEqual(await dispatches.getPackagesByDispatch({ tenantId: "tenant-foreign", branchId }, confirmed.dispatchId), []);
-  assert.deepEqual(inventorySnapshot(store), inventoryBeforeDispatch);
+  const inventoryAfterDispatch = inventorySnapshot(store);
+  const beforeBalance = inventoryBeforeDispatch.balances.find((item) => item.id === "bal-screws");
+  const afterBalance = inventoryAfterDispatch.balances.find((item) => item.id === "bal-screws");
+  assert.equal(afterBalance?.quantity, (beforeBalance?.quantity ?? 0) - 1);
+  assert.equal(afterBalance?.reservedQuantity, (beforeBalance?.reservedQuantity ?? 0) - 1);
+  assert.equal(inventoryAfterDispatch.movements.length, inventoryBeforeDispatch.movements.length + 1);
+  assert.equal(inventoryAfterDispatch.movements.at(-1)?.referenceType, "dispatch");
 
   const retry = await service.confirm(branchId, {
     orderId: primary.orderId,
@@ -90,6 +96,7 @@ async function main() {
     ],
   });
   assert.equal(retry.idempotent, true);
+  assert.deepEqual(inventorySnapshot(store), inventoryAfterDispatch);
   assert.equal((await dispatches.getPackagesByDispatch({ tenantId, branchId }, confirmed.dispatchId)).length, 2);
   await assert.rejects(
     service.confirm(branchId, { orderId: primary.orderId, operationId: "packing-primary-confirm", carrierName: "Changed" }),
@@ -279,7 +286,8 @@ async function verifyRichTrace(
   const serialPicking = await pickOrder(orders, picking, serialOrder.id, "packing-trace-serial-pick", 1, ["DRILL-SN-001"]);
   const serialTrace = await traceService.execute(branchId, { orderId: serialOrder.id, pickingOrderId: serialPicking });
   assert.equal(serialTrace[0]?.allocations[0]?.serial?.number, "DRILL-SN-001");
-  assert.ok(serialTrace[0]?.allocations[0]?.inventoryMovementId);
+  assert.equal(serialTrace[0]?.allocations[0]?.inventoryMovementId, undefined,
+    "Picking selection must not create an outbound movement before Dispatch");
 }
 
 async function pickOrder(

@@ -366,9 +366,9 @@ function prepareFixtures(store: MockDatabaseStore) {
         createdAt: time.created,
         updatedAt: time.picked,
       });
-      if (suffix === "h-delivered") {
+      {
         db.pickingItems.push({
-          id: "history-picking-item-service",
+          id: suffix === "h-delivered" ? "history-picking-item-service" : `history-picking-item-${suffix}`,
           pickingOrderId: `picking-${suffix}`,
           orderItemId: "history-order-item-service",
           productId: "history-service-product",

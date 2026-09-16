@@ -1,14 +1,12 @@
-import type { Dispatch, Notification, Package } from "@/core/entities";
+import type { Dispatch, InventoryMovement, Notification, Package } from "@/core/entities";
 import {
   DispatchStatus,
-  InventoryReservationStatus,
   NotificationChannel,
   NotificationStatus,
   OrderStatus,
   PackingStatus,
   PickingIncidentStatus,
   PickingStatus,
-  ProductType,
   TransportMode,
   UserStatus,
   UserType,
@@ -25,13 +23,14 @@ import type {
 } from "@/core/repositories";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
-import { getInventoryReservationAllocationRemaining } from "@/infrastructure/mock/repositories/inventoryReservationMutations";
+import { commitPickedOrderInventoryInDatabase } from "@/infrastructure/mock/repositories/commitPickedOrderInventoryInDatabase";
 import type { DataEventName, DataEventPayload } from "@/core/types/events.types";
 
 interface DispatchMutationResult extends ConfirmDispatchResult {
   dispatchChanged: boolean;
   orderChanged: boolean;
   notificationChanged: boolean;
+  inventoryMovements?: InventoryMovement[];
 }
 
 export class MockDispatchRepository extends BaseMockRepository implements DispatchRepository {
@@ -165,7 +164,7 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
         if (dispatch.confirmationFingerprint !== fingerprint) {
           throw new Error(`Dispatch operation conflict: ${operationId}`);
         }
-        return this.buildRetryResult(order, dispatch, db);
+        return { ...this.buildRetryResult(order, dispatch, db), dispatchChanged: false, orderChanged: false, notificationChanged: false };
       }
 
       if (order.status === OrderStatus.dispatched) {
@@ -185,7 +184,7 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
             `Dispatch Package data conflict for already dispatched Order: ${order.id}`,
           );
         }
-        return this.buildRetryResult(order, dispatch, db);
+        return { ...this.buildRetryResult(order, dispatch, db), dispatchChanged: false, orderChanged: false, notificationChanged: false };
       }
       if (order.status !== OrderStatus.ready_for_dispatch) {
         throw new Error(`Order is not ready for dispatch: ${order.id}`);
@@ -211,7 +210,6 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
       ) {
         throw new Error(`Picking has unresolved incidents for Order: ${order.id}`);
       }
-      this.assertReservationsConsumed(picking.id, order.id, input, db);
 
       const now = this.now();
       const dispatchChanged = true;
@@ -254,6 +252,12 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
         });
       }
 
+      const inventoryMovements = commitPickedOrderInventoryInDatabase(db, {
+        order, picking, actorUserId: input.actorUserId, operationId,
+        referenceType: "dispatch", referenceId: dispatch.id,
+        reason: `Despacho de pedido ${order.orderNumber}`,
+      }, { id: (prefix) => this.id(prefix), now: () => this.now() });
+
       db.packages = db.packages.filter((item) => item.dispatchId !== dispatch.id);
       db.packages.push(
         ...packages.map<Package>((item) => ({
@@ -283,6 +287,7 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
         dispatchChanged,
         orderChanged: true,
         notificationChanged: notification !== undefined,
+        inventoryMovements,
       };
     });
 
@@ -304,6 +309,12 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
         action: "status_changed",
       });
     }
+    result.inventoryMovements?.forEach((movement) => {
+      const payload = { entityId: movement.id, tenantId: movement.tenantId,
+        branchId: movement.branchId, productId: movement.productId, action: "created" as const };
+      this.emitSafely("inventory.changed", payload);
+      this.emitSafely("stock.changed", payload);
+    });
     if (result.notificationChanged && result.notification) {
       this.emitSafely("notification.changed", {
         entityId: result.notification.id,
@@ -436,57 +447,6 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
         user.type === UserType.employee,
     );
     if (!actor) throw new Error(`Dispatch actor not found for tenant: ${input.actorUserId}`);
-  }
-
-  private assertReservationsConsumed(
-    pickingOrderId: string,
-    orderId: string,
-    input: ConfirmDispatchInput,
-    db: MockDatabase,
-  ): void {
-    db.inventoryReservations
-      .filter(
-        (reservation) =>
-          reservation.tenantId === input.tenantId &&
-          reservation.branchId === input.branchId &&
-          reservation.orderId === orderId,
-      )
-      .forEach((reservation) => {
-        const remaining = reservation.allocations.reduce(
-          (total, allocation) => total + getInventoryReservationAllocationRemaining(allocation),
-          0,
-        );
-        if (reservation.status !== InventoryReservationStatus.consumed || remaining !== 0) {
-          throw new Error(`Inventory reservation is not consumed for dispatch: ${reservation.id}`);
-        }
-      });
-    const items = db.pickingItems.filter((item) => item.pickingOrderId === pickingOrderId);
-    items.forEach((item) => {
-      const product = db.products.find(
-        (entry) => entry.id === item.productId && entry.tenantId === input.tenantId,
-      );
-      if (!product) throw new Error(`Product not found for dispatch validation: ${item.productId}`);
-      if (product.productType !== ProductType.physical || !product.tracking.stock) return;
-      const reservation = db.inventoryReservations.find(
-        (entry) =>
-          entry.tenantId === input.tenantId &&
-          entry.branchId === input.branchId &&
-          entry.orderId === orderId &&
-          entry.orderItemId === item.orderItemId &&
-          entry.productId === item.productId,
-      );
-      const remaining = reservation?.allocations.reduce(
-        (total, allocation) => total + getInventoryReservationAllocationRemaining(allocation),
-        0,
-      );
-      if (
-        !reservation ||
-        reservation.status !== InventoryReservationStatus.consumed ||
-        remaining !== 0
-      ) {
-        throw new Error(`Inventory reservation is not consumed for dispatch: ${item.id}`);
-      }
-    });
   }
 
   private createNotificationIfApplicable(

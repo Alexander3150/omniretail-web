@@ -16,6 +16,7 @@ import type {
   GetPickingInventoryAvailabilityInput,
   GetPickingFulfillmentTraceInput,
   PickingFulfillmentItemTrace,
+  PickingFulfillmentTraceAllocation,
 } from "@/core/repositories";
 import { buildPickingInventoryAvailability } from "@/core/inventory/pickingAvailability";
 import type { DataEventName, DataEventPayload } from "@/core/types/events.types";
@@ -25,6 +26,7 @@ import {
   releaseInventoryReservationInDatabase,
   reserveOrderItemInDatabase,
 } from "@/infrastructure/mock/repositories/inventoryReservationMutations";
+import { getClaimedPickingSerialNumbers } from "@/infrastructure/mock/repositories/pickingSelectionMutations";
 
 export class MockInventoryRepository extends BaseMockRepository implements InventoryRepository {
   async getBalances() {
@@ -112,7 +114,7 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
       );
       if (!product) throw new Error(`Product not found for tenant: ${input.productId}`);
 
-      return buildPickingInventoryAvailability({
+      const availability = buildPickingInventoryAvailability({
         ...input,
         product,
         balances: db.inventoryBalances,
@@ -122,6 +124,18 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
         locations: db.storageLocations,
         at: input.at ?? this.now(),
       });
+      const claimedSerials = getClaimedPickingSerialNumbers(db, input);
+      return {
+        ...availability,
+        locations: availability.locations.map((location) => ({
+          ...location,
+          serialNumbers: location.serialNumbers.filter((serial) => !claimedSerials.has(serial.serialNumber)),
+          lots: location.lots.map((lot) => ({
+            ...lot,
+            serialNumbers: lot.serialNumbers.filter((serial) => !claimedSerials.has(serial.serialNumber)),
+          })),
+        })),
+      };
     });
   }
   async getPickingFulfillmentTrace(
@@ -174,17 +188,17 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
             throw new Error(`Duplicate reservations for PickingItem: ${item.id}`);
           }
           const reservation = reservations[0];
+          const movementIds = new Set(db.inventoryReservationConsumeOperations
+            .filter((operation) => operation.tenantId === input.tenantId &&
+              operation.branchId === input.branchId && operation.reservationId === reservation?.id)
+            .flatMap((operation) => operation.inventoryMovementIds));
           const movements = reservation
             ? db.inventoryMovements
-                .filter(
-                  (movement) =>
-                    movement.tenantId === input.tenantId &&
-                    movement.branchId === input.branchId &&
-                    movement.productId === item.productId &&
-                    movement.type === InventoryMovementType.out &&
-                    movement.referenceType === "inventoryReservation" &&
-                    movement.referenceId === reservation.id,
-                )
+                .filter((movement) => (movementIds.has(movement.id) ||
+                  (movement.referenceType === "inventoryReservation" &&
+                    movement.referenceId === reservation.id)) &&
+                  movement.tenantId === input.tenantId && movement.branchId === input.branchId &&
+                  movement.productId === item.productId && movement.type === InventoryMovementType.out)
                 .sort(
                   (left, right) =>
                     left.createdAt.localeCompare(right.createdAt) ||
@@ -199,7 +213,13 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
           ) {
             throw new Error(`Reservation evidence not found for PickingItem: ${item.id}`);
           }
-          const allocations = movements.map((movement) => {
+          const selected = movements.length === 0 ? (item.pickedAllocations ?? []).flatMap<{
+            balanceId: string; locationId?: string; lotId?: string; quantity: number; serialNumber?: string;
+          }>((picked) =>
+            picked.serialNumbers?.length
+              ? picked.serialNumbers.map((number) => ({ ...picked, quantity: 1, serialNumber: number }))
+              : [{ ...picked, serialNumber: undefined }]) : [];
+          const allocations: PickingFulfillmentTraceAllocation[] = movements.map((movement) => {
             const location = movement.fromLocationId
               ? db.storageLocations.find(
                   (candidate) =>
@@ -255,6 +275,27 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
               serial: serial ? { id: serial.id, number: serial.serialNumber } : undefined,
               consumedAt: movement.createdAt,
             };
+          });
+          selected.forEach((picked) => {
+            const location = picked.locationId ? db.storageLocations.find((entry) =>
+              entry.id === picked.locationId && entry.tenantId === input.tenantId &&
+              entry.branchId === input.branchId) : undefined;
+            const lot = picked.lotId ? db.stockLots.find((entry) =>
+              entry.id === picked.lotId && entry.tenantId === input.tenantId &&
+              entry.branchId === input.branchId && entry.productId === item.productId) : undefined;
+            const serial = picked.serialNumber ? db.serialNumbers.find((entry) =>
+              entry.serialNumber === picked.serialNumber && entry.tenantId === input.tenantId &&
+              entry.branchId === input.branchId && entry.productId === item.productId) : undefined;
+            if ((picked.locationId && !location) || (picked.lotId && !lot) ||
+              (picked.serialNumber && !serial)) {
+              throw new Error(`Picking selection trace is incomplete: ${item.id}`);
+            }
+            allocations.push({ inventoryMovementId: undefined, reservationId: reservation!.id,
+              quantity: picked.quantity,
+              location: location ? { id: location.id, code: location.code, name: location.name } : undefined,
+              lot: lot ? { id: lot.id, number: lot.lotNumber, expiresAt: lot.expirationDate } : undefined,
+              serial: serial ? { id: serial.id, number: serial.serialNumber } : undefined,
+              consumedAt: undefined });
           });
           const tracedQuantity = allocations.reduce(
             (total, allocation) => total + allocation.quantity,

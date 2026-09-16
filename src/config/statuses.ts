@@ -33,6 +33,7 @@ export const statusesConfig: Record<string, StatusDefinition> = {
     storefrontOrderProgress: "preparing",
   },
   dispatched: { label: "Despachado", tone: "info", storefrontOrderProgress: "sent" },
+  sent: { label: "Enviado", tone: "info", storefrontOrderProgress: "sent" },
   delivered: { label: "Entregado", tone: "success", storefrontOrderProgress: "sent" },
   cancelled: { label: "Cancelado", tone: "danger" },
   approved: { label: "Aprobado", tone: "success" },
