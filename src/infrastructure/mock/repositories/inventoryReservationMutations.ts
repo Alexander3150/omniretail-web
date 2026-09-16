@@ -520,7 +520,7 @@ function assertReservationReferences(input: ReserveOrderItemInput, db: MockDatab
   if (orderItem.productId !== input.productId && !fulfillment) {
     throw new Error(`OrderItem product conflict: ${input.orderItemId}`);
   }
-  if (input.quantity > (fulfillment?.quantity ?? orderItem.quantity)) {
+  if (input.quantity > (fulfillment?.quantity ?? orderItem.inventoryQuantity ?? orderItem.quantity)) {
     throw new Error(`Reservation quantity exceeds OrderItem quantity: ${input.orderItemId}`);
   }
 }

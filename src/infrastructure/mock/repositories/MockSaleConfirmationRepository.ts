@@ -105,17 +105,30 @@ export class MockSaleConfirmationRepository
       const now = this.now();
       const saleId = this.id("sale");
       const saleNumber = nextSaleNumber(db.sales, input.tenantId);
+
       const deferredFulfillment = input.deferredOrder
         ? this.createDeferredFulfillment(input, saleNumber, now, db)
         : undefined;
+
       const sourceOrderId = input.sourceOrderId ?? deferredFulfillment?.order.id;
       const effectiveInput = sourceOrderId ? { ...input, sourceOrderId } : input;
-      const sourceOrderOwnsInventory = this.assertSourceOrderOwnership(effectiveInput, db);
-      const saleItems: SaleItem[] = input.items.map((item) => ({
-        ...item,
-        id: this.id("sale-item"),
-        saleId,
-      }));
+
+      const sourceOrderOwnsInventory = this.assertSourceOrderOwnership(
+        effectiveInput,
+        db,
+      );
+
+      const saleItems: SaleItem[] = input.items.map((inputItem) => {
+        const { inventoryQuantity, ...item } = inputItem;
+        void inventoryQuantity;
+
+        return {
+          ...item,
+          id: this.id("sale-item"),
+          saleId,
+        };
+      });
+
       const sale: Sale = {
         id: saleId,
         tenantId: input.tenantId,
@@ -684,16 +697,21 @@ export class MockSaleConfirmationRepository
     const plannedMovements: PlannedInventoryMovement[] = [];
     const plannedQuantities = new Map<string, number>();
 
+    const inventoryQuantityByProduct = new Map(
+      input.items.map((item) => [item.productId, item.inventoryQuantity]),
+    );
     const fulfillmentItems = saleItems.flatMap((saleItem) => {
       const commercialProduct = db.products.find((item) => item.id === saleItem.productId);
-      if (commercialProduct?.productType !== ProductType.kit) return [saleItem];
+      if (commercialProduct?.productType !== ProductType.kit) {
+        return [{ ...saleItem, quantity: inventoryQuantityByProduct.get(saleItem.productId) ?? saleItem.quantity }];
+      }
       return expandKitDemand(
         db.productKitComponents.filter(
           (component) =>
             component.tenantId === input.tenantId &&
             component.kitProductId === commercialProduct.id,
         ),
-        saleItem.quantity,
+        inventoryQuantityByProduct.get(saleItem.productId) ?? saleItem.quantity,
       ).map((demand) => ({ ...saleItem, productId: demand.productId, quantity: demand.quantity }));
     });
 
@@ -1096,6 +1114,7 @@ function getConfirmationFingerprint(input: ConfirmSaleInput): string {
       .map((item) => ({
         productId: item.productId,
         quantity: item.quantity,
+        inventoryQuantity: item.inventoryQuantity,
         unitPrice: roundMoney(item.unitPrice),
         discount: roundMoney(item.discount),
         subtotal: roundMoney(item.subtotal),

@@ -8,6 +8,7 @@ import type {
   Unit,
 } from "@/core/entities";
 import type { InventoryTransferReason, InventoryTransferRequestStatus } from "@/core/enums";
+import type { ProductTrackingConfig } from "@/core/types/tracking.types";
 
 export type InventoryStatus = "normal" | "near_minimum" | "critical" | "out_of_stock";
 export type AlertPanelMode = "alerts" | "product-detail";
@@ -22,11 +23,31 @@ export interface InventoryProductRow {
   categoryName: string;
   unitId: string;
   unitName: string;
+  saleUnitId: string;
+  saleUnitName: string;
+  sellableQuantity: number;
+  sellableReservedQuantity: number;
+  sellableAvailableQuantity: number;
+  inventoryUnitId: string;
+  inventoryUnitName: string;
+  inventoryPresentationQuantity: number;
+  inventoryPresentationAvailableQuantity: number;
+  inventoryToBaseFactor: number;
+  adjustmentUnits: InventoryAdjustmentUnitOption[];
   branchId: string;
   branchName: string;
   defaultLocationId?: string | null;
   defaultLocationName: string;
   locationQuantities: Record<string, number>;
+  tracking: ProductTrackingConfig;
+  availableLots: Array<{
+    id: string;
+    lotNumber: string;
+    expirationDate?: string;
+    quantity: number;
+    locationId?: string;
+  }>;
+  availableSerials: Array<{ serialNumber: string; lotId?: string; locationId?: string }>;
   quantity: number;
   reservedQuantity: number;
   availableQuantity: number;
@@ -119,11 +140,23 @@ export interface AdjustStockDto {
   productId: string;
   branchId: string;
   locationId: string;
+  unitId: string;
   movementKind: "in" | "out" | "waste" | "count";
   quantity: number;
   reason: string;
   notes: string;
+  lotId?: string;
+  lotNumber?: string;
+  expirationDate?: string;
+  serialNumbers?: string[];
   performedByUserId?: string;
+}
+
+export interface InventoryAdjustmentUnitOption {
+  unitId: string;
+  unitName: string;
+  toBaseFactor: number;
+  label: string;
 }
 
 export interface TransferRequestDto {

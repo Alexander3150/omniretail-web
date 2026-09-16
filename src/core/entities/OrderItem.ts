@@ -10,6 +10,8 @@ export interface OrderItem {
   skuSnapshot: string;
   nameSnapshot: string;
   quantity: number;
+  /** Canonical base-unit quantity reserved/consumed for this commercial quantity. */
+  inventoryQuantity?: number;
   unitPrice: number;
   discount: number;
   subtotal: number;

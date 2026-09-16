@@ -8,6 +8,7 @@ import {
   TransportMode,
 } from "@/core/enums";
 import { InsufficientInventoryAvailabilityError } from "@/core/inventory/stockAvailability";
+import { toBaseQuantity } from "@/core/units";
 import { validatePhoneNumber } from "@/config/contact-policy";
 import { normalizeEmail, validateEmail } from "@/config/email-policy";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
@@ -80,7 +81,7 @@ export class CreateStorefrontCheckoutService {
     }
 
     const checkoutToken = checkoutIdentity.replaceAll("-", "");
-    const orderItems = products.map(({ item, product }, index) => {
+    const orderItems = await Promise.all(products.map(async ({ item, product }, index) => {
       if (!product) throw new Error("Uno de los productos ya no está disponible para e-commerce.");
       if (
         !Number.isFinite(item.quantity) ||
@@ -91,17 +92,28 @@ export class CreateStorefrontCheckoutService {
       }
 
       const unitPrice = product.salePrice;
+      const conversions = await this.repositories.units.getConversionsByProductScoped(
+        tenantId,
+        product.id,
+      );
+      const inventoryQuantity = toBaseQuantity(item.quantity, {
+        sourceUnitId: product.saleUnitId ?? product.baseUnitId,
+        baseUnitId: product.baseUnitId,
+        conversions,
+        requireInteger: product.tracking.stock,
+      });
       return {
         id: `storefront-item-${checkoutIdentity}-${index}`,
         productId: product.id,
         skuSnapshot: product.sku,
         nameSnapshot: product.name,
         quantity: item.quantity,
+        inventoryQuantity,
         unitPrice,
         discount: 0,
         subtotal: unitPrice * item.quantity,
       };
-    });
+    }));
     const subtotal = orderItems.reduce((total, item) => total + item.subtotal, 0);
     const orderNumber = `WEB-${checkoutToken.slice(0, 10).toUpperCase()}`;
     const trackingToken = checkoutToken;

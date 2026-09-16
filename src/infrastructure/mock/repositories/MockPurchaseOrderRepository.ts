@@ -21,6 +21,7 @@ export class MockPurchaseOrderRepository
     const item = this.store.mutate((db) => {
       const now = this.now();
       const { items = [], number, ...orderInput } = input;
+      assertValidConversionSnapshots(items);
       const created = {
         ...orderInput,
         id: this.id("purchaseOrders"),
@@ -47,6 +48,7 @@ export class MockPurchaseOrderRepository
   async update(id: string, input: Parameters<PurchaseOrderRepository["update"]>[1]) {
     const item = this.store.mutate((db) => {
       const { items, ...orderInput } = input;
+      if (items) assertValidConversionSnapshots(items);
       const updated = this.updateById(db.purchaseOrders, id, orderInput, "PurchaseOrder");
       if (items) {
         db.purchaseOrderItems = db.purchaseOrderItems.filter(
@@ -82,6 +84,18 @@ export class MockPurchaseOrderRepository
       action: "status_changed",
     });
     return item;
+  }
+}
+
+function assertValidConversionSnapshots(
+  items: Parameters<PurchaseOrderRepository["create"]>[0]["items"],
+) {
+  if (
+    items?.some(
+      (item) => !Number.isFinite(item.purchaseToBaseFactor) || item.purchaseToBaseFactor <= 0,
+    )
+  ) {
+    throw new Error("Purchase order conversion factor must be greater than zero");
   }
 }
 

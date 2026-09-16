@@ -47,7 +47,7 @@ export interface ConfirmSaleInput {
   customerId?: string;
   sourceOrderId?: string;
   deferredOrder?: SaleConfirmationDeferredOrderInput;
-  items: CreateSaleItemInput[];
+  items: Array<CreateSaleItemInput & { inventoryQuantity?: number }>;
   document?: SaleDocumentSnapshot;
   subtotal: number;
   discountTotal: number;

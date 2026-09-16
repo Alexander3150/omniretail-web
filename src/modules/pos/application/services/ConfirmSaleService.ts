@@ -13,6 +13,7 @@ import {
   planInventoryAllocation,
 } from "@/core/inventory/stockAvailability";
 import { calculateEffectivePrice } from "@/core/pricing";
+import { toBaseQuantity } from "@/core/units";
 import type {
   ConfirmSaleResult,
   SaleConfirmationDeferredOrderInput,
@@ -53,6 +54,7 @@ interface ValidatedSaleItem {
   skuSnapshot: string;
   nameSnapshot: string;
   quantity: number;
+  inventoryQuantity: number;
   unitPrice: number;
   discount: number;
   subtotal: number;
@@ -112,6 +114,7 @@ export class ConfirmSaleService {
         skuSnapshot: item.skuSnapshot,
         nameSnapshot: item.nameSnapshot,
         quantity: item.quantity,
+        inventoryQuantity: item.inventoryQuantity,
         unitPrice: item.unitPrice,
         discount: item.discount,
         subtotal: item.subtotal,
@@ -168,6 +171,7 @@ export class ConfirmSaleService {
             }
           : { emailMode: "not_applicable" as const }
         : undefined;
+
     const storePickupContact =
       input.checkout.deliveryMethod === DeliveryMethod.store_pickup
         ? {
@@ -175,6 +179,7 @@ export class ConfirmSaleService {
             recipientPhone: input.checkout.storePickupContact!.recipientPhone.trim(),
           }
         : undefined;
+
     return {
       idempotencyKey,
       deliveryMethod: input.checkout.deliveryMethod,
@@ -288,6 +293,17 @@ export class ConfirmSaleService {
         });
         const price = calculateEffectivePrice(product.salePrice, promotion);
         assertPriceSnapshot(ticketItem, price);
+        const saleUnitId = product.saleUnitId ?? product.baseUnitId;
+        const conversions = await this.repositories.units.getConversionsByProductScoped(
+          input.currentBranch.tenantId,
+          product.id,
+        );
+        const inventoryQuantity = toBaseQuantity(ticketItem.quantity, {
+          sourceUnitId: saleUnitId,
+          baseUnitId: product.baseUnitId,
+          conversions,
+          requireInteger: product.tracking.stock,
+        });
 
         if (
           product.productType === ProductType.physical &&
@@ -368,7 +384,7 @@ export class ConfirmSaleService {
             balances: product.tracking.lot ? sellableBalances : balancesWithAvailability,
             locations,
           });
-          if (availableQuantity < ticketItem.quantity) {
+          if (availableQuantity < inventoryQuantity) {
             throw new Error(`El stock disponible de ${product.name} cambió; actualiza el ticket.`);
           }
           try {
@@ -376,7 +392,7 @@ export class ConfirmSaleService {
               tenantId: input.currentBranch.tenantId,
               branchId: input.currentBranch.id,
               productId: product.id,
-              quantity: ticketItem.quantity,
+              quantity: inventoryQuantity,
               balances: sellableBalances,
               locations,
               preferredLocationId: settings?.defaultLocationId,
@@ -395,6 +411,7 @@ export class ConfirmSaleService {
           skuSnapshot: product.sku,
           nameSnapshot: product.name,
           quantity,
+          inventoryQuantity,
           unitPrice: price.effectivePrice,
           discount: price.discountAmount,
           subtotal: fromCents(totalCents),

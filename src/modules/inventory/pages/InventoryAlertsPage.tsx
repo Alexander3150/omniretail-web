@@ -13,6 +13,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import type { StorageLocation } from "@/core/entities";
+import { getLocalCalendarDate } from "@/core/inventory/expirationDate";
 import { InventoryTransferReason, InventoryTransferRequestStatus } from "@/core/enums";
 import { Button } from "@/shared/components/Button";
 import { Input } from "@/shared/components/Input";
@@ -51,8 +52,9 @@ import {
 type ActionMode =
   "adjust" | "other-branches" | "request-transfer" | "transfer-request-detail" | null;
 
-type EditableAdjustStockDto = Omit<AdjustStockDto, "quantity"> & {
+type EditableAdjustStockDto = Omit<AdjustStockDto, "quantity" | "serialNumbers"> & {
   quantity: NumericInputValue;
+  serialNumbersText: string;
 };
 
 type EditableTransferRequestDto = Omit<TransferRequestDto, "quantity"> & {
@@ -702,15 +704,25 @@ function InventoryTable({
                   </td>
                   <td className="px-4 py-4 text-right">
                     <p className="text-base font-bold text-[var(--color-title)]">
-                      {row.quantity} {row.unitName}
+                      {row.sellableQuantity} {row.saleUnitName}
                     </p>
+                    {row.inventoryUnitId !== row.unitId ? (
+                      <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
+                        Equivale a {row.inventoryPresentationQuantity} {row.inventoryUnitName}
+                      </p>
+                    ) : null}
                     <StockLevelBar row={row} />
                   </td>
                   <td className="px-4 py-4 text-right font-semibold text-[var(--color-text)]">
-                    {row.reservedQuantity} {row.unitName}
+                    {row.sellableReservedQuantity} {row.saleUnitName}
                   </td>
                   <td className="px-4 py-4 text-right font-bold text-[var(--color-title)]">
-                    {row.availableQuantity} {row.unitName}
+                    <p>{row.sellableAvailableQuantity} {row.saleUnitName}</p>
+                    {row.inventoryUnitId !== row.saleUnitId ? (
+                      <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
+                        {row.inventoryPresentationAvailableQuantity} {row.inventoryUnitName}
+                      </p>
+                    ) : null}
                   </td>
                   <td className="hidden px-4 py-4 text-right font-semibold text-[var(--color-text)] md:table-cell">
                     {row.minStock}
@@ -1345,13 +1357,19 @@ function ProductPanel({
             <InventoryStatusBadge label={row.statusLabel} status={row.status} />
           </div>
           <dl className="mt-4 grid gap-4 sm:grid-cols-2">
-            <DetailTile label="Existencia actual" value={`${row.quantity} ${row.unitName}`} />
-            <DetailTile label="Reservado" value={`${row.reservedQuantity} ${row.unitName}`} />
-            <DetailTile label="Disponible" value={`${row.availableQuantity} ${row.unitName}`} />
+            <DetailTile label="Existencia para venta" value={`${row.sellableQuantity} ${row.saleUnitName}`} />
+            <DetailTile label="Reservado" value={`${row.sellableReservedQuantity} ${row.saleUnitName}`} />
+            <DetailTile label="Disponible para venta" value={`${row.sellableAvailableQuantity} ${row.saleUnitName}`} />
+            {row.inventoryUnitId !== row.saleUnitId ? (
+              <DetailTile
+                label="Equivalente de inventario"
+                value={`${row.inventoryPresentationAvailableQuantity} ${row.inventoryUnitName} · 1 = ${row.inventoryToBaseFactor} ${row.unitName}`}
+              />
+            ) : null}
             <DetailTile label="Nivel minimo" value={String(row.minStock)} />
             <DetailTile label="Ubicacion" value={row.defaultLocationName} />
             <DetailTile label="Categoria" value={row.categoryName} />
-            <DetailTile label="Unidad" value={row.unitName} />
+            <DetailTile label="Unidad minima" value={row.unitName} />
             <DetailTile label="Sucursal" value={activeBranchName} />
           </dl>
           <div className="mt-4 rounded-md border border-blue-100 bg-blue-50 px-3 py-2">
@@ -1431,35 +1449,66 @@ function AdjustStockModal({
     productId: row.productId,
     branchId: row.branchId,
     locationId: defaultLocationId,
+    unitId: row.unitId,
     movementKind: "in",
     quantity: 1,
     reason: "",
     notes: "",
+    serialNumbersText: "",
   }));
   const [errors, setErrors] = useState<AdjustmentValidationErrors>({});
   const locationQuantity = useMemo(
     () => row.locationQuantities[value.locationId] ?? 0,
     [row.locationQuantities, value.locationId],
   );
+  const selectedUnit =
+    row.adjustmentUnits.find((option) => option.unitId === value.unitId) ??
+    row.adjustmentUnits[0];
+  const canonicalInputQuantity = toFiniteNumber(value.quantity) * (selectedUnit?.toBaseFactor ?? 1);
   const finalQuantity =
     value.movementKind === "in"
-      ? row.quantity + toFiniteNumber(value.quantity)
+      ? row.quantity + canonicalInputQuantity
       : value.movementKind === "out" || value.movementKind === "waste"
-        ? row.quantity - toFiniteNumber(value.quantity)
-        : toFiniteNumber(value.quantity);
+        ? row.quantity - canonicalInputQuantity
+        : canonicalInputQuantity;
   const delta = finalQuantity - row.quantity;
+  const traceQuantity = Math.abs(delta);
+  const isEntry = delta > 0;
+  const parsedSerials = parseSerialNumbers(value.serialNumbersText);
+  const availableLots = row.availableLots.filter(
+    (lot) => !value.locationId || lot.locationId === value.locationId,
+  );
+  const selectedLot = availableLots.find((lot) => lot.id === value.lotId);
+  const availableSerials = row.availableSerials.filter(
+    (serial) =>
+      (!value.locationId || serial.locationId === value.locationId) &&
+      (!value.lotId || serial.lotId === value.lotId),
+  );
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const dto = toAdjustStockDto(value);
-    const nextErrors = validateAdjustment(dto, row, locationQuantity);
+    const nextErrors = validateAdjustment(
+      { ...dto, quantity: canonicalInputQuantity },
+      row,
+      locationQuantity,
+    );
     setErrors(nextErrors);
     if (hasValidationErrors(nextErrors)) return;
-    await onSubmit(dto);
+    setSubmitError(null);
+    try {
+      await onSubmit(dto);
+    } catch (caughtError) {
+      setSubmitError(
+        caughtError instanceof Error ? caughtError.message : "No se pudo registrar el ajuste.",
+      );
+    }
   }
 
   function update(patch: Partial<EditableAdjustStockDto>) {
     setValue((current) => ({ ...current, ...patch }));
+    setSubmitError(null);
   }
 
   return (
@@ -1492,7 +1541,9 @@ function AdjustStockModal({
         <Field id="adjust-location" label="Ubicacion" error={errors.locationId}>
           <Select
             id="adjust-location"
-            onChange={(event) => update({ locationId: event.target.value })}
+            onChange={(event) =>
+              update({ locationId: event.target.value, lotId: undefined, serialNumbersText: "" })
+            }
             value={value.locationId}
           >
             {locations.map((location) => (
@@ -1506,7 +1557,13 @@ function AdjustStockModal({
           <Select
             id="adjust-kind"
             onChange={(event) =>
-              update({ movementKind: event.target.value as AdjustStockDto["movementKind"] })
+              update({
+                movementKind: event.target.value as AdjustStockDto["movementKind"],
+                lotId: undefined,
+                lotNumber: "",
+                expirationDate: "",
+                serialNumbersText: "",
+              })
             }
             value={value.movementKind}
           >
@@ -1516,6 +1573,107 @@ function AdjustStockModal({
             <option value="count">Conteo / Correccion exacta</option>
           </Select>
         </Field>
+        <Field id="adjust-unit" label="Unidad">
+          <Select
+            id="adjust-unit"
+            onChange={(event) => update({ unitId: event.target.value, serialNumbersText: "" })}
+            value={value.unitId}
+          >
+            {row.adjustmentUnits.map((option) => (
+              <option key={option.unitId} value={option.unitId}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        {row.tracking.lot && traceQuantity > 0 ? (
+          isEntry ? (
+            <Field id="adjust-lot-number" label="Lote *" error={errors.lotNumber}>
+              <Input
+                id="adjust-lot-number"
+                onChange={(event) => update({ lotNumber: event.target.value })}
+                value={value.lotNumber ?? ""}
+              />
+            </Field>
+          ) : (
+            <Field id="adjust-lot" label="Lote existente *" error={errors.lotId}>
+              <Select
+                id="adjust-lot"
+                onChange={(event) => update({ lotId: event.target.value, serialNumbersText: "" })}
+                value={value.lotId ?? ""}
+              >
+                <option value="">Seleccionar lote</option>
+                {availableLots.map((lot) => (
+                  <option key={lot.id} value={lot.id}>
+                    {lot.lotNumber} - {lot.quantity} disponibles
+                    {lot.expirationDate ? ` - vence ${lot.expirationDate}` : ""}
+                  </option>
+                ))}
+              </Select>
+              {selectedLot && selectedLot.quantity < traceQuantity ? (
+                <p className="mt-1 text-xs font-semibold text-[var(--color-danger)]">
+                  El lote no tiene suficientes unidades.
+                </p>
+              ) : null}
+            </Field>
+          )
+        ) : null}
+        {row.tracking.expiration && isEntry && traceQuantity > 0 ? (
+          <Field
+            id="adjust-expiration"
+            label="Fecha de vencimiento *"
+            error={errors.expirationDate}
+          >
+            <Input
+              id="adjust-expiration"
+              min={getLocalCalendarDate()}
+              type="date"
+              onChange={(event) => update({ expirationDate: event.target.value })}
+              value={value.expirationDate ?? ""}
+            />
+          </Field>
+        ) : null}
+        {row.tracking.serial && traceQuantity > 0 ? (
+          <Field
+            id="adjust-serials"
+            label={isEntry ? "Numeros de serie nuevos *" : "Series existentes que salen *"}
+            error={errors.serialNumbers}
+          >
+            {isEntry ? (
+              <textarea
+                id="adjust-serials"
+                className="min-h-32 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm"
+                placeholder="Una serie por linea"
+                onChange={(event) => update({ serialNumbersText: event.target.value })}
+                value={value.serialNumbersText}
+              />
+            ) : (
+              <select
+                id="adjust-serials"
+                className="min-h-36 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm"
+                multiple
+                onChange={(event) =>
+                  update({
+                    serialNumbersText: [...event.target.selectedOptions]
+                      .map((option) => option.value)
+                      .join("\n"),
+                  })
+                }
+                value={parsedSerials}
+              >
+                {availableSerials.map((serial) => (
+                  <option key={serial.serialNumber} value={serial.serialNumber}>
+                    {serial.serialNumber}
+                  </option>
+                ))}
+              </select>
+            )}
+            <p className="mt-1 text-sm font-semibold text-[var(--color-text-muted)]">
+              Cantidad del ajuste: {traceQuantity} {row.unitName}. Seriales requeridos:{" "}
+              {traceQuantity}. Registrados: {parsedSerials.length} / {traceQuantity}.
+            </p>
+          </Field>
+        ) : null}
         <Field id="adjust-quantity" label="Cantidad" error={errors.quantity}>
           <Input
             id="adjust-quantity"
@@ -1526,6 +1684,11 @@ function AdjustStockModal({
             value={value.quantity}
           />
         </Field>
+        {selectedUnit && selectedUnit.toBaseFactor !== 1 ? (
+          <p className="rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-title)]">
+            {toFiniteNumber(value.quantity)} {selectedUnit.unitName} = {canonicalInputQuantity} {row.unitName}
+          </p>
+        ) : null}
         <Field id="adjust-reason" label="Motivo *" error={errors.reason}>
           <textarea
             className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
@@ -1543,6 +1706,14 @@ function AdjustStockModal({
           />
         </Field>
         <AdjustmentSummary delta={delta} finalQuantity={finalQuantity} row={row} value={value} />
+        {submitError ? (
+          <p
+            role="alert"
+            className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-[var(--color-danger)]"
+          >
+            {submitError}
+          </p>
+        ) : null}
       </form>
     </Modal>
   );
@@ -2097,7 +2268,15 @@ function toAdjustStockDto(value: EditableAdjustStockDto): AdjustStockDto {
   return {
     ...value,
     quantity: toFiniteNumber(value.quantity),
+    serialNumbers: parseSerialNumbers(value.serialNumbersText),
   };
+}
+
+function parseSerialNumbers(value: string) {
+  return value
+    .split(/\r?\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function toTransferRequestDto(value: EditableTransferRequestDto): TransferRequestDto {

@@ -10,6 +10,8 @@ export interface PosProductDto {
   effectivePrice: number;
   discount: number;
   availableQuantity: number | null;
+  saleUnitId: string;
+  saleUnitName: string;
   tracksStock: boolean;
   requiresLot: boolean;
   requiresSerial: boolean;

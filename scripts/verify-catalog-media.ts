@@ -185,8 +185,9 @@ function productDto(
     categoryId: product.categoryId,
     baseUnitId: unitId,
     saleUnitId: unitId,
-    inventoryQuantity: 1,
-    saleQuantity: 1,
+    inventoryUnitId: product.baseUnitId,
+    inventoryToBaseFactor: 1,
+    saleToBaseFactor: 1,
     salePrice: 125,
     status: product.status,
     tracking: product.tracking,
@@ -474,6 +475,39 @@ async function verifyRealProductServicesAndReload() {
     createdMedia[0]?.source?.kind === "mockAsset" ? createdMedia[0].source.assetId : "";
   assert.ok(createdAssetId);
   assert.ok(await initial.assets.get(created.tenantId, createdAssetId));
+
+  // T. CREATE conserva una presentacion de inventario distinta aunque venta use la unidad minima.
+  const baseUnitId = initial.store.getSnapshot().units.find((unit) => unit.id === "unit-unit")?.id;
+  const inventoryUnitId = initial.store.getSnapshot().units.find((unit) => unit.id === "unit-box")?.id;
+  assert.ok(baseUnitId);
+  assert.ok(inventoryUnitId);
+  const packagedProduct = await createService.execute(
+    productDto(initial.store, {
+      sku: `PACKAGED-${crypto.randomUUID()}`,
+      name: "Producto caja x10",
+      baseUnitId,
+      inventoryUnitId,
+      saleUnitId: baseUnitId,
+      inventoryToBaseFactor: 10,
+      saleToBaseFactor: 1,
+      media: [],
+    }),
+  );
+  assert.equal(packagedProduct.baseUnitId, baseUnitId);
+  assert.equal(packagedProduct.inventoryUnitId, inventoryUnitId);
+  assert.equal(packagedProduct.saleUnitId, baseUnitId);
+  const packagedConversions = await initial.repositories.units.getConversionsByProductScoped(
+    packagedProduct.tenantId,
+    packagedProduct.id,
+  );
+  assert.deepEqual(
+    packagedConversions.map(({ fromUnitId, toUnitId, factor }) => ({
+      fromUnitId,
+      toUnitId,
+      factor,
+    })),
+    [{ fromUnitId: inventoryUnitId, toUnitId: baseUnitId, factor: 10 }],
+  );
 
   // O. El read model del detalle administrativo conserva la fuente, no la reduce a `url: ""`.
   const detail = await new GetProductDetailService(initial.repositories).execute(created.id);

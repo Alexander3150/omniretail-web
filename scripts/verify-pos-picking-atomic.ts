@@ -14,6 +14,7 @@ import { MockPickingRepository } from "@/infrastructure/mock/repositories/MockPi
 import { MockPackingRepository } from "@/infrastructure/mock/repositories/MockPackingRepository";
 import { MockProductRepository } from "@/infrastructure/mock/repositories/MockProductRepository";
 import { MockPromotionRepository } from "@/infrastructure/mock/repositories/MockPromotionRepository";
+import { MockUnitRepository } from "@/infrastructure/mock/repositories/MockUnitRepository";
 import { MockRoleRepository } from "@/infrastructure/mock/repositories/MockRoleRepository";
 import {
   MockSaleConfirmationRepository,
@@ -252,6 +253,7 @@ function createRepositories(
     promotions: new MockPromotionRepository(store, eventBus),
     roles: new MockRoleRepository(store, eventBus),
     saleConfirmations: new MockSaleConfirmationRepository(store, eventBus, saleHooks),
+    units: new MockUnitRepository(store, eventBus),
     users: new MockUserRepository(store, eventBus),
   } as unknown as RepositoryRegistry;
 }
@@ -267,6 +269,7 @@ function confirmationInput(
   const cashShift = snapshot.cashShifts.find((item) => item.id === "cash-shift-001");
   const product = snapshot.products.find((item) => item.id === productId);
   assert.ok(user && currentBranch && cashShift && product);
+  assert.ok(product.saleUnitId);
   const unitPrice = product.salePrice;
   const isHome = deliveryMethod === DeliveryMethod.home_delivery;
   const isDeferred = deliveryMethod !== DeliveryMethod.immediate;
@@ -285,6 +288,8 @@ function confirmationInput(
           productId,
           sku: product.sku,
           name: product.name,
+          saleUnitId: product.saleUnitId,
+          saleUnitName: "Caja",
           quantity: 1,
           baseUnitPrice: unitPrice,
           unitPrice,

@@ -88,6 +88,7 @@ export class MockUnitRepository extends BaseMockRepository implements UnitReposi
           throw new Error("Unit conversion tenant must match product tenant");
         }
       }
+      this.assertConversionUnits(db.units, input.tenantId, input.fromUnitId, input.toUnitId);
       const existingIndex = db.unitConversions.findIndex(
         (conversion) =>
           conversion.tenantId === input.tenantId &&
@@ -127,7 +128,17 @@ export class MockUnitRepository extends BaseMockRepository implements UnitReposi
         if (conversion.tenantId !== product.tenantId) {
           throw new Error("Unit conversion tenant must match product tenant");
         }
+        this.assertConversionUnits(
+          db.units,
+          conversion.tenantId,
+          conversion.fromUnitId,
+          conversion.toUnitId,
+        );
       });
+      const keys = conversions.map((item) => `${item.fromUnitId}->${item.toUnitId}`);
+      if (new Set(keys).size !== keys.length) {
+        throw new Error("Duplicate unit conversion for product");
+      }
       db.unitConversions = db.unitConversions.filter((item) => item.productId !== productId);
       const created = conversions.map((conversion) => ({
         ...conversion,
@@ -189,8 +200,23 @@ export class MockUnitRepository extends BaseMockRepository implements UnitReposi
   }
 
   private assertValidConversion(factor: number): void {
-    if (factor <= 0) {
+    if (!Number.isFinite(factor) || factor <= 0) {
       throw new Error("Unit conversion factor must be greater than 0");
+    }
+  }
+
+  private assertConversionUnits(
+    units: Array<{ id: string; tenantId: string }>,
+    tenantId: string,
+    fromUnitId: string,
+    toUnitId: string,
+  ): void {
+    if (fromUnitId === toUnitId) throw new Error("Unit conversion must use different units");
+    if (!units.some((unit) => unit.id === fromUnitId && unit.tenantId === tenantId)) {
+      throw new Error("Unit conversion source unit must belong to tenant");
+    }
+    if (!units.some((unit) => unit.id === toUnitId && unit.tenantId === tenantId)) {
+      throw new Error("Unit conversion target unit must belong to tenant");
     }
   }
 

@@ -2,7 +2,7 @@ import { ProductType, SalesChannel } from "@/core/enums";
 import { getBranchAvailableQuantity } from "@/core/inventory/stockAvailability";
 import { getCanonicalProductAvailability } from "@/core/inventory/canonicalAvailability";
 import { calculateEffectivePrice } from "@/core/pricing";
-import { isStockLotEligible } from "@/infrastructure/mock/repositories/stockLotMutations";
+import { fromBaseQuantity } from "@/core/units";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { PosProductDto } from "@/modules/pos/application/dto/PosProductDto";
 
@@ -21,8 +21,9 @@ export class GetPosProductsService {
     const at = new Date().toISOString();
     const locations = await this.repositories.inventory.getLocations(input.branchId);
 
+    const units = await this.repositories.units.getByTenant(input.tenantId);
     const items = await Promise.all(
-      products.map(async (product): Promise<PosProductDto> => {
+      products.map(async (product): Promise<PosProductDto & { canonicalAvailableQuantity: number | null }> => {
         const [promotion, balances, lots, serials, kitComponents] = await Promise.all([
           this.repositories.promotions.getApplicable({
             tenantId: input.tenantId,
@@ -45,56 +46,12 @@ export class GetPosProductsService {
             : Promise.resolve([]),
         ]);
         const price = calculateEffectivePrice(product.salePrice, promotion);
+        const saleUnitId = product.saleUnitId ?? product.baseUnitId;
+        const conversions = await this.repositories.units.getConversionsByProductScoped(
+          input.tenantId,
+          product.id,
+        );
         const tracksStock = product.tracking.stock || product.productType === ProductType.kit;
-        const sellableBalances = product.tracking.lot
-          ? balances.map((balance) => ({
-              ...balance,
-              quantity: Math.min(
-                balance.quantity,
-                lots
-                  .filter(
-                    (lot) =>
-                      lot.tenantId === input.tenantId &&
-                      lot.branchId === input.branchId &&
-                      lot.productId === product.id &&
-                      lot.locationId === balance.locationId &&
-                      isStockLotEligible(
-                        lot,
-                        product.tracking.expiration,
-                        new Date().toISOString(),
-                      ),
-                  )
-                  .reduce(
-                    (sum, lot) =>
-                      sum +
-                      (product.tracking.serial
-                        ? Math.min(
-                            lot.quantity,
-                            serials.filter(
-                              (serial) => serial.lotId === lot.id && serial.status === "available",
-                            ).length,
-                          )
-                        : lot.quantity),
-                    0,
-                  ),
-              ),
-            }))
-          : product.tracking.serial
-            ? balances.map((balance) => ({
-                ...balance,
-                quantity: Math.min(
-                  balance.quantity,
-                  serials.filter(
-                    (serial) =>
-                      serial.tenantId === input.tenantId &&
-                      serial.branchId === input.branchId &&
-                      serial.productId === product.id &&
-                      serial.locationId === balance.locationId &&
-                      serial.status === "available",
-                  ).length,
-                ),
-              }))
-            : balances;
         const physicalAvailableQuantity = product.tracking.stock
           ? getCanonicalProductAvailability({
               product,
@@ -128,12 +85,26 @@ export class GetPosProductsService {
                 )),
               )
             : null;
-        const availableQuantity =
+        const canonicalAvailableQuantity =
           product.productType === ProductType.kit
             ? Number.isFinite(kitAvailableQuantity)
               ? kitAvailableQuantity
               : 0
             : physicalAvailableQuantity;
+        let hasValidSaleConversion = true;
+        let availableQuantity: number | null = canonicalAvailableQuantity;
+        if (canonicalAvailableQuantity !== null) {
+          try {
+            availableQuantity = fromBaseQuantity(canonicalAvailableQuantity, {
+              targetUnitId: saleUnitId,
+              baseUnitId: product.baseUnitId,
+              conversions,
+            });
+          } catch {
+            hasValidSaleConversion = false;
+            availableQuantity = 0;
+          }
+        }
         const requiresLot = product.tracking.lot;
         const requiresSerial = product.tracking.serial;
         const requiresUnsupportedTraceability = product.tracking.expiration && !requiresLot;
@@ -148,14 +119,17 @@ export class GetPosProductsService {
           effectivePrice: price.effectivePrice,
           discount: price.discountAmount,
           availableQuantity,
+          saleUnitId,
+          saleUnitName: units.find((unit) => unit.id === saleUnitId)?.name ?? saleUnitId,
           tracksStock,
           requiresLot,
           requiresSerial,
           requiresUnsupportedTraceability,
           isAvailableForSale:
-            !requiresUnsupportedTraceability &&
+            hasValidSaleConversion && !requiresUnsupportedTraceability &&
             (!(tracksStock || product.productType === ProductType.kit) ||
               (availableQuantity !== null && availableQuantity > 0)),
+          canonicalAvailableQuantity,
         };
       }),
     );
@@ -172,15 +146,33 @@ export class GetPosProductsService {
               ...components.map((component) => {
                 const componentProduct = byProductId.get(component.componentProductId);
                 return Math.floor(
-                  (componentProduct?.availableQuantity ?? 0) / component.quantityPerKit,
+                  ((componentProduct as PosProductDto & { canonicalAvailableQuantity?: number })
+                    ?.canonicalAvailableQuantity ?? 0) / component.quantityPerKit,
                 );
               }),
             )
           : 0;
+        const product = products.find((candidate) => candidate.id === item.productId);
+        if (!product) return { ...item, availableQuantity: 0, isAvailableForSale: false };
+        const conversions = await this.repositories.units.getConversionsByProductScoped(
+          input.tenantId,
+          product.id,
+        );
+        let sellableAvailableQuantity = 0;
+        try {
+          sellableAvailableQuantity = fromBaseQuantity(availableQuantity, {
+            targetUnitId: item.saleUnitId,
+            baseUnitId: product.baseUnitId,
+            conversions,
+          });
+        } catch {
+          return { ...item, availableQuantity: 0, isAvailableForSale: false };
+        }
         return {
           ...item,
-          availableQuantity,
-          isAvailableForSale: availableQuantity > 0,
+          canonicalAvailableQuantity: availableQuantity,
+          availableQuantity: sellableAvailableQuantity,
+          isAvailableForSale: sellableAvailableQuantity > 0,
         };
       }),
     );

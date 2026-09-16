@@ -66,6 +66,7 @@ export function CartPage() {
             <span className="text-right">Acción</span>
           </div>
           {items.map((item) => {
+            const product = products.find((candidate) => candidate.id === item.productId);
             const availableQuantity = availabilityByProductId.get(item.productId);
             const isInvalid =
               availableQuantity !== undefined &&
@@ -98,7 +99,7 @@ export function CartPage() {
                     <p className="mt-1 text-sm font-bold text-[var(--color-danger)]" role="alert">
                       {availableQuantity === 0
                         ? "Agotado. Retira este producto para continuar."
-                        : `Solo hay ${availableQuantity} unidades disponibles.`}
+                        : `Solo hay ${availableQuantity} ${product?.saleUnitName ?? "unidades"} disponibles.`}
                     </p>
                   ) : (
                     <p className="mt-1 text-sm text-[var(--color-text-muted)]">

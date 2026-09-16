@@ -372,6 +372,7 @@ function createEditorLine(
     supplierSku: product.supplierSku,
     unitId: product.unitId,
     unitLabel: product.unitLabel,
+    purchaseToBaseFactor: product.purchaseToBaseFactor,
     quantity,
     baseCost: product.configuredCost,
     suggestedCost: agreedCost,
