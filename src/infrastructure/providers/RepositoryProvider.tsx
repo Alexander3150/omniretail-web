@@ -43,6 +43,7 @@ import type {
   StorePickupDeliveryRepository,
   SupplierProductRepository,
   SupplierRepository,
+  TenantOnboardingRepository,
   TenantRepository,
   TenantSubscriptionRepository,
   UnitRepository,
@@ -90,6 +91,7 @@ import {
   MockStorePickupDeliveryRepository,
   MockSupplierProductRepository,
   MockSupplierRepository,
+  MockTenantOnboardingRepository,
   MockTenantRepository,
   MockTenantSubscriptionRepository,
   MockUnitRepository,
@@ -100,6 +102,7 @@ import { IndexedDbCatalogImageAssetRepository } from "@/infrastructure/media/Ind
 
 export interface RepositoryRegistry {
   tenants: TenantRepository;
+  tenantOnboarding: TenantOnboardingRepository;
   businessConfig: BusinessConfigRepository;
   plans: PlanRepository;
   tenantSubscriptions: TenantSubscriptionRepository;
@@ -162,6 +165,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     const customerPaymentMethods = new MockCustomerPaymentMethodRepository(store, eventBus);
     const repositories: RepositoryRegistry = {
       tenants: new MockTenantRepository(store, eventBus),
+      tenantOnboarding: new MockTenantOnboardingRepository(store, eventBus),
       businessConfig: new MockBusinessConfigRepository(store, eventBus),
       plans: new MockPlanRepository(store, eventBus),
       tenantSubscriptions: new MockTenantSubscriptionRepository(store, eventBus),
