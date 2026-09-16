@@ -8,6 +8,7 @@ import type { UnitEditorDto, UnitListItem } from "@/modules/catalog/application/
 import { GetUnitsService } from "@/modules/catalog/application/services/GetUnitsService";
 import { SaveUnitService } from "@/modules/catalog/application/services/SaveUnitService";
 import { cleanError } from "@/modules/catalog/application/services/serviceHelpers";
+import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 
 export type UnitStatusFilter = UnitStatus.active | UnitStatus.archived;
 export type UnitCategoryFilter = UnitCategory | "all";
@@ -16,6 +17,9 @@ const DEFAULT_PAGE_SIZE = 10;
 
 export function useUnits() {
   const repositories = useRepositories();
+  const { hasPermission } = useCurrentSession();
+  const canRead = hasPermission("catalog.units.read") || hasPermission("catalog.units.manage");
+  const canManage = hasPermission("catalog.units.manage");
   const getService = useMemo(() => new GetUnitsService(repositories), [repositories]);
   const saveService = useMemo(() => new SaveUnitService(repositories), [repositories]);
   const [units, setUnits] = useState<UnitListItem[]>([]);
@@ -113,6 +117,8 @@ export function useUnits() {
     loading,
     busy,
     error,
+    canRead,
+    canManage,
     units,
     filteredUnits,
     paginatedUnits,

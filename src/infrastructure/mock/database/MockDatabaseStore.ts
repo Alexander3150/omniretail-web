@@ -21,6 +21,7 @@ import type {
   InventoryTransferItem,
   ProductInventorySettings,
   Unit,
+  PurchaseOrderItem,
 } from "@/core/entities";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { createMockDatabase } from "@/infrastructure/mock/database/createMockDatabase";
@@ -42,6 +43,9 @@ type PersistedInventoryTransferRequest = Partial<InventoryTransferRequest>;
 type PersistedInventoryTransfer = Partial<InventoryTransfer>;
 type PersistedInventoryTransferItem = Partial<InventoryTransferItem>;
 type PersistedUnit = Partial<Unit>;
+type PersistedPurchaseOrderItem = Omit<PurchaseOrderItem, "purchaseToBaseFactor"> & {
+  purchaseToBaseFactor?: number;
+};
 
 type PersistedMockDatabase = Partial<
   Omit<
@@ -53,6 +57,7 @@ type PersistedMockDatabase = Partial<
     | "inventoryTransferRequests"
     | "inventoryTransfers"
     | "productInventorySettings"
+    | "purchaseOrderItems"
     | "units"
   >
 > & {
@@ -63,6 +68,7 @@ type PersistedMockDatabase = Partial<
   inventoryTransferRequests?: PersistedInventoryTransferRequest[];
   inventoryTransfers?: PersistedInventoryTransfer[];
   productInventorySettings?: PersistedProductInventorySettings[];
+  purchaseOrderItems?: PersistedPurchaseOrderItem[];
   savedPaymentMethods?: PersistedCustomerPaymentMethod[];
   units?: PersistedUnit[];
 };
@@ -92,6 +98,12 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
         PaymentMethod.transfer,
       ],
   }));
+  // Mismo criterio que businessCapabilities/ecommerceConfigs: fallback al seed, NO a []. Un
+  // storage persistido antes de esta feature no tiene la key -- sin este fallback, tenant-demo
+  // quedaría sin PlanDefinition/TenantSubscription y el resolver fallaría fail-closed para una
+  // cuenta que sí las tiene disponibles en el seed. Nunca se borra storage para lograr esto.
+  normalized.planDefinitions = database.planDefinitions ?? base.planDefinitions;
+  normalized.tenantSubscriptions = database.tenantSubscriptions ?? base.tenantSubscriptions;
   normalized.productPriceHistory = database.productPriceHistory ?? [];
   normalized.inventoryReservations = database.inventoryReservations ?? [];
   normalized.inventoryReservationConsumeOperations =
@@ -101,6 +113,8 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   normalized.storePickupDeliveries = database.storePickupDeliveries ?? [];
   normalized.products = (database.products ?? base.products).map((product) => ({
     ...product,
+    // Safe legacy backfill only: no stock quantity is reinterpreted or rescaled.
+    inventoryUnitId: product.inventoryUnitId ?? product.baseUnitId,
     saleUnitId: product.saleUnitId ?? product.baseUnitId,
     channels: {
       ecommerce: product.channels.ecommerce,
@@ -141,6 +155,12 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
         preferred: supplierProduct.preferred ?? false,
       };
     },
+  );
+  normalized.purchaseOrderItems = (database.purchaseOrderItems ?? base.purchaseOrderItems).map(
+    (item) => ({
+      ...item,
+      purchaseToBaseFactor: resolveLegacyPurchaseFactor(item, normalized),
+    }),
   );
   synchronizeSupplierLeadTimeDays(
     normalized,
@@ -201,6 +221,37 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   }));
 
   return normalized;
+}
+
+function resolveLegacyPurchaseFactor(
+  item: PersistedPurchaseOrderItem,
+  database: MockDatabase,
+): number {
+  if (typeof item.purchaseToBaseFactor === "number" && item.purchaseToBaseFactor > 0) {
+    return item.purchaseToBaseFactor;
+  }
+  const order = database.purchaseOrders.find((entry) => entry.id === item.purchaseOrderId);
+  const product = database.products.find((entry) => entry.id === item.productId);
+  if (!product || product.baseUnitId === item.unitId) return 1;
+  const supplierProduct = database.supplierProducts.find(
+    (entry) =>
+      entry.supplierId === order?.supplierId &&
+      entry.productId === item.productId &&
+      entry.purchaseUnitId === item.unitId,
+  );
+  const conversion = database.unitConversions.find(
+    (entry) =>
+      entry.productId === item.productId &&
+      entry.fromUnitId === item.unitId &&
+      entry.toUnitId === product.baseUnitId,
+  );
+  const factor = supplierProduct?.purchaseToBaseFactor ?? conversion?.factor;
+  if (!Number.isFinite(factor) || (factor ?? 0) <= 0) {
+    throw new Error(
+      `Legacy purchase item ${item.id} has no unambiguous conversion to canonical base unit`,
+    );
+  }
+  return factor!;
 }
 
 function normalizeInventoryAdjustments(

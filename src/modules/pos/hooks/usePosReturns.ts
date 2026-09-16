@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SaasCapabilityKey } from "@/core/enums";
 import type { DataEventPayload } from "@/core/types/events.types";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
+import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import type { ReturnSaleLookupDto } from "@/modules/pos/application/dto/ReturnSaleLookupDto";
 import type { SaleReversalResultDto } from "@/modules/pos/application/dto/SaleReversalResultDto";
 import { GetReturnSaleLookupService } from "@/modules/pos/application/services/GetReturnSaleLookupService";
@@ -28,6 +30,8 @@ export function usePosReturns() {
     loading: sessionLoading,
     error: sessionError,
   } = useCurrentSession();
+  const { hasCapability } = useEntitlement();
+  const canUsePos = hasCapability(SaasCapabilityKey.pos);
   const services = useMemo(
     () => ({
       lookup: new GetReturnSaleLookupService(repositories),
@@ -61,8 +65,11 @@ export function usePosReturns() {
     canAccessBranch(currentBranch.id),
   );
   const canRead = hasPermission("pos.returns.read");
-  const canProcessReturn = hasPermission("pos.returns.create");
-  const canVoid = hasPermission("pos.sales.void");
+  // UI action gating (feature/saas-entitlement-enforcement §7/§11): devolucion/anulacion son
+  // operaciones activas -- se gatean por capability. `canRead` (busqueda de la venta) queda
+  // intacto: no es historico de solo lectura como Sales History, es la puerta de entrada al flujo.
+  const canProcessReturn = hasPermission("pos.returns.create") && canUsePos;
+  const canVoid = hasPermission("pos.sales.void") && canUsePos;
   const contextLoading = branchLoading || sessionLoading;
   const accessBlocked =
     !contextLoading && (!user || !currentBranch || !hasBranchAccess || !canRead);

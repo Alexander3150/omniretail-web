@@ -1,16 +1,29 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { PurchaseOrderStatus } from "@/core/enums";
+import { SaasCapabilityKey, type PurchaseOrderStatus } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { GetPurchaseOrdersReadModelService } from "@/modules/purchasing/application/services/GetPurchaseOrdersReadModelService";
+import { UpdatePurchaseOrderStatusService } from "@/modules/purchasing/application/services/UpdatePurchaseOrderStatusService";
 import type {
+  PurchaseOrderAction,
   PurchaseOrderRowReadModel,
   PurchaseOrderStatusFilter,
   PurchaseOrdersReadModel,
 } from "@/modules/purchasing/application/dto/PurchaseOrderReadModel";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
+import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
+
+// UI action gating (feature/saas-entitlement-enforcement §7/§9): acciones mutables de una orden --
+// las de solo lectura/navegacion (continuar recepcion, descargar PDF) NUNCA se gatean por
+// capability, solo por el permission gating ya resuelto en getPurchaseOrderActions.
+const MUTATION_ACTION_IDS: ReadonlySet<PurchaseOrderAction["id"]> = new Set([
+  "edit-draft",
+  "send-approval",
+  "approve",
+  "cancel",
+]);
 
 interface PurchaseOrderFilters {
   search: string;
@@ -33,10 +46,15 @@ const EMPTY_DATA: PurchaseOrdersReadModel = {
 
 export function usePurchaseOrders() {
   const repositories = useRepositories();
+  const { hasCapability } = useEntitlement();
   const { currentBranch, loading: branchLoading } = useActiveBranch();
   const activeBranchId = currentBranch?.id;
   const service = useMemo(
     () => new GetPurchaseOrdersReadModelService(repositories),
+    [repositories],
+  );
+  const updateStatusService = useMemo(
+    () => new UpdatePurchaseOrderStatusService(repositories),
     [repositories],
   );
   const [data, setData] = useState<PurchaseOrdersReadModel>(EMPTY_DATA);
@@ -76,19 +94,30 @@ export function usePurchaseOrders() {
   useDataEvent("supplier-product.changed", reload);
   useDataEvent("product.changed", reload);
 
-  const filteredOrders = useMemo(() => filterOrders(data.orders, filters), [data.orders, filters]);
+  // Gating reactivo (no en `reload`): `canUsePurchasing` puede resolverse despues del primer
+  // render (EntitlementProvider carga async) -- recalcular aca evita quedar con botones
+  // deshabilitados "pegados" si `reload` no vuelve a dispararse.
+  const canUsePurchasing = hasCapability(SaasCapabilityKey.purchasing);
+  const gatedData = useMemo<PurchaseOrdersReadModel>(
+    () => ({ ...data, orders: applyCapabilityGating(data.orders, canUsePurchasing) }),
+    [data, canUsePurchasing],
+  );
+  const filteredOrders = useMemo(
+    () => filterOrders(gatedData.orders, filters),
+    [gatedData.orders, filters],
+  );
   const updateFilters = useCallback((patch: Partial<PurchaseOrderFilters>) => {
     setFilters((current) => ({ ...current, ...patch }));
   }, []);
   const updateStatus = useCallback(
     async (orderId: string, status: PurchaseOrderStatus) => {
-      await repositories.purchaseOrders.updateStatus(orderId, status);
+      await updateStatusService.execute(orderId, status);
     },
-    [repositories],
+    [updateStatusService],
   );
 
   return {
-    data,
+    data: gatedData,
     filters,
     filteredOrders,
     currentBranch,
@@ -97,6 +126,29 @@ export function usePurchaseOrders() {
     updateFilters,
     updateStatus,
   };
+}
+
+// UI action gating (feature/saas-entitlement-enforcement §7/§9): capa PURAMENTE de UI sobre las
+// acciones ya resueltas por `getPurchaseOrderActions` (permission+status) -- nunca sustituye el
+// guard real (`UpdatePurchaseOrderStatusService`/`PurchaseOrderEditorService` siguen siendo la
+// autoridad final). Historico read-only (continuar recepcion, descargar PDF) queda intacto.
+function applyCapabilityGating(
+  orders: PurchaseOrderRowReadModel[],
+  canUsePurchasing: boolean,
+): PurchaseOrderRowReadModel[] {
+  if (canUsePurchasing) return orders;
+  return orders.map((order) => ({
+    ...order,
+    actions: order.actions.map((action) =>
+      MUTATION_ACTION_IDS.has(action.id) && action.enabled
+        ? {
+            ...action,
+            enabled: false,
+            unavailableReason: "Tu plan actual no incluye compras.",
+          }
+        : action,
+    ),
+  }));
 }
 
 function filterOrders(orders: PurchaseOrderRowReadModel[], filters: PurchaseOrderFilters) {

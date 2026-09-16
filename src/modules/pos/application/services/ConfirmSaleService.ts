@@ -15,6 +15,7 @@ import {
   planInventoryAllocation,
 } from "@/core/inventory/stockAvailability";
 import { calculateEffectivePrice } from "@/core/pricing";
+import { toBaseQuantity } from "@/core/units";
 import type {
   ConfirmSaleResult,
   SaleConfirmationPaymentMethod,
@@ -31,17 +32,21 @@ import {
   getApprovedCardTerminalReference,
   validateCheckout,
 } from "@/modules/pos/validation/checkout.validation";
+import {
+  POS_SALES_CREATE_PERMISSION,
+  ensureOwnedOpenCashShift,
+  ensurePosBranchAccess,
+  ensurePosPermission,
+  ensureTenantCanUsePos,
+  resolvePosSessionContext,
+} from "@/modules/pos/application/services/posServiceContext";
 
 export interface ConfirmPosSaleInput {
   confirmationId: string;
-  user: User;
-  currentBranch: Branch;
-  cashShift: CashShift;
-  hasSalesPermission: boolean;
-  hasBranchAccess: boolean;
+  branchId: string;
+  cashShiftId: string;
   ticket: SaleTicketDto;
   checkout: CheckoutDto;
-  currency: CurrencyCode;
   customerId?: string;
   sourceOrderId?: string;
   orderIdempotencyKey?: string;
@@ -49,11 +54,19 @@ export interface ConfirmPosSaleInput {
   notificationContact?: OrderNotificationContact;
 }
 
+interface AuthorizedConfirmPosSaleInput extends ConfirmPosSaleInput {
+  user: User;
+  currentBranch: Branch;
+  cashShift: CashShift;
+  currency: CurrencyCode;
+}
+
 interface ValidatedSaleItem {
   productId: string;
   skuSnapshot: string;
   nameSnapshot: string;
   quantity: number;
+  inventoryQuantity: number;
   unitPrice: number;
   discount: number;
   subtotal: number;
@@ -66,53 +79,61 @@ export class ConfirmSaleService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(input: ConfirmPosSaleInput): Promise<ConfirmSaleResult> {
-    this.validateOperationalContext(input);
-    const confirmationId = input.confirmationId.trim();
+    const context = await this.resolveOperationalContext(input.branchId, input.cashShiftId);
+    const authorizedInput: AuthorizedConfirmPosSaleInput = {
+      ...input,
+      user: context.user,
+      currentBranch: context.branch,
+      cashShift: context.cashShift,
+      currency: context.currency,
+    };
+    const confirmationId = authorizedInput.confirmationId.trim();
     if (!confirmationId) throw new Error("No se pudo identificar el intento de confirmación.");
-    if (input.ticket.items.length === 0) throw new Error("El ticket está vacío.");
-    if (input.ticket.hasUnsupportedTraceability) {
+    if (authorizedInput.ticket.items.length === 0) throw new Error("El ticket está vacío.");
+    if (authorizedInput.ticket.hasUnsupportedTraceability) {
       throw new Error("El ticket contiene lote, serial o kit no soportado para confirmación.");
     }
 
     const capabilities = await this.repositories.businessConfig.getCapabilities(
-      input.currentBranch.tenantId,
+      authorizedInput.currentBranch.tenantId,
     );
     if (!capabilities?.allowedPosPaymentMethods?.length) {
       throw new Error("No existe configuración de métodos de pago para POS.");
     }
 
-    const checkoutValidation = validateCheckout(input.checkout, input.ticket.total);
+    const checkoutValidation = validateCheckout(authorizedInput.checkout, authorizedInput.ticket.total);
     if (!checkoutValidation.isValid) {
       throw new Error("El documento o los datos de pago deben revisarse antes de confirmar.");
     }
 
-    await this.validateOptionalReferences(input);
-    const items = await this.validateAndBuildItems(input);
+    await this.validateOptionalReferences(authorizedInput);
+    const items = await this.validateAndBuildItems(authorizedInput);
     const totals = calculateValidatedTotals(items);
-    assertTicketTotals(input.ticket, totals);
+    assertTicketTotals(authorizedInput.ticket, totals);
 
-    const payments = await this.validateAndBuildPayments(input);
+    const payments = await this.validateAndBuildPayments(authorizedInput);
     assertAllowedPaymentMethods(payments, capabilities.allowedPosPaymentMethods);
     assertPaymentsMatchTotal(payments, totals.totalCents);
 
-    const document = createDocumentSnapshot(input.checkout);
-    const currentShift = await this.requireCurrentCashShift(input);
+    const document = createDocumentSnapshot(authorizedInput.checkout);
+    const currentShift = await this.requireCurrentCashShift(authorizedInput);
     const sourceOrderId =
-      input.sourceOrderId ?? (await this.createDeferredOrder(input, items, totals));
+      authorizedInput.sourceOrderId ?? (await this.createDeferredOrder(authorizedInput, items, totals));
 
     return this.repositories.saleConfirmations.confirm({
       confirmationId,
-      tenantId: input.currentBranch.tenantId,
-      branchId: input.currentBranch.id,
-      cashierUserId: input.user.id,
+      tenantId: authorizedInput.currentBranch.tenantId,
+      branchId: authorizedInput.currentBranch.id,
+      cashierUserId: authorizedInput.user.id,
       cashShiftId: currentShift.id,
-      customerId: input.customerId,
+      customerId: authorizedInput.customerId,
       sourceOrderId,
       items: items.map((item) => ({
         productId: item.productId,
         skuSnapshot: item.skuSnapshot,
         nameSnapshot: item.nameSnapshot,
         quantity: item.quantity,
+        inventoryQuantity: item.inventoryQuantity,
         unitPrice: item.unitPrice,
         discount: item.discount,
         subtotal: item.subtotal,
@@ -127,7 +148,7 @@ export class ConfirmSaleService {
   }
 
   private async createDeferredOrder(
-    input: ConfirmPosSaleInput,
+    input: AuthorizedConfirmPosSaleInput,
     items: ValidatedSaleItem[],
     totals: ReturnType<typeof calculateValidatedTotals>,
   ): Promise<string | undefined> {
@@ -177,6 +198,7 @@ export class ConfirmSaleService {
         skuSnapshot: item.skuSnapshot,
         nameSnapshot: item.nameSnapshot,
         quantity: item.quantity,
+        inventoryQuantity: item.inventoryQuantity,
         unitPrice: item.unitPrice,
         discount: item.discount,
         subtotal: item.subtotal,
@@ -196,29 +218,23 @@ export class ConfirmSaleService {
     return order.id;
   }
 
-  private validateOperationalContext(input: ConfirmPosSaleInput) {
-    if (!input.user) throw new Error("No existe una sesión activa.");
-    if (!input.currentBranch) throw new Error("No existe una sucursal activa.");
-    if (input.user.tenantId !== input.currentBranch.tenantId) {
-      throw new Error("La sesión no pertenece al tenant de la sucursal activa.");
-    }
-    if (!input.hasSalesPermission) {
-      throw new Error("No tienes permiso para crear ventas POS.");
-    }
-    if (!input.hasBranchAccess) {
-      throw new Error("No tienes acceso a la sucursal activa.");
-    }
-    if (
-      input.cashShift.status !== CashShiftStatus.open ||
-      input.cashShift.userId !== input.user.id ||
-      input.cashShift.branchId !== input.currentBranch.id ||
-      input.cashShift.tenantId !== input.currentBranch.tenantId
-    ) {
-      throw new Error("El turno de caja mostrado ya no es válido.");
-    }
+  private async resolveOperationalContext(branchId: string, cashShiftId: string) {
+    const { tenant, tenantId, actorUserId, user, permissions } = await resolvePosSessionContext(
+      this.repositories,
+    );
+    ensurePosPermission(permissions, POS_SALES_CREATE_PERMISSION);
+    await ensureTenantCanUsePos(this.repositories, tenantId);
+    const branch = await ensurePosBranchAccess(this.repositories, user, branchId);
+    const cashShift = await ensureOwnedOpenCashShift(this.repositories, {
+      tenantId,
+      actorUserId,
+      branchId: branch.id,
+      cashShiftId,
+    });
+    return { tenantId, actorUserId, user, branch, cashShift, currency: tenant.defaultCurrency };
   }
 
-  private async requireCurrentCashShift(input: ConfirmPosSaleInput) {
+  private async requireCurrentCashShift(input: AuthorizedConfirmPosSaleInput) {
     const shift = await this.repositories.cashShifts.getOpenByUserAndBranch(
       input.currentBranch.tenantId,
       input.user.id,
@@ -238,7 +254,7 @@ export class ConfirmSaleService {
     return shift;
   }
 
-  private async validateOptionalReferences(input: ConfirmPosSaleInput) {
+  private async validateOptionalReferences(input: AuthorizedConfirmPosSaleInput) {
     if (input.customerId) {
       const customer = await this.repositories.customers.getById(input.customerId);
       if (!customer || customer.tenantId !== input.currentBranch.tenantId) {
@@ -257,7 +273,7 @@ export class ConfirmSaleService {
     }
   }
 
-  private async validateAndBuildItems(input: ConfirmPosSaleInput): Promise<ValidatedSaleItem[]> {
+  private async validateAndBuildItems(input: AuthorizedConfirmPosSaleInput): Promise<ValidatedSaleItem[]> {
     const availableProducts = await this.repositories.products.getAvailableForPos();
     const productsById = new Map(
       availableProducts
@@ -299,6 +315,17 @@ export class ConfirmSaleService {
         });
         const price = calculateEffectivePrice(product.salePrice, promotion);
         assertPriceSnapshot(ticketItem, price);
+        const saleUnitId = product.saleUnitId ?? product.baseUnitId;
+        const conversions = await this.repositories.units.getConversionsByProductScoped(
+          input.currentBranch.tenantId,
+          product.id,
+        );
+        const inventoryQuantity = toBaseQuantity(ticketItem.quantity, {
+          sourceUnitId: saleUnitId,
+          baseUnitId: product.baseUnitId,
+          conversions,
+          requireInteger: product.tracking.stock,
+        });
 
         if (
           product.productType === ProductType.physical &&
@@ -379,7 +406,7 @@ export class ConfirmSaleService {
             balances: product.tracking.lot ? sellableBalances : balancesWithAvailability,
             locations,
           });
-          if (availableQuantity < ticketItem.quantity) {
+          if (availableQuantity < inventoryQuantity) {
             throw new Error(`El stock disponible de ${product.name} cambió; actualiza el ticket.`);
           }
           try {
@@ -387,7 +414,7 @@ export class ConfirmSaleService {
               tenantId: input.currentBranch.tenantId,
               branchId: input.currentBranch.id,
               productId: product.id,
-              quantity: ticketItem.quantity,
+              quantity: inventoryQuantity,
               balances: sellableBalances,
               locations,
               preferredLocationId: settings?.defaultLocationId,
@@ -406,6 +433,7 @@ export class ConfirmSaleService {
           skuSnapshot: product.sku,
           nameSnapshot: product.name,
           quantity,
+          inventoryQuantity,
           unitPrice: price.effectivePrice,
           discount: price.discountAmount,
           subtotal: fromCents(totalCents),
@@ -418,7 +446,7 @@ export class ConfirmSaleService {
   }
 
   private async validateAndBuildPayments(
-    input: ConfirmPosSaleInput,
+    input: AuthorizedConfirmPosSaleInput,
   ): Promise<SaleConfirmationPaymentInput[]> {
     const payments = createPaymentInputs(input.checkout, input.currency, input.user.id);
     const transfer = payments.find((payment) => payment.method === PaymentMethod.transfer);

@@ -29,7 +29,7 @@ export function validateTicketQuantity(
   }
 
   if (requestedQuantity > availableQuantity) {
-    return `No puedes agregar más de ${availableQuantity} unidades de ${product.name}.`;
+    return `No puedes agregar más de ${availableQuantity} ${"saleUnitName" in product ? product.saleUnitName : "unidades"} de ${product.name}.`;
   }
 
   return null;

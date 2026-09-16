@@ -23,14 +23,23 @@ const statusOptions = [RoleStatus.active, RoleStatus.inactive];
 interface RoleFormProps {
   role?: RoleDto;
   busy: boolean;
+  /**
+   * Permisos efectivos del actor actual -- determina qué checkboxes del catálogo puede marcar
+   * (ticket "FIXES FOCALIZADOS" §2: `requestedPermissions ⊆ actorEffectivePermissions`). Es
+   * únicamente UX: `ensureDelegatablePermissions` en el service sigue siendo quien realmente
+   * aplica la regla, así que una llamada directa que se salte este formulario queda igual de
+   * bloqueada.
+   */
+  actorPermissions: readonly string[];
   onCancel: () => void;
   onSubmit: (value: RoleInputDto) => Promise<void>;
 }
 
-export function RoleForm({ role, busy, onCancel, onSubmit }: RoleFormProps) {
+export function RoleForm({ role, busy, actorPermissions, onCancel, onSubmit }: RoleFormProps) {
   const [value, setValue] = useState<RoleInputDto>(() => toRoleInput(role));
 
   const permissionsByModule = useMemo(() => groupPermissionsByModule(permissionsConfig), []);
+  const actorPermissionSet = useMemo(() => new Set(actorPermissions), [actorPermissions]);
 
   function setField<Key extends keyof RoleInputDto>(key: Key, fieldValue: RoleInputDto[Key]) {
     setValue((current) => ({ ...current, [key]: fieldValue }));
@@ -103,21 +112,40 @@ export function RoleForm({ role, busy, onCancel, onSubmit }: RoleFormProps) {
                 {permissionModuleLabels[moduleKey] ?? moduleKey}
               </p>
               <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
-                {modulePermissions.map((permission) => (
-                  <label
-                    className="flex items-start gap-2 text-sm text-[var(--color-text)]"
-                    key={permission.key}
-                    title={permission.description}
-                  >
-                    <input
-                      checked={value.permissions.includes(permission.key)}
-                      disabled={busy}
-                      onChange={(event) => togglePermission(permission.key, event.target.checked)}
-                      type="checkbox"
-                    />
-                    {permission.name}
-                  </label>
-                ))}
+                {modulePermissions.map((permission) => {
+                  const checked = value.permissions.includes(permission.key);
+                  const delegable = actorPermissionSet.has(permission.key);
+                  // Un permiso ya marcado siempre se puede desmarcar (reducir nunca es
+                  // escalación) -- lo que se bloquea es agregar uno que el actor no tiene. Así,
+                  // editar un rol que otro admin con más alcance dejó con permisos fuera del
+                  // alcance actual del actor no queda en un callejón sin salida: se puede seguir
+                  // guardando mientras no se agregue nada nuevo no delegable.
+                  const disabled = busy || (!checked && !delegable);
+                  return (
+                    <label
+                      className="flex items-start gap-2 text-sm text-[var(--color-text)]"
+                      key={permission.key}
+                      title={permission.description}
+                    >
+                      <input
+                        checked={checked}
+                        disabled={disabled}
+                        onChange={(event) =>
+                          togglePermission(permission.key, event.target.checked)
+                        }
+                        type="checkbox"
+                      />
+                      <span>
+                        {permission.name}
+                        {!delegable ? (
+                          <span className="ml-1.5 text-xs text-[var(--color-text-muted)]">
+                            (No disponible para tu cuenta)
+                          </span>
+                        ) : null}
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
             </div>
           ))}

@@ -8,15 +8,17 @@ import {
   validateEditorProduct,
 } from "@/modules/catalog/application/services/productEditorHelpers";
 import {
+  ensureCanUpdateProducts,
   ensureProduct,
-  resolveTenantId,
+  resolveTenantContext,
 } from "@/modules/catalog/application/services/serviceHelpers";
 
 export class UpdateProductWithCommercialDataService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(productId: string, dto: ProductEditorDto): Promise<Product> {
-    const tenantId = await resolveTenantId(this.repositories);
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanUpdateProducts(permissions);
     const current = ensureProduct(
       await this.repositories.products.getByIdScoped(tenantId, productId),
     );

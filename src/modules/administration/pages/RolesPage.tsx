@@ -14,8 +14,19 @@ import { useToast } from "@/shared/components/Toast";
 type EditorState = { mode: "create" } | { mode: "edit"; role: RoleDto } | null;
 
 export function RolesPage() {
-  const { archive, busy, canManage, canRead, create, error, loading, reload, roles, update } =
-    useRoles();
+  const {
+    actorPermissions,
+    archive,
+    busy,
+    canManage,
+    canRead,
+    create,
+    error,
+    loading,
+    reload,
+    roles,
+    update,
+  } = useRoles();
   const { showToast } = useToast();
   const [editor, setEditor] = useState<EditorState>(null);
   const [archiveTarget, setArchiveTarget] = useState<RoleDto | null>(null);
@@ -144,6 +155,7 @@ export function RolesPage() {
       >
         {editor ? (
           <RoleForm
+            actorPermissions={actorPermissions}
             busy={busy}
             key={editor.mode === "edit" ? editor.role.id : "new"}
             onCancel={() => setEditor(null)}

@@ -10,9 +10,13 @@ import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseSt
 import { MockCategoryRepository } from "@/infrastructure/mock/repositories/MockCategoryRepository";
 import { MockBusinessConfigRepository } from "@/infrastructure/mock/repositories/MockBusinessConfigRepository";
 import { MockInventoryRepository } from "@/infrastructure/mock/repositories/MockInventoryRepository";
+import { MockPlanRepository } from "@/infrastructure/mock/repositories/MockPlanRepository";
 import { MockProductKitComponentRepository } from "@/infrastructure/mock/repositories/MockProductKitComponentRepository";
 import { MockProductMediaRepository } from "@/infrastructure/mock/repositories/MockProductMediaRepository";
 import { MockProductRepository } from "@/infrastructure/mock/repositories/MockProductRepository";
+import { MockTenantRepository } from "@/infrastructure/mock/repositories/MockTenantRepository";
+import { MockTenantSubscriptionRepository } from "@/infrastructure/mock/repositories/MockTenantSubscriptionRepository";
+import { MockUnitRepository } from "@/infrastructure/mock/repositories/MockUnitRepository";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import { GetStorefrontDiscoveryService } from "@/modules/storefront/application/services/GetStorefrontDiscoveryService";
@@ -174,6 +178,16 @@ async function main(): Promise<void> {
     businessConfig: new MockBusinessConfigRepository(store, eventBus),
     inventory: new MockInventoryRepository(store, eventBus),
     productKitComponents: new MockProductKitComponentRepository(store, eventBus),
+    units: new MockUnitRepository(store, eventBus),
+    // Requeridos por ensurePublicStorefrontTenant/ResolvePublicStorefrontContextService/
+    // ResolveTenantEntitlementsService (feature/saas-entitlement-enforcement, PR #103) --
+    // GetStorefrontDiscoveryService.execute ahora revalida el boundary público antes de leer
+    // catálogo. tenant-demo (slug "ferrepharma-demo" == publicStorefrontSlug) ya trae, vía
+    // demoSeed, Subscription activa -> Plan Enterprise activo con SaasCapabilityKey.ecommerce y
+    // EcommerceConfig.enabled=true -- no hace falta fixture nueva, solo exponer estos repos.
+    tenants: new MockTenantRepository(store, eventBus),
+    plans: new MockPlanRepository(store, eventBus),
+    tenantSubscriptions: new MockTenantSubscriptionRepository(store, eventBus),
   } as unknown as RepositoryRegistry;
 
   assert.equal(db.categories.length, 10, "A: deben existir 10 categorías");
@@ -310,17 +324,45 @@ async function main(): Promise<void> {
   );
 
   const storefront = new GetStorefrontDiscoveryService(repositories);
+  const tenantUnits = await repositories.units.getByTenant(TENANT_ID);
+  const expectedTenantUnits = db.units.filter((unit) => unit.tenantId === TENANT_ID);
+  assert.deepEqual(
+    tenantUnits.map(({ id }) => id),
+    expectedTenantUnits.map(({ id }) => id),
+    "V: Storefront debe cargar todas y solo las unidades del tenant",
+  );
+  assert.ok(
+    tenantUnits.length > 0 && tenantUnits.every((unit) => unit.tenantId === TENANT_ID),
+    "V: Storefront debe cargar unidades del tenant correcto",
+  );
   const discovery = await storefront.execute(TENANT_ID);
   assert.equal(discovery.products.length, 30, "V: Ecommerce debe descubrir los 30 productos Web");
   assert.equal(discovery.categories.length, 10, "W: Ecommerce debe descubrir las 10 categorías");
   assert.ok(discovery.products.every(({ imageSource }) => imageSource?.kind === "url"));
+  const tenantUnitsById = new Map(tenantUnits.map((unit) => [unit.id, unit]));
+  const productsBySku = new Map(db.products.map((product) => [product.sku, product]));
+  discovery.products.forEach((product) => {
+    const sourceProduct = productsBySku.get(product.sku);
+    assert.ok(sourceProduct, `V: producto Storefront sin origen ${product.sku}`);
+    const expectedSaleUnitId = sourceProduct.saleUnitId ?? sourceProduct.baseUnitId;
+    const expectedSaleUnit = tenantUnitsById.get(expectedSaleUnitId);
+    assert.ok(expectedSaleUnit, `V: unidad de venta fuera del tenant ${product.sku}`);
+    assert.equal(product.saleUnitId, expectedSaleUnit.id, `V: unit mapping ${product.sku}`);
+    assert.equal(product.saleUnitName, expectedSaleUnit.name, `V: unit name ${product.sku}`);
+  });
   const soldOutGrinder = discovery.products.find((item) => item.sku === "HER-ELE-002");
   assert.ok(soldOutGrinder, "V: Producto agotado debe continuar visible en ecommerce");
   assert.equal(soldOutGrinder.availableQuantity, 0, "V: Producto agotado debe informar disponibilidad cero");
   assert.ok(discovery.categories.every(({ imageSource }) => imageSource?.kind === "url"));
-  const foreignDiscovery = await storefront.execute("tenant-other");
-  assert.equal(foreignDiscovery.products.length, 0, "X: filtrado tenant de productos");
-  assert.equal(foreignDiscovery.categories.length, 0, "X: filtrado tenant de categorías");
+  // X: aislamiento entre tenants -- PR #103 cerró el bypass donde un tenantId ajeno al público
+  // real (tenant-demo) obtenía un resultado filtrado-pero-vacío en vez de ser rechazado.
+  // `ensurePublicStorefrontTenant` ahora revalida el tenantId contra el boundary público real
+  // ANTES de leer cualquier dato -- un tenantId que no es el tenant público real se rechaza
+  // directamente, nunca llega a devolver (ni vacío) catálogo de otro tenant.
+  await assert.rejects(
+    storefront.execute("tenant-other"),
+    "X: un tenantId que no es el Storefront público real debe ser rechazado, nunca devolver datos",
+  );
 
   assertAllReferencesExist(db);
   console.log("Hardware demo catalog A-Z: PASS");

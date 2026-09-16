@@ -10,10 +10,12 @@ import { useToast } from "@/shared/components/Toast";
 import { ProductDetailCard } from "@/modules/catalog/components/ProductDetailCard";
 import { useProductDetail } from "@/modules/catalog/hooks/useProductDetail";
 import { useProductMutations } from "@/modules/catalog/hooks/useProductMutations";
+import { useProductPermissions } from "@/modules/catalog/hooks/useProductPermissions";
 
 export function ProductDetailPage() {
   const params = useParams<{ id: string }>();
   const { showToast } = useToast();
+  const { canUpdate } = useProductPermissions();
   const { loading, detail, error, reload } = useProductDetail(params.id);
   const mutations = useProductMutations();
   const [confirmArchive, setConfirmArchive] = useState(false);
@@ -60,8 +62,10 @@ export function ProductDetailPage() {
         actions={
           <>
             <Button href="/catalogo/productos">Volver</Button>
-            <Button href={`/catalogo/productos/${detail.product.id}/editar`}>Editar</Button>
-            {detail.product.status === ProductStatus.published ? (
+            {canUpdate ? (
+              <Button href={`/catalogo/productos/${detail.product.id}/editar`}>Editar</Button>
+            ) : null}
+            {canUpdate && detail.product.status === ProductStatus.published ? (
               <Button onClick={() => setConfirmArchive(true)} type="button">
                 Archivar
               </Button>

@@ -13,12 +13,19 @@ import type {
   StorefrontDiscoveryDto,
   StorefrontDiscoveryProductDto,
 } from "@/modules/storefront/application/dto/StorefrontDiscoveryDto";
+import { ensurePublicStorefrontTenant } from "@/modules/storefront/application/services/ResolvePublicStorefrontContextService";
+import { fromBaseQuantity } from "@/core/units";
 
 export class GetStorefrontDiscoveryService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(tenantId: string): Promise<StorefrontDiscoveryDto> {
-    const [products, activeCategories, ecommerceConfig, allProducts, balances, locations, lots, serials] = await Promise.all([
+    // Auditoría §15/§30 (BLOCKER): el `tenantId` llega ya resuelto por el caller (hook via
+    // `usePublicTenant`, que usa el modo `allowDisabled` -- NO exige entitlement); sin esta
+    // revalidación, discovery seguía sirviendo catálogo aunque Subscription/Plan/capability
+    // `ecommerce` ya no lo permitieran.
+    await ensurePublicStorefrontTenant(this.repositories, tenantId);
+    const [products, activeCategories, ecommerceConfig, allProducts, balances, locations, lots, serials, units] = await Promise.all([
       this.repositories.products.getPublishedForEcommerce(tenantId),
       this.repositories.categories.getActive(),
       this.repositories.businessConfig.getEcommerceConfig(tenantId),
@@ -27,6 +34,7 @@ export class GetStorefrontDiscoveryService {
       this.repositories.inventory.getLocations(),
       this.repositories.inventory.getLots(),
       this.repositories.inventory.getSerialNumbers(),
+      this.repositories.units.getByTenant(tenantId),
     ]);
     const categories = activeCategories.filter((category) => category.tenantId === tenantId);
     const categoryNames = new Map(categories.map((category) => [category.id, category.name]));
@@ -46,6 +54,35 @@ export class GetStorefrontDiscoveryService {
         const media = selectPrimaryProductMedia(
           productMedia.filter((item) => item.tenantId === tenantId),
         );
+        const saleUnitId = product.saleUnitId ?? product.baseUnitId;
+        const canonicalAvailable = getAvailableQuantity({
+          product,
+          components,
+          productsById,
+          tenantId,
+          branchId,
+          balances,
+          lots,
+          serials,
+          locations,
+          at,
+        });
+        const conversions = await this.repositories.units.getConversionsByProductScoped(
+          tenantId,
+          product.id,
+        );
+        let sellableAvailable: number | null = canonicalAvailable;
+        if (canonicalAvailable !== null) {
+          try {
+            sellableAvailable = fromBaseQuantity(canonicalAvailable, {
+              targetUnitId: saleUnitId,
+              baseUnitId: product.baseUnitId,
+              conversions,
+            });
+          } catch {
+            sellableAvailable = 0;
+          }
+        }
         return {
           id: product.id,
           sku: product.sku,
@@ -57,18 +94,9 @@ export class GetStorefrontDiscoveryService {
           categoryName: categoryNames.get(product.categoryId),
           imageSource: media ? (getProductMediaSource(media) ?? undefined) : undefined,
           imageAlt: media?.alt,
-          availableQuantity: getAvailableQuantity({
-            product,
-            components,
-            productsById,
-            tenantId,
-            branchId,
-            balances,
-            lots,
-            serials,
-            locations,
-            at,
-          }),
+          availableQuantity: sellableAvailable,
+          saleUnitId,
+          saleUnitName: units.find((unit) => unit.id === saleUnitId)?.name ?? saleUnitId,
         };
       }),
     );

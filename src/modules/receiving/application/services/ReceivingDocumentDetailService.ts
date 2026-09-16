@@ -8,8 +8,8 @@ import type {
   ReceiptIncident,
   ReceiptLine,
   StorageLocation,
-  SupplierProduct,
   Unit,
+  User,
 } from "@/core/entities";
 import {
   InventoryTransferStatus,
@@ -18,6 +18,11 @@ import {
   ReceiptLineStatus,
   ReceiptStatus,
 } from "@/core/enums";
+import {
+  EXPIRATION_BEFORE_ENTRY_MESSAGE,
+  getLocalCalendarDate,
+  isExpirationBeforeOperationDate,
+} from "@/core/inventory/expirationDate";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   ConfirmReceivingInput,
@@ -28,9 +33,16 @@ import type {
   ReceivingDocumentLine,
   SaveReceivingProgressInput,
 } from "@/modules/receiving/application/dto/ReceivingDocumentDetailDto";
+import {
+  ensureCanConfirmReceiving,
+  ensureCanReadReceiving,
+  ensureCanSaveReceivingProgress,
+  ensureTenantCanUseReceiving,
+  ensureUserCanOperateBranch,
+  ReceivingServiceError,
+  resolveReceivingContext,
+} from "@/modules/receiving/application/services/serviceHelpers";
 import { toFiniteNumber } from "@/shared/utils/numberInput";
-
-const SYSTEM_USER_ID = "user-warehouse";
 
 export class ReceivingDocumentDetailService {
   constructor(private readonly repositories: RepositoryRegistry) {}
@@ -40,32 +52,50 @@ export class ReceivingDocumentDetailService {
     documentId: string,
     activeBranchId?: string,
   ): Promise<ReceivingDocumentDetail> {
+    const { tenantId, user, permissions } = await resolveReceivingContext(this.repositories);
+    ensureCanReadReceiving(permissions);
     if (documentType === "purchase_order") {
-      return this.getPurchaseOrderDocument(documentId, activeBranchId);
+      return this.getPurchaseOrderDocument(tenantId, user, documentId, activeBranchId);
     }
-    return this.getTransferDocument(documentId, activeBranchId);
+    return this.getTransferDocument(tenantId, user, documentId, activeBranchId);
   }
 
   async saveProgress(input: SaveReceivingProgressInput): Promise<Receipt> {
     if (input.documentType !== "purchase_order") {
-      throw new Error("La recepcion de traslados aun no esta soportada por el contrato Receipt.");
+      throw new ReceivingServiceError(
+        "La recepcion de traslados aun no esta soportada por el contrato Receipt.",
+      );
     }
-    const detail = await this.getPurchaseOrderDocument(input.documentId);
+    const { tenantId, actorUserId, user, permissions } = await resolveReceivingContext(
+      this.repositories,
+    );
+    ensureCanSaveReceivingProgress(permissions);
+    await ensureTenantCanUseReceiving(this.repositories, tenantId);
+    const order = await this.requirePurchaseOrder(tenantId, user, input.documentId);
+    const detail = await this.getPurchaseOrderDocument(tenantId, user, input.documentId);
     const validationErrors = validateIncidentQuantities(input.lines, input.incidents, detail);
-    if (validationErrors.length > 0) throw new Error(validationErrors[0]);
-    const order = await this.requirePurchaseOrder(input.documentId);
-    const receipt = await this.ensureInProgressReceipt(order, input.userId);
-    await this.persistDraft(receipt, input, detail);
+    if (validationErrors.length > 0) throw new ReceivingServiceError(validationErrors[0]);
+    const receipt = await this.ensureInProgressReceipt(order, actorUserId);
+    await this.persistDraft(receipt, input, detail, actorUserId);
     return this.repositories.receipts.update(receipt.id, { status: ReceiptStatus.in_progress });
   }
 
   async confirm(input: ConfirmReceivingInput): Promise<Receipt> {
     if (input.documentType !== "purchase_order") {
-      throw new Error("La recepcion de traslados aun no esta soportada por el contrato Receipt.");
+      throw new ReceivingServiceError(
+        "La recepcion de traslados aun no esta soportada por el contrato Receipt.",
+      );
     }
-    const order = await this.requirePurchaseOrder(input.documentId);
+    const { tenantId, actorUserId, user, permissions } = await resolveReceivingContext(
+      this.repositories,
+    );
+    ensureCanConfirmReceiving(permissions);
+    await ensureTenantCanUseReceiving(this.repositories, tenantId);
+    const order = await this.requirePurchaseOrder(tenantId, user, input.documentId);
     const confirmationId = input.confirmationId.trim();
-    if (!confirmationId) throw new Error("La confirmacion de recepcion requiere una identidad.");
+    if (!confirmationId) {
+      throw new ReceivingServiceError("La confirmacion de recepcion requiere una identidad.");
+    }
     const confirmationFingerprint = getReceivingConfirmationFingerprint(input, order);
     const existingConfirmation = await this.repositories.receipts.getByConfirmationId(
       order.tenantId,
@@ -73,35 +103,29 @@ export class ReceivingDocumentDetailService {
     );
     if (existingConfirmation) {
       if (existingConfirmation.confirmationFingerprint !== confirmationFingerprint) {
-        throw new Error(`La confirmacion ${confirmationId} ya fue usada con datos distintos.`);
+        throw new ReceivingServiceError(
+          `La confirmacion ${confirmationId} ya fue usada con datos distintos.`,
+        );
       }
       return existingConfirmation;
     }
-    const detail = await this.getPurchaseOrderDocument(input.documentId);
-    const validationErrors = validateLines(input.lines, input.incidents, detail);
-    if (validationErrors.length > 0) {
-      throw new Error(validationErrors[0]);
-    }
-    const receipt = await this.ensureInProgressReceipt(order, input.userId);
-    const receiptLines = input.lines.map((line) => toReceiptLineInput(line, input.incidents));
-    const receiptIncidents = toReceiptIncidentInputs(input, detail);
+    const detail = await this.getPurchaseOrderDocument(tenantId, user, input.documentId);
     const now = new Date().toISOString();
-    const totalOrdered = detail.lines.reduce((sum, line) => sum + line.orderedQuantity, 0);
-    const acceptedNow = input.lines.reduce((sum, line) => sum + getAcceptedNow(line), 0);
-    const acceptedPreviously = detail.lines.reduce((sum, line) => sum + line.acceptedPreviously, 0);
-    const cumulativeAccepted = acceptedPreviously + acceptedNow;
-    const finalStatus =
-      totalOrdered > 0 && cumulativeAccepted >= totalOrdered
-        ? ReceiptStatus.received
-        : ReceiptStatus.partial;
+    const operationDate = getLocalCalendarDate();
+    const validationErrors = validateLines(input.lines, input.incidents, detail, operationDate);
+    if (validationErrors.length > 0) {
+      throw new ReceivingServiceError(validationErrors[0]);
+    }
+    const receipt = await this.ensureInProgressReceipt(order, actorUserId);
+    const receiptLines = input.lines.map((line) => toReceiptLineInput(line, input.incidents));
+    const receiptIncidents = toReceiptIncidentInputs(input, detail, actorUserId);
 
-    void finalStatus;
     return this.repositories.receipts.confirmReceiptInventory({
       receiptId: receipt.id,
       tenantId: order.tenantId,
       confirmationId,
       confirmationFingerprint,
-      receivedByUserId: input.userId ?? SYSTEM_USER_ID,
+      receivedByUserId: actorUserId,
       receivedAt: now,
       notes: buildReceiptNotes(receiptLines),
       lines: receiptLines,
@@ -113,6 +137,7 @@ export class ReceivingDocumentDetailService {
     receipt: Receipt,
     input: SaveReceivingProgressInput,
     detail: ReceivingDocumentDetail,
+    actorUserId: string,
   ) {
     const savedLines = await this.repositories.receipts.replaceLines(
       receipt.id,
@@ -137,7 +162,13 @@ export class ReceivingDocumentDetailService {
             description: incident.description.trim(),
             quantityAffected: incident.quantityAffected,
             evidence: incident.evidence,
-            createdByUserId: incident.createdByUserId || input.userId || SYSTEM_USER_ID,
+            // Un incidente NUEVO (id "draft-...") solo tiene un placeholder de UI en
+            // createdByUserId (nunca la identidad real, que solo la sesion conoce) -- se
+            // ignora y se usa siempre el actor resuelto server-side. Uno YA persistido
+            // conserva su atribucion original.
+            createdByUserId: incident.id.startsWith("draft-")
+              ? actorUserId
+              : incident.createdByUserId || actorUserId,
           };
         }),
     );
@@ -145,31 +176,35 @@ export class ReceivingDocumentDetailService {
   }
 
   private async getPurchaseOrderDocument(
+    tenantId: string,
+    user: User,
     documentId: string,
     activeBranchId?: string,
   ): Promise<ReceivingDocumentDetail> {
-    const [order, suppliers, branches, products, units, locations, receipts, incidentTypes, users] =
+    const order = await this.requirePurchaseOrder(tenantId, user, documentId);
+    // Filtro de VISTA opcional (no de seguridad): si el hook pasa una sucursal activa distinta
+    // a la del documento, se rechaza para no mostrar un documento de otra sucursal dentro de un
+    // contexto ya filtrado -- la autorizacion real (User.allowedBranchIds) ya ocurrio arriba, en
+    // requirePurchaseOrder.
+    if (activeBranchId && order.branchId !== activeBranchId) {
+      throw new ReceivingServiceError("El documento no pertenece a la sucursal activa.");
+    }
+    const [suppliers, branches, products, units, locations, receipts, incidentTypes, users] =
       await Promise.all([
-        this.repositories.purchaseOrders.getById(documentId),
         this.repositories.suppliers.getAll(),
         this.repositories.branches.getAll(),
         this.repositories.products.getAll(),
         this.repositories.units.getAll(),
-        this.repositories.inventory.getLocations(activeBranchId),
-        this.repositories.receipts.getAll(),
+        this.repositories.inventory.getLocations(order.branchId),
+        this.repositories.receipts.listByTenant(tenantId),
         this.repositories.incidentTypes.getAll(),
         this.repositories.users.getAll(),
       ]);
-    if (!order) throw new Error("Documento de compra no encontrado.");
-    if (activeBranchId && order.branchId !== activeBranchId) {
-      throw new Error("El documento no pertenece a la sucursal activa.");
-    }
     const branch = branches.find((item) => item.id === order.branchId);
     const capabilities = await this.getCapabilities(order.tenantId);
     const orderReceipts = receipts.filter(
       (receipt) =>
         receipt.purchaseOrderId === order.id &&
-        receipt.tenantId === order.tenantId &&
         receipt.branchId === order.branchId &&
         receipt.status !== ReceiptStatus.cancelled,
     );
@@ -179,7 +214,6 @@ export class ReceivingDocumentDetailService {
       )
     ).flat();
     const incidents = await this.repositories.receipts.getIncidents();
-    const supplierProducts = await this.getSupplierProducts(order);
     const settings = await this.getInventorySettings(order);
     const productById = new Map(products.map((product) => [product.id, product]));
     const unitById = new Map(units.map((unit) => [unit.id, unit]));
@@ -231,7 +265,6 @@ export class ReceivingDocumentDetailService {
             baseUnitById: unitById,
             inProgressLine: inProgressLines.find((line) => line.productId === item.productId),
             confirmedLines: confirmedLines.filter((line) => line.productId === item.productId),
-            supplierProducts,
             settingsDefaultLocationId: settings.get(item.productId)?.defaultLocationId ?? undefined,
           }),
         ),
@@ -271,20 +304,31 @@ export class ReceivingDocumentDetailService {
   }
 
   private async getTransferDocument(
+    tenantId: string,
+    user: User,
     documentId: string,
     activeBranchId?: string,
   ): Promise<ReceivingDocumentDetail> {
-    const [transfer, branches, products, units, locations] = await Promise.all([
-      this.repositories.inventoryTransfers.getById(documentId),
+    const transfer = await this.repositories.inventoryTransfers.getById(documentId);
+    // El id llega desde la URL/estado del cliente: un traslado de otro tenant se trata igual
+    // que uno inexistente, mismo criterio que requirePurchaseOrder.
+    if (!transfer || transfer.transfer.tenantId !== tenantId) {
+      throw new ReceivingServiceError("Traslado no encontrado.");
+    }
+    await ensureUserCanOperateBranch(
+      this.repositories,
+      user,
+      transfer.transfer.destinationBranchId,
+    );
+    if (activeBranchId && transfer.transfer.destinationBranchId !== activeBranchId) {
+      throw new ReceivingServiceError("El traslado no pertenece a la sucursal activa.");
+    }
+    const [branches, products, units, locations] = await Promise.all([
       this.repositories.branches.getAll(),
       this.repositories.products.getAll(),
       this.repositories.units.getAll(),
-      this.repositories.inventory.getLocations(activeBranchId),
+      this.repositories.inventory.getLocations(transfer.transfer.destinationBranchId),
     ]);
-    if (!transfer) throw new Error("Traslado no encontrado.");
-    if (activeBranchId && transfer.transfer.destinationBranchId !== activeBranchId) {
-      throw new Error("El traslado no pertenece a la sucursal activa.");
-    }
     const capabilities = await this.getCapabilities(transfer.transfer.tenantId);
     const branchById = new Map(branches.map((branch) => [branch.id, branch]));
     const productById = new Map(products.map((product) => [product.id, product]));
@@ -326,7 +370,6 @@ export class ReceivingDocumentDetailService {
     baseUnitById: Map<string, Unit>;
     inProgressLine?: ReceiptLine;
     confirmedLines: ReceiptLine[];
-    supplierProducts: SupplierProduct[];
     settingsDefaultLocationId?: string | null;
   }): Promise<ReceivingDocumentLine> {
     const product = input.product;
@@ -336,11 +379,7 @@ export class ReceivingDocumentDetailService {
       0,
     );
     const receivedNow = input.inProgressLine ? input.inProgressLine.receivedQuantity : "";
-    const purchaseToBaseFactor = await this.resolvePurchaseToBaseFactor(
-      product,
-      input.item.unitId,
-      input.supplierProducts,
-    );
+    const purchaseToBaseFactor = input.item.purchaseToBaseFactor;
     return {
       id: input.item.id,
       sourceLineId: input.item.id,
@@ -404,14 +443,23 @@ export class ReceivingDocumentDetailService {
     };
   }
 
-  private async requirePurchaseOrder(id: string): Promise<PurchaseOrder> {
-    const order = await this.repositories.purchaseOrders.getById(id);
-    if (!order) throw new Error("Documento de compra no encontrado.");
+  // El id llega desde la URL/estado del cliente: `getByIdScoped` trata una orden de otro tenant
+  // igual que una inexistente. La validacion de sucursal (User.allowedBranchIds) corre siempre
+  // aca, incondicional -- antes de este fix dependia de que el caller pasara `activeBranchId`,
+  // que era opcional y por lo tanto evitable.
+  private async requirePurchaseOrder(
+    tenantId: string,
+    user: User,
+    id: string,
+  ): Promise<PurchaseOrder> {
+    const order = await this.repositories.purchaseOrders.getByIdScoped(tenantId, id);
+    if (!order) throw new ReceivingServiceError("Documento de compra no encontrado.");
+    await ensureUserCanOperateBranch(this.repositories, user, order.branchId);
     return order;
   }
 
-  private async ensureInProgressReceipt(order: PurchaseOrder, userId?: string): Promise<Receipt> {
-    const receipts = await this.repositories.receipts.getAll();
+  private async ensureInProgressReceipt(order: PurchaseOrder, actorUserId: string): Promise<Receipt> {
+    const receipts = await this.repositories.receipts.listByTenant(order.tenantId);
     const existing = receipts.find(
       (receipt) =>
         receipt.purchaseOrderId === order.id && receipt.status === ReceiptStatus.in_progress,
@@ -420,16 +468,16 @@ export class ReceivingDocumentDetailService {
     return this.repositories.receipts.create({
       tenantId: order.tenantId,
       branchId: order.branchId,
-      number: await this.nextReceiptNumber(),
+      number: await this.nextReceiptNumber(order.tenantId),
       purchaseOrderId: order.id,
       supplierId: order.supplierId,
       status: ReceiptStatus.in_progress,
-      receivedByUserId: userId ?? SYSTEM_USER_ID,
+      receivedByUserId: actorUserId,
     });
   }
 
-  private async nextReceiptNumber() {
-    const receipts = await this.repositories.receipts.getAll();
+  private async nextReceiptNumber(tenantId: string) {
+    const receipts = await this.repositories.receipts.listByTenant(tenantId);
     const next =
       receipts.reduce((max, receipt) => {
         const match = /^REC-(\d+)$/.exec(receipt.number);
@@ -440,20 +488,8 @@ export class ReceivingDocumentDetailService {
 
   private async getCapabilities(tenantId: string): Promise<BusinessCapabilitiesConfig> {
     const capabilities = await this.repositories.businessConfig.getCapabilities(tenantId);
-    if (!capabilities) throw new Error("No hay configuracion operativa para este tenant.");
+    if (!capabilities) throw new ReceivingServiceError("No hay configuracion operativa para este tenant.");
     return capabilities;
-  }
-
-  private async getSupplierProducts(order: PurchaseOrder) {
-    const productIds = new Set((order.items ?? []).map((item) => item.productId));
-    const supplierProducts = await Promise.all(
-      [...productIds].map((productId) =>
-        this.repositories.supplierProducts.getByProduct(productId),
-      ),
-    );
-    return supplierProducts
-      .flat()
-      .filter((item) => item.supplierId === order.supplierId && item.active);
   }
 
   private async getInventorySettings(order: PurchaseOrder) {
@@ -470,25 +506,6 @@ export class ReceivingDocumentDetailService {
       ),
     );
     return new Map(entries);
-  }
-
-  private async resolvePurchaseToBaseFactor(
-    product: Product | undefined,
-    purchaseUnitId: string,
-    supplierProducts: SupplierProduct[],
-  ) {
-    if (!product || product.baseUnitId === purchaseUnitId) return 1;
-    const supplierProduct = supplierProducts.find(
-      (item) => item.productId === product.id && item.purchaseUnitId === purchaseUnitId,
-    );
-    if (supplierProduct) return supplierProduct.purchaseToBaseFactor;
-    const conversion = await this.repositories.units.getConversion({
-      tenantId: product.tenantId,
-      productId: product.id,
-      fromUnitId: purchaseUnitId,
-      toUnitId: product.baseUnitId,
-    });
-    return conversion?.factor ?? 1;
   }
 }
 
@@ -530,6 +547,7 @@ function getReceivingConfirmationFingerprint(
 function toReceiptIncidentInputs(
   input: SaveReceivingProgressInput,
   detail: ReceivingDocumentDetail,
+  actorUserId: string,
 ) {
   const validProductIds = new Set(detail.lines.map((line) => line.productId));
   return input.incidents
@@ -545,7 +563,9 @@ function toReceiptIncidentInputs(
       description: incident.description.trim(),
       quantityAffected: incident.quantityAffected,
       evidence: incident.evidence,
-      createdByUserId: incident.createdByUserId || input.userId || SYSTEM_USER_ID,
+      createdByUserId: incident.id.startsWith("draft-")
+        ? actorUserId
+        : incident.createdByUserId || actorUserId,
     }));
 }
 
@@ -553,6 +573,7 @@ export function validateLines(
   lines: ReceivingDocumentLine[],
   incidents: ReceivingDocumentIncident[],
   detail: ReceivingDocumentDetail,
+  operationDate = getLocalCalendarDate(),
 ) {
   const unitAllowsDecimals = new Map(
     detail.lines.map((line) => [line.id, line.unitAllowsDecimals]),
@@ -601,11 +622,23 @@ export function validateLines(
       ) {
         errors.push(`${line.productName}: fecha de vencimiento requerida.`);
       }
+      if (
+        line.tracking.expiration &&
+        detail.capabilities.supportsExpiration &&
+        acceptedNow > 0 &&
+        line.expirationDate &&
+        isExpirationBeforeOperationDate(line.expirationDate, operationDate)
+      ) {
+        errors.push(`${line.productName}: ${EXPIRATION_BEFORE_ENTRY_MESSAGE}`);
+      }
       if (line.tracking.serial && detail.capabilities.supportsSerials && acceptedNow > 0) {
         const serials = parseSerialNumbers(line.serialNumbersText);
         const expectedSerials = toBaseQuantity(line, acceptedNow);
         if (serials.length !== expectedSerials) {
           errors.push(`${line.productName}: registra ${expectedSerials} numeros de serie.`);
+        }
+        if (new Set(serials).size !== serials.length) {
+          errors.push(`${line.productName}: los numeros de serie no pueden repetirse.`);
         }
       }
       return errors;

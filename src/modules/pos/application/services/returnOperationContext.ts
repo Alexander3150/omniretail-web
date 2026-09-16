@@ -1,6 +1,8 @@
-import { BranchStatus, RoleStatus, UserStatus, UserType } from "@/core/enums";
+import { BranchStatus, RoleStatus, SaasCapabilityKey, UserStatus, UserType } from "@/core/enums";
 import { canUserAccessBranch } from "@/core/scopes/userBranchAccess";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import { ensureTenantCapability } from "@/shared/application/services/entitlementGuards";
+import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
 
 export interface ReturnOperationContext {
   tenantId: string;
@@ -9,7 +11,7 @@ export interface ReturnOperationContext {
 }
 
 export async function requireReturnOperationContext(
-  repositories: Pick<RepositoryRegistry, "branches" | "roles" | "users">,
+  repositories: Pick<RepositoryRegistry, "branches" | "roles" | "users" | "plans" | "tenantSubscriptions">,
   context: ReturnOperationContext,
   permission: "pos.returns.read" | "pos.returns.create" | "pos.sales.void",
 ) {
@@ -40,6 +42,14 @@ export async function requireReturnOperationContext(
   }
   if (!canUserAccessBranch(user, role, branch)) {
     throw new Error("No tienes acceso a la sucursal seleccionada.");
+  }
+  // Entitlement SaaS (auditoría §10/§14): solo gatea mutaciones reales (crear devolución, anular
+  // venta) -- `pos.returns.read` (búsqueda de la venta a devolver) permanece como lectura.
+  if (permission !== "pos.returns.read") {
+    const entitlements = await new ResolveTenantEntitlementsService(
+      repositories as RepositoryRegistry,
+    ).execute(tenantId);
+    ensureTenantCapability(entitlements, SaasCapabilityKey.pos);
   }
   return { tenantId, branchId, actorUserId, user, role, branch };
 }

@@ -19,6 +19,7 @@ import type { ProductListItem } from "@/modules/catalog/types/catalog.types";
 import { cn } from "@/shared/utils/cn";
 
 interface ProductActionsMenuProps {
+  canUpdate: boolean;
   product: ProductListItem;
   onPromotion: (product: ProductListItem) => void;
   onPriceHistory: (product: ProductListItem) => void;
@@ -27,6 +28,7 @@ interface ProductActionsMenuProps {
 }
 
 export function ProductActionsMenu({
+  canUpdate,
   product,
   onPromotion,
   onPriceHistory,
@@ -44,7 +46,11 @@ export function ProductActionsMenu({
     function updateMenuPosition() {
       const rect = buttonRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const menuHeight = product.status === ProductStatus.published ? 160 : 112;
+      const menuHeight = canUpdate
+        ? product.status === ProductStatus.published
+          ? 160
+          : 112
+        : 56;
       const spaceBelow = window.innerHeight - rect.bottom;
       const shouldOpenUp = spaceBelow < menuHeight + 12 && rect.top > spaceBelow;
       setMenuStyle({
@@ -62,7 +68,7 @@ export function ProductActionsMenu({
       window.removeEventListener("resize", updateMenuPosition);
       window.removeEventListener("scroll", updateMenuPosition, true);
     };
-  }, [open, product.status]);
+  }, [canUpdate, open, product.status]);
 
   useEffect(() => {
     if (!open) return;
@@ -117,7 +123,7 @@ export function ProductActionsMenu({
           role="menu"
           style={menuStyle}
         >
-          {product.status === ProductStatus.published ? (
+          {canUpdate && product.status === ProductStatus.published ? (
             <MenuItem icon={<TagIcon />} onClick={() => selectAction(onPromotion)}>
               Promoción
             </MenuItem>
@@ -125,19 +131,21 @@ export function ProductActionsMenu({
           <MenuItem icon={<HistoryIcon />} onClick={() => selectAction(onPriceHistory)}>
             Historial de precios
           </MenuItem>
-          {product.status === ProductStatus.published ? (
-            <div className="mt-1 border-t border-[var(--color-border)] pt-1">
-              <MenuItem destructive icon={<ArchiveIcon />} onClick={() => selectAction(onArchive)}>
-                Archivar
-              </MenuItem>
-            </div>
-          ) : (
-            <div className="mt-1 border-t border-[var(--color-border)] pt-1">
-              <MenuItem icon={<CheckIcon />} onClick={() => selectAction(onRestore)}>
-                Restaurar producto
-              </MenuItem>
-            </div>
-          )}
+          {canUpdate ? (
+            product.status === ProductStatus.published ? (
+              <div className="mt-1 border-t border-[var(--color-border)] pt-1">
+                <MenuItem destructive icon={<ArchiveIcon />} onClick={() => selectAction(onArchive)}>
+                  Archivar
+                </MenuItem>
+              </div>
+            ) : (
+              <div className="mt-1 border-t border-[var(--color-border)] pt-1">
+                <MenuItem icon={<CheckIcon />} onClick={() => selectAction(onRestore)}>
+                  Restaurar producto
+                </MenuItem>
+              </div>
+            )
+          ) : null}
         </div>
       ) : null}
     </div>

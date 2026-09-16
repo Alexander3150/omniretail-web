@@ -77,7 +77,7 @@ export function SaleTicket({
                       −
                     </button>
                     <span className="min-w-8 text-center font-semibold text-[var(--color-text)]">
-                      {item.quantity}
+                      {item.quantity} {item.saleUnitName}
                     </span>
                     <button
                       aria-label={`Aumentar cantidad de ${item.name}`}

@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { LocationStatus } from "@/core/enums";
+import { LocationStatus, SaasCapabilityKey } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
+import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
+import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 import type {
   AdjustStockDto,
@@ -16,6 +18,16 @@ import {
   isExpiringSoon,
 } from "@/modules/inventory/application/services/GetInventoryAlertsService";
 import { RegisterInventoryAdjustmentService } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
+import {
+  ApproveTransferRequestService,
+  CreateTransferRequestService,
+  RejectTransferRequestService,
+} from "@/modules/inventory/application/services/TransferRequestServices";
+import {
+  INVENTORY_ADJUSTMENT_CREATE_PERMISSION,
+  INVENTORY_TRANSFERS_MANAGE_PERMISSION,
+  cleanInventoryError,
+} from "@/modules/inventory/application/services/serviceHelpers";
 
 export type InventoryStatusFilter = InventoryStatus | "all";
 export type InventoryKpiFilter = "all" | "active" | "lowStock" | "expiringSoon" | "outOfStock";
@@ -37,10 +49,20 @@ const EMPTY_DATA: InventoryAlertsData = {
 
 export function useInventoryAlerts() {
   const repositories = useRepositories();
+  const { hasPermission, loading: sessionLoading } = useCurrentSession();
+  const { hasCapability } = useEntitlement();
   const { currentBranch, branches: headerBranches, loading: branchLoading } = useActiveBranch();
   const getService = useMemo(() => new GetInventoryAlertsService(repositories), [repositories]);
   const adjustmentService = useMemo(
     () => new RegisterInventoryAdjustmentService(repositories),
+    [repositories],
+  );
+  const transferServices = useMemo(
+    () => ({
+      create: new CreateTransferRequestService(repositories),
+      approve: new ApproveTransferRequestService(repositories),
+      reject: new RejectTransferRequestService(repositories),
+    }),
     [repositories],
   );
   const [data, setData] = useState<InventoryAlertsData>(EMPTY_DATA);
@@ -56,9 +78,18 @@ export function useInventoryAlerts() {
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [loadedBranchId, setLoadedBranchId] = useState("");
   const effectiveBranchId = branchId || currentBranch?.id || "";
+  // UI action gating (feature/saas-entitlement-enforcement §7/§8): el permiso de Role sigue
+  // siendo obligatorio, la capability SaaS se suma -- nunca lo sustituye. El backend
+  // (RegisterInventoryAdjustmentService/TransferRequestServices) sigue siendo la autoridad final.
+  const canAdjustStock =
+    hasPermission(INVENTORY_ADJUSTMENT_CREATE_PERMISSION) &&
+    hasCapability(SaasCapabilityKey.inventory);
+  const canManageTransfers =
+    hasPermission(INVENTORY_TRANSFERS_MANAGE_PERMISSION) &&
+    hasCapability(SaasCapabilityKey.inventory);
 
   const reload = useCallback(async () => {
-    if (!effectiveBranchId) return;
+    if (!effectiveBranchId || branchLoading || sessionLoading) return;
     setLoading(true);
     setError(null);
     try {
@@ -71,11 +102,11 @@ export function useInventoryAlerts() {
     } finally {
       setLoading(false);
     }
-  }, [effectiveBranchId, getService]);
+  }, [branchLoading, effectiveBranchId, getService, sessionLoading]);
 
   useEffect(() => {
     let active = true;
-    if (!effectiveBranchId) {
+    if (!effectiveBranchId || branchLoading || sessionLoading) {
       return () => {
         active = false;
       };
@@ -99,7 +130,7 @@ export function useInventoryAlerts() {
     return () => {
       active = false;
     };
-  }, [effectiveBranchId, getService]);
+  }, [branchLoading, effectiveBranchId, getService, sessionLoading]);
 
   useDataEvent("inventory.changed", reload);
   useDataEvent("stock.changed", reload);
@@ -170,10 +201,9 @@ export function useInventoryAlerts() {
       await reload();
       return result;
     } catch (caughtError) {
-      const message =
-        caughtError instanceof Error ? caughtError.message : "No se pudo registrar el ajuste.";
+      const message = cleanInventoryError(caughtError, "No se pudo registrar el ajuste.");
       setError(message);
-      throw new Error(message);
+      throw caughtError;
     } finally {
       setBusy(false);
     }
@@ -184,19 +214,10 @@ export function useInventoryAlerts() {
     setError(null);
     try {
       if (!activeBranch) throw new Error("Selecciona una sucursal activa.");
-      await repositories.inventoryTransferRequests.createRequest({
-        tenantId: activeBranch.tenantId,
-        requestingBranchId: dto.requesterBranchId,
-        sourceBranchId: dto.providerBranchId,
-        productId: dto.productId,
-        requestedQuantity: dto.quantity,
-        reason: dto.reason,
-        notes: dto.notes.trim() || undefined,
-      });
+      await transferServices.create.execute(dto);
       await reload();
     } catch (caughtError) {
-      const message =
-        caughtError instanceof Error ? caughtError.message : "No se pudo crear la solicitud.";
+      const message = cleanInventoryError(caughtError, "No se pudo crear la solicitud.");
       setError(message);
       throw new Error(message);
     } finally {
@@ -208,11 +229,10 @@ export function useInventoryAlerts() {
     setBusy(true);
     setError(null);
     try {
-      await repositories.inventoryTransferRequests.approveRequest(requestId);
+      await transferServices.approve.execute(requestId);
       await reload();
     } catch (caughtError) {
-      const message =
-        caughtError instanceof Error ? caughtError.message : "No se pudo aprobar la solicitud.";
+      const message = cleanInventoryError(caughtError, "No se pudo aprobar la solicitud.");
       setError(message);
       throw new Error(message);
     } finally {
@@ -224,11 +244,10 @@ export function useInventoryAlerts() {
     setBusy(true);
     setError(null);
     try {
-      await repositories.inventoryTransferRequests.rejectRequest(requestId, rejectionReason);
+      await transferServices.reject.execute(requestId, rejectionReason);
       await reload();
     } catch (caughtError) {
-      const message =
-        caughtError instanceof Error ? caughtError.message : "No se pudo rechazar la solicitud.";
+      const message = cleanInventoryError(caughtError, "No se pudo rechazar la solicitud.");
       setError(message);
       throw new Error(message);
     } finally {
@@ -252,6 +271,7 @@ export function useInventoryAlerts() {
     filtersOpen,
     loading:
       branchLoading ||
+      sessionLoading ||
       loading ||
       (Boolean(effectiveBranchId) && loadedBranchId !== effectiveBranchId),
     busy,
@@ -264,6 +284,8 @@ export function useInventoryAlerts() {
     setKpiFilter,
     setFiltersOpen,
     reload,
+    canAdjustStock,
+    canManageTransfers,
     adjustStock,
     requestTransfer,
     approveTransferRequest,

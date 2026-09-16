@@ -9,6 +9,14 @@ export class MockBusinessConfigRepository
       (db) => db.businessCapabilities.find((item) => item.tenantId === tenantId) ?? null,
     );
   }
+  async createCapabilities(input: Parameters<BusinessConfigRepository["createCapabilities"]>[0]) {
+    const created = this.store.mutate((db) => {
+      db.businessCapabilities.push(input);
+      return input;
+    });
+    this.emit("business-config.changed", { tenantId: input.tenantId, action: "created" });
+    return created;
+  }
   async updateCapabilities(
     tenantId: string,
     input: Parameters<BusinessConfigRepository["updateCapabilities"]>[1],
@@ -26,6 +34,18 @@ export class MockBusinessConfigRepository
     return this.read(
       (db) => db.ecommerceConfigs.find((item) => item.tenantId === tenantId) ?? null,
     );
+  }
+  async createEcommerceConfig(
+    input: Parameters<BusinessConfigRepository["createEcommerceConfig"]>[0],
+  ) {
+    const created = this.store.mutate((db) => {
+      const now = this.now();
+      const item = { ...input, createdAt: now, updatedAt: now };
+      db.ecommerceConfigs.push(item);
+      return item;
+    });
+    this.emit("business-config.changed", { tenantId: input.tenantId, action: "created" });
+    return created;
   }
   async updateEcommerceConfig(
     tenantId: string,

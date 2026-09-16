@@ -9,25 +9,31 @@ export const catalogNavigationItem = {
       id: "catalog-products",
       label: "Productos",
       href: "/catalogo/productos",
-      permission: "catalog.products.read",
+      // permission-enforcement-hardening-products: .create/.update implican poder ver el
+      // listado (mismo criterio que ensureCanReadProducts) -- un rol con solo .create no
+      // quedaría sin forma de llegar a la pantalla donde arranca el flujo de alta.
+      anyPermission: ["catalog.products.read", "catalog.products.create", "catalog.products.update"],
     },
     {
       id: "catalog-categories",
       label: "Categorias",
       href: "/catalogo/categorias",
-      permission: "catalog.categories.manage",
+      // permission-enforcement-hardening: *.read ve la pantalla (mutaciones ocultas por
+      // GetCategoriesService/SaveCategoryService + CategoriesPage.canManage), *.manage sigue
+      // siendo lo único que habilita crear/editar/archivar.
+      anyPermission: ["catalog.categories.read", "catalog.categories.manage"],
     },
     {
       id: "catalog-locations",
       label: "Ubicaciones",
       href: "/catalogo/ubicaciones",
-      permission: "catalog.locations.manage",
+      anyPermission: ["catalog.locations.read", "catalog.locations.manage"],
     },
     {
       id: "catalog-units",
       label: "Unidades y empaques",
       href: "/catalogo/unidades",
-      permission: "catalog.units.manage",
+      anyPermission: ["catalog.units.read", "catalog.units.manage"],
     },
   ],
 } satisfies NavigationItem;

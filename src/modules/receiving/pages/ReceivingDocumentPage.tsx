@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState, type SVGProps } from "react";
+import { SaasCapabilityKey } from "@/core/enums";
+import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { Input } from "@/shared/components/Input";
@@ -11,6 +13,11 @@ import { useToast } from "@/shared/components/Toast";
 import { cn } from "@/shared/utils/cn";
 import { parseDecimalInput, parseIntegerInput, toFiniteNumber } from "@/shared/utils/numberInput";
 import type { ReceiptIncidentEvidence } from "@/core/entities";
+import {
+  EXPIRATION_BEFORE_ENTRY_MESSAGE,
+  getLocalCalendarDate,
+  isExpirationBeforeOperationDate,
+} from "@/core/inventory/expirationDate";
 import type {
   ReceivingDocumentDetailType,
   ReceivingDocumentIncident,
@@ -46,6 +53,8 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
     saveIncident,
     removeIncident,
   } = useReceivingDocumentDetail(documentType, documentId);
+  const { hasCapability } = useEntitlement();
+  const canUseReceiving = hasCapability(SaasCapabilityKey.receiving);
   const [incidentEditorOpen, setIncidentEditorOpen] = useState(false);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
   const [deleteIncidentId, setDeleteIncidentId] = useState<string | null>(null);
@@ -132,7 +141,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
               {!readOnly ? (
                 <>
                   <Button
-                    disabled={saving}
+                    disabled={saving || !canUseReceiving}
                     onClick={handleSaveProgress}
                     type="button"
                     variant="secondary"
@@ -140,7 +149,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
                     <SaveIcon />
                     Guardar avance
                   </Button>
-                  <Button disabled={saving} onClick={handleConfirm} type="button">
+                  <Button disabled={saving || !canUseReceiving} onClick={handleConfirm} type="button">
                     <CheckIcon />
                     Confirmar recepcion
                   </Button>
@@ -334,83 +343,68 @@ function ReceivingLinesTable({
   onUpdateLine: (lineId: string, patch: Partial<ReceivingDocumentLine>) => void;
 }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[970px] table-fixed border-collapse text-left text-sm">
-        <colgroup>
-          <col className="w-[180px]" />
-          <col className="w-[78px]" />
-          <col className="w-[68px]" />
-          <col className="w-[96px]" />
-          <col className="w-[88px]" />
-          <col className="w-[72px]" />
-          <col className="w-[155px]" />
-          <col className="w-[233px]" />
-        </colgroup>
-        <thead className="bg-[var(--color-structure)] text-[11px] uppercase text-white">
-          <tr>
-            <th className="px-2 py-2.5 font-semibold">Producto</th>
-            <th className="px-2 py-2.5 font-semibold">Unidad</th>
-            <th className="px-2 py-2.5 text-right font-semibold">Pedido</th>
-            <th className="px-2 py-2.5 text-right font-semibold">Aceptado ahora</th>
-            <th className="px-2 py-2.5 text-right font-semibold">Con incidencia</th>
-            <th className="px-2 py-2.5 text-right font-semibold">Pendiente</th>
-            <th className="px-2 py-2.5 font-semibold">Ubicacion</th>
-            <th className="px-2 py-2.5 font-semibold">Trazabilidad</th>
-          </tr>
-        </thead>
-        <tbody>
-          {lines.map((line) => (
-            <tr className="border-t border-[var(--color-border)] align-top" key={line.id}>
-              <td className="px-2 py-2.5">
-                <p
-                  className="line-clamp-2 font-bold leading-5 text-[var(--color-title)]"
-                  title={line.productName}
-                >
-                  {line.productName}
+    <>
+      <div className="space-y-3 xl:hidden">
+        {lines.map((line) => {
+          const acceptedNow = Math.max(0, toFiniteNumber(line.receivedNow));
+          const rejectedNow = getRejectedNow(line, incidents);
+          const pendingBefore = Math.max(0, line.orderedQuantity - line.acceptedPreviously);
+          return (
+            <article
+              className="space-y-3 rounded-lg border border-[var(--color-border)] bg-white p-3"
+              key={line.id}
+            >
+              <div>
+                <p className="font-bold text-[var(--color-title)]">{line.productName}</p>
+                <p className="text-xs font-semibold text-[var(--color-text-muted)]">
+                  SKU {line.sku}
                 </p>
-                <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
-                  {line.sku}
-                </p>
-              </td>
-              <td className="px-2 py-2.5 font-semibold text-[var(--color-text)]">
-                {line.unitName}
-              </td>
-              <td className="px-2 py-2.5 text-right font-bold text-[var(--color-title)]">
-                {formatNumber(line.orderedQuantity)}
-              </td>
-              <td className="px-2 py-2.5">
+              </div>
+              <dl className="grid grid-cols-2 gap-3 text-sm">
+                <SmallDescription
+                  label="Pedido"
+                  value={`${formatNumber(line.orderedQuantity)} ${line.unitName}`}
+                />
+                <SmallDescription
+                  label="Equivalencia"
+                  value={`1 ${line.unitName} = ${formatNumber(line.purchaseToBaseFactor)} ${line.baseUnitName}`}
+                />
+                <SmallDescription
+                  label="Total esperado"
+                  value={`${formatNumber(line.orderedQuantity * line.purchaseToBaseFactor)} ${line.baseUnitName}`}
+                />
+                <SmallDescription
+                  label="Recibido anteriormente"
+                  value={`${formatNumber(line.acceptedPreviously)} ${line.unitName} / ${formatNumber(line.acceptedPreviously * line.purchaseToBaseFactor)} ${line.baseUnitName}`}
+                />
+                <SmallDescription
+                  label="Pendiente"
+                  value={`${formatNumber(pendingBefore)} ${line.unitName} / ${formatNumber(pendingBefore * line.purchaseToBaseFactor)} ${line.baseUnitName}`}
+                />
+                <SmallDescription
+                  label="Con incidencia"
+                  value={`${formatNumber(rejectedNow)} ${line.unitName}`}
+                />
+              </dl>
+              <Field label={`Aceptado ahora (${line.unitName})`}>
                 <QuantityInput
                   disabled={readOnly}
                   line={line}
-                  maximum={Math.max(
-                    0,
-                    line.orderedQuantity -
-                      line.acceptedPreviously -
-                      getRejectedNow(line, incidents),
-                  )}
+                  maximum={Math.max(0, pendingBefore - rejectedNow)}
                   value={line.receivedNow}
                   onChange={(value) => onQuantityChange(line.id, value)}
                 />
-              </td>
-              <td className="px-2 py-2.5 text-right">
-                <span className="inline-flex min-h-9 min-w-12 items-center justify-end rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] px-2 font-bold text-[var(--color-title)]">
-                  {formatNumber(getRejectedNow(line, incidents))}
-                </span>
-              </td>
-              <td className="px-2 py-2.5 text-right font-bold text-[var(--color-title)]">
-                {formatNumber(line.pendingQuantity)}
-              </td>
-              <td className="px-2 py-2.5">
-                {detail.capabilities.supportsMultipleLocations && line.tracking.stock ? (
+              </Field>
+              <p className="rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm font-bold text-[var(--color-title)]">
+                Entrada al inventario: {formatNumber(acceptedNow * line.purchaseToBaseFactor)}{" "}
+                {line.baseUnitName}
+              </p>
+              {detail.capabilities.supportsMultipleLocations && line.tracking.stock ? (
+                <Field label="Ubicacion">
                   <Select
-                    className="max-w-full truncate px-2 text-xs"
                     disabled={readOnly}
                     onChange={(event) => onUpdateLine(line.id, { locationId: event.target.value })}
                     value={line.locationId}
-                    title={
-                      detail.locations.find((location) => location.id === line.locationId)?.name ??
-                      "Seleccionar ubicacion"
-                    }
                   >
                     <option value="">Seleccionar</option>
                     {detail.locations.map((location) => (
@@ -419,23 +413,145 @@ function ReceivingLinesTable({
                       </option>
                     ))}
                   </Select>
-                ) : (
-                  <MutedText>No requerido</MutedText>
-                )}
-              </td>
-              <td className="px-2 py-2.5">
-                <TrackingFields
-                  capabilities={detail.capabilities}
-                  line={line}
-                  readOnly={readOnly}
-                  onUpdateLine={onUpdateLine}
-                />
-              </td>
+                </Field>
+              ) : null}
+              <TrackingFields
+                capabilities={detail.capabilities}
+                line={line}
+                readOnly={readOnly}
+                onUpdateLine={onUpdateLine}
+              />
+            </article>
+          );
+        })}
+      </div>
+      <div className="hidden overflow-x-auto xl:block">
+        <table className="w-full min-w-[970px] table-fixed border-collapse text-left text-sm">
+          <colgroup>
+            <col className="w-[180px]" />
+            <col className="w-[78px]" />
+            <col className="w-[68px]" />
+            <col className="w-[96px]" />
+            <col className="w-[88px]" />
+            <col className="w-[72px]" />
+            <col className="w-[155px]" />
+            <col className="w-[233px]" />
+          </colgroup>
+          <thead className="bg-[var(--color-structure)] text-[11px] uppercase text-white">
+            <tr>
+              <th className="px-2 py-2.5 font-semibold">Producto</th>
+              <th className="px-2 py-2.5 font-semibold">Unidad</th>
+              <th className="px-2 py-2.5 text-right font-semibold">Pedido</th>
+              <th className="px-2 py-2.5 text-right font-semibold">Aceptado ahora</th>
+              <th className="px-2 py-2.5 text-right font-semibold">Con incidencia</th>
+              <th className="px-2 py-2.5 text-right font-semibold">Pendiente</th>
+              <th className="px-2 py-2.5 font-semibold">Ubicacion</th>
+              <th className="px-2 py-2.5 font-semibold">Trazabilidad</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {lines.map((line) => (
+              <tr className="border-t border-[var(--color-border)] align-top" key={line.id}>
+                <td className="px-2 py-2.5">
+                  <p
+                    className="line-clamp-2 font-bold leading-5 text-[var(--color-title)]"
+                    title={line.productName}
+                  >
+                    {line.productName}
+                  </p>
+                  <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
+                    {line.sku}
+                  </p>
+                </td>
+                <td className="px-2 py-2.5 font-semibold text-[var(--color-text)]">
+                  {line.unitName}
+                  <span className="mt-1 block text-[10px] font-medium text-[var(--color-text-muted)]">
+                    1 = {formatNumber(line.purchaseToBaseFactor)} {line.baseUnitName}
+                  </span>
+                </td>
+                <td className="px-2 py-2.5 text-right font-bold text-[var(--color-title)]">
+                  {formatNumber(line.orderedQuantity)}
+                  <span className="block text-[10px] font-medium text-[var(--color-text-muted)]">
+                    Total {formatNumber(line.orderedQuantity * line.purchaseToBaseFactor)}{" "}
+                    {line.baseUnitName}
+                  </span>
+                  <span className="block text-[10px] font-medium text-[var(--color-text-muted)]">
+                    Previo {formatNumber(line.acceptedPreviously)} /{" "}
+                    {formatNumber(line.acceptedPreviously * line.purchaseToBaseFactor)} base
+                  </span>
+                </td>
+                <td className="px-2 py-2.5">
+                  <QuantityInput
+                    disabled={readOnly}
+                    line={line}
+                    maximum={Math.max(
+                      0,
+                      line.orderedQuantity -
+                        line.acceptedPreviously -
+                        getRejectedNow(line, incidents),
+                    )}
+                    value={line.receivedNow}
+                    onChange={(value) => onQuantityChange(line.id, value)}
+                  />
+                  <span className="mt-1 block text-right text-[10px] font-semibold text-[var(--color-text-muted)]">
+                    Inventario:{" "}
+                    {formatNumber(
+                      Math.max(0, toFiniteNumber(line.receivedNow)) * line.purchaseToBaseFactor,
+                    )}{" "}
+                    {line.baseUnitName}
+                  </span>
+                </td>
+                <td className="px-2 py-2.5 text-right">
+                  <span className="inline-flex min-h-9 min-w-12 items-center justify-end rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] px-2 font-bold text-[var(--color-title)]">
+                    {formatNumber(getRejectedNow(line, incidents))}
+                  </span>
+                </td>
+                <td className="px-2 py-2.5 text-right font-bold text-[var(--color-title)]">
+                  {formatNumber(line.pendingQuantity)}
+                  <span className="block text-[10px] font-medium text-[var(--color-text-muted)]">
+                    {formatNumber(line.pendingQuantity * line.purchaseToBaseFactor)}{" "}
+                    {line.baseUnitName}
+                  </span>
+                </td>
+                <td className="px-2 py-2.5">
+                  {detail.capabilities.supportsMultipleLocations && line.tracking.stock ? (
+                    <Select
+                      className="max-w-full truncate px-2 text-xs"
+                      disabled={readOnly}
+                      onChange={(event) =>
+                        onUpdateLine(line.id, { locationId: event.target.value })
+                      }
+                      value={line.locationId}
+                      title={
+                        detail.locations.find((location) => location.id === line.locationId)
+                          ?.name ?? "Seleccionar ubicacion"
+                      }
+                    >
+                      <option value="">Seleccionar</option>
+                      {detail.locations.map((location) => (
+                        <option key={location.id} value={location.id}>
+                          {location.code} - {location.name}
+                        </option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <MutedText>No requerido</MutedText>
+                  )}
+                </td>
+                <td className="px-2 py-2.5">
+                  <TrackingFields
+                    capabilities={detail.capabilities}
+                    line={line}
+                    readOnly={readOnly}
+                    onUpdateLine={onUpdateLine}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
@@ -499,15 +615,26 @@ function TrackingFields({
     );
   }
   if (line.tracking.expiration && capabilities.supportsExpiration) {
+    const operationDate = getLocalCalendarDate();
+    const expirationIsBeforeEntry =
+      line.expirationDate &&
+      isExpirationBeforeOperationDate(line.expirationDate, operationDate);
     fields.push(
-      <Input
-        disabled={readOnly}
-        key="expiration"
-        className="h-9 px-2 text-xs"
-        onChange={(event) => onUpdateLine(line.id, { expirationDate: event.target.value })}
-        type="date"
-        value={line.expirationDate}
-      />,
+      <div key="expiration" className="space-y-1">
+        <Input
+          disabled={readOnly}
+          className="h-9 px-2 text-xs"
+          min={operationDate}
+          onChange={(event) => onUpdateLine(line.id, { expirationDate: event.target.value })}
+          type="date"
+          value={line.expirationDate}
+        />
+        {expirationIsBeforeEntry ? (
+          <p className="text-xs font-semibold text-[var(--color-danger)]">
+            {EXPIRATION_BEFORE_ENTRY_MESSAGE}
+          </p>
+        ) : null}
+      </div>,
     );
   }
   if (line.tracking.serial && capabilities.supportsSerials) {
@@ -519,6 +646,12 @@ function TrackingFields({
       Math.max(0, toFiniteNumber(line.receivedNow)) * line.purchaseToBaseFactor;
     fields.push(
       <div key="serial" className="space-y-1">
+        <p className="text-xs font-bold text-[var(--color-title)]">
+          Entrada al inventario: {formatNumber(requiredSerials)} {line.baseUnitName}
+        </p>
+        <p className="text-xs font-semibold text-[var(--color-text)]">
+          Se requieren {formatNumber(requiredSerials)} numeros de serie
+        </p>
         <textarea
           className="min-h-16 w-full resize-y rounded-md border border-[var(--color-border)] bg-white px-2 py-1.5 text-xs text-[var(--color-text)] outline-none transition focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={readOnly}
@@ -527,7 +660,7 @@ function TrackingFields({
           value={line.serialNumbersText}
         />
         <MutedText>
-          {serialCount} / {requiredSerials} seriales
+          {serialCount} / {requiredSerials} registrados
         </MutedText>
       </div>,
     );
@@ -1215,6 +1348,15 @@ function SummaryItem({ label, value }: { label: string; value: string }) {
 
 function MutedText({ children }: { children: React.ReactNode }) {
   return <p className="text-sm font-semibold text-[var(--color-text-muted)]">{children}</p>;
+}
+
+function SmallDescription({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[11px] font-bold uppercase text-[var(--color-text-muted)]">{label}</dt>
+      <dd className="mt-0.5 break-words font-semibold text-[var(--color-title)]">{value}</dd>
+    </div>
+  );
 }
 
 function getSummary(lines: ReceivingDocumentLine[], incidents: ReceivingDocumentIncident[]) {

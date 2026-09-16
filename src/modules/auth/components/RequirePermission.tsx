@@ -6,7 +6,7 @@ import { navigationConfig } from "@/config/navigation";
 import { canUserEnterPrivateRoute } from "@/modules/auth/application/services/postLoginNavigation";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { EMPLOYEE_HOME_ACCESS_PERMISSION, hasEmployeeHomeAccess } from "@/modules/auth/permissions";
-import { isNavigationItemActive } from "@/shared/navigation/Sidebar";
+import { isNavigationItemActive, isNavigationItemPermitted } from "@/shared/navigation/Sidebar";
 import type { NavigationItem } from "@/shared/types/navigation.types";
 
 /**
@@ -56,14 +56,17 @@ function isSessionOnlyRoute(pathname: string): boolean {
  */
 const CUENTA_REDIRECT_ROUTE = "/cuenta";
 
-function findRequiredPermission(items: NavigationItem[], pathname: string): string | undefined {
+function findRequiredPermissionItem(
+  items: NavigationItem[],
+  pathname: string,
+): NavigationItem | undefined {
   for (const item of items) {
     if (item.href && isNavigationItemActive(pathname, item.href)) {
-      return item.permission;
+      return item;
     }
     if (item.children) {
-      const childPermission = findRequiredPermission(item.children, pathname);
-      if (childPermission !== undefined) return childPermission;
+      const child = findRequiredPermissionItem(item.children, pathname);
+      if (child !== undefined) return child;
     }
   }
   return undefined;
@@ -94,7 +97,7 @@ function Denied() {
  */
 export function RequirePermission({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { hasPermission, permissions, user } = useCurrentSession();
+  const { permissions, user } = useCurrentSession();
 
   if (!canUserEnterPrivateRoute(user, pathname)) {
     return <Denied />;
@@ -104,12 +107,12 @@ export function RequirePermission({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
-  const requiredPermission = findRequiredPermission(navigationConfig, pathname);
+  const requiredItem = findRequiredPermissionItem(navigationConfig, pathname);
   const isAllowed =
-    requiredPermission === EMPLOYEE_HOME_ACCESS_PERMISSION
+    requiredItem?.permission === EMPLOYEE_HOME_ACCESS_PERMISSION
       ? hasEmployeeHomeAccess(user, permissions)
-      : requiredPermission
-        ? hasPermission(requiredPermission)
+      : requiredItem
+        ? isNavigationItemPermitted(requiredItem, new Set(permissions))
         : false;
 
   return isAllowed ? <>{children}</> : <Denied />;

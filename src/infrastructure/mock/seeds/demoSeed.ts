@@ -21,6 +21,8 @@ import {
   PickingPriority,
   PickingItemStatus,
   PickingStatus,
+  PlanCode,
+  PlanStatus,
   ProductStatus,
   ProductType,
   PromotionStatus,
@@ -29,22 +31,38 @@ import {
   ReceiptLineStatus,
   ReceiptStatus,
   RoleStatus,
+  SaasCapabilityKey,
   SaleStatus,
   SalesChannel,
   SerialStatus,
   SupplierStatus,
   TenantStatus,
+  TenantSubscriptionStatus,
   TransportMode,
   UnitCategory,
   UnitStatus,
   UserStatus,
   UserType,
 } from "@/core/enums";
+import { permissionsConfig } from "@/config/permissions";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { buildPasswordHashMock } from "@/infrastructure/mock/shared/passwordHashMock";
 import { hardwareCatalogSeed } from "@/infrastructure/mock/seeds/hardwareCatalogSeed";
 
 const now = "2026-01-01T12:00:00.000Z";
+
+/**
+ * Ticket "FIXES FOCALIZADOS" §4: role-admin (demo/bootstrap, admin@ferrepharma.demo) necesita
+ * poder ejercer la app completa durante desarrollo/demo. Se deriva del catálogo canónico real
+ * (`src/config/permissions.ts`) en vez de mantener una segunda lista hardcodeada que se desincroniza
+ * cada vez que se agrega un permiso nuevo -- exactamente el problema que tenía la lista fija de
+ * abajo. Esto es DELIBERADAMENTE solo seed/demo: no crea ningún concepto de "super admin"/bypass
+ * en el código de producción (ensureDelegatablePermissions/ensureDelegatableRole siguen sin
+ * excepción alguna, ver role.validation.ts/employee.validation.ts) -- role-admin simplemente nace
+ * con `permissions` = TODAS las keys del catálogo, así que delega válidamente cualquier permiso
+ * porque literalmente los tiene todos, no porque haya un atajo que lo exima de la regla.
+ */
+const DEMO_ADMIN_ROLE_PERMISSIONS = permissionsConfig.map((permission) => permission.key);
 
 const legacyDemoSeedDatabase: MockDatabase = {
   tenants: [
@@ -126,6 +144,65 @@ const legacyDemoSeedDatabase: MockDatabase = {
       updatedAt: now,
     },
   ],
+  /**
+   * SaaS plans foundation. `plan-enterprise` incluye TODAS las capabilities del catálogo a
+   * propósito -- FerrePharma demo ya ejercita prácticamente todo el sistema (e-commerce, lotes,
+   * vencimiento, series, kits), así que es "el plan de mayor capacidad disponible" (§11 del
+   * ticket), nunca un tenant no reconocido elevado a Enterprise por default (ver
+   * ResolveTenantEntitlementsService: fail-closed sin Subscription). `limits` queda vacío en
+   * ambos planes -- no hay números de negocio aprobados todavía (§12/§22: reportado en la salida
+   * final, no inventado acá).
+   */
+  planDefinitions: [
+    {
+      id: "plan-basic",
+      code: PlanCode.basic,
+      name: "Basic",
+      description: "Operación core: inventario, compras, recepción y punto de venta.",
+      status: PlanStatus.active,
+      capabilities: [
+        SaasCapabilityKey.inventory,
+        SaasCapabilityKey.purchasing,
+        SaasCapabilityKey.receiving,
+        SaasCapabilityKey.pos,
+      ],
+      limits: {},
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "plan-enterprise",
+      code: PlanCode.enterprise,
+      name: "Enterprise",
+      description: "Todo Basic más e-commerce, trazabilidad avanzada (lotes, vencimiento, series) y kits.",
+      status: PlanStatus.active,
+      capabilities: [
+        SaasCapabilityKey.inventory,
+        SaasCapabilityKey.purchasing,
+        SaasCapabilityKey.receiving,
+        SaasCapabilityKey.pos,
+        SaasCapabilityKey.ecommerce,
+        SaasCapabilityKey.traceabilityLots,
+        SaasCapabilityKey.traceabilityExpiration,
+        SaasCapabilityKey.traceabilitySerials,
+        SaasCapabilityKey.catalogKits,
+      ],
+      limits: {},
+      createdAt: now,
+      updatedAt: now,
+    },
+  ],
+  tenantSubscriptions: [
+    {
+      id: "tenant-subscription-demo",
+      tenantId: "tenant-demo",
+      planId: "plan-enterprise",
+      status: TenantSubscriptionStatus.active,
+      startedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ],
   users: [
     {
       id: "user-admin",
@@ -199,21 +276,7 @@ const legacyDemoSeedDatabase: MockDatabase = {
       tenantId: "tenant-demo",
       name: "Administrador",
       isSystem: true,
-      permissions: [
-        "admin.users.manage",
-        "admin.roles.manage",
-        "admin.business_config.manage",
-        "admin.customers.read",
-        "admin.dashboard.read",
-        "admin.reports.read",
-        "admin.reports.export",
-        "admin.cash.read",
-        "admin.ecommerce_config.manage",
-        "admin.branches.read",
-        "admin.branches.manage",
-        "admin.bank_accounts.manage",
-        "admin.suppliers.manage",
-      ],
+      permissions: DEMO_ADMIN_ROLE_PERMISSIONS,
       branchScope: "all",
       status: RoleStatus.active,
       createdAt: now,
@@ -226,7 +289,9 @@ const legacyDemoSeedDatabase: MockDatabase = {
       isSystem: true,
       permissions: [
         "inventory.stock.read",
+        "inventory.movements.read",
         "inventory.adjustment.create",
+        "inventory.transfers.manage",
         "catalog.products.update",
       ],
       branchScope: "selected",
@@ -1264,6 +1329,7 @@ const legacyDemoSeedDatabase: MockDatabase = {
       productId: "prod-drill",
       quantity: 1,
       unitId: "unit-unit",
+      purchaseToBaseFactor: 1,
       unitCost: 420,
       subtotal: 420,
     },

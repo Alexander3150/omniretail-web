@@ -7,6 +7,18 @@ interface StorefrontOrderTrackingResult {
   tracking: StorefrontOrderTrackingDto;
 }
 
+/**
+ * TRACKING POLICY (auditoría §4, feature/saas-entitlement-enforcement): HISTORICAL ACCESS
+ * PRESERVED -- deliberadamente NO llama a `ensurePublicStorefrontTenant` (que exige Subscription/
+ * Plan activos + capability `ecommerce`). Un cliente que ya pagó un pedido necesita poder
+ * consultarlo aunque el tenant haya bajado de plan, suspendido o cancelado su Subscription
+ * DESPUÉS de la compra -- bloquear esto convertiría el fix del catálogo público en una regresión
+ * de órdenes históricas. El boundary de seguridad real ya existe y es suficiente:
+ * `resolveGuestOrderTracking` exige `EcommerceConfig.enabled` + `guestTrackingEnabled` +
+ * `order.source === ecommerce`, y `orders.getByTrackingToken(tenantId, trackingToken)` scopea por
+ * tenant (nunca cross-tenant). Si el negocio quiere bloquear tracking al perder `ecommerce`,
+ * requiere una decisión de producto explícita -- no es un default de este guard.
+ */
 export class GetStorefrontOrderTrackingService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 

@@ -17,6 +17,7 @@ import {
   PencilIcon,
   PosIcon,
 } from "@/modules/catalog/components/CatalogIcons";
+import { useProductPermissions } from "@/modules/catalog/hooks/useProductPermissions";
 import { useProductQuickView } from "@/modules/catalog/hooks/useProductQuickView";
 import type { ProductListItem, ProductQuickViewModel } from "@/modules/catalog/types/catalog.types";
 
@@ -35,6 +36,7 @@ const tabs: { id: QuickViewTab; label: string }[] = [
 
 export function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
   const router = useRouter();
+  const { canUpdate } = useProductPermissions();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [activeTab, setActiveTab] = useState<QuickViewTab>("general");
   const { loading, data, error } = useProductQuickView(product?.id ?? null);
@@ -136,18 +138,20 @@ export function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
             </>
           )}
         </div>
-        <footer className="border-t border-[var(--color-border)] px-4 py-4 sm:px-5">
-          <Button
-            className="w-full"
-            onClick={() => {
-              if (product) router.push(`/catalogo/productos/${product.id}/editar`);
-            }}
-            type="button"
-          >
-            <PencilIcon />
-            Editar
-          </Button>
-        </footer>
+        {canUpdate ? (
+          <footer className="border-t border-[var(--color-border)] px-4 py-4 sm:px-5">
+            <Button
+              className="w-full"
+              onClick={() => {
+                if (product) router.push(`/catalogo/productos/${product.id}/editar`);
+              }}
+              type="button"
+            >
+              <PencilIcon />
+              Editar
+            </Button>
+          </footer>
+        ) : null}
       </aside>
     </div>
   );

@@ -10,6 +10,13 @@ export type ReceiptIncidentInput = Omit<ReceiptIncident, "id" | "receiptId" | "c
 export interface ReceiptRepository {
   getAll(): Promise<Receipt[]>;
   getById(id: string): Promise<Receipt | null>;
+  /**
+   * Tenant-scoped -- permission-hardening (feature/permission-hardening-purchasing-receiving):
+   * GetPurchaseOrdersReadModelService/GetSuppliersReadModelService/ReceivingDocumentsService
+   * usaban getAll() sin filtro de tenant. getAll() se conserva para otros consumidores fuera de
+   * este PR.
+   */
+  listByTenant(tenantId: string): Promise<Receipt[]>;
   getByConfirmationId(tenantId: string, confirmationId: string): Promise<Receipt | null>;
   getLinesByReceipt(receiptId: string): Promise<ReceiptLine[]>;
   getIncidents(): Promise<ReceiptIncident[]>;

@@ -17,10 +17,26 @@ export class MockPurchaseOrderRepository
       return order ? hydratePurchaseOrder(order, db) : null;
     });
   }
+  async listByTenant(tenantId: string) {
+    return this.read((db) =>
+      db.purchaseOrders
+        .filter((order) => order.tenantId === tenantId)
+        .map((order) => hydratePurchaseOrder(order, db)),
+    );
+  }
+  async getByIdScoped(tenantId: string, id: string) {
+    return this.read((db) => {
+      const order = db.purchaseOrders.find(
+        (item) => item.id === id && item.tenantId === tenantId,
+      );
+      return order ? hydratePurchaseOrder(order, db) : null;
+    });
+  }
   async create(input: Parameters<PurchaseOrderRepository["create"]>[0]) {
     const item = this.store.mutate((db) => {
       const now = this.now();
       const { items = [], number, ...orderInput } = input;
+      assertValidConversionSnapshots(items);
       const created = {
         ...orderInput,
         id: this.id("purchaseOrders"),
@@ -47,6 +63,7 @@ export class MockPurchaseOrderRepository
   async update(id: string, input: Parameters<PurchaseOrderRepository["update"]>[1]) {
     const item = this.store.mutate((db) => {
       const { items, ...orderInput } = input;
+      if (items) assertValidConversionSnapshots(items);
       const updated = this.updateById(db.purchaseOrders, id, orderInput, "PurchaseOrder");
       if (items) {
         db.purchaseOrderItems = db.purchaseOrderItems.filter(
@@ -69,6 +86,45 @@ export class MockPurchaseOrderRepository
     });
     return item;
   }
+  async updateScoped(
+    tenantId: string,
+    id: string,
+    input: Parameters<PurchaseOrderRepository["updateScoped"]>[2],
+  ) {
+    const item = this.store.mutate((db) => {
+      const index = db.purchaseOrders.findIndex(
+        (order) => order.id === id && order.tenantId === tenantId,
+      );
+      if (index < 0) throw this.missing("PurchaseOrder", id);
+      const { items, ...orderInput } = input;
+      if (items) assertValidConversionSnapshots(items);
+      const updated = {
+        ...db.purchaseOrders[index],
+        ...orderInput,
+        updatedAt: this.now(),
+      };
+      db.purchaseOrders[index] = updated;
+      if (items) {
+        db.purchaseOrderItems = db.purchaseOrderItems.filter(
+          (orderItem) => orderItem.purchaseOrderId !== id,
+        );
+        db.purchaseOrderItems.push(
+          ...items.map((orderItem) => ({
+            ...orderItem,
+            id: this.id("purchase-order-item"),
+            purchaseOrderId: id,
+          })),
+        );
+      }
+      return hydratePurchaseOrder(updated, db);
+    });
+    this.emit("purchase-order.changed", {
+      entityId: item.id,
+      tenantId: item.tenantId,
+      action: "updated",
+    });
+    return item;
+  }
   async updateStatus(id: string, status: PurchaseOrderStatus) {
     const item = this.store.mutate((db) =>
       hydratePurchaseOrder(
@@ -82,6 +138,35 @@ export class MockPurchaseOrderRepository
       action: "status_changed",
     });
     return item;
+  }
+  async updateStatusScoped(tenantId: string, id: string, status: PurchaseOrderStatus) {
+    const item = this.store.mutate((db) => {
+      const index = db.purchaseOrders.findIndex(
+        (order) => order.id === id && order.tenantId === tenantId,
+      );
+      if (index < 0) throw this.missing("PurchaseOrder", id);
+      const updated = { ...db.purchaseOrders[index], status, updatedAt: this.now() };
+      db.purchaseOrders[index] = updated;
+      return hydratePurchaseOrder(updated, db);
+    });
+    this.emit("purchase-order.changed", {
+      entityId: item.id,
+      tenantId: item.tenantId,
+      action: "status_changed",
+    });
+    return item;
+  }
+}
+
+function assertValidConversionSnapshots(
+  items: Parameters<PurchaseOrderRepository["create"]>[0]["items"],
+) {
+  if (
+    items?.some(
+      (item) => !Number.isFinite(item.purchaseToBaseFactor) || item.purchaseToBaseFactor <= 0,
+    )
+  ) {
+    throw new Error("Purchase order conversion factor must be greater than zero");
   }
 }
 

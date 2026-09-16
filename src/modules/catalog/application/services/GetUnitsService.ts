@@ -2,7 +2,10 @@ import type { Product, Unit, UnitConversion } from "@/core/entities";
 import { UnitCategory } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { UnitListItem } from "@/modules/catalog/application/dto/UnitEditorDto";
-import { resolveTenantId } from "@/modules/catalog/application/services/serviceHelpers";
+import {
+  ensureCanReadUnits,
+  resolveTenantContext,
+} from "@/modules/catalog/application/services/serviceHelpers";
 
 export const UNIT_CATEGORY_LABELS: Record<UnitCategory, string> = {
   [UnitCategory.unit]: "Unidad",
@@ -16,7 +19,8 @@ export class GetUnitsService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(): Promise<UnitListItem[]> {
-    const tenantId = await resolveTenantId(this.repositories);
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanReadUnits(permissions);
     const [units, products] = await Promise.all([
       this.repositories.units.getByTenant(tenantId),
       this.repositories.products.getByTenant(tenantId),

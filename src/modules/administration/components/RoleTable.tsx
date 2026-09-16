@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { permissionsConfig } from "@/config/permissions";
-import type { BranchScope } from "@/core/entities";
 import type { RoleDto } from "@/modules/administration/application/dto/RoleDto";
 import {
   groupPermissionsByModule,
@@ -12,12 +11,6 @@ import { Button } from "@/shared/components/Button";
 import { DataTable, type DataTableColumn } from "@/shared/components/DataTable";
 import { Modal } from "@/shared/components/Modal";
 import { StatusBadge } from "@/shared/components/StatusBadge";
-
-const branchScopeLabels: Record<BranchScope, string> = {
-  assigned: "Sucursal asignada",
-  selected: "Sucursales seleccionadas",
-  all: "Todas las sucursales",
-};
 
 interface RoleTableProps {
   roles: RoleDto[];
@@ -45,13 +38,6 @@ export function RoleTable({ roles, canManage, onArchive, onEdit }: RoleTableProp
             <p className="mt-1 text-xs text-[var(--color-text-muted)]">{role.description}</p>
           ) : null}
         </div>
-      ),
-    },
-    {
-      key: "branchScope",
-      header: "Alcance",
-      cell: (role) => (
-        <span className="text-[var(--color-text)]">{branchScopeLabels[role.branchScope]}</span>
       ),
     },
     {
@@ -145,7 +131,6 @@ function RoleDetailModal({ role, onClose }: { role: RoleDto | null; onClose: () 
       onClose={onClose}
       open={Boolean(role)}
       size="lg"
-      subtitle={role ? branchScopeLabels[role.branchScope] : undefined}
       title={role ? `Permisos de ${role.name}` : "Permisos del rol"}
     >
       {role ? (

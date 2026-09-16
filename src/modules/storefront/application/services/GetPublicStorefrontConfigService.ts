@@ -5,7 +5,7 @@ import { ResolvePublicStorefrontContextService } from "@/modules/storefront/appl
 
 type PublicConfigRepositories = Pick<
   RepositoryRegistry,
-  "tenants" | "businessConfig" | "branches"
+  "tenants" | "businessConfig" | "branches" | "plans" | "tenantSubscriptions"
 >;
 
 export class GetPublicStorefrontConfigService {

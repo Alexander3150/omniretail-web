@@ -26,6 +26,7 @@ import type {
   OrderRepository,
   PaymentRepository,
   PickingRepository,
+  PlanRepository,
   ProductMediaRepository,
   ProductKitComponentRepository,
   ProductPriceHistoryRepository,
@@ -42,7 +43,9 @@ import type {
   StorePickupDeliveryRepository,
   SupplierProductRepository,
   SupplierRepository,
+  TenantOnboardingRepository,
   TenantRepository,
+  TenantSubscriptionRepository,
   UnitRepository,
   UserRepository,
 } from "@/core/repositories";
@@ -72,6 +75,7 @@ import {
   MockOrderRepository,
   MockPaymentRepository,
   MockPickingRepository,
+  MockPlanRepository,
   MockProductMediaRepository,
   MockProductKitComponentRepository,
   MockProductPriceHistoryRepository,
@@ -87,7 +91,9 @@ import {
   MockStorePickupDeliveryRepository,
   MockSupplierProductRepository,
   MockSupplierRepository,
+  MockTenantOnboardingRepository,
   MockTenantRepository,
+  MockTenantSubscriptionRepository,
   MockUnitRepository,
   MockUserRepository,
 } from "@/infrastructure/mock/repositories";
@@ -96,7 +102,10 @@ import { IndexedDbCatalogImageAssetRepository } from "@/infrastructure/media/Ind
 
 export interface RepositoryRegistry {
   tenants: TenantRepository;
+  tenantOnboarding: TenantOnboardingRepository;
   businessConfig: BusinessConfigRepository;
+  plans: PlanRepository;
+  tenantSubscriptions: TenantSubscriptionRepository;
   auth: AuthRepository;
   users: UserRepository;
   roles: RoleRepository;
@@ -156,7 +165,10 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     const customerPaymentMethods = new MockCustomerPaymentMethodRepository(store, eventBus);
     const repositories: RepositoryRegistry = {
       tenants: new MockTenantRepository(store, eventBus),
+      tenantOnboarding: new MockTenantOnboardingRepository(store, eventBus),
       businessConfig: new MockBusinessConfigRepository(store, eventBus),
+      plans: new MockPlanRepository(store, eventBus),
+      tenantSubscriptions: new MockTenantSubscriptionRepository(store, eventBus),
       auth: new MockAuthRepository(store, eventBus, storage),
       users: new MockUserRepository(store, eventBus),
       roles: new MockRoleRepository(store, eventBus),

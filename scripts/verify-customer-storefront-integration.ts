@@ -10,10 +10,13 @@ import { MockAuthRepository } from "@/infrastructure/mock/repositories/MockAuthR
 import { MockOrderPaymentConfirmationRepository } from "@/infrastructure/mock/repositories/MockOrderPaymentConfirmationRepository";
 import { MockOrderRepository } from "@/infrastructure/mock/repositories/MockOrderRepository";
 import { MockPaymentRepository } from "@/infrastructure/mock/repositories/MockPaymentRepository";
+import { MockPlanRepository } from "@/infrastructure/mock/repositories/MockPlanRepository";
 import { MockProductRepository } from "@/infrastructure/mock/repositories/MockProductRepository";
 import { MockRoleRepository } from "@/infrastructure/mock/repositories/MockRoleRepository";
 import { MockTenantRepository } from "@/infrastructure/mock/repositories/MockTenantRepository";
+import { MockTenantSubscriptionRepository } from "@/infrastructure/mock/repositories/MockTenantSubscriptionRepository";
 import { MockUserRepository } from "@/infrastructure/mock/repositories/MockUserRepository";
+import { MockUnitRepository } from "@/infrastructure/mock/repositories/MockUnitRepository";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import {
@@ -166,10 +169,13 @@ function createHarness() {
     orderPaymentConfirmations: new MockOrderPaymentConfirmationRepository(store, eventBus),
     orders: new MockOrderRepository(store, eventBus),
     payments: new MockPaymentRepository(store, eventBus),
+    plans: new MockPlanRepository(store, eventBus),
     products: new MockProductRepository(store, eventBus),
     roles: new MockRoleRepository(store, eventBus),
     tenants: new MockTenantRepository(store, eventBus),
+    tenantSubscriptions: new MockTenantSubscriptionRepository(store, eventBus),
     users: new MockUserRepository(store, eventBus),
+    units: new MockUnitRepository(store, eventBus),
   } as unknown as RepositoryRegistry;
 
   return {
@@ -199,7 +205,7 @@ function createSessionReactivityHarness() {
     customers,
   } as unknown as RepositoryRegistry;
 
-  let snapshot: CurrentSessionSnapshot = { user: null, role: null };
+  let snapshot: CurrentSessionSnapshot = { user: null, role: null, sessionId: null };
   let reloadVersion = 0;
   let pendingReload: Promise<void> = Promise.resolve();
   let pointerChecks: Promise<void>[] = [];

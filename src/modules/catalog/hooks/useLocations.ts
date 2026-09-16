@@ -12,6 +12,7 @@ import type {
 import { GetLocationsService } from "@/modules/catalog/application/services/GetLocationsService";
 import { SaveLocationService } from "@/modules/catalog/application/services/SaveLocationService";
 import { cleanError } from "@/modules/catalog/application/services/serviceHelpers";
+import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 
 export type LocationStatusFilter = LocationStatus.active | LocationStatus.archived;
 
@@ -19,6 +20,9 @@ const DEFAULT_PAGE_SIZE = 10;
 
 export function useLocations() {
   const repositories = useRepositories();
+  const { hasPermission } = useCurrentSession();
+  const canRead = hasPermission("catalog.locations.read") || hasPermission("catalog.locations.manage");
+  const canManage = hasPermission("catalog.locations.manage");
   const { currentBranch, loading: branchLoading } = useActiveBranch();
   const getService = useMemo(() => new GetLocationsService(repositories), [repositories]);
   const saveService = useMemo(() => new SaveLocationService(repositories), [repositories]);
@@ -125,6 +129,8 @@ export function useLocations() {
     loading: branchLoading || loading,
     busy,
     error,
+    canRead,
+    canManage,
     locations: branchLocations,
     currentBranch,
     filteredLocations,

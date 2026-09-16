@@ -42,7 +42,7 @@
 | 9   | Dashboard                 | `/administracion/dashboard`             | Agregación                    | ✅ **Implementada**                 |
 | 10  | Reportes                  | `/administracion/reportes`              | Agregación                    | ✅ **Implementada**                 |
 | 11  | Roles y permisos          | `/administracion/roles-permisos`        | `Role`, `Permission`          | ✅ **Implementada** (`feature/admin-roles-permissions`) |
-| 12  | Usuarios                  | `/administracion/usuarios`              | `User` (+ `AuthAccount`)      | ⛔ Bloqueada — depende de #11       |
+| 12  | Usuarios                  | `/administracion/usuarios`              | `User` (+ `AuthAccount`)      | ✅ **Implementada** (`feature/admin-users`) |
 | 13  | Planes y facturación SaaS | `/administracion/planes-facturacion`    | _(sin definir)_               | ⛔ Bloqueada — modelo               |
 | 14  | Sincronización            | `/administracion/sincronizacion`        | _(sin definir)_               | ⛔ Bloqueada — modelo               |
 
@@ -109,7 +109,7 @@ Firmas reales leídas de `src/core/repositories/`.
 | `BranchRepository`          | `getAll` · `getById` · `getActive` · `create` · `update`                                       | ✅ Completo                                         |
 | `SupplierRepository`        | `getAll` · `getById` · `getActive` · `getProductsBySupplier` · `create` · `update` · `archive` | ✅ Completo                                         |
 | `BankAccountRepository`     | `getAll` · `getActive` · `getById` · `create` · `update`                                       | ✅ Completo                                         |
-| `UserRepository`            | `getAll` · `getById` · `getByEmail` · `create` · `update` · `updateStatus`                     | ✅ Completo                                         |
+| `UserRepository`            | `getAll` · `getById` · `getByEmail` · `listByTenant` · `getByIdScoped` · `create` · `update` · `updateScoped` · `updateStatus` | ✅ Completo (`feature/admin-users`) |
 | `AuditLogRepository`        | `getByTenant` · `append`                                                                       | Sin filtros funcionales ni paginacion server-side   |
 | `TenantRepository`          | `getAll` · `getById`                                                                           | Sin `create` ni `update`                            |
 | `CustomerRepository`        | `getAll` · `listByTenant` · `getById` · `getByUserId` · `getByEmail` · `create` · `update`     | Sin segmentos                                       |
@@ -711,29 +711,109 @@ explícitamente (`ensureRoleNotSystem`) como defensa adicional.
 Archivar un rol no revoca el acceso ya otorgado a cuentas existentes, solo impide asignarlo a
 cuentas nuevas — no hay un mecanismo de revocación retroactiva en esta entrega.
 
-### 12.12 Usuarios ⛔
+### 12.12 Usuarios ✅ implementada
 
-La más compleja. Tabla: `name`, `email`, rol, sucursal/alcance, estado, última conexión.
+**Ownership (§1, admin-users):** administration es owner de `User` Employee (datos, `tenantId`,
+`roleId`, `allowedBranchIds`, `User.status`, CRUD/listado, auditoría administrativa). Auth sigue
+siendo owner exclusivo de `AuthAccount`, password, login, `EmployeeInvitation`,
+`activateEmployeeAccount`, MFA, lockout, recovery, `Session`, `lastLoginAt`. Administration
+**nunca** crea ni modifica `AuthAccount` directamente -- reutiliza
+`AuthRepository.inviteEmployee(userId)` (ya existía, de Andy) para el alta y dos contratos nuevos,
+chicos, agregados en esta misma rama porque `admin-users` los necesita directo:
 
-Alta (R-A07/R-A08): nombre, `employeeCode`, correo laboral opcional, rol principal, sucursales
-autorizadas, estado inicial.
+- `AuthRepository.getEmployeeAuthSummariesByUserIds(tenantId, userIds)`: lectura batch (nunca
+  `getById` en loop -- N+1, ver §27) de `{ userId, status: AccountStatus, mfaEnabled, lastLoginAt
+  }`. Nunca expone `passwordHashMock`, `failedLoginAttempts`, secretos MFA, recovery codes,
+  `MfaChallenge` ni tokens. Ver `AuthRepository.ts` para el detalle de qué pasa con userIds
+  cross-tenant/inexistentes/sin `AuthAccount` (los tres se ven igual: ausentes del resultado).
+- `AuthRepository.revokeAllSessionsByUserId(tenantId, userId)`: revoca todas las sesiones activas
+  de un empleado (no solo la que originó el pedido). Idempotente, tenant-scoped, nunca toca
+  sesiones de otro usuario. Se dispara automáticamente desde `UpdateEmployeeService` cuando
+  cambia `status`, `roleId` o `allowedBranchIds` -- un update que solo toca nombre/teléfono NO
+  revoca nada.
 
-- Con correo → invitación de un solo uso, **24 h** (R-A09).
-- Sin correo → activación asistida, código temporal de un solo uso, **15 min** (R-A10).
-- El administrador **nunca** ve ni define la contraseña final (R-A11). Una credencial usada o
-  vencida deja la cuenta en `password_reset_required` (R-A12).
+**`UserRepository` endurecido** (§5, mismo patrón que `RoleRepository` de PR #88):
+`listByTenant`/`getByIdScoped`/`updateScoped` agregados como métodos NUEVOS; `getAll`/`getById`/
+`update`/`updateStatus`/`getByEmail` se conservan sin cambios para no romper consumidores
+existentes (p. ej. resolución de sesión, que resuelve `User` antes de tener `tenantId`
+disponible). `updateScoped` excluye `tenantId`/`type`/`customerId` del payload editable a nivel de
+tipo -- administration nunca puede convertir un Employee en Customer ni mudarlo de tenant editando
+un usuario existente.
 
-Recuperación asistida (4.9): requiere `users.credentials.reset`; genera código de 15 min; ni
-gerente ni administrador conocen la nueva contraseña, solo autorizan el mecanismo.
+**Alcance de esta entrega (§29):** solo Employees, nunca Customers -- `GetEmployeesService`
+filtra por `UserType.employee`, y un `userId` que resuelve a Customer se trata como inexistente
+(`ensureEmployeeBelongsToTenant`). Sin alta de contraseña (R-A11: el admin nunca la ve ni la
+define -- el empleado la elige al activar su invitación). Sin Owner/SaaS todavía (§23). Sin
+recuperación asistida de contraseña desde esta pantalla, sin reset/disable de MFA (§19: solo
+lectura, `mfaEnabled: boolean`).
 
-MFA (4.12): obligatorio para roles con permisos sensibles, configurable para el resto.
+**Política de unicidad de email** (§7, investigada antes de implementar, no asumida):
+`UserRepository.getByEmail` es global a propósito (sin `tenantId`) porque es la misma fuente que
+usa `login()` -- ahí, los candidatos Employee/Admin se buscan **sin restricción de tenant**
+(`AuthRepository.ts`, `LoginInput.tenantId`). `CreateEmployeeService` reutiliza ese mismo
+`getByEmail` global para rechazar duplicados: un email ya usado por CUALQUIER usuario (de
+cualquier tenant, Employee o Customer) no puede reutilizarse para un alta nueva -- misma regla que
+ya aplica el login, no una inventada.
 
-Alcance de sucursal (4.17): `assigned` / `selected` / `all` en `Role.branchScope`; el formulario
-cambia según la elección y escribe `User.branchId` o `User.allowedBranchIds`.
+**Delegación de privilegios al asignar Role** (§9, misma filosofía que PR #88
+`ensureDelegatablePermissions`): un actor con `admin.users.manage` no puede asignar un Role cuyos
+permisos excedan los propios (`targetRole.permissions ⊆ actorEffectivePermissions`,
+`ensureDelegatableRole` en `employee.validation.ts`). Sin excepción por `isSystem`: se buscó de
+nuevo un concepto autoritativo de "super admin"/bypass y no existe, así que no se inventó ninguno.
+`isSystem` en un Role NO significa "no asignable" (solo "no editable/no archivable", ver PR #88) --
+`role-admin`, `role-cashier`, etc. siguen siendo asignables a un empleado nuevo.
 
-Auditoría: cada alta, cambio de rol, activación o archivado genera `AuditLog`. Siempre.
+**Reglas de asignación de Role** (§8): debe existir, mismo tenant, `status === active` (ni
+`archived` ni `inactive` son asignables -- preferencia explícita del ticket para `inactive`, sin
+contrato que diga lo contrario todavía).
 
-**Bloqueada** por la ausencia de contrato para `AuthAccount`/`MfaEnrollment`.
+**Sucursales pertenecen a `User`, no a `Role`** (§10, consistente con PR #88: `Role.branchScope`
+salió del formulario de Roles porque esta pantalla es la dueña real de "a qué sucursales puede
+entrar un empleado"). `allowedBranchIds` reutiliza el campo que `User` ya tenía. Cada sucursal
+debe existir, pertenecer al tenant y estar activa para asignarse de nuevo (`ensureEmployeeBranchIds`,
+mismo patrón que `ensureBankAccountBranchIds`); las ya asignadas se conservan aunque hoy estén
+inactivas. Un array vacío conserva la semántica que ya tenía en `core/scopes/userBranchAccess.ts`
+-- no se inventó un significado nuevo de "todas las sucursales" para ese caso.
+
+**Alta (`CreateEmployeeService`, §11):** sin boundary atómico cross-repository real entre crear el
+`User` y `AuthRepository.inviteEmployee` (dos repositorios distintos, cada uno con su propia
+transacción interna). Estrategia de falla elegida: NO hace falta compensación destructiva porque
+el contrato ya es fail-closed sin ayuda -- un `User` sin `AuthAccount` simplemente no puede hacer
+login (ningún candidato coincide), sin importar `User.status`. Si `inviteEmployee` falla después
+de crear el `User`, éste queda visible en la tabla (para que el admin lo vea) y sin acceso
+posible; no se borra automáticamente y no se inventa un mecanismo de rollback nuevo. El error se
+reporta explícito para que el admin sepa que debe reintentar la invitación.
+
+**Edición (`UpdateEmployeeService`, §13/§14):** campos editables: `name`, `phone`, `roleId`,
+`allowedBranchIds`, `status`. `email` se valida por formato pero **no se persiste** -- `User.
+email` y `AuthAccount.email` son campos independientes sin ningún contrato que los sincronice; sin
+eso, cambiar uno sin el otro dejaría el login inconsistente. No es un olvido, es una decisión
+explícita hasta que exista ese contrato. `password`/MFA secret/`AuthAccount.status`/lockout
+counters nunca aparecen en `EmployeeInputDto` -- no hay forma de que este service los toque.
+Cualquier cambio de `status`, `roleId` o `allowedBranchIds` dispara
+`revokeAllSessionsByUserId` (§14) para que el empleado tenga que volver a autenticarse con su
+contexto actual; un update que solo cambia nombre/teléfono no revoca nada.
+
+**`User.status` vs `AuthAccount.status` vs `Role.status`** (§15): tres conceptos distintos, nunca
+mezclados en la UI. `User.status` es laboral/administrativo (lo maneja esta pantalla).
+`AuthAccount.status` es técnico (lo maneja Auth, se muestra de solo lectura acá). `Role.status`
+es disponibilidad del rol para asignación (PR #88). Inactivar un empleado cambia únicamente
+`User.status` y revoca sesiones -- nunca toca `AuthAccount.status` directamente.
+
+**Auditoría** (§21): una sola entrada por acción (`employee.created`/`employee.updated`), con
+metadata detallando qué cambió (`statusChanged`/`roleChanged`/`branchesChanged`/
+`sessionsRevoked`) en vez de una fila separada por cada campo tocado en una misma edición. Nunca
+incluye password, tokens, secretos MFA ni sesiones.
+
+**Tabla** (§16/§17): batch real, sin N+1 -- `GetEmployeesService` hace 1 lectura de `users` + 1
+lectura batch de Auth; nombres de rol/sucursal se resuelven en `useEmployees` con
+`roles.listByTenant`/`branches.getActiveByTenant` (mismo patrón `ReadonlyMap` que ya usa
+`CashShiftTable`), no en el service. Columnas: Empleado, Correo, Rol, Sucursales, Estado
+empleado, Estado cuenta, MFA, Último acceso, Acciones. Sin IDs técnicos visibles.
+
+Ruta privada `/administracion/usuarios` y entrada de navegación con `admin.users.manage` (mismo
+criterio de único-permiso-en-nav que Roles/Sucursales: `admin.users.read` en solitario no ve el
+ítem del menú, aunque el service/página ya lo dejarían entrar por URL directa).
 
 ### 12.13 Planes y facturación SaaS ⛔ GAP
 
@@ -785,7 +865,7 @@ Convención de rama: `feature/admin-<funcionalidad>` (`docs/GIT_WORKFLOW.md`), s
 | 2   | `feature/admin-branches`            | Sucursales                | —                           |
 | 3   | `chore/admin-role-contracts`        | _(contrato)_              | — ✅ hecha, avisar a Andy   |
 | 4   | `feature/admin-roles-permissions`   | Roles y permisos          | 3 ✅ hecha                  |
-| 5   | `feature/admin-users`               | Usuarios                  | 2, 4 + contrato AuthAccount |
+| 5   | `feature/admin-users`               | Usuarios                  | 2, 4 ✅ hecha (Auth: `getAuthAccountStatusByUserId` de Andy en PR #90 sin mergear; `getEmployeeAuthSummariesByUserIds`/`revokeAllSessionsByUserId` agregados en esta misma rama) |
 | 6   | `feature/admin-suppliers`           | Proveedores               | —                           |
 | 7   | `feature/admin-bank-accounts`       | Cuentas bancarias         | 2                           |
 | 8   | `feature/admin-ecommerce-design`    | Diseño E-commerce         | 1                           |
@@ -823,8 +903,12 @@ Estado actual del seed (`src/infrastructure/mock/seeds/demoSeed.ts`): tenant `te
 ## 16. Preguntas abiertas para el equipo
 
 1. `RoleRepository`: resuelto en `chore/admin-role-contracts` con fronteras tenant-scoped.
-2. `AuthAccount` / `MfaEnrollment`: ¿Andy expone contrato para invitación, activación asistida y
-   MFA, o la pantalla de Usuarios se recorta?
+2. ~~`AuthAccount` / `MfaEnrollment`~~ **Resuelto en `feature/admin-users`:** `inviteEmployee`/
+   `activateEmployeeAccount` ya existían (Andy); se agregaron `getEmployeeAuthSummariesByUserIds`
+   (batch) y `revokeAllSessionsByUserId` a `AuthRepository`, ambos aditivos, sin tocar
+   login/MFA/lockout/recovery existentes. Pendiente: coordinar con Andy la reconciliación con su
+   PR #90 (`getAuthAccountStatusByUserId`, lectura de un solo usuario, no usada por esta
+   pantalla -- se prefirió la variante batch para evitar N+1 en la tabla).
 3. `Branch.schedule`: ¿se agrega o Sucursales no maneja horarios?
 4. `EcommerceConfig.theme`: ¿se agrega o Diseño E-commerce va sin branding?
 5. `Supplier`: ¿se extiende con contactos, términos de pago, moneda y lead time, o la pantalla se

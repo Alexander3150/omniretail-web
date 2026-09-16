@@ -19,6 +19,69 @@ Si dos documentos contradicen el codigo actual, no corregir silenciosamente el c
 
 Jerarquia: Platform -> Tenant / negocio -> Branch / sucursal. Las entidades de negocio pertenecen a tenant; las operativas relevantes tambien pertenecen a branch. El aislamiento entre tenants es obligatorio conceptualmente.
 
+## SaaS Entitlement
+
+Authentication ("quien sos"), Entitlement ("que tiene derecho a usar/comprar tu negocio"), Role
+Permission ("que puede hacer este Employee") y Branch Scope ("en que sucursal puede operar")
+son cuatro capas independientes. Ninguna sustituye a las demas. Para una mutacion Employee, la
+decision final exige TENANT ENTITLEMENT AND ROLE PERMISSION AND BRANCH ACCESS (cuando aplica)
+AND RESOURCE OWNERSHIP (cuando aplica). Un Plan con `pos` NO otorga `pos.sales.create`; un Role
+con `pos.sales.create` NO otorga la capability `pos` si el Plan no la incluye.
+
+`ResolveTenantEntitlementsService` (`src/shared/application/services`, movido fuera de
+`administration` para que Inventory/Purchasing/Receiving/POS/Storefront/Catalog puedan
+consumirlo sin invertir la direccion de dependencias) es el UNICO resolver de entitlements.
+Fail-closed: sin `TenantSubscription`, o con una Subscription que referencia un
+`PlanDefinition` inexistente, lanza `SaasEntitlementError` (nunca asume Enterprise ni ningun
+plan por default, nunca cae a `tenant-demo`). `effectiveCapabilities` es
+`subscriptionStatus === active && planStatus === active ? plan.capabilities : []` -- una
+Subscription suspendida/cancelada o un Plan archivado nunca otorgan capabilities para
+operaciones comerciales nuevas, aunque el Plan las incluya nominalmente. `SaasEntitlementError`
+expone un `code` machine-readable (`CAPABILITY_REQUIRED`, `LIMIT_REACHED`,
+`SUBSCRIPTION_INACTIVE`, `PLAN_INACTIVE`, `SUBSCRIPTION_MISSING`, `PLAN_MISSING`) para que la UI
+distinga una restriccion de Plan de un error de permisos sin parsear el mensaje.
+
+El catalogo de `SaasCapabilityKey` (`inventory`, `purchasing`, `receiving`, `pos`, `ecommerce`,
+`traceability.lots`, `traceability.expiration`, `traceability.serials`, `catalog.kits`) gatea
+exclusivamente mutaciones activas (crear/actualizar/aprobar/confirmar/ajustar/transferir/
+ejecutar/habilitar feature), nunca lectura historica: un Employee con `purchasing.orders.read`
+sigue viendo ordenes de compra existentes aunque el Plan ya no incluya `purchasing`; lo que se
+bloquea es `UpdatePurchaseOrderStatusService`/`PurchaseOrderEditorService.createOrder`. No existe
+capability para Administration (sigue gobernada solo por `admin.*` permissions) ni para
+Logistics (sin `SaasCapabilityKey` propia).
+
+`SaasLimitKey` (`maxEmployees`, `maxBranches`) gatea unicamente `CreateEmployeeService`/
+`CreateBranchService`. Ausente en `PlanDefinition.limits` significa sin limite (nunca "0"
+implicito). Un downgrade de limite NUNCA archiva/borra empleados o sucursales existentes -- solo
+bloquea la PROXIMA alta mientras el conteo actual (`type === employee && status !== archived`;
+`status !== archived` para Branch) sea mayor o igual al limite.
+
+`BusinessCapabilitiesConfig` (config operativa del Tenant, p.ej. `supportsLots`) y SaaS
+capability (derecho comercial contratado) son conceptos independientes -- ninguno sustituye al
+otro. `effectiveFeatureEnabled = planHasCapability AND businessConfigSetting`
+(`isEffectiveBusinessCapabilityEnabled`, `src/shared/application/services/
+businessCapabilityEntitlement.ts`), aplicable a `supportsLots`/`supportsExpiration`/
+`supportsSerials`/`supportsKits` (los unicos 4 campos de `BusinessCapabilitiesConfig` con
+`SaasCapabilityKey` equivalente). `SaveBusinessConfigService` deniega habilitar (false -> true)
+una business capability cuyo Plan no la incluye, pero SIEMPRE permite deshabilitarla (evita
+lockout). Un downgrade de Plan nunca muta `BusinessCapabilitiesConfig` -- el setting persistido
+puede seguir en `true`, pero el efecto real cae a `false` hasta que el Tenant vuelva a un Plan
+que lo incluya, momento en el que el setting previo vuelve a ser efectivo sin reconfigurar nada.
+
+Storefront/Customer publico usa un eje de autorizacion DISTINTO: nunca `Role.permissions` ni
+`User.allowedBranchIds`. El checkout (`CreateStorefrontCheckoutService`, via
+`ResolvePublicStorefrontContextService` en modo estricto) exige Subscription active AND Plan
+active AND capability `ecommerce` AND `EcommerceConfig.enabled` -- las 4 condiciones son
+independientes; cualquiera ausente deja el canal comercial no disponible.
+
+`EntitlementProvider` (`src/shared/providers`, montado en `(private)/layout.tsx` dentro de
+`RequireSession`) es la UNICA fuente de entitlements para la UI -- ningun componente resuelve
+`plans`/`tenantSubscriptions` directo. Si la resolucion falla, `entitlements` queda `null` y
+`hasCapability`/`getLimit` devuelven `false`/`undefined`; un fallo aca NUNCA dispara logout ni
+redirige (Authentication y Entitlement son capas distintas). Esta foundation es enforcement READ
+del estado ya existente -- no expone mutaciones de Subscription/Plan ni implementa upgrade/
+downgrade/cancel/renew/billing.
+
 ## Producto
 
 Existe una sola Entity `Product`. No crear `StorefrontProduct`, `InventoryProduct` ni `PosProduct`. Product es consumido por Catalog, Storefront, Inventory, POS, Logistics y Purchasing cuando corresponde.
@@ -53,7 +116,7 @@ Ejemplos: taladro usa stock y serial; tornillos usan stock; medicamento usa stoc
 
 `Product` describe que es el producto. `InventoryBalance` describe cuanto existe y donde. No almacenar stock oficial dentro de Product.
 
-Stock es por tenant, branch y location. Catalogo es global dentro del tenant. Precios son globales por tenant durante esta fase. `Product.baseUnitId` es la unidad base de inventario. `Product.saleUnitId` es la unidad/presentacion normal de venta y, si falta en datos legados, se interpreta como `baseUnitId`. `Product.salePrice` es el precio base; cualquier precio promocional se deriva y no se guarda como campo mutable en `Product`.
+Stock es por tenant, branch y location. Catalogo es global dentro del tenant. Precios son globales por tenant durante esta fase. `Product.baseUnitId` es la unidad minima indivisible y canonica: balances, movimientos, reservas, lotes y series siempre se expresan en ella. `Product.inventoryUnitId` es solo la presentacion preferida de entrada/display y, si falta en datos legados, se interpreta como `baseUnitId` sin reescalar stock. `Product.saleUnitId` es la unidad/presentacion comercial; POS y e-commerce convierten su cantidad a base antes de validar o mutar inventario. Toda presentacion distinta debe tener una conversion positiva y finita en direccion presentacion -> base; una conversion ausente nunca equivale a factor 1. `Product.salePrice` es el precio base; cualquier precio promocional se deriva y no se guarda como campo mutable en `Product`.
 
 `Unit.category` es la clasificacion canonica de una unidad (`unit`, `weight`, `length`, `volume`, `other`). No depende de `Unit.code`, `Unit.name` ni `Unit.symbol`: cambiar el codigo o el simbolo no debe cambiar la categoria. `Unit.code` sigue siendo identificador interno, `Unit.symbol` sigue siendo representacion corta y `Unit.allowsDecimals` sigue indicando si permite cantidades fraccionarias.
 

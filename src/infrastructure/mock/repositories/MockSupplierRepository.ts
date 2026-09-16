@@ -17,6 +17,9 @@ export class MockSupplierRepository extends BaseMockRepository implements Suppli
       db.suppliers.filter((item) => item.status === "active" && item.tenantId === tenantId),
     );
   }
+  async listByTenant(tenantId: string) {
+    return this.read((db) => db.suppliers.filter((item) => item.tenantId === tenantId));
+  }
   async getProductsBySupplier(supplierId: string) {
     return this.read((db) =>
       db.supplierProducts.filter((item) => item.supplierId === supplierId && item.active),

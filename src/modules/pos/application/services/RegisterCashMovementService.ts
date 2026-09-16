@@ -9,7 +9,7 @@ import {
 
 type CashMovementRepositories = Pick<
   RepositoryRegistry,
-  "branches" | "cashMovements" | "cashShifts" | "roles" | "users"
+  "branches" | "cashMovements" | "cashShifts" | "roles" | "users" | "plans" | "tenantSubscriptions"
 >;
 
 export interface RegisterCashMovementRequest extends CashShiftOperationContext {

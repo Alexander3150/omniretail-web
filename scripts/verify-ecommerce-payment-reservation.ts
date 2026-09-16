@@ -15,9 +15,12 @@ import { MockBranchRepository } from "@/infrastructure/mock/repositories/MockBra
 import { MockBusinessConfigRepository } from "@/infrastructure/mock/repositories/MockBusinessConfigRepository";
 import { MockOrderPaymentConfirmationRepository } from "@/infrastructure/mock/repositories/MockOrderPaymentConfirmationRepository";
 import { MockOrderRepository } from "@/infrastructure/mock/repositories/MockOrderRepository";
+import { MockPlanRepository } from "@/infrastructure/mock/repositories/MockPlanRepository";
 import { MockProductRepository } from "@/infrastructure/mock/repositories/MockProductRepository";
 import { MockSaleConfirmationRepository } from "@/infrastructure/mock/repositories/MockSaleConfirmationRepository";
 import { MockTenantRepository } from "@/infrastructure/mock/repositories/MockTenantRepository";
+import { MockTenantSubscriptionRepository } from "@/infrastructure/mock/repositories/MockTenantSubscriptionRepository";
+import { MockUnitRepository } from "@/infrastructure/mock/repositories/MockUnitRepository";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import {
@@ -132,10 +135,13 @@ function createHarness(physicalQuantity: number, reservedQuantity = 0) {
     customers: {},
     orderPaymentConfirmations: confirmations,
     orders,
+    plans: new MockPlanRepository(store, eventBus),
     products: new MockProductRepository(store, eventBus),
     roles: {},
     tenants: new MockTenantRepository(store, eventBus),
+    tenantSubscriptions: new MockTenantSubscriptionRepository(store, eventBus),
     users: {},
+    units: new MockUnitRepository(store, eventBus),
   } as unknown as RepositoryRegistry;
   return {
     store,
@@ -261,6 +267,64 @@ async function verifyConsecutiveStorefrontOrders() {
     ),
     true,
   );
+}
+
+async function verifyStorefrontSaleUnitConversion() {
+  const { store, checkout } = createHarness(250);
+  store.mutate((db) => {
+    const product = db.products.find((item) => item.id === physicalProductId);
+    assert.ok(product);
+    product.baseUnitId = "unit-unit";
+    product.saleUnitId = "unit-box";
+    product.inventoryUnitId = "unit-box";
+    db.unitConversions = db.unitConversions.filter(
+      (item) => !(item.productId === physicalProductId && item.fromUnitId === "unit-box"),
+    );
+    db.unitConversions.push({
+      id: "conversion-storefront-box-base",
+      tenantId,
+      productId: physicalProductId,
+      fromUnitId: "unit-box",
+      toUnitId: "unit-unit",
+      factor: 100,
+      createdAt: new Date().toISOString(),
+    });
+  });
+  await checkout.execute({
+    items: storefrontCart(2),
+    form: checkoutForm,
+    idempotencyKey: "00000000-0000-4000-8000-000000000099",
+  });
+  const snapshot = store.getSnapshot();
+  assert.equal(snapshot.orders[0].items[0].quantity, 2);
+  assert.equal(snapshot.orders[0].items[0].inventoryQuantity, 200);
+  assert.equal(
+    snapshot.inventoryReservations[0].allocations.reduce(
+      (sum, allocation) => sum + allocation.reservedQuantity,
+      0,
+    ),
+    200,
+  );
+}
+
+async function verifyStorefrontMissingConversionFailsClosed() {
+  const { store, checkout } = createHarness(250);
+  store.mutate((db) => {
+    const product = db.products.find((item) => item.id === physicalProductId);
+    assert.ok(product);
+    product.baseUnitId = "unit-unit";
+    product.saleUnitId = "unit-pack";
+    db.unitConversions = db.unitConversions.filter((item) => item.productId !== physicalProductId);
+  });
+  await assert.rejects(
+    () => checkout.execute({
+      items: storefrontCart(1),
+      form: checkoutForm,
+      idempotencyKey: "00000000-0000-4000-8000-000000000098",
+    }),
+    /No existe conversion/,
+  );
+  assert.equal(store.getSnapshot().orders.length, 0);
 }
 
 async function verifyAccumulatedReservationQaCase() {
@@ -522,6 +586,42 @@ async function verifyPosRegression() {
   assert.equal(result.inventoryMovements.length, 1);
 }
 
+async function verifyPosCanonicalDecrement() {
+  const store = new MockDatabaseStore(new LocalStorageAdapter());
+  const repository = new MockSaleConfirmationRepository(store, new DataEventBus());
+  store.mutate((db) => {
+    const balance = db.inventoryBalances.find((item) => item.id === "bal-screws");
+    assert.ok(balance);
+    balance.quantity = 250;
+  });
+  const before = store.getSnapshot().inventoryBalances.find((item) => item.id === "bal-screws");
+  assert.ok(before);
+  await repository.confirm({
+    confirmationId: "pos-canonical-box-sale",
+    tenantId,
+    branchId,
+    cashierUserId: "user-cashier",
+    cashShiftId: "cash-shift-001",
+    items: [{
+      productId: physicalProductId,
+      skuSnapshot: "TOR-001",
+      nameSnapshot: "Tornillos",
+      quantity: 1,
+      inventoryQuantity: 100,
+      unitPrice: 24.99,
+      discount: 0,
+      subtotal: 24.99,
+    }],
+    subtotal: 24.99,
+    discountTotal: 0,
+    taxTotal: 0,
+    total: 24.99,
+    payments: [{ method: PaymentMethod.card, amount: 24.99, currency: "GTQ" }],
+  });
+  const after = store.getSnapshot().inventoryBalances.find((item) => item.id === "bal-screws");
+  assert.equal(after?.quantity, before.quantity - 100);
+}
+
 function verifyInventoryAlertCalculations() {
   const availability = {
     quantity: 10,
@@ -537,6 +637,8 @@ function verifyInventoryAlertCalculations() {
 
 async function main() {
   await verifyConsecutiveStorefrontOrders();
+  await verifyStorefrontSaleUnitConversion();
+  await verifyStorefrontMissingConversionFailsClosed();
   await verifyAccumulatedReservationQaCase();
   await verifyImmediateCardAndLifecycle();
   await verifyDeferredMethodsStayPending();
@@ -544,6 +646,7 @@ async function main() {
   await verifyServiceOrder();
   await verifyKitAndTrackedProducts();
   await verifyPosRegression();
+  await verifyPosCanonicalDecrement();
   verifyInventoryAlertCalculations();
   console.log("ecommerce payment/reservation findings verification: PASS");
 }

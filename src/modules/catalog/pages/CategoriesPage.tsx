@@ -54,6 +54,8 @@ export function CategoriesPage() {
     loading,
     busy,
     error,
+    canRead,
+    canManage,
     categories,
     filteredCategories,
     paginatedCategories,
@@ -111,6 +113,32 @@ export function CategoriesPage() {
     setPanel({ mode: "detail", category: { ...category, status: CategoryStatus.active } });
   }
 
+  if (!loading && !canRead) {
+    return (
+      <div className="min-w-0 space-y-5">
+        <header className="border-b border-[var(--color-border)] pb-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+            CATEGORÍA
+          </p>
+          <h1 className="mt-1 text-2xl font-bold text-[var(--color-title)]">Categorías</h1>
+        </header>
+        <div
+          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
+          role="alert"
+        >
+          <h2 className="text-base font-semibold text-[var(--color-title)]">
+            No tenés acceso a categorías
+          </h2>
+          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+            Consultar categorías requiere el permiso{" "}
+            <span className="font-medium text-[var(--color-text)]">catalog.categories.read</span>.
+            Pedí acceso a un administrador.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-w-0 space-y-5">
       <header className="flex min-w-0 flex-col gap-4 border-b border-[var(--color-border)] pb-4 lg:flex-row lg:items-end lg:justify-between">
@@ -125,14 +153,16 @@ export function CategoriesPage() {
             Define la estructura que después usarás al registrar y organizar productos.
           </p>
         </div>
-        <Button
-          className="w-full sm:w-auto"
-          onClick={() => setPanel({ mode: "create" })}
-          type="button"
-        >
-          <PlusIcon />
-          Nueva categoría
-        </Button>
+        {canManage ? (
+          <Button
+            className="w-full sm:w-auto"
+            onClick={() => setPanel({ mode: "create" })}
+            type="button"
+          >
+            <PlusIcon />
+            Nueva categoría
+          </Button>
+        ) : null}
       </header>
 
       {error ? (
@@ -160,6 +190,7 @@ export function CategoriesPage() {
             </p>
           ) : (
             <CategoryTable
+              canManage={canManage}
               categories={paginatedCategories}
               emptyMessage={
                 categories.length === 0
@@ -190,6 +221,7 @@ export function CategoriesPage() {
           <CategoryPanel
             allCategories={categories}
             busy={busy}
+            canManage={canManage}
             category={panelCategory}
             mode={panel.mode}
             onCancel={() =>
@@ -284,6 +316,7 @@ function StatusFilterButton({
 }
 
 function CategoryTable({
+  canManage,
   categories,
   emptyMessage,
   onArchive,
@@ -291,6 +324,7 @@ function CategoryTable({
   onOpen,
   onRestore,
 }: {
+  canManage: boolean;
   categories: CategoryListItem[];
   emptyMessage: string;
   onArchive: (category: CategoryListItem) => void;
@@ -342,12 +376,14 @@ function CategoryTable({
                   {category.productCount}
                 </td>
                 <td className="px-4 py-3">
-                  <CategoryActionsMenu
-                    category={category}
-                    onArchive={onArchive}
-                    onEdit={onEdit}
-                    onRestore={onRestore}
-                  />
+                  {canManage ? (
+                    <CategoryActionsMenu
+                      category={category}
+                      onArchive={onArchive}
+                      onEdit={onEdit}
+                      onRestore={onRestore}
+                    />
+                  ) : null}
                 </td>
               </tr>
             ))
@@ -563,6 +599,7 @@ function CategoryTableFooter({
 function CategoryPanel({
   allCategories,
   busy,
+  canManage,
   category,
   mode,
   onCancel,
@@ -573,6 +610,7 @@ function CategoryPanel({
 }: {
   allCategories: CategoryListItem[];
   busy: boolean;
+  canManage: boolean;
   category?: CategoryListItem;
   mode: PanelMode;
   onCancel: () => void;
@@ -629,6 +667,7 @@ function CategoryPanel({
             />
           ) : category ? (
             <CategoryDetail
+              canManage={canManage}
               category={category}
               onClose={onClose}
               onEdit={onEdit}
@@ -642,11 +681,13 @@ function CategoryPanel({
 }
 
 function CategoryDetail({
+  canManage,
   category,
   onClose,
   onEdit,
   onViewProducts,
 }: {
+  canManage: boolean;
   category: CategoryListItem;
   onClose: () => void;
   onEdit: () => void;
@@ -677,10 +718,12 @@ function CategoryDetail({
         >
           Ver productos
         </Button>
-        <Button className="w-full sm:w-auto" onClick={onEdit} type="button">
-          <PencilIcon />
-          Editar
-        </Button>
+        {canManage ? (
+          <Button className="w-full sm:w-auto" onClick={onEdit} type="button">
+            <PencilIcon />
+            Editar
+          </Button>
+        ) : null}
       </div>
     </div>
   );

@@ -39,6 +39,7 @@ import type {
   PickingAssignmentRelease,
   PickingIncident,
   PickingOrder,
+  PlanDefinition,
   PriceTier,
   Product,
   ProductKitComponent,
@@ -70,6 +71,7 @@ import type {
   SupplierCostTier,
   SupplierProduct,
   Tenant,
+  TenantSubscription,
   Unit,
   UnitConversion,
   User,
@@ -80,6 +82,8 @@ export interface MockDatabase {
   branches: Branch[];
   businessCapabilities: BusinessCapabilitiesConfig[];
   ecommerceConfigs: EcommerceConfig[];
+  planDefinitions: PlanDefinition[];
+  tenantSubscriptions: TenantSubscription[];
   users: User[];
   roles: Role[];
   permissions: Permission[];

@@ -141,6 +141,7 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
             input.tenantId,
             item.productId,
             item.quantity,
+            item.inventoryQuantity,
             db,
           ),
         })),
@@ -238,6 +239,7 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
             input.order.tenantId,
             item.productId,
             item.quantity,
+            item.inventoryQuantity,
             db,
           ),
         })),
@@ -347,18 +349,19 @@ export class MockOrderRepository extends BaseMockRepository implements OrderRepo
     tenantId: string,
     productId: string,
     quantity: number,
+    inventoryQuantity: number | undefined,
     db: MockDatabase,
   ) {
     const product = db.products.find((item) => item.id === productId && item.tenantId === tenantId);
     if (!product) throw new Error(`Product not found for tenant: ${productId}`);
     if (product.productType === ProductType.physical && product.tracking.stock)
-      return [{ productId, quantity }];
+      return [{ productId, quantity: inventoryQuantity ?? quantity }];
     if (product.productType !== ProductType.kit) return undefined;
     return expandKitDemand(
       db.productKitComponents.filter(
         (item) => item.tenantId === tenantId && item.kitProductId === productId,
       ),
-      quantity,
+      inventoryQuantity ?? quantity,
     );
   }
 
@@ -511,6 +514,7 @@ function getOrderCreationFingerprint(input: CreateOrderInput): string {
         skuSnapshot: item.skuSnapshot,
         nameSnapshot: item.nameSnapshot,
         quantity: item.quantity,
+        inventoryQuantity: item.inventoryQuantity ?? null,
         unitPrice: item.unitPrice,
         discount: item.discount,
         subtotal: item.subtotal,

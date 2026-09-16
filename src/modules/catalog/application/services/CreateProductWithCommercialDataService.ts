@@ -5,14 +5,18 @@ import {
   syncEditorRelatedData,
   validateEditorProduct,
 } from "@/modules/catalog/application/services/productEditorHelpers";
-import { resolveTenantId } from "@/modules/catalog/application/services/serviceHelpers";
-import { CatalogServiceError } from "@/modules/catalog/application/services/serviceHelpers";
+import {
+  CatalogServiceError,
+  ensureCanCreateProducts,
+  resolveTenantContext,
+} from "@/modules/catalog/application/services/serviceHelpers";
 
 export class CreateProductWithCommercialDataService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(dto: ProductEditorDto): Promise<Product> {
-    const tenantId = await resolveTenantId(this.repositories);
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanCreateProducts(permissions);
     if (!tenantId) {
       throw new CatalogServiceError("No hay un negocio disponible para crear productos.");
     }

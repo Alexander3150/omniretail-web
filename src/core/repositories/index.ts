@@ -1,5 +1,8 @@
 export type * from "./TenantRepository";
 export type * from "./BusinessConfigRepository";
+export type * from "./PlanRepository";
+export type * from "./TenantSubscriptionRepository";
+export type * from "./TenantOnboardingRepository";
 export type * from "./AuthRepository";
 export type * from "./UserRepository";
 export type * from "./RoleRepository";

@@ -2,10 +2,16 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { BankAccount, Tenant } from "@/core/entities";
-import { BranchStatus, BranchType, TenantStatus } from "@/core/enums";
+import { BranchStatus, BranchType, RoleStatus, TenantStatus, UserStatus, UserType } from "@/core/enums";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
-import { MockBankAccountRepository, MockTenantRepository } from "@/infrastructure/mock/repositories";
+import {
+  MockBankAccountRepository,
+  MockBranchRepository,
+  MockRoleRepository,
+  MockTenantRepository,
+  MockUserRepository,
+} from "@/infrastructure/mock/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import { GetCheckoutBankAccountsService } from "@/modules/pos/application/services/GetCheckoutBankAccountsService";
@@ -92,6 +98,29 @@ function createHarness() {
         updatedAt: NOW,
       },
     ];
+    db.roles.push({
+      id: "role-pos-bank",
+      tenantId: TENANT_A,
+      name: "POS bank role",
+      isSystem: false,
+      permissions: ["pos.sales.create"],
+      branchScope: "selected",
+      status: RoleStatus.active,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    db.users.push({
+      id: "user-pos-bank",
+      tenantId: TENANT_A,
+      name: "POS Bank User",
+      email: "pos-bank@example.com",
+      type: UserType.employee,
+      status: UserStatus.active,
+      roleId: "role-pos-bank",
+      allowedBranchIds: [BRANCH_A1, BRANCH_A2],
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
     db.bankAccounts = [
       bankAccount({ id: "account-branch-a1-only", branchIds: [BRANCH_A1] }),
       bankAccount({ id: "account-all-branches", branchIds: [] }),
@@ -101,25 +130,38 @@ function createHarness() {
     ];
   });
 
-  const bankAccounts = new MockBankAccountRepository(store, eventBus);
-  const tenants = new MockTenantRepository(store, eventBus);
-
+  const session = { id: "session-pos-bank", userId: "user-pos-bank" };
   return {
-    repositories: { bankAccounts, tenants } as unknown as RepositoryRegistry,
+    repositories: {
+      auth: {
+        getCurrentSessionId: async () => session.id,
+        getSession: async (sessionId: string) => (sessionId === session.id ? session : null),
+      },
+      bankAccounts: new MockBankAccountRepository(store, eventBus),
+      branches: new MockBranchRepository(store, eventBus),
+      roles: new MockRoleRepository(store, eventBus),
+      tenants: new MockTenantRepository(store, eventBus),
+      users: new MockUserRepository(store, eventBus),
+    } as unknown as RepositoryRegistry,
   };
 }
 
 async function verifyServiceBehavior(harness: ReturnType<typeof createHarness>) {
   const service = new GetCheckoutBankAccountsService(harness.repositories);
 
-  const forBranchA1 = await service.execute({ tenantId: TENANT_A, branchId: BRANCH_A1 });
+  const forBranchA1 = await service.execute({ branchId: BRANCH_A1 });
   const byId = new Map(forBranchA1.map((item) => [item.id, item]));
 
-  // B. POS transfer recibe el numero completo, sin mascara.
+  // B. POS transfer recibe solo mascara, no numero completo.
   assert.equal(
-    byId.get("account-branch-a1-only")?.accountNumber,
-    "123456789012",
-    "El servicio debe devolver accountNumber completo, no enmascarado",
+    byId.get("account-branch-a1-only")?.accountNumberMasked,
+    "********9012",
+    "El servicio debe devolver accountNumberMasked",
+  );
+  assert.equal(
+    "accountNumber" in (byId.get("account-branch-a1-only") ?? {}),
+    false,
+    "El read model de POS no debe exponer accountNumber completo",
   );
 
   // C. Campos estructurados correctos, sin label concatenado.
@@ -146,7 +188,7 @@ async function verifyServiceBehavior(harness: ReturnType<typeof createHarness>) 
   );
   assert.equal(byId.has("account-all-branches"), true, "branchIds vacio = todas las sucursales");
 
-  const forBranchA2 = await service.execute({ tenantId: TENANT_A, branchId: BRANCH_A2 });
+  const forBranchA2 = await service.execute({ branchId: BRANCH_A2 });
   const idsForA2 = forBranchA2.map((item) => item.id);
   assert.equal(
     idsForA2.includes("account-branch-a1-only"),
@@ -200,12 +242,17 @@ function verifySourceInvariants() {
     "El cajero no debe necesitar admin.bank_accounts.manage para leer cuentas de transferencia",
   );
 
-  // H. Copiar usa exactamente la cuenta seleccionada (no un valor global/stale).
+  // H. Checkout solo muestra mascara; no copia ni renderiza accountNumber completo.
   const checkoutModal = read("src/modules/pos/components/CheckoutModal.tsx");
   assert.equal(
-    checkoutModal.includes("navigator.clipboard.writeText(account.accountNumber)"),
+    /account\.accountNumber(?!Masked)/.test(checkoutModal),
+    false,
+    "CheckoutModal no debe usar accountNumber completo",
+  );
+  assert.equal(
+    checkoutModal.includes("account.accountNumberMasked"),
     true,
-    "Copiar debe escribir accountNumber de la cuenta seleccionada, no un valor externo",
+    "CheckoutModal debe mostrar accountNumberMasked",
   );
 
   // I. Cash shift sigue sin exponer userId.

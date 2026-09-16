@@ -1,4 +1,5 @@
 import type { BusinessCapabilitiesConfig, Product, ProductMedia } from "@/core/entities";
+import { ProductType } from "@/core/enums";
 import { getProductMediaSource, isSafeCatalogImageUrl } from "@/core/media/catalogImage";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { normalizeSku } from "@/shared/utils/normalizeSku";
@@ -22,6 +23,7 @@ import {
   ensureActiveCategory,
   ensureActiveUnit,
   ensureProductTypeAllowed,
+  ensureTenantCanUseKits,
   ensureUnitConfigUnchanged,
   requireCapabilities,
 } from "@/modules/catalog/application/services/serviceHelpers";
@@ -30,18 +32,25 @@ export async function validateEditorProduct(
   repositories: RepositoryRegistry,
   dto: ProductEditorDto,
   tenantId: string,
-  current?: Pick<Product, "id" | "productType" | "baseUnitId" | "saleUnitId" | "tracking">,
+  current?: Pick<Product, "id" | "productType" | "baseUnitId" | "inventoryUnitId" | "saleUnitId" | "tracking">,
 ) {
   const capabilities = await requireCapabilities(repositories, tenantId);
   ensureProductTypeAllowed(dto.productType, capabilities, current?.productType);
   ensureUnitConfigUnchanged(dto, capabilities, current);
+  if (dto.productType === ProductType.kit) {
+    await ensureTenantCanUseKits(repositories, tenantId);
+  }
 
   // El borrador se normaliza ANTES de validar y de persistir: lo que la configuracion deshabilita
   // no llega ni al producto ni a sus datos relacionados, venga de la pantalla o de otro consumidor.
   // Con `current` (producto existente) se conserva lo ya persistido en vez de recortarlo: la
   // capacidad apagada bloquea crear configuracion nueva, nunca borra la que ya habia.
   const capabilityContext = current
-    ? { saleUnitId: current.saleUnitId ?? current.baseUnitId, tracking: current.tracking }
+    ? {
+        saleUnitId: current.saleUnitId ?? current.baseUnitId,
+        inventoryUnitId: current.inventoryUnitId ?? current.baseUnitId,
+        tracking: current.tracking,
+      }
     : undefined;
   const normalizedDto = applyCapabilityRulesToEditor(dto, capabilities, capabilityContext);
   const currentProductId = current?.id;
@@ -65,11 +74,20 @@ export async function validateEditorProduct(
   }
 
   if (
-    normalizedDto.baseUnitId !== normalizedDto.saleUnitId &&
-    (!isPositiveNumber(normalizedDto.inventoryQuantity) ||
-      !isPositiveNumber(normalizedDto.saleQuantity))
+    (normalizedDto.inventoryUnitId !== normalizedDto.baseUnitId &&
+      !isPositiveNumber(normalizedDto.inventoryToBaseFactor)) ||
+    (normalizedDto.saleUnitId !== normalizedDto.baseUnitId &&
+      !isPositiveNumber(normalizedDto.saleToBaseFactor))
   ) {
-    throw new CatalogServiceError("La equivalencia de venta debe tener cantidades mayores a 0.");
+    throw new CatalogServiceError("Cada presentacion debe equivaler a un multiplo positivo de la unidad base.");
+  }
+  if (
+    normalizedDto.inventoryUnitId === normalizedDto.saleUnitId &&
+    normalizedDto.inventoryUnitId !== normalizedDto.baseUnitId &&
+    toFiniteNumber(normalizedDto.inventoryToBaseFactor) !==
+      toFiniteNumber(normalizedDto.saleToBaseFactor)
+  ) {
+    throw new CatalogServiceError("Una misma presentacion no puede tener dos factores distintos.");
   }
   const invalidMedia = normalizedDto.media.find((media) => {
     if (media.pendingUpload || media.source?.kind === "mockAsset") return false;
@@ -101,13 +119,15 @@ export async function validateEditorProduct(
     }
   }
 
-  const [category, baseUnit, saleUnit] = await Promise.all([
+  const [category, baseUnit, inventoryUnit, saleUnit] = await Promise.all([
     repositories.categories.getByIdScoped(tenantId, normalizedDto.categoryId),
     repositories.units.getByIdScoped(tenantId, normalizedDto.baseUnitId),
+    repositories.units.getByIdScoped(tenantId, normalizedDto.inventoryUnitId),
     repositories.units.getByIdScoped(tenantId, normalizedDto.saleUnitId),
   ]);
   ensureActiveCategory(category);
   ensureActiveUnit(baseUnit);
+  ensureActiveUnit(inventoryUnit);
   ensureActiveUnit(saleUnit);
 
   return {
@@ -132,6 +152,7 @@ export function toProductDto(dto: ProductEditorDto) {
     productType: dto.productType,
     categoryId: dto.categoryId,
     baseUnitId: dto.baseUnitId,
+    inventoryUnitId: dto.inventoryUnitId,
     saleUnitId: dto.saleUnitId,
     salePrice: toFiniteNumber(dto.salePrice),
     status: dto.status,
@@ -212,21 +233,28 @@ async function syncUnitConversion(
   // Producto existente + capacidad apagada: no se toca la tabla de conversiones en absoluto. La UI
   // no puede producir un valor nuevo legitimo (el selector de unidad de venta queda deshabilitado),
   // asi que la unica escritura segura es NO escribir, dejando la conversion historica intacta pase
-  // lo que pase con `dto.inventoryQuantity`/`dto.saleQuantity` (evita confiar en esos numeros).
+  // lo que pase con los factores del borrador (evita confiar en esos numeros).
   if (!context.capabilities.supportsUnitsAndPackaging && !context.isNewProduct) return;
 
   await repositories.units.replaceConversionsForProductScoped(
     product.tenantId,
     product.id,
-    dto.baseUnitId === dto.saleUnitId
-      ? []
-      : [
-          {
-            fromUnitId: dto.baseUnitId,
-            toUnitId: dto.saleUnitId,
-            factor: toFiniteNumber(dto.saleQuantity) / toFiniteNumber(dto.inventoryQuantity),
-          },
-        ],
+    [
+      ...(dto.inventoryUnitId === dto.baseUnitId
+        ? []
+        : [{
+            fromUnitId: dto.inventoryUnitId,
+            toUnitId: dto.baseUnitId,
+            factor: toFiniteNumber(dto.inventoryToBaseFactor),
+          }]),
+      ...(dto.saleUnitId === dto.baseUnitId || dto.saleUnitId === dto.inventoryUnitId
+        ? []
+        : [{
+            fromUnitId: dto.saleUnitId,
+            toUnitId: dto.baseUnitId,
+            factor: toFiniteNumber(dto.saleToBaseFactor),
+          }]),
+    ],
   );
 }
 
