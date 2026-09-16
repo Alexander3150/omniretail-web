@@ -6,6 +6,7 @@ import {
   InventoryTransferRequestStatus,
   LocationStatus,
   PaymentMethod,
+  PlanStatus,
   PromotionType,
   RoleStatus,
   SalesChannel,
@@ -24,6 +25,7 @@ import type {
   PurchaseOrderItem,
 } from "@/core/entities";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
+import { BASE_MONTHLY_QUETZALES } from "@/core/subscription/catalog";
 import { createMockDatabase } from "@/infrastructure/mock/database/createMockDatabase";
 import { synchronizeSupplierLeadTimeDays } from "@/infrastructure/mock/database/supplierLeadTime";
 import type { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
@@ -103,7 +105,19 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   // quedaría sin PlanDefinition/TenantSubscription y el resolver fallaría fail-closed para una
   // cuenta que sí las tiene disponibles en el seed. Nunca se borra storage para lograr esto.
   normalized.planDefinitions = database.planDefinitions ?? base.planDefinitions;
-  normalized.tenantSubscriptions = database.tenantSubscriptions ?? base.tenantSubscriptions;
+  normalized.planDefinitions = normalized.planDefinitions.map((plan) =>
+    plan.id === "plan-basic"
+      ? { ...plan, monthlyQuetzales: BASE_MONTHLY_QUETZALES, limits: {} }
+      : plan.id === "plan-enterprise"
+        ? { ...plan, status: PlanStatus.archived }
+        : plan,
+  );
+  normalized.tenantSubscriptions = (database.tenantSubscriptions ?? base.tenantSubscriptions).map(
+    (subscription) => subscription.planId === "plan-enterprise"
+      ? { ...subscription, planId: "plan-basic", addonCodes: ["ecommerce_delivery", "advanced_reports"] }
+      : { ...subscription, addonCodes: subscription.addonCodes ?? [] },
+  );
+  normalized.subscriptionInvoices = database.subscriptionInvoices ?? [];
   normalized.productPriceHistory = database.productPriceHistory ?? [];
   normalized.inventoryReservations = database.inventoryReservations ?? [];
   normalized.inventoryReservationConsumeOperations =

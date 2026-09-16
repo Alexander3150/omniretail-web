@@ -310,6 +310,8 @@ export enum SaasCapabilityKey {
   receiving = "receiving",
   pos = "pos",
   ecommerce = "ecommerce",
+  delivery = "delivery",
+  advancedReports = "reports.advanced",
   traceabilityLots = "traceability.lots",
   traceabilityExpiration = "traceability.expiration",
   traceabilitySerials = "traceability.serials",

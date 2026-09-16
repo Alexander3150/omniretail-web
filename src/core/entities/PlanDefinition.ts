@@ -12,6 +12,7 @@ export interface PlanDefinition {
   code: PlanCode;
   name: string;
   description?: string;
+  monthlyQuetzales?: number;
   status: PlanStatus;
   capabilities: SaasCapabilityKey[];
   /** Ausente = sin límite definido para ese key en este plan (nunca "ilimitado" implícito). */

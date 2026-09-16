@@ -69,7 +69,7 @@ export function ReportsPage() {
             No tenés acceso a los reportes
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            Esta vista requiere el permiso{" "}
+            Esta vista requiere Reportes avanzados en la suscripción y el permiso{" "}
             <span className="font-medium text-[var(--color-text)]">{REPORTS_READ_PERMISSION}</span>.
             Pedí acceso a un administrador.
           </p>

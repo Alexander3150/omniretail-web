@@ -6,6 +6,7 @@ import {
   REPORTS_READ_PERMISSION,
 } from "@/modules/administration/permissions";
 import type { NavigationItem } from "@/shared/types/navigation.types";
+import { SaasCapabilityKey } from "@/core/enums";
 
 export const administrationNavigation = [
   {
@@ -73,6 +74,7 @@ export const administrationNavigation = [
       },
       {
         id: "administration-reports",
+        capability: SaasCapabilityKey.advancedReports,
         label: "Reportes",
         href: "/administracion/reportes",
         permission: REPORTS_READ_PERMISSION,

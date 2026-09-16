@@ -803,6 +803,8 @@ function buildStorefrontState(options: {
     tenantId = tenant.id;
     const subscription = db.tenantSubscriptions.find((item) => item.tenantId === tenant.id);
     assert.ok(subscription, "fixture: tenant-demo debe tener una Subscription real");
+    // Esta matriz prueba el eje Plan/Config sin complementos comerciales activos.
+    subscription.addonCodes = [];
     subscription.status =
       options.subscriptionStatus ??
       (options.subscriptionActive === false
@@ -1458,7 +1460,7 @@ async function verifyPr102TenantResolvesOwnPlan() {
 }
 
 // ==================================================
-// 29. tenant-demo remains operational
+// 29. tenant-demo remains operational under Basic + both commercial add-ons
 // ==================================================
 async function verifyTenantDemoRemainsOperational() {
   const storage = new MemoryStorageAdapter();
@@ -1489,8 +1491,16 @@ async function verifyTenantDemoRemainsOperational() {
   assert.equal(entitlements.isEntitlementActive, true, "29: tenant-demo debe seguir con Subscription+Plan activos");
   assert.deepEqual(
     new Set(entitlements.effectiveCapabilities),
-    new Set(FULL_CAPABILITIES),
-    "29: tenant-demo (Enterprise) sigue resolviendo TODAS las capabilities",
+    new Set([
+      SaasCapabilityKey.inventory,
+      SaasCapabilityKey.purchasing,
+      SaasCapabilityKey.receiving,
+      SaasCapabilityKey.pos,
+      SaasCapabilityKey.ecommerce,
+      SaasCapabilityKey.delivery,
+      SaasCapabilityKey.advancedReports,
+    ]),
+    "29: tenant-demo resuelve Basic y los dos complementos contratados",
   );
 
   // Mutación real representativa -- abrir turno de caja con el admin demo, en su sucursal real --

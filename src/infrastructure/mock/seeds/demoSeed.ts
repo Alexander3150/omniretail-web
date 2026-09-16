@@ -44,6 +44,7 @@ import {
   UserStatus,
   UserType,
 } from "@/core/enums";
+import { BASE_MONTHLY_QUETZALES } from "@/core/subscription/catalog";
 import { permissionsConfig } from "@/config/permissions";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { buildPasswordHashMock } from "@/infrastructure/mock/shared/passwordHashMock";
@@ -145,20 +146,17 @@ const legacyDemoSeedDatabase: MockDatabase = {
     },
   ],
   /**
-   * SaaS plans foundation. `plan-enterprise` incluye TODAS las capabilities del catálogo a
-   * propósito -- FerrePharma demo ya ejercita prácticamente todo el sistema (e-commerce, lotes,
-   * vencimiento, series, kits), así que es "el plan de mayor capacidad disponible" (§11 del
-   * ticket), nunca un tenant no reconocido elevado a Enterprise por default (ver
-   * ResolveTenantEntitlementsService: fail-closed sin Subscription). `limits` queda vacío en
-   * ambos planes -- no hay números de negocio aprobados todavía (§12/§22: reportado en la salida
-   * final, no inventado acá).
+   * Enterprise queda archivado para migrar suscripciones legadas a Basic con ambos complementos.
+   * Basic no fija cupos de empleados ni sucursales. Un tenant sin suscripción sigue fallando
+   * cerrado, sin plan asignado por defecto.
    */
   planDefinitions: [
     {
       id: "plan-basic",
       code: PlanCode.basic,
       name: "Basic",
-      description: "Operación core: inventario, compras, recepción y punto de venta.",
+      description: "Catálogo, inventario, compras y punto de venta.",
+      monthlyQuetzales: BASE_MONTHLY_QUETZALES,
       status: PlanStatus.active,
       capabilities: [
         SaasCapabilityKey.inventory,
@@ -175,7 +173,7 @@ const legacyDemoSeedDatabase: MockDatabase = {
       code: PlanCode.enterprise,
       name: "Enterprise",
       description: "Todo Basic más e-commerce, trazabilidad avanzada (lotes, vencimiento, series) y kits.",
-      status: PlanStatus.active,
+      status: PlanStatus.archived,
       capabilities: [
         SaasCapabilityKey.inventory,
         SaasCapabilityKey.purchasing,
@@ -196,13 +194,15 @@ const legacyDemoSeedDatabase: MockDatabase = {
     {
       id: "tenant-subscription-demo",
       tenantId: "tenant-demo",
-      planId: "plan-enterprise",
+      planId: "plan-basic",
+      addonCodes: ["ecommerce_delivery", "advanced_reports"],
       status: TenantSubscriptionStatus.active,
       startedAt: now,
       createdAt: now,
       updatedAt: now,
     },
   ],
+  subscriptionInvoices: [],
   users: [
     {
       id: "user-admin",

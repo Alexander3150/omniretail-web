@@ -10,11 +10,12 @@ export const DASHBOARD_READ_PERMISSION = "admin.dashboard.read";
 export const REPORTS_READ_PERMISSION = "admin.reports.read";
 export const REPORTS_EXPORT_PERMISSION = "admin.reports.export";
 /**
- * Solo lectura a propósito: esta foundation no expone ninguna mutación de Plan/Subscription
- * desde la UI todavía (upgrade/downgrade/addons quedan fuera de este PR), así que no existe un
- * `admin.plans.manage` que proteger.
+ * `PLANS_READ_PERMISSION` habilita consultar el plan; `PLANS_MANAGE_PERMISSION` habilita
+ * cambiarlo. Add-ons, cancelación y facturación siguen sin permiso propio porque todavía no
+ * existen.
  */
 export const PLANS_READ_PERMISSION = "admin.plans.read";
+export const PLANS_MANAGE_PERMISSION = "admin.plans.manage";
 
 export const administrationPermissions = [
   {
@@ -106,6 +107,12 @@ export const administrationPermissions = [
     module: "administration",
     name: "Leer plan y suscripción",
     description: "Permite consultar el plan contratado, capabilities y uso del negocio.",
+  },
+  {
+    key: PLANS_MANAGE_PERMISSION,
+    module: "administration",
+    name: "Gestionar plan y suscripción",
+    description: "Permite cambiar el plan contratado del negocio.",
   },
   {
     key: "admin.ecommerce_config.manage",

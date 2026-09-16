@@ -1,4 +1,6 @@
-import { RoleStatus, UserStatus } from "@/core/enums";
+import { RoleStatus, SaasCapabilityKey, UserStatus } from "@/core/enums";
+import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
+import { ensureTenantCapability } from "@/shared/application/services/entitlementGuards";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { ReportsDataDto } from "@/modules/administration/application/dto/ReportDto";
 import {
@@ -19,6 +21,7 @@ export class GetReportsService {
   async execute(): Promise<ReportsDataDto> {
     const { tenantId, permissions } = await this.resolveAuthenticatedContext();
     ensureCanReadReports(permissions);
+    ensureTenantCapability(await new ResolveTenantEntitlementsService(this.repositories).execute(tenantId), SaasCapabilityKey.advancedReports);
 
     const [sales, purchases, movements, payments, branches, suppliers, products] =
       await Promise.all([
@@ -70,6 +73,7 @@ export class GetReportsService {
   async authorizeExport(): Promise<string> {
     const { tenantId, permissions } = await this.resolveAuthenticatedContext();
     ensureCanExportReports(permissions);
+    ensureTenantCapability(await new ResolveTenantEntitlementsService(this.repositories).execute(tenantId), SaasCapabilityKey.advancedReports);
     return tenantId;
   }
 

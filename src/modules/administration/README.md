@@ -1,5 +1,16 @@
 # administration
 
+## Plan y suscripción modular
+
+La ruta `/administracion/plan` muestra Plan Básico obligatorio (Q199/mes), E-commerce +
+Entregas (Q129/mes) y Reportes avanzados (Q99/mes). Los complementos se guardan en la
+suscripción del tenant con `admin.plans.manage`; la lectura exige `admin.plans.read`. El acceso
+operativo a tienda, despachos y reportes exige capability comercial **además** del permiso de
+rol. El historial mensual es simulado, no fiscal ni evidencia de pago; sus importes son snapshots
+por tenant y ciclo. Basic legacy migra sin extras y Enterprise con ambos extras. El Plan Básico
+no limita empleados ni sucursales: la pantalla muestra su uso sin cupos. POS está incluido sin
+cupo comercial de cajas; permanece la regla operativa de un turno abierto por usuario y sucursal.
+
 Responsable: Jose
 
 ## Territorio del modulo

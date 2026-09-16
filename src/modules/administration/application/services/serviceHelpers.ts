@@ -6,6 +6,7 @@ import {
   BUSINESS_CONFIG_MANAGE_PERMISSION,
   CASH_READ_PERMISSION,
   DASHBOARD_READ_PERMISSION,
+  PLANS_MANAGE_PERMISSION,
   PLANS_READ_PERMISSION,
   REPORTS_EXPORT_PERMISSION,
   REPORTS_READ_PERMISSION,
@@ -438,8 +439,7 @@ export function ensureEmployeeBranchIds(
 
 /**
  * La lectura de plan/suscripción pertenece a la capa de aplicación, no a la pantalla: ocultar el
- * menú no es enforcement. Solo lectura -- esta foundation no expone mutaciones de Plan/
- * Subscription (§16 del ticket, "NO plan change todavía").
+ * menú no es enforcement. La mutación de Plan se protege aparte con `ensureCanManagePlans`.
  */
 export function ensureCanReadPlans(permissions: readonly string[]) {
   if (permissions.includes(PLANS_READ_PERMISSION)) return;
@@ -451,6 +451,23 @@ export function ensurePlanTenant(tenantId: string) {
   if (tenantId.trim()) return;
 
   throw new AdministrationServiceError("No se pudo resolver el negocio activo.");
+}
+
+/**
+ * Cambiar el plan contratado es una mutación tenant-wide de alto impacto (dispara/retira
+ * capabilities comerciales completas) -- requiere su propio permiso, separado de
+ * `PLANS_READ_PERMISSION`, mismo criterio que el resto del módulo (leer != gestionar).
+ */
+export function ensureCanManagePlans(permissions: readonly string[]) {
+  if (permissions.includes(PLANS_MANAGE_PERMISSION)) return;
+
+  throw new AdministrationServiceError("No tenés permiso para cambiar el plan del negocio.");
+}
+
+export function ensurePlanActor(actorUserId: string) {
+  if (actorUserId.trim()) return;
+
+  throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
 }
 
 export function cleanError(error: unknown): string {

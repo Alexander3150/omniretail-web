@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useMemo, useState, type ComponentType, type SVGProps } from "react";
 import { CloseIcon } from "@/shared/navigation/PrivateHeader/icons";
 import type { NavigationItem } from "@/shared/types/navigation.types";
+import { useEntitlementContext } from "@/shared/providers/EntitlementProvider";
 
 type SidebarProps = {
   allowedPermissions?: ReadonlySet<string>;
@@ -195,9 +196,10 @@ export function Sidebar({
   onNavigate,
 }: SidebarProps) {
   const pathname = usePathname();
+  const { hasCapability } = useEntitlementContext();
   const visibleItems = useMemo(
-    () => filterNavigationItemsByPermissions(items, allowedPermissions),
-    [allowedPermissions, items],
+    () => filterByCapability(filterNavigationItemsByPermissions(items, allowedPermissions), hasCapability),
+    [allowedPermissions, items, hasCapability],
   );
 
   return (
@@ -234,6 +236,15 @@ export function Sidebar({
       </nav>
     </aside>
   );
+}
+
+function filterByCapability(items: NavigationItem[], hasCapability: (key: import("@/core/enums").SaasCapabilityKey) => boolean): NavigationItem[] {
+  return items.flatMap((item) => {
+    if (item.capability && !hasCapability(item.capability)) return [];
+    const children = item.children ? filterByCapability(item.children, hasCapability) : undefined;
+    if (item.children && children?.length === 0 && !item.href) return [];
+    return [{ ...item, children }];
+  });
 }
 
 function Icon({ children, className, ...props }: SVGProps<SVGSVGElement>) {

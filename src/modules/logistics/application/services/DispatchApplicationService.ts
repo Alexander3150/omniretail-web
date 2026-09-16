@@ -1,5 +1,5 @@
 import type { Notification, Order, Package, PickingOrder } from "@/core/entities";
-import { DeliveryMethod, OrderStatus, PickingStatus } from "@/core/enums";
+import { DeliveryMethod, OrderStatus, PickingStatus, SaasCapabilityKey } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   ConfirmDispatchCommand,
@@ -14,13 +14,15 @@ import type {
   PreparedOrderQueueItemDto,
 } from "@/modules/logistics/application/dto/DispatchReadModelDto";
 import { resolveTrustedDispatchContext } from "@/modules/logistics/application/services/DispatchAuthorizationContext";
+import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
+import { ensureTenantCapability } from "@/shared/application/services/entitlementGuards";
 
 const DISPATCH_READ = "logistics.dispatch.read";
 const DISPATCH_CONFIRM = "logistics.dispatch.confirm";
 
 type DispatchRepositories = Pick<
   RepositoryRegistry,
-  "auth" | "users" | "roles" | "branches" | "orders" | "picking" | "dispatches" | "notifications"
+  "auth" | "users" | "roles" | "branches" | "orders" | "picking" | "dispatches" | "notifications" | "plans" | "tenantSubscriptions"
 >;
 
 export class DispatchApplicationService {
@@ -155,8 +157,10 @@ export class DispatchApplicationService {
     };
   }
 
-  private context(selectedBranchId: string, permission: string) {
-    return resolveTrustedDispatchContext(this.repositories, selectedBranchId, permission);
+  private async context(selectedBranchId: string, permission: string) {
+    const context = await resolveTrustedDispatchContext(this.repositories, selectedBranchId, permission);
+    ensureTenantCapability(await new ResolveTenantEntitlementsService(this.repositories).execute(context.tenantId), SaasCapabilityKey.delivery);
+    return context;
   }
 
   private async requireScopedOrder(

@@ -52,7 +52,9 @@ Logistics (sin `SaasCapabilityKey` propia).
 
 `SaasLimitKey` (`maxEmployees`, `maxBranches`) gatea unicamente `CreateEmployeeService`/
 `CreateBranchService`. Ausente en `PlanDefinition.limits` significa sin limite (nunca "0"
-implicito). Un downgrade de limite NUNCA archiva/borra empleados o sucursales existentes -- solo
+implicito). El Plan Básico actual deja ambas keys ausentes; los conteos son informativos y no
+bloquean nuevas altas. El mecanismo genérico se conserva para futuros planes que sí definan
+cupos. Un downgrade de limite NUNCA archiva/borra empleados o sucursales existentes -- solo
 bloquea la PROXIMA alta mientras el conteo actual (`type === employee && status !== archived`;
 `status !== archived` para Branch) sea mayor o igual al limite.
 
@@ -78,9 +80,14 @@ independientes; cualquiera ausente deja el canal comercial no disponible.
 `RequireSession`) es la UNICA fuente de entitlements para la UI -- ningun componente resuelve
 `plans`/`tenantSubscriptions` directo. Si la resolucion falla, `entitlements` queda `null` y
 `hasCapability`/`getLimit` devuelven `false`/`undefined`; un fallo aca NUNCA dispara logout ni
-redirige (Authentication y Entitlement son capas distintas). Esta foundation es enforcement READ
-del estado ya existente -- no expone mutaciones de Subscription/Plan ni implementa upgrade/
-downgrade/cancel/renew/billing.
+redirige (Authentication y Entitlement son capas distintas). La suscripción comercial usa Plan
+Básico obligatorio (Q199/mes, sin cupos de empleados ni sucursales), E-commerce + Entregas (Q129/mes) y
+Reportes avanzados (Q99/mes). Los complementos persisten en `TenantSubscription.addonCodes`; el
+resolver compone sus capabilities con las del plan base. El acceso exige entitlement Y permiso
+de rol. La facturación es simulada: un snapshot por ciclo mensual y tenant, sin cobros, impuestos,
+prorrateos ni factura fiscal. `UpdateTenantSubscriptionService` cambia los complementos y propaga por
+`tenant-subscription.changed` -- solo dentro de la misma pestana: DataEventBus es in-memory, no
+cross-tab.
 
 ## Producto
 

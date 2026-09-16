@@ -1,4 +1,5 @@
 import type { NavigationItem } from "@/shared/types/navigation.types";
+import { SaasCapabilityKey } from "@/core/enums";
 
 export const logisticsNavigation = [
   {
@@ -8,6 +9,7 @@ export const logisticsNavigation = [
     children: [
       {
         id: "logistics-dispatches",
+        capability: SaasCapabilityKey.delivery,
         label: "Packing y Despacho",
         href: "/logistica/despachos",
         permission: "logistics.dispatch.read",

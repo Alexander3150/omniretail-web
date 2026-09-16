@@ -11,9 +11,12 @@ import { GetLogisticsItemTraceService } from "@/modules/logistics/application/se
 import type { DispatchValidationResult } from "@/modules/logistics/validation/dispatch.validation";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
+import { useEntitlementContext } from "@/shared/providers/EntitlementProvider";
+import { SaasCapabilityKey } from "@/core/enums";
 
 export function useLogisticsPackingDispatch() {
   const repositories = useRepositories();
+  const { hasCapability } = useEntitlementContext();
   const { currentBranch, loading: branchLoading } = useActiveBranch();
   const { user, canAccessBranch, hasPermission, loading: sessionLoading, error: sessionError } = useCurrentSession();
   const services = useMemo(() => ({ dispatch: new DispatchApplicationService(repositories), trace: new GetLogisticsItemTraceService(repositories) }), [repositories]);
@@ -36,9 +39,9 @@ export function useLogisticsPackingDispatch() {
   const activeBranchIdRef = useRef<string | null>(currentBranch?.id ?? null);
 
   const hasBranchAccess = Boolean(user && currentBranch && user.tenantId === currentBranch.tenantId && canAccessBranch(currentBranch.id));
-  const canRead = hasPermission("logistics.dispatch.read");
+  const canRead = hasPermission("logistics.dispatch.read") && hasCapability(SaasCapabilityKey.delivery);
   const canReadTrace = hasPermission("logistics.picking.read");
-  const canConfirm = hasPermission("logistics.dispatch.confirm");
+  const canConfirm = hasPermission("logistics.dispatch.confirm") && hasCapability(SaasCapabilityKey.delivery);
 
   const reload = useCallback(async () => {
     const sequence = ++loadSequenceRef.current;

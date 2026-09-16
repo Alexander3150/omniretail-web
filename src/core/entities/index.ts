@@ -74,3 +74,4 @@ export type * from "./StorePickupDelivery";
 export type * from "./Package";
 export type * from "./Notification";
 export type * from "./AuditLog";
+export type * from "./SubscriptionInvoice";
