@@ -81,6 +81,7 @@ export const administrationNavigation = [
       },
       {
         id: "administration-ecommerce-config",
+        capability: SaasCapabilityKey.ecommerce,
         label: "Diseño E-commerce",
         href: "/administracion/diseno-ecommerce",
         permission: "admin.ecommerce_config.manage",

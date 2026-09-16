@@ -89,6 +89,14 @@ export function isNavigationItemPermitted(
   return !item.permission || allowedPermissions.has(item.permission);
 }
 
+/** Shared by Sidebar and the direct-route guard: a missing entitlement fails closed. */
+export function isNavigationItemEntitled(
+  item: Pick<NavigationItem, "capability">,
+  hasCapability: (key: import("@/core/enums").SaasCapabilityKey) => boolean,
+): boolean {
+  return !item.capability || hasCapability(item.capability);
+}
+
 export function filterNavigationItemsByPermissions(
   items: NavigationItem[],
   allowedPermissions?: ReadonlySet<string>,
@@ -240,7 +248,7 @@ export function Sidebar({
 
 function filterByCapability(items: NavigationItem[], hasCapability: (key: import("@/core/enums").SaasCapabilityKey) => boolean): NavigationItem[] {
   return items.flatMap((item) => {
-    if (item.capability && !hasCapability(item.capability)) return [];
+    if (!isNavigationItemEntitled(item, hasCapability)) return [];
     const children = item.children ? filterByCapability(item.children, hasCapability) : undefined;
     if (item.children && children?.length === 0 && !item.href) return [];
     return [{ ...item, children }];

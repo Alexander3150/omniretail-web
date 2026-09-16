@@ -189,9 +189,13 @@ Implementado en esta rama:
 - Lectura y actualizacion mediante `BusinessConfigRepository`, sin enviar `tenantId`, `createdAt`
   ni `updatedAt` en el payload de guardado.
 - Enforcement de `admin.ecommerce_config.manage` dentro de los services de lectura y escritura.
+- Diseño E-commerce requiere además `SaasCapabilityKey.ecommerce` en navegación, ruta privada y
+  services de lectura/escritura. Al desactivar el complemento se oculta y se deniega el acceso,
+  pero `EcommerceConfig` permanece intacta para una eventual reactivación. Reactivar el
+  complemento no fuerza `EcommerceConfig.enabled`: la tienda pública requiere ambas condiciones.
 - Auditoria mediante `ecommerce_config.updated` y refresco reactivo ante
   `business-config.changed`.
-- Ruta privada `/administracion/diseno-ecommerce` y entrada de navegacion con el permiso nuevo.
+- Ruta privada `/administracion/diseno-ecommerce` y entrada de navegacion con permiso y capability.
 
 ### Contrato de integracion
 

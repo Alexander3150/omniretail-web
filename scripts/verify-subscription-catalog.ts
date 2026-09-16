@@ -8,7 +8,7 @@ import { createMockDatabase } from "@/infrastructure/mock/database/createMockDat
 import {
   MockAuditLogRepository, MockBranchRepository, MockBusinessConfigRepository,
   MockPlanRepository, MockTenantSubscriptionRepository, MockUserRepository,
-  MockRoleRepository,
+  MockRoleRepository, MockTenantRepository,
 } from "@/infrastructure/mock/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
@@ -21,6 +21,12 @@ import { DispatchApplicationService } from "@/modules/logistics/application/serv
 import { CreateEmployeeService } from "@/modules/administration/application/services/CreateEmployeeService";
 import { CreateBranchService } from "@/modules/administration/application/services/CreateBranchService";
 import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
+import { GetEcommerceConfigService } from "@/modules/administration/application/services/GetEcommerceConfigService";
+import { SaveEcommerceConfigService } from "@/modules/administration/application/services/SaveEcommerceConfigService";
+import { GetPublicStorefrontConfigService } from "@/modules/storefront/application/services/GetPublicStorefrontConfigService";
+import { administrationNavigation } from "@/modules/administration/navigation";
+import { isNavigationItemEntitled, isNavigationItemPermitted } from "@/shared/navigation/Sidebar";
+import { SaasEntitlementError } from "@/shared/application/services/entitlementGuards";
 
 class MemoryStorage extends LocalStorageAdapter {
   readonly values = new Map<string, unknown>();
@@ -66,6 +72,7 @@ async function main() {
     businessConfig: new MockBusinessConfigRepository(store, events),
     auditLogs: new MockAuditLogRepository(store, events),
     roles: new MockRoleRepository(store, events),
+    tenants: new MockTenantRepository(store, events),
     auth: {
       getCurrentSessionId: async () => "session-demo",
       getSession: async () => ({ id: "session-demo", userId: "user-admin", expiresAt: "2099-01-01T00:00:00.000Z" }),
@@ -77,6 +84,15 @@ async function main() {
   const manage = new UpdateTenantSubscriptionService(repositories);
   const permissions = ["admin.plans.read", "admin.plans.manage"];
   const adminPermissions = permissionsConfig.map((permission) => permission.key);
+  const ecommerceNav = administrationNavigation[0].children.find((item) => item.id === "administration-ecommerce-config")!;
+  const reportsNav = administrationNavigation[0].children.find((item) => item.id === "administration-reports")!;
+  const hasCapability = (key: SaasCapabilityKey, capabilities: readonly SaasCapabilityKey[]) => capabilities.includes(key);
+  const ecommerceConfig = new GetEcommerceConfigService(repositories);
+  const saveEcommerceConfig = new SaveEcommerceConfigService(repositories);
+  const initialConfig = await ecommerceConfig.execute();
+  const allCapabilities = (await new ResolveTenantEntitlementsService(repositories).execute("tenant-demo")).effectiveCapabilities;
+  assert(isNavigationItemPermitted(ecommerceNav, new Set(adminPermissions)) && isNavigationItemEntitled(ecommerceNav, (key) => hasCapability(key, allCapabilities)));
+  assert(!isNavigationItemPermitted(ecommerceNav, new Set([])));
   const employeesBefore = (await repositories.users.listByTenant("tenant-demo")).filter((user) => user.type === "employee").length;
   const branchesBefore = (await repositories.branches.listByTenant("tenant-demo")).length;
   assert(employeesBefore >= 3 && branchesBefore >= 1);
@@ -118,6 +134,8 @@ async function main() {
   const entitlements = await new ResolveTenantEntitlementsService(repositories).execute("tenant-demo");
   assert(entitlements.effectiveCapabilities.includes(SaasCapabilityKey.delivery));
   assert(!entitlements.effectiveCapabilities.includes(SaasCapabilityKey.advancedReports));
+  assert(isNavigationItemEntitled(ecommerceNav, (key) => hasCapability(key, entitlements.effectiveCapabilities)));
+  assert(!isNavigationItemEntitled(reportsNav, (key) => hasCapability(key, entitlements.effectiveCapabilities)));
   const reports = new GetReportsService(repositories);
   await assert.rejects(() => reports.authorizeExport());
   await assert.rejects(() => reports.execute());
@@ -126,6 +144,19 @@ async function main() {
   await manage.execute("tenant-demo", ["advanced_reports"], permissions, "user-admin");
   // Dejar de contratar entregas no bloquea una obligación logística ya existente.
   assert.deepEqual(await dispatch.getPreparedQueue("branch-centro"), []);
+  const withoutEcommerce = (await new ResolveTenantEntitlementsService(repositories).execute("tenant-demo")).effectiveCapabilities;
+  assert(!isNavigationItemEntitled(ecommerceNav, (key) => hasCapability(key, withoutEcommerce)));
+  assert(isNavigationItemEntitled(reportsNav, (key) => hasCapability(key, withoutEcommerce)));
+  await assert.rejects(() => ecommerceConfig.execute(), (error: unknown) => error instanceof SaasEntitlementError && error.code === "CAPABILITY_REQUIRED");
+  await assert.rejects(() => saveEcommerceConfig.execute(initialConfig), (error: unknown) => error instanceof SaasEntitlementError && error.code === "CAPABILITY_REQUIRED");
+  assert.deepEqual(await repositories.businessConfig.getEcommerceConfig("tenant-demo"), { ...initialConfig, tenantId: "tenant-demo" });
+  await manage.execute("tenant-demo", ["ecommerce_delivery", "advanced_reports"], permissions, "user-admin");
+  const reactivated = (await new ResolveTenantEntitlementsService(repositories).execute("tenant-demo")).effectiveCapabilities;
+  assert(isNavigationItemEntitled(ecommerceNav, (key) => hasCapability(key, reactivated)));
+  assert.deepEqual(await ecommerceConfig.execute(), initialConfig);
+  store.mutate((db) => { db.ecommerceConfigs.find((item) => item.tenantId === "tenant-demo")!.enabled = false; });
+  assert.equal((await ecommerceConfig.execute()).enabled, false);
+  assert.equal((await new GetPublicStorefrontConfigService(repositories).execute()).storeEnabled, false);
   assert.equal(await reports.authorizeExport(), "tenant-demo");
   await assert.rejects(() => manage.execute("tenant-demo", ["advanced_reports"], ["admin.plans.read"], "user-admin"));
   await assert.rejects(() => manage.execute("tenant-demo", ["invalid"], permissions, "user-admin"));
