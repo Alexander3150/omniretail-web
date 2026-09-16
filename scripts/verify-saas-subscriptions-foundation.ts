@@ -232,13 +232,13 @@ function createSaasHarness() {
 async function verifyPlanCatalog() {
   const { repositories } = createSaasHarness();
 
-  // 1. PlanDefinition basic/enterprise se resuelven correctamente.
+  // 1. Basic es la oferta activa; Enterprise se conserva archivado para migración legacy.
   const basic = await repositories.plans.getByCode(PlanCode.basic);
   const enterprise = await repositories.plans.getByCode(PlanCode.enterprise);
   assert.ok(basic, "1: plan-basic debe existir en el catálogo");
   assert.ok(enterprise, "1: plan-enterprise debe existir en el catálogo");
   assert.equal(basic?.status, PlanStatus.active);
-  assert.equal(enterprise?.status, PlanStatus.active);
+  assert.equal(enterprise?.status, PlanStatus.archived);
   assert.ok(
     enterprise?.capabilities.includes(SaasCapabilityKey.ecommerce),
     "1: enterprise incluye ecommerce",
@@ -250,7 +250,7 @@ async function verifyPlanCatalog() {
 
   const activePlans = await repositories.plans.listActive();
   assert.ok(activePlans.some((plan) => plan.id === basic?.id));
-  assert.ok(activePlans.some((plan) => plan.id === enterprise?.id));
+  assert.ok(!activePlans.some((plan) => plan.id === enterprise?.id));
 }
 
 async function verifyDemoSubscription() {
@@ -265,7 +265,7 @@ async function verifyDemoSubscription() {
   const entitlements = await new ResolveTenantEntitlementsService(repositories).execute(
     TENANT_DEMO,
   );
-  assert.equal(entitlements.planCode, PlanCode.enterprise, "2: demo queda en el plan Enterprise");
+  assert.equal(entitlements.planCode, PlanCode.basic, "2: demo queda en Basic con complementos");
   assert.equal(entitlements.subscriptionStatus, TenantSubscriptionStatus.active);
 }
 
@@ -281,8 +281,16 @@ async function verifyResolverCapabilitiesAndLimits() {
   );
   assert.deepEqual(
     new Set(demoEntitlements.capabilities),
-    new Set(Object.values(SaasCapabilityKey)),
-    "3: demo (Enterprise) tiene TODAS las capabilities del catálogo",
+    new Set([
+      SaasCapabilityKey.inventory,
+      SaasCapabilityKey.purchasing,
+      SaasCapabilityKey.receiving,
+      SaasCapabilityKey.pos,
+      SaasCapabilityKey.ecommerce,
+      SaasCapabilityKey.delivery,
+      SaasCapabilityKey.advancedReports,
+    ]),
+    "3: demo tiene las capabilities de Basic y sus dos complementos",
   );
   assert.deepEqual(
     new Set(tenantBEntitlements.capabilities),
@@ -291,7 +299,7 @@ async function verifyResolverCapabilitiesAndLimits() {
   );
 
   // 4. Resolver retorna limits del plan correcto.
-  assert.deepEqual(demoEntitlements.limits, {}, "4: demo (Enterprise) sin límites definidos");
+  assert.deepEqual(demoEntitlements.limits, {}, "4: demo (Basic) sin límites definidos");
   assert.deepEqual(
     tenantBEntitlements.limits,
     { [SaasLimitKey.maxEmployees]: 5, [SaasLimitKey.maxBranches]: 2 },

@@ -24,9 +24,9 @@ export interface PublicStorefrontContext {
  * `ensurePublicStorefrontTenant`), TAMBIÉN exige Subscription active + Plan active + SaaS
  * capability `ecommerce`, además de `EcommerceConfig.enabled`. Las 4 condiciones son
  * INDEPENDIENTES entre sí (§49): cualquiera ausente bloquea. El modo `allowDisabled: true`
- * (usado solo por `GetPublicStorefrontConfigService`/`PublicTenantProvider` para poder mostrar un
- * mensaje de "tienda deshabilitada" en vez de un error genérico) sigue sin exigir esto -- nunca
- * es el modo que autoriza una operación comercial real.
+ * (usado por `GetPublicStorefrontConfigService`/`PublicTenantProvider` para mostrar un mensaje
+ * de "tienda deshabilitada" y por el tracking histórico para validar el slug público) sigue sin
+ * exigir esto -- nunca es el modo que autoriza una operación comercial nueva.
  */
 export class ResolvePublicStorefrontContextService {
   constructor(private readonly repositories: PublicStorefrontRepositories) {}
@@ -59,7 +59,7 @@ export class ResolvePublicStorefrontContextService {
 
 /**
  * Guard reutilizable para las lecturas públicas de Storefront (discovery, detalle de producto,
- * tracking de pedidos) que hoy reciben `tenantId` como parámetro ya resuelto por el caller en vez
+ * lecturas de catálogo) que hoy reciben `tenantId` como parámetro ya resuelto por el caller en vez
  * de derivarlo ellas mismas (auditoría §15) -- revalida que ESE `tenantId` sea exactamente el
  * tenant público autoritativo (modo estricto: Tenant activo + EcommerceConfig.enabled +
  * Subscription/Plan activos + capability `ecommerce`). Cierra el gap donde una llamada directa al

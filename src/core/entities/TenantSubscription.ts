@@ -2,10 +2,9 @@ import type { TenantSubscriptionStatus } from "@/core/enums";
 import type { ISODateString } from "@/core/types/common.types";
 
 /**
- * Tenant-scoped -- vincula un Tenant a un PlanDefinition. `addonCodes` queda tipado pero SIN
- * motor de add-ons todavía (§6 del ticket foundation): hoy es siempre un array vacío o
- * undefined, reservado para que ResolveTenantEntitlementsService pueda aplicar overrides en una
- * fase futura sin volver a tocar este contrato. `status` es la foundation mínima -- ver
+ * Tenant-scoped -- vincula un Tenant a un PlanDefinition. `addonCodes` selecciona los
+ * complementos contratados; ausencia en datos legados equivale a ninguno. `status` es la
+ * foundation mínima -- ver
  * SaasSubscriptionStatus: `suspended`/`cancelled` solo se INFORMAN acá, el enforcement (bloquear
  * navegación/login) es un PR posterior.
  */

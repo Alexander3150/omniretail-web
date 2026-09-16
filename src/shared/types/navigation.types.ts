@@ -1,6 +1,7 @@
 export interface NavigationItem {
   id: string;
   label: string;
+  capability?: import("@/core/enums").SaasCapabilityKey;
   href?: string;
   permission?: string;
   /**

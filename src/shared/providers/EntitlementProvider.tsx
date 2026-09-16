@@ -52,8 +52,9 @@ export function shouldRevalidateEntitlementsOnIdentityChanged(
  * Entitlement (¿qué puede comprar/usar tu negocio?) son capas completamente distintas, y una
  * Subscription suspendida no es motivo para cerrar la sesión de nadie.
  *
- * No expone ninguna mutación de Subscription/Plan -- esta foundation es enforcement READ del
- * estado ya existente (auditoría §34), nunca upgrade/downgrade/cancel/renew.
+ * Expone enforcement READ; la mutación de Plan vive en ChangeTenantPlanService (administration) y
+ * llega acá SOLO como `tenant-subscription.changed`, que dispara un reload. Cancel/renew/billing
+ * siguen fuera de scope.
  */
 export function EntitlementProvider({ children }: { children: ReactNode }) {
   const repositories = useRepositories();
@@ -115,6 +116,9 @@ export function EntitlementProvider({ children }: { children: ReactNode }) {
 
   useDataEvent("auth.changed", handleIdentityChanged);
   useDataEvent("user.changed", handleIdentityChanged);
+  // Tenant-wide: no hay pregunta de "¿de qué identidad?" que responder -- el Plan es del
+  // Tenant, no del User, así que se recarga siempre (una sola sesión por tab).
+  useDataEvent("tenant-subscription.changed", reload);
 
   const value = useMemo<EntitlementContextValue>(
     () => ({

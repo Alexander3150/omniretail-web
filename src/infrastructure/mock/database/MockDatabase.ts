@@ -74,6 +74,7 @@ import type {
   SupplierProduct,
   Tenant,
   TenantSubscription,
+  SubscriptionInvoice,
   Unit,
   UnitConversion,
   User,
@@ -86,6 +87,7 @@ export interface MockDatabase {
   ecommerceConfigs: EcommerceConfig[];
   planDefinitions: PlanDefinition[];
   tenantSubscriptions: TenantSubscription[];
+  subscriptionInvoices: SubscriptionInvoice[];
   users: User[];
   roles: Role[];
   permissions: Permission[];

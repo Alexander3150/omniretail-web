@@ -6,8 +6,9 @@ import { navigationConfig } from "@/config/navigation";
 import { canUserEnterPrivateRoute } from "@/modules/auth/application/services/postLoginNavigation";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { EMPLOYEE_HOME_ACCESS_PERMISSION, hasEmployeeHomeAccess } from "@/modules/auth/permissions";
-import { isNavigationItemActive, isNavigationItemPermitted } from "@/shared/navigation/Sidebar";
+import { isNavigationItemActive, isNavigationItemEntitled, isNavigationItemPermitted } from "@/shared/navigation/Sidebar";
 import type { NavigationItem } from "@/shared/types/navigation.types";
+import { useEntitlementContext } from "@/shared/providers/EntitlementProvider";
 
 /**
  * Rutas privadas que solo exigen sesion valida, sin permiso operacional.
@@ -98,6 +99,7 @@ function Denied() {
 export function RequirePermission({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { permissions, user } = useCurrentSession();
+  const { hasCapability } = useEntitlementContext();
 
   if (!canUserEnterPrivateRoute(user, pathname)) {
     return <Denied />;
@@ -112,7 +114,8 @@ export function RequirePermission({ children }: { children: ReactNode }) {
     requiredItem?.permission === EMPLOYEE_HOME_ACCESS_PERMISSION
       ? hasEmployeeHomeAccess(user, permissions)
       : requiredItem
-        ? isNavigationItemPermitted(requiredItem, new Set(permissions))
+        ? isNavigationItemPermitted(requiredItem, new Set(permissions)) &&
+          isNavigationItemEntitled(requiredItem, hasCapability)
         : false;
 
   return isAllowed ? <>{children}</> : <Denied />;
