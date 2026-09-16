@@ -2,6 +2,9 @@ import { BranchType } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { PublicStorefrontConfigDto } from "@/modules/storefront/application/dto/PublicStorefrontConfigDto";
 import { ResolvePublicStorefrontContextService } from "@/modules/storefront/application/services/ResolvePublicStorefrontContextService";
+import { SaasCapabilityKey } from "@/core/enums";
+import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
+import { SaasEntitlementError, hasTenantCapability } from "@/shared/application/services/entitlementGuards";
 
 type PublicConfigRepositories = Pick<
   RepositoryRegistry,
@@ -23,10 +26,20 @@ export class GetPublicStorefrontConfigService {
       tenantId,
       BranchType.store,
     );
+    // El read model publico puede mostrar "tienda no disponible" sin perder el tenantId
+    // que necesitan las rutas historicas de tracking. Las operaciones comerciales siguen
+    // revalidando el entitlement estricto en sus propios Application Services.
+    let commerciallyEnabled = false;
+    try {
+      const entitlements = await new ResolveTenantEntitlementsService(this.repositories).execute(tenantId);
+      commerciallyEnabled = hasTenantCapability(entitlements, SaasCapabilityKey.ecommerce);
+    } catch (error) {
+      if (!(error instanceof SaasEntitlementError)) throw error;
+    }
 
     return {
       storeName: ecommerceConfig.storeName,
-      storeEnabled: ecommerceConfig.enabled,
+      storeEnabled: ecommerceConfig.enabled && commerciallyEnabled,
       accountRequired: ecommerceConfig.requireAccountForCheckout,
       guestTrackingEnabled: ecommerceConfig.guestTrackingEnabled,
       contactPhone: ecommerceConfig.contactPhone,

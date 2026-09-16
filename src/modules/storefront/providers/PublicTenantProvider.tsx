@@ -79,6 +79,11 @@ export function PublicTenantProvider({ children }: { children: ReactNode }) {
         void load();
       }
     });
+    const unsubscribeSubscription = eventBus.subscribe("tenant-subscription.changed", (event) => {
+      if (active && shouldRefreshPublicConfig(event.tenantId, resolvedTenantIdRef.current)) {
+        void load();
+      }
+    });
 
     void load();
     return () => {
@@ -86,6 +91,7 @@ export function PublicTenantProvider({ children }: { children: ReactNode }) {
       requestIdRef.current += 1;
       unsubscribeConfig();
       unsubscribeBranches();
+      unsubscribeSubscription();
     };
   }, [configService, contextService, eventBus]);
 

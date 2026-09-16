@@ -124,7 +124,8 @@ async function main() {
   const dispatch = new DispatchApplicationService(repositories);
   assert.deepEqual(await dispatch.getPreparedQueue("branch-centro"), []);
   await manage.execute("tenant-demo", ["advanced_reports"], permissions, "user-admin");
-  await assert.rejects(() => dispatch.getPreparedQueue("branch-centro"));
+  // Dejar de contratar entregas no bloquea una obligación logística ya existente.
+  assert.deepEqual(await dispatch.getPreparedQueue("branch-centro"), []);
   assert.equal(await reports.authorizeExport(), "tenant-demo");
   await assert.rejects(() => manage.execute("tenant-demo", ["advanced_reports"], ["admin.plans.read"], "user-admin"));
   await assert.rejects(() => manage.execute("tenant-demo", ["invalid"], permissions, "user-admin"));

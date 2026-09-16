@@ -87,7 +87,10 @@ resolver compone sus capabilities con las del plan base. El acceso exige entitle
 de rol. La facturación es simulada: un snapshot por ciclo mensual y tenant, sin cobros, impuestos,
 prorrateos ni factura fiscal. `UpdateTenantSubscriptionService` cambia los complementos y propaga por
 `tenant-subscription.changed` -- solo dentro de la misma pestana: DataEventBus es in-memory, no
-cross-tab.
+cross-tab. La capacidad comercial `ecommerce` bloquea nuevas compras cuando el complemento se
+desactiva; no bloquea el cumplimiento de Orders anteriores. Picking, Packing, Dispatch y
+seguimiento histórico conservan autorización por sesión, tenant, sucursal, permiso y propiedad
+del recurso según corresponda. `delivery` no debe utilizarse como veto global de Logistics.
 
 ## Producto
 

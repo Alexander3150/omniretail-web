@@ -2,14 +2,35 @@
 
 ## Plan y suscripción modular
 
-La ruta `/administracion/plan` muestra Plan Básico obligatorio (Q199/mes), E-commerce +
+La ruta `/administracion/plan` muestra MARJYM Base obligatorio (Q199/mes), E-commerce +
 Entregas (Q129/mes) y Reportes avanzados (Q99/mes). Los complementos se guardan en la
 suscripción del tenant con `admin.plans.manage`; la lectura exige `admin.plans.read`. El acceso
-operativo a tienda, despachos y reportes exige capability comercial **además** del permiso de
-rol. El historial mensual es simulado, no fiscal ni evidencia de pago; sus importes son snapshots
+operativo a nuevas compras de tienda y a reportes avanzados exige capability comercial;
+los permisos de rol siguen siendo independientes. Desactivar E-commerce + Entregas no bloquea
+Picking, Packing, Dispatch ni tracking de pedidos existentes: esas acciones conservan sus
+controles de sesión, tenant, sucursal, permisos, recurso y estado. El historial mensual es
+simulado, no fiscal ni evidencia de pago; sus importes son snapshots
 por tenant y ciclo. Basic legacy migra sin extras y Enterprise con ambos extras. El Plan Básico
 no limita empleados ni sucursales: la pantalla muestra su uso sin cupos. POS está incluido sin
 cupo comercial de cajas; permanece la regla operativa de un turno abierto por usuario y sucursal.
+
+| `SaasCapabilityKey` | MARJYM Base | E-commerce + Entregas | Reportes avanzados |
+| --- | --- | --- | --- |
+| `inventory` | Sí | — | — |
+| `purchasing` | Sí | — | — |
+| `receiving` | Sí | — | — |
+| `pos` | Sí | — | — |
+| `ecommerce` | — | Sí | — |
+| `delivery` | — | Sí | — |
+| `advancedReports` (`reports.advanced`) | — | — | Sí |
+| `catalogKits` (`catalog.kits`) | — | — | — |
+| `traceabilityLots`, `traceabilityExpiration`, `traceabilitySerials` | — | — | — |
+
+No existe una key comercial `catalog`: el catálogo base y la administración básica se gobiernan
+por sus permisos y reglas propias. `delivery` identifica el módulo comprado, pero **no** es un
+kill-switch de Logistics para obligaciones ya existentes. El checkout público, que origina un
+nuevo pedido Ecommerce, exige `ecommerce` y configuración operativa activa; hoy no hay un
+Application Service independiente para crear fulfillment Ecommerce sin una Order previa.
 
 Responsable: Jose
 

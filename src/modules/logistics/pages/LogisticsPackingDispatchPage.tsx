@@ -17,7 +17,7 @@ export function LogisticsPackingDispatchPage() {
     <div className="min-w-0 space-y-5">
       <PageHeader actions={<Button disabled={logistics.loading || logistics.submitting} onClick={() => void logistics.reload()} variant="secondary">Actualizar</Button>} description={`Prepara paquetes y confirma envíos desde ${logistics.currentBranchName}.`} title="Packing y Despacho" />
       {!logistics.hasBranchAccess && !logistics.loading ? <InlineAlert description="Selecciona una sucursal autorizada para consultar Logistics." title="Sucursal no disponible" tone="warning" /> : null}
-      {logistics.hasBranchAccess && !logistics.canRead && !logistics.loading ? <InlineAlert description="Necesitás E-commerce + Entregas en la suscripción y el permiso logistics.dispatch.read." title="Acceso no autorizado" tone="warning" /> : null}
+      {logistics.hasBranchAccess && !logistics.canRead && !logistics.loading ? <InlineAlert description="Necesitás el permiso logistics.dispatch.read para consultar los despachos existentes." title="Acceso no autorizado" tone="warning" /> : null}
       {logistics.error && !logistics.workspaceOpen ? <InlineAlert description={logistics.error} title="No se pudo cargar Logistics" /> : null}
       {logistics.loading ? <section className="rounded-xl border border-[var(--color-border)] bg-white p-5 text-sm text-[var(--color-text-muted)] shadow-sm">Consultando pedidos preparados...</section> : null}
       {!logistics.loading && logistics.hasBranchAccess && logistics.canRead ? (
