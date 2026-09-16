@@ -10,6 +10,7 @@ import { MockDispatchRepository } from "@/infrastructure/mock/repositories/MockD
 import { MockInventoryRepository } from "@/infrastructure/mock/repositories/MockInventoryRepository";
 import { MockNotificationRepository } from "@/infrastructure/mock/repositories/MockNotificationRepository";
 import { MockOrderRepository } from "@/infrastructure/mock/repositories/MockOrderRepository";
+import { MockPlanRepository } from "@/infrastructure/mock/repositories/MockPlanRepository";
 import { MockPickingRepository } from "@/infrastructure/mock/repositories/MockPickingRepository";
 import { MockPackingRepository } from "@/infrastructure/mock/repositories/MockPackingRepository";
 import { MockProductRepository } from "@/infrastructure/mock/repositories/MockProductRepository";
@@ -21,6 +22,7 @@ import {
   type MockSaleConfirmationRepositoryTestHooks,
 } from "@/infrastructure/mock/repositories/MockSaleConfirmationRepository";
 import { MockTenantRepository } from "@/infrastructure/mock/repositories/MockTenantRepository";
+import { MockTenantSubscriptionRepository } from "@/infrastructure/mock/repositories/MockTenantSubscriptionRepository";
 import { MockUserRepository } from "@/infrastructure/mock/repositories/MockUserRepository";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
@@ -255,6 +257,7 @@ function createRepositories(
     inventory: new MockInventoryRepository(store, eventBus),
     notifications: new MockNotificationRepository(store, eventBus),
     orders: new MockOrderRepository(store, eventBus),
+    plans: new MockPlanRepository(store, eventBus),
     picking: new MockPickingRepository(store, eventBus),
     packings: new MockPackingRepository(store, eventBus),
     products: new MockProductRepository(store, eventBus),
@@ -262,6 +265,7 @@ function createRepositories(
     roles: new MockRoleRepository(store, eventBus),
     saleConfirmations: new MockSaleConfirmationRepository(store, eventBus, saleHooks),
     tenants: new MockTenantRepository(store, eventBus),
+    tenantSubscriptions: new MockTenantSubscriptionRepository(store, eventBus),
     units: new MockUnitRepository(store, eventBus),
     users: new MockUserRepository(store, eventBus),
   } as unknown as RepositoryRegistry;

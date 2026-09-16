@@ -20,10 +20,12 @@ import {
   type MockOrderPaymentConfirmationRepositoryTestHooks,
 } from "@/infrastructure/mock/repositories/MockOrderPaymentConfirmationRepository";
 import { MockOrderRepository } from "@/infrastructure/mock/repositories/MockOrderRepository";
+import { MockPlanRepository } from "@/infrastructure/mock/repositories/MockPlanRepository";
 import { MockProductRepository } from "@/infrastructure/mock/repositories/MockProductRepository";
 import { MockRoleRepository } from "@/infrastructure/mock/repositories/MockRoleRepository";
 import { MockSaleConfirmationRepository } from "@/infrastructure/mock/repositories/MockSaleConfirmationRepository";
 import { MockTenantRepository } from "@/infrastructure/mock/repositories/MockTenantRepository";
+import { MockTenantSubscriptionRepository } from "@/infrastructure/mock/repositories/MockTenantSubscriptionRepository";
 import { MockUnitRepository } from "@/infrastructure/mock/repositories/MockUnitRepository";
 import { MockUserRepository } from "@/infrastructure/mock/repositories/MockUserRepository";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
@@ -131,9 +133,11 @@ function createHarness(testHooks: MockOrderPaymentConfirmationRepositoryTestHook
       testHooks,
     ),
     orders: new MockOrderRepository(store, eventBus),
+    plans: new MockPlanRepository(store, eventBus),
     products: new MockProductRepository(store, eventBus),
     roles: new MockRoleRepository(store, eventBus),
     tenants: new MockTenantRepository(store, eventBus),
+    tenantSubscriptions: new MockTenantSubscriptionRepository(store, eventBus),
     units: new MockUnitRepository(store, eventBus),
     users: new MockUserRepository(store, eventBus),
   } as unknown as RepositoryRegistry;
