@@ -13,6 +13,12 @@ export type DataEventName =
   | "branch.changed"
   | "role.changed"
   | "business-config.changed"
+  // Cambio de Plan del Tenant (feature/tenant-plan-selection) -- SEPARADO de
+  // "business-config.changed": ese evento cubre la CONFIG OPERATIVA del negocio
+  // (BusinessCapabilitiesConfig/EcommerceConfig) y este el DERECHO COMERCIAL
+  // (plan.capabilities). No son la misma capa y un downgrade de Plan nunca muta
+  // BusinessConfig, asi que fusionarlos haria recargar la capa equivocada.
+  | "tenant-subscription.changed"
   | "product.changed"
   | "product-price.changed"
   | "product-sales-price-tier.changed"

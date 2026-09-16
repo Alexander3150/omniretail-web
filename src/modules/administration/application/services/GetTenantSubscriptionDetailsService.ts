@@ -1,6 +1,9 @@
 import { SaasCapabilityKey, SaasLimitKey } from "@/core/enums";
+import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
+import { ensureCurrentSubscriptionInvoice } from "@/modules/administration/application/services/subscriptionBilling";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
+  SelectablePlanDto,
   SubscriptionCapabilityDto,
   TenantSubscriptionDetailsDto,
 } from "@/modules/administration/application/dto/SubscriptionDto";
@@ -44,19 +47,31 @@ export class GetTenantSubscriptionDetailsService {
     }
 
     const usage = await new GetTenantUsageService(this.repositories).execute(tenantId);
+    const entitlements = await new ResolveTenantEntitlementsService(this.repositories).execute(tenantId);
+    const addonCodes = subscription.addonCodes ?? [];
+    const { nextRenewalAt } = await ensureCurrentSubscriptionInvoice(this.repositories, subscription);
+    const invoices = await this.repositories.tenantSubscriptions.listInvoices(tenantId);
+    const activePlans = await this.repositories.plans.listActive();
+    const availablePlans: SelectablePlanDto[] = activePlans.map((activePlan) => ({
+      id: activePlan.id,
+      code: activePlan.code,
+      name: activePlan.name,
+      description: activePlan.description,
+      capabilities: [...activePlan.capabilities],
+    }));
 
     // Ecommerce: entitlement (plan.capabilities) Y business config (EcommerceConfig.enabled) son
     // ejes INDEPENDIENTES -- solo se lee EcommerceConfig para mostrar el estado operacional
     // cuando el plan efectivamente incluye la capability; un entitlement=false nunca consulta ni
     // depende de EcommerceConfig.enabled (§8: enforcement cross-module queda para otro PR).
-    const includesEcommerce = plan.capabilities.includes(SaasCapabilityKey.ecommerce);
+    const includesEcommerce = entitlements.capabilities.includes(SaasCapabilityKey.ecommerce);
     const ecommerceConfig = includesEcommerce
       ? await this.repositories.businessConfig.getEcommerceConfig(tenantId)
       : null;
 
     const capabilities: SubscriptionCapabilityDto[] = Object.values(SaasCapabilityKey).map(
       (key) => {
-        const included = plan.capabilities.includes(key);
+        const included = entitlements.capabilities.includes(key);
         if (key === SaasCapabilityKey.ecommerce && included) {
           return {
             key,
@@ -70,9 +85,13 @@ export class GetTenantSubscriptionDetailsService {
 
     return {
       tenantId,
+      addonCodes: [...addonCodes],
+      nextRenewalAt,
+      invoices,
       subscription: { status: subscription.status, startedAt: subscription.startedAt },
-      plan: { code: plan.code, name: plan.name },
+      plan: { id: plan.id, code: plan.code, name: plan.name, description: plan.description },
       capabilities,
+      availablePlans,
       usage: [
         {
           key: SaasLimitKey.maxEmployees,

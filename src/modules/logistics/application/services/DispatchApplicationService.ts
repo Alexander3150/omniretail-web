@@ -155,7 +155,9 @@ export class DispatchApplicationService {
     };
   }
 
-  private context(selectedBranchId: string, permission: string) {
+  private async context(selectedBranchId: string, permission: string) {
+    // Dispatch only completes an existing, scoped Order. A cancelled add-on must not strand
+    // an already committed delivery; session, role, branch, resource and state still apply.
     return resolveTrustedDispatchContext(this.repositories, selectedBranchId, permission);
   }
 

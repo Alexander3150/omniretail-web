@@ -1,6 +1,7 @@
 import { resolveGuestOrderTracking } from "@/core/orders/resolveGuestOrderTracking";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { StorefrontOrderTrackingDto } from "@/modules/storefront/application/dto/StorefrontOrderTrackingDto";
+import { ResolvePublicStorefrontContextService } from "@/modules/storefront/application/services/ResolvePublicStorefrontContextService";
 
 interface StorefrontOrderTrackingResult {
   orderId: string;
@@ -15,8 +16,9 @@ interface StorefrontOrderTrackingResult {
  * DESPUÉS de la compra -- bloquear esto convertiría el fix del catálogo público en una regresión
  * de órdenes históricas. El boundary de seguridad real ya existe y es suficiente:
  * `resolveGuestOrderTracking` exige `EcommerceConfig.enabled` + `guestTrackingEnabled` +
- * `order.source === ecommerce`, y `orders.getByTrackingToken(tenantId, trackingToken)` scopea por
- * tenant (nunca cross-tenant). Si el negocio quiere bloquear tracking al perder `ecommerce`,
+ * `order.source === ecommerce`; además se verifica que `tenantId` corresponda al slug público
+ * autoritativo y `orders.getByTrackingToken` scopea por tenant (nunca cross-tenant). Si el negocio
+ * quiere bloquear tracking al perder `ecommerce`,
  * requiere una decisión de producto explícita -- no es un default de este guard.
  */
 export class GetStorefrontOrderTrackingService {
@@ -26,6 +28,11 @@ export class GetStorefrontOrderTrackingService {
     tenantId: string,
     trackingToken: string,
   ): Promise<StorefrontOrderTrackingResult | null> {
+    // Tracking histórico no exige el addon, pero tampoco acepta un tenantId arbitrario.
+    // El slug público sigue siendo la autoridad para impedir lecturas cross-tenant.
+    const publicContext = await new ResolvePublicStorefrontContextService(this.repositories)
+      .execute({ allowDisabled: true });
+    if (publicContext.tenantId !== tenantId) return null;
     // Guarda compartida (guestTrackingEnabled + canal ecommerce) --
     // ver core/orders/resolveGuestOrderTracking, tambien usada por el
     // widget de soporte (modulo support) para el mismo chip de "estado

@@ -1,5 +1,7 @@
-import { RoleStatus, TenantStatus, UserStatus } from "@/core/enums";
+import { RoleStatus, SaasCapabilityKey, TenantStatus, UserStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
+import { ensureTenantCapability } from "@/shared/application/services/entitlementGuards";
 import {
   AdministrationServiceError,
   ensureCanManageEcommerceConfig,
@@ -38,5 +40,9 @@ export async function resolveEcommerceConfigAdminContext(
   }
 
   ensureCanManageEcommerceConfig(role.permissions);
+  ensureTenantCapability(
+    await new ResolveTenantEntitlementsService(repositories).execute(actor.tenantId),
+    SaasCapabilityKey.ecommerce,
+  );
   return { tenantId: actor.tenantId, actorUserId: actor.id };
 }

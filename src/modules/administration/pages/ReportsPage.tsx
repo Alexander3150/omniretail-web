@@ -109,7 +109,7 @@ export function ReportsPage() {
             <Button
               disabled={!canExport || rows.length === 0 || loading}
               onClick={exportCsv}
-              title={canExport ? undefined : "Requiere el permiso admin.reports.export"}
+              title={canExport ? undefined : "Exportar CSV requiere Reportes avanzados y el permiso admin.reports.export"}
               type="button"
             >
               Exportar CSV

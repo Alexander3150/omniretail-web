@@ -2,6 +2,7 @@ import { PlanStatus, TenantSubscriptionStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { TenantEntitlementsDto } from "@/shared/application/dto/EntitlementDto";
 import { SaasEntitlementError } from "@/shared/application/services/entitlementGuards";
+import { SUBSCRIPTION_ADDONS } from "@/core/subscription/catalog";
 
 /**
  * Domain service reutilizable, neutral respecto de módulos (feature/saas-entitlement-
@@ -28,7 +29,7 @@ import { SaasEntitlementError } from "@/shared/application/services/entitlementG
  * acepta un `tenantId` como autoridad porque no tiene forma de validar de dónde vino.
  */
 export class ResolveTenantEntitlementsService {
-  constructor(private readonly repositories: RepositoryRegistry) {}
+  constructor(private readonly repositories: Pick<RepositoryRegistry, "plans" | "tenantSubscriptions">) {}
 
   async execute(tenantId: string): Promise<TenantEntitlementsDto> {
     if (!tenantId.trim()) {
@@ -48,14 +49,20 @@ export class ResolveTenantEntitlementsService {
     const isEntitlementActive =
       subscription.status === TenantSubscriptionStatus.active && plan.status === PlanStatus.active;
 
+    const capabilities = [...new Set([
+      ...plan.capabilities,
+      ...SUBSCRIPTION_ADDONS.filter((addon) => subscription.addonCodes?.includes(addon.code))
+        .flatMap((addon) => [...addon.capabilities]),
+    ])];
+
     return {
       tenantId,
       planCode: plan.code,
       planStatus: plan.status,
       subscriptionStatus: subscription.status,
       isEntitlementActive,
-      capabilities: [...plan.capabilities],
-      effectiveCapabilities: isEntitlementActive ? [...plan.capabilities] : [],
+      capabilities,
+      effectiveCapabilities: isEntitlementActive ? capabilities : [],
       limits: { ...plan.limits },
     };
   }

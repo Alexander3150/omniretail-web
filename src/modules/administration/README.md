@@ -1,5 +1,37 @@
 # administration
 
+## Plan y suscripción modular
+
+La ruta `/administracion/plan` muestra MARJYM Base obligatorio (Q199/mes), E-commerce +
+Entregas (Q129/mes) y Reportes avanzados (Q99/mes). Los complementos se guardan en la
+suscripción del tenant con `admin.plans.manage`; la lectura exige `admin.plans.read`. El acceso
+operativo a nuevas compras de tienda y a reportes avanzados exige capability comercial;
+los permisos de rol siguen siendo independientes. Desactivar E-commerce + Entregas no bloquea
+Picking, Packing, Dispatch ni tracking de pedidos existentes: esas acciones conservan sus
+controles de sesión, tenant, sucursal, permisos, recurso y estado. El historial mensual es
+simulado, no fiscal ni evidencia de pago; sus importes son snapshots
+por tenant y ciclo. Basic legacy migra sin extras y Enterprise con ambos extras. El Plan Básico
+no limita empleados ni sucursales: la pantalla muestra su uso sin cupos. POS está incluido sin
+cupo comercial de cajas; permanece la regla operativa de un turno abierto por usuario y sucursal.
+
+| `SaasCapabilityKey` | MARJYM Base | E-commerce + Entregas | Reportes avanzados |
+| --- | --- | --- | --- |
+| `inventory` | Sí | — | — |
+| `purchasing` | Sí | — | — |
+| `receiving` | Sí | — | — |
+| `pos` | Sí | — | — |
+| `ecommerce` | — | Sí | — |
+| `delivery` | — | Sí | — |
+| `advancedReports` (`reports.advanced`) | — | — | Sí |
+| `catalogKits` (`catalog.kits`) | — | — | — |
+| `traceabilityLots`, `traceabilityExpiration`, `traceabilitySerials` | — | — | — |
+
+No existe una key comercial `catalog`: el catálogo base y la administración básica se gobiernan
+por sus permisos y reglas propias. `delivery` identifica el módulo comprado, pero **no** es un
+kill-switch de Logistics para obligaciones ya existentes. El checkout público, que origina un
+nuevo pedido Ecommerce, exige `ecommerce` y configuración operativa activa; hoy no hay un
+Application Service independiente para crear fulfillment Ecommerce sin una Order previa.
+
 Responsable: Jose
 
 ## Territorio del modulo
@@ -157,9 +189,13 @@ Implementado en esta rama:
 - Lectura y actualizacion mediante `BusinessConfigRepository`, sin enviar `tenantId`, `createdAt`
   ni `updatedAt` en el payload de guardado.
 - Enforcement de `admin.ecommerce_config.manage` dentro de los services de lectura y escritura.
+- Diseño E-commerce requiere además `SaasCapabilityKey.ecommerce` en navegación, ruta privada y
+  services de lectura/escritura. Al desactivar el complemento se oculta y se deniega el acceso,
+  pero `EcommerceConfig` permanece intacta para una eventual reactivación. Reactivar el
+  complemento no fuerza `EcommerceConfig.enabled`: la tienda pública requiere ambas condiciones.
 - Auditoria mediante `ecommerce_config.updated` y refresco reactivo ante
   `business-config.changed`.
-- Ruta privada `/administracion/diseno-ecommerce` y entrada de navegacion con el permiso nuevo.
+- Ruta privada `/administracion/diseno-ecommerce` y entrada de navegacion con permiso y capability.
 
 ### Contrato de integracion
 
@@ -348,11 +384,14 @@ Decisiones y coordinación:
 
 ## Reportes
 
-La ruta `/administracion/reportes` expone reportes agregados de ventas, compras, movimientos de
-inventario y pagos. Se integra en la navegación como `administration-reports`, exige
-`admin.reports.read` para consultar y `admin.reports.export` para descargar el resultado visible
-como CSV. Se refresca ante `sale.changed`, `purchase-order.changed`, `inventory.changed` y
-`payment.changed`.
+La ruta `/administracion/reportes` expone como **reportes básicos de MARJYM Base** los listados,
+filtros y totales existentes de ventas, compras, movimientos de inventario y pagos. Se integra en
+la navegación como `administration-reports` y exige `admin.reports.read`, pero no el complemento
+avanzado. La **única funcionalidad avanzada implementada actualmente** es exportar el resultado
+visible como CSV: requiere tanto `admin.reports.export` como
+`SaasCapabilityKey.advancedReports` en la UI y en el service. No existen aún dashboards,
+comparativas ni otros reportes premium. La pantalla se refresca ante `sale.changed`,
+`purchase-order.changed`, `inventory.changed` y `payment.changed`.
 
 La pantalla solo consulta contratos compartidos y agrega sus resultados en memoria. No persiste
 reportes, no modifica las fuentes y no escribe auditoría. El helper CSV vive dentro de

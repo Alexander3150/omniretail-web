@@ -12,6 +12,8 @@ import { SaveEcommerceConfigService } from "@/modules/administration/application
 import { cleanError } from "@/modules/administration/application/services/serviceHelpers";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
+import { useEntitlementContext } from "@/shared/providers/EntitlementProvider";
+import { SaasCapabilityKey } from "@/core/enums";
 
 export interface EcommerceBranchOption {
   id: string;
@@ -27,8 +29,9 @@ function toBranchOptions(branches: Branch[], tenantId: string): EcommerceBranchO
 export function useEcommerceConfig() {
   const repositories = useRepositories();
   const { user, hasPermission, loading: sessionLoading } = useCurrentSession();
+  const { hasCapability } = useEntitlementContext();
   const tenantId = user?.tenantId ?? null;
-  const canManage = hasPermission("admin.ecommerce_config.manage");
+  const canManage = hasPermission("admin.ecommerce_config.manage") && hasCapability(SaasCapabilityKey.ecommerce);
   const getService = useMemo(() => new GetEcommerceConfigService(repositories), [repositories]);
   const saveService = useMemo(() => new SaveEcommerceConfigService(repositories), [repositories]);
   const [config, setConfig] = useState<EcommerceConfigDto | null>(null);
@@ -68,6 +71,7 @@ export function useEcommerceConfig() {
   }, [getService, repositories, sessionLoading, tenantId]);
 
   useDataEvent("business-config.changed", reload);
+  useDataEvent("tenant-subscription.changed", reload);
 
   useEffect(() => {
     let active = true;

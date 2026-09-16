@@ -31,6 +31,8 @@ import {
 } from "@/modules/administration/permissions";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
+import { useEntitlementContext } from "@/shared/providers/EntitlementProvider";
+import { SaasCapabilityKey } from "@/core/enums";
 
 const EMPTY_DATA: ReportsDataDto = {
   tenantId: "",
@@ -42,9 +44,10 @@ const EMPTY_DATA: ReportsDataDto = {
 
 export function useReports() {
   const repositories = useRepositories();
+  const { hasCapability } = useEntitlementContext();
   const { hasPermission, loading: sessionLoading } = useCurrentSession();
   const canRead = hasPermission(REPORTS_READ_PERMISSION);
-  const canExport = hasPermission(REPORTS_EXPORT_PERMISSION);
+  const canExport = hasPermission(REPORTS_EXPORT_PERMISSION) && hasCapability(SaasCapabilityKey.advancedReports);
   const service = useMemo(() => new GetReportsService(repositories), [repositories]);
   const [data, setData] = useState<ReportsDataDto>(EMPTY_DATA);
   const [kind, setKindState] = useState<ReportKind>("sales");
@@ -71,6 +74,7 @@ export function useReports() {
   useDataEvent("purchase-order.changed", reload);
   useDataEvent("inventory.changed", reload);
   useDataEvent("payment.changed", reload);
+  useDataEvent("tenant-subscription.changed", reload);
 
   useEffect(() => {
     let active = true;
