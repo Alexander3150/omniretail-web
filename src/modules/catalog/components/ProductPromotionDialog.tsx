@@ -10,6 +10,13 @@ import { useToast } from "@/shared/components/Toast";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
 import { cn } from "@/shared/utils/cn";
 import {
+  MAX_PERCENTAGE,
+  MAX_SAFE_CURRENCY,
+  MONEY_DECIMAL_PLACES,
+  PERCENTAGE_DECIMAL_PLACES,
+} from "@/shared/utils/inputLimits";
+import { hasAtMostDecimalPlaces, isDecimalInputText } from "@/shared/utils/numberInput";
+import {
   CheckIcon,
   GlobeIcon,
   MobileIcon,
@@ -366,10 +373,12 @@ function PromotionForm({
         Valor
         <input
           className="h-10 w-full rounded-lg border border-[var(--color-border)] bg-white px-3 text-sm text-[var(--color-text)] outline-none transition hover:border-[var(--color-structure)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
-          min="0"
-          onChange={(event) => update({ value: event.target.value })}
-          step="0.01"
-          type="number"
+          inputMode="decimal"
+          maxLength={11}
+          onChange={(event) => {
+            if (isDecimalInputText(event.target.value)) update({ value: event.target.value });
+          }}
+          type="text"
           value={state.value}
         />
       </label>
@@ -552,8 +561,18 @@ function enabledProductChannels(product: PromotionProduct): SalesChannel[] {
 function validatePromotionForm(state: PromotionFormState, salePrice: number) {
   const value = Number(state.value);
   if (!Number.isFinite(value) || value <= 0) return "Ingresa un valor mayor a 0.";
-  if (state.type === PromotionType.percentage && value >= 100) {
-    return "El porcentaje debe ser menor a 100.";
+  const maximumDecimalPlaces =
+    state.type === PromotionType.percentage
+      ? PERCENTAGE_DECIMAL_PLACES
+      : MONEY_DECIMAL_PLACES;
+  if (!hasAtMostDecimalPlaces(state.value, maximumDecimalPlaces)) {
+    return `El valor admite hasta ${maximumDecimalPlaces} decimales.`;
+  }
+  if (state.type === PromotionType.percentage && value > MAX_PERCENTAGE) {
+    return "El porcentaje no puede superar 100.";
+  }
+  if (state.type !== PromotionType.percentage && value > MAX_SAFE_CURRENCY) {
+    return "El valor no puede superar Q9,999,999.99.";
   }
   if (
     (state.type === PromotionType.fixedDiscount || state.type === PromotionType.fixedPrice) &&

@@ -24,6 +24,7 @@ import {
   ReceivingServiceError,
   resolveReceivingContext,
 } from "@/modules/receiving/application/services/serviceHelpers";
+import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
 
 export class ReceivingDocumentsService {
   constructor(private readonly repositories: RepositoryRegistry) {}
@@ -132,6 +133,9 @@ export class ReceivingDocumentsService {
     await ensureTenantCanUseReceiving(this.repositories, tenantId);
     const trimmedName = name.trim();
     if (!trimmedName) throw new ReceivingServiceError("Ingresa el nombre del tipo de incidencia.");
+    if (trimmedName.length > TEXT_LIMITS.incidentName) {
+      throw new ReceivingServiceError("El nombre admite hasta 80 caracteres.");
+    }
     return this.repositories.incidentTypes.create({
       tenantId,
       name: trimmedName,

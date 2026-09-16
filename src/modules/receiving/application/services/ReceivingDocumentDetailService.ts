@@ -42,7 +42,12 @@ import {
   ReceivingServiceError,
   resolveReceivingContext,
 } from "@/modules/receiving/application/services/serviceHelpers";
-import { toFiniteNumber } from "@/shared/utils/numberInput";
+import { isQuantityCompatibleWithUnit, toFiniteNumber } from "@/shared/utils/numberInput";
+import {
+  MAX_SAFE_INVENTORY_QUANTITY,
+  QUANTITY_DECIMAL_PLACES,
+  TEXT_LIMITS,
+} from "@/shared/utils/inputLimits";
 
 export class ReceivingDocumentDetailService {
   constructor(private readonly repositories: RepositoryRegistry) {}
@@ -458,7 +463,10 @@ export class ReceivingDocumentDetailService {
     return order;
   }
 
-  private async ensureInProgressReceipt(order: PurchaseOrder, actorUserId: string): Promise<Receipt> {
+  private async ensureInProgressReceipt(
+    order: PurchaseOrder,
+    actorUserId: string,
+  ): Promise<Receipt> {
     const receipts = await this.repositories.receipts.listByTenant(order.tenantId);
     const existing = receipts.find(
       (receipt) =>
@@ -488,7 +496,8 @@ export class ReceivingDocumentDetailService {
 
   private async getCapabilities(tenantId: string): Promise<BusinessCapabilitiesConfig> {
     const capabilities = await this.repositories.businessConfig.getCapabilities(tenantId);
-    if (!capabilities) throw new ReceivingServiceError("No hay configuracion operativa para este tenant.");
+    if (!capabilities)
+      throw new ReceivingServiceError("No hay configuracion operativa para este tenant.");
     return capabilities;
   }
 
@@ -583,19 +592,23 @@ export function validateLines(
       const errors: string[] = [];
       const acceptedNow = toFiniteNumber(line.receivedNow);
       const incidentQuantity = getRejectedNow(line, incidents);
-      const remainingBefore = Math.max(0, line.orderedQuantity - line.acceptedPreviously);
-      if (acceptedNow < 0) errors.push(`${line.productName}: la cantidad aceptada no es valida.`);
-      if (acceptedNow > remainingBefore) {
-        errors.push(`${line.productName}: no puede aceptar mas de la cantidad pendiente.`);
-      }
+      const allowsDecimals = unitAllowsDecimals.get(line.id) ?? false;
       if (
-        !unitAllowsDecimals.get(line.id) &&
-        (!Number.isInteger(acceptedNow) || !Number.isInteger(incidentQuantity))
+        line.receivedNow !== "" &&
+        !isQuantityCompatibleWithUnit(line.receivedNow, allowsDecimals)
       ) {
-        errors.push(`${line.productName}: la unidad no admite fracciones.`);
+        errors.push(
+          allowsDecimals
+            ? `${line.productName}: la cantidad admite hasta ${QUANTITY_DECIMAL_PLACES} decimales.`
+            : `${line.productName}: la unidad no admite fracciones.`,
+        );
       }
-      if (line.receivedNow !== "" && !Number.isFinite(acceptedNow)) {
-        errors.push(`${line.productName}: aceptado ahora no es valido.`);
+      if (!isQuantityCompatibleWithUnit(incidentQuantity, allowsDecimals)) {
+        errors.push(
+          allowsDecimals
+            ? `${line.productName}: la incidencia admite hasta ${QUANTITY_DECIMAL_PLACES} decimales.`
+            : `${line.productName}: la unidad no admite incidencias fraccionarias.`,
+        );
       }
       if (
         detail.capabilities.supportsMultipleLocations &&
@@ -651,7 +664,9 @@ export function validateIncidentQuantities(
   incidents: ReceivingDocumentIncident[],
   detail?: ReceivingDocumentDetail,
 ) {
-  const lineByProductId = new Map(lines.map((line) => [line.productId, line]));
+  const lineByProductId = new Map(
+    (detail?.lines ?? lines).map((line) => [line.productId, line]),
+  );
   const validIncidentTypeIds = detail
     ? new Set(detail.incidentTypes.map((type) => type.id))
     : undefined;
@@ -671,18 +686,46 @@ export function validateIncidentQuantities(
     if (!incident.description.trim()) {
       errors.push(`${line.productName}: agrega la observacion de la incidencia.`);
     }
+    if (incident.description.length > TEXT_LIMITS.notes) {
+      errors.push(`${line.productName}: la observacion admite hasta 500 caracteres.`);
+    }
     const quantity = incident.quantityAffected ?? 0;
     if (!Number.isFinite(quantity) || quantity <= 0) {
       errors.push(`${line.productName}: la cantidad de la incidencia debe ser mayor que cero.`);
     }
-    if (!line.unitAllowsDecimals && !Number.isInteger(quantity)) {
-      errors.push(`${line.productName}: la unidad no admite incidencias fraccionarias.`);
+    if (quantity > MAX_SAFE_INVENTORY_QUANTITY) {
+      errors.push(`${line.productName}: la cantidad de la incidencia no puede superar 999,999.99.`);
+    }
+    if (!isQuantityCompatibleWithUnit(quantity, line.unitAllowsDecimals)) {
+      errors.push(
+        line.unitAllowsDecimals
+          ? `${line.productName}: la incidencia admite hasta ${QUANTITY_DECIMAL_PLACES} decimales.`
+          : `${line.productName}: la unidad no admite incidencias fraccionarias.`,
+      );
     }
   }
   for (const line of lines) {
     const incidentQuantity = getRejectedNow(line, incidents);
     const acceptedNow = toFiniteNumber(line.receivedNow);
     const remainingBefore = Math.max(0, line.orderedQuantity - line.acceptedPreviously);
+    if (
+      line.receivedNow !== "" &&
+      (typeof line.receivedNow !== "number" || !Number.isFinite(line.receivedNow))
+    ) {
+      errors.push(`${line.productName}: aceptado ahora no es valido.`);
+    }
+    if (acceptedNow > MAX_SAFE_INVENTORY_QUANTITY) {
+      errors.push(`${line.productName}: la cantidad no puede superar 999,999.99.`);
+    }
+    if ((line.lotNumber?.length ?? 0) > TEXT_LIMITS.lotNumber) {
+      errors.push(`${line.productName}: el lote admite hasta 50 caracteres.`);
+    }
+    if ((line.serialNumbersText?.length ?? 0) > TEXT_LIMITS.serialNumbers) {
+      errors.push(`${line.productName}: las series admiten hasta 5,000 caracteres.`);
+    }
+    if ((line.notes?.length ?? 0) > TEXT_LIMITS.notes) {
+      errors.push(`${line.productName}: las notas admiten hasta 500 caracteres.`);
+    }
     if (acceptedNow < 0 || acceptedNow > remainingBefore) {
       errors.push(`${line.productName}: aceptado ahora debe estar entre 0 y ${remainingBefore}.`);
     }

@@ -6,6 +6,7 @@ import { Input } from "@/shared/components/Input";
 import { Select } from "@/shared/components/Select";
 import { cn } from "@/shared/utils/cn";
 import { formatNumber } from "@/shared/utils/formatNumber";
+import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
 import type {
   InventoryMovementRow,
   MovementDisplayType,
@@ -376,6 +377,7 @@ function MovementFilters({
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_190px_auto] lg:items-center">
         <Input
           aria-label="Buscar movimientos"
+          maxLength={TEXT_LIMITS.search}
           onChange={(event) => onSearchChange(event.target.value)}
           placeholder="Buscar por producto, SKU, referencia, usuario o sucursal..."
           type="search"

@@ -334,6 +334,7 @@ function buildOrderLine(
     supplierSku: "-",
     unitId: overrides.unitId ?? "unit-box",
     unitLabel: "cj",
+    unitAllowsDecimals: false,
     purchaseToBaseFactor: overrides.purchaseToBaseFactor ?? 5,
     quantity: 2,
     baseCost: 20,
