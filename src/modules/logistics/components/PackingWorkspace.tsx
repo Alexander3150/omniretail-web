@@ -434,7 +434,7 @@ function PackingCompletion({ completion }: { completion: { orderReference: strin
             ? `${completion.orderReference} fue entregado al cliente y ya no tiene acciones pendientes.`
             : `${completion.orderReference} salió de la cola activa de Packing y quedó listo para despacho.`}
         </p>
-        {!delivered ? <p className="mt-4 text-xs text-[var(--color-text-muted)]">La guía y la confirmación de Dispatch se realizarán en una etapa posterior.</p> : null}
+        {!delivered ? <p className="mt-4 text-xs text-[var(--color-text-muted)]">La guía y la confirmación de Despacho se realizarán en una etapa posterior.</p> : null}
       </div>
     </section>
   );
