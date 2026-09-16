@@ -6,6 +6,7 @@ import {
   ensureCanApprovePurchaseOrders,
   ensureCanCreatePurchaseOrders,
   ensurePurchaseOrderBelongsToTenant,
+  ensureTenantCanUsePurchasing,
   PurchasingServiceError,
   resolvePurchasingContext,
 } from "@/modules/purchasing/application/services/serviceHelpers";
@@ -31,6 +32,7 @@ export class UpdatePurchaseOrderStatusService {
 
   async execute(orderId: string, targetStatus: PurchaseOrderStatus): Promise<PurchaseOrder> {
     const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
+    await ensureTenantCanUsePurchasing(this.repositories, tenantId);
     const order = ensurePurchaseOrderBelongsToTenant(
       await this.repositories.purchaseOrders.getByIdScoped(tenantId, orderId),
       tenantId,

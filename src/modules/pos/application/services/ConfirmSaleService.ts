@@ -37,6 +37,7 @@ import {
   ensureOwnedOpenCashShift,
   ensurePosBranchAccess,
   ensurePosPermission,
+  ensureTenantCanUsePos,
   resolvePosSessionContext,
 } from "@/modules/pos/application/services/posServiceContext";
 
@@ -222,6 +223,7 @@ export class ConfirmSaleService {
       this.repositories,
     );
     ensurePosPermission(permissions, POS_SALES_CREATE_PERMISSION);
+    await ensureTenantCanUsePos(this.repositories, tenantId);
     const branch = await ensurePosBranchAccess(this.repositories, user, branchId);
     const cashShift = await ensureOwnedOpenCashShift(this.repositories, {
       tenantId,

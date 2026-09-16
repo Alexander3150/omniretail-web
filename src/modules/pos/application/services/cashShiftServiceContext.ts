@@ -1,7 +1,9 @@
 import type { Branch, Role, User } from "@/core/entities";
-import { BranchStatus, RoleStatus, UserStatus, UserType } from "@/core/enums";
+import { BranchStatus, RoleStatus, SaasCapabilityKey, UserStatus, UserType } from "@/core/enums";
 import { canUserAccessBranch } from "@/core/scopes/userBranchAccess";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import { ensureTenantCapability } from "@/shared/application/services/entitlementGuards";
+import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
 
 export interface CashShiftOperationContext {
   tenantId: string;
@@ -9,7 +11,10 @@ export interface CashShiftOperationContext {
   branchId: string;
 }
 
-type CashContextRepositories = Pick<RepositoryRegistry, "branches" | "roles" | "users">;
+type CashContextRepositories = Pick<
+  RepositoryRegistry,
+  "branches" | "roles" | "users" | "plans" | "tenantSubscriptions"
+>;
 
 export interface ResolvedCashContext {
   branch: Branch;
@@ -55,6 +60,16 @@ export async function requireCashContext(
   }
   if (!canUserAccessBranch(user, role, branch)) {
     throw new Error("No tienes acceso a la sucursal seleccionada.");
+  }
+
+  // Capa de entitlement SaaS (feature/saas-entitlement-enforcement, auditoría §14) -- se suma al
+  // permiso ya validado arriba, nunca lo sustituye. `pos.cash.read` (consultas de resumen/
+  // movimientos) permanece como lectura histórica, sin exigir la capability (auditoría §10).
+  if (permission !== "pos.cash.read") {
+    const entitlements = await new ResolveTenantEntitlementsService(
+      repositories as RepositoryRegistry,
+    ).execute(context.tenantId);
+    ensureTenantCapability(entitlements, SaasCapabilityKey.pos);
   }
 
   return { branch, role, user };

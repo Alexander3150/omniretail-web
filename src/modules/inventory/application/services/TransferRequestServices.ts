@@ -6,6 +6,7 @@ import {
   ensureCanManageTransfers,
   ensureInventoryBranchBelongsToTenant,
   ensureProductBelongsToTenant,
+  ensureTenantCanUseInventory,
   ensureUserCanOperateInventoryBranch,
   InventoryServiceError,
   resolveInventoryContext,
@@ -19,6 +20,7 @@ export class CreateTransferRequestService {
       this.repositories,
     );
     ensureCanManageTransfers(permissions);
+    await ensureTenantCanUseInventory(this.repositories, tenantId);
 
     const product = ensureProductBelongsToTenant(
       await this.repositories.products.getById(dto.productId),
@@ -55,6 +57,7 @@ export class ApproveTransferRequestService {
       this.repositories,
     );
     ensureCanManageTransfers(permissions);
+    await ensureTenantCanUseInventory(this.repositories, tenantId);
 
     const request = await ensureReviewableRequest(this.repositories, requestId, tenantId);
     await ensureUserCanOperateInventoryBranch(this.repositories, user, request.sourceBranchId);
@@ -74,6 +77,7 @@ export class RejectTransferRequestService {
       this.repositories,
     );
     ensureCanManageTransfers(permissions);
+    await ensureTenantCanUseInventory(this.repositories, tenantId);
 
     const reason = rejectionReason.trim();
     if (!reason) throw new InventoryServiceError("Ingresa el motivo del rechazo.");

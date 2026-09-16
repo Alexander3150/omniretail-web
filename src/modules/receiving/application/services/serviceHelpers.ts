@@ -1,7 +1,10 @@
 import type { Branch, User } from "@/core/entities";
+import { SaasCapabilityKey } from "@/core/enums";
 import { canUserOperateBranch } from "@/core/scopes/userBranchAccess";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/services/resolveCurrentSessionSnapshot";
+import { ensureTenantCapability } from "@/shared/application/services/entitlementGuards";
+import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
 
 export class ReceivingServiceError extends Error {
   constructor(message: string) {
@@ -98,4 +101,18 @@ export function cleanError(error: unknown): string {
   if (error instanceof ReceivingServiceError) return error.message;
   if (error instanceof Error) return error.message;
   return "No se pudo completar la operación. Inténtalo de nuevo.";
+}
+
+/**
+ * Capa de entitlement SaaS (feature/saas-entitlement-enforcement, auditoría §13) -- se suma a
+ * `ensureCanSaveReceivingProgress`/`ensureCanConfirmReceiving`/`ensureCanManageIncidentTypes`,
+ * nunca los sustituye. El read model histórico (`getDocument`) sigue gobernado únicamente por
+ * `ensureCanReadReceiving`.
+ */
+export async function ensureTenantCanUseReceiving(
+  repositories: RepositoryRegistry,
+  tenantId: string,
+): Promise<void> {
+  const entitlements = await new ResolveTenantEntitlementsService(repositories).execute(tenantId);
+  ensureTenantCapability(entitlements, SaasCapabilityKey.receiving);
 }

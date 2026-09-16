@@ -16,6 +16,7 @@ import {
   MockCategoryRepository,
   MockInventoryRepository,
   MockInventoryTransferRequestRepository,
+  MockPlanRepository,
   MockProductRepository,
   MockProductMediaRepository,
   MockProductKitComponentRepository,
@@ -25,6 +26,7 @@ import {
   MockRoleRepository,
   MockSupplierProductRepository,
   MockTenantRepository,
+  MockTenantSubscriptionRepository,
   MockUnitRepository,
   MockUserRepository,
 } from "@/infrastructure/mock/repositories";
@@ -83,6 +85,8 @@ const repositories = {
   productMedia: new MockProductMediaRepository(store, events),
   branches: new MockBranchRepository(store, events),
   inventoryTransferRequests: new MockInventoryTransferRequestRepository(store, events),
+  plans: new MockPlanRepository(store, events),
+  tenantSubscriptions: new MockTenantSubscriptionRepository(store, events),
 } as unknown as RepositoryRegistry;
 const adjustmentService = new RegisterInventoryAdjustmentService(repositories);
 

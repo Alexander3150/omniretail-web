@@ -1,15 +1,30 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { AccountStatus, BranchStatus, BranchType, CustomerStatus, RoleStatus, UserStatus, UserType } from "@/core/enums";
+import {
+  AccountStatus,
+  BranchStatus,
+  BranchType,
+  CustomerStatus,
+  PlanCode,
+  PlanStatus,
+  RoleStatus,
+  SaasCapabilityKey,
+  TenantSubscriptionStatus,
+  UserStatus,
+  UserType,
+} from "@/core/enums";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
+import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import {
   MockAuditLogRepository,
   MockAuthRepository,
   MockBranchRepository,
   MockCustomerRepository,
+  MockPlanRepository,
   MockRoleRepository,
+  MockTenantSubscriptionRepository,
   MockUserRepository,
 } from "@/infrastructure/mock/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
@@ -50,11 +65,43 @@ const MANAGE_PERMISSION = "admin.users.manage";
 // poder probar que no puede delegar más de esto.
 const ACTOR_PERMISSIONS = [MANAGE_PERMISSION, "catalog.products.read"];
 
+/**
+ * feature/saas-entitlement-enforcement agregó un límite SaaS delante de CreateEmployeeService/
+ * CreateBranchService -- este harness prueba permisos/delegación/tenant, no entitlements (eso
+ * vive en verify-saas-entitlement-enforcement.ts), así que cada tenant fixture necesita un Plan
+ * "full" (todas las capabilities, sin límites) para no quedar bloqueado por una capa que este
+ * script no está probando.
+ */
+function seedFullEntitlementPlan(db: MockDatabase, tenantId: string) {
+  const planId = `plan-full-${tenantId}`;
+  db.planDefinitions.push({
+    id: planId,
+    code: PlanCode.enterprise,
+    name: `Plan full (fixture ${tenantId})`,
+    status: PlanStatus.active,
+    capabilities: Object.values(SaasCapabilityKey),
+    limits: {},
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
+  db.tenantSubscriptions.push({
+    id: `tenant-subscription-${tenantId}`,
+    tenantId,
+    planId,
+    status: TenantSubscriptionStatus.active,
+    startedAt: NOW,
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
+}
+
 function createHarness() {
   const store = new MockDatabaseStore(new MemoryStorageAdapter());
   const eventBus = new DataEventBus();
 
   store.mutate((db) => {
+    seedFullEntitlementPlan(db, TENANT_A);
+    seedFullEntitlementPlan(db, TENANT_B);
     db.branches = [
       ...db.branches,
       {
@@ -239,6 +286,8 @@ function createHarness() {
   const auth = new MockAuthRepository(store, eventBus, new MemoryStorageAdapter());
   const customers = new MockCustomerRepository(store, eventBus);
   const auditLogs = new MockAuditLogRepository(store, eventBus);
+  const plans = new MockPlanRepository(store, eventBus);
+  const tenantSubscriptions = new MockTenantSubscriptionRepository(store, eventBus);
 
   return {
     repositories: {
@@ -248,6 +297,8 @@ function createHarness() {
       auth,
       customers,
       auditLogs,
+      plans,
+      tenantSubscriptions,
     } as unknown as RepositoryRegistry,
     store,
   };

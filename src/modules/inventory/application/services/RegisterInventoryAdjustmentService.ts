@@ -6,6 +6,8 @@ import { toBaseQuantity } from "@/core/units";
 import {
   ensureCanCreateAdjustment,
   ensureProductBelongsToTenant,
+  ensureTenantCanUseInventory,
+  ensureTenantCanUseTracking,
   ensureUserCanOperateInventoryBranch,
   InventoryServiceError,
   resolveInventoryContext,
@@ -29,10 +31,15 @@ export class RegisterInventoryAdjustmentService {
       this.repositories,
     );
     ensureCanCreateAdjustment(permissions);
+    const entitlements = await ensureTenantCanUseInventory(this.repositories, tenantId);
     const product = ensureProductBelongsToTenant(
       await this.repositories.products.getById(dto.productId),
       tenantId,
     );
+    const businessCapabilities = await this.repositories.businessConfig.getCapabilities(tenantId);
+    if (businessCapabilities) {
+      ensureTenantCanUseTracking(entitlements, businessCapabilities, product);
+    }
     await ensureUserCanOperateInventoryBranch(this.repositories, user, dto.branchId);
     const reason = dto.reason.trim();
     if (!reason) throw new Error("El motivo es requerido.");

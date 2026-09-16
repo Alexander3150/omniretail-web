@@ -2,19 +2,13 @@ import type { PlanCode, SaasCapabilityKey, SaasLimitKey, TenantSubscriptionStatu
 import type { ISODateString } from "@/core/types/common.types";
 
 /**
- * Salida READ-ONLY de ResolveTenantEntitlementsService -- lo que el Tenant tiene derecho
- * comercial a usar, nunca lo que un Employee puede hacer (Role.permissions) ni en qué sucursal
- * puede operar (User.allowedBranchIds). Pensado para que enforcement futuro (otro PR) pueda
- * preguntar `resolveEntitlements(tenantId)` sin volver a tocar este contrato.
+ * `TenantEntitlementsDto` (salida de `ResolveTenantEntitlementsService`) se movió a
+ * `src/shared/application/dto/EntitlementDto.ts` -- feature/saas-entitlement-enforcement,
+ * auditoría §7: Inventory/Purchasing/Receiving/POS/Storefront/Catalog también necesitan
+ * resolverla, y hacer que importen `administration` invertiría la dependencia. `administration`
+ * la vuelve a importar desde ahí, igual que todos los demás módulos.
  */
-export interface TenantEntitlementsDto {
-  tenantId: string;
-  planCode: PlanCode;
-  subscriptionStatus: TenantSubscriptionStatus;
-  capabilities: SaasCapabilityKey[];
-  /** Ausente = sin límite definido para ese key (nunca "ilimitado" ni "0" implícito). */
-  limits: Partial<Record<SaasLimitKey, number>>;
-}
+export type { TenantEntitlementsDto } from "@/shared/application/dto/EntitlementDto";
 
 export interface TenantUsageMetricDto {
   current: number;

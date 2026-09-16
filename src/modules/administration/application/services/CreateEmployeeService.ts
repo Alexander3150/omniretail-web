@@ -10,6 +10,7 @@ import {
   ensureEmployeeActor,
   ensureEmployeeBranchIds,
   ensureEmployeeTenant,
+  ensureTenantCanCreateEmployee,
   AdministrationServiceError,
 } from "@/modules/administration/application/services/serviceHelpers";
 import {
@@ -55,6 +56,10 @@ export class CreateEmployeeService {
     // 3. validar input
     const normalizedInput = normalizeEmployeeInput(dto);
     validateEmployeeInput(normalizedInput);
+
+    // 3.5. límite SaaS del Plan (auditoría §23) -- ANTES de email/Role/Branch para no hacer
+    // trabajo de más cuando el Tenant ya está en el límite.
+    await ensureTenantCanCreateEmployee(this.repositories, tenantId);
 
     // 4. email según la política REAL de Auth: login()/UserRepository.getByEmail ya tratan el
     // email como único globalmente para Employee/Admin (ver getByEmail en UserRepository -- sin
