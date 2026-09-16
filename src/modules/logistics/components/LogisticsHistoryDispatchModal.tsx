@@ -41,6 +41,7 @@ export function LogisticsHistoryDispatchModal({
   const [values, setValues] = useState(emptyValues);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const thirdParty = detail?.transportMode === TransportMode.third_party;
+  const sendsNotificationEmail = detail?.notificationContact.emailMode === "send";
 
   const confirm = async () => {
     if (!detail || submitting) return;
@@ -58,7 +59,11 @@ export function LogisticsHistoryDispatchModal({
             Cancelar
           </Button>
           <Button disabled={!detail || loading || submitting} type="button" onClick={() => void confirm()}>
-            {submitting ? "Confirmando..." : "Confirmar despacho"}
+            {submitting
+              ? "Confirmando..."
+              : sendsNotificationEmail
+                ? "Confirmar despacho y enviar correo"
+                : "Confirmar despacho"}
           </Button>
         </div>
       }

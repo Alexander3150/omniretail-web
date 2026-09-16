@@ -8,9 +8,11 @@ import { useLogisticsHistory } from "@/modules/logistics/hooks/useLogisticsHisto
 import { Button } from "@/shared/components/Button";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PageHeader } from "@/shared/components/PageHeader";
+import { useToast } from "@/shared/components/Toast";
 
 export function LogisticsHistoryPage() {
   const history = useLogisticsHistory();
+  const { showToast } = useToast();
 
   return (
     <div className="min-w-0 space-y-5">
@@ -86,7 +88,17 @@ export function LogisticsHistoryPage() {
         onClose={() => {
           history.closeDispatch();
         }}
-        onConfirm={history.confirmDispatch}
+        onConfirm={async (validation) => {
+          const notificationContact = history.dispatchDetail?.notificationContact;
+          const confirmed = await history.confirmDispatch(validation);
+          if (confirmed && notificationContact?.emailMode === "send") {
+            showToast({
+              title: `Despacho confirmado. Guía enviada a ${notificationContact.email}`,
+              tone: "success",
+            });
+          }
+          return confirmed;
+        }}
       />
     </div>
   );
