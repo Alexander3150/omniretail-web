@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState, type ComponentType, type SVGProps } from "react";
+import { BrandMark } from "@/shared/components/BrandMark";
 import { CloseIcon } from "@/shared/navigation/PrivateHeader/icons";
 import type { NavigationItem } from "@/shared/types/navigation.types";
 import { useEntitlementContext } from "@/shared/providers/EntitlementProvider";
@@ -219,7 +220,7 @@ export function Sidebar({
       id={id}
     >
       <div className="mb-4 flex items-center justify-between px-1 lg:hidden">
-        <span className="text-sm font-bold">OmniRetail</span>
+        <BrandMark size="sm" variant="light" />
         <button
           aria-label="Cerrar navegacion"
           className="inline-flex h-10 w-10 items-center justify-center rounded-md text-white transition hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"

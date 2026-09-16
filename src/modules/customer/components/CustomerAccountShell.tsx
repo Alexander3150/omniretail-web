@@ -52,6 +52,8 @@ export function CustomerAccountShell({ children, navigationItems }: CustomerAcco
   return (
     <PrivateShell
       allowedPermissions={allowedPermissions}
+      homeHref="/"
+      homeLabel="Volver al inicio"
       navigationItems={navigationItems}
       onLogout={handleLogout}
       userMenuDescription={user?.email}

@@ -1,11 +1,21 @@
 "use client";
 
+import Link from "next/link";
 import { BranchSelector } from "@/shared/navigation/PrivateHeader/BranchSelector";
 import { MenuIcon } from "@/shared/navigation/PrivateHeader/icons";
 import { NotificationButton } from "@/shared/navigation/PrivateHeader/NotificationButton";
 import { UserMenu } from "@/shared/navigation/PrivateHeader/UserMenu";
 
 type PrivateHeaderProps = {
+  /**
+   * Enlace opcional puramente presentacional (p.ej. "volver al inicio del
+   * storefront" para Customer) -- este componente no sabe ni le importa a
+   * que shell pertenece; solo renderiza el link si el caller lo provee.
+   * Employee/Admin (AuthorizedPrivateShell) no lo pasa, asi que el
+   * backoffice queda visualmente identico.
+   */
+  homeHref?: string;
+  homeLabel?: string;
   onLogout?: () => void;
   onOpenSidebar: () => void;
   sidebarId: string;
@@ -15,6 +25,8 @@ type PrivateHeaderProps = {
 };
 
 export function PrivateHeader({
+  homeHref,
+  homeLabel,
   onLogout,
   onOpenSidebar,
   sidebarId,
@@ -35,6 +47,14 @@ export function PrivateHeader({
         <MenuIcon />
       </button>
       <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5 sm:gap-2">
+        {homeHref ? (
+          <Link
+            className="mr-auto inline-flex h-10 shrink-0 items-center rounded-md border border-[var(--color-border)] bg-white px-3 text-sm font-medium text-[var(--color-title)] transition hover:border-[var(--color-structure)] hover:bg-[var(--color-app-background)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]"
+            href={homeHref}
+          >
+            {homeLabel ?? "Volver al inicio"}
+          </Link>
+        ) : null}
         <div className="flex min-w-0 flex-1 justify-end">
           <BranchSelector />
         </div>

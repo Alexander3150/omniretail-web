@@ -26,7 +26,15 @@ export function PedidoDetallePage({ orderId }: { orderId: string }) {
           <section className="min-w-0 rounded-xl border border-[var(--color-border)] p-4"><h2 className="font-black text-[var(--color-text)]">Método de pago</h2><p className="mt-3 break-words text-sm font-bold text-[var(--color-text)]">{order.payment?.method ?? "Pago registrado"}</p>{order.payment?.reference ? <p className="mt-1 text-sm text-[var(--color-text-muted)]">{order.payment.reference}</p> : null}<p className="mt-3 text-sm text-[var(--color-text-muted)]">Estado: {order.payment?.status ?? "No disponible"}</p></section>
         </div>
         <section className="border-t border-[var(--color-border)]"><h2 className="px-5 pt-5 font-black text-[var(--color-text)] sm:px-7">Productos</h2><div className="divide-y divide-[var(--color-border)] px-5 sm:px-7">{order.items.map((item) => <article className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-4" key={`${item.sku}-${item.name}`}><div className="min-w-0"><p className="break-words font-bold text-[var(--color-text)]">{item.name}</p><p className="mt-1 text-sm text-[var(--color-text-muted)]">{item.quantity} × Q{item.unitPrice.toFixed(2)} · {item.sku}</p></div><p className="self-center whitespace-nowrap font-black text-[var(--color-title)]">Q{item.subtotal.toFixed(2)}</p></article>)}</div></section>
-        <dl className="ml-auto grid w-full max-w-sm gap-3 border-t border-[var(--color-border)] p-5 text-sm sm:p-7"><div className="flex justify-between gap-4"><dt>Subtotal</dt><dd>Q{order.subtotal.toFixed(2)}</dd></div><div className="flex justify-between gap-4"><dt>Envío</dt><dd>Q{order.shippingTotal.toFixed(2)}</dd></div><div className="flex justify-between gap-4 border-t border-[var(--color-border)] pt-3 text-xl font-black"><dt>Total</dt><dd>Q{order.total.toFixed(2)}</dd></div></dl>
+        <div className="flex flex-wrap items-start justify-between gap-4 border-t border-[var(--color-border)] p-5 sm:p-7">
+          <Link
+            className="inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--color-primary)] bg-white px-5 py-2.5 text-sm font-semibold text-[var(--color-title)] transition hover:bg-[var(--color-app-background)]"
+            href={`/pedido/seguimiento/${order.trackingToken}`}
+          >
+            Ver seguimiento
+          </Link>
+          <dl className="ml-auto grid w-full max-w-sm gap-3 text-sm"><div className="flex justify-between gap-4"><dt>Subtotal</dt><dd>Q{order.subtotal.toFixed(2)}</dd></div><div className="flex justify-between gap-4"><dt>Envío</dt><dd>Q{order.shippingTotal.toFixed(2)}</dd></div><div className="flex justify-between gap-4 border-t border-[var(--color-border)] pt-3 text-xl font-black"><dt>Total</dt><dd>Q{order.total.toFixed(2)}</dd></div></dl>
+        </div>
       </section>
     </div>
   );

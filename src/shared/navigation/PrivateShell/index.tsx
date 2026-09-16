@@ -8,6 +8,8 @@ import type { NavigationItem } from "@/shared/types/navigation.types";
 type PrivateShellProps = {
   allowedPermissions?: ReadonlySet<string>;
   children: ReactNode;
+  homeHref?: string;
+  homeLabel?: string;
   navigationItems: NavigationItem[];
   onLogout?: () => void;
   userMenuDescription?: string;
@@ -17,6 +19,8 @@ type PrivateShellProps = {
 export function PrivateShell({
   allowedPermissions,
   children,
+  homeHref,
+  homeLabel,
   navigationItems,
   onLogout,
   userMenuDescription,
@@ -101,6 +105,8 @@ export function PrivateShell({
         ) : null}
         <div className="flex min-w-0 flex-1 flex-col">
           <PrivateHeader
+            homeHref={homeHref}
+            homeLabel={homeLabel}
             onLogout={onLogout}
             onOpenSidebar={() => setSidebarOpen(true)}
             sidebarId={sidebarId}
