@@ -58,6 +58,8 @@ const PRODUCT_SCREWS = "prod-screws";
 const PRODUCT_HAMMER = "prod-hammer";
 const PRODUCT_B = "product-inventory-hardening-b";
 const LOCATION_CENTRO = "loc-centro-a";
+const LOCATION_NORTE = "loc-norte-a";
+const LOCATION_B = "loc-inventory-hardening-b";
 const NOW = "2026-09-15T12:00:00.000Z";
 
 class MemoryStorageAdapter extends LocalStorageAdapter {
@@ -284,6 +286,26 @@ async function expectDenied(action: () => Promise<unknown>, pattern: RegExp) {
   await assert.rejects(action, pattern);
 }
 
+function inventoryEffectSnapshot(store: MockDatabaseStore) {
+  const snapshot = store.getSnapshot();
+  return {
+    balances: snapshot.inventoryBalances,
+    movements: snapshot.inventoryMovements,
+    lots: snapshot.stockLots,
+    serials: snapshot.serialNumbers,
+  };
+}
+
+async function expectDeniedWithNoInventoryEffect(
+  store: MockDatabaseStore,
+  action: () => Promise<unknown>,
+  pattern: RegExp,
+) {
+  const before = inventoryEffectSnapshot(store);
+  await expectDenied(action, pattern);
+  assert.deepEqual(inventoryEffectSnapshot(store), before);
+}
+
 async function main() {
   const harness = createHarness();
 
@@ -292,8 +314,25 @@ async function main() {
   assert.ok(alerts.rows.length > 0, "read-only stock read should return inventory rows");
   const movements = await new GetInventoryMovementsService(readOnly).execute(BRANCH_CENTRO);
   assert.ok(Array.isArray(movements.rows), "read-only movements read should return rows");
-
   await expectDenied(
+    () => new GetInventoryAlertsService(readOnly).execute(BRANCH_NORTE),
+    /No ten.*acceso|sucursal seleccionada/i,
+  );
+  await expectDenied(
+    () => new GetInventoryAlertsService(readOnly).execute(BRANCH_B),
+    /sucursal seleccionada/i,
+  );
+  await expectDenied(
+    () => new GetInventoryMovementsService(readOnly).execute(BRANCH_NORTE),
+    /No ten.*acceso|sucursal seleccionada/i,
+  );
+  await expectDenied(
+    () => new GetInventoryMovementsService(readOnly).execute(BRANCH_B),
+    /sucursal seleccionada/i,
+  );
+
+  await expectDeniedWithNoInventoryEffect(
+    harness.store,
     () =>
       new RegisterInventoryAdjustmentService(readOnly).execute({
         productId: PRODUCT_SCREWS,
@@ -312,7 +351,8 @@ async function main() {
     [...READ_PERMISSIONS, ADJUST_PERMISSION],
     [BRANCH_CENTRO],
   );
-  await expectDenied(
+  await expectDeniedWithNoInventoryEffect(
+    harness.store,
     () =>
       new RegisterInventoryAdjustmentService(adjuster).execute({
         productId: PRODUCT_B,
@@ -326,12 +366,13 @@ async function main() {
       }),
     /Producto no encontrado/i,
   );
-  await expectDenied(
+  await expectDeniedWithNoInventoryEffect(
+    harness.store,
     () =>
       new RegisterInventoryAdjustmentService(adjuster).execute({
         productId: PRODUCT_SCREWS,
         branchId: BRANCH_NORTE,
-        locationId: "loc-norte-a",
+        locationId: LOCATION_NORTE,
         unitId: "unit-unit",
         movementKind: "in",
         quantity: 1,
@@ -339,6 +380,36 @@ async function main() {
         notes: "",
       }),
     /No ten.*acceso|sucursal seleccionada/i,
+  );
+  await expectDeniedWithNoInventoryEffect(
+    harness.store,
+    () =>
+      new RegisterInventoryAdjustmentService(adjuster).execute({
+        productId: PRODUCT_SCREWS,
+        branchId: BRANCH_CENTRO,
+        locationId: LOCATION_NORTE,
+        unitId: "unit-box",
+        movementKind: "in",
+        quantity: 1,
+        reason: "Wrong branch location",
+        notes: "",
+      }),
+    /ubicaci.*no est.*disponible/i,
+  );
+  await expectDeniedWithNoInventoryEffect(
+    harness.store,
+    () =>
+      new RegisterInventoryAdjustmentService(adjuster).execute({
+        productId: PRODUCT_SCREWS,
+        branchId: BRANCH_CENTRO,
+        locationId: LOCATION_B,
+        unitId: "unit-box",
+        movementKind: "in",
+        quantity: 1,
+        reason: "Wrong tenant location",
+        notes: "",
+      }),
+    /ubicaci.*no est.*disponible/i,
   );
 
   await expectDenied(

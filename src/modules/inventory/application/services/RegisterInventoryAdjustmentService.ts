@@ -41,7 +41,7 @@ export class RegisterInventoryAdjustmentService {
     const location = branchLocations.find((item) => item.id === dto.locationId);
     if (!location || location.tenantId !== tenantId) {
       throw new InventoryServiceError(
-        "La ubicaciÛn seleccionada no est· disponible para esta sucursal.",
+        "La ubicaci√≥n seleccionada no est√° disponible para esta sucursal.",
       );
     }
     if (!Number.isFinite(dto.quantity) || dto.quantity < 0) {
