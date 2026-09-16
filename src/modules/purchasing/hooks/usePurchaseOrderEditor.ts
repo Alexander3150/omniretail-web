@@ -32,7 +32,7 @@ const EMPTY_MODEL: PurchaseOrderEditorModel = {
 export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrderPrefillContext) {
   const repositories = useRepositories();
   const { currentBranch, loading: branchLoading } = useActiveBranch();
-  const { user, loading: sessionLoading } = useCurrentSession();
+  const { loading: sessionLoading } = useCurrentSession();
   const service = useMemo(() => new PurchaseOrderEditorService(repositories), [repositories]);
   const [model, setModel] = useState<PurchaseOrderEditorModel>(EMPTY_MODEL);
   const [suppliers, setSuppliers] = useState<PurchaseOrderEditorSupplier[]>([]);
@@ -50,11 +50,7 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
   const loadAvailableProducts = useCallback(
     async (supplierId: string) => {
       if (!currentBranch?.tenantId) return [];
-      const products = await service.getAvailableProducts(
-        currentBranch.tenantId,
-        supplierId,
-        currentBranch?.id,
-      );
+      const products = await service.getAvailableProducts(supplierId, currentBranch?.id);
       setAvailableProducts(products);
       return products;
     },
@@ -68,14 +64,12 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
       setLoading(true);
       setError(null);
       try {
-        const tenantId = currentBranch.tenantId;
-        const activeSuppliers = await service.getActiveSuppliers(tenantId);
+        const activeSuppliers = await service.getActiveSuppliers();
         if (!active) return;
         if (orderId) {
           setSuppliers(activeSuppliers);
-          const order = await service.getOrderForEdit(tenantId, orderId, currentBranch?.id);
+          const order = await service.getOrderForEdit(orderId, currentBranch?.id);
           const products = await service.getAvailableProducts(
-            tenantId,
             order.supplierId,
             currentBranch?.id,
           );
@@ -83,7 +77,7 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
           setModel(order);
           setAvailableProducts(products);
         } else if (prefill?.productId) {
-          const resolution = await service.resolvePrefillContext(tenantId, prefill);
+          const resolution = await service.resolvePrefillContext(prefill);
           if (!active) return;
           setPrefillResolution(resolution);
           setPrefillNotice(resolution?.notice ?? null);
@@ -97,7 +91,6 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
           );
           if (resolution?.supplierId) {
             const products = await service.getAvailableProducts(
-              tenantId,
               resolution.supplierId,
               prefill.branchId ?? currentBranch?.id,
             );
@@ -291,14 +284,11 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
   const saveDraft = useCallback(async () => {
     if (!model.supplierId) throw new Error("Selecciona un proveedor.");
     if (!currentBranch) throw new Error("Selecciona una sucursal destino.");
-    if (!user) throw new Error("No se pudo resolver el usuario actual.");
     setSaving(true);
     try {
       return await service.saveDraft({
         orderId: model.id,
-        tenantId: currentBranch.tenantId,
         branchId: currentBranch.id,
-        createdByUserId: user.id,
         supplierId: model.supplierId,
         expectedDate: model.expectedDate,
         notes: model.notes,
@@ -307,18 +297,15 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
     } finally {
       setSaving(false);
     }
-  }, [currentBranch, model, service, user]);
+  }, [currentBranch, model, service]);
 
   const createOrder = useCallback(async () => {
     if (!currentBranch) throw new Error("Selecciona una sucursal destino.");
-    if (!user) throw new Error("No se pudo resolver el usuario actual.");
     setSaving(true);
     try {
       return await service.createOrder({
         orderId: model.id,
-        tenantId: currentBranch.tenantId,
         branchId: currentBranch.id,
-        createdByUserId: user.id,
         supplierId: model.supplierId,
         expectedDate: model.expectedDate,
         notes: model.notes,
@@ -327,7 +314,7 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
     } finally {
       setSaving(false);
     }
-  }, [currentBranch, model, service, user]);
+  }, [currentBranch, model, service]);
 
   return {
     model,

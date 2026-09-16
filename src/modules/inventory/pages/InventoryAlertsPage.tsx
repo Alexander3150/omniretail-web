@@ -108,6 +108,8 @@ export function InventoryAlertsPage() {
     setStatus,
     setKpiFilter,
     setFiltersOpen,
+    canAdjustStock,
+    canManageTransfers,
     adjustStock,
     requestTransfer,
     approveTransferRequest,
@@ -238,8 +240,8 @@ export function InventoryAlertsPage() {
           <div className="grid gap-2 sm:flex sm:flex-wrap sm:justify-end">
             <Button
               className="w-full sm:w-auto"
-              disabled={!selectedRow}
-              onClick={() => openAdjust(selectedRow ?? undefined)}
+              disabled={!selectedRow || !canAdjustStock}
+              onClick={() => canAdjustStock && openAdjust(selectedRow ?? undefined)}
               type="button"
             >
               + Registrar ajuste
@@ -316,6 +318,8 @@ export function InventoryAlertsPage() {
               showExpiration={data.visibility.showExpirationFeatures}
               totalItems={rows.length}
               totalPages={totalPages}
+              canAdjustStock={canAdjustStock}
+              canManageTransfers={canManageTransfers}
               onAdjust={openAdjust}
               onOpen={selectRow}
               onPageChange={setPage}
@@ -335,7 +339,9 @@ export function InventoryAlertsPage() {
           alerts={data.alerts}
           mode={panelMode}
           row={selectedRow}
-          onAdjust={() => selectedRow && openAdjust(selectedRow)}
+          canAdjustStock={canAdjustStock}
+          canManageTransfers={canManageTransfers}
+          onAdjust={() => selectedRow && canAdjustStock && openAdjust(selectedRow)}
           onCreateOrder={() => selectedRow && openPurchaseOrder(selectedRow, "inventory-alert")}
           onOtherBranches={() => selectedRow && openOtherBranches(selectedRow)}
           onViewHistory={() => selectedRow && openMovementHistory(selectedRow)}
@@ -374,6 +380,7 @@ export function InventoryAlertsPage() {
           open
           row={selectedRow}
           onClose={() => setActionMode(null)}
+          canManageTransfers={canManageTransfers}
           onRequest={(providerBranchId) => openTransfer(selectedRow, providerBranchId)}
         />
       ) : null}
@@ -391,6 +398,7 @@ export function InventoryAlertsPage() {
           open
           request={selectedTransferRequest}
           busy={busy}
+          canManageTransfers={canManageTransfers}
           onApprove={async () => {
             await approveTransferRequest(selectedTransferRequest.id);
             setActionMode(null);
@@ -628,6 +636,8 @@ function InventoryTable({
   showExpiration,
   totalItems,
   totalPages,
+  canAdjustStock,
+  canManageTransfers,
   onAdjust,
   onOpen,
   onPageChange,
@@ -644,6 +654,8 @@ function InventoryTable({
   showExpiration: boolean;
   totalItems: number;
   totalPages: number;
+  canAdjustStock: boolean;
+  canManageTransfers: boolean;
   onAdjust: (row: InventoryProductRow) => void;
   onOpen: (row: InventoryProductRow) => void;
   onPageChange: (page: number) => void;
@@ -742,6 +754,8 @@ function InventoryTable({
                     {!row.isDerivedKit ? (
                       <RowActionsMenu
                         row={row}
+                        canAdjustStock={canAdjustStock}
+                        canManageTransfers={canManageTransfers}
                         onAdjust={onAdjust}
                         onTransfer={onTransfer}
                         onViewHistory={onViewHistory}
@@ -900,11 +914,15 @@ function InventoryStatusBadge({ label, status }: { label: string; status: Invent
 
 function RowActionsMenu({
   row,
+  canAdjustStock,
+  canManageTransfers,
   onAdjust,
   onTransfer,
   onViewHistory,
 }: {
   row: InventoryProductRow;
+  canAdjustStock: boolean;
+  canManageTransfers: boolean;
   onAdjust: (row: InventoryProductRow) => void;
   onTransfer: (row: InventoryProductRow) => void;
   onViewHistory: (row: InventoryProductRow) => void;
@@ -984,12 +1002,16 @@ function RowActionsMenu({
           role="menu"
           style={menuStyle}
         >
-          <MenuItem icon={<AdjustIcon />} onClick={() => select(onAdjust)}>
-            Ajustar existencias
-          </MenuItem>
-          <MenuItem icon={<TransferIcon />} onClick={() => select(onTransfer)}>
-            Solicitar traslado
-          </MenuItem>
+          {canAdjustStock ? (
+            <MenuItem icon={<AdjustIcon />} onClick={() => select(onAdjust)}>
+              Ajustar existencias
+            </MenuItem>
+          ) : null}
+          {canManageTransfers ? (
+            <MenuItem icon={<TransferIcon />} onClick={() => select(onTransfer)}>
+              Solicitar traslado
+            </MenuItem>
+          ) : null}
           <MenuItem icon={<HistoryIcon />} onClick={() => select(onViewHistory)}>
             Historial de movimientos
           </MenuItem>
@@ -1072,6 +1094,8 @@ function HistoryIcon() {
 function ContextPanel({
   activeBranchId,
   activeBranchName,
+  canAdjustStock,
+  canManageTransfers,
   alerts,
   mode,
   row,
@@ -1089,6 +1113,8 @@ function ContextPanel({
 }: {
   activeBranchId: string;
   activeBranchName: string;
+  canAdjustStock: boolean;
+  canManageTransfers: boolean;
   alerts: InventoryAlert[];
   mode: AlertPanelMode;
   row: InventoryProductRow | null;
@@ -1135,6 +1161,8 @@ function ContextPanel({
           activeBranchName={activeBranchName}
           alerts={productAlerts}
           row={row}
+          canAdjustStock={canAdjustStock}
+          canManageTransfers={canManageTransfers}
           onAdjust={onAdjust}
           onCreateOrder={onCreateOrder}
           onClose={onCloseProduct}
@@ -1266,6 +1294,8 @@ function AlertsPanel({
 function ProductPanel({
   activeBranchName,
   alerts,
+  canAdjustStock,
+  canManageTransfers,
   row,
   onAdjust,
   onCreateOrder,
@@ -1275,6 +1305,8 @@ function ProductPanel({
 }: {
   activeBranchName: string;
   alerts: InventoryAlert[];
+  canAdjustStock: boolean;
+  canManageTransfers: boolean;
   row: InventoryProductRow;
   onAdjust: () => void;
   onCreateOrder: () => void;
@@ -1399,15 +1431,19 @@ function ProductPanel({
           )}
         </section>
         <div className="grid gap-2">
-          <Button onClick={onOtherBranches} type="button" variant="secondary">
-            Ver existencias en otras sucursales
-          </Button>
+          {canManageTransfers ? (
+            <Button onClick={onOtherBranches} type="button" variant="secondary">
+              Ver existencias en otras sucursales
+            </Button>
+          ) : null}
           <Button onClick={onViewHistory} type="button" variant="secondary">
             Ver historial de movimientos
           </Button>
-          <Button onClick={onAdjust} type="button">
-            Ajustar existencias
-          </Button>
+          {canAdjustStock ? (
+            <Button onClick={onAdjust} type="button">
+              Ajustar existencias
+            </Button>
+          ) : null}
           <Button onClick={onCreateOrder} type="button" variant="secondary">
             Crear orden de compra
           </Button>
@@ -1759,11 +1795,13 @@ function AdjustmentSummary({
 function OtherBranchesStockModal({
   open,
   row,
+  canManageTransfers,
   onClose,
   onRequest,
 }: {
   open: boolean;
   row: InventoryProductRow;
+  canManageTransfers: boolean;
   onClose: () => void;
   onRequest: (providerBranchId: string) => void;
 }) {
@@ -1796,7 +1834,7 @@ function OtherBranchesStockModal({
                 </p>
               </div>
               <Button
-                disabled={stock.availableQuantity <= 0}
+                disabled={!canManageTransfers || stock.availableQuantity <= 0}
                 onClick={() => onRequest(stock.branchId)}
                 type="button"
                 variant="secondary"
@@ -1950,6 +1988,7 @@ function TransferRequestDetailModal({
   open,
   request,
   busy,
+  canManageTransfers,
   onApprove,
   onClose,
   onReject,
@@ -1957,6 +1996,7 @@ function TransferRequestDetailModal({
   open: boolean;
   request: InventoryTransferRequestRow;
   busy: boolean;
+  canManageTransfers: boolean;
   onApprove: () => Promise<void>;
   onClose: () => void;
   onReject: (reason: string) => Promise<void>;
@@ -1980,7 +2020,7 @@ function TransferRequestDetailModal({
   return (
     <Modal
       footer={
-        isReceivedRequest ? (
+        isReceivedRequest && canManageTransfers ? (
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             {rejecting ? (
               <>

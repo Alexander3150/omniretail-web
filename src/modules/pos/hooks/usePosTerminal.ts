@@ -158,7 +158,6 @@ export function usePosTerminal() {
     setBankAccountsError(null);
     try {
       const accounts = await bankAccountsService.execute({
-        tenantId: currentBranch.tenantId,
         branchId: currentBranch.id,
       });
       setBankAccounts(accounts);
@@ -821,18 +820,12 @@ export function usePosTerminal() {
     setConfirmationResult(null);
 
     try {
-      const tenant = await repositories.tenants.getById(currentBranch.tenantId);
-      if (!tenant) throw new Error("No se pudo resolver la moneda del negocio actual.");
       const result = await confirmationService.execute({
         confirmationId: attemptId,
-        user,
-        currentBranch,
-        cashShift,
-        hasSalesPermission: hasPosSalesPermission,
-        hasBranchAccess: hasCurrentBranchAccess,
+        branchId: currentBranch.id,
+        cashShiftId: cashShift.id,
         ticket,
         checkout: checkoutState.value,
-        currency: tenant.defaultCurrency,
         orderIdempotencyKey,
       });
 
@@ -858,9 +851,6 @@ export function usePosTerminal() {
     confirmationAttempt?.orderIdempotencyKey,
     confirmationService,
     currentBranch,
-    hasCurrentBranchAccess,
-    hasPosSalesPermission,
-    repositories.tenants,
     ticket,
     user,
   ]);

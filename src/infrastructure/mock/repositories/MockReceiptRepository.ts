@@ -16,6 +16,9 @@ export class MockReceiptRepository extends BaseMockRepository implements Receipt
   async getById(id: string) {
     return this.read((db) => db.receipts.find((item) => item.id === id) ?? null);
   }
+  async listByTenant(tenantId: string) {
+    return this.read((db) => db.receipts.filter((item) => item.tenantId === tenantId));
+  }
   async getByConfirmationId(tenantId: string, confirmationId: string) {
     return this.read(
       (db) =>

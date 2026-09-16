@@ -289,7 +289,9 @@ const legacyDemoSeedDatabase: MockDatabase = {
       isSystem: true,
       permissions: [
         "inventory.stock.read",
+        "inventory.movements.read",
         "inventory.adjustment.create",
+        "inventory.transfers.manage",
         "catalog.products.update",
       ],
       branchScope: "selected",

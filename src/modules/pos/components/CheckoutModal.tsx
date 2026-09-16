@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { BankAccountType } from "@/core/entities";
 import type {
   CardTerminalOutcome,
@@ -736,38 +736,15 @@ function PaymentSection({ title, children }: { title: string; children: ReactNod
   );
 }
 
-/**
- * El número completo de la cuenta seleccionada solo se pinta acá, dentro del checkout de
- * transferencia -- este es el único consumidor autorizado a mostrarlo (ver
- * GetCheckoutBankAccountsService). Nunca queda en un query param, log ni mensaje de error.
- */
 function SelectedBankAccountDetail({ account }: { account?: CheckoutBankAccountDto }) {
-  const [copied, setCopied] = useState(false);
-
   if (!account) return null;
-
-  async function handleCopy() {
-    if (!account) return;
-    await navigator.clipboard.writeText(account.accountNumber);
-    setCopied(true);
-  }
 
   return (
     <div className="space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 text-sm">
       <DetailRow label="Banco" value={account.bankName} />
       <DetailRow label="Tipo de cuenta" value={accountTypeLabels[account.accountType]} />
       <DetailRow label="Titular" value={account.holderName} />
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <DetailRow label="Número completo" value={account.accountNumber} mono />
-        <Button
-          className="min-h-8 px-3 py-1.5 text-xs"
-          onClick={() => void handleCopy()}
-          type="button"
-          variant="secondary"
-        >
-          {copied ? "Copiado ✓" : "Copiar"}
-        </Button>
-      </div>
+      <DetailRow label="Cuenta" value={account.accountNumberMasked} mono />
     </div>
   );
 }

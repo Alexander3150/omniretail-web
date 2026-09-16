@@ -33,7 +33,6 @@ export function useReceivingDocuments() {
   const repositories = useRepositories();
   const { currentBranch, loading: branchLoading } = useActiveBranch();
   const activeBranchId = currentBranch?.id;
-  const tenantId = currentBranch?.tenantId;
   const service = useMemo(() => new ReceivingDocumentsService(repositories), [repositories]);
   const [data, setData] = useState<ReceivingReadModel>(EMPTY_DATA);
   const [filters, setFilters] = useState<ReceivingFilters>(DEFAULT_FILTERS);
@@ -86,11 +85,10 @@ export function useReceivingDocuments() {
 
   const createIncidentType = useCallback(
     async (name: string) => {
-      if (!tenantId) throw new Error("No hay una sucursal activa.");
-      await service.createIncidentType({ tenantId, name });
+      await service.createIncidentType(name);
       await reload();
     },
-    [reload, service, tenantId],
+    [reload, service],
   );
 
   const archiveIncidentType = useCallback(

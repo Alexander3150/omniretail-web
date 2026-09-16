@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PurchaseOrderStatus } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { GetPurchaseOrdersReadModelService } from "@/modules/purchasing/application/services/GetPurchaseOrdersReadModelService";
+import { UpdatePurchaseOrderStatusService } from "@/modules/purchasing/application/services/UpdatePurchaseOrderStatusService";
 import type {
   PurchaseOrderRowReadModel,
   PurchaseOrderStatusFilter,
@@ -37,6 +38,10 @@ export function usePurchaseOrders() {
   const activeBranchId = currentBranch?.id;
   const service = useMemo(
     () => new GetPurchaseOrdersReadModelService(repositories),
+    [repositories],
+  );
+  const updateStatusService = useMemo(
+    () => new UpdatePurchaseOrderStatusService(repositories),
     [repositories],
   );
   const [data, setData] = useState<PurchaseOrdersReadModel>(EMPTY_DATA);
@@ -82,9 +87,9 @@ export function usePurchaseOrders() {
   }, []);
   const updateStatus = useCallback(
     async (orderId: string, status: PurchaseOrderStatus) => {
-      await repositories.purchaseOrders.updateStatus(orderId, status);
+      await updateStatusService.execute(orderId, status);
     },
-    [repositories],
+    [updateStatusService],
   );
 
   return {

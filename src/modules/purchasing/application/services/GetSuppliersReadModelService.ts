@@ -16,11 +16,21 @@ import type {
   SuppliersReadModel,
 } from "@/modules/purchasing/application/dto/SupplierReadModel";
 import { buildIncidentListItems } from "@/modules/receiving/application/services/buildIncidentListItems";
+import { resolvePurchasingContext } from "@/modules/purchasing/application/services/serviceHelpers";
 
 export class GetSuppliersReadModelService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
+  /**
+   * `activeBranchId`/`activeTenantId` (parametros historicos del cliente) ya NO deciden el
+   * tenant autoritativo -- permission-hardening (feature/permission-hardening-purchasing-
+   * receiving): el tenant SIEMPRE sale de la sesion (`resolvePurchasingContext`). Se conservan
+   * solo como filtro de VISTA (que ordenes/recepciones de ESTA sucursal mostrar en las stats de
+   * cada proveedor), nunca como limite de seguridad.
+   */
   async execute(activeBranchId?: string, activeTenantId?: string): Promise<SuppliersReadModel> {
+    void activeTenantId;
+    const { tenantId } = await resolvePurchasingContext(this.repositories);
     const [
       allSuppliers,
       products,
@@ -34,21 +44,15 @@ export class GetSuppliersReadModelService {
       this.repositories.suppliers.getAll(),
       this.repositories.products.getAll(),
       this.repositories.units.getAll(),
-      this.repositories.purchaseOrders.getAll(),
-      this.repositories.receipts.getAll(),
+      this.repositories.purchaseOrders.listByTenant(tenantId),
+      this.repositories.receipts.listByTenant(tenantId),
       this.repositories.incidentTypes.getAll(),
       this.repositories.users.getAll(),
       this.repositories.branches.getAll(),
     ]);
 
-    const tenantId =
-      activeTenantId ?? branches.find((branch) => branch.id === activeBranchId)?.tenantId;
-    const suppliers = tenantId
-      ? allSuppliers.filter((supplier) => supplier.tenantId === tenantId)
-      : [];
-    const purchaseOrders = tenantId
-      ? allPurchaseOrders.filter((order) => order.tenantId === tenantId)
-      : [];
+    const suppliers = allSuppliers.filter((supplier) => supplier.tenantId === tenantId);
+    const purchaseOrders = allPurchaseOrders;
     const branchPurchaseOrders = purchaseOrders.filter(
       (order) => order.branchId === activeBranchId,
     );

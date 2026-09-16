@@ -20,6 +20,7 @@ import {
   MockSaleConfirmationRepository,
   type MockSaleConfirmationRepositoryTestHooks,
 } from "@/infrastructure/mock/repositories/MockSaleConfirmationRepository";
+import { MockTenantRepository } from "@/infrastructure/mock/repositories/MockTenantRepository";
 import { MockUserRepository } from "@/infrastructure/mock/repositories/MockUserRepository";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
@@ -41,7 +42,8 @@ async function main() {
   const store = createIsolatedStore();
   const eventBus = new DataEventBus();
   const repositories = createRepositories(store, eventBus);
-  const confirmSale = new ConfirmSaleService(repositories);
+  const posRepositories = createRepositories(store, eventBus, {}, cashierId);
+  const confirmSale = new ConfirmSaleService(posRepositories);
   const picking = new PickingApplicationService(repositories);
   const packing = new PackingApplicationService(repositories);
   const dispatch = new DispatchApplicationService(repositories);
@@ -158,7 +160,12 @@ async function main() {
       throw new Error("simulated late deferred fulfillment failure");
     },
   };
-  const rollbackRepositories = createRepositories(rollbackStore, rollbackEvents, hooks);
+  const rollbackRepositories = createRepositories(
+    rollbackStore,
+    rollbackEvents,
+    hooks,
+    cashierId,
+  );
   const rollbackService = new ConfirmSaleService(rollbackRepositories);
   const rollbackBefore = rollbackSnapshot(rollbackStore);
   await assert.rejects(
@@ -226,12 +233,13 @@ function createRepositories(
   store: MockDatabaseStore,
   eventBus: DataEventBus,
   saleHooks: MockSaleConfirmationRepositoryTestHooks = {},
+  sessionUserId = warehouseId,
 ): RepositoryRegistry {
   const auth = {
     getCurrentSessionId: async () => "session-pos-picking-atomic",
     getSession: async () => ({
       id: "session-pos-picking-atomic",
-      userId: warehouseId,
+      userId: sessionUserId,
       createdAt: "2026-09-14T10:00:00.000Z",
       expiresAt: "2099-01-01T00:00:00.000Z",
       rememberMe: false,
@@ -253,6 +261,7 @@ function createRepositories(
     promotions: new MockPromotionRepository(store, eventBus),
     roles: new MockRoleRepository(store, eventBus),
     saleConfirmations: new MockSaleConfirmationRepository(store, eventBus, saleHooks),
+    tenants: new MockTenantRepository(store, eventBus),
     units: new MockUnitRepository(store, eventBus),
     users: new MockUserRepository(store, eventBus),
   } as unknown as RepositoryRegistry;
@@ -275,13 +284,9 @@ function confirmationInput(
   const isDeferred = deliveryMethod !== DeliveryMethod.immediate;
   return {
     confirmationId: `pos-picking-confirmation-${suffix}`,
+    branchId: currentBranch.id,
+    cashShiftId: cashShift.id,
     orderIdempotencyKey: isDeferred ? `pos-picking-order-${suffix}` : undefined,
-    user,
-    currentBranch,
-    cashShift,
-    hasSalesPermission: true,
-    hasBranchAccess: true,
-    currency: "GTQ",
     ticket: {
       items: [
         {
