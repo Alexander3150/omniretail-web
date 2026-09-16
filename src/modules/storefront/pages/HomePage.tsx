@@ -78,7 +78,7 @@ export function HomePage() {
   const showNextSlide = () => setActiveSlide((current) => (current + 1) % slides.length);
   return (
     <main>
-      <section className="mx-auto max-w-7xl px-5 py-8 sm:py-10">
+      <section className="mx-auto max-w-[90rem] px-4 py-8 sm:px-5 sm:py-10">
         <div className="relative min-h-[26rem] overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm sm:min-h-[30rem]">
           {slide?.imageSource ? (
             <>
@@ -160,7 +160,7 @@ export function HomePage() {
         </div>
       </section>
       <section className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="mx-auto grid max-w-7xl gap-5 px-5 py-5 text-sm sm:grid-cols-3">
+        <div className="mx-auto grid max-w-[90rem] gap-5 px-4 py-5 text-sm sm:px-5 sm:grid-cols-3">
           <div>
             <p className="font-bold text-[var(--color-title)]">Productos publicados</p>
             <p className="mt-1 text-[var(--color-text-muted)]">
@@ -181,7 +181,7 @@ export function HomePage() {
           </div>
         </div>
       </section>
-      <section className="mx-auto max-w-7xl px-5 py-14">
+      <section className="mx-auto max-w-[90rem] px-4 py-14 sm:px-5">
         <div className="flex items-end justify-between gap-4">
           <div>
             <p className="text-sm font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">
@@ -218,7 +218,7 @@ export function HomePage() {
           </StorefrontHorizontalCarousel>
         ) : null}
       </section>
-      <section className="mx-auto max-w-7xl px-5 py-14">
+      <section className="mx-auto max-w-[90rem] px-4 py-14 sm:px-5">
         <div className="flex items-end justify-between gap-4">
           <div>
             <p className="text-sm font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">
@@ -246,6 +246,7 @@ export function HomePage() {
                       : undefined
                   }
                   product={{ ...product, salePrice: offer?.effectivePrice ?? product.salePrice }}
+                  uniformHeight
                 />
               </div>
             ))}

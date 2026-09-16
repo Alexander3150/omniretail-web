@@ -2,19 +2,23 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useState } from "react";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
 import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
+import { StorefrontUnavailableQuantityModal } from "@/modules/storefront/components/StorefrontUnavailableQuantityModal";
 
 export function CartPage() {
   const { items, subtotal, updateQuantity, removeProduct, clearCart } = useStorefrontCart();
   const { products } = useStorefrontDiscovery();
-  const availabilityByProductId = new Map(
-    products.map((product) => [product.id, product.availableQuantity]),
-  );
-  const invalidItems = items.filter((item) => {
-    const availableQuantity = availabilityByProductId.get(item.productId);
-    return availableQuantity !== undefined && availableQuantity !== null && item.quantity > availableQuantity;
-  });
+  const [unavailableQuantityModalOpen, setUnavailableQuantityModalOpen] = useState(false);
+  const increaseQuantity = (productId: string, quantity: number) => {
+    const availableQuantity = products.find((product) => product.id === productId)?.availableQuantity;
+    if (availableQuantity !== undefined && availableQuantity !== null && quantity >= availableQuantity) {
+      setUnavailableQuantityModalOpen(true);
+      return;
+    }
+    updateQuantity(productId, quantity + 1);
+  };
   const itemCount = items.reduce((total, item) => total + item.quantity, 0);
   if (items.length === 0)
     return (
@@ -57,24 +61,19 @@ export function CartPage() {
       </div>
       <div className="mt-8 grid gap-6 2xl:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
-          <div className="hidden grid-cols-[minmax(14rem,1fr)_5rem_6rem_6rem_6rem_3rem] gap-3 border-b border-[var(--color-border)] bg-slate-50 px-5 py-4 text-xs font-black uppercase tracking-wider text-[var(--color-primary-hover)] xl:grid">
+          <div className="hidden grid-cols-[minmax(14rem,1fr)_6rem_10rem_7rem_7rem_3rem] gap-3 border-b border-[var(--color-border)] bg-slate-50 px-5 py-4 text-xs font-black uppercase tracking-wider text-[var(--color-primary-hover)] xl:grid">
             <span>Producto</span>
-            <span>SKU</span>
+            <span className="text-center">SKU</span>
             <span className="text-center">Cantidad</span>
             <span className="text-right">Precio unit.</span>
-            <span className="text-right">Total</span>
+            <span className="text-center">Total</span>
             <span className="text-right">Acción</span>
           </div>
           {items.map((item) => {
-            const availableQuantity = availabilityByProductId.get(item.productId);
-            const isInvalid =
-              availableQuantity !== undefined &&
-              availableQuantity !== null &&
-              item.quantity > availableQuantity;
             return (
             <article
               key={item.productId}
-              className="grid min-h-32 gap-3 border-b border-[var(--color-border)] px-4 py-5 last:border-b-0 sm:px-5 xl:grid-cols-[minmax(14rem,1fr)_5rem_6rem_6rem_6rem_3rem] xl:items-center"
+              className="grid min-h-32 gap-3 border-b border-[var(--color-border)] px-4 py-5 last:border-b-0 sm:px-5 xl:grid-cols-[minmax(14rem,1fr)_6rem_10rem_7rem_7rem_3rem] xl:items-center"
             >
               <div className="flex min-w-0 items-center gap-4">
                 {item.imageUrl ? (
@@ -94,21 +93,13 @@ export function CartPage() {
                   <h2 className="mt-1 truncate text-lg font-black text-[var(--color-text)]">
                     {item.name}
                   </h2>
-                  {isInvalid ? (
-                    <p className="mt-1 text-sm font-bold text-[var(--color-danger)]" role="alert">
-                      {availableQuantity === 0
-                        ? "Agotado. Retira este producto para continuar."
-                        : `Solo hay ${availableQuantity} unidades disponibles.`}
-                    </p>
-                  ) : (
-                    <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                      Producto disponible para compra en línea
-                    </p>
-                  )}
+                  <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                    Producto disponible para compra en línea
+                  </p>
                 </div>
               </div>
-              <p className="text-sm font-mono text-[var(--color-text-muted)]">{item.sku}</p>
-              <div className="flex items-center justify-between gap-4 md:block">
+              <p className="text-sm font-mono text-[var(--color-text-muted)] xl:text-center">{item.sku}</p>
+              <div className="flex items-center justify-between gap-4 md:block xl:justify-self-center">
                 <span className="text-sm font-bold text-[var(--color-text-muted)] md:hidden">
                   Cantidad
                 </span>
@@ -125,8 +116,7 @@ export function CartPage() {
                   <button
                     aria-label={`Aumentar cantidad de ${item.name}`}
                     className="px-4 py-2 font-black"
-                    disabled={availableQuantity !== undefined && availableQuantity !== null && item.quantity >= availableQuantity}
-                    onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                    onClick={() => increaseQuantity(item.productId, item.quantity)}
                     type="button"
                   >
                     +
@@ -176,18 +166,12 @@ export function CartPage() {
               Q{subtotal.toFixed(2)}
             </span>
           </div>
-          {invalidItems.length > 0 ? (
-            <p className="mt-6 rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-[var(--color-danger)]" role="alert">
-              Corrige o retira los productos agotados antes de continuar al checkout.
-            </p>
-          ) : (
-            <Link
-              className="mt-6 block rounded-xl bg-[var(--color-primary-hover)] px-4 py-3 text-center font-black text-white transition hover:brightness-110"
-              href="/checkout"
-            >
-              Continuar al checkout
-            </Link>
-          )}
+          <Link
+            className="mt-6 block rounded-xl bg-[var(--color-primary-hover)] px-4 py-3 text-center font-black text-white transition hover:brightness-110"
+            href="/checkout"
+          >
+            Continuar al checkout
+          </Link>
           <Link
             className="mt-4 block text-center text-sm font-bold text-[var(--color-title)] hover:underline"
             href="/catalogo"
@@ -196,6 +180,10 @@ export function CartPage() {
           </Link>
         </aside>
       </div>
+      <StorefrontUnavailableQuantityModal
+        onClose={() => setUnavailableQuantityModalOpen(false)}
+        open={unavailableQuantityModalOpen}
+      />
     </main>
   );
 }

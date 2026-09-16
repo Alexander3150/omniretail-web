@@ -81,35 +81,35 @@ export function OrderConfirmationPage() {
           </p>
         ) : null}
         <div className="mt-6 grid gap-5 md:grid-cols-2">
-          <section className="rounded-xl border border-[var(--color-border)] bg-slate-50 p-5">
+          <section className="min-w-0 rounded-xl border border-[var(--color-border)] bg-slate-50 p-5">
             <div className="flex items-center gap-2 border-b border-[var(--color-border)] pb-3">
               <span className="text-[var(--color-title)]">⌖</span>
               <h2 className="font-black text-[var(--color-text)]">Dirección de entrega</h2>
             </div>
-            <p className="mt-3 font-bold text-[var(--color-text)]">
+            <p className="mt-3 break-words font-bold text-[var(--color-text)] [overflow-wrap:anywhere]">
               {result.deliveryAddress.recipientName}
             </p>
-            <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+            <p className="mt-2 break-words text-sm text-[var(--color-text-muted)] [overflow-wrap:anywhere]">
               {result.deliveryAddress.line1}
               {result.deliveryAddress.line2 ? `, ${result.deliveryAddress.line2}` : ""}
             </p>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            <p className="mt-1 break-words text-sm text-[var(--color-text-muted)] [overflow-wrap:anywhere]">
               {result.deliveryAddress.city}
               {result.deliveryAddress.department ? `, ${result.deliveryAddress.department}` : ""},
               Guatemala
             </p>
-            <p className="mt-4 text-sm text-[var(--color-text-muted)]">
+            <p className="mt-4 break-words text-sm text-[var(--color-text-muted)] [overflow-wrap:anywhere]">
               ☎ {result.deliveryAddress.phone}
             </p>
           </section>
-          <section className="rounded-xl border border-[var(--color-border)] bg-slate-50 p-5">
+          <section className="min-w-0 rounded-xl border border-[var(--color-border)] bg-slate-50 p-5">
             <div className="flex items-center gap-2 border-b border-[var(--color-border)] pb-3">
               <span className="text-[var(--color-title)]">▣</span>
               <h2 className="font-black text-[var(--color-text)]">Detalle de pago</h2>
             </div>
             <p className="mt-3 text-sm text-[var(--color-text-muted)]">Método de pago</p>
-            <p className="font-bold text-[var(--color-text)]">Tarjeta de crédito o débito</p>
-            <p className="mt-4 rounded-lg border border-[var(--color-success)]/30 bg-[var(--color-success)]/10 px-3 py-2 text-sm font-semibold text-[var(--color-success)]">
+            <p className="break-words font-bold text-[var(--color-text)] [overflow-wrap:anywhere]">Tarjeta de crédito o débito</p>
+            <p className="mt-4 break-words rounded-lg border border-[var(--color-success)]/30 bg-[var(--color-success)]/10 px-3 py-2 text-sm font-semibold text-[var(--color-success)] [overflow-wrap:anywhere]">
               ✓ Transacción autorizada y procesada con éxito.
             </p>
             <p className="mt-4 text-sm text-[var(--color-text-muted)]">

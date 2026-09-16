@@ -16,31 +16,19 @@ import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCart
 import { useStorefrontCheckoutConfirmation } from "@/modules/storefront/providers/StorefrontCheckoutConfirmationProvider";
 import { municipalitiesByDepartment } from "@/modules/storefront/data/guatemalaLocations";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
-import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
+import {
+  DELIVERY_ADDRESS_LIMITS,
+  sanitizeDeliveryAddress,
+  sanitizeDeliveryNotificationEmail,
+  sanitizeRecipientName,
+} from "@/config/delivery-address-policy";
+import { EMAIL_MAX_LENGTH } from "@/config/email-policy";
 
 const departments = Object.keys(municipalitiesByDepartment);
-
-function keepLettersAndSpaces(value: string) {
-  return value.replace(/[^A-Za-zÀ-ÿ\s]/g, "");
-}
-
-function keepEmailCharacters(value: string) {
-  const sanitized = value.replace(/[^A-Za-z0-9@._+-]/g, "");
-  const [localPart = "", ...domainParts] = sanitized.split("@");
-  return domainParts.length ? `${localPart}@${domainParts.join("")}` : localPart;
-}
 
 function formatGuatemalaPhone(value: string) {
   const digits = value.replace(/\D/g, "").replace(/^502/, "").slice(0, 8);
   return digits ? `+502 ${digits}` : "+502 ";
-}
-
-function keepAddressCharacters(value: string) {
-  return value.replace(/[^A-Za-zÀ-ÿ0-9\s.-]/g, "");
-}
-
-function keepAlphaNumeric(value: string) {
-  return value.replace(/[^A-Za-zÀ-ÿ0-9\s]/g, "");
 }
 
 const initialForm: StorefrontCheckoutFormDto = {
@@ -57,7 +45,6 @@ const initialForm: StorefrontCheckoutFormDto = {
 };
 export function CheckoutPage() {
   const { items, subtotal } = useStorefrontCart();
-  const { products } = useStorefrontDiscovery();
   const repositories = useRepositories();
   const { user } = useCurrentSession();
   const { tenantId, config, loading: configLoading } = usePublicTenant();
@@ -72,10 +59,6 @@ export function CheckoutPage() {
   const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState<string | "new">("new");
   const [selectedAddressId, setSelectedAddressId] = useState<string | "new">("new");
   const router = useRouter();
-  const invalidCartItems = items.filter((item) => {
-    const availableQuantity = products.find((product) => product.id === item.productId)?.availableQuantity;
-    return availableQuantity !== undefined && availableQuantity !== null && item.quantity > availableQuantity;
-  });
   useEffect(() => {
     let active = true;
     const loadCustomerCheckoutData = async () => {
@@ -188,18 +171,6 @@ export function CheckoutPage() {
         >
           Ver catálogo
         </Link>
-      </main>
-    );
-  if (invalidCartItems.length > 0)
-    return (
-      <main className="mx-auto max-w-3xl px-4 py-12 sm:px-5">
-        <section className="rounded-2xl border border-[var(--color-danger)]/30 bg-[var(--color-surface)] p-5 text-center shadow-sm sm:p-8">
-          <h1 className="text-2xl font-black text-[var(--color-text)]">Revisa la disponibilidad</h1>
-          <p className="mt-3 text-[var(--color-text-muted)]">
-            Hay productos agotados o con una cantidad mayor a la disponible. Corrígelos en el carrito antes de continuar.
-          </p>
-          <Link className="mt-6 inline-block rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)]" href="/carrito">Volver al carrito</Link>
-        </section>
       </main>
     );
   if (!configLoading && config?.accountRequired && !user)
@@ -324,18 +295,18 @@ export function CheckoutPage() {
                 <div className="mt-5 grid gap-4 sm:grid-cols-2">
                   <Field
                     label="Nombre completo"
-                    maxLength={100}
+                    maxLength={DELIVERY_ADDRESS_LIMITS.recipientName}
                     value={form.fullName}
                     onChange={(value) =>
-                      setForm({ ...form, fullName: keepLettersAndSpaces(value) })
+                      setForm({ ...form, fullName: sanitizeRecipientName(value) })
                     }
                   />
                   <Field
                     label="Correo electrónico (para notificaciones)"
-                    maxLength={100}
+                    maxLength={EMAIL_MAX_LENGTH}
                     type="email"
                     value={form.email}
-                    onChange={(value) => setForm({ ...form, email: keepEmailCharacters(value) })}
+                    onChange={(value) => setForm({ ...form, email: sanitizeDeliveryNotificationEmail(value) })}
                   />
                   <Field
                     label="Teléfono"
@@ -348,19 +319,19 @@ export function CheckoutPage() {
                   />
                   <Field
                     label="Dirección"
-                    maxLength={150}
+                    maxLength={DELIVERY_ADDRESS_LIMITS.line1}
                     value={form.addressLine1}
                     onChange={(value) =>
-                      setForm({ ...form, addressLine1: keepAddressCharacters(value) })
+                      setForm({ ...form, addressLine1: sanitizeDeliveryAddress(value, "line1") })
                     }
                   />
                   <Field
                     label="Complemento"
-                    maxLength={100}
+                    maxLength={DELIVERY_ADDRESS_LIMITS.line2}
                     required={false}
                     value={form.addressLine2 ?? ""}
                     onChange={(value) =>
-                      setForm({ ...form, addressLine2: keepAlphaNumeric(value) })
+                      setForm({ ...form, addressLine2: sanitizeDeliveryAddress(value, "line2") })
                     }
                   />
                   <SelectField
@@ -380,10 +351,10 @@ export function CheckoutPage() {
                   />
                   <Field
                     label="Referencias"
-                    maxLength={150}
+                    maxLength={DELIVERY_ADDRESS_LIMITS.references}
                     required={false}
                     value={form.references ?? ""}
-                    onChange={(value) => setForm({ ...form, references: keepAlphaNumeric(value) })}
+                    onChange={(value) => setForm({ ...form, references: sanitizeDeliveryAddress(value, "references") })}
                   />
                 </div>
               )}

@@ -22,6 +22,11 @@ import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { Select } from "@/shared/components/Select";
 import { useToast } from "@/shared/components/Toast";
+import {
+  DELIVERY_ADDRESS_LIMITS,
+  sanitizeDeliveryAddress,
+  sanitizeRecipientName,
+} from "@/config/delivery-address-policy";
 
 const EMPTY_FORM: AddressFormDto = {
   label: "",
@@ -167,8 +172,8 @@ export function DireccionesPage() {
                   </span>
                 ) : null}
               </div>
-              <p className="mt-2 text-sm text-[var(--color-text)]">{address.recipientName}</p>
-              <p className="text-sm text-[var(--color-text-muted)]">
+              <p className="mt-2 break-words text-sm text-[var(--color-text)] [overflow-wrap:anywhere]">{address.recipientName}</p>
+              <p className="break-words text-sm text-[var(--color-text-muted)] [overflow-wrap:anywhere]">
                 {address.line1}
                 {address.line2 ? `, ${address.line2}` : ""}
               </p>
@@ -222,7 +227,8 @@ export function DireccionesPage() {
             <Input
               disabled={busy}
               id="address-label"
-              onChange={(event) => setForm((prev) => ({ ...prev, label: event.target.value }))}
+              maxLength={DELIVERY_ADDRESS_LIMITS.label}
+              onChange={(event) => setForm((prev) => ({ ...prev, label: event.target.value.slice(0, DELIVERY_ADDRESS_LIMITS.label) }))}
               placeholder="Casa, Oficina..."
               value={form.label}
             />
@@ -233,8 +239,9 @@ export function DireccionesPage() {
               disabled={busy}
               id="address-recipient"
               onChange={(event) =>
-                setForm((prev) => ({ ...prev, recipientName: event.target.value }))
+                setForm((prev) => ({ ...prev, recipientName: sanitizeRecipientName(event.target.value) }))
               }
+              maxLength={DELIVERY_ADDRESS_LIMITS.recipientName}
               value={form.recipientName}
             />
           </FormField>
@@ -243,16 +250,18 @@ export function DireccionesPage() {
             <Input
               disabled={busy}
               id="address-line1"
-              onChange={(event) => setForm((prev) => ({ ...prev, line1: event.target.value }))}
+              maxLength={DELIVERY_ADDRESS_LIMITS.line1}
+              onChange={(event) => setForm((prev) => ({ ...prev, line1: sanitizeDeliveryAddress(event.target.value, "line1") }))}
               value={form.line1}
             />
           </FormField>
 
-          <FormField hint="Opcional" id="address-line2" label="Referencia / línea 2">
+          <FormField error={fieldErrors.line2} hint="Opcional" id="address-line2" label="Referencia / línea 2">
             <Input
               disabled={busy}
               id="address-line2"
-              onChange={(event) => setForm((prev) => ({ ...prev, line2: event.target.value }))}
+              maxLength={DELIVERY_ADDRESS_LIMITS.line2}
+              onChange={(event) => setForm((prev) => ({ ...prev, line2: sanitizeDeliveryAddress(event.target.value, "line2") }))}
               value={form.line2}
             />
           </FormField>
@@ -324,11 +333,12 @@ export function DireccionesPage() {
             />
           </FormField>
 
-          <FormField hint="Opcional" id="address-references" label="Referencias adicionales">
+          <FormField error={fieldErrors.references} hint="Opcional" id="address-references" label="Referencias adicionales">
             <Input
               disabled={busy}
               id="address-references"
-              onChange={(event) => setForm((prev) => ({ ...prev, references: event.target.value }))}
+              maxLength={DELIVERY_ADDRESS_LIMITS.references}
+              onChange={(event) => setForm((prev) => ({ ...prev, references: sanitizeDeliveryAddress(event.target.value, "references") }))}
               value={form.references}
             />
           </FormField>
