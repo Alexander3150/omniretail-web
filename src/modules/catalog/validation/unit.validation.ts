@@ -1,5 +1,6 @@
 import { UnitCategory, UnitStatus } from "@/core/enums";
 import type { UnitEditorDto, UnitListItem } from "@/modules/catalog/application/dto/UnitEditorDto";
+import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
 
 export interface UnitValidationErrors {
   name?: string;
@@ -37,12 +38,16 @@ export function validateUnitDto(
   const symbol = dto.symbol.trim();
 
   if (!name) errors.name = "El nombre es requerido.";
+  else if (dto.name.length > TEXT_LIMITS.unitName)
+    errors.name = "El nombre admite hasta 40 caracteres.";
   if (!isUnitCategory(dto.category)) errors.category = "La categoria es requerida.";
   if (!symbol) {
     errors.symbol = "El simbolo es requerido.";
   } else if (!/^[\p{L}\p{N}./_-]+$/u.test(symbol)) {
     errors.symbol = "Usa letras, numeros, punto, diagonal, guion o guion bajo.";
   }
+  if (dto.symbol.length > TEXT_LIMITS.unitSymbol)
+    errors.symbol = "El simbolo admite hasta 10 caracteres.";
 
   const duplicate = units.find(
     (unit) =>

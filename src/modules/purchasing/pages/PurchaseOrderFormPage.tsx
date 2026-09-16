@@ -17,7 +17,19 @@ import { PageHeader } from "@/shared/components/PageHeader";
 import { Select } from "@/shared/components/Select";
 import { useToast } from "@/shared/components/Toast";
 import { cn } from "@/shared/utils/cn";
-import { parseDecimalInput, parseIntegerInput, toFiniteNumber } from "@/shared/utils/numberInput";
+import {
+  hasAtMostDecimalPlaces,
+  isQuantityCompatibleWithUnit,
+  parseDecimalInput,
+  parseUnitQuantityInput,
+  toFiniteNumber,
+} from "@/shared/utils/numberInput";
+import {
+  MAX_SAFE_INVENTORY_QUANTITY,
+  MONEY_DECIMAL_PLACES,
+  QUANTITY_DECIMAL_PLACES,
+  TEXT_LIMITS,
+} from "@/shared/utils/inputLimits";
 import { SaasCapabilityKey } from "@/core/enums";
 import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import type { PurchaseOrderAvailableProduct } from "@/modules/purchasing/application/dto/PurchaseOrderEditorModel";
@@ -47,6 +59,9 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
   const canUsePurchasing = hasCapability(SaasCapabilityKey.purchasing);
   const [pendingSupplierId, setPendingSupplierId] = useState<string | null>(null);
   const returnPath = getReturnPath(prefillContext?.source);
+  const hasInvalidPurchaseQuantity = editor.model.lines.some((line) =>
+    Boolean(getPurchaseQuantityUiError(line)),
+  );
 
   async function handleSupplierChange(supplierId: string) {
     const result = await editor.changeSupplier(supplierId);
@@ -177,10 +192,14 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
                 </span>
                 <textarea
                   className="mt-1 min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
+                  maxLength={TEXT_LIMITS.notes}
                   onChange={(event) => editor.updateField({ notes: event.target.value })}
                   placeholder="Notas opcionales para compras o recepcion..."
                   value={editor.model.notes}
                 />
+                <span className="mt-1 block text-right text-xs text-[var(--color-text-muted)]">
+                  {editor.model.notes.length} / {TEXT_LIMITS.notes}
+                </span>
               </label>
             </div>
           </section>
@@ -197,6 +216,7 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
               </div>
               <Input
                 className="sm:max-w-xs"
+                maxLength={TEXT_LIMITS.search}
                 onChange={(event) => editor.setProductSearch(event.target.value)}
                 placeholder="Buscar producto, SKU o categoria..."
                 type="search"
@@ -265,31 +285,40 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
                           <label className="block text-sm font-bold text-[var(--color-text)]">
                             Cantidad
                             <Input
+                              aria-invalid={Boolean(getPurchaseQuantityUiError(line))}
                               className="mt-1 w-full"
-                              min="1"
-                              step="1"
-                              type="number"
+                              inputMode={line.unitAllowsDecimals ? "decimal" : "numeric"}
+                              maxLength={line.unitAllowsDecimals ? 12 : 6}
+                              type="text"
                               value={line.quantity}
                               onChange={(event) =>
                                 editor.updateLineQuantity(
                                   line.id,
-                                  parseIntegerInput(event.target.value),
+                                  parseUnitQuantityInput(
+                                    event.target.value,
+                                    line.unitAllowsDecimals,
+                                  ),
                                 )
                               }
                             />
+                            {getPurchaseQuantityUiError(line) ? (
+                              <span className="mt-1 block text-xs font-semibold text-[var(--color-danger)]">
+                                {getPurchaseQuantityUiError(line)}
+                              </span>
+                            ) : null}
                           </label>
                           <label className="block text-sm font-bold text-[var(--color-text)]">
                             Costo acordado
                             <Input
                               className="mt-1 w-full"
-                              min="0"
-                              step="0.01"
-                              type="number"
+                              inputMode="decimal"
+                              maxLength={11}
+                              type="text"
                               value={line.agreedCost}
                               onChange={(event) =>
                                 editor.updateLineCost(
                                   line.id,
-                                  parseDecimalInput(event.target.value),
+                                  parseDecimalInput(event.target.value, MONEY_DECIMAL_PLACES),
                                 )
                               }
                             />
@@ -354,18 +383,27 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
                               </td>
                               <td className="px-2 py-2">
                                 <Input
+                                  aria-invalid={Boolean(getPurchaseQuantityUiError(line))}
                                   className="h-9"
-                                  min="1"
+                                  inputMode={line.unitAllowsDecimals ? "decimal" : "numeric"}
+                                  maxLength={line.unitAllowsDecimals ? 12 : 6}
                                   onChange={(event) =>
                                     editor.updateLineQuantity(
                                       line.id,
-                                      parseIntegerInput(event.target.value),
+                                      parseUnitQuantityInput(
+                                        event.target.value,
+                                        line.unitAllowsDecimals,
+                                      ),
                                     )
                                   }
-                                  step="1"
-                                  type="number"
+                                  type="text"
                                   value={line.quantity}
                                 />
+                                {getPurchaseQuantityUiError(line) ? (
+                                  <p className="mt-1 text-[11px] font-semibold text-[var(--color-danger)]">
+                                    {getPurchaseQuantityUiError(line)}
+                                  </p>
+                                ) : null}
                               </td>
                               <td className="px-2 py-2 text-right font-semibold text-[var(--color-text)]">
                                 {formatCurrency(line.baseCost)}
@@ -373,15 +411,15 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
                               <td className="px-2 py-2">
                                 <Input
                                   className="h-9"
-                                  min="0"
+                                  inputMode="decimal"
+                                  maxLength={11}
                                   onChange={(event) =>
                                     editor.updateLineCost(
                                       line.id,
-                                      parseDecimalInput(event.target.value),
+                                      parseDecimalInput(event.target.value, MONEY_DECIMAL_PLACES),
                                     )
                                   }
-                                  step="0.01"
-                                  type="number"
+                                  type="text"
                                   value={line.agreedCost}
                                 />
                                 <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
@@ -466,14 +504,18 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
               Volver
             </Button>
             <Button
-              disabled={editor.saving || !canUsePurchasing}
+              disabled={editor.saving || !canUsePurchasing || hasInvalidPurchaseQuantity}
               onClick={handleSaveDraft}
               type="button"
               variant="secondary"
             >
               {mode === "edit" ? "Guardar cambios" : "Guardar borrador"}
             </Button>
-            <Button disabled={editor.saving || !canUsePurchasing} onClick={handleCreateOrder} type="button">
+            <Button
+              disabled={editor.saving || !canUsePurchasing || hasInvalidPurchaseQuantity}
+              onClick={handleCreateOrder}
+              type="button"
+            >
               Crear orden
             </Button>
           </div>
@@ -865,6 +907,40 @@ function formatCurrency(value: number) {
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("es-GT").format(Number.isFinite(value) ? value : 0);
+}
+
+function getPurchaseQuantityUiError(line: PurchaseOrderEditorLine) {
+  if (typeof line.quantity !== "number") {
+    if (
+      line.quantity !== "" &&
+      line.unitAllowsDecimals &&
+      !hasAtMostDecimalPlaces(line.quantity, QUANTITY_DECIMAL_PLACES)
+    ) {
+      return "La cantidad admite hasta 3 decimales.";
+    }
+    if (line.quantity !== "" && !line.unitAllowsDecimals) {
+      return "La unidad de compra no admite fracciones.";
+    }
+    return "Ingresa una cantidad valida.";
+  }
+  if (!Number.isFinite(line.quantity)) return "Ingresa una cantidad valida.";
+  if (line.quantity <= 0) return "La cantidad debe ser mayor que cero.";
+  if (line.quantity > MAX_SAFE_INVENTORY_QUANTITY) {
+    return "La cantidad no puede superar 999,999.99.";
+  }
+  if (
+    !line.unitAllowsDecimals &&
+    !isQuantityCompatibleWithUnit(line.quantity, false)
+  ) {
+    return "La unidad de compra no admite fracciones.";
+  }
+  if (
+    line.unitAllowsDecimals &&
+    !hasAtMostDecimalPlaces(line.quantity, QUANTITY_DECIMAL_PLACES)
+  ) {
+    return "La cantidad admite hasta 3 decimales.";
+  }
+  return null;
 }
 
 function formatLeadTime(value?: number) {

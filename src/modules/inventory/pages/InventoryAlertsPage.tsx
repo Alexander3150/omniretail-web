@@ -21,8 +21,10 @@ import { Modal } from "@/shared/components/Modal";
 import { Select } from "@/shared/components/Select";
 import { useToast } from "@/shared/components/Toast";
 import { cn } from "@/shared/utils/cn";
+import { QUANTITY_DECIMAL_PLACES, TEXT_LIMITS } from "@/shared/utils/inputLimits";
 import {
-  parseDecimalInput,
+  hasAtMostDecimalPlaces,
+  parseUnitQuantityInput,
   toFiniteNumber,
   type NumericInputValue,
 } from "@/shared/utils/numberInput";
@@ -575,6 +577,7 @@ function InventoryFilters({
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_auto] lg:items-center">
         <Input
           aria-label="Buscar productos en inventario"
+          maxLength={TEXT_LIMITS.search}
           onChange={(event) => onSearchChange(event.target.value)}
           placeholder="Buscar por nombre, SKU, categoria o ubicacion..."
           type="search"
@@ -729,7 +732,9 @@ function InventoryTable({
                     {row.sellableReservedQuantity} {row.saleUnitName}
                   </td>
                   <td className="px-4 py-4 text-right font-bold text-[var(--color-title)]">
-                    <p>{row.sellableAvailableQuantity} {row.saleUnitName}</p>
+                    <p>
+                      {row.sellableAvailableQuantity} {row.saleUnitName}
+                    </p>
                     {row.inventoryUnitId !== row.saleUnitId ? (
                       <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
                         {row.inventoryPresentationAvailableQuantity} {row.inventoryUnitName}
@@ -1389,9 +1394,18 @@ function ProductPanel({
             <InventoryStatusBadge label={row.statusLabel} status={row.status} />
           </div>
           <dl className="mt-4 grid gap-4 sm:grid-cols-2">
-            <DetailTile label="Existencia para venta" value={`${row.sellableQuantity} ${row.saleUnitName}`} />
-            <DetailTile label="Reservado" value={`${row.sellableReservedQuantity} ${row.saleUnitName}`} />
-            <DetailTile label="Disponible para venta" value={`${row.sellableAvailableQuantity} ${row.saleUnitName}`} />
+            <DetailTile
+              label="Existencia para venta"
+              value={`${row.sellableQuantity} ${row.saleUnitName}`}
+            />
+            <DetailTile
+              label="Reservado"
+              value={`${row.sellableReservedQuantity} ${row.saleUnitName}`}
+            />
+            <DetailTile
+              label="Disponible para venta"
+              value={`${row.sellableAvailableQuantity} ${row.saleUnitName}`}
+            />
             {row.inventoryUnitId !== row.saleUnitId ? (
               <DetailTile
                 label="Equivalente de inventario"
@@ -1498,8 +1512,7 @@ function AdjustStockModal({
     [row.locationQuantities, value.locationId],
   );
   const selectedUnit =
-    row.adjustmentUnits.find((option) => option.unitId === value.unitId) ??
-    row.adjustmentUnits[0];
+    row.adjustmentUnits.find((option) => option.unitId === value.unitId) ?? row.adjustmentUnits[0];
   const canonicalInputQuantity = toFiniteNumber(value.quantity) * (selectedUnit?.toBaseFactor ?? 1);
   const finalQuantity =
     value.movementKind === "in"
@@ -1521,20 +1534,26 @@ function AdjustStockModal({
       (!value.lotId || serial.lotId === value.lotId),
   );
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const adjustmentDto = toAdjustStockDto(value);
+  const adjustmentValidationErrors = validateAdjustment(
+    { ...adjustmentDto, quantity: canonicalInputQuantity },
+    row,
+    locationQuantity,
+  );
+  const adjustmentQuantityError = getUnitQuantityInputError(
+    value.quantity,
+    selectedUnit?.unitAllowsDecimals ?? false,
+  );
+  if (adjustmentQuantityError) adjustmentValidationErrors.quantity = adjustmentQuantityError;
+  const adjustmentInvalid = hasValidationErrors(adjustmentValidationErrors);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const dto = toAdjustStockDto(value);
-    const nextErrors = validateAdjustment(
-      { ...dto, quantity: canonicalInputQuantity },
-      row,
-      locationQuantity,
-    );
-    setErrors(nextErrors);
-    if (hasValidationErrors(nextErrors)) return;
+    setErrors(adjustmentValidationErrors);
+    if (adjustmentInvalid) return;
     setSubmitError(null);
     try {
-      await onSubmit(dto);
+      await onSubmit(adjustmentDto);
     } catch (caughtError) {
       setSubmitError(
         caughtError instanceof Error ? caughtError.message : "No se pudo registrar el ajuste.",
@@ -1544,6 +1563,7 @@ function AdjustStockModal({
 
   function update(patch: Partial<EditableAdjustStockDto>) {
     setValue((current) => ({ ...current, ...patch }));
+    setErrors({});
     setSubmitError(null);
   }
 
@@ -1554,7 +1574,7 @@ function AdjustStockModal({
           <Button onClick={onClose} type="button" variant="secondary">
             Cancelar
           </Button>
-          <Button disabled={busy} form="inventory-adjust-form" type="submit">
+          <Button disabled={busy || adjustmentInvalid} form="inventory-adjust-form" type="submit">
             {busy ? "Registrando..." : "Confirmar ajuste"}
           </Button>
         </div>
@@ -1627,6 +1647,7 @@ function AdjustStockModal({
             <Field id="adjust-lot-number" label="Lote *" error={errors.lotNumber}>
               <Input
                 id="adjust-lot-number"
+                maxLength={TEXT_LIMITS.lotNumber}
                 onChange={(event) => update({ lotNumber: event.target.value })}
                 value={value.lotNumber ?? ""}
               />
@@ -1679,6 +1700,7 @@ function AdjustStockModal({
               <textarea
                 id="adjust-serials"
                 className="min-h-32 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm"
+                maxLength={TEXT_LIMITS.serialNumbers}
                 placeholder="Una serie por linea"
                 onChange={(event) => update({ serialNumbersText: event.target.value })}
                 value={value.serialNumbersText}
@@ -1710,36 +1732,52 @@ function AdjustStockModal({
             </p>
           </Field>
         ) : null}
-        <Field id="adjust-quantity" label="Cantidad" error={errors.quantity}>
+        <Field
+          id="adjust-quantity"
+          label="Cantidad"
+          error={errors.quantity ?? adjustmentValidationErrors.quantity}
+        >
           <Input
             id="adjust-quantity"
-            min={value.movementKind === "count" ? 0 : 0.01}
-            onChange={(event) => update({ quantity: parseDecimalInput(event.target.value) })}
-            step="0.01"
-            type="number"
+            inputMode={selectedUnit?.unitAllowsDecimals ? "decimal" : "numeric"}
+            maxLength={selectedUnit?.unitAllowsDecimals ? 12 : 6}
+            onChange={(event) =>
+              update({
+                quantity: parseUnitQuantityInput(
+                  event.target.value,
+                  selectedUnit?.unitAllowsDecimals ?? false,
+                ),
+              })
+            }
+            type="text"
             value={value.quantity}
           />
         </Field>
         {selectedUnit && selectedUnit.toBaseFactor !== 1 ? (
           <p className="rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-title)]">
-            {toFiniteNumber(value.quantity)} {selectedUnit.unitName} = {canonicalInputQuantity} {row.unitName}
+            {toFiniteNumber(value.quantity)} {selectedUnit.unitName} = {canonicalInputQuantity}{" "}
+            {row.unitName}
           </p>
         ) : null}
         <Field id="adjust-reason" label="Motivo *" error={errors.reason}>
           <textarea
             className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
             id="adjust-reason"
+            maxLength={TEXT_LIMITS.reason}
             onChange={(event) => update({ reason: event.target.value })}
             value={value.reason}
           />
+          <CharacterCount current={value.reason.length} maximum={TEXT_LIMITS.reason} />
         </Field>
-        <Field id="adjust-notes" label="Observaciones">
+        <Field id="adjust-notes" label="Observaciones" error={errors.notes}>
           <textarea
             className="min-h-16 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
             id="adjust-notes"
+            maxLength={TEXT_LIMITS.notes}
             onChange={(event) => update({ notes: event.target.value })}
             value={value.notes}
           />
+          <CharacterCount current={value.notes.length} maximum={TEXT_LIMITS.notes} />
         </Field>
         <AdjustmentSummary delta={delta} finalQuantity={finalQuantity} row={row} value={value} />
         {submitError ? (
@@ -1878,18 +1916,22 @@ function RequestTransferModal({
   const selectedProvider = availableProviders.find(
     (stock) => stock.branchId === value.providerBranchId,
   );
+  const transferDto = toTransferRequestDto(value);
+  const transferValidationErrors = validateTransfer(transferDto, row);
+  const transferQuantityError = getUnitQuantityInputError(value.quantity, row.unitAllowsDecimals);
+  if (transferQuantityError) transferValidationErrors.quantity = transferQuantityError;
+  const transferInvalid = hasValidationErrors(transferValidationErrors);
 
   function update(patch: Partial<EditableTransferRequestDto>) {
     setValue((current) => ({ ...current, ...patch }));
+    setErrors({});
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const dto = toTransferRequestDto(value);
-    const nextErrors = validateTransfer(dto, row);
-    setErrors(nextErrors);
-    if (hasValidationErrors(nextErrors)) return;
-    onSubmit(dto);
+    setErrors(transferValidationErrors);
+    if (transferInvalid) return;
+    onSubmit(transferDto);
   }
 
   return (
@@ -1899,7 +1941,12 @@ function RequestTransferModal({
           <Button onClick={onClose} type="button" variant="secondary">
             Cerrar
           </Button>
-          <Button form="inventory-transfer-request-form" type="submit" variant="secondary">
+          <Button
+            disabled={transferInvalid}
+            form="inventory-transfer-request-form"
+            type="submit"
+            variant="secondary"
+          >
             Solicitar traslado
           </Button>
         </div>
@@ -1948,13 +1995,21 @@ function RequestTransferModal({
             ))}
           </Select>
         </Field>
-        <Field id="transfer-quantity" label="Cantidad solicitada *" error={errors.quantity}>
+        <Field
+          id="transfer-quantity"
+          label="Cantidad solicitada *"
+          error={errors.quantity ?? transferValidationErrors.quantity}
+        >
           <Input
             id="transfer-quantity"
-            min={0.01}
-            onChange={(event) => update({ quantity: parseDecimalInput(event.target.value) })}
-            step="0.01"
-            type="number"
+            inputMode={row.unitAllowsDecimals ? "decimal" : "numeric"}
+            maxLength={row.unitAllowsDecimals ? 12 : 6}
+            onChange={(event) =>
+              update({
+                quantity: parseUnitQuantityInput(event.target.value, row.unitAllowsDecimals),
+              })
+            }
+            type="text"
             value={value.quantity}
           />
         </Field>
@@ -1971,13 +2026,15 @@ function RequestTransferModal({
             ))}
           </Select>
         </Field>
-        <Field id="transfer-notes" label="Descripcion / observaciones">
+        <Field id="transfer-notes" label="Descripcion / observaciones" error={errors.notes}>
           <textarea
             className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
             id="transfer-notes"
+            maxLength={TEXT_LIMITS.notes}
             onChange={(event) => update({ notes: event.target.value })}
             value={value.notes}
           />
+          <CharacterCount current={value.notes.length} maximum={TEXT_LIMITS.notes} />
         </Field>
       </form>
     </Modal>
@@ -2082,12 +2139,14 @@ function TransferRequestDetailModal({
             <textarea
               className="min-h-24 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
               id="transfer-rejection-reason"
+              maxLength={TEXT_LIMITS.reason}
               onChange={(event) => {
                 setReason(event.target.value);
                 setError("");
               }}
               value={reason}
             />
+            <CharacterCount current={reason.length} maximum={TEXT_LIMITS.reason} />
           </Field>
         ) : null}
       </div>
@@ -2114,6 +2173,14 @@ function Field({
       {children}
       {error ? <p className="text-sm font-semibold text-[var(--color-danger)]">{error}</p> : null}
     </div>
+  );
+}
+
+function CharacterCount({ current, maximum }: { current: number; maximum: number }) {
+  return (
+    <p className="mt-1 text-right text-xs text-[var(--color-text-muted)]">
+      {current} / {maximum}
+    </p>
   );
 }
 
@@ -2324,6 +2391,30 @@ function toTransferRequestDto(value: EditableTransferRequestDto): TransferReques
     ...value,
     quantity: toFiniteNumber(value.quantity),
   };
+}
+
+function getUnitQuantityInputError(value: NumericInputValue, unitAllowsDecimals: boolean) {
+  if (typeof value !== "number") {
+    if (
+      unitAllowsDecimals &&
+      value !== "" &&
+      !value.endsWith(".") &&
+      !hasAtMostDecimalPlaces(value, QUANTITY_DECIMAL_PLACES)
+    ) {
+      return "La cantidad admite hasta 3 decimales.";
+    }
+    if (!unitAllowsDecimals && value !== "" && !value.endsWith(".")) {
+      return "La unidad seleccionada no admite fracciones.";
+    }
+    return "Ingresa una cantidad valida.";
+  }
+  if (!unitAllowsDecimals && !Number.isInteger(value)) {
+    return "La unidad seleccionada no admite fracciones.";
+  }
+  if (unitAllowsDecimals && !hasAtMostDecimalPlaces(value, QUANTITY_DECIMAL_PLACES)) {
+    return "La cantidad admite hasta 3 decimales.";
+  }
+  return null;
 }
 
 function formatAdjustmentDelta(value: number) {

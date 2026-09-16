@@ -2,6 +2,7 @@
 
 import { Button } from "@/shared/components/Button";
 import { SearchInput } from "@/shared/components/SearchInput";
+import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
 import { FilterIcon, PlusIcon } from "@/modules/catalog/components/CatalogIcons";
 
 interface ProductToolbarProps {
@@ -34,6 +35,7 @@ export function ProductToolbar({
       <div className="flex min-w-0 flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-end">
         <SearchInput
           aria-label="Buscar productos"
+          maxLength={TEXT_LIMITS.search}
           className="w-full md:w-96"
           onChange={(event) => onSearchChange(event.target.value)}
           placeholder="Buscar por nombre, SKU, marca o código de barras"

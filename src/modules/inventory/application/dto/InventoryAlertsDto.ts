@@ -23,6 +23,7 @@ export interface InventoryProductRow {
   categoryName: string;
   unitId: string;
   unitName: string;
+  unitAllowsDecimals: boolean;
   saleUnitId: string;
   saleUnitName: string;
   sellableQuantity: number;
@@ -155,6 +156,7 @@ export interface AdjustStockDto {
 export interface InventoryAdjustmentUnitOption {
   unitId: string;
   unitName: string;
+  unitAllowsDecimals: boolean;
   toBaseFactor: number;
   label: string;
 }

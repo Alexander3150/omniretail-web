@@ -2,6 +2,8 @@ import type { InventoryTransferRequest } from "@/core/entities";
 import { InventoryTransferRequestStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { TransferRequestDto } from "@/modules/inventory/application/dto/InventoryAlertsDto";
+import { MAX_SAFE_INVENTORY_QUANTITY, TEXT_LIMITS } from "@/shared/utils/inputLimits";
+import { isQuantityCompatibleWithUnit } from "@/shared/utils/numberInput";
 import {
   ensureCanManageTransfers,
   ensureInventoryBranchBelongsToTenant,
@@ -32,8 +34,18 @@ export class CreateTransferRequestService {
     if (dto.requesterBranchId === dto.providerBranchId) {
       throw new InventoryServiceError("Las sucursales de origen y destino deben ser distintas.");
     }
-    if (!Number.isFinite(dto.quantity) || dto.quantity <= 0) {
-      throw new InventoryServiceError("La cantidad solicitada debe ser mayor que cero.");
+    const baseUnit = await this.repositories.units.getByIdScoped(tenantId, product.baseUnitId);
+    if (!baseUnit) {
+      throw new InventoryServiceError("La unidad base del producto no esta disponible.");
+    }
+    assertValidTransferQuantity(dto.quantity, baseUnit.allowsDecimals);
+    const reason = dto.reason.trim();
+    if (!reason) throw new InventoryServiceError("Ingresa el motivo del traslado.");
+    if (reason.length > TEXT_LIMITS.reason) {
+      throw new InventoryServiceError("El motivo admite hasta 200 caracteres.");
+    }
+    if (dto.notes.length > TEXT_LIMITS.notes) {
+      throw new InventoryServiceError("Las observaciones admiten hasta 500 caracteres.");
     }
 
     return this.repositories.inventoryTransferRequests.createRequest({
@@ -49,6 +61,22 @@ export class CreateTransferRequestService {
   }
 }
 
+export function assertValidTransferQuantity(quantity: number, unitAllowsDecimals = true) {
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    throw new InventoryServiceError("Ingresa una cantidad solicitada valida.");
+  }
+  if (quantity > MAX_SAFE_INVENTORY_QUANTITY) {
+    throw new InventoryServiceError("La cantidad solicitada no puede superar 999,999.99.");
+  }
+  if (!isQuantityCompatibleWithUnit(quantity, unitAllowsDecimals)) {
+    throw new InventoryServiceError(
+      unitAllowsDecimals
+        ? "La cantidad solicitada admite hasta 3 decimales."
+        : "La unidad del producto no admite fracciones.",
+    );
+  }
+}
+
 export class ApproveTransferRequestService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
@@ -61,7 +89,11 @@ export class ApproveTransferRequestService {
 
     const request = await ensureReviewableRequest(this.repositories, requestId, tenantId);
     await ensureUserCanOperateInventoryBranch(this.repositories, user, request.sourceBranchId);
-    await ensureInventoryBranchBelongsToTenant(this.repositories, tenantId, request.requestingBranchId);
+    await ensureInventoryBranchBelongsToTenant(
+      this.repositories,
+      tenantId,
+      request.requestingBranchId,
+    );
 
     return this.repositories.inventoryTransferRequests.approveRequest(request.id, {
       reviewedByUserId: actorUserId,
@@ -81,10 +113,17 @@ export class RejectTransferRequestService {
 
     const reason = rejectionReason.trim();
     if (!reason) throw new InventoryServiceError("Ingresa el motivo del rechazo.");
+    if (reason.length > TEXT_LIMITS.reason) {
+      throw new InventoryServiceError("El motivo admite hasta 200 caracteres.");
+    }
 
     const request = await ensureReviewableRequest(this.repositories, requestId, tenantId);
     await ensureUserCanOperateInventoryBranch(this.repositories, user, request.sourceBranchId);
-    await ensureInventoryBranchBelongsToTenant(this.repositories, tenantId, request.requestingBranchId);
+    await ensureInventoryBranchBelongsToTenant(
+      this.repositories,
+      tenantId,
+      request.requestingBranchId,
+    );
 
     return this.repositories.inventoryTransferRequests.rejectRequest(request.id, reason, {
       reviewedByUserId: actorUserId,
