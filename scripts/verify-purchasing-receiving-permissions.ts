@@ -35,6 +35,7 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import { GetPurchaseOrdersReadModelService } from "@/modules/purchasing/application/services/GetPurchaseOrdersReadModelService";
 import { PurchaseOrderEditorService } from "@/modules/purchasing/application/services/PurchaseOrderEditorService";
+import { PurchaseOrderPdfService } from "@/modules/purchasing/application/services/PurchaseOrderPdfService";
 import { UpdatePurchaseOrderStatusService } from "@/modules/purchasing/application/services/UpdatePurchaseOrderStatusService";
 import { PurchasingServiceError } from "@/modules/purchasing/application/services/serviceHelpers";
 import { ReceivingDocumentDetailService } from "@/modules/receiving/application/services/ReceivingDocumentDetailService";
@@ -307,6 +308,36 @@ function buildOrderLine(
     suggestedReorder: 0,
     availabilityLabel: "Disponible",
   };
+}
+
+/**
+ * Envuelve `repositories.receipts` en un Proxy que registra cuantas veces se llama `getAll()`
+ * y con que `tenantId` se llama `listByTenant()`, delegando el resto sin modificar comportamiento
+ * -- usado por el test B para probar (desde afuera, sin tocar el metodo privado `getPdfData`) que
+ * `PurchaseOrderPdfService` consulta receipts EXCLUSIVAMENTE via `listByTenant(tenantId)` y nunca
+ * via `getAll()` (BLOCKER #2: antes cargaba receipts de todos los tenants al Application Service).
+ */
+function wrapReceiptsWithSpy(receipts: RepositoryRegistry["receipts"]) {
+  const calls = { getAll: 0, listByTenant: [] as string[] };
+  const proxy = new Proxy(receipts, {
+    get(target, prop) {
+      if (prop === "getAll") {
+        return (...args: unknown[]) => {
+          calls.getAll += 1;
+          return (target.getAll as (...a: unknown[]) => unknown).apply(target, args);
+        };
+      }
+      if (prop === "listByTenant") {
+        return (...args: unknown[]) => {
+          calls.listByTenant.push(args[0] as string);
+          return (target.listByTenant as (...a: unknown[]) => unknown).apply(target, args);
+        };
+      }
+      const value = Reflect.get(target, prop as keyof typeof target);
+      return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+    },
+  }) as RepositoryRegistry["receipts"];
+  return { proxy, calls };
 }
 
 // 1. tenant A no lista ordenes B
@@ -739,6 +770,186 @@ async function verifyAuthorizedFlowsPassAndSnapshotPreserved() {
   );
 }
 
+// A. read model Tenant A no contiene Supplier Tenant B (BLOCKER 1)
+async function verifySupplierReadModelTenantIsolation() {
+  const { createSession } = createHarness();
+  const repositoriesA = createSession(TENANT_A, ["purchasing.orders.read"], ["branch-centro"]);
+  const result = await new GetPurchaseOrdersReadModelService(repositoriesA).execute();
+  assert.ok(
+    result.suppliers.some((supplier) => supplier.id === "supplier-hardening-a"),
+    "A (fixture): el read model de Tenant A debe incluir su propio proveedor",
+  );
+  assert.ok(
+    !result.suppliers.some((supplier) => supplier.id === "supplier-hardening-b"),
+    "A: el read model de Tenant A NO debe incluir el proveedor de Tenant B",
+  );
+}
+
+// B. PurchaseOrderPdfService de Tenant A no consulta/devuelve receipts Tenant B (BLOCKER 2)
+async function verifyPurchaseOrderPdfReceiptsTenantIsolation() {
+  const { createSession } = createHarness();
+  const purchaserA = createSession(
+    TENANT_A,
+    ["purchasing.orders.create", "purchasing.orders.approve"],
+    ["branch-centro"],
+  );
+  const orderA = await new PurchaseOrderEditorService(purchaserA).createOrder({
+    branchId: "branch-centro",
+    supplierId: "supplier-hardening-a",
+    expectedDate: "2026-10-01",
+    notes: "",
+    lines: [buildOrderLine()],
+  });
+  await new UpdatePurchaseOrderStatusService(purchaserA).execute(
+    orderA.id,
+    PurchaseOrderStatus.approved,
+  );
+
+  const { proxy, calls } = wrapReceiptsWithSpy(purchaserA.receipts);
+  const pdfRepositories = { ...purchaserA, receipts: proxy } as RepositoryRegistry;
+  const document = await new PurchaseOrderPdfService(
+    pdfRepositories,
+  ).generatePurchaseOrderDocument(orderA.id);
+  assert.ok(document.arrayBuffer, "B (fixture): la generacion del PDF debe completar sin lanzar");
+  assert.equal(
+    calls.getAll,
+    0,
+    "B: PurchaseOrderPdfService NO debe llamar receipts.getAll() (cargaria receipts cross-tenant)",
+  );
+  assert.deepEqual(
+    calls.listByTenant,
+    [TENANT_A],
+    "B: PurchaseOrderPdfService debe consultar receipts SOLO con listByTenant(TENANT_A)",
+  );
+}
+
+// C. rol read-only: "Aprobar" debe quedar disabled/ausente
+async function verifyReadOnlyApproveActionDisabled() {
+  const { createSession } = createHarness();
+  const purchaser = createSession(TENANT_A, ["purchasing.orders.create"], ["branch-centro"]);
+  const order = await new PurchaseOrderEditorService(purchaser).createOrder({
+    branchId: "branch-centro",
+    supplierId: "supplier-hardening-a",
+    expectedDate: "2026-10-01",
+    notes: "",
+    lines: [buildOrderLine()],
+  });
+  assert.equal(
+    order.status,
+    PurchaseOrderStatus.pending_approval,
+    "C (fixture): createOrder debe dejar la orden en pending_approval",
+  );
+
+  const readOnly = createSession(TENANT_A, ["purchasing.orders.read"], ["branch-centro"]);
+  const result = await new GetPurchaseOrdersReadModelService(readOnly).execute();
+  const row = result.orders.find((item) => item.id === order.id);
+  assert.ok(row, "C (fixture): read-only debe poder ver la orden en el listado");
+  const approveAction = row!.actions.find((action) => action.id === "approve");
+  assert.ok(
+    !approveAction || approveAction.enabled === false,
+    "C: read-only + pending_approval => 'Aprobar' no debe quedar enabled",
+  );
+}
+
+// D. rol read-only: "Editar"/"Cancelar" deben quedar disabled cuando requieren permiso mutable
+async function verifyReadOnlyEditCancelActionsDisabled() {
+  const { createSession } = createHarness();
+  const purchaser = createSession(TENANT_A, ["purchasing.orders.create"], ["branch-centro"]);
+  const draft = await new PurchaseOrderEditorService(purchaser).saveDraft({
+    branchId: "branch-centro",
+    supplierId: "supplier-hardening-a",
+    expectedDate: "2026-10-01",
+    notes: "",
+    lines: [buildOrderLine()],
+  });
+  assert.equal(
+    draft.status,
+    PurchaseOrderStatus.draft,
+    "D (fixture): saveDraft debe crear un borrador",
+  );
+
+  const readOnly = createSession(TENANT_A, ["purchasing.orders.read"], ["branch-centro"]);
+  const result = await new GetPurchaseOrdersReadModelService(readOnly).execute();
+  const row = result.orders.find((item) => item.id === draft.id);
+  assert.ok(row, "D (fixture): read-only debe poder ver el borrador en el listado");
+  const editAction = row!.actions.find((action) => action.id === "edit-draft");
+  const cancelAction = row!.actions.find((action) => action.id === "cancel");
+  assert.ok(
+    !editAction || editAction.enabled === false,
+    "D: read-only + draft => 'Editar' no debe quedar enabled",
+  );
+  assert.ok(
+    !cancelAction || cancelAction.enabled === false,
+    "D: read-only + draft => 'Cancelar' no debe quedar enabled",
+  );
+}
+
+// E. rol autorizado: las acciones validas siguen enabled segun el estado
+async function verifyAuthorizedRoleActionsRemainEnabled() {
+  const { createSession } = createHarness();
+  const purchaser = createSession(
+    TENANT_A,
+    ["purchasing.orders.create", "purchasing.orders.approve"],
+    ["branch-centro"],
+  );
+  const draft = await new PurchaseOrderEditorService(purchaser).saveDraft({
+    branchId: "branch-centro",
+    supplierId: "supplier-hardening-a",
+    expectedDate: "2026-10-01",
+    notes: "",
+    lines: [buildOrderLine()],
+  });
+
+  const draftResult = await new GetPurchaseOrdersReadModelService(purchaser).execute();
+  const draftRow = draftResult.orders.find((item) => item.id === draft.id);
+  assert.ok(draftRow, "E (fixture): debe ver el borrador en el listado");
+  assert.equal(
+    draftRow!.actions.find((action) => action.id === "edit-draft")?.enabled,
+    true,
+    "E: create+approve + draft => 'Editar' debe quedar enabled",
+  );
+  assert.equal(
+    draftRow!.actions.find((action) => action.id === "send-approval")?.enabled,
+    true,
+    "E: create+approve + draft => 'Crear orden' debe quedar enabled",
+  );
+
+  const submitted = await new PurchaseOrderEditorService(purchaser).createOrder({
+    orderId: draft.id,
+    branchId: "branch-centro",
+    supplierId: "supplier-hardening-a",
+    expectedDate: "2026-10-01",
+    notes: "",
+    lines: [buildOrderLine()],
+  });
+  const pendingResult = await new GetPurchaseOrdersReadModelService(purchaser).execute();
+  const pendingRow = pendingResult.orders.find((item) => item.id === submitted.id);
+  assert.ok(pendingRow, "E (fixture): debe ver la orden pending_approval en el listado");
+  assert.equal(
+    pendingRow!.actions.find((action) => action.id === "approve")?.enabled,
+    true,
+    "E: approve + pending_approval => 'Aprobar' debe quedar enabled",
+  );
+
+  await new UpdatePurchaseOrderStatusService(purchaser).execute(
+    submitted.id,
+    PurchaseOrderStatus.approved,
+  );
+  const approvedResult = await new GetPurchaseOrdersReadModelService(purchaser).execute();
+  const approvedRow = approvedResult.orders.find((item) => item.id === submitted.id);
+  assert.ok(approvedRow, "E (fixture): debe ver la orden approved en el listado");
+  assert.equal(
+    approvedRow!.actions.find((action) => action.id === "continue-receiving")?.enabled,
+    true,
+    "E: accion de solo lectura ('Iniciar recepcion') debe quedar enabled sin permiso adicional",
+  );
+  assert.equal(
+    approvedRow!.actions.find((action) => action.id === "cancel")?.enabled,
+    true,
+    "E: approve + approved => 'Cancelar' debe quedar enabled",
+  );
+}
+
 async function main() {
   await verifyPurchaseOrdersListTenantIsolation();
   console.log("1. tenant A no lista ordenes de tenant B: PASS");
@@ -760,6 +971,16 @@ async function main() {
   console.log("9. confirm without receiving.receipts.confirm denied: PASS");
   await verifyAuthorizedFlowsPassAndSnapshotPreserved();
   console.log("10-11. authorized flow end-to-end + purchaseToBaseFactor snapshot: PASS");
+  await verifySupplierReadModelTenantIsolation();
+  console.log("A. read model Tenant A no contiene Supplier Tenant B: PASS");
+  await verifyPurchaseOrderPdfReceiptsTenantIsolation();
+  console.log("B. PurchaseOrderPdfService Tenant A no consulta/devuelve receipts Tenant B: PASS");
+  await verifyReadOnlyApproveActionDisabled();
+  console.log("C. read-only + pending_approval: 'Aprobar' disabled/ausente: PASS");
+  await verifyReadOnlyEditCancelActionsDisabled();
+  console.log("D. read-only + draft: 'Editar'/'Cancelar' disabled: PASS");
+  await verifyAuthorizedRoleActionsRemainEnabled();
+  console.log("E. rol autorizado: acciones validas siguen enabled segun estado: PASS");
 }
 
 void main();

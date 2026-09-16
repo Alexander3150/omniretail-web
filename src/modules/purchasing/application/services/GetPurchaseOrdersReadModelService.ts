@@ -32,7 +32,7 @@ export class GetPurchaseOrdersReadModelService {
 
     const [orders, suppliers, products, units, branches, receipts] = await Promise.all([
       this.repositories.purchaseOrders.listByTenant(tenantId),
-      this.repositories.suppliers.getAll(),
+      this.repositories.suppliers.listByTenant(tenantId),
       this.repositories.products.getAll(),
       this.repositories.units.getAll(),
       this.repositories.branches.getAll(),
@@ -56,6 +56,7 @@ export class GetPurchaseOrdersReadModelService {
           unitById,
           receipts: receiptsByOrderId.get(order.id) ?? [],
           receiptLines: receiptLinesByOrderId.get(order.id) ?? [],
+          permissions,
         }),
       )
       .sort(
@@ -91,6 +92,7 @@ export class GetPurchaseOrdersReadModelService {
     unitById,
     receipts,
     receiptLines,
+    permissions,
   }: {
     order: PurchaseOrder;
     supplier?: Supplier;
@@ -99,6 +101,7 @@ export class GetPurchaseOrdersReadModelService {
     unitById: Map<string, Unit>;
     receipts: Receipt[];
     receiptLines: ReceiptLine[];
+    permissions: readonly string[];
   }): PurchaseOrderRowReadModel {
     const receivedByProductId = groupReceivedQuantityByProductId(receiptLines);
     const lines = (order.items ?? []).map((item) =>
@@ -123,7 +126,7 @@ export class GetPurchaseOrdersReadModelService {
       productCount: lines.length,
       lines,
       reception,
-      actions: getPurchaseOrderActions(order.status),
+      actions: getPurchaseOrderActions(order.status, permissions),
       searchText: [
         order.number,
         supplier?.name,

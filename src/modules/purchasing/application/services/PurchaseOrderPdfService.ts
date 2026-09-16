@@ -134,7 +134,7 @@ export class PurchaseOrderPdfService {
       this.repositories.products.getAll(),
       this.repositories.units.getAll(),
       this.repositories.supplierProducts.getBySupplier(order.supplierId),
-      this.repositories.receipts.getAll(),
+      this.repositories.receipts.listByTenant(tenantId),
       this.repositories.receipts.getIncidents(),
       this.repositories.incidentTypes.getAll(),
       this.repositories.users.getAll(),

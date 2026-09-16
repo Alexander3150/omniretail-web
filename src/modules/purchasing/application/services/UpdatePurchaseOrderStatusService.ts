@@ -35,7 +35,7 @@ export class UpdatePurchaseOrderStatusService {
       await this.repositories.purchaseOrders.getByIdScoped(tenantId, orderId),
       tenantId,
     );
-    ensureValidStatusTransition(order.status, targetStatus);
+    ensureValidStatusTransition(order.status, targetStatus, permissions);
     if (order.status === PurchaseOrderStatus.draft) {
       ensureCanCreatePurchaseOrders(permissions);
     } else {
@@ -45,11 +45,18 @@ export class UpdatePurchaseOrderStatusService {
   }
 }
 
+// `statusTarget` no depende de `enabled` (que ahora SI combina permiso -- ver
+// purchaseOrderActions.ts): esta funcion valida que la transicion exista en la maquina de
+// estados, el permiso real ya se exige por separado arriba en `execute()`. Se pasan los
+// `permissions` reales de todos modos (no un set sintetico "acceso total") para que
+// getPurchaseOrderActions siga siendo una unica fuente de verdad, sin necesidad de una segunda
+// firma "solo estado".
 function ensureValidStatusTransition(
   currentStatus: PurchaseOrderStatus,
   targetStatus: PurchaseOrderStatus,
+  permissions: readonly string[],
 ) {
-  const allowedTargets = getPurchaseOrderActions(currentStatus)
+  const allowedTargets = getPurchaseOrderActions(currentStatus, permissions)
     .map((action) => action.statusTarget)
     .filter((target): target is PurchaseOrderStatus => Boolean(target));
   if (!allowedTargets.includes(targetStatus)) {
