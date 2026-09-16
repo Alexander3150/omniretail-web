@@ -384,11 +384,14 @@ Decisiones y coordinación:
 
 ## Reportes
 
-La ruta `/administracion/reportes` expone reportes agregados de ventas, compras, movimientos de
-inventario y pagos. Se integra en la navegación como `administration-reports`, exige
-`admin.reports.read` para consultar y `admin.reports.export` para descargar el resultado visible
-como CSV. Se refresca ante `sale.changed`, `purchase-order.changed`, `inventory.changed` y
-`payment.changed`.
+La ruta `/administracion/reportes` expone como **reportes básicos de MARJYM Base** los listados,
+filtros y totales existentes de ventas, compras, movimientos de inventario y pagos. Se integra en
+la navegación como `administration-reports` y exige `admin.reports.read`, pero no el complemento
+avanzado. La **única funcionalidad avanzada implementada actualmente** es exportar el resultado
+visible como CSV: requiere tanto `admin.reports.export` como
+`SaasCapabilityKey.advancedReports` en la UI y en el service. No existen aún dashboards,
+comparativas ni otros reportes premium. La pantalla se refresca ante `sale.changed`,
+`purchase-order.changed`, `inventory.changed` y `payment.changed`.
 
 La pantalla solo consulta contratos compartidos y agrega sus resultados en memoria. No persiste
 reportes, no modifica las fuentes y no escribe auditoría. El helper CSV vive dentro de

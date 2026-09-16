@@ -74,7 +74,6 @@ export const administrationNavigation = [
       },
       {
         id: "administration-reports",
-        capability: SaasCapabilityKey.advancedReports,
         label: "Reportes",
         href: "/administracion/reportes",
         permission: REPORTS_READ_PERMISSION,

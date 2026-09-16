@@ -21,7 +21,6 @@ export class GetReportsService {
   async execute(): Promise<ReportsDataDto> {
     const { tenantId, permissions } = await this.resolveAuthenticatedContext();
     ensureCanReadReports(permissions);
-    ensureTenantCapability(await new ResolveTenantEntitlementsService(this.repositories).execute(tenantId), SaasCapabilityKey.advancedReports);
 
     const [sales, purchases, movements, payments, branches, suppliers, products] =
       await Promise.all([

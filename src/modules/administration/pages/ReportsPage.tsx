@@ -69,7 +69,7 @@ export function ReportsPage() {
             No tenés acceso a los reportes
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            Esta vista requiere Reportes avanzados en la suscripción y el permiso{" "}
+            Esta vista requiere el permiso{" "}
             <span className="font-medium text-[var(--color-text)]">{REPORTS_READ_PERMISSION}</span>.
             Pedí acceso a un administrador.
           </p>
@@ -109,7 +109,7 @@ export function ReportsPage() {
             <Button
               disabled={!canExport || rows.length === 0 || loading}
               onClick={exportCsv}
-              title={canExport ? undefined : "Requiere el permiso admin.reports.export"}
+              title={canExport ? undefined : "Exportar CSV requiere Reportes avanzados y el permiso admin.reports.export"}
               type="button"
             >
               Exportar CSV

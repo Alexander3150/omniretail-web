@@ -8,7 +8,9 @@ import { createMockDatabase } from "@/infrastructure/mock/database/createMockDat
 import {
   MockAuditLogRepository, MockBranchRepository, MockBusinessConfigRepository,
   MockPlanRepository, MockTenantSubscriptionRepository, MockUserRepository,
-  MockRoleRepository, MockTenantRepository,
+  MockRoleRepository, MockTenantRepository, MockSalesRepository,
+  MockPurchaseOrderRepository, MockInventoryRepository, MockPaymentRepository,
+  MockSupplierRepository, MockProductRepository,
 } from "@/infrastructure/mock/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
@@ -64,6 +66,7 @@ async function main() {
   });
 
   const events = new DataEventBus();
+  let actorUserId = "user-admin";
   const repositories = {
     plans: new MockPlanRepository(store, events),
     tenantSubscriptions: new MockTenantSubscriptionRepository(store, events),
@@ -73,9 +76,15 @@ async function main() {
     auditLogs: new MockAuditLogRepository(store, events),
     roles: new MockRoleRepository(store, events),
     tenants: new MockTenantRepository(store, events),
+    sales: new MockSalesRepository(store, events),
+    purchaseOrders: new MockPurchaseOrderRepository(store, events),
+    inventory: new MockInventoryRepository(store, events),
+    payments: new MockPaymentRepository(store, events),
+    suppliers: new MockSupplierRepository(store, events),
+    products: new MockProductRepository(store, events),
     auth: {
       getCurrentSessionId: async () => "session-demo",
-      getSession: async () => ({ id: "session-demo", userId: "user-admin", expiresAt: "2099-01-01T00:00:00.000Z" }),
+      getSession: async () => ({ id: "session-demo", userId: actorUserId, expiresAt: "2099-01-01T00:00:00.000Z" }),
       inviteEmployee: async () => ({ invitationToken: "demo-invitation" }),
     },
     orders: { listByBranch: async () => [] },
@@ -90,9 +99,18 @@ async function main() {
   const ecommerceConfig = new GetEcommerceConfigService(repositories);
   const saveEcommerceConfig = new SaveEcommerceConfigService(repositories);
   const initialConfig = await ecommerceConfig.execute();
+  const reports = new GetReportsService(repositories);
   const allCapabilities = (await new ResolveTenantEntitlementsService(repositories).execute("tenant-demo")).effectiveCapabilities;
   assert(isNavigationItemPermitted(ecommerceNav, new Set(adminPermissions)) && isNavigationItemEntitled(ecommerceNav, (key) => hasCapability(key, allCapabilities)));
   assert(!isNavigationItemPermitted(ecommerceNav, new Set([])));
+  assert(isNavigationItemPermitted(reportsNav, new Set(adminPermissions)) && isNavigationItemEntitled(reportsNav, (key) => hasCapability(key, allCapabilities)));
+  assert.equal((await reports.execute()).tenantId, "tenant-demo");
+  assert.equal(await reports.authorizeExport(), "tenant-demo");
+  const initialRolePermissions = (await repositories.roles.getByIdScoped("tenant-demo", "role-admin"))!.permissions;
+  store.mutate((db) => { db.roles.find((role) => role.id === "role-admin")!.permissions = initialRolePermissions.filter((permission) => permission !== "admin.reports.export"); });
+  assert.equal((await reports.execute()).tenantId, "tenant-demo");
+  await assert.rejects(() => reports.authorizeExport());
+  store.mutate((db) => { db.roles.find((role) => role.id === "role-admin")!.permissions = initialRolePermissions; });
   const employeesBefore = (await repositories.users.listByTenant("tenant-demo")).filter((user) => user.type === "employee").length;
   const branchesBefore = (await repositories.branches.listByTenant("tenant-demo")).length;
   assert(employeesBefore >= 3 && branchesBefore >= 1);
@@ -135,10 +153,9 @@ async function main() {
   assert(entitlements.effectiveCapabilities.includes(SaasCapabilityKey.delivery));
   assert(!entitlements.effectiveCapabilities.includes(SaasCapabilityKey.advancedReports));
   assert(isNavigationItemEntitled(ecommerceNav, (key) => hasCapability(key, entitlements.effectiveCapabilities)));
-  assert(!isNavigationItemEntitled(reportsNav, (key) => hasCapability(key, entitlements.effectiveCapabilities)));
-  const reports = new GetReportsService(repositories);
-  await assert.rejects(() => reports.authorizeExport());
-  await assert.rejects(() => reports.execute());
+  assert(isNavigationItemEntitled(reportsNav, (key) => hasCapability(key, entitlements.effectiveCapabilities)));
+  assert.equal((await reports.execute()).tenantId, "tenant-demo");
+  await assert.rejects(() => reports.authorizeExport(), (error: unknown) => error instanceof SaasEntitlementError && error.code === "CAPABILITY_REQUIRED");
   const dispatch = new DispatchApplicationService(repositories);
   assert.deepEqual(await dispatch.getPreparedQueue("branch-centro"), []);
   await manage.execute("tenant-demo", ["advanced_reports"], permissions, "user-admin");
@@ -147,6 +164,8 @@ async function main() {
   const withoutEcommerce = (await new ResolveTenantEntitlementsService(repositories).execute("tenant-demo")).effectiveCapabilities;
   assert(!isNavigationItemEntitled(ecommerceNav, (key) => hasCapability(key, withoutEcommerce)));
   assert(isNavigationItemEntitled(reportsNav, (key) => hasCapability(key, withoutEcommerce)));
+  assert.equal((await reports.execute()).tenantId, "tenant-demo");
+  assert.equal(await reports.authorizeExport(), "tenant-demo");
   await assert.rejects(() => ecommerceConfig.execute(), (error: unknown) => error instanceof SaasEntitlementError && error.code === "CAPABILITY_REQUIRED");
   await assert.rejects(() => saveEcommerceConfig.execute(initialConfig), (error: unknown) => error instanceof SaasEntitlementError && error.code === "CAPABILITY_REQUIRED");
   assert.deepEqual(await repositories.businessConfig.getEcommerceConfig("tenant-demo"), { ...initialConfig, tenantId: "tenant-demo" });
@@ -158,6 +177,33 @@ async function main() {
   assert.equal((await ecommerceConfig.execute()).enabled, false);
   assert.equal((await new GetPublicStorefrontConfigService(repositories).execute()).storeEnabled, false);
   assert.equal(await reports.authorizeExport(), "tenant-demo");
+  const reportDataBeforeRemoval = await reports.execute();
+  assert(reportDataBeforeRemoval.sales.length + reportDataBeforeRemoval.purchases.length + reportDataBeforeRemoval.movements.length + reportDataBeforeRemoval.payments.length > 0);
+  await manage.execute("tenant-demo", ["ecommerce_delivery"], permissions, "user-admin");
+  const baseCapabilities = (await new ResolveTenantEntitlementsService(repositories).execute("tenant-demo")).effectiveCapabilities;
+  assert(isNavigationItemEntitled(reportsNav, (key) => hasCapability(key, baseCapabilities)));
+  assert.deepEqual(await reports.execute(), reportDataBeforeRemoval);
+  await assert.rejects(() => reports.authorizeExport(), (error: unknown) => error instanceof SaasEntitlementError && error.code === "CAPABILITY_REQUIRED");
+  const originalRolePermissions = (await repositories.roles.getByIdScoped("tenant-demo", "role-admin"))!.permissions;
+  store.mutate((db) => { db.roles.find((role) => role.id === "role-admin")!.permissions = originalRolePermissions.filter((permission) => !permission.startsWith("admin.reports.")); });
+  assert(!isNavigationItemPermitted(reportsNav, new Set(originalRolePermissions.filter((permission) => !permission.startsWith("admin.reports.")))));
+  await assert.rejects(() => reports.execute());
+  await assert.rejects(() => reports.authorizeExport());
+  store.mutate((db) => { db.roles.find((role) => role.id === "role-admin")!.permissions = originalRolePermissions; });
+  actorUserId = "another-user";
+  const otherTenantReports = await reports.execute();
+  assert.equal(otherTenantReports.tenantId, "another-tenant");
+  assert.deepEqual(otherTenantReports.sales, []);
+  assert.deepEqual(otherTenantReports.purchases, []);
+  assert.deepEqual(otherTenantReports.movements, []);
+  assert.deepEqual(otherTenantReports.payments, []);
+  await assert.rejects(() => reports.authorizeExport(), (error: unknown) => error instanceof SaasEntitlementError && error.code === "CAPABILITY_REQUIRED");
+  actorUserId = "user-admin";
+  await manage.execute("tenant-demo", [], permissions, "user-admin");
+  const onlyBaseCapabilities = (await new ResolveTenantEntitlementsService(repositories).execute("tenant-demo")).effectiveCapabilities;
+  assert(isNavigationItemPermitted(reportsNav, new Set(adminPermissions)) && isNavigationItemEntitled(reportsNav, (key) => hasCapability(key, onlyBaseCapabilities)));
+  assert.deepEqual(await reports.execute(), reportDataBeforeRemoval);
+  await assert.rejects(() => reports.authorizeExport(), (error: unknown) => error instanceof SaasEntitlementError && error.code === "CAPABILITY_REQUIRED");
   await assert.rejects(() => manage.execute("tenant-demo", ["advanced_reports"], ["admin.plans.read"], "user-admin"));
   await assert.rejects(() => manage.execute("tenant-demo", ["invalid"], permissions, "user-admin"));
   assert.deepEqual(await repositories.tenantSubscriptions.listInvoices("another-tenant"), []);

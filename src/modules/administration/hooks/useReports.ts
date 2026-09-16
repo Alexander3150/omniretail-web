@@ -46,7 +46,7 @@ export function useReports() {
   const repositories = useRepositories();
   const { hasCapability } = useEntitlementContext();
   const { hasPermission, loading: sessionLoading } = useCurrentSession();
-  const canRead = hasPermission(REPORTS_READ_PERMISSION) && hasCapability(SaasCapabilityKey.advancedReports);
+  const canRead = hasPermission(REPORTS_READ_PERMISSION);
   const canExport = hasPermission(REPORTS_EXPORT_PERMISSION) && hasCapability(SaasCapabilityKey.advancedReports);
   const service = useMemo(() => new GetReportsService(repositories), [repositories]);
   const [data, setData] = useState<ReportsDataDto>(EMPTY_DATA);
