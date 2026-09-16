@@ -11,6 +11,12 @@
  * BusinessConfig (lots/expiration/serials), límites maxEmployees/maxBranches, "denied leaves zero
  * effects", bypass directo de Application Service, Tenant creado por PR#102, tenant-demo, y
  * distinción entre error de entitlement y error de permiso.
+ *
+ * PR #103 (fix de hallazgos de auditoría, BLOCKER de Storefront público, §51): agrega
+ * `verifyPublicStorefrontReadBoundary` -- ejercita Discovery/ProductDetail/OrderTracking reales
+ * (no solo el resolver) contra la matriz completa (activo, sin capability, suspended, cancelled,
+ * archived plan, config disabled, product detail directo, cross-tenant, y la política de
+ * OrderTracking de HISTORICAL ACCESS PRESERVED).
  */
 import assert from "node:assert/strict";
 import {
@@ -36,6 +42,7 @@ import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import {
+  MockAttributeRepository,
   MockAuthRepository,
   MockBranchRepository,
   MockBusinessConfigRepository,
@@ -46,8 +53,10 @@ import {
   MockInventoryAdjustmentRepository,
   MockInventoryRepository,
   MockInventoryTransferRequestRepository,
+  MockOrderRepository,
   MockPlanRepository,
   MockProductKitComponentRepository,
+  MockProductMediaRepository,
   MockProductRepository,
   MockPurchaseOrderRepository,
   MockReceiptRepository,
@@ -73,6 +82,9 @@ import { OpenCashShiftService } from "@/modules/pos/application/services/OpenCas
 import { GetPurchaseOrdersReadModelService } from "@/modules/purchasing/application/services/GetPurchaseOrdersReadModelService";
 import { PurchaseOrderEditorService } from "@/modules/purchasing/application/services/PurchaseOrderEditorService";
 import { PurchasingServiceError } from "@/modules/purchasing/application/services/serviceHelpers";
+import { GetStorefrontDiscoveryService } from "@/modules/storefront/application/services/GetStorefrontDiscoveryService";
+import { GetStorefrontProductDetailService } from "@/modules/storefront/application/services/GetStorefrontProductDetailService";
+import { GetStorefrontOrderTrackingService } from "@/modules/storefront/application/services/GetStorefrontOrderTrackingService";
 import { ResolvePublicStorefrontContextService } from "@/modules/storefront/application/services/ResolvePublicStorefrontContextService";
 import { isEffectiveBusinessCapabilityEnabled } from "@/shared/application/services/businessCapabilityEntitlement";
 import { SaasEntitlementError } from "@/shared/application/services/entitlementGuards";
@@ -759,86 +771,253 @@ async function verifyHistoricalReadAfterCapabilityRemoval() {
 }
 
 // ==================================================
-// 15/49. ecommerce 4-state matrix
+// 15/49/51. ecommerce 4-state matrix + Storefront public read boundary
 // ==================================================
-async function verifyEcommerceFourStateMatrix() {
-  // `ResolvePublicStorefrontContextService` deriva el tenant público SIEMPRE por
-  // `publicStorefrontSlug` (config de deployment) -- no es parametrizable. `MockDatabaseStore`
-  // tampoco permite arrancar realmente vacío (siempre siembra demoSeed cuando no hay datos
-  // persistidos), y demoSeed YA ocupa ese slug con tenant-demo. Por eso cada estado de la matriz
-  // se arma sobre un store fresco (demoSeed real) mutando DIRECTAMENTE la Subscription/Plan/
-  // EcommerceConfig reales de tenant-demo -- nunca intentando crear un segundo tenant con el
-  // mismo slug (colisionaría con el ya sembrado).
-  function buildStorefrontState(options: {
-    planHasEcommerce: boolean;
-    configEnabled: boolean;
-    subscriptionActive?: boolean;
-  }) {
-    const storage = new MemoryStorageAdapter();
-    const store = new MockDatabaseStore(storage);
-    const eventBus = new DataEventBus();
-    store.mutate((db) => {
-      const tenant = db.tenants.find((item) => item.slug === publicStorefrontSlug);
-      assert.ok(tenant, "fixture: el tenant público del slug configurado debe existir en el seed");
-      const subscription = db.tenantSubscriptions.find((item) => item.tenantId === tenant.id);
-      assert.ok(subscription, "fixture: tenant-demo debe tener una Subscription real");
-      subscription.status =
-        options.subscriptionActive === false
-          ? TenantSubscriptionStatus.suspended
-          : TenantSubscriptionStatus.active;
-      const plan = db.planDefinitions.find((item) => item.id === subscription.planId);
-      assert.ok(plan, "fixture: la Subscription de tenant-demo debe apuntar a un Plan real");
-      plan.capabilities = options.planHasEcommerce
-        ? [...new Set([...plan.capabilities, SaasCapabilityKey.ecommerce])]
-        : plan.capabilities.filter((key) => key !== SaasCapabilityKey.ecommerce);
-      const config = db.ecommerceConfigs.find((item) => item.tenantId === tenant.id);
-      assert.ok(config, "fixture: tenant-demo debe tener un EcommerceConfig real");
-      config.enabled = options.configEnabled;
-      return tenant.id;
-    });
-    return {
+
+/**
+ * `ResolvePublicStorefrontContextService` deriva el tenant público SIEMPRE por
+ * `publicStorefrontSlug` (config de deployment) -- no es parametrizable. `MockDatabaseStore`
+ * tampoco permite arrancar realmente vacío (siempre siembra demoSeed cuando no hay datos
+ * persistidos), y demoSeed YA ocupa ese slug con tenant-demo. Por eso cada estado de la matriz se
+ * arma sobre un store fresco (demoSeed real) mutando DIRECTAMENTE la Subscription/Plan/
+ * EcommerceConfig reales de tenant-demo -- nunca intentando crear un segundo tenant con el mismo
+ * slug (colisionaría con el ya sembrado). Se comparte entre `verifyEcommerceFourStateMatrix` y
+ * `verifyPublicStorefrontReadBoundary` (auditoría §6/§51) porque ambas ejercen la misma matriz de
+ * estado, solo que la segunda la ejerce a través de los Application Services reales
+ * (Discovery/ProductDetail/OrderTracking) en vez de llamar al resolver directamente.
+ */
+function buildStorefrontState(options: {
+  planHasEcommerce: boolean;
+  configEnabled: boolean;
+  subscriptionActive?: boolean;
+  subscriptionStatus?: TenantSubscriptionStatus;
+  planStatus?: PlanStatus;
+}) {
+  const storage = new MemoryStorageAdapter();
+  const store = new MockDatabaseStore(storage);
+  const eventBus = new DataEventBus();
+  let tenantId = "";
+  store.mutate((db) => {
+    const tenant = db.tenants.find((item) => item.slug === publicStorefrontSlug);
+    assert.ok(tenant, "fixture: el tenant público del slug configurado debe existir en el seed");
+    tenantId = tenant.id;
+    const subscription = db.tenantSubscriptions.find((item) => item.tenantId === tenant.id);
+    assert.ok(subscription, "fixture: tenant-demo debe tener una Subscription real");
+    subscription.status =
+      options.subscriptionStatus ??
+      (options.subscriptionActive === false
+        ? TenantSubscriptionStatus.suspended
+        : TenantSubscriptionStatus.active);
+    const plan = db.planDefinitions.find((item) => item.id === subscription.planId);
+    assert.ok(plan, "fixture: la Subscription de tenant-demo debe apuntar a un Plan real");
+    plan.capabilities = options.planHasEcommerce
+      ? [...new Set([...plan.capabilities, SaasCapabilityKey.ecommerce])]
+      : plan.capabilities.filter((key) => key !== SaasCapabilityKey.ecommerce);
+    plan.status = options.planStatus ?? PlanStatus.active;
+    const config = db.ecommerceConfigs.find((item) => item.tenantId === tenant.id);
+    assert.ok(config, "fixture: tenant-demo debe tener un EcommerceConfig real");
+    config.enabled = options.configEnabled;
+    return tenant.id;
+  });
+  // demoSeed siempre siembra `prod-drill` (ecommerce: true, tenant-demo) y la orden
+  // `order-001`/`TRACK-WEB-001` (ecommerce, tenant-demo) -- se reutilizan en vez de sembrar
+  // fixtures nuevos para poder ejercer Discovery/ProductDetail/OrderTracking reales (no solo el
+  // resolver) sobre cada estado de la matriz.
+  return {
+    tenantId,
+    productId: "prod-drill",
+    trackingToken: "TRACK-WEB-001",
+    repositories: {
       tenants: new MockTenantRepository(store, eventBus),
       businessConfig: new MockBusinessConfigRepository(store, eventBus),
       plans: new MockPlanRepository(store, eventBus),
       tenantSubscriptions: new MockTenantSubscriptionRepository(store, eventBus),
-    };
-  }
+      products: new MockProductRepository(store, eventBus),
+      categories: new MockCategoryRepository(store, eventBus),
+      units: new MockUnitRepository(store, eventBus),
+      attributes: new MockAttributeRepository(store, eventBus),
+      productMedia: new MockProductMediaRepository(store, eventBus),
+      productKitComponents: new MockProductKitComponentRepository(store, eventBus),
+      inventory: new MockInventoryRepository(store, eventBus),
+      branches: new MockBranchRepository(store, eventBus),
+      orders: new MockOrderRepository(store, eventBus),
+    } as unknown as RepositoryRegistry,
+  };
+}
 
+async function verifyEcommerceFourStateMatrix() {
   // Plan ecommerce YES + Config YES => disponible.
   const yesYes = buildStorefrontState({ planHasEcommerce: true, configEnabled: true });
-  const context = await new ResolvePublicStorefrontContextService(yesYes).execute();
+  const context = await new ResolvePublicStorefrontContextService(yesYes.repositories).execute();
   assert.ok(context.tenantId, "15/49: Plan YES + Config YES => disponible");
 
   // Plan ecommerce YES + Config NO => no disponible. (rechazo por EcommerceConfig.enabled)
-  const yesNo = await buildStorefrontState({ planHasEcommerce: true, configEnabled: false });
+  const yesNo = buildStorefrontState({ planHasEcommerce: true, configEnabled: false });
   await assert.rejects(
-    new ResolvePublicStorefrontContextService(yesNo).execute(),
+    new ResolvePublicStorefrontContextService(yesNo.repositories).execute(),
     "15/49: Plan YES + Config NO => no disponible",
   );
 
   // Plan ecommerce NO + Config YES => no disponible. (rechazo por capability ausente)
-  const noYes = await buildStorefrontState({ planHasEcommerce: false, configEnabled: true });
+  const noYes = buildStorefrontState({ planHasEcommerce: false, configEnabled: true });
   await assert.rejects(
-    new ResolvePublicStorefrontContextService(noYes).execute(),
+    new ResolvePublicStorefrontContextService(noYes.repositories).execute(),
     "15/49: Plan NO + Config YES => no disponible",
   );
 
   // Plan ecommerce NO + Config NO => no disponible.
-  const noNo = await buildStorefrontState({ planHasEcommerce: false, configEnabled: false });
+  const noNo = buildStorefrontState({ planHasEcommerce: false, configEnabled: false });
   await assert.rejects(
-    new ResolvePublicStorefrontContextService(noNo).execute(),
+    new ResolvePublicStorefrontContextService(noNo.repositories).execute(),
     "15/49: Plan NO + Config NO => no disponible",
   );
 
   // Subscription inactive + Plan ecommerce YES + Config YES => no disponible.
-  const inactiveSubscription = await buildStorefrontState({
+  const inactiveSubscription = buildStorefrontState({
     planHasEcommerce: true,
     configEnabled: true,
     subscriptionActive: false,
   });
   await assert.rejects(
-    new ResolvePublicStorefrontContextService(inactiveSubscription).execute(),
+    new ResolvePublicStorefrontContextService(inactiveSubscription.repositories).execute(),
     "49: Subscription inactive + Plan ecommerce YES + Config YES => no disponible",
+  );
+}
+
+// ==================================================
+// 51. Storefront público -- Discovery/ProductDetail cierran el BLOCKER (auditoría §15/§30):
+// antes de este fix, ambos leían con el tenantId ya resuelto por el hook (modo laxo
+// `allowDisabled`) SIN revalidar Subscription/Plan/capability `ecommerce` -- una tienda
+// suspendida/cancelada/con plan archivado/sin capability seguía sirviendo catálogo real.
+// ==================================================
+async function verifyPublicStorefrontReadBoundary() {
+  // A. Subscription active + Plan active + capability ecommerce + Config enabled => PASS.
+  const active = buildStorefrontState({ planHasEcommerce: true, configEnabled: true });
+  const discovery = await new GetStorefrontDiscoveryService(active.repositories).execute(
+    active.tenantId,
+  );
+  assert.ok(
+    discovery.products.some((product) => product.id === active.productId),
+    "A: discovery debe listar catálogo real cuando el estado comercial está activo",
+  );
+  const detail = await new GetStorefrontProductDetailService(active.repositories).execute(
+    active.tenantId,
+    active.productId,
+  );
+  assert.ok(detail, "A: product detail debe responder cuando el estado comercial está activo");
+
+  // B. Plan sin capability ecommerce + Config enabled => discovery DENIED.
+  const noCapability = buildStorefrontState({ planHasEcommerce: false, configEnabled: true });
+  await assert.rejects(
+    new GetStorefrontDiscoveryService(noCapability.repositories).execute(noCapability.tenantId),
+    SaasEntitlementError,
+    "B: Plan sin capability ecommerce => discovery DENIED",
+  );
+
+  // C. Subscription suspended => discovery DENIED.
+  const suspended = buildStorefrontState({
+    planHasEcommerce: true,
+    configEnabled: true,
+    subscriptionStatus: TenantSubscriptionStatus.suspended,
+  });
+  await assert.rejects(
+    new GetStorefrontDiscoveryService(suspended.repositories).execute(suspended.tenantId),
+    SaasEntitlementError,
+    "C: Subscription suspended => discovery DENIED",
+  );
+
+  // D. Subscription cancelled => discovery DENIED.
+  const cancelled = buildStorefrontState({
+    planHasEcommerce: true,
+    configEnabled: true,
+    subscriptionStatus: TenantSubscriptionStatus.cancelled,
+  });
+  await assert.rejects(
+    new GetStorefrontDiscoveryService(cancelled.repositories).execute(cancelled.tenantId),
+    SaasEntitlementError,
+    "D: Subscription cancelled => discovery DENIED",
+  );
+
+  // E. Plan archived => discovery DENIED.
+  const archivedPlan = buildStorefrontState({
+    planHasEcommerce: true,
+    configEnabled: true,
+    planStatus: PlanStatus.archived,
+  });
+  await assert.rejects(
+    new GetStorefrontDiscoveryService(archivedPlan.repositories).execute(archivedPlan.tenantId),
+    SaasEntitlementError,
+    "E: Plan archived => discovery DENIED",
+  );
+
+  // F. Plan ecommerce YES + Config disabled => discovery DENIED.
+  const configDisabled = buildStorefrontState({ planHasEcommerce: true, configEnabled: false });
+  await assert.rejects(
+    new GetStorefrontDiscoveryService(configDisabled.repositories).execute(configDisabled.tenantId),
+    "F: Plan ecommerce YES + Config disabled => discovery DENIED",
+  );
+
+  // G. Direct Product Detail call with ecommerce missing => DENIED (cierra el bypass donde
+  // discovery deniega pero /product/:id todavía devuelve datos).
+  await assert.rejects(
+    new GetStorefrontProductDetailService(noCapability.repositories).execute(
+      noCapability.tenantId,
+      noCapability.productId,
+    ),
+    SaasEntitlementError,
+    "G: product detail directo sin capability ecommerce => DENIED",
+  );
+
+  // H. Un `tenantId` que NO es el tenant público real (resuelto por slug) nunca debe recibir
+  // datos -- cierra el cross-tenant disclosure de un caller que invoca el Application Service
+  // directo con un tenantId arbitrario (bypass de `PublicTenantProvider`/`usePublicTenant`).
+  // `ensurePublicStorefrontTenant` resuelve el tenant público real (que SÍ pasa el estado
+  // comercial estricto) y luego compara contra el tenantId pedido -- el mismatch es un Error
+  // simple ("La tienda pública no está disponible."), no un SaasEntitlementError (esto no es una
+  // denegación de Plan/Subscription, es un intento de leer un tenant que no es el público).
+  const crossTenantId = "tenant-storefront-cross";
+  await assert.rejects(
+    new GetStorefrontDiscoveryService(active.repositories).execute(crossTenantId),
+    "H: un tenantId que no es el tenant público real => DENIED (no cross-tenant disclosure)",
+  );
+  await assert.rejects(
+    new GetStorefrontProductDetailService(active.repositories).execute(
+      crossTenantId,
+      active.productId,
+    ),
+    "H: product detail con tenantId ajeno => DENIED",
+  );
+
+  // I. Order Tracking -- política HISTORICAL ACCESS PRESERVED (auditoría §4): la orden ecommerce
+  // ya existente de demoSeed (`order-001`/`TRACK-WEB-001`, tenant-demo) sigue siendo consultable
+  // por su tracking token aunque el tenant haya perdido la capability `ecommerce` DESPUÉS de la
+  // compra -- el boundary real de esta lectura es tenant+EcommerceConfig.enabled+
+  // guestTrackingEnabled+order.source, nunca la capability SaaS `ecommerce`.
+  const trackingWithoutCapability = buildStorefrontState({
+    planHasEcommerce: false,
+    configEnabled: true,
+  });
+  const trackingResult = await new GetStorefrontOrderTrackingService(
+    trackingWithoutCapability.repositories,
+  ).execute(trackingWithoutCapability.tenantId, trackingWithoutCapability.trackingToken);
+  assert.ok(
+    trackingResult,
+    "I: TRACKING POLICY = HISTORICAL ACCESS PRESERVED -- debe seguir respondiendo sin capability ecommerce",
+  );
+
+  // I (contraparte): si el boundary real (EcommerceConfig.enabled) falla, tracking SÍ deniega --
+  // no es un guard que siempre pasa, solo no depende de la capability SaaS.
+  const trackingWithConfigDisabled = buildStorefrontState({
+    planHasEcommerce: true,
+    configEnabled: false,
+  });
+  const deniedTrackingResult = await new GetStorefrontOrderTrackingService(
+    trackingWithConfigDisabled.repositories,
+  ).execute(trackingWithConfigDisabled.tenantId, trackingWithConfigDisabled.trackingToken);
+  assert.equal(
+    deniedTrackingResult,
+    null,
+    "I: EcommerceConfig.enabled=false sigue denegando tracking (boundary real, no capability)",
   );
 }
 
@@ -1400,6 +1579,8 @@ async function main() {
   console.log("14. lectura histórica tras perder la capability: PASS");
   await verifyEcommerceFourStateMatrix();
   console.log("15/49. matriz de 4 estados de ecommerce (Plan x EcommerceConfig x Subscription): PASS");
+  await verifyPublicStorefrontReadBoundary();
+  console.log("51. Storefront público: Discovery/ProductDetail/OrderTracking respetan el boundary real (A-I): PASS");
   await verifyCatalogKitsEnforcement();
   console.log("16. catalog.kits cableado en validateEditorProduct + guard directo: PASS");
   verifyBusinessConfigMatrix();
