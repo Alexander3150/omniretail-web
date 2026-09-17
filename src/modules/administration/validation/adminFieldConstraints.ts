@@ -33,7 +33,7 @@ export const ADMIN_FIELD_LIMITS = {
   },
   ecommerceConfig: {
     storeName: 120,
-    contactPhone: 9,
+    contactPhone: 14,
     contactEmail: 254,
   },
 } as const;
@@ -59,14 +59,19 @@ function normalizePhoneDigits(value: string): string {
 }
 
 export function formatGuatemalaPhoneInput(value: string): string {
-  const digits = normalizePhoneDigits(value).slice(0, PHONE_DIGIT_LIMIT);
-  if (digits.length <= 4) return digits;
+  const localDigits = normalizePhoneDigits(value).slice(0, PHONE_DIGIT_LIMIT);
+  if (localDigits.length <= 4) return localDigits;
 
-  return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  return `${localDigits.slice(0, 4)}-${localDigits.slice(4)}`;
 }
 
 export function normalizeGuatemalaPhone(value: string): string {
-  return formatGuatemalaPhoneInput(value);
+  const localDigits = normalizePhoneDigits(value).slice(0, PHONE_DIGIT_LIMIT);
+  if (localDigits.length < PHONE_DIGIT_LIMIT) {
+    return localDigits;
+  }
+
+  return `+${GUATEMALA_COUNTRY_CODE} ${localDigits.slice(0, 4)}-${localDigits.slice(4)}`;
 }
 
 export function isValidGuatemalaPhone(value: string): boolean {
