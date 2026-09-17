@@ -58,9 +58,9 @@ export function CustomerAccountShell({ children, navigationItems }: CustomerAcco
       // sesion y la navegacion a /iniciar-sesion ocurren pase lo que pase
       // con la revocacion remota.
       await repositories.auth.clearLocalSession();
-      router.replace("/iniciar-sesion");
+      router.replace(storefrontRoutes ? storefrontRoutes.login() : "/iniciar-sesion");
     }
-  }, [repositories, router]);
+  }, [repositories, router, storefrontRoutes]);
 
   const localizedItems = useMemo(() => {
     if (!storefrontRoutes) return navigationItems;

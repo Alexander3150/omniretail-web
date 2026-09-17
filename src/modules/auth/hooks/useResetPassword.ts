@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { PasswordPolicyError } from "@/config/auth-policy";
+import type { ResetPasswordResult } from "@/core/repositories/AuthRepository";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import {
   hasResetPasswordValidationErrors,
@@ -19,6 +20,7 @@ export function useResetPassword(token: string) {
   const [formError, setFormError] = useState<string | undefined>();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
+  const [result, setResult] = useState<ResetPasswordResult | null>(null);
 
   const submit = useCallback(async () => {
     setFormError(undefined);
@@ -33,7 +35,8 @@ export function useResetPassword(token: string) {
 
     setIsSubmitting(true);
     try {
-      await repositories.auth.resetPassword(token, dto.password);
+      const resetResult = await repositories.auth.resetPassword(token, dto.password);
+      setResult(resetResult);
       setCompleted(true);
     } catch (error) {
       if (error instanceof PasswordPolicyError) {
@@ -58,6 +61,7 @@ export function useResetPassword(token: string) {
     formError,
     isSubmitting,
     completed,
+    result,
     submit,
   };
 }

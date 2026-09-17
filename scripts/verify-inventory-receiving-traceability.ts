@@ -92,6 +92,47 @@ const repositories = {
 const adjustmentService = new RegisterInventoryAdjustmentService(repositories);
 
 async function main() {
+  // Regression: product metadata persists across an account/session switch,
+  // while stock remains strictly branch-scoped. The adjustment below is the
+  // real application service; POS is queried through its normal read model.
+  const persistenceProductId = "prod-branch-persistence-harness";
+  let persistenceUnitId = "";
+  store.mutate((db) => {
+    const template = db.products.find((item) => item.id === "prod-screws");
+    assert.ok(template);
+    persistenceUnitId = template.baseUnitId;
+    db.products.push({
+      ...template,
+      id: persistenceProductId,
+      sku: "BRANCH-PERSIST-10",
+      name: "Producto persistencia sucursal",
+      tracking: { stock: true, lot: false, expiration: false, serial: false },
+      channels: { pos: true, ecommerce: false, mobileApp: false },
+    });
+  });
+  await adjustmentService.execute({
+    productId: persistenceProductId,
+    branchId: "branch-centro",
+    locationId: "loc-centro-a",
+    unitId: persistenceUnitId,
+    movementKind: "in",
+    quantity: 10,
+    reason: "Existencia inicial de regresión",
+    notes: "",
+  });
+  const persistedProduct = store.getSnapshot().products.find((item) => item.id === persistenceProductId);
+  assert.ok(persistedProduct, "Product metadata survives session/account changes");
+  const branchAProduct = (await new GetPosProductsService(repositories).execute({
+    tenantId: "tenant-demo", branchId: "branch-centro",
+  })).find((item) => item.productId === persistenceProductId);
+  const branchBProduct = (await new GetPosProductsService(repositories).execute({
+    tenantId: "tenant-demo", branchId: "branch-norte",
+  })).find((item) => item.productId === persistenceProductId);
+  assert.equal(branchAProduct?.availableQuantity, 10, "Branch A stock persists");
+  assert.equal(branchAProduct?.isAvailableForSale, true, "Branch A follows normal POS availability");
+  assert.equal(branchBProduct?.availableQuantity, 0, "Branch B cannot consume Branch A stock");
+  assert.equal(branchBProduct?.isAvailableForSale, false, "Branch B remains unsellable at zero stock");
+
   const receivingDetail = {
     capabilities: {
       supportsInventory: true,

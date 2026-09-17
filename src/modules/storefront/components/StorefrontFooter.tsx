@@ -28,7 +28,7 @@ export function StorefrontFooter() {
         <div>
           <p className="text-sm font-bold uppercase tracking-wider text-white">Atención</p>
           <div className="mt-3 grid gap-2 text-sm">
-            <Link href="/ayuda">Ayuda de compra</Link>
+            <Link href={routes.help()}>Ayuda de compra</Link>
             <span>Soporte para pedidos en línea</span>
             <span>Envío a domicilio disponible</span>
           </div>

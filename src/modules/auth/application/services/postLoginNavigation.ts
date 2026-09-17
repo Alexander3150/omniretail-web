@@ -46,9 +46,8 @@ export function isSafeCustomerReturnUrl(returnUrl: string, tenantSlug?: string):
     if (!isBaseSafe) return false;
 
     if (tenantSlug) {
-      if (url.pathname.startsWith("/tienda/")) {
-        return url.pathname.startsWith(`/tienda/${encodeURIComponent(tenantSlug)}`);
-      }
+      const tenantRoot = `/tienda/${encodeURIComponent(tenantSlug)}`;
+      return isRouteWithin(url.pathname, tenantRoot);
     }
     return true;
   } catch {

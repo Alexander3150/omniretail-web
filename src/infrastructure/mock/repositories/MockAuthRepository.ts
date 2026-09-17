@@ -818,7 +818,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     this.emit("auth.changed", { action: "created" });
   }
   async resetPassword(token: string, newPasswordMock: string) {
-    this.store.mutate((db) => {
+    const result = this.store.mutate((db) => {
       const now = new Date();
 
       const challenge = db.passwordResetChallenges.find(
@@ -941,9 +941,15 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         createdAt: nowIso,
       });
 
-      return undefined;
+      return user.type === UserType.customer
+        ? {
+            userType: user.type,
+            tenantSlug: db.tenants.find((tenant) => tenant.id === user.tenantId)?.slug,
+          }
+        : { userType: user.type };
     });
     this.emit("auth.changed", { action: "updated" });
+    return result;
   }
   async verifyEmail(token: string) {
     const outcome = this.store.mutate((db) => {

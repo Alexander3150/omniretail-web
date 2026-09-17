@@ -50,6 +50,8 @@ export interface ProductListItem {
   activePromotion?: ProductListPromotion;
   status: ProductStatus;
   tracking: ProductTrackingConfig;
+  /** Available stock for the active operational branch; only populated for tracked physical products. */
+  availableQuantity?: number;
 }
 
 export interface ProductDetailViewModel {

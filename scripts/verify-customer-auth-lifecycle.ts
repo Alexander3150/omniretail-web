@@ -106,7 +106,31 @@ async function runLifecycleTests() {
   assert.equal(isCustomerAccountPath(`/inicio`), false);
   assert.equal(isCustomerAccountPath(`/administracion/usuarios`), false);
 
-  // SCENARIO 8: PRIVATE ROUTE AUTHORITY
+  // SCENARIO 8: LEGACY CUSTOMER ROLE BACKFILL. Mutate persisted data into
+  // the pre-normalization shape, then reconstruct the real store twice.
+  const employeeBefore = store.getSnapshot().users.find((user) => user.type === UserType.employee);
+  assert.ok(employeeBefore, "Seed employee exists");
+  store.mutate((db) => {
+    const legacyCustomer = db.users.find((user) => user.id === registerResult.user.id);
+    assert.ok(legacyCustomer);
+    legacyCustomer.roleId = undefined;
+  });
+  const normalizedOnce = new MockDatabaseStore(storage).getSnapshot();
+  const repairedCustomer = normalizedOnce.users.find((user) => user.id === registerResult.user.id);
+  const customerRoles = normalizedOnce.roles.filter(
+    (role) => role.tenantId === registerResult.user.tenantId && role.isSystem &&
+      role.permissions.includes("customer.account.read") &&
+      !role.permissions.some((permission) => permission.startsWith("admin.") || permission.startsWith("pos.") || permission.startsWith("inventory.")),
+  );
+  assert.equal(customerRoles.length, 1, "Canonical Customer role remains singular");
+  assert.equal(repairedCustomer?.roleId, customerRoles[0].id, "Legacy Customer roleId repaired");
+  assert.ok(customerRoles[0].permissions.includes("storefront.orders.read"), "Canonical Customer permissions available");
+  assert.equal(normalizedOnce.users.find((user) => user.id === employeeBefore.id)?.roleId, employeeBefore.roleId, "Employee role unchanged");
+  const normalizedTwice = new MockDatabaseStore(storage).getSnapshot();
+  assert.equal(normalizedTwice.roles.filter((role) => role.id === customerRoles[0].id).length, 1, "Normalization is idempotent");
+  assert.equal(normalizedTwice.users.find((user) => user.id === registerResult.user.id)?.roleId, customerRoles[0].id, "Repaired relation persists");
+
+  // SCENARIO 9: PRIVATE ROUTE AUTHORITY
   assert.equal(canUserEnterPrivateRoute(verifiedUser!, `/tienda/${tenantSlug}/cuenta`), true, "Customer route classification allows Customer path");
   assert.equal(canUserEnterPrivateRoute(verifiedUser!, `/administracion/usuarios`), false, "Employee-only routes must remain denied");
 

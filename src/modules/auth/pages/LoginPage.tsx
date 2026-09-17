@@ -238,7 +238,7 @@ export function LoginPage() {
             </label>
             <Link
               className="font-semibold text-[var(--color-title)] hover:underline"
-              href="/recuperar-contrasena"
+              href={routes ? routes.forgotPassword() : "/recuperar-contrasena"}
             >
               Â¿Olvidaste tu contraseña?
             </Link>
