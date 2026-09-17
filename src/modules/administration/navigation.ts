@@ -15,6 +15,12 @@ export const administrationNavigation = [
     permission: BUSINESS_CONFIG_MANAGE_PERMISSION,
     children: [
       {
+        id: "administration-dashboard",
+        label: "Dashboard",
+        href: "/administracion/dashboard",
+        permission: DASHBOARD_READ_PERMISSION,
+      },
+      {
         id: "administration-branches",
         label: "Sucursales",
         href: "/administracion/sucursales",
@@ -65,12 +71,6 @@ export const administrationNavigation = [
         label: "Caja",
         href: "/administracion/caja",
         permission: CASH_READ_PERMISSION,
-      },
-      {
-        id: "administration-dashboard",
-        label: "Dashboard",
-        href: "/administracion/dashboard",
-        permission: DASHBOARD_READ_PERMISSION,
       },
       {
         id: "administration-reports",

@@ -2,6 +2,11 @@ import type { Role } from "@/core/entities";
 import { RoleStatus, UserStatus } from "@/core/enums";
 import type { EmployeeInputDto } from "@/modules/administration/application/dto/EmployeeDto";
 import { AdministrationServiceError } from "@/modules/administration/application/services/serviceHelpers";
+import {
+  ADMIN_FIELD_LIMITS,
+  isValidGuatemalaPhone,
+  normalizeGuatemalaPhone,
+} from "@/modules/administration/validation/adminFieldConstraints";
 
 const EDITABLE_STATUSES: readonly UserStatus[] = [
   UserStatus.active,
@@ -9,17 +14,40 @@ const EDITABLE_STATUSES: readonly UserStatus[] = [
   UserStatus.blocked,
 ];
 const EMAIL_FORMAT = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMPLOYEE_CODE_FORMAT = /^[A-Za-z0-9_-]+$/;
+const LIMITS = ADMIN_FIELD_LIMITS.employee;
 
 /**
  * Valida el DTO recibido antes de normalizarlo. Una UI oculta no impide que otro consumidor
  * invoque el service con datos inválidos.
  */
 export function validateEmployeeInput(dto: EmployeeInputDto) {
-  if (!dto.name.trim()) {
+  const name = dto.name.trim();
+  if (!name) {
     throw new AdministrationServiceError("El nombre del empleado es obligatorio.");
   }
-  if (!dto.email.trim() || !EMAIL_FORMAT.test(dto.email.trim())) {
+  if (name.length > LIMITS.name) {
+    throw new AdministrationServiceError("El nombre del empleado no puede exceder 120 caracteres.");
+  }
+  const email = dto.email.trim();
+  if (!email || email.length > LIMITS.email || !EMAIL_FORMAT.test(email)) {
     throw new AdministrationServiceError("El correo del empleado no es válido.");
+  }
+  const employeeCode = dto.employeeCode.trim();
+  if (!employeeCode) {
+    throw new AdministrationServiceError("El código de empleado es obligatorio.");
+  }
+  if (employeeCode.length > LIMITS.employeeCode) {
+    throw new AdministrationServiceError("El código de empleado no puede exceder 20 caracteres.");
+  }
+  if (!EMPLOYEE_CODE_FORMAT.test(employeeCode)) {
+    throw new AdministrationServiceError(
+      "El código de empleado solo puede contener letras, números, guión y guión bajo.",
+    );
+  }
+  const phone = dto.phone?.trim();
+  if (phone && !isValidGuatemalaPhone(phone)) {
+    throw new AdministrationServiceError("El teléfono del empleado debe tener 8 dígitos.");
   }
   if (!dto.roleId.trim()) {
     throw new AdministrationServiceError("Seleccioná un rol para el empleado.");
@@ -40,9 +68,12 @@ export function normalizeEmployeeInput(dto: EmployeeInputDto): EmployeeInputDto 
   return {
     name: dto.name.trim(),
     email: dto.email.trim().toLowerCase(),
-    phone: dto.phone?.trim() || undefined,
+    phone: dto.phone?.trim() ? normalizeGuatemalaPhone(dto.phone) : undefined,
+    employeeCode: dto.employeeCode.trim().toUpperCase(),
     roleId: dto.roleId.trim(),
-    allowedBranchIds: Array.from(new Set(dto.allowedBranchIds.map((id) => id.trim()).filter(Boolean))),
+    allowedBranchIds: Array.from(
+      new Set(dto.allowedBranchIds.map((id) => id.trim()).filter(Boolean)),
+    ),
     status: dto.status,
   };
 }
@@ -81,7 +112,9 @@ export function ensureDelegatableRole(
  */
 export function ensureRoleAssignable(role: Role | null, tenantId: string): Role {
   if (!role || role.tenantId !== tenantId) {
-    throw new AdministrationServiceError("El rol seleccionado no está disponible para el negocio activo.");
+    throw new AdministrationServiceError(
+      "El rol seleccionado no está disponible para el negocio activo.",
+    );
   }
   if (role.status !== RoleStatus.active) {
     throw new AdministrationServiceError(

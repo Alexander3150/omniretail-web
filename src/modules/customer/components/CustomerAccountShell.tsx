@@ -23,12 +23,6 @@ interface CustomerAccountShellProps {
  * viceversa) aunque el resultado visual sea identico -- ese resultado
  * visual es intencional, es el diseño que el negocio ya aprobo.
  *
- * showBranchSelector=false: Customer nunca tiene contexto de sucursal
- * operacional (ver ScopedActiveBranchProvider) -- mostrar "Sin
- * sucursales" en Mi Cuenta daba la impresion de que al cliente le
- * faltaba configurar algo. PrivateHeader mantiene el default true, asi
- * que Employee/Admin (AuthorizedPrivateShell) no se ve afectado.
- *
  * EntitlementProvider: Sidebar (compartido) ahora filtra items via
  * useEntitlementContext() (feature/saas-entitlement-enforcement) -- fuera
  * de (private)/layout.tsx (que ya lo provee para Employee/Admin) nadie

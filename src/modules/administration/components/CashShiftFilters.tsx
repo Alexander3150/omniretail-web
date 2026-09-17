@@ -5,6 +5,7 @@ import type {
   CashShiftFilter,
 } from "@/modules/administration/application/dto/CashShiftDto";
 import { Button } from "@/shared/components/Button";
+import { BroomIcon } from "@/shared/components/icons";
 import { Input } from "@/shared/components/Input";
 import { Select } from "@/shared/components/Select";
 
@@ -37,7 +38,7 @@ export function CashShiftFilters({
 
   return (
     <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1.5fr)_minmax(170px,1fr)_minmax(170px,1fr)_150px_150px_auto] xl:items-end">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1.5fr)_minmax(170px,1fr)_minmax(170px,1fr)_auto] xl:items-end">
         <FilterField label="Buscar" htmlFor="cash-shift-search">
           <Input
             id="cash-shift-search"
@@ -73,25 +74,34 @@ export function CashShiftFilters({
             ))}
           </Select>
         </FilterField>
-        <FilterField label="Desde" htmlFor="cash-shift-from">
-          <Input
-            id="cash-shift-from"
-            onChange={(event) => update({ from: event.target.value })}
-            type="date"
-            value={filter.from ?? ""}
-          />
-        </FilterField>
-        <FilterField label="Hasta" htmlFor="cash-shift-to">
-          <Input
-            id="cash-shift-to"
-            onChange={(event) => update({ to: event.target.value })}
-            type="date"
-            value={filter.to ?? ""}
-          />
-        </FilterField>
-        <Button onClick={onReset} type="button" variant="secondary">
-          Limpiar
-        </Button>
+        <div className="flex items-end gap-2">
+          <FilterField label="Rango de fechas" htmlFor="cash-shift-from">
+            <div className="flex items-center gap-2">
+              <Input
+                id="cash-shift-from"
+                onChange={(event) => update({ from: event.target.value })}
+                type="date"
+                value={filter.from ?? ""}
+              />
+              <span className="shrink-0 text-sm text-[var(--color-text-muted)]">a</span>
+              <Input
+                id="cash-shift-to"
+                onChange={(event) => update({ to: event.target.value })}
+                type="date"
+                value={filter.to ?? ""}
+              />
+            </div>
+          </FilterField>
+          <Button
+            className="min-h-[2.6rem] gap-1.5 px-3"
+            onClick={onReset}
+            title="Limpiar filtros"
+            type="button"
+            variant="secondary"
+          >
+            <BroomIcon className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
     </section>
   );

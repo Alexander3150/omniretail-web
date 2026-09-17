@@ -3,6 +3,11 @@ import { BranchStatus, BranchType, SaasLimitKey, UserStatus, UserType } from "@/
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { BranchInputDto } from "@/modules/administration/application/dto/BranchDto";
 import {
+  ADMIN_FIELD_LIMITS,
+  isValidGuatemalaPhone,
+  normalizeGuatemalaPhone,
+} from "@/modules/administration/validation/adminFieldConstraints";
+import {
   BUSINESS_CONFIG_MANAGE_PERMISSION,
   CASH_READ_PERMISSION,
   DASHBOARD_READ_PERMISSION,
@@ -214,11 +219,29 @@ export function ensureBranchBelongsToTenant(branch: Branch | null, tenantId: str
  * el consumidor y la normalización posterior no puede ocultar un valor inválido.
  */
 export function ensureValidBranchInput(dto: BranchInputDto) {
-  if (!dto.code.trim()) {
+  const limits = ADMIN_FIELD_LIMITS.branch;
+  const code = dto.code.trim();
+  const name = dto.name.trim();
+  if (!code) {
     throw new AdministrationServiceError("El código de la sucursal es obligatorio.");
   }
-  if (!dto.name.trim()) {
+  if (code.length > limits.code) {
+    throw new AdministrationServiceError(
+      "El código de la sucursal no puede exceder 16 caracteres.",
+    );
+  }
+  if (!name) {
     throw new AdministrationServiceError("El nombre de la sucursal es obligatorio.");
+  }
+  if (name.length > limits.name) {
+    throw new AdministrationServiceError(
+      "El nombre de la sucursal no puede exceder 120 caracteres.",
+    );
+  }
+  if (dto.address && dto.address.trim().length > limits.address) {
+    throw new AdministrationServiceError(
+      "La dirección de la sucursal no puede exceder 180 caracteres.",
+    );
   }
   if (!Object.values(BranchType).includes(dto.type)) {
     throw new AdministrationServiceError("El tipo de sucursal no es válido.");
@@ -226,8 +249,12 @@ export function ensureValidBranchInput(dto: BranchInputDto) {
   if (!Object.values(BranchStatus).includes(dto.status)) {
     throw new AdministrationServiceError("El estado de la sucursal no es válido.");
   }
+  const phone = dto.phone?.trim();
+  if (phone && !isValidGuatemalaPhone(phone)) {
+    throw new AdministrationServiceError("El teléfono de la sucursal debe tener 8 dígitos.");
+  }
   const email = dto.email?.trim();
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (email && (email.length > limits.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
     throw new AdministrationServiceError("El correo de la sucursal no es válido.");
   }
 }
@@ -238,7 +265,7 @@ export function normalizeBranchInput(dto: BranchInputDto): BranchInputDto {
     name: dto.name.trim(),
     type: dto.type,
     address: normalizeOptionalText(dto.address),
-    phone: normalizeOptionalText(dto.phone),
+    phone: dto.phone?.trim() ? normalizeGuatemalaPhone(dto.phone) : undefined,
     email: normalizeOptionalText(dto.email)?.toLowerCase(),
     status: dto.status,
   };

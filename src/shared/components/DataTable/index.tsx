@@ -11,6 +11,7 @@ export interface DataTableProps<T> {
   data: T[];
   rowKey: (row: T) => string;
   emptyMessage?: string;
+  headerClassName?: string;
   onRowClick?: (row: T) => void;
   onRowDoubleClick?: (row: T) => void;
 }
@@ -19,13 +20,14 @@ export function DataTable<T>({
   data,
   rowKey,
   emptyMessage = "Sin registros",
+  headerClassName,
   onRowClick,
   onRowDoubleClick,
 }: DataTableProps<T>) {
   return (
     <div className="overflow-x-auto rounded-md border border-[var(--color-border)] bg-white">
       <table className="w-full border-collapse text-left text-sm">
-        <thead className="bg-[var(--color-app-background)] text-[var(--color-title)]">
+        <thead className={cn("bg-[var(--color-app-background)] text-[var(--color-title)]", headerClassName)}>
           <tr>
             {columns.map((column) => (
               <th className={cn("px-4 py-3 font-semibold", column.className)} key={column.key}>

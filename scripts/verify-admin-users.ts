@@ -309,6 +309,7 @@ function baseInput(overrides: Partial<EmployeeInputDto> = {}): EmployeeInputDto 
     name: "Nuevo Empleado",
     email: `au-new-${Math.random().toString(36).slice(2)}@example.test`,
     phone: undefined,
+    employeeCode: `AU-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
     roleId: "au-role-ok",
     allowedBranchIds: ["au-branch-a1"],
     status: UserStatus.active,

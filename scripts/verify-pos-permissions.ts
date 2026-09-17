@@ -460,8 +460,8 @@ async function verifyBankAccountBoundaries() {
     "read model must expose masked account number",
   );
   assert.ok(
-    accounts.every((account) => !("accountNumber" in account)),
-    "read model must not expose full account number",
+    accounts.every((account) => "accountNumber" in account),
+    "read model must expose full account number for POS transfer detail",
   );
   assert.equal(
     accounts.some((account) => account.id === "pos-hardening-bank-tenant-b"),

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { AccountStatus } from "@/core/enums";
 import type { EmployeeDto } from "@/modules/administration/application/dto/EmployeeDto";
 import { Button } from "@/shared/components/Button";
+import { LinkIcon, PencilIcon, SendIcon } from "@/shared/components/icons";
 import { DataTable, type DataTableColumn } from "@/shared/components/DataTable";
 import { SearchInput } from "@/shared/components/SearchInput";
 import { StatusBadge } from "@/shared/components/StatusBadge";
@@ -154,35 +155,41 @@ export function EmployeeTable({
       header: <span className="sr-only">Acciones</span>,
       className: "text-right",
       cell: (employee) => (
-        <div className="flex flex-wrap justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-1.5">
           {employee.authStatus === AccountStatus.password_reset_required ? (
             <Button
-              className="min-h-9 px-3 py-1.5"
+              className="min-h-9 gap-1.5 px-3 py-1.5"
               disabled={busy}
               onClick={() => onCopyInvitation(employee)}
+              title="Copiar enlace"
               type="button"
               variant="ghost"
             >
-              Copiar enlace
+              <LinkIcon className="h-4 w-4" />
+              <span className="hidden sm:inline">Copiar enlace</span>
             </Button>
           ) : canResendInvitation(employee.authStatus) ? (
             <Button
-              className="min-h-9 px-3 py-1.5"
+              className="min-h-9 gap-1.5 px-3 py-1.5"
               disabled={busy}
               onClick={() => onResendInvitation(employee)}
+              title="Enviar invitación"
               type="button"
               variant="ghost"
             >
-              Enviar invitación
+              <SendIcon className="h-4 w-4" />
+              <span className="hidden sm:inline">Invitar</span>
             </Button>
           ) : null}
           <Button
-            className="min-h-9 px-3 py-1.5"
+            className="min-h-9 gap-1.5 px-3 py-1.5"
             onClick={() => onEdit(employee)}
+            title="Editar"
             type="button"
             variant="ghost"
           >
-            Editar
+            <PencilIcon className="h-4 w-4" />
+            <span className="hidden sm:inline">Editar</span>
           </Button>
         </div>
       ),
@@ -205,6 +212,7 @@ export function EmployeeTable({
           columns={columns}
           data={paginatedEmployees}
           emptyMessage="No hay empleados para los filtros actuales."
+          headerClassName="bg-[var(--color-structure)] text-white [&_th]:text-white"
           rowKey={(employee) => employee.id}
         />
         <TablePagination

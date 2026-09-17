@@ -7,23 +7,10 @@ import { NotificationButton } from "@/shared/navigation/PrivateHeader/Notificati
 import { UserMenu } from "@/shared/navigation/PrivateHeader/UserMenu";
 
 type PrivateHeaderProps = {
-  /**
-   * Enlace opcional puramente presentacional (p.ej. "volver al inicio del
-   * storefront" para Customer) -- este componente no sabe ni le importa a
-   * que shell pertenece; solo renderiza el link si el caller lo provee.
-   * Employee/Admin (AuthorizedPrivateShell) no lo pasa, asi que el
-   * backoffice queda visualmente identico.
-   */
   homeHref?: string;
   homeLabel?: string;
   onLogout?: () => void;
   onOpenSidebar: () => void;
-  /**
-   * El selector de sucursal operativa no aplica a Customer (nunca tiene
-   * contexto de sucursal propio) -- por defecto true para no alterar
-   * Employee/Admin. CustomerAccountShell es el unico caller que lo pasa
-   * en false.
-   */
   showBranchSelector?: boolean;
   sidebarId: string;
   sidebarOpen: boolean;

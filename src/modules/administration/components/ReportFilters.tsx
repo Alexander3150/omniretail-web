@@ -10,6 +10,7 @@ import {
   getReportStatusLabel,
 } from "@/modules/administration/application/reportLabels";
 import { Button } from "@/shared/components/Button";
+import { BroomIcon } from "@/shared/components/icons";
 import { Input } from "@/shared/components/Input";
 import { Select } from "@/shared/components/Select";
 
@@ -30,24 +31,25 @@ export function ReportFilters({ data, filter, kind, onChange, onReset }: ReportF
 
   return (
     <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[repeat(4,minmax(150px,1fr))_auto] xl:items-end">
-        <FilterField htmlFor="report-from" label="Desde">
-          <Input
-            id="report-from"
-            max={filter.to}
-            onChange={(event) => update({ from: event.target.value })}
-            type="date"
-            value={filter.from ?? ""}
-          />
-        </FilterField>
-        <FilterField htmlFor="report-to" label="Hasta">
-          <Input
-            id="report-to"
-            min={filter.from}
-            onChange={(event) => update({ to: event.target.value })}
-            type="date"
-            value={filter.to ?? ""}
-          />
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[repeat(3,minmax(150px,1fr))_auto] xl:items-end">
+        <FilterField htmlFor="report-from" label="Rango de fechas">
+          <div className="flex items-center gap-2">
+            <Input
+              id="report-from"
+              max={filter.to}
+              onChange={(event) => update({ from: event.target.value })}
+              type="date"
+              value={filter.from ?? ""}
+            />
+            <span className="shrink-0 text-sm text-[var(--color-text-muted)]">a</span>
+            <Input
+              id="report-to"
+              min={filter.from}
+              onChange={(event) => update({ to: event.target.value })}
+              type="date"
+              value={filter.to ?? ""}
+            />
+          </div>
         </FilterField>
 
         {kind === "sales" ? (
@@ -140,8 +142,14 @@ export function ReportFilters({ data, filter, kind, onChange, onReset }: ReportF
           </>
         ) : null}
 
-        <Button onClick={onReset} type="button" variant="secondary">
-          Limpiar
+        <Button
+          className="min-h-[2.6rem] gap-1.5 px-3"
+          onClick={onReset}
+          title="Limpiar filtros"
+          type="button"
+          variant="secondary"
+        >
+          <BroomIcon className="h-4 w-4" />
         </Button>
       </div>
     </section>

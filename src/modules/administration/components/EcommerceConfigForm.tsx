@@ -2,6 +2,10 @@ import type { FormEvent } from "react";
 import type { EcommerceConfigInputDto } from "@/modules/administration/application/dto/EcommerceConfigDto";
 import { BusinessConfigToggle } from "@/modules/administration/components/BusinessConfigToggle";
 import type { EcommerceBranchOption } from "@/modules/administration/hooks/useEcommerceConfig";
+import {
+  ADMIN_FIELD_LIMITS,
+  formatGuatemalaPhoneInput,
+} from "@/modules/administration/validation/adminFieldConstraints";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
@@ -49,7 +53,7 @@ export function EcommerceConfigForm({
           <Input
             disabled={saving}
             id="ecommerce-store-name"
-            maxLength={120}
+            maxLength={ADMIN_FIELD_LIMITS.ecommerceConfig.storeName}
             onChange={(event) => setField("storeName", event.target.value)}
             required
             value={value.storeName}
@@ -62,8 +66,11 @@ export function EcommerceConfigForm({
               autoComplete="tel"
               disabled={saving}
               id="ecommerce-contact-phone"
-              maxLength={32}
-              onChange={(event) => setField("contactPhone", event.target.value)}
+              maxLength={ADMIN_FIELD_LIMITS.ecommerceConfig.contactPhone}
+              onChange={(event) =>
+                setField("contactPhone", formatGuatemalaPhoneInput(event.target.value))
+              }
+              placeholder="0000-0000"
               type="tel"
               value={value.contactPhone ?? ""}
             />
@@ -73,7 +80,7 @@ export function EcommerceConfigForm({
               autoComplete="email"
               disabled={saving}
               id="ecommerce-contact-email"
-              maxLength={254}
+              maxLength={ADMIN_FIELD_LIMITS.ecommerceConfig.contactEmail}
               onChange={(event) => setField("contactEmail", event.target.value)}
               type="email"
               value={value.contactEmail ?? ""}

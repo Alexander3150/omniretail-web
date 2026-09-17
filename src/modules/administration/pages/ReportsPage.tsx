@@ -23,6 +23,7 @@ import { ReportTotals } from "@/modules/administration/components/ReportTotals";
 import { useReports } from "@/modules/administration/hooks/useReports";
 import { REPORTS_READ_PERMISSION } from "@/modules/administration/permissions";
 import { Button } from "@/shared/components/Button";
+import { DownloadIcon, RefreshIcon } from "@/shared/components/icons";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { TablePagination, type TablePageSize } from "@/shared/components/TablePagination";
 
@@ -99,21 +100,32 @@ export function ReportsPage() {
         actions={
           <>
             <Button
+              className="gap-2"
               disabled={loading}
               onClick={() => void reload()}
+              title="Actualizar"
               type="button"
               variant="secondary"
             >
-              {loading ? "Actualizando..." : "Actualizar"}
+              <RefreshIcon className="h-4 w-4" />
             </Button>
+            <div className="flex flex-col items-end gap-1">
             <Button
+              className="gap-2"
               disabled={!canExport || rows.length === 0 || loading}
               onClick={exportCsv}
               title={canExport ? undefined : "Exportar CSV requiere Reportes avanzados y el permiso admin.reports.export"}
               type="button"
             >
+              <DownloadIcon className="h-4 w-4" />
               Exportar CSV
             </Button>
+            {!canExport ? (
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Requerí el módulo Reportes avanzados para exportar.
+              </p>
+            ) : null}
+            </div>
           </>
         }
         description="Consultá información consolidada de ventas, compras, inventario y pagos."
