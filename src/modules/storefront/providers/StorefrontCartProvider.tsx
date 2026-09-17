@@ -1,6 +1,9 @@
 "use client";
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import type { ProductSalesPriceTier, Promotion } from "@/core/entities";
+import { SalesChannel } from "@/core/enums";
+import { calculateEffectivePrice, resolveQuantityPrice } from "@/core/pricing";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import {
   createStorefrontCartItem,
@@ -21,6 +24,20 @@ interface StorefrontCartContextValue {
 
 const StorefrontCartContext = createContext<StorefrontCartContextValue | null>(null);
 
+type PricedStorefrontCartItem = StorefrontCartItemDto & {
+  basePrice: number;
+  salesPriceTiers: Array<Pick<ProductSalesPriceTier, "minQuantity" | "unitPrice" | "active">>;
+  promotion?: Pick<Promotion, "id" | "type" | "value">;
+};
+
+function withQuantityPrice(item: PricedStorefrontCartItem, quantity: number): PricedStorefrontCartItem {
+  const price = calculateEffectivePrice(
+    resolveQuantityPrice({ basePrice: item.basePrice, quantity, tiers: item.salesPriceTiers }),
+    item.promotion,
+  );
+  return { ...item, quantity, unitPrice: price.effectivePrice };
+}
+
 export function StorefrontCartProvider({ children }: { children: ReactNode }) {
   const repositories = useRepositories();
   const { tenantId } = usePublicTenant();
@@ -28,7 +45,7 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
     () => new GetStorefrontPublishedProductService(repositories),
     [repositories],
   );
-  const [allItems, setAllItems] = useState<StorefrontCartItemDto[]>([]);
+  const [allItems, setAllItems] = useState<PricedStorefrontCartItem[]>([]);
   const items = useMemo(
     () => allItems.filter((item) => item.tenantId === tenantId),
     [allItems, tenantId],
@@ -44,7 +61,19 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
       if (!tenantId) return;
       const product = await publishedProductService.execute(tenantId, productId);
       if (!product) return;
-      const primaryMedia = await repositories.productMedia.getPrimaryByProduct(product.id);
+      const ecommerceConfig = await repositories.businessConfig.getEcommerceConfig(tenantId);
+      if (!ecommerceConfig?.defaultBranchId) return;
+      const [primaryMedia, salesPriceTiers, promotion] = await Promise.all([
+        repositories.productMedia.getPrimaryByProduct(product.id),
+        repositories.productSalesPriceTiers.getByProduct(product.id),
+        repositories.promotions.getApplicable({
+          tenantId,
+          productId: product.id,
+          at: new Date().toISOString(),
+          channel: SalesChannel.ecommerce,
+          branchId: ecommerceConfig.defaultBranchId,
+        }),
+      ]);
       const media =
         primaryMedia?.tenantId === tenantId && primaryMedia.type === "image"
           ? { imageUrl: primaryMedia.url, imageAlt: primaryMedia.alt }
@@ -54,23 +83,35 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
         const existing = current.find(
           (item) => item.tenantId === tenantId && item.productId === product.id,
         );
-        if (!existing) return [...current, createStorefrontCartItem(product, media)];
+        const pricingContext = {
+          basePrice: product.salePrice,
+          salesPriceTiers: salesPriceTiers
+            .filter((tier) => tier.tenantId === tenantId && tier.productId === product.id && tier.active)
+            .map(({ minQuantity, unitPrice, active }) => ({ minQuantity, unitPrice, active })),
+          promotion: promotion ?? undefined,
+        };
+        if (!existing)
+          return [
+            withQuantityPrice(
+              { ...createStorefrontCartItem(product, media), ...pricingContext },
+              1,
+            ),
+          ];
 
         return current.map((item) =>
           item === existing
-            ? {
+            ? withQuantityPrice({
                 ...item,
                 sku: product.sku,
                 name: product.name,
                 ...media,
-                unitPrice: product.salePrice,
-                quantity: item.quantity + 1,
-              }
+                ...pricingContext,
+              }, item.quantity + 1)
             : item,
         );
       });
     },
-    [publishedProductService, repositories.productMedia, tenantId],
+    [publishedProductService, repositories, tenantId],
   );
 
   const updateQuantity = useCallback(
@@ -83,7 +124,7 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
           ? current.filter((item) => item.tenantId !== tenantId || item.productId !== productId)
           : current.map((item) =>
               item.tenantId === tenantId && item.productId === productId
-                ? { ...item, quantity: nextQuantity }
+                ? withQuantityPrice(item, nextQuantity)
                 : item,
             ),
       );
