@@ -1,5 +1,5 @@
 export function buildCsv(headers: string[], rows: Array<Array<string | number>>): string {
-  return [headers, ...rows].map((row) => row.map(escapeCsvCell).join(",")).join("\r\n");
+  return [headers, ...rows].map((row) => row.map(escapeCsvCell).join(";")).join("\r\n");
 }
 
 export function downloadCsv(filename: string, csv: string): void {
