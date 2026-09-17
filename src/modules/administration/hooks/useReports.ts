@@ -14,7 +14,7 @@ import type {
   ReportTotals,
   SalesReportRow,
 } from "@/modules/administration/application/dto/ReportDto";
-import { buildCsv, downloadCsv } from "@/modules/administration/application/reportCsv";
+import { downloadReportXlsx } from "@/modules/administration/application/reportXlsx";
 import { GetReportsService } from "@/modules/administration/application/services/GetReportsService";
 import {
   AdministrationServiceError,
@@ -122,7 +122,7 @@ export function useReports() {
     setKindState(nextKind);
     setFilter({});
   }, []);
-  const exportCsv = useCallback(async () => {
+  const exportXlsx = useCallback(async () => {
     if (rows.length === 0) return;
 
     setError(null);
@@ -133,10 +133,10 @@ export function useReports() {
           "Los datos visibles ya no pertenecen a la sesión actual. Actualizá el reporte.",
         );
       }
-      const csvData = getCsvData(kind, rows);
-      downloadCsv(
-        `reporte-${kind}-${getLocalDateKey(new Date())}.csv`,
-        buildCsv(csvData.headers, csvData.rows),
+      await downloadReportXlsx(
+        `reporte-${kind}-${getLocalDateKey(new Date())}.xlsx`,
+        getReportTableData(kind, rows),
+        REPORT_KIND_SHEET_LABELS[kind],
       );
     } catch (caughtError) {
       setError(cleanError(caughtError));
@@ -156,10 +156,17 @@ export function useReports() {
     totals,
     canRead,
     canExport,
-    exportCsv,
+    exportXlsx,
     reload,
   };
 }
+
+const REPORT_KIND_SHEET_LABELS: Record<ReportKind, string> = {
+  sales: "Ventas",
+  purchases: "Compras",
+  movements: "Movimientos",
+  payments: "Pagos",
+};
 
 export function filterRows(
   data: ReportsDataDto,
@@ -274,7 +281,7 @@ function sum(values: number[]) {
   return values.reduce((total, value) => total + value, 0);
 }
 
-export function getCsvData(
+export function getReportTableData(
   kind: ReportKind,
   rows: ReportRow[],
 ): { headers: string[]; rows: Array<Array<string | number>> } {
