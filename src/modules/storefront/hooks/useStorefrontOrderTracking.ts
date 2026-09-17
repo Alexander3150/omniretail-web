@@ -9,7 +9,7 @@ import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProv
 export function useStorefrontOrderTracking(trackingToken: string) {
   const repositories = useRepositories();
   const eventBus = useDataEventBus();
-  const { tenantId, loading: tenantLoading, error: tenantError } = usePublicTenant();
+  const { tenantId, tenantSlug, loading: tenantLoading, error: tenantError } = usePublicTenant();
   const service = useMemo(
     () => new GetStorefrontOrderTrackingService(repositories),
     [repositories],
@@ -39,7 +39,7 @@ export function useStorefrontOrderTracking(trackingToken: string) {
       setLoading(true);
       setError(null);
       try {
-        const nextData = await service.execute(tenantId, trackingToken);
+        const nextData = await service.execute({ tenantSlug, trackingToken });
         if (!active) return;
         if (!nextData) {
           setData(null);
@@ -75,7 +75,7 @@ export function useStorefrontOrderTracking(trackingToken: string) {
       active = false;
       unsubscribe();
     };
-  }, [eventBus, reloadKey, service, tenantError, tenantId, tenantLoading, trackingToken]);
+  }, [eventBus, reloadKey, service, tenantError, tenantId, tenantLoading, tenantSlug, trackingToken]);
 
   return { data, loading: tenantLoading || loading, error, reload };
 }

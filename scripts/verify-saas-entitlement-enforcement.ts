@@ -850,27 +850,27 @@ function buildStorefrontState(options: {
 async function verifyEcommerceFourStateMatrix() {
   // Plan ecommerce YES + Config YES => disponible.
   const yesYes = buildStorefrontState({ planHasEcommerce: true, configEnabled: true });
-  const context = await new ResolvePublicStorefrontContextService(yesYes.repositories).execute();
+  const context = await new ResolvePublicStorefrontContextService(yesYes.repositories).execute({ tenantSlug: publicStorefrontSlug });
   assert.ok(context.tenantId, "15/49: Plan YES + Config YES => disponible");
 
   // Plan ecommerce YES + Config NO => no disponible. (rechazo por EcommerceConfig.enabled)
   const yesNo = buildStorefrontState({ planHasEcommerce: true, configEnabled: false });
   await assert.rejects(
-    new ResolvePublicStorefrontContextService(yesNo.repositories).execute(),
+    new ResolvePublicStorefrontContextService(yesNo.repositories).execute({ tenantSlug: publicStorefrontSlug }),
     "15/49: Plan YES + Config NO => no disponible",
   );
 
   // Plan ecommerce NO + Config YES => no disponible. (rechazo por capability ausente)
   const noYes = buildStorefrontState({ planHasEcommerce: false, configEnabled: true });
   await assert.rejects(
-    new ResolvePublicStorefrontContextService(noYes.repositories).execute(),
+    new ResolvePublicStorefrontContextService(noYes.repositories).execute({ tenantSlug: publicStorefrontSlug }),
     "15/49: Plan NO + Config YES => no disponible",
   );
 
   // Plan ecommerce NO + Config NO => no disponible.
   const noNo = buildStorefrontState({ planHasEcommerce: false, configEnabled: false });
   await assert.rejects(
-    new ResolvePublicStorefrontContextService(noNo.repositories).execute(),
+    new ResolvePublicStorefrontContextService(noNo.repositories).execute({ tenantSlug: publicStorefrontSlug }),
     "15/49: Plan NO + Config NO => no disponible",
   );
 
@@ -881,7 +881,7 @@ async function verifyEcommerceFourStateMatrix() {
     subscriptionActive: false,
   });
   await assert.rejects(
-    new ResolvePublicStorefrontContextService(inactiveSubscription.repositories).execute(),
+    new ResolvePublicStorefrontContextService(inactiveSubscription.repositories).execute({ tenantSlug: publicStorefrontSlug }),
     "49: Subscription inactive + Plan ecommerce YES + Config YES => no disponible",
   );
 }
@@ -896,14 +896,14 @@ async function verifyPublicStorefrontReadBoundary() {
   // A. Subscription active + Plan active + capability ecommerce + Config enabled => PASS.
   const active = buildStorefrontState({ planHasEcommerce: true, configEnabled: true });
   const discovery = await new GetStorefrontDiscoveryService(active.repositories).execute(
-    active.tenantId,
+    publicStorefrontSlug, active.tenantId,
   );
   assert.ok(
     discovery.products.some((product) => product.id === active.productId),
     "A: discovery debe listar catálogo real cuando el estado comercial está activo",
   );
   const detail = await new GetStorefrontProductDetailService(active.repositories).execute(
-    active.tenantId,
+    publicStorefrontSlug, active.tenantId,
     active.productId,
   );
   assert.ok(detail, "A: product detail debe responder cuando el estado comercial está activo");
@@ -911,7 +911,7 @@ async function verifyPublicStorefrontReadBoundary() {
   // B. Plan sin capability ecommerce + Config enabled => discovery DENIED.
   const noCapability = buildStorefrontState({ planHasEcommerce: false, configEnabled: true });
   await assert.rejects(
-    new GetStorefrontDiscoveryService(noCapability.repositories).execute(noCapability.tenantId),
+    new GetStorefrontDiscoveryService(noCapability.repositories).execute(publicStorefrontSlug, noCapability.tenantId),
     SaasEntitlementError,
     "B: Plan sin capability ecommerce => discovery DENIED",
   );
@@ -923,7 +923,7 @@ async function verifyPublicStorefrontReadBoundary() {
     subscriptionStatus: TenantSubscriptionStatus.suspended,
   });
   await assert.rejects(
-    new GetStorefrontDiscoveryService(suspended.repositories).execute(suspended.tenantId),
+    new GetStorefrontDiscoveryService(suspended.repositories).execute(publicStorefrontSlug, suspended.tenantId),
     SaasEntitlementError,
     "C: Subscription suspended => discovery DENIED",
   );
@@ -935,7 +935,7 @@ async function verifyPublicStorefrontReadBoundary() {
     subscriptionStatus: TenantSubscriptionStatus.cancelled,
   });
   await assert.rejects(
-    new GetStorefrontDiscoveryService(cancelled.repositories).execute(cancelled.tenantId),
+    new GetStorefrontDiscoveryService(cancelled.repositories).execute(publicStorefrontSlug, cancelled.tenantId),
     SaasEntitlementError,
     "D: Subscription cancelled => discovery DENIED",
   );
@@ -947,7 +947,7 @@ async function verifyPublicStorefrontReadBoundary() {
     planStatus: PlanStatus.archived,
   });
   await assert.rejects(
-    new GetStorefrontDiscoveryService(archivedPlan.repositories).execute(archivedPlan.tenantId),
+    new GetStorefrontDiscoveryService(archivedPlan.repositories).execute(publicStorefrontSlug, archivedPlan.tenantId),
     SaasEntitlementError,
     "E: Plan archived => discovery DENIED",
   );
@@ -955,7 +955,7 @@ async function verifyPublicStorefrontReadBoundary() {
   // F. Plan ecommerce YES + Config disabled => discovery DENIED.
   const configDisabled = buildStorefrontState({ planHasEcommerce: true, configEnabled: false });
   await assert.rejects(
-    new GetStorefrontDiscoveryService(configDisabled.repositories).execute(configDisabled.tenantId),
+    new GetStorefrontDiscoveryService(configDisabled.repositories).execute(publicStorefrontSlug, configDisabled.tenantId),
     "F: Plan ecommerce YES + Config disabled => discovery DENIED",
   );
 
@@ -963,8 +963,7 @@ async function verifyPublicStorefrontReadBoundary() {
   // discovery deniega pero /product/:id todavía devuelve datos).
   await assert.rejects(
     new GetStorefrontProductDetailService(noCapability.repositories).execute(
-      noCapability.tenantId,
-      noCapability.productId,
+      publicStorefrontSlug, noCapability.tenantId, noCapability.productId,
     ),
     SaasEntitlementError,
     "G: product detail directo sin capability ecommerce => DENIED",
@@ -979,13 +978,12 @@ async function verifyPublicStorefrontReadBoundary() {
   // denegación de Plan/Subscription, es un intento de leer un tenant que no es el público).
   const crossTenantId = "tenant-storefront-cross";
   await assert.rejects(
-    new GetStorefrontDiscoveryService(active.repositories).execute(crossTenantId),
+    new GetStorefrontDiscoveryService(active.repositories).execute(publicStorefrontSlug, crossTenantId),
     "H: un tenantId que no es el tenant público real => DENIED (no cross-tenant disclosure)",
   );
   await assert.rejects(
     new GetStorefrontProductDetailService(active.repositories).execute(
-      crossTenantId,
-      active.productId,
+      publicStorefrontSlug, crossTenantId, active.productId,
     ),
     "H: product detail con tenantId ajeno => DENIED",
   );
@@ -1001,7 +999,7 @@ async function verifyPublicStorefrontReadBoundary() {
   });
   const trackingResult = await new GetStorefrontOrderTrackingService(
     trackingWithoutCapability.repositories,
-  ).execute(trackingWithoutCapability.tenantId, trackingWithoutCapability.trackingToken);
+  ).execute({ tenantSlug: publicStorefrontSlug, trackingToken: trackingWithoutCapability.trackingToken });
   assert.ok(
     trackingResult,
     "I: TRACKING POLICY = HISTORICAL ACCESS PRESERVED -- debe seguir respondiendo sin capability ecommerce",
@@ -1015,7 +1013,7 @@ async function verifyPublicStorefrontReadBoundary() {
   });
   const deniedTrackingResult = await new GetStorefrontOrderTrackingService(
     trackingWithConfigDisabled.repositories,
-  ).execute(trackingWithConfigDisabled.tenantId, trackingWithConfigDisabled.trackingToken);
+  ).execute({ tenantSlug: publicStorefrontSlug, trackingToken: trackingWithConfigDisabled.trackingToken });
   assert.equal(
     deniedTrackingResult,
     null,

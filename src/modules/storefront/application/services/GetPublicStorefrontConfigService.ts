@@ -18,8 +18,9 @@ export class GetPublicStorefrontConfigService {
     this.contextService = new ResolvePublicStorefrontContextService(repositories);
   }
 
-  async execute(): Promise<PublicStorefrontConfigDto> {
+  async execute(tenantSlug: string): Promise<PublicStorefrontConfigDto> {
     const { tenantId, ecommerceConfig } = await this.contextService.execute({
+      tenantSlug,
       allowDisabled: true,
     });
     const branches = await this.repositories.branches.getActiveByTenantAndType(

@@ -10,7 +10,7 @@ import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProv
 
 export function useStorefrontCheckout() {
   const repositories = useRepositories();
-  const { tenantId } = usePublicTenant();
+  const { tenantId, tenantSlug } = usePublicTenant();
   const { items, clearCart } = useStorefrontCart();
   const { result, setResult } = useStorefrontCheckoutConfirmation();
   const service = useMemo(() => new CreateStorefrontCheckoutService(repositories), [repositories]);
@@ -30,6 +30,7 @@ export function useStorefrontCheckout() {
 
       try {
         const nextResult = await service.execute({
+          tenantSlug,
           items,
           form,
           idempotencyKey: keyRef.current,
@@ -49,7 +50,7 @@ export function useStorefrontCheckout() {
         setSubmitting(false);
       }
     },
-    [clearCart, items, service, setResult, tenantId],
+    [clearCart, items, service, setResult, tenantId, tenantSlug],
   );
 
   return { submitting, error, result, submit };

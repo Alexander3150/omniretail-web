@@ -42,7 +42,6 @@ import {
   MFA_CODE_DIGITS,
   RECOVERY_CODES_COUNT,
 } from "@/config/mfa-policy";
-import { publicStorefrontSlug } from "@/config/publicStorefront";
 import { sessionPolicy } from "@/config/session-policy";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
@@ -615,7 +614,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       // ademas este activo es la misma garantia de siempre: un dato que
       // pueda haber cambiado nunca es autoridad por si solo.
       const tenant = db.tenants.find(
-        (item) => item.slug === publicStorefrontSlug && item.status === TenantStatus.active,
+        (item) => item.slug === input.tenantSlug && item.status === TenantStatus.active,
       );
       if (!tenant) {
         throw new Error("No se pudo completar el registro.");

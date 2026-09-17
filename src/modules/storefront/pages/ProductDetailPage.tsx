@@ -10,8 +10,10 @@ import { StorefrontUnavailableQuantityModal } from "@/modules/storefront/compone
 import { StorefrontCatalogImage } from "@/modules/storefront/components/StorefrontCatalogImage";
 import { ProductType } from "@/core/enums";
 import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
+import { useStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 
 export function ProductDetailPage({ productId }: { productId: string }) {
+  const routes = useStorefrontRoutes();
   const { data, loading, error, reload } = useStorefrontProductDetail(productId);
   const { addProduct, items } = useStorefrontCart();
   const { products } = useStorefrontDiscovery();
@@ -42,7 +44,7 @@ export function ProductDetailPage({ productId }: { productId: string }) {
           </button>
           <Link
             className="rounded-xl border border-[var(--color-border)] px-4 py-2 font-bold"
-            href="/catalogo"
+          href={routes.catalog()}
           >
             Volver al catálogo
           </Link>
@@ -90,7 +92,7 @@ export function ProductDetailPage({ productId }: { productId: string }) {
   };
   return (
     <main className="mx-auto max-w-7xl px-5 py-10">
-      <Link className="text-sm font-bold text-[var(--color-title)]" href="/catalogo">
+      <Link className="text-sm font-bold text-[var(--color-title)]" href={routes.catalog()}>
         ← Volver al catálogo
       </Link>
       <section className="mt-5 grid gap-7 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm lg:grid-cols-[1.25fr_.9fr] lg:p-7">
@@ -176,7 +178,7 @@ export function ProductDetailPage({ productId }: { productId: string }) {
                   {addedQuantity} {addedQuantity === 1 ? "unidad agregada" : "unidades agregadas"}{" "}
                   al carrito.
                 </span>
-                <Link className="font-bold underline underline-offset-2" href="/carrito">
+          <Link className="font-bold underline underline-offset-2" href={routes.cart()}>
                   Ver carrito
                 </Link>
               </div>

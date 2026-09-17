@@ -42,20 +42,22 @@ export class CreateStorefrontCheckoutService {
   }
 
   async execute({
+    tenantSlug,
     items,
     form,
     idempotencyKey,
   }: {
+    tenantSlug: string;
     items: StorefrontCartItemDto[];
     form: StorefrontCheckoutFormDto;
     idempotencyKey: string;
   }): Promise<StorefrontCheckoutResultDto> {
-    assertCheckoutForm(form);
+    const normalizedEmail = normalizeEmail(form.email);
+    assertCheckoutForm({ ...form, email: normalizedEmail });
     const checkoutIdentity = idempotencyKey.trim();
     if (!checkoutIdentity) throw new Error("No se pudo inicializar el pedido.");
 
-    const normalizedEmail = normalizeEmail(form.email);
-    const { tenantId, ecommerceConfig } = await this.publicStorefrontContextService.execute();
+    const { tenantId, ecommerceConfig } = await this.publicStorefrontContextService.execute({ tenantSlug });
     const [products, customerContext] = await Promise.all([
       Promise.all(
         items.map(async (item) => ({
@@ -181,7 +183,11 @@ export class CreateStorefrontCheckoutService {
       }
       throw cause;
     }
-    const emailSimulation = this.emailSimulationService.simulateConfirmation(normalizedEmail);
+    const emailSimulation = this.emailSimulationService.simulateConfirmation(
+      normalizedEmail,
+      tenantSlug,
+      confirmation.order.trackingToken,
+    );
 
     return {
       orderNumber: confirmation.order.orderNumber,

@@ -7,6 +7,7 @@ import type { StorefrontDiscoveryProductDto } from "@/modules/storefront/applica
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
 import { StorefrontCatalogImage } from "@/modules/storefront/components/StorefrontCatalogImage";
 import { StorefrontUnavailableQuantityModal } from "@/modules/storefront/components/StorefrontUnavailableQuantityModal";
+import { useStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 
 export function StorefrontProductCard({
   product,
@@ -20,6 +21,7 @@ export function StorefrontProductCard({
   offer?: { originalPrice: number; promotionName: string };
 }) {
   const { addProduct, items } = useStorefrontCart();
+  const routes = useStorefrontRoutes();
   const [added, setAdded] = useState(false);
   const [unavailableQuantityModalOpen, setUnavailableQuantityModalOpen] = useState(false);
   const { showToast } = useToast();
@@ -43,7 +45,7 @@ export function StorefrontProductCard({
   return (
     <>
     <article className={`group overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-[var(--color-title)]/10 ${uniformHeight ? "flex h-full min-h-[31rem] flex-col" : ""}`}>
-      <Link className={uniformHeight ? "flex min-h-0 flex-1 flex-col text-left" : "block text-left"} href={`/catalogo/${product.id}`}>
+      <Link className={uniformHeight ? "flex min-h-0 flex-1 flex-col text-left" : "block text-left"} href={routes.product(product.id)}>
         <div className="relative">
           <StorefrontCatalogImage
             alt={product.imageAlt ?? product.name}

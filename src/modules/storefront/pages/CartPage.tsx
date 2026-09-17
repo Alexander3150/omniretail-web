@@ -6,8 +6,10 @@ import { useState } from "react";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
 import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
 import { StorefrontUnavailableQuantityModal } from "@/modules/storefront/components/StorefrontUnavailableQuantityModal";
+import { useStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 
 export function CartPage() {
+  const routes = useStorefrontRoutes();
   const { items, subtotal, updateQuantity, removeProduct, clearCart } = useStorefrontCart();
   const { products } = useStorefrontDiscovery();
   const [unavailableQuantityModalOpen, setUnavailableQuantityModalOpen] = useState(false);
@@ -35,7 +37,7 @@ export function CartPage() {
           </p>
           <Link
             className="mt-6 inline-block rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)]"
-            href="/catalogo"
+          href={routes.catalog()}
           >
             Ver catálogo
           </Link>
@@ -168,13 +170,13 @@ export function CartPage() {
           </div>
           <Link
             className="mt-6 block rounded-xl bg-[var(--color-primary-hover)] px-4 py-3 text-center font-black text-white transition hover:brightness-110"
-            href="/checkout"
+          href={routes.checkout()}
           >
             Continuar al checkout
           </Link>
           <Link
             className="mt-4 block text-center text-sm font-bold text-[var(--color-title)] hover:underline"
-            href="/catalogo"
+          href={routes.catalog()}
           >
             Seguir comprando
           </Link>

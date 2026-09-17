@@ -6,6 +6,7 @@ import { toReceiptInput } from "@/modules/customer/application/services/orderRec
 import { useCustomerOrderDetail } from "@/modules/customer/hooks/useCustomerOrderDetail";
 import { downloadStorefrontReceiptPdf } from "@/modules/storefront/application/services/StorefrontReceiptPdfService";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
+import { useStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 import { Button } from "@/shared/components/Button";
 import { CompassIcon, CreditCardIcon, DownloadIcon, PackageIcon, TruckIcon } from "@/shared/components/icons";
 import { StatusBadge } from "@/shared/components/StatusBadge";
@@ -23,6 +24,7 @@ function SectionIcon({ children }: { children: ReactNode }) {
 }
 
 export function PedidoDetallePage({ orderId }: { orderId: string }) {
+  const routes = useStorefrontRoutes();
   const { order, loading, error } = useCustomerOrderDetail(orderId);
   const { config } = usePublicTenant();
   const { showToast } = useToast();
@@ -40,7 +42,7 @@ export function PedidoDetallePage({ orderId }: { orderId: string }) {
         <p className="rounded-xl bg-red-50 p-4 text-sm text-[var(--color-danger)]">
           {error ?? "Pedido no encontrado."}
         </p>
-        <Link className="font-bold text-[var(--color-title)] underline" href="/cuenta/pedidos">
+    <Link className="font-bold text-[var(--color-title)] underline" href={routes.accountOrders()}>
           ← Volver a mis pedidos
         </Link>
       </div>
@@ -68,7 +70,7 @@ export function PedidoDetallePage({ orderId }: { orderId: string }) {
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-5">
-      <Link className="text-sm font-bold text-[var(--color-title)]" href="/cuenta/pedidos">
+    <Link className="text-sm font-bold text-[var(--color-title)]" href={routes.accountOrders()}>
         ← Volver a mis pedidos
       </Link>
       <section className="min-w-0 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">

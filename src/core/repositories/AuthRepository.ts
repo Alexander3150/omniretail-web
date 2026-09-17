@@ -101,6 +101,7 @@ export class MfaChallengeUnavailableError extends Error {
 }
 
 export interface RegisterCustomerInput {
+  tenantSlug: string;
   name: string;
   email: string;
   phone?: string;

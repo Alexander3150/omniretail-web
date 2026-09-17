@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { publicStorefrontSlug } from "@/config/publicStorefront";
 import { BranchStatus, BranchType, PlanCode, SaasCapabilityKey, UserStatus } from "@/core/enums";
 import { permissionsConfig } from "@/config/permissions";
 import { subscriptionTotalQuetzales } from "@/core/subscription/catalog";
@@ -203,7 +204,7 @@ async function main() {
   assert.deepEqual(await ecommerceConfig.execute(), initialConfig);
   store.mutate((db) => { db.ecommerceConfigs.find((item) => item.tenantId === "tenant-demo")!.enabled = false; });
   assert.equal((await ecommerceConfig.execute()).enabled, false);
-  assert.equal((await new GetPublicStorefrontConfigService(repositories).execute()).storeEnabled, false);
+  assert.equal((await new GetPublicStorefrontConfigService(repositories).execute(publicStorefrontSlug)).storeEnabled, false);
   assert.equal(await reports.authorizeExport(), "tenant-demo");
   const reportDataBeforeRemoval = await reports.execute();
   assert(reportDataBeforeRemoval.sales.length + reportDataBeforeRemoval.purchases.length + reportDataBeforeRemoval.movements.length + reportDataBeforeRemoval.payments.length > 0);

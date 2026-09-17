@@ -16,6 +16,7 @@ import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCart
 import { useStorefrontCheckoutConfirmation } from "@/modules/storefront/providers/StorefrontCheckoutConfirmationProvider";
 import { municipalitiesByDepartment } from "@/modules/storefront/data/guatemalaLocations";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
+import { useStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 import {
   DELIVERY_ADDRESS_LIMITS,
   sanitizeDeliveryAddress,
@@ -44,6 +45,7 @@ const initialForm: StorefrontCheckoutFormDto = {
   cardLastFour: "",
 };
 export function CheckoutPage() {
+  const routes = useStorefrontRoutes();
   const { items, subtotal } = useStorefrontCart();
   const repositories = useRepositories();
   const { user } = useCurrentSession();
@@ -167,7 +169,7 @@ export function CheckoutPage() {
         <p className="mt-3 text-[var(--color-text-muted)]">Agrega productos antes de continuar.</p>
         <Link
           className="mt-5 inline-block rounded-xl bg-[var(--color-primary)] px-4 py-3 font-bold text-[var(--color-topbar)]"
-          href="/catalogo"
+          href={routes.catalog()}
         >
           Ver catálogo
         </Link>
@@ -217,7 +219,7 @@ export function CheckoutPage() {
   };
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-5 sm:py-10">
-      <Link className="text-sm font-bold text-[var(--color-title)]" href="/carrito">
+      <Link className="text-sm font-bold text-[var(--color-title)]" href={routes.cart()}>
         ← Volver al carrito
       </Link>
       <div className="mx-auto mt-4 flex max-w-xl items-center gap-2 sm:gap-4">
