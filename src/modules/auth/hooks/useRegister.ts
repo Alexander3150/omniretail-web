@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
-import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
+import { useOptionalPublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 import type { RegisterFormDto } from "@/modules/auth/application/dto/RegisterFormDto";
 import {
   hasRegisterValidationErrors,
@@ -22,7 +22,10 @@ export function useRegister() {
   // tenant real del registro ya NO se decide aca ni se envia al
   // repositorio -- registerCustomer() lo resuelve el mismo, con la misma
   // fuente de verdad (ver AuthRepository.registerCustomer).
-  const { tenantSlug, loading: tenantLoading, error: tenantError } = usePublicTenant();
+  const tenant = useOptionalPublicTenant();
+  const tenantSlug = tenant?.tenantSlug;
+  const tenantLoading = tenant?.loading ?? false;
+  const tenantError = tenant?.error;
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -41,7 +44,7 @@ export function useRegister() {
       return;
     }
     if (tenantError) {
-      setFormError("La tienda no está disponible en este momento. Intenta más tarde.");
+      setFormError("La tienda no estí¡ disponible en este momento. Intenta mí¡s tarde.");
       return;
     }
 
@@ -62,7 +65,7 @@ export function useRegister() {
       // cualquier cuenta por id.
       const { user: createdUser, emailVerificationToken } =
         await repositories.auth.registerCustomer({
-          tenantSlug,
+          tenantSlug: tenantSlug ?? "",
           name: dto.name.trim(),
           email: dto.email.trim(),
           phone: dto.phone.trim() || undefined,

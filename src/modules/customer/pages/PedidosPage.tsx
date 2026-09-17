@@ -7,6 +7,8 @@ import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import Link from "next/link";
 
+import { useOptionalStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
+
 const DELIVERY_METHOD_LABELS: Record<DeliveryMethod, string> = {
   [DeliveryMethod.home_delivery]: "Entrega a domicilio",
   [DeliveryMethod.store_pickup]: "Recoger en tienda",
@@ -20,6 +22,7 @@ const DELIVERY_METHOD_LABELS: Record<DeliveryMethod, string> = {
  */
 export function PedidosPage() {
   const { orders, loading, error } = useCustomerOrders();
+  const storefrontRoutes = useOptionalStorefrontRoutes();
 
   return (
     <div className="min-w-0 space-y-5">
@@ -51,13 +54,15 @@ export function PedidosPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {orders.map((order) => (
-            <Link
-              href={`/cuenta/pedidos/${order.id}`}
-              className="flex flex-col gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm transition hover:border-[var(--color-structure)] sm:flex-row sm:items-center sm:justify-between"
-              key={order.id}
-            >
-              <div className="flex min-w-0 items-center gap-3">
+          {orders.map((order) => {
+            const href = storefrontRoutes ? storefrontRoutes.accountOrder(order.id) : `/cuenta/pedidos/${order.id}`;
+            return (
+              <Link
+                href={href}
+                className="flex flex-col gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm transition hover:border-[var(--color-structure)] sm:flex-row sm:items-center sm:justify-between"
+                key={order.id}
+              >
+                <div className="flex min-w-0 items-center gap-3">
                 <span
                   aria-hidden="true"
                   className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-structure)]"
@@ -86,7 +91,8 @@ export function PedidosPage() {
                 </span>
               </div>
             </Link>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

@@ -1,7 +1,7 @@
-"use client";
+﻿"use client";
 
 import { useCallback } from "react";
-import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
+import { usePublicTenant, useOptionalPublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
 const segment = (value: string) => encodeURIComponent(value);
 
@@ -24,4 +24,35 @@ export function useStorefrontRoutes() {
     help: useCallback(() => `${base}/ayuda`, [base]),
     branches: useCallback(() => `${base}/sucursales`, [base]),
   };
+}
+
+
+export function useOptionalStorefrontRoutes() {
+  const tenant = useOptionalPublicTenant();
+  const tenantSlug = tenant?.tenantSlug;
+  const base = tenantSlug ? `/tienda/${encodeURIComponent(tenantSlug)}` : null;
+  return useCallback(() => {
+    if (!base) return null;
+    return {
+      home: () => base,
+      catalog: () => `${base}/catalogo`,
+      product: (id: string) => `${base}/catalogo/${segment(id)}`,
+      offers: () => `${base}/ofertas`,
+      cart: () => `${base}/carrito`,
+      checkout: () => `${base}/checkout`,
+      register: () => `${base}/registro`,
+      login: () => `${base}/iniciar-sesion`,
+      account: () => `${base}/cuenta`,
+      accountOrders: () => `${base}/cuenta/pedidos`,
+      accountAddresses: () => `${base}/cuenta/direcciones`,
+      accountPaymentMethods: () => `${base}/cuenta/metodos-pago`,
+      accountProfile: () => `${base}/cuenta/perfil`,
+      accountSecurity: () => `${base}/cuenta/seguridad`,
+      accountSupport: () => `${base}/cuenta/soporte`,
+      accountOrder: (id: string) => `${base}/cuenta/pedidos/${segment(id)}`,
+      tracking: (token: string) => `${base}/pedido/seguimiento/${segment(token)}`,
+      help: () => `${base}/ayuda`,
+      branches: () => `${base}/sucursales`,
+    };
+  }, [base])();
 }

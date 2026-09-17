@@ -78,6 +78,7 @@ export class MockTenantOnboardingRepository
       const tenant = this.pushTenant(db, input, now);
       const branch = this.pushBranch(db, tenant.id, now);
       const role = this.pushRole(db, tenant.id, input.adminPermissions, now);
+      this.pushCustomerRole(db, tenant.id, now);
       const user = this.pushUser(db, tenant.id, role.id, branch.id, input, now);
       const authAccount = this.pushAuthAccount(db, user, input.adminPasswordMock, now);
       const businessCapabilities = this.pushBusinessCapabilities(db, tenant.id);
@@ -172,6 +173,32 @@ export class MockTenantOnboardingRepository
       isSystem: true,
       permissions: [...permissions],
       branchScope: "all",
+      status: RoleStatus.active,
+      createdAt: now,
+      updatedAt: now,
+    };
+    db.roles.push(role);
+    return role;
+  }
+
+  protected pushCustomerRole(
+    db: MockDatabase,
+    tenantId: string,
+    now: string,
+  ): Role {
+    const role: Role = {
+      id: this.id("role"),
+      tenantId,
+      name: "Cliente",
+      isSystem: true,
+      permissions: [
+        "customer.account.read",
+        "customer.account.update",
+        "customer.address.manage",
+        "customer.payment_method.manage",
+        "storefront.orders.read",
+      ],
+      branchScope: "assigned",
       status: RoleStatus.active,
       createdAt: now,
       updatedAt: now,

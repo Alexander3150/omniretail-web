@@ -13,6 +13,7 @@ import {
   SalesChannel,
   UnitCategory,
   UnitStatus,
+  UserType,
 } from "@/core/enums";
 import type {
   Address,
@@ -244,6 +245,59 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
     type: String(promotion.type) === "fixed_amount" ? PromotionType.fixedDiscount : promotion.type,
     channels: promotion.channels ?? [SalesChannel.pos, SalesChannel.ecommerce],
   }));
+
+  const CUSTOMER_ROLE_NAME = "Cliente";
+  const CUSTOMER_ROLE_PERMISSIONS = [
+    "customer.account.read",
+    "customer.account.update",
+    "customer.address.manage",
+    "customer.payment_method.manage",
+    "storefront.orders.read",
+  ];
+
+  normalized.tenants.forEach((tenant) => {
+    const hasCustomerRole = normalized.roles.some(
+      (role) =>
+        role.tenantId === tenant.id &&
+        role.isSystem &&
+        role.permissions.includes("customer.account.read") &&
+        !role.permissions.some(
+          (p) => p.startsWith("admin.") || p.startsWith("pos.") || p.startsWith("inventory."),
+        ),
+    );
+    if (!hasCustomerRole) {
+      normalized.roles.push({
+        id: `role-customer-${tenant.id}`,
+        tenantId: tenant.id,
+        name: CUSTOMER_ROLE_NAME,
+        isSystem: true,
+        permissions: [...CUSTOMER_ROLE_PERMISSIONS],
+        branchScope: "assigned",
+        status: RoleStatus.active,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  });
+
+  normalized.users = (database.users ?? base.users).map((user) => {
+    if (user.type === UserType.customer && !user.roleId) {
+      const customerRole = normalized.roles.find(
+        (role) =>
+          role.tenantId === user.tenantId &&
+          role.isSystem &&
+          role.permissions.includes("customer.account.read") &&
+          !role.permissions.some(
+            (p) => p.startsWith("admin.") || p.startsWith("pos.") || p.startsWith("inventory."),
+          ),
+      );
+      return {
+        ...user,
+        roleId: customerRole?.id,
+      };
+    }
+    return user;
+  });
 
   return normalized;
 }

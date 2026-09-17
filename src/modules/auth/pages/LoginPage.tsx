@@ -1,8 +1,9 @@
-"use client";
+﻿"use client";
 
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useLogin } from "@/modules/auth/hooks/useLogin";
+import { useOptionalStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 import { BrandMark } from "@/shared/components/BrandMark";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
@@ -104,6 +105,7 @@ export function LoginPage() {
     cancelMfaChallenge,
   } = useLogin();
   const { showToast } = useToast();
+  const routes = useOptionalStorefrontRoutes();
   const isLockedOut = lockoutSecondsRemaining > 0;
   const lockoutMinutes = Math.floor(lockoutSecondsRemaining / 60);
   const lockoutSeconds = lockoutSecondsRemaining % 60;
@@ -195,7 +197,7 @@ export function LoginPage() {
         >
           {isLockedOut ? (
             <InlineAlert title="Demasiados intentos fallidos." tone="danger">
-              <p>Podrás intentarlo de nuevo en {lockoutDisplay}.</p>
+              <p>Podrí¡s intentarlo de nuevo en {lockoutDisplay}.</p>
             </InlineAlert>
           ) : formError ? (
             <InlineAlert title={formError} tone="danger" />
@@ -238,7 +240,7 @@ export function LoginPage() {
               className="font-semibold text-[var(--color-title)] hover:underline"
               href="/recuperar-contrasena"
             >
-              ¿Olvidaste tu contraseña?
+              Â¿Olvidaste tu contraseña?
             </Link>
           </div>
 
@@ -264,16 +266,16 @@ export function LoginPage() {
         </Button>
 
         <p className="mt-6 text-center text-sm text-[var(--color-text-muted)]">
-          ¿No tienes cuenta?{" "}
+          Â¿No tienes cuenta?{" "}
           <Link
             className="font-semibold text-[var(--color-title)] hover:underline"
-            href="/registro"
+            href={routes ? routes.register() : "/registro"}
           >
             Registrate
           </Link>
         </p>
         <p className="mt-2 text-center text-sm text-[var(--color-text-muted)]">
-          <Link className="font-semibold text-[var(--color-title)] hover:underline" href="/">
+          <Link className="font-semibold text-[var(--color-title)] hover:underline" href={routes ? routes.home() : "/"}>
             Volver al inicio
           </Link>
         </p>

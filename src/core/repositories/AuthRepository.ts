@@ -286,7 +286,7 @@ export interface AuthRepository {
    * la contraseña cambia, el acceso no).
    */
   resetPassword(token: string, newPasswordMock: string): Promise<void>;
-  verifyEmail(token: string): Promise<void>;
+  verifyEmail(token: string): Promise<{ tenantSlug?: string }>;
   /**
    * Invita (o reinvita) a un empleado YA EXISTENTE a activar su acceso.
    * Nunca crea el User -- eso es responsabilidad de la pantalla de

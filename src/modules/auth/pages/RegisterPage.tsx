@@ -10,9 +10,12 @@ import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Input } from "@/shared/components/Input";
 import { PasswordInput } from "@/shared/components/PasswordInput";
 
+import { useOptionalStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
+
 const customerPasswordHint = getPasswordRequirementsMessage(CUSTOMER_PASSWORD_POLICY);
 
 export function RegisterPage() {
+  const routes = useOptionalStorefrontRoutes();
   const {
     name,
     setName,
@@ -69,7 +72,7 @@ export function RegisterPage() {
           <p className="mt-6 text-center text-sm text-[var(--color-text-muted)]">
             <Link
               className="font-semibold text-[var(--color-title)] hover:underline"
-              href="/iniciar-sesion"
+              href={routes ? routes.login() : "/iniciar-sesion"}
             >
               Volver a iniciar sesión
             </Link>
@@ -182,7 +185,7 @@ export function RegisterPage() {
           ¿Ya tienes cuenta?{" "}
           <Link
             className="font-semibold text-[var(--color-title)] hover:underline"
-            href="/iniciar-sesion"
+            href={routes ? routes.login() : "/iniciar-sesion"}
           >
             Inicia sesión
           </Link>

@@ -17,9 +17,9 @@ type Repositories = ReturnType<typeof useRepositories>;
  * por token para que un remonte reutilice el resultado real en vez de
  * invocar el repositorio de nuevo.
  */
-const verificationAttempts = new Map<string, Promise<void>>();
+const verificationAttempts = new Map<string, Promise<{ tenantSlug?: string }>>();
 
-function verifyOnce(repositories: Repositories, token: string): Promise<void> {
+function verifyOnce(repositories: Repositories, token: string): Promise<{ tenantSlug?: string }> {
   let attempt = verificationAttempts.get(token);
   if (!attempt) {
     attempt = repositories.auth.verifyEmail(token);
@@ -31,14 +31,18 @@ function verifyOnce(repositories: Repositories, token: string): Promise<void> {
 export function useVerifyEmail(token: string) {
   const repositories = useRepositories();
   const [state, setState] = useState<VerifyEmailState>("loading");
+  const [tenantSlug, setTenantSlug] = useState<string | undefined>();
 
   useEffect(() => {
     let active = true;
 
     async function run() {
       try {
-        await verifyOnce(repositories, token);
-        if (active) setState("success");
+        const result = await verifyOnce(repositories, token);
+        if (active) {
+          setState("success");
+          setTenantSlug(result.tenantSlug);
+        }
       } catch {
         // Token inexistente, ya usado o expirado producen el mismo error
         // generico en verifyEmail() (mismo criterio de no revelar detalle
@@ -54,5 +58,5 @@ export function useVerifyEmail(token: string) {
     };
   }, [repositories, token]);
 
-  return state;
+  return { state, tenantSlug };
 }

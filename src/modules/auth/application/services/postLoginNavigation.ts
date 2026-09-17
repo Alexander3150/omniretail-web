@@ -9,6 +9,7 @@ const CUSTOMER_PUBLIC_ROUTE_ROOTS = [
   "/checkout",
   "/ofertas",
   "/pedido",
+  "/tienda",
 ] as const;
 
 function isRouteWithin(pathname: string, root: string): boolean {
@@ -16,7 +17,8 @@ function isRouteWithin(pathname: string, root: string): boolean {
 }
 
 export function isCustomerAccountPath(pathname: string): boolean {
-  return isRouteWithin(pathname, "/cuenta");
+  if (isRouteWithin(pathname, "/cuenta")) return true;
+  return /^\/tienda\/[^/]+\/cuenta(\/|$)/.test(pathname);
 }
 
 /**
@@ -32,22 +34,30 @@ export function canUserEnterPrivateRoute(user: User | null, pathname: string): b
   return user.type === UserType.customer ? isCustomerRoute : !isCustomerRoute;
 }
 
-export function isSafeCustomerReturnUrl(returnUrl: string): boolean {
+export function isSafeCustomerReturnUrl(returnUrl: string, tenantSlug?: string): boolean {
   if (!returnUrl.startsWith("/") || returnUrl.startsWith("//")) return false;
 
   try {
     const url = new URL(returnUrl, "https://omniretail.local");
     if (url.origin !== "https://omniretail.local") return false;
-    return (
-      isCustomerAccountPath(url.pathname) ||
-      CUSTOMER_PUBLIC_ROUTE_ROOTS.some((root) => isRouteWithin(url.pathname, root))
-    );
+    const isBaseSafe = isCustomerAccountPath(url.pathname) ||
+      CUSTOMER_PUBLIC_ROUTE_ROOTS.some((root) => isRouteWithin(url.pathname, root));
+
+    if (!isBaseSafe) return false;
+
+    if (tenantSlug) {
+      if (url.pathname.startsWith("/tienda/")) {
+        return url.pathname.startsWith(`/tienda/${encodeURIComponent(tenantSlug)}`);
+      }
+    }
+    return true;
   } catch {
     return false;
   }
 }
 
-export function resolvePostLoginDestination(user: User, returnUrl?: string): string {
+export function resolvePostLoginDestination(user: User, returnUrl?: string, tenantSlug?: string): string {
   if (user.type !== UserType.customer) return "/inicio";
-  return returnUrl && isSafeCustomerReturnUrl(returnUrl) ? returnUrl : "/";
+  if (returnUrl && isSafeCustomerReturnUrl(returnUrl, tenantSlug)) return returnUrl;
+  return tenantSlug ? `/tienda/${encodeURIComponent(tenantSlug)}` : "/";
 }
