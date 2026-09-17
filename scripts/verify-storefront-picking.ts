@@ -154,8 +154,11 @@ function createHarness(testHooks: MockOrderPaymentConfirmationRepositoryTestHook
 
 async function verifyAuthenticatedAndGuestFulfillment() {
   const harness = createHarness();
+  const tenantSlug = harness.store.getSnapshot().tenants.find((tenant) => tenant.id === tenantId)?.slug;
+  assert.ok(tenantSlug);
   const authenticatedKey = "00000000-0000-4000-8000-000000000201";
   await harness.checkout.execute({
+    tenantSlug,
     items: [{
       productId,
       tenantId,
@@ -191,6 +194,7 @@ async function verifyAuthenticatedAndGuestFulfillment() {
 
   const reservationCount = snapshot.inventoryReservations.length;
   await harness.checkout.execute({
+    tenantSlug,
     items: [{
       productId,
       tenantId,
@@ -213,6 +217,7 @@ async function verifyAuthenticatedAndGuestFulfillment() {
   harness.setAuthenticated(false);
   const guestKey = "00000000-0000-4000-8000-000000000202";
   await harness.checkout.execute({
+    tenantSlug,
     items: [{
       productId,
       tenantId,
@@ -236,6 +241,7 @@ async function verifyAuthenticatedAndGuestFulfillment() {
 
   const serviceKey = "00000000-0000-4000-8000-000000000203";
   await harness.checkout.execute({
+    tenantSlug,
     items: [{
       productId: "prod-install",
       tenantId,

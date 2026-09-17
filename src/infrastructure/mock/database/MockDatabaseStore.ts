@@ -9,6 +9,7 @@ import {
   PlanStatus,
   PromotionType,
   RoleStatus,
+  SaasCapabilityKey,
   SalesChannel,
   UnitCategory,
   UnitStatus,
@@ -108,7 +109,17 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   normalized.planDefinitions = database.planDefinitions ?? base.planDefinitions;
   normalized.planDefinitions = normalized.planDefinitions.map((plan) =>
     plan.id === "plan-basic"
-      ? { ...plan, monthlyQuetzales: BASE_MONTHLY_QUETZALES, limits: {} }
+      ? {
+          ...plan,
+          monthlyQuetzales: BASE_MONTHLY_QUETZALES,
+          capabilities: [...new Set([
+            ...plan.capabilities,
+            SaasCapabilityKey.traceabilityLots,
+            SaasCapabilityKey.traceabilityExpiration,
+            SaasCapabilityKey.traceabilitySerials,
+          ])],
+          limits: {},
+        }
       : plan.id === "plan-enterprise"
         ? { ...plan, status: PlanStatus.archived }
         : plan,

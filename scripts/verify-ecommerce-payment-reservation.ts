@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { publicStorefrontSlug } from "@/config/publicStorefront";
 import {
   DeliveryMethod,
   InventoryReservationStatus,
@@ -237,11 +238,13 @@ async function createPendingCheckout(
 async function verifyConsecutiveStorefrontOrders() {
   const { store, checkout } = createHarness(20);
   await checkout.execute({
+    tenantSlug: publicStorefrontSlug,
     items: storefrontCart(1),
     form: checkoutForm,
     idempotencyKey: "00000000-0000-4000-8000-000000000001",
   });
   await checkout.execute({
+    tenantSlug: publicStorefrontSlug,
     items: storefrontCart(1),
     form: checkoutForm,
     idempotencyKey: "00000000-0000-4000-8000-000000000002",
@@ -291,6 +294,7 @@ async function verifyStorefrontSaleUnitConversion() {
     });
   });
   await checkout.execute({
+    tenantSlug: publicStorefrontSlug,
     items: storefrontCart(2),
     form: checkoutForm,
     idempotencyKey: "00000000-0000-4000-8000-000000000099",
@@ -318,6 +322,7 @@ async function verifyStorefrontMissingConversionFailsClosed() {
   });
   await assert.rejects(
     () => checkout.execute({
+      tenantSlug: publicStorefrontSlug,
       items: storefrontCart(1),
       form: checkoutForm,
       idempotencyKey: "00000000-0000-4000-8000-000000000098",
@@ -331,6 +336,7 @@ async function verifyAccumulatedReservationQaCase() {
   const { store, checkout } = createHarness(15, 6);
   const successfulKey = "00000000-0000-4000-8000-000000000007";
   const successful = await checkout.execute({
+    tenantSlug: publicStorefrontSlug,
     items: storefrontCart(7),
     form: checkoutForm,
     idempotencyKey: successfulKey,
@@ -347,6 +353,7 @@ async function verifyAccumulatedReservationQaCase() {
   const persistedOrderItemId = snapshot.orders[0].items[0].id;
 
   await checkout.execute({
+    tenantSlug: publicStorefrontSlug,
     items: storefrontCart(7),
     form: checkoutForm,
     idempotencyKey: successfulKey,
@@ -359,6 +366,7 @@ async function verifyAccumulatedReservationQaCase() {
 
   await assert.rejects(
     checkout.execute({
+      tenantSlug: publicStorefrontSlug,
       items: storefrontCart(3),
       form: checkoutForm,
       idempotencyKey: "00000000-0000-4000-8000-000000000003",

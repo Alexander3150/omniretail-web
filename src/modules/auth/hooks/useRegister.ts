@@ -22,7 +22,7 @@ export function useRegister() {
   // tenant real del registro ya NO se decide aca ni se envia al
   // repositorio -- registerCustomer() lo resuelve el mismo, con la misma
   // fuente de verdad (ver AuthRepository.registerCustomer).
-  const { loading: tenantLoading, error: tenantError } = usePublicTenant();
+  const { tenantSlug, loading: tenantLoading, error: tenantError } = usePublicTenant();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -62,6 +62,7 @@ export function useRegister() {
       // cualquier cuenta por id.
       const { user: createdUser, emailVerificationToken } =
         await repositories.auth.registerCustomer({
+          tenantSlug,
           name: dto.name.trim(),
           email: dto.email.trim(),
           phone: dto.phone.trim() || undefined,
@@ -80,7 +81,7 @@ export function useRegister() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [confirmPassword, email, name, password, phone, repositories, tenantError, tenantLoading]);
+  }, [confirmPassword, email, name, password, phone, repositories, tenantError, tenantLoading, tenantSlug]);
 
   return {
     name,

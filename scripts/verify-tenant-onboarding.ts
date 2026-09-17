@@ -135,7 +135,7 @@ function buildOnboardingInput(
     tenantSlug: `tenant-onboarding-${suffix}`,
     adminName: "Admin Onboarding",
     adminEmail: `admin-onboarding-${suffix}@example.test`,
-    adminPasswordMock: "OnboardingPass1",
+    adminPasswordMock: "OnboardingPass1!",
     planId: ACTIVE_PLAN_ID,
     ...overrides,
   };
@@ -210,10 +210,14 @@ async function verifySuccessfulOnboardingAndLogin() {
   assert.ok(subscription, "11: la Subscription debe existir");
   assert.equal(subscription?.id, result.subscriptionId);
   assert.equal(subscription?.planId, input.planId, "12: planId debe ser el plan solicitado");
+  assert.deepEqual(subscription?.addonCodes, [], "12: el tenant nuevo inicia sin addons");
 
   // 13. config defaults created
   const capabilities = await harness.repositories.businessConfig.getCapabilities(result.tenantId);
   assert.ok(capabilities, "13: BusinessCapabilitiesConfig debe existir");
+  assert.equal(capabilities?.supportsLots, true, "13: lots debe iniciar habilitado");
+  assert.equal(capabilities?.supportsExpiration, true, "13: expiration debe iniciar habilitado");
+  assert.equal(capabilities?.supportsSerials, true, "13: serials debe iniciar habilitado");
   const ecommerceConfig = await harness.repositories.businessConfig.getEcommerceConfig(result.tenantId);
   assert.ok(ecommerceConfig, "13: EcommerceConfig debe existir");
   assert.equal(ecommerceConfig?.enabled, false, "13: EcommerceConfig.enabled debe ser false por default");

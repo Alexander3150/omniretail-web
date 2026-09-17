@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState, type ComponentType, type SVGProps } from "react";
+import { BrandMark } from "@/shared/components/BrandMark";
 import { CloseIcon } from "@/shared/navigation/PrivateHeader/icons";
 import type { NavigationItem } from "@/shared/types/navigation.types";
 import { useEntitlementContext } from "@/shared/providers/EntitlementProvider";
@@ -40,6 +41,12 @@ const NAVIGATION_ICON_MAP: Record<string, IconComponent> = {
   "purchasing-orders": ClipboardListIcon,
   receiving: PackageCheckIcon,
   logistics: TruckIcon,
+  "customer-account-profile": UserIcon,
+  "customer-account-addresses": MapPinIcon,
+  "customer-account-payment-methods": CreditCardIcon,
+  "customer-account-orders": PackageIcon,
+  "customer-account-security": ShieldIcon,
+  "customer-account-support": HeadphonesIcon,
 };
 
 export function isNavigationItemActive(pathname: string, href?: string): boolean {
@@ -219,7 +226,7 @@ export function Sidebar({
       id={id}
     >
       <div className="mb-4 flex items-center justify-between px-1 lg:hidden">
-        <span className="text-sm font-bold">OmniRetail</span>
+        <BrandMark size="sm" variant="light" />
         <button
           aria-label="Cerrar navegacion"
           className="inline-flex h-10 w-10 items-center justify-center rounded-md text-white transition hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
@@ -413,6 +420,42 @@ function TruckIcon(props: SVGProps<SVGSVGElement>) {
       <path d="M14 8h4l4 4v5h-3" />
       <circle cx="7" cy="17" r="2" />
       <circle cx="17" cy="17" r="2" />
+    </Icon>
+  );
+}
+
+function UserIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21c0-4 3.6-6 8-6s8 2 8 6" />
+    </Icon>
+  );
+}
+
+function CreditCardIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <rect height="14" rx="2" width="20" x="2" y="5" />
+      <path d="M2 10h20" />
+    </Icon>
+  );
+}
+
+function ShieldIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M12 3 4 6v6c0 5 3.4 7.8 8 9 4.6-1.2 8-4 8-9V6Z" />
+    </Icon>
+  );
+}
+
+function HeadphonesIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M4 15v-3a8 8 0 0 1 16 0v3" />
+      <rect height="6" rx="1.5" width="4" x="2" y="14" />
+      <rect height="6" rx="1.5" width="4" x="18" y="14" />
     </Icon>
   );
 }

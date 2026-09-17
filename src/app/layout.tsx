@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "OmniRetail | Frontend Base",
-  description: "Proyecto base del frontend web de OmniRetail.",
+  title: "MARJYM | Frontend Base",
+  description: "Proyecto base del frontend web de MARJYM.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

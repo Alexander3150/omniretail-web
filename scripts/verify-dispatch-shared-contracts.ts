@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { publicStorefrontSlug } from "@/config/publicStorefront";
 import type { OrderNotificationContact } from "@/core/types/orderNotification.types";
 import {
   DeliveryMethod,
@@ -22,7 +23,10 @@ import {
   MockOrderRepository,
   MockPackingRepository,
   MockPickingRepository,
+  MockPlanRepository,
   MockRoleRepository,
+  MockTenantRepository,
+  MockTenantSubscriptionRepository,
   MockUserRepository,
 } from "@/infrastructure/mock/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
@@ -71,6 +75,9 @@ async function main() {
     packings,
     picking,
     roles: new MockRoleRepository(store, eventBus),
+    plans: new MockPlanRepository(store, eventBus),
+    tenants: new MockTenantRepository(store, eventBus),
+    tenantSubscriptions: new MockTenantSubscriptionRepository(store, eventBus),
     users: new MockUserRepository(store, eventBus),
   } as unknown as RepositoryRegistry;
   const service = new DispatchApplicationService(repositories);
@@ -78,7 +85,7 @@ async function main() {
   const assertPublicStatus = async (orderId: string, expected: string) => {
     const order = await orders.getById(orderId);
     assert.ok(order);
-    assert.equal((await trackingService.execute(tenantId, order.trackingToken))?.tracking.status, expected);
+    assert.equal((await trackingService.execute({ tenantSlug: publicStorefrontSlug, trackingToken: order.trackingToken }))?.tracking.status, expected);
     assert.equal(toCustomerOrderSummaryDto(order).status, expected);
     assert.equal(toCustomerOrderDetailDto(order).status, expected);
   };
@@ -145,7 +152,7 @@ async function main() {
   assert.ok(trackingOrder);
   await assertPublicStatus(trackingOrder.id, "preparing");
   assert.equal(
-    (await trackingService.execute(tenantId, trackingProgress.trackingToken))?.tracking.status,
+      (await trackingService.execute({ tenantSlug: publicStorefrontSlug, trackingToken: trackingProgress.trackingToken }))?.tracking.status,
     OrderStatus.preparing,
   );
   await picking.updateItem({
@@ -159,7 +166,7 @@ async function main() {
   });
   await assertPublicStatus(trackingOrder.id, "preparing");
   assert.equal(
-    (await trackingService.execute(tenantId, trackingProgress.trackingToken))?.tracking.status,
+    (await trackingService.execute({ tenantSlug: publicStorefrontSlug, trackingToken: trackingProgress.trackingToken }))?.tracking.status,
     OrderStatus.preparing,
   );
 
@@ -175,7 +182,7 @@ async function main() {
   assert.equal(thirdParty.completed.status, OrderStatus.ready_for_dispatch);
   await assertPublicStatus(thirdParty.completed.id, "preparing");
   assert.equal(
-    (await trackingService.execute(tenantId, thirdParty.completed.trackingToken))?.tracking.status,
+    (await trackingService.execute({ tenantSlug: publicStorefrontSlug, trackingToken: thirdParty.completed.trackingToken }))?.tracking.status,
     OrderStatus.preparing,
   );
 
@@ -243,7 +250,7 @@ async function main() {
     /authorized dispatch scope/,
   );
 
-  // L-O, T-Z, AF-AG. Dispatch owns no stock mutation and confirmation is atomic/idempotent.
+  // L-O, T-Z, AF-AG. Dispatch owns the atomic/idempotent stock mutation.
   await assert.rejects(
     service.confirm(branchId, {
       orderId: thirdParty.completed.id,
@@ -280,7 +287,7 @@ async function main() {
   assert.equal(confirmed.notification?.recipientEmail, "shipment@example.com");
   await assertPublicStatus(thirdParty.completed.id, "sent");
   assert.equal(
-    (await trackingService.execute(tenantId, thirdParty.completed.trackingToken))?.tracking.status,
+    (await trackingService.execute({ tenantSlug: publicStorefrontSlug, trackingToken: thirdParty.completed.trackingToken }))?.tracking.status,
     "sent",
   );
   const inventoryAfter = inventorySnapshot(store);
@@ -343,7 +350,7 @@ async function main() {
   assert.equal(persistedDeliveredDispatch?.carrierName, "Carrier QA");
   assert.equal(persistedDeliveredDispatch?.trackingNumber, "TRACK-001");
   assert.equal(
-    (await trackingService.execute(tenantId, thirdParty.completed.trackingToken))?.tracking.status,
+      (await trackingService.execute({ tenantSlug: publicStorefrontSlug, trackingToken: thirdParty.completed.trackingToken }))?.tracking.status,
     OrderStatus.delivered,
   );
   await assert.rejects(

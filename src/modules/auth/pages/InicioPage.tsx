@@ -1,13 +1,14 @@
 "use client";
 
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
+import { BrandMark } from "@/shared/components/BrandMark";
 
 export function InicioPage() {
   const { role, user } = useCurrentSession();
 
   return (
     <section className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-6">
-      <p className="text-sm font-semibold uppercase text-[var(--color-text-muted)]">OmniRetail</p>
+      <BrandMark />
       <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">
         Hola{user?.name ? `, ${user.name}` : ""}
       </h1>

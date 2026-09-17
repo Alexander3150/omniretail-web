@@ -30,9 +30,11 @@ import {
   PASSWORD_RESET_COOLDOWN_MINUTES,
   PASSWORD_RESET_REQUEST_LIMIT,
   PASSWORD_RESET_TOKEN_MINUTES,
+  PasswordPolicyError,
   getLockoutMinutesForOccurrence,
   isPasswordRecoveryEligible,
-  validatePasswordAgainstPolicy,
+  validateCustomerPassword,
+  validateEmployeePassword,
 } from "@/config/auth-policy";
 import {
   MFA_CHALLENGE_EXPIRATION_MINUTES,
@@ -40,7 +42,6 @@ import {
   MFA_CODE_DIGITS,
   RECOVERY_CODES_COUNT,
 } from "@/config/mfa-policy";
-import { publicStorefrontSlug } from "@/config/publicStorefront";
 import { sessionPolicy } from "@/config/session-policy";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
@@ -597,9 +598,9 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     // el formulario (register.validation.ts) lo hacia, asi que una
     // llamada directa a este metodo podia crear una cuenta con
     // cualquier contraseña, incluida una compuesta solo de digitos.
-    const passwordError = validatePasswordAgainstPolicy(input.passwordMock);
+    const passwordError = validateCustomerPassword(input.passwordMock, input.email);
     if (passwordError) {
-      throw new Error(passwordError);
+      throw new PasswordPolicyError(passwordError);
     }
     const result = this.store.mutate((db) => {
       const now = this.now();
@@ -613,7 +614,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       // ademas este activo es la misma garantia de siempre: un dato que
       // pueda haber cambiado nunca es autoridad por si solo.
       const tenant = db.tenants.find(
-        (item) => item.slug === publicStorefrontSlug && item.status === TenantStatus.active,
+        (item) => item.slug === input.tenantSlug && item.status === TenantStatus.active,
       );
       if (!tenant) {
         throw new Error("No se pudo completar el registro.");
@@ -862,9 +863,12 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       // Password policy en la capa funcional (mismo patrón que
       // activateEmployeeAccount desde PR9): una llamada directa a este
       // método no debe poder saltarse lo que el formulario ya exige.
-      const passwordError = validatePasswordAgainstPolicy(newPasswordMock);
+      const passwordError =
+        user.type === UserType.customer
+          ? validateCustomerPassword(newPasswordMock, user.email)
+          : validateEmployeePassword(newPasswordMock, user.email);
       if (passwordError) {
-        throw new Error(passwordError);
+        throw new PasswordPolicyError(passwordError);
       }
 
       account.passwordHashMock = buildPasswordHashMock(newPasswordMock);
@@ -970,6 +974,10 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       const user = db.users.find((item) => item.id === userId);
       if (!user || user.type !== UserType.employee) {
         throw new Error("No se encontró un empleado con ese id.");
+      }
+      const passwordError = validateEmployeePassword(passwordMock, user.email);
+      if (passwordError) {
+        throw new PasswordPolicyError(passwordError);
       }
       if (db.authAccounts.some((item) => item.userId === userId)) {
         throw new Error("Este empleado ya tiene un AuthAccount.");
@@ -1111,9 +1119,9 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       // activateAccount.validation.ts) no debe poder activar una cuenta
       // con una contraseña que la politica rechazaria. Se valida ANTES
       // de mutar nada, junto con el resto de las condiciones de arriba.
-      const passwordError = validatePasswordAgainstPolicy(newPasswordMock);
+      const passwordError = validateEmployeePassword(newPasswordMock, user.email);
       if (passwordError) {
-        throw new Error(passwordError);
+        throw new PasswordPolicyError(passwordError);
       }
 
       const tenantId = user.tenantId;
@@ -1186,11 +1194,13 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         throw new Error("La nueva contraseña debe ser diferente a la actual.");
       }
 
-      const passwordError = validatePasswordAgainstPolicy(input.newPasswordMock);
-      if (passwordError) throw new Error(passwordError);
-
       const user = db.users.find((item) => item.id === account.userId);
       if (!user) throw new Error("No se encontró el usuario.");
+      const passwordError =
+        user.type === UserType.customer
+          ? validateCustomerPassword(input.newPasswordMock, user.email)
+          : validateEmployeePassword(input.newPasswordMock, user.email);
+      if (passwordError) throw new PasswordPolicyError(passwordError);
       const tenantId = user.tenantId;
 
       // Todo lo de arriba es validación de solo lectura (sesión, cuenta,

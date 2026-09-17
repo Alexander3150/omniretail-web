@@ -9,12 +9,14 @@ import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCart
 import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
 import { StorefrontCatalogImage } from "@/modules/storefront/components/StorefrontCatalogImage";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
+import { useStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 
 export function StorefrontHeader() {
   const { itemCount } = useStorefrontCart();
   const { products } = useStorefrontDiscovery();
   const { user, loading } = useCurrentSession();
   const { config } = usePublicTenant();
+  const routes = useStorefrontRoutes();
   const router = useRouter();
   const [search, setSearch] = useState("");
   const normalizedSearch = search.trim().toLocaleLowerCase();
@@ -31,10 +33,10 @@ export function StorefrontHeader() {
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const query = search.trim();
-    router.push(query ? `/catalogo?q=${encodeURIComponent(query)}` : "/catalogo");
+    router.push(query ? `${routes.catalog()}?q=${encodeURIComponent(query)}` : routes.catalog());
   };
   const isCustomer = user?.type === UserType.customer;
-  const accountHref = !loading && user ? (isCustomer ? "/cuenta" : "/inicio") : "/iniciar-sesion";
+  const accountHref = !loading && user ? (isCustomer ? routes.account() : "/inicio") : routes.login();
   const accountLabel = !loading && user ? (isCustomer ? "Mi Cuenta" : "Ir a inicio") : "Ingresar";
 
   return (
@@ -50,7 +52,7 @@ export function StorefrontHeader() {
       <div className="mx-auto flex max-w-[90rem] flex-wrap items-center gap-3 px-4 py-3 sm:px-5">
         <Link
           className="flex shrink-0 items-center gap-2 text-lg font-black tracking-tight sm:text-xl"
-          href="/"
+          href={routes.home()}
         >
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--color-primary)] text-xs text-[var(--color-topbar)] shadow-sm">
             OR
@@ -60,7 +62,7 @@ export function StorefrontHeader() {
         <div className="ml-auto flex items-center gap-1 lg:order-4">
           <Link
             className="rounded-lg bg-white/10 px-2.5 py-2 text-sm font-semibold text-white transition hover:bg-white/20 sm:px-3"
-            href="/carrito"
+            href={routes.cart()}
           >
             Carrito{" "}
             <span className="ml-1 rounded-full bg-[var(--color-primary)] px-1.5 py-0.5 text-xs text-[var(--color-topbar)]">
@@ -129,7 +131,7 @@ export function StorefrontHeader() {
                     {suggestions.map((product) => (
                       <Link
                         className="flex items-center gap-3 px-4 py-3 transition hover:bg-slate-50"
-                        href={`/catalogo/${product.id}`}
+                        href={routes.product(product.id)}
                         key={product.id}
                         onClick={() => setSearch("")}
                       >
@@ -160,7 +162,7 @@ export function StorefrontHeader() {
                 {suggestions.length > 0 ? (
                   <button
                     className="flex w-full items-center justify-center gap-2 border-t border-[var(--color-border)] bg-slate-50 px-4 py-3 text-sm font-bold text-[var(--color-title)] hover:bg-[var(--color-primary)]/10"
-                    onClick={() => router.push(`/catalogo?q=${encodeURIComponent(search.trim())}`)}
+                    onClick={() => router.push(`${routes.catalog()}?q=${encodeURIComponent(search.trim())}`)}
                     type="button"
                   >
                     ⌕ Ver todos los resultados para “{search.trim()}”
@@ -176,13 +178,13 @@ export function StorefrontHeader() {
         >
           <Link
             className="rounded-lg px-2.5 py-2 text-slate-200 transition hover:bg-white/10 hover:text-white sm:px-3"
-            href="/catalogo"
+            href={routes.catalog()}
           >
             Catálogo
           </Link>
           <Link
             className="rounded-lg px-2.5 py-2 text-slate-200 transition hover:bg-white/10 hover:text-white sm:px-3"
-            href="/ofertas"
+            href={routes.offers()}
           >
             Ofertas
           </Link>

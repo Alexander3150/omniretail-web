@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
+import { useStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 
 export function StorefrontFooter() {
   const { config } = usePublicTenant();
+  const routes = useStorefrontRoutes();
   const businessName = config?.storeName ?? "Tienda";
   return (
     <footer className="mt-auto border-t border-white/10 bg-[var(--color-topbar)] text-slate-300">
@@ -18,9 +20,9 @@ export function StorefrontFooter() {
         <div>
           <p className="text-sm font-bold uppercase tracking-wider text-white">Compra</p>
           <div className="mt-3 grid gap-2 text-sm">
-            <Link href="/catalogo">Catálogo</Link>
-            <Link href="/ofertas">Ofertas</Link>
-            <Link href="/carrito">Mi carrito</Link>
+            <Link href={routes.catalog()}>Catálogo</Link>
+            <Link href={routes.offers()}>Ofertas</Link>
+            <Link href={routes.cart()}>Mi carrito</Link>
           </div>
         </div>
         <div>

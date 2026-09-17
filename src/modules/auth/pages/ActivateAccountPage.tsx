@@ -1,11 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { EMPLOYEE_PASSWORD_POLICY, getPasswordRequirementsMessage } from "@/config/auth-policy";
 import { useActivateAccount } from "@/modules/auth/hooks/useActivateAccount";
+import { BrandMark } from "@/shared/components/BrandMark";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PasswordInput } from "@/shared/components/PasswordInput";
+
+const employeePasswordHint = getPasswordRequirementsMessage(EMPLOYEE_PASSWORD_POLICY);
 
 export function ActivateAccountPage({ token }: { token: string }) {
   const {
@@ -24,9 +28,7 @@ export function ActivateAccountPage({ token }: { token: string }) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[var(--color-app-background)] px-6 py-10">
         <section className="w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center">
-          <p className="text-sm font-semibold uppercase text-[var(--color-text-muted)]">
-            OmniRetail
-          </p>
+          <BrandMark className="justify-center" />
           <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">Cuenta activada</h1>
           <InlineAlert
             className="mt-4 text-left"
@@ -44,7 +46,7 @@ export function ActivateAccountPage({ token }: { token: string }) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[var(--color-app-background)] px-6 py-10">
       <section className="w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-8">
-        <p className="text-sm font-semibold uppercase text-[var(--color-text-muted)]">OmniRetail</p>
+        <BrandMark />
         <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">Activa tu cuenta</h1>
         <p className="mt-3 text-sm text-[var(--color-text-muted)]">
           Establece tu contraseña para completar la activación de tu cuenta de personal.
@@ -60,11 +62,17 @@ export function ActivateAccountPage({ token }: { token: string }) {
         >
           {formError ? <InlineAlert title={formError} tone="danger" /> : null}
 
-          <FormField error={fieldErrors.password} id="activate-password" label="Contraseña">
+          <FormField
+            error={fieldErrors.password}
+            hint={employeePasswordHint}
+            id="activate-password"
+            label="Contraseña"
+          >
             <PasswordInput
               autoComplete="new-password"
               disabled={isSubmitting}
               id="activate-password"
+              maxLength={EMPLOYEE_PASSWORD_POLICY.MAX_LENGTH}
               onChange={(event) => setPassword(event.target.value)}
               value={password}
             />
@@ -79,6 +87,7 @@ export function ActivateAccountPage({ token }: { token: string }) {
               autoComplete="new-password"
               disabled={isSubmitting}
               id="activate-confirm-password"
+              maxLength={EMPLOYEE_PASSWORD_POLICY.MAX_LENGTH}
               onChange={(event) => setConfirmPassword(event.target.value)}
               value={confirmPassword}
             />

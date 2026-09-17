@@ -24,28 +24,21 @@ interface StorefrontOrderTrackingResult {
 export class GetStorefrontOrderTrackingService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async execute(
-    tenantId: string,
-    trackingToken: string,
-  ): Promise<StorefrontOrderTrackingResult | null> {
-    // Tracking histórico no exige el addon, pero tampoco acepta un tenantId arbitrario.
-    // El slug público sigue siendo la autoridad para impedir lecturas cross-tenant.
+  async execute({ trackingToken, tenantSlug }: { trackingToken: string; tenantSlug: string }): Promise<StorefrontOrderTrackingResult | null> {
     const publicContext = await new ResolvePublicStorefrontContextService(this.repositories)
-      .execute({ allowDisabled: true });
-    if (publicContext.tenantId !== tenantId) return null;
+      .execute({ tenantSlug, allowDisabled: true });
+    const order = await this.repositories.orders.getByTrackingToken(publicContext.tenantId, trackingToken);
+    if (!order) return null;
     // Guarda compartida (guestTrackingEnabled + canal ecommerce) --
     // ver core/orders/resolveGuestOrderTracking, tambien usada por el
     // widget de soporte (modulo support) para el mismo chip de "estado
     // de mi pedido".
-    const view = await resolveGuestOrderTracking(this.repositories, tenantId, trackingToken);
+    const view = await resolveGuestOrderTracking(this.repositories, publicContext.tenantId, trackingToken);
     if (!view) return null;
 
     // Esta pantalla necesita ademas el detalle de items, que
     // resolveGuestOrderTracking no expone (el widget de soporte no lo
     // necesita) -- se vuelve a pedir el pedido completo aca.
-    const order = await this.repositories.orders.getByTrackingToken(tenantId, trackingToken);
-    if (!order) return null;
-
     return {
       orderId: view.orderId,
       tracking: {

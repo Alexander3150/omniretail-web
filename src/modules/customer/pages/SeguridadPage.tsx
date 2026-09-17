@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CUSTOMER_PASSWORD_POLICY, getPasswordRequirementsMessage } from "@/config/auth-policy";
 import { useChangePassword } from "@/modules/customer/hooks/useChangePassword";
 import { useMfaEnrollment } from "@/modules/customer/hooks/useMfaEnrollment";
 import type { ChangePasswordFormDto } from "@/modules/customer/application/dto/ChangePasswordFormDto";
@@ -11,11 +12,14 @@ import {
 } from "@/modules/customer/validation/changePassword.validation";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
+import { LockIcon } from "@/shared/components/icons";
 import { Input } from "@/shared/components/Input";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { PasswordInput } from "@/shared/components/PasswordInput";
 import { useToast } from "@/shared/components/Toast";
 import { TwoFactorAuthSection } from "@/shared/components/TwoFactorAuthSection";
+
+const customerPasswordHint = getPasswordRequirementsMessage(CUSTOMER_PASSWORD_POLICY);
 
 const EMPTY_FORM: ChangePasswordFormDto = {
   currentPassword: "",
@@ -55,35 +59,57 @@ export function SeguridadPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full max-w-lg space-y-5">
       <PageHeader
         description="Cambia tu contraseña. Al confirmar, se cerrarán tus demás sesiones activas."
         title="Seguridad"
       />
 
       <form
-        className="max-w-lg space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
+        className="space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
           void handleSubmit();
         }}
       >
-        <FormField error={fieldErrors.currentPassword} id="security-current-password" label="Contraseña actual">
+        <div className="flex items-center gap-2.5">
+          <span
+            aria-hidden="true"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-structure)]"
+          >
+            <LockIcon className="h-5 w-5" />
+          </span>
+          <h2 className="font-semibold text-[var(--color-title)]">Cambiar contraseña</h2>
+        </div>
+
+        <FormField
+          error={fieldErrors.currentPassword}
+          id="security-current-password"
+          label="Contraseña actual"
+        >
           <PasswordInput
             autoComplete="current-password"
             disabled={busy}
             id="security-current-password"
-            onChange={(event) => setForm((prev) => ({ ...prev, currentPassword: event.target.value }))}
+            onChange={(event) =>
+              setForm((prev) => ({ ...prev, currentPassword: event.target.value }))
+            }
             value={form.currentPassword}
           />
         </FormField>
 
-        <FormField error={fieldErrors.newPassword} id="security-new-password" label="Nueva contraseña">
+        <FormField
+          error={fieldErrors.newPassword}
+          hint={customerPasswordHint}
+          id="security-new-password"
+          label="Nueva contraseña"
+        >
           <PasswordInput
             autoComplete="new-password"
             disabled={busy}
             id="security-new-password"
+            maxLength={CUSTOMER_PASSWORD_POLICY.MAX_LENGTH}
             onChange={(event) => setForm((prev) => ({ ...prev, newPassword: event.target.value }))}
             value={form.newPassword}
           />
@@ -98,6 +124,7 @@ export function SeguridadPage() {
             autoComplete="new-password"
             disabled={busy}
             id="security-confirm-password"
+            maxLength={CUSTOMER_PASSWORD_POLICY.MAX_LENGTH}
             onChange={(event) =>
               setForm((prev) => ({ ...prev, confirmNewPassword: event.target.value }))
             }

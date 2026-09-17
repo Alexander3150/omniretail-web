@@ -1,4 +1,4 @@
-import { validatePasswordAgainstPolicy } from "@/config/auth-policy";
+import { validateCustomerPassword } from "@/config/auth-policy";
 import type { ChangePasswordFormDto } from "@/modules/customer/application/dto/ChangePasswordFormDto";
 
 export type ChangePasswordValidationErrors = Partial<
@@ -7,7 +7,7 @@ export type ChangePasswordValidationErrors = Partial<
 
 /**
  * La regla de password vive en config/auth-policy.ts
- * (validatePasswordAgainstPolicy), NO duplicada aca -- es la misma
+ * (validateCustomerPassword), NO duplicada aca -- es la misma
  * funcion que usa AuthRepository.changePassword() como barrera real
  * (mismo patrón que resetPassword.validation.ts). Esta función es solo
  * feedback inmediato de UI; una llamada directa al repositorio no
@@ -22,7 +22,7 @@ export function validateChangePasswordForm(
     errors.currentPassword = "Ingresa tu contraseña actual.";
   }
 
-  const passwordError = validatePasswordAgainstPolicy(dto.newPassword);
+  const passwordError = validateCustomerPassword(dto.newPassword);
   if (passwordError) {
     errors.newPassword = passwordError;
   } else if (dto.currentPassword && dto.newPassword === dto.currentPassword) {

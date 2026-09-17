@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { publicStorefrontSlug } from "@/config/publicStorefront";
 import { BranchStatus, BranchType, PlanCode, SaasCapabilityKey, UserStatus } from "@/core/enums";
 import { permissionsConfig } from "@/config/permissions";
 import { subscriptionTotalQuetzales } from "@/core/subscription/catalog";
@@ -42,21 +43,49 @@ async function main() {
   assert.equal(subscriptionTotalQuetzales(["advanced_reports"]), 298);
   assert.equal(subscriptionTotalQuetzales(["ecommerce_delivery", "advanced_reports"]), 427);
   assert.equal(getBillingCycle("2026-01-31T00:00:00.000Z", new Date("2026-02-28T12:00:00.000Z")).nextRenewalAt, "2026-03-31T00:00:00.000Z");
+  const freshBasicPlan = createMockDatabase().planDefinitions.find((plan) => plan.code === PlanCode.basic)!;
+  assert(freshBasicPlan.capabilities.includes(SaasCapabilityKey.traceabilityLots));
+  assert(freshBasicPlan.capabilities.includes(SaasCapabilityKey.traceabilityExpiration));
+  assert(freshBasicPlan.capabilities.includes(SaasCapabilityKey.traceabilitySerials));
+  assert(!freshBasicPlan.capabilities.includes(SaasCapabilityKey.ecommerce));
+  assert(!freshBasicPlan.capabilities.includes(SaasCapabilityKey.advancedReports));
 
   const storage = new MemoryStorage();
   const legacy = createMockDatabase();
-  legacy.planDefinitions.find((plan) => plan.code === PlanCode.basic)!.limits = { maxEmployees: 3, maxBranches: 1 };
+  const legacyBasicPlan = legacy.planDefinitions.find((plan) => plan.code === PlanCode.basic)!;
+  legacyBasicPlan.limits = { maxEmployees: 3, maxBranches: 1 };
+  legacyBasicPlan.capabilities = [SaasCapabilityKey.inventory, SaasCapabilityKey.inventory];
   legacy.tenantSubscriptions[0].planId = "plan-enterprise";
   legacy.tenantSubscriptions[0].addonCodes = undefined;
-  delete (legacy as Partial<typeof legacy>).subscriptionInvoices;
+  const legacySubscription = structuredClone(legacy.tenantSubscriptions[0]);
+  legacy.subscriptionInvoices = [{
+    id: "legacy-invoice",
+    tenantId: legacySubscription.tenantId,
+    cycleStart: "2026-01-01T00:00:00.000Z",
+    cycleEnd: "2026-02-01T00:00:00.000Z",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    addonCodes: ["ecommerce_delivery"],
+    baseQuetzales: 199,
+    addonLines: [{ code: "ecommerce_delivery", name: "E-commerce", amountQuetzales: 129 }],
+    totalQuetzales: 328,
+    status: "simulated",
+  }];
   storage.set(MOCK_DATABASE_STORAGE_KEY, legacy);
   const store = new MockDatabaseStore(storage);
   const migrated = store.getSnapshot();
   assert.equal(migrated.tenantSubscriptions[0].planId, "plan-basic");
+  assert.equal(migrated.tenantSubscriptions[0].id, legacySubscription.id);
+  assert.equal(migrated.tenantSubscriptions[0].status, legacySubscription.status);
   assert.deepEqual(migrated.tenantSubscriptions[0].addonCodes, ["ecommerce_delivery", "advanced_reports"]);
   assert.deepEqual(createMockDatabase().planDefinitions.find((plan) => plan.code === PlanCode.basic)?.limits, {});
   assert.deepEqual(migrated.planDefinitions.find((plan) => plan.code === PlanCode.basic)?.limits, {});
-  assert.deepEqual(migrated.subscriptionInvoices, []);
+  assert.deepEqual(migrated.planDefinitions.find((plan) => plan.code === PlanCode.basic)?.capabilities, [
+    SaasCapabilityKey.inventory,
+    SaasCapabilityKey.traceabilityLots,
+    SaasCapabilityKey.traceabilityExpiration,
+    SaasCapabilityKey.traceabilitySerials,
+  ]);
+  assert.deepEqual(migrated.subscriptionInvoices, legacy.subscriptionInvoices);
   store.mutate((db) => {
     db.tenants.push({ ...db.tenants[0], id: "another-tenant", slug: "another-tenant" });
     db.branches.push({ ...db.branches[0], id: "another-branch", tenantId: "another-tenant", code: "OTHER" });
@@ -139,9 +168,9 @@ async function main() {
   const before = await read.execute("tenant-demo", permissions);
   assert.equal(before.usage.find((item) => item.key === "maxEmployees")?.limit, null);
   assert.equal(before.usage.find((item) => item.key === "maxBranches")?.limit, null);
-  const firstInvoice = before.invoices[0];
-  assert.equal(firstInvoice.totalQuetzales, 427);
-  assert.equal((await read.execute("tenant-demo", permissions)).invoices.length, 1);
+  const currentInvoice = before.invoices.find((invoice) => invoice.totalQuetzales === 427);
+  assert.equal(currentInvoice?.totalQuetzales, 427);
+  assert.equal((await read.execute("tenant-demo", permissions)).invoices.length, 2);
   // Un caller de mutación sin lectura previa conserva el precio del ciclo vigente.
   store.mutate((db) => { db.subscriptionInvoices = []; });
   await manage.execute("tenant-demo", ["ecommerce_delivery"], permissions, "user-admin");
@@ -175,7 +204,7 @@ async function main() {
   assert.deepEqual(await ecommerceConfig.execute(), initialConfig);
   store.mutate((db) => { db.ecommerceConfigs.find((item) => item.tenantId === "tenant-demo")!.enabled = false; });
   assert.equal((await ecommerceConfig.execute()).enabled, false);
-  assert.equal((await new GetPublicStorefrontConfigService(repositories).execute()).storeEnabled, false);
+  assert.equal((await new GetPublicStorefrontConfigService(repositories).execute(publicStorefrontSlug)).storeEnabled, false);
   assert.equal(await reports.authorizeExport(), "tenant-demo");
   const reportDataBeforeRemoval = await reports.execute();
   assert(reportDataBeforeRemoval.sales.length + reportDataBeforeRemoval.purchases.length + reportDataBeforeRemoval.movements.length + reportDataBeforeRemoval.payments.length > 0);

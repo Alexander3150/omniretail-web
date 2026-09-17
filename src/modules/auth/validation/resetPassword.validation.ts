@@ -1,4 +1,4 @@
-import { validatePasswordAgainstPolicy } from "@/config/auth-policy";
+import { validateCustomerPassword } from "@/config/auth-policy";
 
 export interface ResetPasswordFormDto {
   password: string;
@@ -9,7 +9,8 @@ export type ResetPasswordValidationErrors = Partial<Record<"password" | "confirm
 
 /**
  * La regla de password vive en config/auth-policy.ts
- * (validatePasswordAgainstPolicy), NO duplicada aca -- es la misma
+ * (validateCustomerPassword como mínimo seguro en UI), NO duplicada aca -- el repositorio
+ * resuelve Customer/Employee desde el token y vuelve a validar con la policy autoritativa. Es la misma
  * funcion que usa AuthRepository.resetPassword() como barrera real
  * (mismo patrón que activateAccount.validation.ts desde PR9). Esta
  * función es solo feedback inmediato de UI; una llamada directa al
@@ -20,7 +21,10 @@ export function validateResetPasswordForm(
 ): ResetPasswordValidationErrors {
   const errors: ResetPasswordValidationErrors = {};
 
-  const passwordError = validatePasswordAgainstPolicy(dto.password);
+  // El token puede pertenecer a Customer o Employee. La UI aplica el mínimo Customer para no
+  // bloquear una contraseña Customer válida; el repositorio resuelve el UserType autoritativo y
+  // vuelve a validar con la política exacta antes de mutar.
+  const passwordError = validateCustomerPassword(dto.password);
   if (passwordError) {
     errors.password = passwordError;
   }

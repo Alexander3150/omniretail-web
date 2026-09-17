@@ -7,7 +7,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /**
  * Validacion minima segun tabla 4.26 del documento (formato de correo
  * valido). NO valida fuerza/complejidad de password aqui -- eso aplica a
- * registro/reset (PASSWORD_POLICY en auth-policy.ts), no a login.
+ * registro/reset (políticas Customer/Employee en auth-policy.ts), no a login.
  */
 export function validateLoginForm(dto: LoginFormDto): LoginFormValidationErrors {
   const errors: LoginFormValidationErrors = {};

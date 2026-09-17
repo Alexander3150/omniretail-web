@@ -1,4 +1,4 @@
-import { validatePasswordAgainstPolicy } from "@/config/auth-policy";
+import { validateEmployeePassword } from "@/config/auth-policy";
 import { permissionsConfig } from "@/config/permissions";
 import { PlanStatus } from "@/core/enums";
 import type { CurrencyCode } from "@/core/types/common.types";
@@ -101,9 +101,7 @@ export class TenantOnboardingService {
     };
   }
 
-  private normalizeAndValidate(
-    input: TenantOnboardingInputDto,
-  ): NormalizedTenantOnboardingInput {
+  private normalizeAndValidate(input: TenantOnboardingInputDto): NormalizedTenantOnboardingInput {
     const tenantName = input.tenantName?.trim() ?? "";
     if (!tenantName) {
       throw new AdministrationServiceError("El nombre del negocio es obligatorio.");
@@ -126,7 +124,7 @@ export class TenantOnboardingService {
       throw new AdministrationServiceError("El correo del administrador no es válido.");
     }
 
-    const passwordError = validatePasswordAgainstPolicy(input.adminPasswordMock);
+    const passwordError = validateEmployeePassword(input.adminPasswordMock, adminEmail);
     if (passwordError) {
       throw new AdministrationServiceError(passwordError);
     }

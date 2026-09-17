@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRequestPasswordReset } from "@/modules/auth/hooks/useRequestPasswordReset";
+import { BrandMark } from "@/shared/components/BrandMark";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { InlineAlert } from "@/shared/components/InlineAlert";
@@ -16,9 +17,7 @@ export function RequestPasswordResetPage() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[var(--color-app-background)] px-6 py-10">
         <section className="w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center">
-          <p className="text-sm font-semibold uppercase text-[var(--color-text-muted)]">
-            OmniRetail
-          </p>
+          <BrandMark className="justify-center" />
           <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">Revisa tu correo</h1>
           <InlineAlert className="mt-4 text-left" title={GENERIC_RECOVERY_MESSAGE} tone="info" />
           <ol className="mt-4 space-y-2 text-left text-sm text-[var(--color-text)]">
@@ -27,7 +26,7 @@ export function RequestPasswordResetPage() {
               asociado a tu cuenta.
             </li>
             <li>
-              <span className="font-semibold">Paso 2.</span> Busca el correo de OmniRetail y haz clic
+              <span className="font-semibold">Paso 2.</span> Busca el correo de MARJYM y haz clic
               en el enlace de recuperación que contiene.
             </li>
             <li>
@@ -56,7 +55,7 @@ export function RequestPasswordResetPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[var(--color-app-background)] px-6 py-10">
       <section className="w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-8">
-        <p className="text-sm font-semibold uppercase text-[var(--color-text-muted)]">OmniRetail</p>
+        <BrandMark />
         <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">
           Recupera tu contraseña
         </h1>

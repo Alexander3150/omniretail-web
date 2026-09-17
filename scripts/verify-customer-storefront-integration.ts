@@ -39,6 +39,7 @@ import {
 import type { StorefrontCheckoutFormDto } from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
 import { CreateStorefrontCheckoutService } from "@/modules/storefront/application/services/CreateStorefrontCheckoutService";
 import { getStorefrontAccountNavigation } from "@/modules/storefront/application/services/storefrontAccountNavigation";
+import { publicStorefrontSlug } from "@/config/publicStorefront";
 
 const tenantId = "tenant-demo";
 const customerAId = "customer-ana";
@@ -360,6 +361,7 @@ async function checkout(
   form: StorefrontCheckoutFormDto = checkoutForm,
 ) {
   return harness.checkout.execute({
+    tenantSlug: publicStorefrontSlug,
     items: cart(),
     form,
     idempotencyKey: key,
@@ -504,10 +506,11 @@ async function verifyRegistrationProvisioning() {
   const auth = new MockAuthRepository(store, eventBus, storage);
 
   const registerResult = await auth.registerCustomer({
+    tenantSlug: publicStorefrontSlug,
     name: "Nuevo Cliente",
     email: "nuevo@example.com",
     phone: "12345678",
-    passwordMock: "NuevoCliente123",
+    passwordMock: "NuevoCliente123!",
   });
 
   assert.equal(registerResult.user.type, UserType.customer);

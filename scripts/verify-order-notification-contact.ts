@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { publicStorefrontSlug } from "@/config/publicStorefront";
 import type { CreateOrderInput } from "@/core/repositories";
 import { DeliveryMethod, OrderSource, OrderStatus, TransportMode } from "@/core/enums";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
@@ -14,6 +15,7 @@ import {
   MockRoleRepository,
   MockTenantRepository,
   MockTenantSubscriptionRepository,
+  MockUnitRepository,
   MockUserRepository,
 } from "@/infrastructure/mock/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
@@ -125,11 +127,13 @@ async function main() {
     roles: new MockRoleRepository(store, eventBus),
     tenants: new MockTenantRepository(store, eventBus),
     tenantSubscriptions: new MockTenantSubscriptionRepository(store, eventBus),
+    units: new MockUnitRepository(store, eventBus),
     users: new MockUserRepository(store, eventBus),
   } as unknown as RepositoryRegistry;
   const checkout = new CreateStorefrontCheckoutService(repositories);
 
   await checkout.execute({
+    tenantSlug: publicStorefrontSlug,
     items: storefrontCart(),
     form: checkoutForm(" Guest@Example.COM "),
     idempotencyKey: "00000000-0000-4000-8000-000000000101",
@@ -145,6 +149,7 @@ async function main() {
 
   currentUserId = "user-customer";
   await checkout.execute({
+    tenantSlug: publicStorefrontSlug,
     items: storefrontCart(),
     form: checkoutForm(" Historical@Example.COM "),
     idempotencyKey: "00000000-0000-4000-8000-000000000102",

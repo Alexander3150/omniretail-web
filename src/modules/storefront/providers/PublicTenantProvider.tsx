@@ -17,6 +17,7 @@ import { shouldRefreshPublicConfig } from "@/modules/storefront/application/serv
 
 interface PublicTenantContextValue {
   tenantId: string | null;
+  tenantSlug: string;
   config: PublicStorefrontConfigDto | null;
   loading: boolean;
   error: string | null;
@@ -24,7 +25,7 @@ interface PublicTenantContextValue {
 
 const PublicTenantContext = createContext<PublicTenantContextValue | null>(null);
 
-export function PublicTenantProvider({ children }: { children: ReactNode }) {
+export function PublicTenantProvider({ children, tenantSlug }: { children: ReactNode; tenantSlug: string }) {
   const repositories = useRepositories();
   const eventBus = useDataEventBus();
   const configService = useMemo(
@@ -50,8 +51,8 @@ export function PublicTenantProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       try {
         const [nextConfig, context] = await Promise.all([
-          configService.execute(),
-          contextService.execute({ allowDisabled: true }),
+          configService.execute(tenantSlug),
+          contextService.execute({ tenantSlug, allowDisabled: true }),
         ]);
         if (!active || requestId !== requestIdRef.current) return;
         resolvedTenantIdRef.current = context.tenantId;
@@ -93,11 +94,11 @@ export function PublicTenantProvider({ children }: { children: ReactNode }) {
       unsubscribeBranches();
       unsubscribeSubscription();
     };
-  }, [configService, contextService, eventBus]);
+  }, [configService, contextService, eventBus, tenantSlug]);
 
   const value = useMemo<PublicTenantContextValue>(
-    () => ({ tenantId, config, loading, error }),
-    [config, error, loading, tenantId],
+    () => ({ tenantId, tenantSlug, config, loading, error }),
+    [config, error, loading, tenantId, tenantSlug],
   );
 
   return <PublicTenantContext.Provider value={value}>{children}</PublicTenantContext.Provider>;

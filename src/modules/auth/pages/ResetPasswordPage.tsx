@@ -1,10 +1,18 @@
 "use client";
 
+import {
+  CUSTOMER_PASSWORD_POLICY,
+  EMPLOYEE_PASSWORD_POLICY,
+  getPasswordRequirementsMessage,
+} from "@/config/auth-policy";
 import { useResetPassword } from "@/modules/auth/hooks/useResetPassword";
+import { BrandMark } from "@/shared/components/BrandMark";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PasswordInput } from "@/shared/components/PasswordInput";
+
+const resetPasswordHint = `Clientes: ${getPasswordRequirementsMessage(CUSTOMER_PASSWORD_POLICY)} Personal: ${getPasswordRequirementsMessage(EMPLOYEE_PASSWORD_POLICY)}`;
 
 export function ResetPasswordPage({ token }: { token: string }) {
   const {
@@ -23,9 +31,7 @@ export function ResetPasswordPage({ token }: { token: string }) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[var(--color-app-background)] px-6 py-10">
         <section className="w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center">
-          <p className="text-sm font-semibold uppercase text-[var(--color-text-muted)]">
-            OmniRetail
-          </p>
+          <BrandMark className="justify-center" />
           <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">
             Contraseña actualizada
           </h1>
@@ -45,7 +51,7 @@ export function ResetPasswordPage({ token }: { token: string }) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[var(--color-app-background)] px-6 py-10">
       <section className="w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-8">
-        <p className="text-sm font-semibold uppercase text-[var(--color-text-muted)]">OmniRetail</p>
+        <BrandMark />
         <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">
           Restablece tu contraseña
         </h1>
@@ -60,11 +66,17 @@ export function ResetPasswordPage({ token }: { token: string }) {
         >
           {formError ? <InlineAlert title={formError} tone="danger" /> : null}
 
-          <FormField error={fieldErrors.password} id="reset-password" label="Nueva contraseña">
+          <FormField
+            error={fieldErrors.password}
+            hint={resetPasswordHint}
+            id="reset-password"
+            label="Nueva contraseña"
+          >
             <PasswordInput
               autoComplete="new-password"
               disabled={isSubmitting}
               id="reset-password"
+              maxLength={CUSTOMER_PASSWORD_POLICY.MAX_LENGTH}
               onChange={(event) => setPassword(event.target.value)}
               value={password}
             />
@@ -79,6 +91,7 @@ export function ResetPasswordPage({ token }: { token: string }) {
               autoComplete="new-password"
               disabled={isSubmitting}
               id="reset-confirm-password"
+              maxLength={CUSTOMER_PASSWORD_POLICY.MAX_LENGTH}
               onChange={(event) => setConfirmPassword(event.target.value)}
               value={confirmPassword}
             />

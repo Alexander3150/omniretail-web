@@ -7,6 +7,7 @@ import { StorefrontCatalogImage } from "@/modules/storefront/components/Storefro
 import { StorefrontHorizontalCarousel } from "@/modules/storefront/components/StorefrontHorizontalCarousel";
 import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
 import { useStorefrontOffers } from "@/modules/storefront/hooks/useStorefrontOffers";
+import { useStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 
 const hardwareHeroMessages = [
   {
@@ -29,6 +30,7 @@ const hardwareHeroMessages = [
 ] as const;
 
 export function HomePage() {
+  const routes = useStorefrontRoutes();
   const { categories, products, loading, error } = useStorefrontDiscovery();
   const { items: offers } = useStorefrontOffers();
   const hardwareImages = useMemo(
@@ -101,7 +103,7 @@ export function HomePage() {
                 <div className="mt-7 flex flex-wrap gap-3">
                   <Link
                     className="rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)] transition hover:bg-[var(--color-primary-hover)]"
-                    href="/catalogo"
+          href={routes.catalog()}
                   >
                     Explorar catálogo →
                   </Link>
@@ -118,7 +120,7 @@ export function HomePage() {
               </h1>
               <Link
                 className="mt-7 w-fit rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)]"
-                href="/catalogo"
+          href={routes.catalog()}
               >
                 Explorar catálogo
               </Link>
@@ -191,7 +193,7 @@ export function HomePage() {
               Compra por categoría
             </h2>
           </div>
-          <Link className="text-sm font-bold text-[var(--color-title)]" href="/catalogo">
+      <Link className="text-sm font-bold text-[var(--color-title)]" href={routes.catalog()}>
             Ver todo →
           </Link>
         </div>
@@ -228,7 +230,7 @@ export function HomePage() {
               Productos destacados
             </h2>
           </div>
-          <Link className="text-sm font-bold text-[var(--color-title)]" href="/catalogo">
+      <Link className="text-sm font-bold text-[var(--color-title)]" href={routes.catalog()}>
             Ver catálogo →
           </Link>
         </div>

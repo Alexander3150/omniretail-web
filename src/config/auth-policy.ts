@@ -9,57 +9,126 @@
  * derives its values from here instead of repeating them, so there is
  * a single place to change a rule.
  *
- * NOTE: the source document has two conflicting password length rules
- * (page 1 says 15/64, section 4.5 says 8/24). The team agreed to use
- * MIN 8 / MAX 24.
+ * Customer y Employee comparten las mismas reglas estructurales; Employee usa un mínimo mayor
+ * porque incluye al Tenant Admin privilegiado. Toda nueva contraseña se valida aquí; login no
+ * revalida política para conservar acceso a credenciales legacy válidas.
  */
 
 import { AccountStatus } from "@/core/enums";
 
-export const PASSWORD_POLICY = {
-  MIN_LENGTH: 8,
+export interface PasswordPolicy {
+  readonly MIN_LENGTH: number;
+  readonly MAX_LENGTH: number;
+  readonly ALLOW_UNICODE: boolean;
+  readonly ALLOW_SPACES: boolean;
+  readonly REQUIRE_UPPERCASE: boolean;
+  readonly REQUIRE_LOWERCASE: boolean;
+  readonly REQUIRE_NUMBER: boolean;
+  readonly REQUIRE_SPECIAL: boolean;
+  readonly REJECT_ALL_NUMERIC: boolean;
+  readonly REJECT_COMMON_OR_COMPROMISED_PASSWORDS: boolean;
+  readonly FORCE_PERIODIC_CHANGE: boolean;
+}
+
+const SHARED_PASSWORD_POLICY = {
   MAX_LENGTH: 24,
   ALLOW_UNICODE: true,
   ALLOW_SPACES: false,
-  REQUIRE_COMPLEXITY_RULES: false, // no forced uppercase/number/symbol combo
-  // No es "complejidad forzada" (mayus/numero/simbolo obligatorios) --
-  // ese combo sigue sin exigirse. Esto es mas angosto: una contraseña
-  // compuesta ÚNICAMENTE de dígitos (p.ej. "12345678") queda rechazada.
-  // Agregado a pedido explicito (reunion con Melbyn), no viene del PDF
-  // de arquitectura.
+  REQUIRE_UPPERCASE: true,
+  REQUIRE_LOWERCASE: true,
+  REQUIRE_NUMBER: true,
+  REQUIRE_SPECIAL: true,
   REJECT_ALL_NUMERIC: true,
-  FORCE_PERIODIC_CHANGE: false, // no 30/60/90 day rotation
   REJECT_COMMON_OR_COMPROMISED_PASSWORDS: true,
+  FORCE_PERIODIC_CHANGE: false,
 } as const;
 
+export const CUSTOMER_PASSWORD_POLICY = {
+  ...SHARED_PASSWORD_POLICY,
+  MIN_LENGTH: 8,
+} as const satisfies PasswordPolicy;
+
+export const EMPLOYEE_PASSWORD_POLICY = {
+  ...SHARED_PASSWORD_POLICY,
+  MIN_LENGTH: 12,
+} as const satisfies PasswordPolicy;
+
+const COMMON_OR_COMPROMISED_PASSWORDS = new Set([
+  "password",
+  "password1",
+  "password1!",
+  "password123!",
+  "qwerty123!",
+  "admin123!",
+  "welcome123!",
+  "letmein123!",
+]);
+
+const HAS_UPPERCASE = /\p{Lu}/u;
+const HAS_LOWERCASE = /\p{Ll}/u;
+const HAS_NUMBER = /\p{N}/u;
+const HAS_REAL_SPECIAL = /[^\p{L}\p{N}\s]/u;
+
+export class PasswordPolicyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PasswordPolicyError";
+  }
+}
+
+export function getPasswordRequirementsMessage(policy: PasswordPolicy): string {
+  return `La contraseña debe tener entre ${policy.MIN_LENGTH} y ${policy.MAX_LENGTH} caracteres e incluir una mayúscula, una minúscula, un número y un carácter especial.`;
+}
+
 /**
- * Validacion canonica de PASSWORD_POLICY, pensada para usarse en AMBAS
- * capas -- formulario (feedback inmediato) y repositorio/mock (barrera
- * real). Vive en config/ (no en modules/auth) precisamente para que la
- * capa funcional pueda importarla sin depender de un modulo de feature
- * (infra/core no deben importar modules). Una sola regla, un solo lugar
- * para cambiarla; ninguna llamada directa al repositorio puede saltarse
- * lo que el formulario ya exige porque ambos llaman a esta misma
- * funcion. Devuelve el mensaje de error o null si la contraseña es
- * valida.
+ * Validador canónico único. `email` es contexto autoritativo del boundary que conoce la cuenta;
+ * nunca un accountType declarado libremente por UI. Devuelve un mensaje público o null.
  */
-export function validatePasswordAgainstPolicy(password: string): string | null {
+export function validatePasswordAgainstPolicy(
+  password: string,
+  policy: PasswordPolicy,
+  email?: string,
+): string | null {
   if (!password) {
     return "La contraseña es obligatoria.";
   }
-  if (
-    password.length < PASSWORD_POLICY.MIN_LENGTH ||
-    password.length > PASSWORD_POLICY.MAX_LENGTH
-  ) {
-    return `La contraseña debe tener entre ${PASSWORD_POLICY.MIN_LENGTH} y ${PASSWORD_POLICY.MAX_LENGTH} caracteres.`;
+
+  if (email && password.trim().toLowerCase() === email.trim().toLowerCase()) {
+    return "La contraseña no puede ser igual al correo electrónico.";
   }
-  if (!PASSWORD_POLICY.ALLOW_SPACES && /\s/.test(password)) {
+
+  if (password.length < policy.MIN_LENGTH || password.length > policy.MAX_LENGTH) {
+    return getPasswordRequirementsMessage(policy);
+  }
+  if (!policy.ALLOW_SPACES && /\s/.test(password)) {
     return "La contraseña no puede contener espacios.";
   }
-  if (PASSWORD_POLICY.REJECT_ALL_NUMERIC && /^\d+$/.test(password)) {
+  if (policy.REJECT_ALL_NUMERIC && /^\p{N}+$/u.test(password)) {
     return "La contraseña no puede contener solo números.";
   }
+  if (
+    (policy.REQUIRE_UPPERCASE && !HAS_UPPERCASE.test(password)) ||
+    (policy.REQUIRE_LOWERCASE && !HAS_LOWERCASE.test(password)) ||
+    (policy.REQUIRE_NUMBER && !HAS_NUMBER.test(password)) ||
+    (policy.REQUIRE_SPECIAL && !HAS_REAL_SPECIAL.test(password))
+  ) {
+    return getPasswordRequirementsMessage(policy);
+  }
+  if (
+    policy.REJECT_COMMON_OR_COMPROMISED_PASSWORDS &&
+    COMMON_OR_COMPROMISED_PASSWORDS.has(password.trim().toLowerCase())
+  ) {
+    return "La contraseña es demasiado común o está comprometida.";
+  }
   return null;
+}
+
+export function validateCustomerPassword(password: string, email?: string): string | null {
+  return validatePasswordAgainstPolicy(password, CUSTOMER_PASSWORD_POLICY, email);
+}
+
+export function validateEmployeePassword(password: string, email?: string): string | null {
+  return validatePasswordAgainstPolicy(password, EMPLOYEE_PASSWORD_POLICY, email);
 }
 
 /**

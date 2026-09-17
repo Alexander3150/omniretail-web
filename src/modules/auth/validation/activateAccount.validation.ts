@@ -1,4 +1,4 @@
-import { validatePasswordAgainstPolicy } from "@/config/auth-policy";
+import { validateEmployeePassword } from "@/config/auth-policy";
 
 export interface ActivateAccountFormDto {
   password: string;
@@ -11,7 +11,7 @@ export type ActivateAccountValidationErrors = Partial<
 
 /**
  * La regla de password vive en config/auth-policy.ts
- * (validatePasswordAgainstPolicy), NO duplicada aca -- es la misma
+ * (validateEmployeePassword), NO duplicada aca -- es la misma
  * funcion que usa AuthRepository.activateEmployeeAccount() como barrera
  * real. Esta función es solo feedback inmediato de UI; una llamada
  * directa al repositorio no depende de esto para quedar protegida.
@@ -21,7 +21,7 @@ export function validateActivateAccountForm(
 ): ActivateAccountValidationErrors {
   const errors: ActivateAccountValidationErrors = {};
 
-  const passwordError = validatePasswordAgainstPolicy(dto.password);
+  const passwordError = validateEmployeePassword(dto.password);
   if (passwordError) {
     errors.password = passwordError;
   }

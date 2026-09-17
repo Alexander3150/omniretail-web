@@ -1,7 +1,9 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { useLogin } from "@/modules/auth/hooks/useLogin";
+import { BrandMark } from "@/shared/components/BrandMark";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { InlineAlert } from "@/shared/components/InlineAlert";
@@ -29,6 +31,55 @@ function GoogleIcon() {
         fill="#EA4335"
       />
     </svg>
+  );
+}
+
+/**
+ * Dos columnas en pantallas grandes (panel de marca + formulario), una sola
+ * columna (solo el formulario, con el logo arriba) en mobile/tablet. Uso
+ * exclusivo de LoginPage -- las demas pantallas de auth conservan su tarjeta
+ * simple centrada, este rediseño se pidio puntualmente para login.
+ */
+function LoginLayout({ children }: { children: ReactNode }) {
+  return (
+    <main className="flex min-h-screen bg-[var(--color-app-background)]">
+      <div className="relative hidden w-full max-w-md shrink-0 flex-col justify-between overflow-hidden bg-gradient-to-br from-[var(--color-structure)] to-[var(--color-title)] p-10 text-white lg:flex">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-16 -top-24 h-72 w-72 rounded-full bg-white/10 blur-3xl"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -bottom-24 -left-10 h-64 w-64 rounded-full bg-[var(--color-primary)]/30 blur-3xl"
+        />
+
+        <div className="relative flex flex-1 items-center justify-center">
+          <BrandMark layout="column" size="2xl" variant="light" />
+        </div>
+
+        <div className="relative">
+          <h2 className="text-3xl font-black leading-tight text-balance">
+            Todo tu negocio, en un solo lugar.
+          </h2>
+          <p className="mt-4 max-w-sm text-sm text-white/80">
+            Ventas, inventario, clientes y pedidos -- gestionados desde una sola plataforma.
+          </p>
+        </div>
+
+        <p className="relative text-xs text-white/60">
+          &copy; {new Date().getFullYear()} MARJYM
+        </p>
+      </div>
+
+      <div className="flex min-w-0 flex-1 items-center justify-center px-6 py-10">
+        <div className="w-full max-w-md">
+          <div className="mb-8 flex justify-center lg:hidden">
+            <BrandMark size="lg" />
+          </div>
+          {children}
+        </div>
+      </div>
+    </main>
   );
 }
 
@@ -70,10 +121,9 @@ export function LoginPage() {
   // nueva -- se oculta email/password y se pide el código.
   if (pendingChallenge) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[var(--color-app-background)] px-6 py-10">
-        <section className="w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-8">
-          <p className="text-sm font-semibold uppercase text-[var(--color-text-muted)]">OmniRetail</p>
-          <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">Verificación en dos pasos</h1>
+      <LoginLayout>
+        <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-8 shadow-xl shadow-black/5">
+          <h1 className="text-2xl font-bold text-[var(--color-title)]">Verificación en dos pasos</h1>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             Ingresa el código de tu{" "}
             {pendingChallenge.method === "totp" ? "aplicación de autenticación" : "correo"}.
@@ -123,15 +173,17 @@ export function LoginPage() {
             </Button>
           </form>
         </section>
-      </main>
+      </LoginLayout>
     );
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[var(--color-app-background)] px-6 py-10">
-      <section className="w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-8">
-        <p className="text-sm font-semibold uppercase text-[var(--color-text-muted)]">OmniRetail</p>
-        <h1 className="mt-2 text-2xl font-bold text-[var(--color-title)]">Bienvenido de nuevo</h1>
+    <LoginLayout>
+      <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-8 shadow-xl shadow-black/5">
+        <h1 className="text-2xl font-bold text-[var(--color-title)]">Bienvenido de nuevo</h1>
+        <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+          Ingresa tus datos para continuar.
+        </p>
 
         <form
           className="mt-6 space-y-4"
@@ -226,6 +278,6 @@ export function LoginPage() {
           </Link>
         </p>
       </section>
-    </main>
+    </LoginLayout>
   );
 }

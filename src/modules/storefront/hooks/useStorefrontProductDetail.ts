@@ -9,7 +9,7 @@ import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProv
 export function useStorefrontProductDetail(productId: string) {
   const repositories = useRepositories();
   const eventBus = useDataEventBus();
-  const { tenantId, loading: tenantLoading, error: tenantError } = usePublicTenant();
+  const { tenantId, tenantSlug, loading: tenantLoading, error: tenantError } = usePublicTenant();
   const service = useMemo(
     () => new GetStorefrontProductDetailService(repositories),
     [repositories],
@@ -38,7 +38,7 @@ export function useStorefrontProductDetail(productId: string) {
       setError(null);
 
       try {
-        const nextData = await service.execute(tenantId, productId);
+        const nextData = await service.execute(tenantSlug, tenantId, productId);
         if (!active) return;
         if (!nextData) {
           setData(null);
@@ -79,7 +79,7 @@ export function useStorefrontProductDetail(productId: string) {
       unsubscribeStock();
       unsubscribeBranch();
     };
-  }, [eventBus, productId, reloadKey, service, tenantError, tenantId, tenantLoading]);
+  }, [eventBus, productId, reloadKey, service, tenantError, tenantId, tenantLoading, tenantSlug]);
 
   return { data, loading: tenantLoading || loading, error, reload };
 }

@@ -11,7 +11,7 @@ const emptyDiscovery: StorefrontDiscoveryDto = { categories: [], products: [] };
 export function useStorefrontDiscovery() {
   const repositories = useRepositories();
   const eventBus = useDataEventBus();
-  const { tenantId, loading: tenantLoading, error: tenantError } = usePublicTenant();
+  const { tenantId, tenantSlug, loading: tenantLoading, error: tenantError } = usePublicTenant();
   const service = useMemo(() => new GetStorefrontDiscoveryService(repositories), [repositories]);
   const [data, setData] = useState<StorefrontDiscoveryDto>(emptyDiscovery);
   const [loading, setLoading] = useState(true);
@@ -34,7 +34,7 @@ export function useStorefrontDiscovery() {
       setLoading(true);
       setError(null);
       try {
-        const nextData = await service.execute(tenantId);
+        const nextData = await service.execute(tenantSlug, tenantId);
         if (active) setData(nextData);
       } catch {
         if (active) setError("No se pudo cargar la tienda. Intenta nuevamente.");
@@ -61,7 +61,7 @@ export function useStorefrontDiscovery() {
       unsubscribeCategories();
       unsubscribeStock();
     };
-  }, [eventBus, reloadKey, service, tenantError, tenantId, tenantLoading]);
+  }, [eventBus, reloadKey, service, tenantError, tenantId, tenantLoading, tenantSlug]);
 
   return { ...data, loading: tenantLoading || loading, error, reload };
 }

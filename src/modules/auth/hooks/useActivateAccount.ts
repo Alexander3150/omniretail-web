@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { PasswordPolicyError } from "@/config/auth-policy";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import {
   hasActivateAccountValidationErrors,
@@ -42,7 +43,11 @@ export function useActivateAccount(token: string) {
     try {
       await repositories.auth.activateEmployeeAccount(token, dto.password);
       setCompleted(true);
-    } catch {
+    } catch (error) {
+      if (error instanceof PasswordPolicyError) {
+        setFormError(error.message);
+        return;
+      }
       // Mismo criterio que verifyEmail/resetPassword: token inexistente,
       // ya usado, vencido, o una cuenta que ya no está en
       // password_reset_required producen el mismo mensaje genérico.

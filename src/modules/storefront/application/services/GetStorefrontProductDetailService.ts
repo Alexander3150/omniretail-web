@@ -16,10 +16,10 @@ export class GetStorefrontProductDetailService {
     this.publishedProductService = new GetStorefrontPublishedProductService(repositories);
   }
 
-  async execute(tenantId: string, productId: string): Promise<StorefrontProductDetailDto | null> {
+  async execute(tenantSlug: string, tenantId: string, productId: string): Promise<StorefrontProductDetailDto | null> {
     // Auditoría §15/§30 (BLOCKER): cierra el bypass donde discovery deniega pero `/product/:id`
     // seguía devolviendo datos -- mismo `tenantId` sin revalidar que llegaba desde el hook.
-    await ensurePublicStorefrontTenant(this.repositories, tenantId);
+    await ensurePublicStorefrontTenant(this.repositories, tenantSlug, tenantId);
     const [
       product,
       allProducts,
