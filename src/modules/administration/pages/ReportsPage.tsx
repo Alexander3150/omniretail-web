@@ -23,6 +23,7 @@ import { ReportTotals } from "@/modules/administration/components/ReportTotals";
 import { useReports } from "@/modules/administration/hooks/useReports";
 import { REPORTS_READ_PERMISSION } from "@/modules/administration/permissions";
 import { Button } from "@/shared/components/Button";
+import { DownloadIcon } from "@/shared/components/icons";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { TablePagination, type TablePageSize } from "@/shared/components/TablePagination";
 
@@ -38,7 +39,6 @@ export function ReportsPage() {
     filter,
     kind,
     loading,
-    reload,
     resetFilter,
     rows,
     setFilter,
@@ -97,24 +97,23 @@ export function ReportsPage() {
     <div className="min-w-0 space-y-5">
       <PageHeader
         actions={
-          <>
+          <div className="flex flex-col items-end gap-1">
             <Button
-              disabled={loading}
-              onClick={() => void reload()}
-              type="button"
-              variant="secondary"
-            >
-              {loading ? "Actualizando..." : "Actualizar"}
-            </Button>
-            <Button
+              className="gap-2"
               disabled={!canExport || rows.length === 0 || loading}
               onClick={exportCsv}
               title={canExport ? undefined : "Exportar CSV requiere Reportes avanzados y el permiso admin.reports.export"}
               type="button"
             >
+              <DownloadIcon className="h-4 w-4" />
               Exportar CSV
             </Button>
-          </>
+            {!canExport ? (
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Requerí el módulo Reportes avanzados para exportar.
+              </p>
+            ) : null}
+          </div>
         }
         description="Consultá información consolidada de ventas, compras, inventario y pagos."
         title="Reportes"
@@ -126,9 +125,6 @@ export function ReportsPage() {
           role="alert"
         >
           <p className="text-sm font-medium text-[var(--color-danger)]">{error}</p>
-          <Button onClick={() => void reload()} type="button" variant="secondary">
-            Reintentar
-          </Button>
         </div>
       ) : null}
 

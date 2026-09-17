@@ -1,6 +1,5 @@
 import type { BankAccountType } from "@/core/entities";
 import type { BankAccountDto } from "@/modules/administration/application/dto/BankAccountDto";
-import { Button } from "@/shared/components/Button";
 import { DataTable, type DataTableColumn } from "@/shared/components/DataTable";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 
@@ -11,17 +10,10 @@ const accountTypeLabels: Record<BankAccountType, string> = {
 
 interface BankAccountTableProps {
   accounts: BankAccountDto[];
-  canManage: boolean;
-  onArchive: (account: BankAccountDto) => void;
-  onEdit: (account: BankAccountDto) => void;
+  onSelect: (account: BankAccountDto) => void;
 }
 
-export function BankAccountTable({
-  accounts,
-  canManage,
-  onArchive,
-  onEdit,
-}: BankAccountTableProps) {
+export function BankAccountTable({ accounts, onSelect }: BankAccountTableProps) {
   const columns: DataTableColumn<BankAccountDto>[] = [
     {
       key: "bankName",
@@ -41,17 +33,17 @@ export function BankAccountTable({
       cell: (account) => <span className="text-[var(--color-text)]">{account.alias}</span>,
     },
     {
+      key: "accountNumber",
+      header: "Número",
+      cell: (account) => (
+        <span className="font-mono text-[var(--color-text)]">{account.accountNumber}</span>
+      ),
+    },
+    {
       key: "accountType",
       header: "Tipo",
       cell: (account) => (
         <span className="text-[var(--color-text)]">{accountTypeLabels[account.accountType]}</span>
-      ),
-    },
-    {
-      key: "accountNumberMasked",
-      header: "Número",
-      cell: (account) => (
-        <span className="font-mono text-[var(--color-text)]">{account.accountNumberMasked}</span>
       ),
     },
     {
@@ -66,41 +58,13 @@ export function BankAccountTable({
     },
   ];
 
-  if (canManage) {
-    columns.push({
-      key: "actions",
-      header: <span className="sr-only">Acciones</span>,
-      className: "text-right",
-      cell: (account) => (
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button
-            className="min-h-9 px-3 py-1.5"
-            onClick={() => onEdit(account)}
-            type="button"
-            variant="ghost"
-          >
-            Editar
-          </Button>
-          {account.status !== "archived" ? (
-            <Button
-              className="min-h-9 px-3 py-1.5"
-              onClick={() => onArchive(account)}
-              type="button"
-              variant="danger"
-            >
-              Archivar
-            </Button>
-          ) : null}
-        </div>
-      ),
-    });
-  }
-
   return (
     <DataTable
       columns={columns}
       data={accounts}
       emptyMessage="Aún no hay cuentas bancarias registradas."
+      headerClassName="bg-[var(--color-structure)] text-white [&_th]:text-white"
+      onRowClick={onSelect}
       rowKey={(account) => account.id}
     />
   );

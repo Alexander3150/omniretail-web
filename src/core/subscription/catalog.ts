@@ -13,7 +13,7 @@ export const SUBSCRIPTION_ADDONS = [
   {
     code: "advanced_reports",
     name: "Reportes avanzados",
-    description: "Consulta y exportación de reportes de ventas, compras, inventario y pagos.",
+    description: "Exporta tus reportes de ventas, compras, inventario y pagos para analizarlos fuera de MARJYM.",
     monthlyQuetzales: 99,
     capabilities: [SaasCapabilityKey.advancedReports],
   },

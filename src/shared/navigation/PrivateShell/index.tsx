@@ -12,7 +12,6 @@ type PrivateShellProps = {
   homeLabel?: string;
   navigationItems: NavigationItem[];
   onLogout?: () => void;
-  showBranchSelector?: boolean;
   userMenuDescription?: string;
   userMenuLabel?: string;
 };
@@ -24,7 +23,6 @@ export function PrivateShell({
   homeLabel,
   navigationItems,
   onLogout,
-  showBranchSelector,
   userMenuDescription,
   userMenuLabel,
 }: PrivateShellProps) {
@@ -111,7 +109,6 @@ export function PrivateShell({
             homeLabel={homeLabel}
             onLogout={onLogout}
             onOpenSidebar={() => setSidebarOpen(true)}
-            showBranchSelector={showBranchSelector}
             sidebarId={sidebarId}
             sidebarOpen={sidebarOpen}
             userMenuDescription={userMenuDescription}

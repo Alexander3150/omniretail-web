@@ -7,6 +7,10 @@ import type {
   SupplierDto,
   SupplierInputDto,
 } from "@/modules/administration/application/dto/SupplierDto";
+import {
+  ADMIN_FIELD_LIMITS,
+  formatGuatemalaPhoneInput,
+} from "@/modules/administration/validation/adminFieldConstraints";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
@@ -43,6 +47,7 @@ export function SupplierForm({ supplier, busy, onCancel, onSubmit }: SupplierFor
           <Input
             disabled={busy}
             id="supplier-name"
+            maxLength={ADMIN_FIELD_LIMITS.supplier.name}
             onChange={(event) => setField("name", event.target.value)}
             required
             value={value.name}
@@ -53,6 +58,7 @@ export function SupplierForm({ supplier, busy, onCancel, onSubmit }: SupplierFor
           <Input
             disabled={busy}
             id="supplier-legal-name"
+            maxLength={ADMIN_FIELD_LIMITS.supplier.legalName}
             onChange={(event) => setField("legalName", event.target.value)}
             value={value.legalName ?? ""}
           />
@@ -62,6 +68,7 @@ export function SupplierForm({ supplier, busy, onCancel, onSubmit }: SupplierFor
           <Input
             disabled={busy}
             id="supplier-tax-id"
+            maxLength={ADMIN_FIELD_LIMITS.supplier.taxId}
             onChange={(event) => setField("taxId", event.target.value)}
             value={value.taxId ?? ""}
           />
@@ -71,6 +78,7 @@ export function SupplierForm({ supplier, busy, onCancel, onSubmit }: SupplierFor
           <Input
             disabled={busy}
             id="supplier-email"
+            maxLength={ADMIN_FIELD_LIMITS.supplier.email}
             onChange={(event) => setField("email", event.target.value)}
             type="email"
             value={value.email ?? ""}
@@ -81,7 +89,9 @@ export function SupplierForm({ supplier, busy, onCancel, onSubmit }: SupplierFor
           <Input
             disabled={busy}
             id="supplier-phone"
-            onChange={(event) => setField("phone", event.target.value)}
+            maxLength={ADMIN_FIELD_LIMITS.supplier.phone}
+            onChange={(event) => setField("phone", formatGuatemalaPhoneInput(event.target.value))}
+            placeholder="0000-0000"
             type="tel"
             value={value.phone ?? ""}
           />
@@ -108,6 +118,7 @@ export function SupplierForm({ supplier, busy, onCancel, onSubmit }: SupplierFor
           className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={busy}
           id="supplier-address"
+          maxLength={ADMIN_FIELD_LIMITS.supplier.address}
           onChange={(event) => setField("address", event.target.value)}
           value={value.address ?? ""}
         />
@@ -118,6 +129,7 @@ export function SupplierForm({ supplier, busy, onCancel, onSubmit }: SupplierFor
           className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={busy}
           id="supplier-notes"
+          maxLength={ADMIN_FIELD_LIMITS.supplier.notes}
           onChange={(event) => setField("notes", event.target.value)}
           value={value.notes ?? ""}
         />

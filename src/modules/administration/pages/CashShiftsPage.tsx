@@ -71,16 +71,6 @@ export function CashShiftsPage() {
   return (
     <div className="min-w-0 space-y-5">
       <PageHeader
-        actions={
-          <Button
-            disabled={loading}
-            onClick={() => void reload()}
-            type="button"
-            variant="secondary"
-          >
-            {loading ? "Actualizando..." : "Actualizar"}
-          </Button>
-        }
         description="Consultá aperturas, cierres y diferencias de los turnos de caja."
         title="Caja"
       />

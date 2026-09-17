@@ -1,7 +1,11 @@
 import type { Customer } from "@/core/entities";
-import type { CustomerDto } from "@/modules/administration/application/dto/CustomerDto";
+import type { CustomerDto, CustomerProductPurchase } from "@/modules/administration/application/dto/CustomerDto";
 
-export function toCustomerDto(customer: Customer, purchaseCount: number): CustomerDto {
+export function toCustomerDto(
+  customer: Customer,
+  purchaseCount: number,
+  topProducts: CustomerProductPurchase[],
+): CustomerDto {
   return {
     id: customer.id,
     userId: customer.userId,
@@ -14,5 +18,6 @@ export function toCustomerDto(customer: Customer, purchaseCount: number): Custom
     createdAt: customer.createdAt,
     updatedAt: customer.updatedAt,
     purchaseCount,
+    topProducts,
   };
 }

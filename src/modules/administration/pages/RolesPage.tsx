@@ -2,16 +2,22 @@
 
 import { useState } from "react";
 import type { RoleDto, RoleInputDto } from "@/modules/administration/application/dto/RoleDto";
+import { RoleDetailView } from "@/modules/administration/components/RoleDetailView";
 import { RoleForm } from "@/modules/administration/components/RoleForm";
 import { RoleTable } from "@/modules/administration/components/RoleTable";
 import { useRoles } from "@/modules/administration/hooks/useRoles";
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
+import { PlusIcon } from "@/shared/components/icons";
 import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { useToast } from "@/shared/components/Toast";
 
-type EditorState = { mode: "create" } | { mode: "edit"; role: RoleDto } | null;
+type ModalState =
+  | { mode: "view"; role: RoleDto }
+  | { mode: "create" }
+  | { mode: "edit"; role: RoleDto }
+  | null;
 
 export function RolesPage() {
   const {
@@ -28,19 +34,19 @@ export function RolesPage() {
     update,
   } = useRoles();
   const { showToast } = useToast();
-  const [editor, setEditor] = useState<EditorState>(null);
+  const [modal, setModal] = useState<ModalState>(null);
   const [archiveTarget, setArchiveTarget] = useState<RoleDto | null>(null);
 
   async function handleSubmit(value: RoleInputDto) {
     try {
-      if (editor?.mode === "edit") {
-        await update(editor.role.id, value);
+      if (modal?.mode === "edit") {
+        await update(modal.role.id, value);
         showToast({ title: "Rol actualizado", tone: "success" });
       } else {
         await create(value);
         showToast({ title: "Rol creado", tone: "success" });
       }
-      setEditor(null);
+      setModal(null);
     } catch (caughtError) {
       showToast({
         title: "No se pudo guardar el rol",
@@ -64,6 +70,7 @@ export function RolesPage() {
         tone: "success",
       });
       setArchiveTarget(null);
+      setModal(null);
     } catch (caughtError) {
       showToast({
         title: "No se pudo archivar el rol",
@@ -74,6 +81,18 @@ export function RolesPage() {
         tone: "danger",
       });
     }
+  }
+
+  function openView(role: RoleDto) {
+    setModal({ mode: "view", role });
+  }
+
+  function openEditFromView(role: RoleDto) {
+    setModal({ mode: "edit", role });
+  }
+
+  function openArchiveFromView(role: RoleDto) {
+    setArchiveTarget(role);
   }
 
   if (!loading && !canRead) {
@@ -100,12 +119,25 @@ export function RolesPage() {
     );
   }
 
+  const modalTitle =
+    modal?.mode === "edit"
+      ? "Editar rol"
+      : modal?.mode === "create"
+        ? "Nuevo rol"
+        : "Detalle del rol";
+
+  const modalSubtitle =
+    modal?.mode === "view"
+      ? "Hacé clic en Editar o Archivar para realizar cambios."
+      : "Los cambios se aplican únicamente al negocio activo.";
+
   return (
     <div className="min-w-0 space-y-5">
       <PageHeader
         actions={
           canManage ? (
-            <Button onClick={() => setEditor({ mode: "create" })} type="button">
+            <Button className="gap-2" onClick={() => setModal({ mode: "create" })} type="button">
+              <PlusIcon className="h-4 w-4" />
               Nuevo rol
             </Button>
           ) : null
@@ -138,29 +170,41 @@ export function RolesPage() {
           Cargando roles...
         </div>
       ) : (
-        <RoleTable
-          canManage={canManage}
-          onArchive={setArchiveTarget}
-          onEdit={(role) => setEditor({ mode: "edit", role })}
-          roles={roles}
-        />
+        <RoleTable roles={roles} onSelect={openView} />
       )}
 
       <Modal
-        onClose={() => setEditor(null)}
-        open={Boolean(editor)}
+        onClose={() => setModal(null)}
+        open={Boolean(modal)}
         size="lg"
-        subtitle="Los cambios se aplican únicamente al negocio activo."
-        title={editor?.mode === "edit" ? "Editar rol" : "Nuevo rol"}
+        subtitle={modalSubtitle}
+        title={modalTitle}
       >
-        {editor ? (
+        {modal?.mode === "view" ? (
+          <RoleDetailView
+            busy={busy}
+            canManage={canManage}
+            onClose={() => setModal(null)}
+            onEdit={() => openEditFromView(modal.role)}
+            onArchive={() => openArchiveFromView(modal.role)}
+            role={modal.role}
+          />
+        ) : modal?.mode === "edit" ? (
           <RoleForm
             actorPermissions={actorPermissions}
             busy={busy}
-            key={editor.mode === "edit" ? editor.role.id : "new"}
-            onCancel={() => setEditor(null)}
+            key={modal.role.id}
+            onCancel={() => setModal({ mode: "view", role: modal.role })}
             onSubmit={handleSubmit}
-            role={editor.mode === "edit" ? editor.role : undefined}
+            role={modal.role}
+          />
+        ) : modal?.mode === "create" ? (
+          <RoleForm
+            actorPermissions={actorPermissions}
+            busy={busy}
+            key="new"
+            onCancel={() => setModal(null)}
+            onSubmit={handleSubmit}
           />
         ) : null}
       </Modal>

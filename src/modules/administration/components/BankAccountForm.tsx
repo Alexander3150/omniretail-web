@@ -8,6 +8,7 @@ import type {
   BankAccountInputDto,
 } from "@/modules/administration/application/dto/BankAccountDto";
 import type { BranchOption } from "@/modules/administration/hooks/useBankAccounts";
+import { ADMIN_FIELD_LIMITS } from "@/modules/administration/validation/adminFieldConstraints";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
@@ -70,6 +71,7 @@ export function BankAccountForm({
           <Input
             disabled={busy}
             id="bank-account-bank"
+            maxLength={ADMIN_FIELD_LIMITS.bankAccount.bankName}
             onChange={(event) => setField("bankName", event.target.value)}
             required
             value={value.bankName}
@@ -80,6 +82,7 @@ export function BankAccountForm({
           <Input
             disabled={busy}
             id="bank-account-holder"
+            maxLength={ADMIN_FIELD_LIMITS.bankAccount.holderName}
             onChange={(event) => setField("holderName", event.target.value)}
             required
             value={value.holderName}
@@ -90,6 +93,7 @@ export function BankAccountForm({
           <Input
             disabled={busy}
             id="bank-account-alias"
+            maxLength={ADMIN_FIELD_LIMITS.bankAccount.alias}
             onChange={(event) => setField("alias", event.target.value)}
             required
             value={value.alias}
@@ -110,7 +114,8 @@ export function BankAccountForm({
             disabled={busy}
             id="bank-account-number"
             inputMode="numeric"
-            onChange={(event) => setField("accountNumber", event.target.value)}
+            maxLength={ADMIN_FIELD_LIMITS.bankAccount.accountNumber}
+            onChange={(event) => setField("accountNumber", event.target.value.replace(/\D/g, ""))}
             placeholder={isEdit ? "Sin cambios" : "Ej. 123456789012"}
             required={!isEdit}
             value={value.accountNumber}
@@ -202,6 +207,7 @@ export function BankAccountForm({
           className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={busy}
           id="bank-account-instructions"
+          maxLength={ADMIN_FIELD_LIMITS.bankAccount.transferInstructions}
           onChange={(event) => setField("transferInstructions", event.target.value)}
           value={value.transferInstructions ?? ""}
         />

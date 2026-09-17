@@ -1,6 +1,6 @@
 import { SaleStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
-import type { DashboardSummaryDto } from "@/modules/administration/application/dto/DashboardDto";
+import type { DashboardSummaryDto, DashboardTopProduct } from "@/modules/administration/application/dto/DashboardDto";
 import {
   ensureCanReadDashboard,
   ensureDashboardTenant,
@@ -53,6 +53,8 @@ export class GetDashboardSummaryService {
       { outOfStock: 0, lowStock: 0 },
     );
 
+    const topProducts = aggregateTopProducts(tenantSales);
+
     return {
       salesToday: summarizeSales(todaySales),
       salesMonth: summarizeSales(monthSales),
@@ -67,8 +69,29 @@ export class GetDashboardSummaryService {
           typeName: incidentTypeNames.get(incident.incidentTypeId) ?? incident.incidentTypeId,
           createdAt: incident.createdAt,
         })),
+      topProducts,
     };
   }
+}
+
+function aggregateTopProducts(
+  sales: Array<{ items: Array<{ nameSnapshot: string; quantity: number; subtotal: number }> }>,
+): DashboardTopProduct[] {
+  const productMap = new Map<string, { totalQuantity: number; totalRevenue: number }>();
+
+  for (const sale of sales) {
+    for (const item of sale.items) {
+      const existing = productMap.get(item.nameSnapshot) ?? { totalQuantity: 0, totalRevenue: 0 };
+      existing.totalQuantity += item.quantity;
+      existing.totalRevenue += item.subtotal;
+      productMap.set(item.nameSnapshot, existing);
+    }
+  }
+
+  return [...productMap.entries()]
+    .map(([productName, data]) => ({ productName, ...data }))
+    .sort((a, b) => b.totalQuantity - a.totalQuantity)
+    .slice(0, 10);
 }
 
 function summarizeSales(sales: Array<{ total: number }>) {

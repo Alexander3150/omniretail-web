@@ -38,6 +38,7 @@ export function useBankAccounts() {
   const archiveService = useMemo(() => new ArchiveBankAccountService(repositories), [repositories]);
   const [accounts, setAccounts] = useState<BankAccountDto[]>([]);
   const [branchOptions, setBranchOptions] = useState<BranchOption[]>([]);
+  const [branchNames, setBranchNames] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +62,7 @@ export function useBankAccounts() {
       ]);
       setAccounts(nextAccounts);
       setBranchOptions(toBranchOptions(branches, tenantId));
+      setBranchNames(new Map(branches.map((b) => [b.id, b.name])));
       return nextAccounts;
     } catch (caughtError) {
       setAccounts([]);
@@ -91,6 +93,7 @@ export function useBankAccounts() {
           if (!active) return;
           setAccounts(nextAccounts);
           setBranchOptions(toBranchOptions(branches, tenantId));
+          setBranchNames(new Map(branches.map((b) => [b.id, b.name])));
           setError(null);
         })
         .catch((caughtError: unknown) => {
@@ -160,6 +163,7 @@ export function useBankAccounts() {
     busy,
     error,
     accounts,
+    branchNames,
     branchOptions,
     canManage,
     create,

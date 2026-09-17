@@ -1,9 +1,10 @@
 import type { FormEvent } from "react";
-import { BusinessPreset } from "@/core/enums";
+import { BusinessPreset, PaymentMethod } from "@/core/enums";
 import type { BusinessConfigDto } from "@/modules/administration/application/dto/BusinessConfigDto";
 import { BusinessConfigSection } from "@/modules/administration/components/BusinessConfigSection";
 import { BusinessConfigToggle } from "@/modules/administration/components/BusinessConfigToggle";
 import { Button } from "@/shared/components/Button";
+import { SaveIcon } from "@/shared/components/icons";
 import { Select } from "@/shared/components/Select";
 
 export type BusinessCapabilityKey =
@@ -19,10 +20,28 @@ export type BusinessCapabilityKey =
 
 export type BusinessTrackingKey = keyof BusinessConfigDto["defaultProductTracking"];
 
+const posPaymentOptions: Array<{
+  description: string;
+  key: PaymentMethod;
+  label: string;
+}> = [
+  {
+    key: PaymentMethod.cash,
+    label: "Efectivo",
+    description: "Acepta pagos en efectivo directamente en caja.",
+  },
+  {
+    key: PaymentMethod.transfer,
+    label: "Transferencia bancaria",
+    description: "Acepta pagos mediante transferencia o depósito bancario.",
+  },
+];
+
 interface BusinessConfigFormProps {
   busy: boolean;
   onCapabilityChange: (capability: BusinessCapabilityKey, checked: boolean) => void;
   onPresetChange: (preset: BusinessPreset) => void;
+  onPosPaymentChange: (method: PaymentMethod, checked: boolean) => void;
   onSubmit: () => Promise<void>;
   onTrackingChange: (tracking: BusinessTrackingKey, checked: boolean) => void;
   value: BusinessConfigDto;
@@ -128,6 +147,7 @@ export function BusinessConfigForm({
   busy,
   onCapabilityChange,
   onPresetChange,
+  onPosPaymentChange,
   onSubmit,
   onTrackingChange,
   value,
@@ -201,6 +221,29 @@ export function BusinessConfigForm({
       </BusinessConfigSection>
 
       <BusinessConfigSection
+        description="Seleccioná los métodos de pago que estarán disponibles en el punto de venta."
+        title="Métodos de pago POS"
+      >
+        <div className="grid gap-3 md:grid-cols-2">
+          {posPaymentOptions.map((option) => {
+            const checked = (value.allowedPosPaymentMethods ?? []).includes(option.key);
+
+            return (
+              <BusinessConfigToggle
+                checked={checked}
+                description={option.description}
+                disabled={busy}
+                id={`business-pos-payment-${option.key}`}
+                key={option.key}
+                label={option.label}
+                onChange={(nextChecked) => onPosPaymentChange(option.key, nextChecked)}
+              />
+            );
+          })}
+        </div>
+      </BusinessConfigSection>
+
+      <BusinessConfigSection
         description="Elegí qué datos de trazabilidad se activarán inicialmente al crear productos. Cada producto podrá conservar su propia configuración."
         title="Trazabilidad por defecto"
       >
@@ -236,7 +279,8 @@ export function BusinessConfigForm({
         <p className="text-sm leading-5 text-[var(--color-text-muted)]">
           Los cambios se aplicarán a todo el negocio después de guardar.
         </p>
-        <Button className="w-full shrink-0 sm:w-auto" disabled={busy} type="submit">
+        <Button className="w-full gap-2 shrink-0 sm:w-auto" disabled={busy} type="submit">
+          <SaveIcon className="h-4 w-4" />
           {busy ? "Guardando..." : "Guardar configuración"}
         </Button>
       </footer>

@@ -4,6 +4,10 @@ import { useState, type FormEvent } from "react";
 import { statusesConfig } from "@/config/statuses";
 import { BranchStatus, BranchType } from "@/core/enums";
 import type { BranchDto, BranchInputDto } from "@/modules/administration/application/dto/BranchDto";
+import {
+  ADMIN_FIELD_LIMITS,
+  formatGuatemalaPhoneInput,
+} from "@/modules/administration/validation/adminFieldConstraints";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
@@ -36,6 +40,7 @@ export function BranchForm({ branch, busy, onCancel, onSubmit }: BranchFormProps
             autoComplete="off"
             disabled={busy}
             id="branch-code"
+            maxLength={ADMIN_FIELD_LIMITS.branch.code}
             onChange={(event) => setField("code", event.target.value)}
             required
             value={value.code}
@@ -46,6 +51,7 @@ export function BranchForm({ branch, busy, onCancel, onSubmit }: BranchFormProps
           <Input
             disabled={busy}
             id="branch-name"
+            maxLength={ADMIN_FIELD_LIMITS.branch.name}
             onChange={(event) => setField("name", event.target.value)}
             required
             value={value.name}
@@ -85,6 +91,7 @@ export function BranchForm({ branch, busy, onCancel, onSubmit }: BranchFormProps
         <Input
           disabled={busy}
           id="branch-address"
+          maxLength={ADMIN_FIELD_LIMITS.branch.address}
           onChange={(event) => setField("address", event.target.value)}
           value={value.address ?? ""}
         />
@@ -96,7 +103,9 @@ export function BranchForm({ branch, busy, onCancel, onSubmit }: BranchFormProps
             autoComplete="tel"
             disabled={busy}
             id="branch-phone"
-            onChange={(event) => setField("phone", event.target.value)}
+            maxLength={ADMIN_FIELD_LIMITS.branch.phone}
+            onChange={(event) => setField("phone", formatGuatemalaPhoneInput(event.target.value))}
+            placeholder="0000-0000"
             type="tel"
             value={value.phone ?? ""}
           />
@@ -107,6 +116,7 @@ export function BranchForm({ branch, busy, onCancel, onSubmit }: BranchFormProps
             autoComplete="email"
             disabled={busy}
             id="branch-email"
+            maxLength={ADMIN_FIELD_LIMITS.branch.email}
             onChange={(event) => setField("email", event.target.value)}
             type="email"
             value={value.email ?? ""}

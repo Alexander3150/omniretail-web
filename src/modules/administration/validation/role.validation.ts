@@ -2,6 +2,7 @@ import { permissionsConfig } from "@/config/permissions";
 import { RoleStatus } from "@/core/enums";
 import type { RoleInputDto } from "@/modules/administration/application/dto/RoleDto";
 import { AdministrationServiceError } from "@/modules/administration/application/services/serviceHelpers";
+import { ADMIN_FIELD_LIMITS } from "@/modules/administration/validation/adminFieldConstraints";
 
 /**
  * `archived` deliberadamente NO es un estado directamente asignable desde Create/Edit: solo
@@ -16,14 +17,22 @@ const EDITABLE_STATUSES: readonly RoleStatus[] = [RoleStatus.active, RoleStatus.
  * catálogo, pero el service valida igual por si otro consumidor invoca con una key inventada.
  */
 const VALID_PERMISSION_KEYS = new Set(permissionsConfig.map((permission) => permission.key));
+const LIMITS = ADMIN_FIELD_LIMITS.role;
 
 /**
  * Valida el DTO recibido antes de normalizarlo. Una UI oculta no impide que otro consumidor
  * invoque el service con datos inválidos.
  */
 export function validateRoleInput(dto: RoleInputDto) {
-  if (!dto.name.trim()) {
+  const name = dto.name.trim();
+  if (!name) {
     throw new AdministrationServiceError("El nombre del rol es obligatorio.");
+  }
+  if (name.length > LIMITS.name) {
+    throw new AdministrationServiceError("El nombre del rol no puede exceder 80 caracteres.");
+  }
+  if (dto.description && dto.description.trim().length > LIMITS.description) {
+    throw new AdministrationServiceError("La descripción del rol no puede exceder 240 caracteres.");
   }
   if (!EDITABLE_STATUSES.includes(dto.status)) {
     throw new AdministrationServiceError(

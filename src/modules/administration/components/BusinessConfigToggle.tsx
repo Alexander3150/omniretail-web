@@ -20,7 +20,13 @@ export function BusinessConfigToggle({
   const descriptionId = `${id}-description`;
 
   return (
-    <div className="flex min-h-28 items-start justify-between gap-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+    <div
+      className={`flex min-h-28 items-start justify-between gap-4 rounded-lg border p-4 transition-all duration-150 ${
+        checked
+          ? "border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5"
+          : "border-[var(--color-border)] bg-[var(--color-surface)]"
+      } ${disabled ? "opacity-60" : "hover:border-[var(--color-primary)]/40 hover:shadow-sm"}`}
+    >
       <div className="min-w-0">
         <p className="text-sm font-semibold text-[var(--color-text)]" id={`${id}-label`}>
           {label}

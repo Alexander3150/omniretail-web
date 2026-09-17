@@ -1,30 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { BranchSelector } from "@/shared/navigation/PrivateHeader/BranchSelector";
 import { MenuIcon } from "@/shared/navigation/PrivateHeader/icons";
 import { NotificationButton } from "@/shared/navigation/PrivateHeader/NotificationButton";
 import { UserMenu } from "@/shared/navigation/PrivateHeader/UserMenu";
 
 type PrivateHeaderProps = {
-  /**
-   * Enlace opcional puramente presentacional (p.ej. "volver al inicio del
-   * storefront" para Customer) -- este componente no sabe ni le importa a
-   * que shell pertenece; solo renderiza el link si el caller lo provee.
-   * Employee/Admin (AuthorizedPrivateShell) no lo pasa, asi que el
-   * backoffice queda visualmente identico.
-   */
   homeHref?: string;
   homeLabel?: string;
   onLogout?: () => void;
   onOpenSidebar: () => void;
-  /**
-   * El selector de sucursal operativa no aplica a Customer (nunca tiene
-   * contexto de sucursal propio) -- por defecto true para no alterar
-   * Employee/Admin. CustomerAccountShell es el unico caller que lo pasa
-   * en false.
-   */
-  showBranchSelector?: boolean;
   sidebarId: string;
   sidebarOpen: boolean;
   userMenuDescription?: string;
@@ -36,7 +21,6 @@ export function PrivateHeader({
   homeLabel,
   onLogout,
   onOpenSidebar,
-  showBranchSelector = true,
   sidebarId,
   sidebarOpen,
   userMenuDescription,
@@ -62,11 +46,6 @@ export function PrivateHeader({
           >
             {homeLabel ?? "Volver al inicio"}
           </Link>
-        ) : null}
-        {showBranchSelector ? (
-          <div className="flex min-w-0 flex-1 justify-end">
-            <BranchSelector />
-          </div>
         ) : null}
         <NotificationButton />
         <UserMenu description={userMenuDescription} label={userMenuLabel} onLogout={onLogout} />
