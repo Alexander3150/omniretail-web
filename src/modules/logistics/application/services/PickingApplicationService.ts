@@ -28,6 +28,7 @@ type PickingRepositories = Pick<
   | "orders"
   | "products"
   | "inventory"
+  | "inventoryTransfers"
 >;
 
 export type PickingLineUpdateCommand = {
@@ -59,8 +60,31 @@ export class PickingApplicationService {
     const pickingOrders = await this.repositories.picking.getQueue(scope);
     return Promise.all(
       pickingOrders.map(async (pickingOrder) => {
+        if (pickingOrder.sourceType === "transfer") {
+          const transfer = await this.repositories.inventoryTransfers.getById(pickingOrder.sourceId!);
+          if (!transfer || transfer.transfer.tenantId !== context.tenantId ||
+            transfer.transfer.sourceBranchId !== context.branchId) {
+            throw new Error(`Transfer context conflict for PickingOrder: ${pickingOrder.id}`);
+          }
+          const [lines, destination] = await Promise.all([
+            this.repositories.picking.getItems(scope, pickingOrder.id),
+            this.repositories.branches.getById(transfer.transfer.destinationBranchId),
+          ]);
+          return {
+            pickingOrderId: pickingOrder.id,
+            orderReference: transfer.transfer.number,
+            customerName: destination?.tenantId === context.tenantId
+              ? destination.name : "Sucursal destino",
+            storePickupContact: null, deliveryMethod: "transfer" as const,
+            sourceType: "transfer" as const, sourceId: transfer.transfer.id,
+            branchId: pickingOrder.branchId, status: pickingOrder.status,
+            priority: pickingOrder.priority, assignedUserId: pickingOrder.assignedUserId ?? null,
+            progress: getProgress(lines), startedAt: pickingOrder.startedAt ?? null,
+            createdAt: pickingOrder.createdAt, updatedAt: pickingOrder.updatedAt,
+          };
+        }
         const [order, lines] = await Promise.all([
-          this.repositories.orders.getById(pickingOrder.orderId),
+          pickingOrder.orderId ? this.repositories.orders.getById(pickingOrder.orderId) : Promise.resolve(null),
           this.repositories.picking.getItems(scope, pickingOrder.id),
         ]);
         if (!order || order.tenantId !== context.tenantId || order.branchId !== context.branchId) {
@@ -175,6 +199,8 @@ export class PickingApplicationService {
       ...context,
       pickingOrderId,
       orderId: pickingOrder.orderId,
+      sourceType: pickingOrder.sourceType,
+      sourceId: pickingOrder.sourceId,
       productId,
     });
   }
@@ -195,6 +221,14 @@ export class PickingApplicationService {
 
   async complete(selectedBranchId: string, pickingOrderId: string) {
     const context = await this.context(selectedBranchId, PICKING_COMPLETE);
+    const pickingOrder = await this.requirePickingOrder(context, pickingOrderId);
+    if (pickingOrder.sourceType === "transfer") {
+      const result = await this.repositories.picking.complete({
+        ...context, pickingOrderId, actorUserId: context.actorUserId, sourceType: "transfer",
+      });
+      return { ...toActionResult(result.pickingOrder, result.idempotent),
+        orderStatus: null, transferStatus: result.transfer.status };
+    }
     const result = await this.repositories.picking.complete({
       ...context,
       pickingOrderId,
@@ -227,16 +261,28 @@ export class PickingApplicationService {
     const scope = { tenantId: context.tenantId, branchId: context.branchId };
     const pickingOrder = await this.requirePickingOrder(scope, pickingOrderId);
     const [order, lines, locations, incidents, releases] = await Promise.all([
-      this.repositories.orders.getById(pickingOrder.orderId),
+      pickingOrder.sourceType === "transfer" || !pickingOrder.orderId
+        ? Promise.resolve(null) : this.repositories.orders.getById(pickingOrder.orderId),
       this.repositories.picking.getItems(scope, pickingOrderId),
       this.repositories.inventory.getLocations(scope.branchId),
       this.repositories.picking.getIncidents(scope, pickingOrderId),
       this.repositories.picking.getReleaseHistory(scope, pickingOrderId),
     ]);
-    if (!order || order.tenantId !== scope.tenantId || order.branchId !== scope.branchId) {
-      throw new Error(`Order context conflict for PickingOrder: ${pickingOrderId}`);
+    const transfer = pickingOrder.sourceType === "transfer"
+      ? await this.repositories.inventoryTransfers.getById(pickingOrder.sourceId!) : null;
+    if (transfer) {
+      if (transfer.transfer.tenantId !== scope.tenantId ||
+        transfer.transfer.sourceBranchId !== scope.branchId) {
+        throw new Error(`Transfer context conflict for PickingOrder: ${pickingOrderId}`);
+      }
+    } else if (!order || order.tenantId !== scope.tenantId || order.branchId !== scope.branchId) {
+      throw new Error(`Fulfillment source conflict for PickingOrder: ${pickingOrderId}`);
     }
-    const customerName = await this.resolveCustomerName(order, scope.tenantId);
+    const destination = transfer
+      ? await this.repositories.branches.getById(transfer.transfer.destinationBranchId) : null;
+    const customerName = transfer
+      ? destination?.tenantId === scope.tenantId ? destination.name : "Sucursal destino"
+      : await this.resolveCustomerName(order!, scope.tenantId);
     const detailLines = await Promise.all(
       lines.map(async (line): Promise<PickingDetailLineDto> => {
         const product = await this.repositories.products.getById(line.productId);
@@ -246,7 +292,10 @@ export class PickingApplicationService {
         const inventory = await this.repositories.inventory.getPickingAvailability({
           ...scope,
           pickingOrderId,
-          orderId: order.id,
+          pickingItemId: line.id,
+          orderId: pickingOrder.orderId,
+          sourceType: pickingOrder.sourceType,
+          sourceId: pickingOrder.sourceId,
           productId: line.productId,
         });
         const location = locations.find(
@@ -293,11 +342,13 @@ export class PickingApplicationService {
     );
     return {
       pickingOrderId: pickingOrder.id,
-      orderId: order.id,
-      orderReference: order.orderNumber,
+      orderId: pickingOrder.orderId,
+      orderReference: transfer?.transfer.number ?? order!.orderNumber,
       customerName,
-      storePickupContact: getStorePickupContact(order),
-      deliveryMethod: order.deliveryMethod,
+      storePickupContact: transfer ? null : getStorePickupContact(order!),
+      deliveryMethod: transfer ? "transfer" : order!.deliveryMethod,
+      sourceType: transfer ? "transfer" : "order",
+      sourceId: transfer?.transfer.id ?? order!.id,
       branchId: pickingOrder.branchId,
       status: pickingOrder.status,
       priority: pickingOrder.priority,
@@ -348,7 +399,7 @@ function getProgress(
 function toActionResult(
   pickingOrder: {
     id: string;
-    orderId: string;
+    orderId?: string;
     status: PickingActionResultDto["status"];
     assignedUserId?: string;
     updatedAt: string;

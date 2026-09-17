@@ -435,10 +435,92 @@ async function main() {
   );
   assert.ok(!preparedQueue.some((item) => item.orderId === guestOrder.id));
 
+  await verifyFefoSerialOptions(store, orders, picking, service);
+
   console.log("verify-logistics-picking-ui: PASS");
   console.log(
     "A-Y: scope/queue/read-model/assignment/detail/progress/allocations/FEFO/serial/incidents/release/completion/dispatch PASS",
   );
+}
+
+async function verifyFefoSerialOptions(
+  store: MockDatabaseStore,
+  orders: MockOrderRepository,
+  picking: MockPickingRepository,
+  service: PickingApplicationService,
+) {
+  store.transact((db) => {
+    const template = db.products.find((item) => item.id === "picking-ui-serial");
+    assert.ok(template);
+    for (const suffix of ["single", "multi"] as const) {
+      const productId = `picking-ui-fefo-serial-${suffix}`;
+      const lotCapacities = suffix === "single" ? [5, 5] : [3, 2, 4];
+      db.products.push({
+        ...template,
+        id: productId,
+        sku: `PICK-UI-FEFO-${suffix.toUpperCase()}`,
+        tracking: { stock: true, lot: true, expiration: true, serial: true },
+      });
+      db.inventoryBalances.push({
+        id: `${productId}-balance`, tenantId, branchId, productId,
+        locationId: "loc-centro-a", quantity: lotCapacities.reduce((sum, value) => sum + value, 0),
+        reservedQuantity: 0, minStock: 0, updatedAt: now,
+      });
+      lotCapacities.forEach((quantity, index) => {
+        const lotId = `${productId}-lot-${index + 1}`;
+        db.stockLots.push({
+          id: lotId, tenantId, branchId, productId, locationId: "loc-centro-a",
+          lotNumber: `FEFO-${suffix}-${index + 1}`,
+          expirationDate: `2026-${String(index + 10).padStart(2, "0")}-01`,
+          quantity, createdAt: now,
+        });
+        for (let serialIndex = 1; serialIndex <= quantity; serialIndex += 1) {
+          const serialNumber = `FEFO-${suffix}-${index + 1}-${serialIndex}`;
+          db.serialNumbers.push({
+            id: `${lotId}-serial-${serialIndex}`, tenantId, branchId, productId,
+            locationId: "loc-centro-a", lotId, serialNumber,
+            status: SerialStatus.available, createdAt: now, updatedAt: now,
+          });
+        }
+      });
+    }
+  });
+
+  for (const suffix of ["single", "multi"] as const) {
+    const productId = `picking-ui-fefo-serial-${suffix}`;
+    const order = await orders.create(orderInput({
+      suffix: `fefo-${suffix}`, deliveryMethod: DeliveryMethod.home_delivery,
+      items: [[productId, 5]],
+    }));
+    const pick = await picking.create({ tenantId, branchId, orderId: order.id, priority: PickingPriority.normal });
+    await service.assign(branchId, pick.id);
+    const line = requiredLine(await service.getDetail(branchId, pick.id), productId);
+    const earlySerials = Array.from({ length: suffix === "single" ? 5 : 3 },
+      (_, index) => `FEFO-${suffix}-1-${index + 1}`);
+    const nextSerials = Array.from({ length: suffix === "single" ? 0 : 2 },
+      (_, index) => `FEFO-${suffix}-2-${index + 1}`);
+    assert.deepEqual(line.availableSerialNumbers, [...earlySerials, ...nextSerials]);
+    assert.ok(!line.availableSerialNumbers.includes(`FEFO-${suffix}-${suffix === "single" ? 2 : 3}-1`));
+
+    if (suffix === "single") {
+      await assert.rejects(service.updateLine(branchId, {
+        pickingOrderId: pick.id, pickingLineId: line.pickingLineId,
+        pickedQuantity: 5, operationId: "picking-ui-fefo-late-denied",
+        serialNumbers: [...earlySerials.slice(0, 4), "FEFO-single-2-1"],
+      }), /FEFO lot allocation/);
+    }
+    await service.updateLine(branchId, {
+      pickingOrderId: pick.id, pickingLineId: line.pickingLineId,
+      pickedQuantity: 5, operationId: `picking-ui-fefo-${suffix}-valid`,
+      serialNumbers: [...earlySerials, ...nextSerials],
+    });
+    const allocations = store.getSnapshot().pickingItems.find((item) =>
+      item.id === line.pickingLineId)?.pickedAllocations ?? [];
+    assert.deepEqual(allocations.map((item) => [item.lotId, item.quantity]),
+      suffix === "single"
+        ? [[`${productId}-lot-1`, 5]]
+        : [[`${productId}-lot-1`, 3], [`${productId}-lot-2`, 2]]);
+  }
 }
 
 function prepareDatabase(store: MockDatabaseStore) {

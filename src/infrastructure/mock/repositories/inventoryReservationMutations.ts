@@ -1,4 +1,4 @@
-import { InventoryMovementType, InventoryReservationStatus } from "@/core/enums";
+import { InventoryMovementType, InventoryReservationStatus, SerialStatus } from "@/core/enums";
 import type {
   InventoryBalance,
   InventoryMovement,
@@ -31,6 +31,7 @@ import {
 interface ReservationConsumptionOptions {
   pickedLots?: Array<{ balanceId: string; lotId: string; quantity: number }>;
   movement?: { reason: string; referenceType: string; referenceId: string };
+  serialStatus?: SerialStatus;
 }
 
 interface InventoryReservationMutationDependencies {
@@ -114,6 +115,8 @@ export function reserveOrderItemInDatabase(
     branchId: input.branchId,
     orderId: input.orderId,
     orderItemId: input.orderItemId,
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
     productId: input.productId,
     status: InventoryReservationStatus.active,
     allocations,
@@ -368,6 +371,7 @@ export function consumeInventoryReservationInDatabase(
         consumePlannedSerials(
           lotSerialAllocations.flatMap((item) => item.serialNumbers),
           now,
+          options.serialStatus,
         );
         let movementBefore = quantityBefore;
         return lotSerialAllocations.flatMap(({ lotAllocation, serialNumbers: plannedSerials }) =>
@@ -387,7 +391,7 @@ export function consumeInventoryReservationInDatabase(
         );
       }
       if (serialNumbers.length > 0) {
-        consumePlannedSerials(serialNumbers, now);
+        consumePlannedSerials(serialNumbers, now, options.serialStatus);
         let movementBefore = quantityBefore;
         return serialNumbers.map((serial) => {
           const movementAfter = movementBefore - 1;
@@ -529,7 +533,6 @@ export function getInventoryReservationAllocationRemaining(
 function assertReservationReferences(input: ReserveOrderItemInput, db: MockDatabase): void {
   assertRequiredText(input.tenantId, "Reservation tenantId");
   assertRequiredText(input.branchId, "Reservation branchId");
-  assertRequiredText(input.orderId, "Reservation orderId");
   assertRequiredText(input.orderItemId, "Reservation orderItemId");
   assertRequiredText(input.productId, "Reservation productId");
 
@@ -543,6 +546,21 @@ function assertReservationReferences(input: ReserveOrderItemInput, db: MockDatab
   if (!product || product.tenantId !== input.tenantId) {
     throw new Error(`Product not found for tenant: ${input.productId}`);
   }
+  if (input.sourceType === "transfer") {
+    assertRequiredText(input.sourceId, "Transfer reservation sourceId");
+    if (input.orderId !== undefined) throw new Error("Transfer reservation cannot reference an Order");
+    const transfer = db.inventoryTransfers.find((item) =>
+      item.id === input.sourceId && item.tenantId === input.tenantId &&
+      item.sourceBranchId === input.branchId);
+    const transferItem = db.inventoryTransferItems.find((item) =>
+      item.id === input.orderItemId && item.transferId === transfer?.id &&
+      item.productId === input.productId);
+    if (!transferItem || input.quantity > transferItem.requestedQuantity) {
+      throw new Error(`Transfer item not found or quantity conflict: ${input.orderItemId}`);
+    }
+    return;
+  }
+  assertRequiredText(input.orderId, "Reservation orderId");
   const order = db.orders.find(
     (item) =>
       item.id === input.orderId &&
@@ -576,6 +594,8 @@ function assertMatchingReservation(
   if (
     reservation.branchId !== input.branchId ||
     reservation.orderId !== input.orderId ||
+    reservation.sourceId !== input.sourceId ||
+    (reservation.sourceType ?? "order") !== (input.sourceType ?? "order") ||
     reservation.productId !== input.productId ||
     reservedQuantity !== input.quantity
   ) {
@@ -589,8 +609,8 @@ function assertPositiveQuantity(quantity: number, label: string): void {
   }
 }
 
-function assertRequiredText(value: string, label: string): void {
-  if (!value.trim()) throw new Error(`${label} is required`);
+function assertRequiredText(value: string | undefined, label: string): asserts value is string {
+  if (!value?.trim()) throw new Error(`${label} is required`);
 }
 
 function assertConsumeInput(input: ConsumeInventoryReservationInput): void {

@@ -407,14 +407,42 @@ function verifyPersistedAdminBackfill() {
   const storage = new MemoryStorageAdapter();
   const initial = new MockDatabaseStore(storage).getSnapshot();
   const admin = initial.roles.find((role) => role.id === "role-admin");
+  const warehouse = initial.roles.find((role) => role.id === "role-warehouse");
+  const demoTenant = initial.tenants.find((tenant) => tenant.id === "tenant-demo");
   assert.ok(admin);
+  assert.ok(warehouse && demoTenant);
+  assert.deepEqual(new Set(admin.permissions), new Set(permissionsConfig.map((permission) => permission.key)));
+  const warehousePermissions = [...warehouse.permissions];
   admin.permissions = ["catalog.products.read"];
+  for (const suffix of ["a", "b"]) {
+    const tenantId = `tenant-admin-backfill-${suffix}`;
+    initial.tenants.push({
+      ...demoTenant,
+      id: tenantId,
+      slug: `admin-backfill-${suffix}`,
+      name: `Tenant Admin Backfill ${suffix.toUpperCase()}`,
+    });
+    initial.roles.push({
+      ...admin,
+      id: `role-admin-backfill-${suffix}`,
+      tenantId,
+      permissions: ["catalog.products.read"],
+    });
+  }
   initial.roles.push({
     ...admin,
     id: "role-custom-admin-like",
-    name: "Custom admin-like role",
+    tenantId: "tenant-admin-backfill-a",
+    name: "Administrador",
     isSystem: false,
     permissions: ["catalog.products.read"],
+  });
+  initial.roles.push({
+    ...warehouse,
+    id: "role-custom-warehouse-like",
+    tenantId: "tenant-admin-backfill-b",
+    isSystem: false,
+    permissions: ["logistics.picking.read"],
   });
   storage.set(MOCK_DATABASE_STORAGE_KEY, initial);
 
@@ -426,6 +454,21 @@ function verifyPersistedAdminBackfill() {
     new Set(permissionsConfig.map((permission) => permission.key)),
   );
   assert.deepEqual(customRole?.permissions, ["catalog.products.read"]);
+  for (const suffix of ["a", "b"]) {
+    const tenantAdmin = normalized.roles.find((role) => role.id === `role-admin-backfill-${suffix}`);
+    assert.deepEqual(
+      new Set(tenantAdmin?.permissions),
+      new Set(permissionsConfig.map((permission) => permission.key)),
+    );
+    assert.ok(tenantAdmin?.permissions.includes("inventory.transfers.manage"));
+    assert.ok(tenantAdmin?.permissions.includes("logistics.picking.start"));
+    assert.ok(tenantAdmin?.permissions.includes("logistics.packing.finalize"));
+    assert.ok(tenantAdmin?.permissions.includes("logistics.dispatch.confirm"));
+  }
+  assert.deepEqual(normalized.roles.find((role) => role.id === "role-warehouse")?.permissions,
+    warehousePermissions);
+  assert.deepEqual(normalized.roles.find((role) => role.id === "role-custom-warehouse-like")?.permissions,
+    ["logistics.picking.read"]);
   [
     "logistics.history.read",
     "logistics.picking.read",

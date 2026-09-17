@@ -12,6 +12,8 @@ import type {
   User,
 } from "@/core/entities";
 import {
+  DispatchStatus,
+  InventoryMovementType,
   InventoryTransferStatus,
   LocationStatus,
   PurchaseOrderStatus,
@@ -89,10 +91,8 @@ export class ReceivingDocumentDetailService {
   }
 
   async confirm(input: ConfirmReceivingInput): Promise<Receipt> {
-    if (input.documentType !== "purchase_order") {
-      throw new ReceivingServiceError(
-        "La recepcion de traslados aun no esta soportada por el contrato Receipt.",
-      );
+    if (input.documentType === "transfer") {
+      return this.confirmTransfer(input);
     }
     const { tenantId, actorUserId, user, permissions } = await resolveReceivingContext(
       this.repositories,
@@ -139,6 +139,47 @@ export class ReceivingDocumentDetailService {
       lines: receiptLines,
       incidents: receiptIncidents,
     });
+  }
+
+  private async confirmTransfer(input: ConfirmReceivingInput): Promise<Receipt> {
+    const { tenantId, actorUserId, user, permissions } = await resolveReceivingContext(
+      this.repositories,
+    );
+    ensureCanConfirmReceiving(permissions);
+    await ensureTenantCanUseReceiving(this.repositories, tenantId);
+    const transfer = await this.repositories.inventoryTransfers.getById(input.documentId);
+    if (!transfer || transfer.transfer.tenantId !== tenantId) {
+      throw new ReceivingServiceError("Traslado no encontrado.");
+    }
+    await ensureUserCanOperateBranch(
+      this.repositories, user, transfer.transfer.destinationBranchId,
+    );
+    if (!(await this.hasTransferDispatchEvidence(transfer))) {
+      throw new ReceivingServiceError("El traslado no tiene una salida de despacho verificable.");
+    }
+    if (input.incidents.length > 0) {
+      throw new ReceivingServiceError("La recepción de traslado no admite incidencias parciales.");
+    }
+    if (input.lines.length !== transfer.items.length) {
+      throw new ReceivingServiceError("Las líneas del traslado no coinciden con la recepción.");
+    }
+    const items = transfer.items.map((item) => {
+      const line = input.lines.find((entry) => entry.sourceLineId === item.id &&
+        entry.productId === item.productId);
+      if (!line || line.receivedNow !== item.dispatchedQuantity || !line.locationId) {
+        throw new ReceivingServiceError("Recibe la cantidad despachada en una ubicación válida.");
+      }
+      return { itemId: item.id, receivedQuantity: item.dispatchedQuantity,
+        locationId: line.locationId };
+    });
+    await this.repositories.inventoryTransfers.markReceived(transfer.transfer.id, {
+      receivedByUserId: actorUserId, confirmationId: input.confirmationId, items,
+    });
+    const receipt = await this.repositories.receipts.getByConfirmationId(tenantId, input.confirmationId);
+    if (!receipt || receipt.inventoryTransferId !== transfer.transfer.id) {
+      throw new ReceivingServiceError("No se pudo recuperar la recepción confirmada.");
+    }
+    return receipt;
   }
 
   private async persistDraft(
@@ -344,6 +385,18 @@ export class ReceivingDocumentDetailService {
       this.getCapabilities(transfer.transfer.tenantId),
       new ResolveTenantEntitlementsService(this.repositories).execute(transfer.transfer.tenantId),
     ]);
+    const settings = new Map(await Promise.all(transfer.items.map(async (item) => [
+      item.productId,
+      await this.repositories.inventory.getProductInventorySettings(
+        item.productId, transfer.transfer.destinationBranchId,
+      ),
+    ] as const)));
+    const activeDestinationLocations = locations.filter((location) =>
+      location.tenantId === tenantId &&
+      location.branchId === transfer.transfer.destinationBranchId &&
+      location.status === LocationStatus.active);
+    const receivable = transfer.transfer.status === InventoryTransferStatus.inTransit &&
+      await this.hasTransferDispatchEvidence(transfer);
     const branchById = new Map(branches.map((branch) => [branch.id, branch]));
     const productById = new Map(products.map((product) => [product.id, product]));
     const unitById = new Map(units.map((unit) => [unit.id, unit]));
@@ -365,16 +418,47 @@ export class ReceivingDocumentDetailService {
             ? "Recibida"
             : "En transito",
       },
-      lines: transfer.items.map((item) =>
-        this.toTransferDetailLine(item, productById.get(item.productId), unitById),
-      ),
+      lines: transfer.items.map((item) => {
+        const productSettings = settings.get(item.productId);
+        const configuredLocationId = productSettings?.tenantId === tenantId &&
+          productSettings.branchId === transfer.transfer.destinationBranchId &&
+          productSettings.productId === item.productId &&
+          activeDestinationLocations.some((location) => location.id === productSettings.defaultLocationId)
+          ? productSettings.defaultLocationId
+          : undefined;
+        return this.toTransferDetailLine(item, productById.get(item.productId), unitById,
+          configuredLocationId ?? activeDestinationLocations[0]?.id ?? "");
+      }),
       locations: toLocationOptions(locations, capabilities),
       incidentTypes: [],
       incidents: [],
       previousReceipts: [],
       capabilities: toCapabilityFlags(capabilities, entitlements),
-      readOnly: true,
+      readOnly: !receivable,
     };
+  }
+
+  private async hasTransferDispatchEvidence(
+    transfer: NonNullable<Awaited<ReturnType<RepositoryRegistry["inventoryTransfers"]["getById"]>>>,
+  ): Promise<boolean> {
+    const { tenantId, sourceBranchId, id } = transfer.transfer;
+    const [dispatches, movements] = await Promise.all([
+      this.repositories.dispatches.getAll({ tenantId, branchId: sourceBranchId }),
+      this.repositories.inventory.getMovements(),
+    ]);
+    const matchingDispatches = dispatches.filter((entry) => entry.sourceType === "transfer" &&
+      entry.sourceId === id && entry.status === DispatchStatus.dispatched);
+    if (matchingDispatches.length !== 1) return false;
+    const outgoing = movements.filter((entry) => entry.tenantId === tenantId &&
+      entry.branchId === sourceBranchId && entry.referenceType === "transfer" &&
+      entry.referenceId === id && entry.type === InventoryMovementType.out);
+    if (transfer.items.length === 0 || transfer.items.some((item) =>
+      item.dispatchedQuantity <= 0 || item.dispatchedQuantity !== item.requestedQuantity)) return false;
+    if (outgoing.reduce((sum, entry) => sum + entry.quantity, 0) !==
+      transfer.items.reduce((sum, item) => sum + item.dispatchedQuantity, 0)) return false;
+    return transfer.items.every((item) => outgoing.filter((entry) =>
+      entry.productId === item.productId).reduce((sum, entry) => sum + entry.quantity, 0) ===
+      item.dispatchedQuantity);
   }
 
   private async toPurchaseOrderDetailLine(input: {
@@ -428,6 +512,7 @@ export class ReceivingDocumentDetailService {
     item: InventoryTransferItem,
     product: Product | undefined,
     unitById: Map<string, Unit>,
+    defaultLocationId: string,
   ): ReceivingDocumentLine {
     const orderedQuantity =
       item.dispatchedQuantity > 0 ? item.dispatchedQuantity : item.requestedQuantity;
@@ -445,9 +530,9 @@ export class ReceivingDocumentDetailService {
       baseUnitName: baseUnit?.name ?? "Unidad base",
       orderedQuantity,
       acceptedPreviously: item.receivedQuantity,
-      receivedNow: "",
+      receivedNow: item.receivedQuantity > 0 ? "" : item.dispatchedQuantity,
       pendingQuantity: Math.max(0, orderedQuantity - item.receivedQuantity),
-      locationId: "",
+      locationId: defaultLocationId,
       tracking: product?.tracking ?? { stock: false, lot: false, expiration: false, serial: false },
       lotNumber: "",
       expirationDate: "",

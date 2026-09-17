@@ -17,7 +17,11 @@ import {
   UserStatus,
   UserType,
 } from "@/core/enums";
-import type { PickingRepository, UpdatePickingItemInput } from "@/core/repositories";
+import type {
+  CompletePickingOrderInput, CompletePickingOrderResult,
+  CompleteTransferPickingOrderInput, CompleteTransferPickingOrderResult,
+  PickingRepository, UpdatePickingItemInput,
+} from "@/core/repositories";
 import type {
   DataEventArguments,
   DataEventName,
@@ -33,12 +37,17 @@ import {
   getInventoryReservationAllocationRemaining,
 } from "@/infrastructure/mock/repositories/inventoryReservationMutations";
 import { planPickedAllocations } from "@/infrastructure/mock/repositories/pickingSelectionMutations";
+import {
+  assignTransferPickingInDatabase,
+  completeTransferPickingInDatabase,
+  updateTransferPickingItemInDatabase,
+} from "@/infrastructure/mock/repositories/transferPickingMutations";
 
 interface PickingItemMutationResult {
   item: PickingItem;
   tenantId: string;
   branchId: string;
-  orderId: string;
+  orderId?: string;
   itemChanged: boolean;
   reservation?: InventoryReservation;
   inventoryMovements: InventoryMovement[];
@@ -157,11 +166,23 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
       (db) =>
         db.pickingOrders.find(
           (item) =>
-            item.orderId === orderId &&
+            item.sourceType !== "transfer" && item.orderId === orderId &&
             item.tenantId === scope.tenantId &&
             item.branchId === scope.branchId,
         ) ?? null,
     );
+  }
+
+  async getBySource(
+    scope: Parameters<PickingRepository["getBySource"]>[0],
+    sourceType: "order" | "transfer",
+    sourceId: string,
+  ) {
+    return this.read((db) => db.pickingOrders.find((item) =>
+      item.tenantId === scope.tenantId && item.branchId === scope.branchId &&
+      (item.sourceType ?? "order") === sourceType &&
+      (sourceType === "transfer" ? item.sourceId : item.sourceId ?? item.orderId) === sourceId,
+    ) ?? null);
   }
 
   async getQueue(scope: Parameters<PickingRepository["getQueue"]>[0]) {
@@ -196,6 +217,14 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
   }
 
   async assign(input: Parameters<PickingRepository["assign"]>[0]) {
+    if (this.read((db) => db.pickingOrders.some((item) => item.id === input.pickingOrderId &&
+      item.sourceType === "transfer"))) {
+      const transferResult = this.store.transact((db) => assignTransferPickingInDatabase(db, input, {
+        id: (prefix) => this.id(prefix), now: () => this.now(),
+      }));
+      if (transferResult.changed) this.emitPickingChanged(transferResult.pickingOrder, "updated");
+      return { pickingOrder: transferResult.pickingOrder, idempotent: transferResult.idempotent };
+    }
     const result = this.store.transact((db) => {
       const pickingOrder = this.findScopedPickingOrder(db, input, input.pickingOrderId);
       this.assertActor(input.actorUserId, input.tenantId, db);
@@ -380,7 +409,27 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
     return result.incident;
   }
 
-  async complete(input: Parameters<PickingRepository["complete"]>[0]) {
+  complete(input: CompletePickingOrderInput): Promise<CompletePickingOrderResult>;
+  complete(input: CompleteTransferPickingOrderInput): Promise<CompleteTransferPickingOrderResult>;
+  async complete(input: CompletePickingOrderInput | CompleteTransferPickingOrderInput): Promise<
+    CompletePickingOrderResult | CompleteTransferPickingOrderResult
+  > {
+    if (input.sourceType === "transfer") {
+      const transferResult = this.store.transact((db) => completeTransferPickingInDatabase(db, input, {
+        id: (prefix) => this.id(prefix), now: () => this.now(),
+      }));
+      if (transferResult.changed) {
+        this.emitPickingChanged(transferResult.pickingOrder, "status_changed");
+        this.emitSafely("packing.changed", {
+          entityId: transferResult.packing.id, tenantId: transferResult.transfer.tenantId,
+          branchId: transferResult.transfer.sourceBranchId,
+          packingId: transferResult.packing.id, sourceType: "transfer",
+          sourceId: transferResult.transfer.id,
+          action: "created",
+        });
+      }
+      return transferResult;
+    }
     const result = this.store.transact((db) => {
       const pickingOrder = this.findScopedPickingOrder(db, input, input.pickingOrderId);
       this.assertActor(input.actorUserId, input.tenantId, db);
@@ -493,6 +542,19 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
   }
 
   async updateItem(input: UpdatePickingItemInput) {
+    if (this.read((db) => db.pickingOrders.some((item) => item.id === input.pickingOrderId &&
+      item.sourceType === "transfer"))) {
+      const item = this.store.transact((db) => updateTransferPickingItemInDatabase(db, input, {
+        id: (prefix) => this.id(prefix), now: () => this.now(),
+      }));
+      this.emitSafely("picking.changed", {
+        entityId: input.pickingOrderId, tenantId: input.tenantId, branchId: input.branchId,
+        pickingOrderId: input.pickingOrderId, pickingLineId: input.pickingItemId,
+        orderId: item.pickingOrderId,
+        action: "updated",
+      });
+      return item;
+    }
     const id = input.pickingItemId;
     const result = this.store.transact<PickingItemMutationResult>((db) => {
       const itemIndex = db.pickingItems.findIndex((entry) => entry.id === id);
@@ -729,7 +791,7 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
   }
 
   private emitPickingChanged(
-    pickingOrder: { id: string; tenantId: string; branchId: string; orderId: string },
+    pickingOrder: PickingOrder,
     action: NonNullable<DataEventPayload["action"]>,
     metadata?: Record<string, unknown>,
   ): void {
@@ -739,6 +801,8 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
       branchId: pickingOrder.branchId,
       pickingOrderId: pickingOrder.id,
       orderId: pickingOrder.orderId,
+      sourceType: pickingOrder.sourceType,
+      sourceId: pickingOrder.sourceId,
       action,
       metadata,
     });
@@ -796,7 +860,7 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
 
   private getRequiredReservation(
     item: PickingItem,
-    pickingOrder: { id: string; tenantId: string; branchId: string; orderId: string },
+    pickingOrder: PickingOrder,
     db: MockDatabase,
   ): InventoryReservation {
     const reservation = this.getLinkedReservation(item, pickingOrder, db);
@@ -808,7 +872,7 @@ export class MockPickingRepository extends BaseMockRepository implements Picking
 
   private getLinkedReservation(
     item: PickingItem,
-    pickingOrder: { id: string; tenantId: string; branchId: string; orderId: string },
+    pickingOrder: PickingOrder,
     db: MockDatabase,
   ): InventoryReservation | undefined {
     const reservation = db.inventoryReservations.find(

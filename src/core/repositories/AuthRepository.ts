@@ -219,6 +219,7 @@ export interface AuthRepository {
   logout(sessionId: string): Promise<void>;
   getSession(sessionId: string): Promise<Session | null>;
   getCurrentSessionId(): Promise<string | null>;
+  setActiveBranchId(branchId: string): Promise<void>;
   /**
    * Elimina el puntero de sesion persistido en este navegador,
    * incondicionalmente -- sin tocar el repositorio ni intentar revocar

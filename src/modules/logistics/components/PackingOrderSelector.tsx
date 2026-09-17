@@ -13,7 +13,8 @@ interface PackingOrderSelectorProps {
   onSelect: (packingId: string) => void;
 }
 
-const deliveryLabels: Record<DeliveryMethod, string> = {
+const deliveryLabels: Record<DeliveryMethod | "transfer", string> = {
+  transfer: "Traslado entre sucursales",
   [DeliveryMethod.immediate]: "Entrega inmediata",
   [DeliveryMethod.store_pickup]: "Retiro en tienda/bodega",
   [DeliveryMethod.home_delivery]: "Envío a domicilio",

@@ -5,11 +5,13 @@ import type { StorePickupContactSnapshot } from "@/core/types/storePickupContact
 
 export interface PackingQueueItemDto {
   packingId: string;
-  orderId: string;
+  orderId?: string;
   orderReference: string;
   customerName: string;
   storePickupContact: StorePickupContactSnapshot | null;
-  deliveryMethod: DeliveryMethod;
+  deliveryMethod: DeliveryMethod | "transfer";
+  sourceType?: "order" | "transfer";
+  sourceId?: string;
   status: PackingStatus;
   version: number;
   startedAt: string;
@@ -18,7 +20,7 @@ export interface PackingQueueItemDto {
 
 export interface PackingDetailDto extends PackingQueueItemDto {
   pickingOrderId: string;
-  orderStatus: OrderStatus;
+  orderStatus: OrderStatus | null;
   deliveryAddress: AddressSnapshot | null;
   checklist: PackingChecklist;
   totalWeight: number | null;
@@ -59,7 +61,8 @@ export interface PackingActionResultDto {
 }
 
 export interface FinalizePackingResultDto extends PackingActionResultDto {
-  orderStatus: OrderStatus;
+  orderStatus: OrderStatus | null;
+  transferStatus?: string;
 }
 
 export interface ConfirmStorePickupDeliveryCommand {

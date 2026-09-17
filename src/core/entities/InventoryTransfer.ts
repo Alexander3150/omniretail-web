@@ -1,4 +1,4 @@
-import type { InventoryTransferStatus } from "@/core/enums";
+import type { InventoryTransferReason, InventoryTransferStatus } from "@/core/enums";
 import type { ISODateString } from "@/core/types/common.types";
 
 export interface InventoryTransfer {
@@ -8,7 +8,11 @@ export interface InventoryTransfer {
   sourceBranchId: string;
   destinationBranchId: string;
   status: InventoryTransferStatus;
+  /** Stable identity of the creation command; retries must not create another transfer. */
+  operationId?: string;
+  operationFingerprint?: string;
   sourceRequestIds?: string[];
+  reason?: InventoryTransferReason;
   notes?: string;
   preparedByUserId?: string;
   dispatchedByUserId?: string;
@@ -18,4 +22,7 @@ export interface InventoryTransfer {
   dispatchedAt?: ISODateString;
   receivedAt?: ISODateString;
   cancelledAt?: ISODateString;
+  cancelledByUserId?: string;
+  cancelOperationId?: string;
+  cancelFingerprint?: string;
 }

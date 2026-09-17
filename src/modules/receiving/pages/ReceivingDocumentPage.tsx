@@ -83,7 +83,10 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
   const saveProgressInvalid = detail
     ? validateIncidentQuantities(lines, incidents, detail).length > 0
     : true;
-  const confirmationInvalid = detail ? validateLines(lines, incidents, detail).length > 0 : true;
+  const confirmationInvalid = detail?.document.type === "transfer"
+    ? lines.length === 0 || lines.some((line) =>
+        line.receivedNow !== line.orderedQuantity - line.acceptedPreviously || !line.locationId)
+    : detail ? validateLines(lines, incidents, detail).length > 0 : true;
 
   async function handleSaveProgress() {
     try {
@@ -152,7 +155,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
               </Button>
               {!readOnly ? (
                 <>
-                  <Button
+                  {detail.document.type === "purchase_order" ? <Button
                     disabled={saving || !canUseReceiving || saveProgressInvalid}
                     onClick={handleSaveProgress}
                     type="button"
@@ -160,7 +163,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
                   >
                     <SaveIcon />
                     Guardar avance
-                  </Button>
+                  </Button> : null}
                   <Button
                     disabled={saving || !canUseReceiving || confirmationInvalid}
                     onClick={handleConfirm}
@@ -208,7 +211,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
                   Pendiente inicial: {formatNumber(summary.ordered - summary.acceptedPreviously)}
                 </p>
               </div>
-              {!readOnly ? (
+              {!readOnly && detail.document.type === "purchase_order" ? (
                 <Button
                   onClick={() => {
                     setSelectedIncidentId(null);
@@ -431,12 +434,16 @@ function ReceivingLinesTable({
                   </Select>
                 </Field>
               ) : null}
-              <TrackingFields
+              {detail.document.type === "transfer" ? (
+                <p className="text-xs text-[var(--color-text-muted)]">
+                  Lotes y series se conservan del despacho de origen.
+                </p>
+              ) : <TrackingFields
                 capabilities={detail.capabilities}
                 line={line}
                 readOnly={readOnly}
                 onUpdateLine={onUpdateLine}
-              />
+              />}
             </article>
           );
         })}
@@ -555,12 +562,14 @@ function ReceivingLinesTable({
                   )}
                 </td>
                 <td className="px-2 py-2.5">
-                  <TrackingFields
+                  {detail.document.type === "transfer" ? (
+                    <MutedText>Lotes y series conservados del despacho de origen</MutedText>
+                  ) : <TrackingFields
                     capabilities={detail.capabilities}
                     line={line}
                     readOnly={readOnly}
                     onUpdateLine={onUpdateLine}
-                  />
+                  />}
                 </td>
               </tr>
             ))}

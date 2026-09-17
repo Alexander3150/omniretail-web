@@ -3,6 +3,7 @@
 import { DeliveryMethod } from "@/core/enums";
 import { PackingOrderSelector } from "@/modules/logistics/components/PackingOrderSelector";
 import { PackingWorkspace } from "@/modules/logistics/components/PackingWorkspace";
+import { TransferDispatchPanel } from "@/modules/logistics/components/TransferDispatchPanel";
 import { useLogisticsPacking } from "@/modules/logistics/hooks/useLogisticsPacking";
 import { Button } from "@/shared/components/Button";
 import { InlineAlert } from "@/shared/components/InlineAlert";
@@ -59,9 +60,11 @@ export function LogisticsPackingDispatchPage() {
               const finalized = await packing.finalize();
               if (finalized) {
                 const storePickup = packing.detail?.deliveryMethod === DeliveryMethod.store_pickup;
+                const transfer = packing.detail?.deliveryMethod === "transfer";
                 showToast({
                   title: "Preparación finalizada",
-                  description: storePickup ? "El pedido quedó listo para retiro." : "El pedido quedó listo para despacho.",
+                  description: transfer ? "El traslado quedó listo para confirmar su salida." :
+                    storePickup ? "El pedido quedó listo para retiro." : "El pedido quedó listo para despacho.",
                   tone: "success",
                 });
               }
@@ -87,6 +90,7 @@ export function LogisticsPackingDispatchPage() {
           />
         </>
       ) : null}
+      <TransferDispatchPanel />
     </div>
   );
 }

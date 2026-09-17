@@ -70,15 +70,17 @@ export function ActiveBranchProvider({
   const [loading, setLoading] = useState(true);
 
   const applyBranches = useCallback(
-    (activeBranches: Branch[]) => {
+    async (activeBranches: Branch[]) => {
       const accessibleBranches = canAccessBranch
         ? activeBranches.filter((branch) => canAccessBranch(branch))
         : activeBranches;
+      const nextBranchId = selectNextActiveBranchId(accessibleBranches, activeBranchId);
+      if (nextBranchId) await repositories.auth.setActiveBranchId(nextBranchId);
       setBranches(accessibleBranches);
-      setActiveBranchId((current) => selectNextActiveBranchId(accessibleBranches, current));
+      setActiveBranchId(nextBranchId);
       setLoading(false);
     },
-    [canAccessBranch],
+    [activeBranchId, canAccessBranch, repositories.auth],
   );
 
   const reloadBranches = useCallback(async () => {
@@ -87,7 +89,7 @@ export function ActiveBranchProvider({
       return;
     }
     const activeBranches = await repositories.branches.getActiveByTenant(tenantId);
-    applyBranches(activeBranches);
+    await applyBranches(activeBranches);
   }, [applyBranches, repositories, tenantId]);
 
   useEffect(() => {
@@ -95,9 +97,9 @@ export function ActiveBranchProvider({
     const request = tenantId
       ? repositories.branches.getActiveByTenant(tenantId)
       : Promise.resolve([]);
-    request.then((activeBranches) => {
+    request.then(async (activeBranches) => {
       if (!active) return;
-      applyBranches(activeBranches);
+      await applyBranches(activeBranches);
     });
 
     return () => {
@@ -118,9 +120,10 @@ export function ActiveBranchProvider({
   // de otro alcance) se ignora en vez de aceptarse silenciosamente.
   const selectActiveBranch = useCallback(
     (branchId: string) => {
-      setActiveBranchId((current) => (isBranchIdSelectable(branches, branchId) ? branchId : current));
+      if (!isBranchIdSelectable(branches, branchId)) return;
+      void repositories.auth.setActiveBranchId(branchId).then(() => setActiveBranchId(branchId));
     },
-    [branches],
+    [branches, repositories.auth],
   );
 
   const value = useMemo<ActiveBranchContextValue>(

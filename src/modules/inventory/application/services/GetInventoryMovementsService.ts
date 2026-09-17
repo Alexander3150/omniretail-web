@@ -257,7 +257,7 @@ function buildReferenceResolver({
 }: {
   purchaseOrders: Array<{ id: string; number: string }>;
   receipts: Array<{ id: string; number: string }>;
-  dispatches: Array<{ id: string; orderId: string; trackingNumber?: string }>;
+  dispatches: Array<{ id: string; orderId?: string; trackingNumber?: string }>;
   orders: Array<{ id: string; orderNumber: string }>;
   sales: Array<{ id: string; number: string }>;
   inventoryAdjustments: InventoryAdjustment[];
@@ -266,7 +266,8 @@ function buildReferenceResolver({
   const purchaseOrderById = new Map(purchaseOrders.map((item) => [item.id, item.number]));
   const receiptById = new Map(receipts.map((item) => [item.id, item.number]));
   const orderById = new Map(orders.map((item) => [item.id, item.orderNumber]));
-  const dispatchById = new Map(dispatches.map((item) => [item.id, orderById.get(item.orderId)]));
+  const dispatchById = new Map(dispatches.map((item) =>
+    [item.id, item.orderId ? orderById.get(item.orderId) : undefined]));
   const saleById = new Map(sales.map((item) => [item.id, item.number]));
   const adjustmentById = new Map(inventoryAdjustments.map((item) => [item.id, item.number]));
   const transferById = new Map(

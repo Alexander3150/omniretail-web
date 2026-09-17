@@ -26,7 +26,10 @@ import {
   releaseInventoryReservationInDatabase,
   reserveOrderItemInDatabase,
 } from "@/infrastructure/mock/repositories/inventoryReservationMutations";
-import { getClaimedPickingSerialNumbers } from "@/infrastructure/mock/repositories/pickingSelectionMutations";
+import {
+  getClaimedPickingSerialNumbers,
+  planPickingAllocationCapacity,
+} from "@/infrastructure/mock/repositories/pickingSelectionMutations";
 
 export class MockInventoryRepository extends BaseMockRepository implements InventoryRepository {
   async getBalances() {
@@ -60,9 +63,13 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
     return result.reservation;
   }
   async releaseReservation(input: ReleaseInventoryReservationInput) {
-    const result = this.store.transact((db) =>
-      releaseInventoryReservationInDatabase(db, input, { now: () => this.now() }),
-    );
+    const result = this.store.transact((db) => {
+      if (db.inventoryReservations.some((item) => item.id === input.reservationId &&
+        item.sourceType === "transfer")) {
+        throw new Error("Transfer reservations can only be released by Transfer cancellation");
+      }
+      return releaseInventoryReservationInDatabase(db, input, { now: () => this.now() });
+    });
 
     if (result.changed) this.emitStockChanged(result.reservation);
     return result.reservation;
@@ -70,12 +77,16 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
   async consumeReservation(
     input: ConsumeInventoryReservationInput,
   ): Promise<ConsumeInventoryReservationResult> {
-    const result = this.store.transact((db) =>
-      consumeInventoryReservationInDatabase(db, input, {
+    const result = this.store.transact((db) => {
+      if (db.inventoryReservations.some((item) => item.id === input.reservationId &&
+        item.sourceType === "transfer")) {
+        throw new Error("Transfer reservations can only be consumed by Transfer Dispatch");
+      }
+      return consumeInventoryReservationInDatabase(db, input, {
         id: (prefix) => this.id(prefix),
         now: () => this.now(),
-      }),
-    );
+      });
+    });
 
     if (result.changed) this.emitConsumedReservation(result);
     return {
@@ -91,18 +102,26 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
           item.id === input.pickingOrderId &&
           item.tenantId === input.tenantId &&
           item.branchId === input.branchId &&
-          item.orderId === input.orderId,
+            (item.sourceType === "transfer"
+              ? input.sourceType === "transfer" && item.sourceId === input.sourceId
+              : input.sourceType !== "transfer" && item.orderId === input.orderId),
       );
       if (!pickingOrder) {
         throw new Error(`PickingOrder not found for tenant/branch: ${input.pickingOrderId}`);
       }
-      const order = db.orders.find(
+      const order = pickingOrder.sourceType === "transfer" ? null : db.orders.find(
         (item) =>
           item.id === input.orderId &&
           item.tenantId === input.tenantId &&
           item.branchId === input.branchId,
       );
-      if (!order) throw new Error(`Order not found for tenant/branch: ${input.orderId}`);
+      if (!order) {
+        const transfer = pickingOrder.sourceType === "transfer" &&
+          db.inventoryTransfers.find((item) => item.id === pickingOrder.sourceId &&
+            item.id === input.sourceId && item.tenantId === input.tenantId &&
+            item.sourceBranchId === input.branchId);
+        if (!transfer) throw new Error(`Fulfillment source not found for tenant/branch: ${input.sourceId}`);
+      }
       const pickingItems = db.pickingItems.filter(
         (item) => item.pickingOrderId === pickingOrder.id && item.productId === input.productId,
       );
@@ -125,11 +144,34 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
         at: input.at ?? this.now(),
       });
       const claimedSerials = getClaimedPickingSerialNumbers(db, input);
+      const pickingItem = input.pickingItemId
+        ? pickingItems.find((item) => item.id === input.pickingItemId)
+        : undefined;
+      if (input.pickingItemId && !pickingItem) {
+        throw new Error(`PickingItem not found for product: ${input.pickingItemId}`);
+      }
+      const reservation = pickingItem && db.inventoryReservations.find((item) =>
+        item.tenantId === input.tenantId && item.branchId === input.branchId &&
+        item.orderItemId === pickingItem.orderItemId && item.productId === input.productId &&
+        (pickingOrder.sourceType === "transfer"
+          ? item.sourceType === "transfer" && item.sourceId === pickingOrder.sourceId
+          : item.sourceType !== "transfer" && item.orderId === pickingOrder.orderId));
+      // The mutation planner, not React, decides which FEFO lots belong to this line.
+      const selectableAllocations = product.tracking.lot && product.tracking.serial && pickingItem && reservation
+        ? planPickingAllocationCapacity(
+            db, pickingItem, reservation, product, pickingItem.requestedQuantity,
+            input.at ?? this.now(), true,
+          ).planned
+        : null;
       return {
         ...availability,
         locations: availability.locations.map((location) => ({
           ...location,
-          serialNumbers: location.serialNumbers.filter((serial) => !claimedSerials.has(serial.serialNumber)),
+          serialNumbers: location.serialNumbers.filter((serial) =>
+            !claimedSerials.has(serial.serialNumber) &&
+            (!product.tracking.lot || !product.tracking.serial ||
+              selectableAllocations?.some((allocation) => allocation.balanceId === location.balanceId &&
+                allocation.lotId === serial.lotId))).sort((left, right) => left.id.localeCompare(right.id)),
           lots: location.lots.map((lot) => ({
             ...lot,
             serialNumbers: lot.serialNumbers.filter((serial) => !claimedSerials.has(serial.serialNumber)),

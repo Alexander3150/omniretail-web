@@ -57,7 +57,7 @@ export function buildIncidentListItems({
         ? purchaseOrderById.get(receipt.purchaseOrderId)
         : undefined;
       const supplierId = purchaseOrder?.supplierId;
-      const supplier = supplierById.get(supplierId ?? receipt.supplierId);
+      const supplier = supplierById.get(supplierId ?? receipt.supplierId ?? "");
 
       return [
         {

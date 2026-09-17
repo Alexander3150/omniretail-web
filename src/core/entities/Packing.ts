@@ -11,7 +11,9 @@ export interface Packing {
   id: string;
   tenantId: string;
   branchId: string;
-  orderId: string;
+  orderId?: string;
+  sourceType?: "order" | "transfer";
+  sourceId?: string;
   pickingOrderId: string;
   status: PackingStatus;
   checklist: PackingChecklist;

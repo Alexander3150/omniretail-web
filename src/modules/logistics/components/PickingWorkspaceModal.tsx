@@ -37,7 +37,8 @@ interface PickingWorkspaceProps {
   submitting: boolean;
 }
 
-const deliveryLabels: Record<DeliveryMethod, string> = {
+const deliveryLabels: Record<DeliveryMethod | "transfer", string> = {
+  transfer: "Traslado entre sucursales",
   [DeliveryMethod.immediate]: "Entrega inmediata",
   [DeliveryMethod.store_pickup]: "Retiro en tienda",
   [DeliveryMethod.home_delivery]: "Envío a domicilio",

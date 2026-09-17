@@ -1,5 +1,5 @@
 import type { InventoryReservation, PickingItem, Product } from "@/core/entities";
-import { OrderStatus, PickingStatus, SerialStatus } from "@/core/enums";
+import { InventoryTransferStatus, OrderStatus, PickingStatus, SerialStatus } from "@/core/enums";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { getAvailableSerials } from "@/infrastructure/mock/repositories/serialNumberMutations";
 import { getEligibleStockLots } from "@/infrastructure/mock/repositories/stockLotMutations";
@@ -9,6 +9,12 @@ type PickedAllocation = NonNullable<PickingItem["pickedAllocations"]>[number];
 function activePicks(db: MockDatabase): PickingItem[] {
   return db.pickingItems.filter((item) => {
     const picking = db.pickingOrders.find((entry) => entry.id === item.pickingOrderId);
+    if (picking?.sourceType === "transfer") {
+      const transfer = db.inventoryTransfers.find((entry) => entry.id === picking.sourceId &&
+        entry.tenantId === picking.tenantId && entry.sourceBranchId === picking.branchId);
+      return !!transfer && picking.status !== PickingStatus.cancelled &&
+        transfer.status === InventoryTransferStatus.preparing;
+    }
     const order = picking && db.orders.find((entry) => entry.id === picking.orderId);
     return picking && order && picking.status !== PickingStatus.cancelled &&
       ![OrderStatus.cancelled, OrderStatus.dispatched, OrderStatus.delivered].includes(order.status);
@@ -72,6 +78,54 @@ export function planPickedAllocations(
   if (product.tracking.serial) {
     assertPickedSerialsAvailable(db, item, reservation, product, serialNumbers);
   }
+  const { existing, planned } = planPickingAllocationCapacity(
+    db, item, reservation, product, targetQuantity, at,
+  );
+  if (product.tracking.serial) {
+    const serials = db.serialNumbers.filter((entry) => entry.tenantId === reservation.tenantId &&
+      serialNumbers.includes(entry.serialNumber));
+    const used = new Set<string>();
+    const preserveExisting = targetQuantity > item.pickedQuantity ||
+      (item.serialNumbers?.length === serialNumbers.length &&
+        item.serialNumbers.every((number) => serialNumbers.includes(number)));
+    planned.forEach((allocation, index) => {
+      if (preserveExisting && index < existing.length) {
+        const prior = existing[index].serialNumbers ?? [];
+        if (prior.length !== allocation.quantity || prior.some((number) => !serialNumbers.includes(number))) {
+          throw new Error("Persisted Picking serial selection is inconsistent");
+        }
+        allocation.serialNumbers = [...prior];
+        prior.forEach((number) => used.add(number));
+        return;
+      }
+      const matching = serials.filter((serial) =>
+        (serial.locationId ?? null) === (allocation.locationId ?? null) &&
+        (!product.tracking.lot || serial.lotId === allocation.lotId));
+      const unassigned = matching.filter((serial) => !used.has(serial.serialNumber));
+      if (unassigned.length < allocation.quantity) {
+        throw new Error("Picked serials do not match reserved location/FEFO lot allocation");
+      }
+      const selected = unassigned.slice(0, allocation.quantity);
+      allocation.serialNumbers = selected.map((serial) => serial.serialNumber);
+      selected.forEach((serial) => used.add(serial.serialNumber));
+    });
+    if (used.size !== serialNumbers.length) {
+      throw new Error("Picked serials include an unallocated serial number");
+    }
+  }
+  return planned;
+}
+
+/** Same reservation/FEFO capacity plan used by mutation and serial-option projection. */
+export function planPickingAllocationCapacity(
+  db: MockDatabase,
+  item: PickingItem,
+  reservation: InventoryReservation,
+  product: Product,
+  targetQuantity: number,
+  at: string,
+  allowPartial = false,
+): { existing: PickedAllocation[]; planned: PickedAllocation[] } {
   const existing = item.pickedAllocations ?? [];
   if (existing.reduce((total, entry) => total + entry.quantity, 0) !== item.pickedQuantity) {
     throw new Error(`Persisted Picking selections are incomplete: ${item.id}`);
@@ -120,40 +174,8 @@ export function planPickedAllocations(
       locationRemaining -= lotQuantity;
       remaining -= lotQuantity;
     }
-    if (locationRemaining > 0) throw new Error("Insufficient eligible lot stock for Picking");
+    if (locationRemaining > 0 && !allowPartial) throw new Error("Insufficient eligible lot stock for Picking");
   }
-  if (remaining > 0) throw new Error("Picked quantity exceeds reserved allocations");
-  if (product.tracking.serial) {
-    const serials = db.serialNumbers.filter((entry) => entry.tenantId === reservation.tenantId &&
-      serialNumbers.includes(entry.serialNumber));
-    const used = new Set<string>();
-    const preserveExisting = targetQuantity > item.pickedQuantity ||
-      (item.serialNumbers?.length === serialNumbers.length &&
-        item.serialNumbers.every((number) => serialNumbers.includes(number)));
-    planned.forEach((allocation, index) => {
-      if (preserveExisting && index < existing.length) {
-        const prior = existing[index].serialNumbers ?? [];
-        if (prior.length !== allocation.quantity || prior.some((number) => !serialNumbers.includes(number))) {
-          throw new Error("Persisted Picking serial selection is inconsistent");
-        }
-        allocation.serialNumbers = [...prior];
-        prior.forEach((number) => used.add(number));
-        return;
-      }
-      const matching = serials.filter((serial) =>
-        (serial.locationId ?? null) === (allocation.locationId ?? null) &&
-        (!product.tracking.lot || serial.lotId === allocation.lotId));
-      const unassigned = matching.filter((serial) => !used.has(serial.serialNumber));
-      if (unassigned.length < allocation.quantity) {
-        throw new Error("Picked serials do not match reserved location/FEFO lot allocation");
-      }
-      const selected = unassigned.slice(0, allocation.quantity);
-      allocation.serialNumbers = selected.map((serial) => serial.serialNumber);
-      selected.forEach((serial) => used.add(serial.serialNumber));
-    });
-    if (used.size !== serialNumbers.length) {
-      throw new Error("Picked serials include an unallocated serial number");
-    }
-  }
-  return planned;
+  if (remaining > 0 && !allowPartial) throw new Error("Picked quantity exceeds reserved allocations");
+  return { existing, planned };
 }

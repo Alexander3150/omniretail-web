@@ -1,5 +1,5 @@
 import type { InventoryTransfer, InventoryTransferItem } from "@/core/entities";
-import type { InventoryTransferStatus } from "@/core/enums";
+import type { InventoryTransferReason, InventoryTransferStatus } from "@/core/enums";
 
 export interface InventoryTransferFilters {
   tenantId?: string;
@@ -20,9 +20,11 @@ export interface CreateInventoryTransferInput {
   tenantId: string;
   sourceBranchId: string;
   destinationBranchId: string;
+  operationId: string;
   sourceRequestIds?: string[];
+  reason?: InventoryTransferReason;
   notes?: string;
-  preparedByUserId?: string;
+  preparedByUserId: string;
   items: CreateInventoryTransferItemInput[];
 }
 
@@ -32,17 +34,20 @@ export interface DispatchInventoryTransferItemInput {
 }
 
 export interface DispatchInventoryTransferInput {
-  dispatchedByUserId?: string;
+  dispatchedByUserId: string;
+  operationId: string;
   items: DispatchInventoryTransferItemInput[];
 }
 
 export interface ReceiveInventoryTransferItemInput {
   itemId: string;
   receivedQuantity: number;
+  locationId: string;
 }
 
 export interface ReceiveInventoryTransferInput {
-  receivedByUserId?: string;
+  receivedByUserId: string;
+  confirmationId: string;
   items: ReceiveInventoryTransferItemInput[];
 }
 
@@ -64,5 +69,9 @@ export interface InventoryTransferRepository {
     id: string,
     input: ReceiveInventoryTransferInput,
   ): Promise<InventoryTransferWithItems>;
-  cancel(id: string, reason?: string): Promise<InventoryTransferWithItems>;
+  cancel(id: string, input: {
+    reason: string;
+    actorUserId: string;
+    operationId: string;
+  }): Promise<InventoryTransferWithItems>;
 }

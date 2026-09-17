@@ -159,8 +159,8 @@ function assertAllReferencesExist(db: ReturnType<typeof createMockDatabase>): vo
     assert.ok(pickingOrderIds.has(item.pickingOrderId), `picking order roto: ${item.id}`);
     assert.ok(orderItemIds.has(item.orderItemId), `picking item/order item roto: ${item.id}`);
   });
-  db.dispatches.forEach((item) =>
-    assert.ok(orderIds.has(item.orderId), `dispatch order rota: ${item.id}`),
+  db.dispatches.filter((item) => item.sourceType !== "transfer").forEach((item) =>
+    assert.ok(item.orderId && orderIds.has(item.orderId), `dispatch order rota: ${item.id}`),
   );
   db.packages.forEach((item) =>
     assert.ok(dispatchIds.has(item.dispatchId), `package dispatch roto: ${item.id}`),

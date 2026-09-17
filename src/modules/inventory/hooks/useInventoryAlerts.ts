@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LocationStatus, SaasCapabilityKey } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
@@ -23,6 +23,11 @@ import {
   CreateTransferRequestService,
   RejectTransferRequestService,
 } from "@/modules/inventory/application/services/TransferRequestServices";
+import { CancelInventoryTransferService, CreateInventoryTransferService } from "@/modules/inventory/application/services/InventoryTransferServices";
+import {
+  GetInventoryTransferHistoryService,
+  type TransferHistoryRow,
+} from "@/modules/inventory/application/services/GetInventoryTransferHistoryService";
 import {
   INVENTORY_ADJUSTMENT_CREATE_PERMISSION,
   INVENTORY_TRANSFERS_MANAGE_PERMISSION,
@@ -65,7 +70,21 @@ export function useInventoryAlerts() {
     }),
     [repositories],
   );
+  const createInventoryTransferService = useMemo(
+    () => new CreateInventoryTransferService(repositories), [repositories],
+  );
+  const cancelInventoryTransferService = useMemo(
+    () => new CancelInventoryTransferService(repositories), [repositories],
+  );
+  const transferHistoryService = useMemo(
+    () => new GetInventoryTransferHistoryService(repositories), [repositories],
+  );
   const [data, setData] = useState<InventoryAlertsData>(EMPTY_DATA);
+  const [transferHistory, setTransferHistory] = useState<TransferHistoryRow[]>([]);
+  const [transferHistoryBranchId, setTransferHistoryBranchId] = useState("");
+  const [transferHistoryLoading, setTransferHistoryLoading] = useState(true);
+  const [transferHistoryError, setTransferHistoryError] = useState<string | null>(null);
+  const transferHistoryRequest = useRef(0);
   const [branchId, setBranchIdState] = useState("");
   const [search, setSearchState] = useState("");
   const [categoryId, setCategoryIdState] = useState("all");
@@ -104,6 +123,50 @@ export function useInventoryAlerts() {
     }
   }, [branchLoading, effectiveBranchId, getService, sessionLoading]);
 
+  const reloadTransferHistory = useCallback(async () => {
+    const requestId = ++transferHistoryRequest.current;
+    if (!effectiveBranchId || branchLoading || sessionLoading) return;
+    try {
+      const rows = await transferHistoryService.execute(effectiveBranchId);
+      if (requestId === transferHistoryRequest.current) {
+        setTransferHistory(rows);
+        setTransferHistoryBranchId(effectiveBranchId);
+        setTransferHistoryError(null);
+      }
+    } catch {
+      if (requestId === transferHistoryRequest.current) {
+        setTransferHistory([]);
+        setTransferHistoryBranchId(effectiveBranchId);
+        setTransferHistoryError("No se pudo cargar el historial de traslados.");
+      }
+    } finally {
+      if (requestId === transferHistoryRequest.current) setTransferHistoryLoading(false);
+    }
+  }, [branchLoading, effectiveBranchId, sessionLoading, transferHistoryService]);
+
+  useEffect(() => {
+    const requestId = ++transferHistoryRequest.current;
+    if (effectiveBranchId && !branchLoading && !sessionLoading) {
+      void transferHistoryService.execute(effectiveBranchId)
+        .then((rows) => {
+          if (requestId !== transferHistoryRequest.current) return;
+          setTransferHistory(rows);
+          setTransferHistoryBranchId(effectiveBranchId);
+          setTransferHistoryError(null);
+        })
+        .catch(() => {
+          if (requestId !== transferHistoryRequest.current) return;
+          setTransferHistory([]);
+          setTransferHistoryBranchId(effectiveBranchId);
+          setTransferHistoryError("No se pudo cargar el historial de traslados.");
+        })
+        .finally(() => {
+          if (requestId === transferHistoryRequest.current) setTransferHistoryLoading(false);
+        });
+    }
+    return () => { transferHistoryRequest.current += 1; };
+  }, [branchLoading, effectiveBranchId, sessionLoading, transferHistoryService]);
+
   useEffect(() => {
     let active = true;
     if (!effectiveBranchId || branchLoading || sessionLoading) {
@@ -135,6 +198,12 @@ export function useInventoryAlerts() {
   useDataEvent("inventory.changed", reload);
   useDataEvent("stock.changed", reload);
   useDataEvent("inventory-transfer-request.changed", reload);
+  useDataEvent("inventory-transfer.changed", reload);
+  useDataEvent("inventory-transfer.changed", reloadTransferHistory);
+  useDataEvent("picking.changed", reloadTransferHistory);
+  useDataEvent("packing.changed", reloadTransferHistory);
+  useDataEvent("dispatch.changed", reloadTransferHistory);
+  useDataEvent("receipt.changed", reloadTransferHistory);
   useDataEvent("product.changed", reload);
   useDataEvent("category.changed", reload);
   useDataEvent("business-config.changed", reload);
@@ -225,6 +294,51 @@ export function useInventoryAlerts() {
     }
   }
 
+  async function createTransfer(dto: TransferRequestDto, operationId: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      if (!currentBranch || !activeBranch || effectiveBranchId !== currentBranch.id ||
+        dto.requesterBranchId !== currentBranch.id) {
+        throw new Error("Selecciona la sucursal destino activa.");
+      }
+      const result = await createInventoryTransferService.execute({
+        destinationBranchId: currentBranch.id,
+        sourceBranchId: dto.providerBranchId,
+        productId: dto.productId,
+        quantity: dto.quantity,
+        reason: dto.reason,
+        notes: dto.notes,
+        operationId,
+      });
+      await reload();
+      return result.transfer;
+    } catch (caughtError) {
+      const message = cleanInventoryError(caughtError, "No se pudo crear el traslado.");
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancelTransfer(transferId: string, reason: string, operationId: string) {
+    if (busy) throw new Error("Hay otra operación en curso.");
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await cancelInventoryTransferService.execute(transferId, reason, operationId);
+      await Promise.all([reloadTransferHistory(), reload()]);
+      return result.transfer;
+    } catch (caughtError) {
+      const message = cleanInventoryError(caughtError, "No se pudo cancelar el traslado.");
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function approveTransferRequest(requestId: string) {
     setBusy(true);
     setError(null);
@@ -257,10 +371,15 @@ export function useInventoryAlerts() {
 
   return {
     data,
+    transferHistory: transferHistoryBranchId === effectiveBranchId ? transferHistory : [],
+    transferHistoryLoading: Boolean(effectiveBranchId) && !branchLoading && !sessionLoading &&
+      (transferHistoryBranchId !== effectiveBranchId || transferHistoryLoading),
+    transferHistoryError: transferHistoryBranchId === effectiveBranchId ? transferHistoryError : null,
     kpis: filteredKpis,
     rows: filteredRows,
     branchId: effectiveBranchId,
     activeBranch,
+    canCreateTransferForActiveBranch: Boolean(currentBranch && effectiveBranchId === currentBranch.id),
     branches: data.branches.length ? data.branches : headerBranches,
     categories: data.categories,
     locations: activeLocations,
@@ -288,6 +407,8 @@ export function useInventoryAlerts() {
     canManageTransfers,
     adjustStock,
     requestTransfer,
+    createTransfer,
+    cancelTransfer,
     approveTransferRequest,
     rejectTransferRequest,
   };

@@ -117,6 +117,7 @@ export enum LocationStatus {
 export enum SerialStatus {
   available = "available",
   reserved = "reserved",
+  in_transit = "in_transit",
   sold = "sold",
   damaged = "damaged",
   archived = "archived",

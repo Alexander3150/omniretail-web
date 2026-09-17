@@ -1,4 +1,9 @@
-import { InventoryTransferRequestStatus, InventoryTransferStatus } from "@/core/enums";
+import {
+  BranchStatus, DispatchStatus, InventoryMovementType, InventoryReservationStatus, InventoryTransferRequestStatus,
+  InventoryTransferStatus, LocationStatus, PackingStatus, PickingIncidentStatus,
+  PickingItemStatus, PickingPriority, PickingStatus, ProductType, ReceiptLineStatus,
+  ReceiptStatus, SerialStatus, TransportMode, UserStatus, UserType,
+} from "@/core/enums";
 import type { InventoryTransfer, InventoryTransferItem } from "@/core/entities";
 import type {
   CreateInventoryTransferInput,
@@ -7,6 +12,8 @@ import type {
 } from "@/core/repositories";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
+import { reserveOrderItemInDatabase } from "@/infrastructure/mock/repositories/inventoryReservationMutations";
+import { commitPickedOrderInventoryInDatabase } from "@/infrastructure/mock/repositories/commitPickedOrderInventoryInDatabase";
 
 export class MockInventoryTransferRepository
   extends BaseMockRepository
@@ -42,8 +49,27 @@ export class MockInventoryTransferRepository
   }
 
   async create(input: CreateInventoryTransferInput) {
-    const item = this.store.mutate((db) => {
+    const item = this.store.transact((db) => {
       this.assertValidCreateInput(db, input);
+      const fingerprint = JSON.stringify({
+        tenantId: input.tenantId, sourceBranchId: input.sourceBranchId,
+        destinationBranchId: input.destinationBranchId,
+        items: input.items.map((entry) => ({ productId: entry.productId,
+          requestedQuantity: entry.requestedQuantity, sourceRequestId: entry.sourceRequestId ?? null })),
+        notes: input.notes?.trim() || null,
+        reason: input.reason ?? null,
+      });
+      const existing = db.inventoryTransfers.find((entry) =>
+        entry.tenantId === input.tenantId && entry.operationId === input.operationId);
+      if (existing) {
+        if (existing.operationFingerprint !== fingerprint) {
+          throw new Error(`Transfer operation conflict: ${input.operationId}`);
+        }
+        const picking = db.pickingOrders.filter((entry) =>
+          entry.sourceType === "transfer" && entry.sourceId === existing.id);
+        if (picking.length !== 1) throw new Error(`Transfer Picking conflict: ${existing.id}`);
+        return { ...this.toTransferWithItems(db, existing), created: false };
+      }
       const now = this.now();
       const sourceRequestIds = this.getTransferSourceRequestIds(input);
       const transfer: InventoryTransfer = {
@@ -53,7 +79,10 @@ export class MockInventoryTransferRepository
         sourceBranchId: input.sourceBranchId,
         destinationBranchId: input.destinationBranchId,
         status: InventoryTransferStatus.preparing,
+        operationId: input.operationId,
+        operationFingerprint: fingerprint,
         sourceRequestIds: sourceRequestIds.length ? sourceRequestIds : undefined,
+        reason: input.reason,
         notes: input.notes?.trim() || undefined,
         preparedByUserId: input.preparedByUserId,
         createdAt: now,
@@ -70,22 +99,109 @@ export class MockInventoryTransferRepository
       }));
       db.inventoryTransfers.push(transfer);
       db.inventoryTransferItems.push(...items);
-      return { transfer, items };
+      const pickingId = this.id("picking");
+      db.pickingOrders.push({
+        id: pickingId, tenantId: input.tenantId, branchId: input.sourceBranchId,
+        sourceType: "transfer", sourceId: transfer.id,
+        status: PickingStatus.pending, priority: PickingPriority.normal,
+        createdAt: now, updatedAt: now,
+      });
+      for (const transferItem of items) {
+        const reservation = reserveOrderItemInDatabase(db, {
+          tenantId: input.tenantId, branchId: input.sourceBranchId,
+          orderItemId: transferItem.id,
+          sourceType: "transfer", sourceId: transfer.id,
+          productId: transferItem.productId, quantity: transferItem.requestedQuantity,
+        }, { id: (prefix) => this.id(prefix), now: () => now }).reservation;
+        db.pickingItems.push({
+          id: this.id("picking-item"), pickingOrderId: pickingId,
+          orderItemId: transferItem.id, productId: transferItem.productId,
+          requestedQuantity: transferItem.requestedQuantity, pickedQuantity: 0,
+          locationId: reservation.allocations[0]?.locationId,
+          status: PickingItemStatus.pending,
+        });
+      }
+      return { transfer, items, created: true };
     });
-    this.emitChanged(item.transfer, "created");
-    return item;
+    if (item.created) {
+      this.emitChanged(item.transfer, "created");
+      const picking = this.read((db) => db.pickingOrders.find((entry) =>
+        entry.sourceType === "transfer" && entry.sourceId === item.transfer.id));
+      if (picking) this.emitPickingChanged(picking, "created");
+      this.emitStockChanged(item.transfer, item.items, item.transfer.sourceBranchId);
+    }
+    return { transfer: item.transfer, items: item.items };
   }
 
   async markInTransit(
     id: string,
     input: Parameters<InventoryTransferRepository["markInTransit"]>[1],
   ) {
-    const item = this.store.mutate((db) => {
+    const item = this.store.transact((db) => {
       const current = this.findTransfer(db, id);
-      this.assertStatus(current, [InventoryTransferStatus.preparing], "mark in transit");
+      this.assertTransferActor(db, current, input.dispatchedByUserId);
+      if (!input.operationId?.trim()) throw new Error("Transfer dispatch operationId is required");
       const currentItems = db.inventoryTransferItems.filter((entry) => entry.transferId === id);
       this.assertValidQuantityUpdates(input.items, currentItems, "dispatchedQuantity");
+      if (input.items.length !== currentItems.length || currentItems.some((entry) =>
+        input.items.find((candidate) => candidate.itemId === entry.id)?.dispatchedQuantity !==
+          entry.requestedQuantity)) {
+        throw new Error("Transfer dispatch requires every requested item in full");
+      }
+      const picking = db.pickingOrders.find((entry) => entry.sourceType === "transfer" &&
+        entry.sourceId === current.id && entry.tenantId === current.tenantId &&
+        entry.branchId === current.sourceBranchId);
+      const packing = db.packings.find((entry) => entry.sourceType === "transfer" &&
+        entry.sourceId === current.id && entry.tenantId === current.tenantId &&
+        entry.branchId === current.sourceBranchId);
+      if (!picking || picking.status !== PickingStatus.completed || !packing ||
+        packing.status !== PackingStatus.finalized || !packing.labelPrintedAt ||
+        !packing.packageCount || !packing.totalWeight ||
+        db.pickingIncidents.some((entry) => entry.pickingOrderId === picking.id &&
+          entry.status === PickingIncidentStatus.open)) {
+        throw new Error("Transfer Picking/Packing is not ready for Dispatch");
+      }
+      const fingerprint = JSON.stringify({ id, items: [...input.items].sort((a, b) =>
+        a.itemId.localeCompare(b.itemId)), actor: input.dispatchedByUserId,
+        packingId: packing.id, labelGenerationId: packing.labelGenerationId });
+      const dispatches = db.dispatches.filter((entry) => entry.sourceType === "transfer" &&
+        entry.sourceId === current.id && entry.tenantId === current.tenantId);
+      if (dispatches.length > 1) throw new Error("Duplicate Transfer Dispatch records");
+      const existing = dispatches[0];
+      if (existing) {
+        if (![InventoryTransferStatus.inTransit, InventoryTransferStatus.received].includes(current.status) ||
+          existing.status !== DispatchStatus.dispatched ||
+          existing.confirmationOperationId !== input.operationId ||
+          existing.confirmationFingerprint !== fingerprint) {
+          throw new Error("Transfer Dispatch retry conflict");
+        }
+        return { ...this.toTransferWithItems(db, current), changed: false };
+      }
+      this.assertStatus(current, [InventoryTransferStatus.preparing], "mark in transit");
+      if (db.dispatches.some((entry) => entry.tenantId === current.tenantId &&
+        entry.confirmationOperationId === input.operationId)) {
+        throw new Error("Transfer Dispatch operationId conflict");
+      }
       const now = this.now();
+      const dispatchId = this.id("dispatch");
+      commitPickedOrderInventoryInDatabase(db, {
+        transfer: current, picking, actorUserId: input.dispatchedByUserId,
+        operationId: input.operationId, referenceType: "transfer", referenceId: current.id,
+        reason: `Salida por traslado ${current.number}`,
+      }, { id: (prefix) => this.id(prefix), now: () => now });
+      db.dispatches.push({
+        id: dispatchId, tenantId: current.tenantId, branchId: current.sourceBranchId,
+        sourceType: "transfer", sourceId: current.id,
+        status: DispatchStatus.dispatched, transportMode: TransportMode.own_fleet,
+        dispatchedByUserId: input.dispatchedByUserId,
+        confirmationOperationId: input.operationId, confirmationFingerprint: fingerprint,
+        packageCount: packing.packageCount, weight: packing.totalWeight,
+        dispatchedAt: now, createdAt: now, updatedAt: now,
+      });
+      for (let index = 0; index < packing.packageCount; index += 1) {
+        db.packages.push({ id: this.id("package"), dispatchId, number: `${index + 1}`,
+          description: packing.labelCode, createdAt: now });
+      }
       input.items.forEach((nextItem) => {
         const index = db.inventoryTransferItems.findIndex((entry) => entry.id === nextItem.itemId);
         db.inventoryTransferItems[index] = {
@@ -100,22 +216,155 @@ export class MockInventoryTransferRepository
         dispatchedAt: now,
         updatedAt: now,
       });
-      return this.toTransferWithItems(db, updated);
+      return { ...this.toTransferWithItems(db, updated), changed: true };
     });
-    this.emitChanged(item.transfer, "status_changed");
-    return item;
+    if (item.changed) {
+      this.emitChanged(item.transfer, "status_changed");
+      const dispatch = this.read((db) => db.dispatches.find((entry) =>
+        entry.sourceType === "transfer" && entry.sourceId === item.transfer.id));
+      if (dispatch) {
+        try {
+          this.emit("dispatch.changed", { entityId: dispatch.id,
+            tenantId: dispatch.tenantId, branchId: dispatch.branchId,
+            action: "status_changed" });
+        } catch { /* Commit already succeeded. */ }
+      }
+      this.emitTransferMovements(item.transfer, InventoryMovementType.out);
+    }
+    return { transfer: item.transfer, items: item.items };
   }
 
   async markReceived(
     id: string,
     input: Parameters<InventoryTransferRepository["markReceived"]>[1],
   ) {
-    const item = this.store.mutate((db) => {
+    const item = this.store.transact((db) => {
       const current = this.findTransfer(db, id);
-      this.assertStatus(current, [InventoryTransferStatus.inTransit], "mark received");
+      this.assertTransferActor(db, current, input.receivedByUserId);
+      if (!input.confirmationId?.trim()) throw new Error("Transfer receipt confirmationId is required");
       const currentItems = db.inventoryTransferItems.filter((entry) => entry.transferId === id);
       this.assertValidQuantityUpdates(input.items, currentItems, "receivedQuantity");
+      if (input.items.length !== currentItems.length || currentItems.some((entry) =>
+        input.items.find((candidate) => candidate.itemId === entry.id)?.receivedQuantity !==
+          entry.dispatchedQuantity)) {
+        throw new Error("Transfer receipt requires every dispatched item in full");
+      }
+      const fingerprint = JSON.stringify({ id, actor: input.receivedByUserId,
+        items: [...input.items].sort((a, b) => a.itemId.localeCompare(b.itemId)) });
+      const existing = db.receipts.find((entry) => entry.tenantId === current.tenantId &&
+        entry.inventoryTransferId === current.id);
+      if (existing) {
+        if (current.status !== InventoryTransferStatus.received ||
+          existing.confirmationId !== input.confirmationId ||
+          existing.confirmationFingerprint !== fingerprint) {
+          throw new Error("Transfer receipt retry conflict");
+        }
+        return { ...this.toTransferWithItems(db, current), changed: false };
+      }
+      if (db.receipts.some((entry) => entry.tenantId === current.tenantId &&
+        entry.confirmationId === input.confirmationId)) {
+        throw new Error("Transfer receipt confirmationId conflict");
+      }
+      this.assertStatus(current, [InventoryTransferStatus.inTransit], "mark received");
+      const dispatch = db.dispatches.find((entry) => entry.sourceType === "transfer" &&
+        entry.sourceId === current.id && entry.status === DispatchStatus.dispatched &&
+        entry.tenantId === current.tenantId && entry.branchId === current.sourceBranchId);
+      if (!dispatch) throw new Error("Transfer Dispatch not found for receipt");
       const now = this.now();
+      const receiptId = this.id("receipts");
+      const receipt = {
+        id: receiptId, tenantId: current.tenantId, branchId: current.destinationBranchId,
+        number: `RC-${current.number}`, inventoryTransferId: current.id,
+        status: ReceiptStatus.received, confirmationId: input.confirmationId,
+        confirmationFingerprint: fingerprint, receivedByUserId: input.receivedByUserId,
+        receivedAt: now, createdAt: now, updatedAt: now,
+      };
+      const outMovements = db.inventoryMovements.filter((movement) =>
+        movement.tenantId === current.tenantId && movement.branchId === current.sourceBranchId &&
+        movement.referenceType === "transfer" && movement.referenceId === current.id &&
+        movement.type === InventoryMovementType.out);
+      for (const transferItem of currentItems) {
+        const receiptItem = input.items.find((entry) => entry.itemId === transferItem.id)!;
+        const location = db.storageLocations.find((entry) => entry.id === receiptItem.locationId &&
+          entry.tenantId === current.tenantId && entry.branchId === current.destinationBranchId &&
+          entry.status === LocationStatus.active);
+        if (!location) throw new Error("Transfer receipt destination location is unavailable");
+        const movements = outMovements.filter((entry) => entry.productId === transferItem.productId);
+        if (movements.reduce((sum, entry) => sum + entry.quantity, 0) !==
+          transferItem.dispatchedQuantity) {
+          throw new Error("Transfer receipt cannot reconcile physical dispatch movements");
+        }
+        const product = db.products.find((entry) => entry.id === transferItem.productId &&
+          entry.tenantId === current.tenantId);
+        if (!product) throw new Error("Transfer receipt product is unavailable");
+        for (const movement of movements) {
+          let balance = db.inventoryBalances.find((entry) =>
+            entry.tenantId === current.tenantId && entry.branchId === current.destinationBranchId &&
+            entry.productId === transferItem.productId && entry.locationId === location.id);
+          if (!balance) {
+            balance = { id: this.id("inventory-balance"), tenantId: current.tenantId,
+              branchId: current.destinationBranchId, productId: transferItem.productId,
+              locationId: location.id, quantity: 0, reservedQuantity: 0, updatedAt: now };
+            db.inventoryBalances.push(balance);
+          }
+          const before = balance.quantity;
+          let destinationLotId: string | undefined;
+          if (product.tracking.lot) {
+            const sourceLot = db.stockLots.find((entry) => entry.id === movement.lotId &&
+              entry.tenantId === current.tenantId && entry.branchId === current.sourceBranchId &&
+              entry.productId === transferItem.productId);
+            if (!sourceLot) throw new Error("Transfer source lot evidence is missing");
+            let destinationLot = db.stockLots.find((entry) =>
+              entry.tenantId === current.tenantId && entry.branchId === current.destinationBranchId &&
+              entry.productId === transferItem.productId && entry.locationId === location.id &&
+              entry.lotNumber === sourceLot.lotNumber);
+            if (destinationLot && destinationLot.expirationDate !== sourceLot.expirationDate) {
+              throw new Error("Transfer destination lot metadata conflicts with source");
+            }
+            if (!destinationLot) {
+              destinationLot = { id: this.id("stock-lot"), tenantId: current.tenantId,
+                branchId: current.destinationBranchId, productId: transferItem.productId,
+                locationId: location.id, lotNumber: sourceLot.lotNumber,
+                expirationDate: sourceLot.expirationDate, quantity: 0, createdAt: now };
+              db.stockLots.push(destinationLot);
+            }
+            destinationLot.quantity += movement.quantity;
+            destinationLotId = destinationLot.id;
+          }
+          if (product.tracking.serial) {
+            const serial = db.serialNumbers.find((entry) => entry.id === movement.serialNumberId &&
+              entry.tenantId === current.tenantId && entry.branchId === current.sourceBranchId &&
+              entry.productId === transferItem.productId && entry.status === SerialStatus.in_transit);
+            if (!serial || movement.quantity !== 1) throw new Error("Transfer serial evidence is invalid");
+            serial.branchId = current.destinationBranchId;
+            serial.locationId = location.id;
+            serial.lotId = destinationLotId;
+            serial.status = SerialStatus.available;
+            serial.updatedAt = now;
+          }
+          balance.quantity += movement.quantity;
+          balance.updatedAt = now;
+          db.inventoryMovements.push({ id: this.id("movement"), tenantId: current.tenantId,
+            branchId: current.destinationBranchId, productId: transferItem.productId,
+            lotId: destinationLotId, serialNumberId: movement.serialNumberId,
+            type: InventoryMovementType.in, reason: `Entrada por traslado ${current.number}`,
+            quantity: movement.quantity, quantityBefore: before, quantityAfter: balance.quantity,
+            toLocationId: location.id, referenceType: "transfer", referenceId: current.id,
+            performedByUserId: input.receivedByUserId, createdAt: now });
+          db.receiptLines.push({ id: this.id("receipt-line"), receiptId,
+            productId: transferItem.productId, orderedQuantity: movement.quantity,
+            receivedQuantity: movement.quantity, inventoryQuantity: movement.quantity,
+            status: ReceiptLineStatus.complete, locationId: location.id,
+            lotId: destinationLotId,
+            lotNumber: destinationLotId ? db.stockLots.find((entry) =>
+              entry.id === destinationLotId)?.lotNumber : undefined,
+            expirationDate: destinationLotId ? db.stockLots.find((entry) =>
+              entry.id === destinationLotId)?.expirationDate : undefined,
+            serialNumbers: movement.serialNumberId ? [db.serialNumbers.find((entry) =>
+              entry.id === movement.serialNumberId)!.serialNumber] : undefined });
+        }
+      }
+      db.receipts.push(receipt);
       input.items.forEach((nextItem) => {
         const index = db.inventoryTransferItems.findIndex((entry) => entry.id === nextItem.itemId);
         db.inventoryTransferItems[index] = {
@@ -130,35 +379,101 @@ export class MockInventoryTransferRepository
         receivedAt: now,
         updatedAt: now,
       });
-      return this.toTransferWithItems(db, updated);
+      return { ...this.toTransferWithItems(db, updated), changed: true };
     });
-    this.emitChanged(item.transfer, "status_changed");
-    return item;
+    if (item.changed) {
+      this.emitChanged(item.transfer, "status_changed");
+      const receipt = this.read((db) => db.receipts.find((entry) =>
+        entry.inventoryTransferId === item.transfer.id));
+      if (receipt) {
+        try {
+          this.emit("receipt.changed", { entityId: receipt.id,
+            tenantId: receipt.tenantId, branchId: receipt.branchId,
+            action: "status_changed" });
+        } catch { /* Commit already succeeded. */ }
+      }
+      this.emitTransferMovements(item.transfer, InventoryMovementType.in);
+    }
+    return { transfer: item.transfer, items: item.items };
   }
 
-  async cancel(id: string, reason?: string) {
-    const item = this.store.mutate((db) => {
+  async cancel(id: string, input: Parameters<InventoryTransferRepository["cancel"]>[1]) {
+    const item = this.store.transact((db) => {
       const current = this.findTransfer(db, id);
-      this.assertStatus(
-        current,
-        [InventoryTransferStatus.preparing, InventoryTransferStatus.inTransit],
-        "cancel",
-      );
+      this.assertTransferActor(db, current, input.actorUserId);
+      if (!input.operationId?.trim()) throw new Error("Transfer cancel operationId is required");
+      const fingerprint = JSON.stringify({ id, reason: input.reason.trim(),
+        actorUserId: input.actorUserId });
+      if (current.status === InventoryTransferStatus.cancelled) {
+        if (current.cancelOperationId !== input.operationId ||
+          current.cancelFingerprint !== fingerprint) throw new Error("Transfer cancel retry conflict");
+        return { ...this.toTransferWithItems(db, current), changed: false };
+      }
+      this.assertStatus(current, [InventoryTransferStatus.preparing], "cancel");
+      if (db.dispatches.some((entry) => entry.sourceType === "transfer" &&
+        entry.sourceId === current.id)) throw new Error("Dispatched Transfer cannot be cancelled");
       const now = this.now();
+      for (const reservation of db.inventoryReservations.filter((entry) =>
+        entry.sourceType === "transfer" && entry.sourceId === current.id &&
+        entry.tenantId === current.tenantId)) {
+        if (reservation.status !== InventoryReservationStatus.active) {
+          throw new Error("Transfer reservation is not active");
+        }
+        for (const allocation of reservation.allocations) {
+          if (allocation.consumedQuantity !== 0) throw new Error("Transfer has consumed stock");
+          const balance = db.inventoryBalances.find((entry) => entry.id === allocation.balanceId &&
+            entry.tenantId === current.tenantId && entry.branchId === current.sourceBranchId);
+          if (!balance || balance.reservedQuantity < allocation.reservedQuantity) {
+            throw new Error("Transfer reservation balance conflict");
+          }
+          balance.reservedQuantity -= allocation.reservedQuantity;
+          balance.updatedAt = now;
+        }
+        reservation.status = InventoryReservationStatus.released;
+        reservation.updatedAt = now;
+      }
+      const picking = db.pickingOrders.find((entry) => entry.sourceType === "transfer" &&
+        entry.sourceId === current.id);
+      if (picking) {
+        picking.status = PickingStatus.cancelled;
+        picking.updatedAt = now;
+        for (const line of db.pickingItems.filter((entry) =>
+          entry.pickingOrderId === picking.id)) {
+          line.pickedQuantity = 0;
+          line.pickedAllocations = undefined;
+          line.serialNumbers = undefined;
+          line.lotId = undefined;
+          line.status = PickingItemStatus.pending;
+        }
+      }
       const updated = this.replaceTransfer(db, {
         ...current,
         status: InventoryTransferStatus.cancelled,
-        notes: reason?.trim() || current.notes,
+        notes: input.reason.trim() || current.notes,
         cancelledAt: now,
+        cancelledByUserId: input.actorUserId,
+        cancelOperationId: input.operationId,
+        cancelFingerprint: fingerprint,
         updatedAt: now,
       });
-      return this.toTransferWithItems(db, updated);
+      return { ...this.toTransferWithItems(db, updated), changed: true };
     });
-    this.emitChanged(item.transfer, "status_changed");
-    return item;
+    if (item.changed) {
+      this.emitChanged(item.transfer, "status_changed");
+      const picking = this.read((db) => db.pickingOrders.find((entry) =>
+        entry.sourceType === "transfer" && entry.sourceId === item.transfer.id));
+      if (picking) this.emitPickingChanged(picking, "status_changed");
+      this.emitStockChanged(item.transfer, item.items, item.transfer.sourceBranchId);
+    }
+    return { transfer: item.transfer, items: item.items };
   }
 
   private assertValidCreateInput(db: MockDatabase, input: CreateInventoryTransferInput): void {
+    if (!input.operationId?.trim()) throw new Error("Transfer operationId is required");
+    const actor = db.users.find((user) => user.id === input.preparedByUserId &&
+      user.tenantId === input.tenantId && user.status === UserStatus.active &&
+      user.type === UserType.employee);
+    if (!actor) throw new Error("Transfer actor is not active in tenant");
     if (input.sourceBranchId === input.destinationBranchId) {
       throw new Error("Inventory transfer branches must be different");
     }
@@ -169,8 +484,14 @@ export class MockInventoryTransferRepository
     if (sourceBranch.tenantId !== input.tenantId || destinationBranch.tenantId !== input.tenantId) {
       throw new Error("Inventory transfer branches must match transfer tenant");
     }
+    if (sourceBranch.status !== BranchStatus.active || destinationBranch.status !== BranchStatus.active) {
+      throw new Error("Inventory transfer branches must be active");
+    }
     if (input.items.length === 0) {
       throw new Error("Inventory transfer must include at least one item");
+    }
+    if (new Set(input.items.map((item) => item.productId)).size !== input.items.length) {
+      throw new Error("Inventory transfer cannot repeat a product in multiple items");
     }
     this.assertValidTransferSourceRequests(input);
     input.items.forEach((item) => {
@@ -178,6 +499,9 @@ export class MockInventoryTransferRepository
       if (!product) throw this.missing("Product", item.productId);
       if (product.tenantId !== input.tenantId) {
         throw new Error("Inventory transfer item product must match transfer tenant");
+      }
+      if (product.productType !== ProductType.physical || !product.tracking.stock) {
+        throw new Error("Inventory transfer requires a stock-tracked physical product");
       }
       if (item.sourceRequestId) {
         this.assertValidSourceRequest(db, {
@@ -190,6 +514,13 @@ export class MockInventoryTransferRepository
       }
       this.assertValidCreateQuantities(item);
     });
+  }
+
+  private assertTransferActor(db: MockDatabase, transfer: InventoryTransfer, actorUserId: string) {
+    if (!db.users.some((user) => user.id === actorUserId && user.tenantId === transfer.tenantId &&
+      user.status === UserStatus.active && user.type === UserType.employee)) {
+      throw new Error("Transfer actor is not active in tenant");
+    }
   }
 
   private assertValidTransferSourceRequests(input: CreateInventoryTransferInput): void {
@@ -251,6 +582,9 @@ export class MockInventoryTransferRepository
     this.assertRequestedQuantity(item.requestedQuantity);
     this.assertQuantity(dispatchedQuantity, "dispatchedQuantity");
     this.assertQuantity(receivedQuantity, "receivedQuantity");
+    if (dispatchedQuantity !== 0 || receivedQuantity !== 0) {
+      throw new Error("A new Transfer cannot begin with dispatched or received stock");
+    }
     if (dispatchedQuantity > item.requestedQuantity) {
       throw new Error(
         "Inventory transfer dispatchedQuantity must be less than or equal to requestedQuantity",
@@ -365,7 +699,7 @@ export class MockInventoryTransferRepository
   }
 
   private emitChanged(transfer: InventoryTransfer, action: "created" | "status_changed"): void {
-    this.emit("inventory-transfer.changed", {
+    try { this.emit("inventory-transfer.changed", {
       entityId: transfer.id,
       tenantId: transfer.tenantId,
       branchId: transfer.sourceBranchId,
@@ -376,6 +710,41 @@ export class MockInventoryTransferRepository
         destinationBranchId: transfer.destinationBranchId,
         status: transfer.status,
       },
-    });
+    }); } catch { /* Authoritative commit already succeeded. */ }
+  }
+
+  private emitPickingChanged(
+    picking: { id: string; tenantId: string; branchId: string; orderId?: string; sourceType?: "order" | "transfer"; sourceId?: string },
+    action: "created" | "status_changed",
+  ) {
+    try { this.emit("picking.changed", { entityId: picking.id,
+      tenantId: picking.tenantId, branchId: picking.branchId,
+      pickingOrderId: picking.id, orderId: picking.orderId, sourceType: picking.sourceType,
+      sourceId: picking.sourceId, action });
+    } catch { /* Authoritative commit already succeeded. */ }
+  }
+
+  private emitStockChanged(
+    transfer: InventoryTransfer, items: InventoryTransferItem[], branchId: string,
+  ) {
+    for (const item of items) {
+      try { this.emit("stock.changed", { entityId: transfer.id,
+        tenantId: transfer.tenantId, branchId, productId: item.productId,
+        action: "updated" });
+      } catch { /* Authoritative commit already succeeded. */ }
+    }
+  }
+
+  private emitTransferMovements(transfer: InventoryTransfer, type: InventoryMovementType) {
+    const movements = this.read((db) => db.inventoryMovements.filter((entry) =>
+      entry.tenantId === transfer.tenantId && entry.referenceType === "transfer" &&
+      entry.referenceId === transfer.id && entry.type === type));
+    for (const movement of movements) {
+      const payload = { entityId: movement.id, tenantId: movement.tenantId,
+        branchId: movement.branchId, productId: movement.productId,
+        action: "created" as const };
+      try { this.emit("inventory.changed", payload); } catch { /* Committed. */ }
+      try { this.emit("stock.changed", payload); } catch { /* Committed. */ }
+    }
   }
 }

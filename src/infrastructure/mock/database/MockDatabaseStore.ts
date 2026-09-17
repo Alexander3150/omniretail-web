@@ -157,15 +157,15 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   // Backfill para datos persistidos antes de que Role.status existiera -- sin esto, un rol
   // guardado en localStorage antes de este contrato quedaria con status undefined.
   normalized.roles = (database.roles ?? base.roles).map((role) => {
-    const isCanonicalDemoAdmin =
-      role.id === "role-admin" && role.tenantId === "tenant-demo" && role.isSystem;
+    const isCanonicalSystemAdmin =
+      role.isSystem && role.name === "Administrador" && role.branchScope === "all";
     const packingPermissions =
       role.id === "role-warehouse"
         ? ["logistics.packing.read", "logistics.packing.prepare", "logistics.packing.finalize"]
         : [];
     return {
       ...role,
-      permissions: isCanonicalDemoAdmin
+      permissions: isCanonicalSystemAdmin
         ? permissionsConfig.map((permission) => permission.key)
         : [...new Set([...role.permissions, ...packingPermissions])],
       status: role.status ?? RoleStatus.active,
@@ -403,7 +403,10 @@ function normalizePersistedInventoryTransfer(
     status: isInventoryTransferStatus(transfer.status)
       ? transfer.status
       : InventoryTransferStatus.preparing,
+    operationId: transfer.operationId,
+    operationFingerprint: transfer.operationFingerprint,
     sourceRequestIds: transfer.sourceRequestIds,
+    reason: transfer.reason,
     notes: transfer.notes,
     preparedByUserId: transfer.preparedByUserId,
     dispatchedByUserId: transfer.dispatchedByUserId,
@@ -413,6 +416,9 @@ function normalizePersistedInventoryTransfer(
     dispatchedAt: transfer.dispatchedAt,
     receivedAt: transfer.receivedAt,
     cancelledAt: transfer.cancelledAt,
+    cancelledByUserId: transfer.cancelledByUserId,
+    cancelOperationId: transfer.cancelOperationId,
+    cancelFingerprint: transfer.cancelFingerprint,
   };
 }
 

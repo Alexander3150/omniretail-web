@@ -1,5 +1,5 @@
 import type { Notification, Order, Package, PickingOrder } from "@/core/entities";
-import { DeliveryMethod, OrderStatus, PackingStatus, PickingStatus } from "@/core/enums";
+import { DeliveryMethod, InventoryTransferStatus, OrderStatus, PackingStatus, PickingStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   ConfirmDispatchCommand,
@@ -20,11 +20,45 @@ const DISPATCH_CONFIRM = "logistics.dispatch.confirm";
 
 type DispatchRepositories = Pick<
   RepositoryRegistry,
-  "auth" | "users" | "roles" | "branches" | "orders" | "picking" | "packings" | "dispatches" | "notifications"
+  "auth" | "users" | "roles" | "branches" | "orders" | "picking" | "packings" | "dispatches" | "notifications" | "inventoryTransfers"
 >;
 
 export class DispatchApplicationService {
   constructor(private readonly repositories: DispatchRepositories) {}
+
+  async getTransferQueue(selectedBranchId: string) {
+    const context = await this.context(selectedBranchId, DISPATCH_READ);
+    const transfers = await this.repositories.inventoryTransfers.query({
+      tenantId: context.tenantId, sourceBranchId: context.branchId,
+      status: InventoryTransferStatus.preparing,
+    });
+    const prepared = await Promise.all(transfers.map(async ({ transfer, items }) => {
+      const packing = await this.repositories.packings.getBySource(context, "transfer", transfer.id);
+      if (!packing || packing.sourceType !== "transfer" ||
+        packing.status !== PackingStatus.finalized) return null;
+      const destination = await this.repositories.branches.getById(transfer.destinationBranchId);
+      if (!destination || destination.tenantId !== context.tenantId) return null;
+      return { transferId: transfer.id, reference: transfer.number,
+        destinationName: destination.name, sourceBranchId: transfer.sourceBranchId,
+        destinationBranchId: transfer.destinationBranchId,
+        itemCount: items.length, packageCount: packing.packageCount ?? 0 };
+    }));
+    return prepared.filter((item): item is NonNullable<typeof item> => item !== null);
+  }
+
+  async confirmTransfer(selectedBranchId: string, transferId: string, operationId: string) {
+    const context = await this.context(selectedBranchId, DISPATCH_CONFIRM);
+    const found = await this.repositories.inventoryTransfers.getById(transferId);
+    if (!found || found.transfer.tenantId !== context.tenantId ||
+      found.transfer.sourceBranchId !== context.branchId) {
+      throw new Error("Traslado no encontrado en la sucursal autorizada.");
+    }
+    return this.repositories.inventoryTransfers.markInTransit(found.transfer.id, {
+      dispatchedByUserId: context.actorUserId, operationId,
+      items: found.items.map((item) => ({ itemId: item.id,
+        dispatchedQuantity: item.requestedQuantity })),
+    });
+  }
 
   async getPreparedQueue(selectedBranchId: string): Promise<PreparedOrderQueueItemDto[]> {
     const context = await this.context(selectedBranchId, DISPATCH_READ);

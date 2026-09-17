@@ -49,6 +49,8 @@ import type { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatab
 import { buildPasswordHashMock } from "@/infrastructure/mock/shared/passwordHashMock";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
+import { canUserOperateBranch } from "@/core/scopes/userBranchAccess";
+import { BranchStatus } from "@/core/enums";
 import { MOCK_SESSION_STORAGE_KEY } from "@/infrastructure/storage/storageKeys";
 export class MockAuthRepository extends BaseMockRepository implements AuthRepository {
   private readonly sessionStorage: LocalStorageAdapter;
@@ -586,6 +588,22 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
   }
   async getCurrentSessionId(): Promise<string | null> {
     return this.sessionStorage.get<string>(MOCK_SESSION_STORAGE_KEY);
+  }
+  async setActiveBranchId(branchId: string): Promise<void> {
+    const sessionId = await this.getCurrentSessionId();
+    if (!sessionId) throw new Error("An active session is required to select a branch");
+    this.store.mutate((db) => {
+      const session = db.sessions.find((item) => item.id === sessionId && !item.revokedAt &&
+        new Date(item.expiresAt) > new Date());
+      const user = db.users.find((item) => item.id === session?.userId &&
+        item.status === UserStatus.active && item.type === UserType.employee);
+      const branch = db.branches.find((item) => item.id === branchId &&
+        item.status === BranchStatus.active);
+      if (!session || !user || !branch || !canUserOperateBranch(user, branch)) {
+        throw new Error("The selected branch is not authorized for this session");
+      }
+      session.activeBranchId = branch.id;
+    });
   }
   async clearLocalSession(): Promise<void> {
     this.sessionStorage.remove(MOCK_SESSION_STORAGE_KEY);

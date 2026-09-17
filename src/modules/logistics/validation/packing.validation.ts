@@ -18,7 +18,7 @@ export interface PackingPreparationValidationResult {
 }
 
 export function validatePackingPreparation(
-  deliveryMethod: DeliveryMethod,
+  deliveryMethod: DeliveryMethod | "transfer",
   form: PackingPreparationFormValues,
 ): PackingPreparationValidationResult {
   const errors: PackingPreparationValidationResult["errors"] = {};
@@ -26,7 +26,7 @@ export function validatePackingPreparation(
     checklist: { ...form.checklist },
   };
 
-  if (deliveryMethod === DeliveryMethod.home_delivery) {
+  if (deliveryMethod === DeliveryMethod.home_delivery || deliveryMethod === "transfer") {
     const weightText = form.totalWeight.trim();
     const packageCountText = form.packageCount.trim();
     if (weightText) {

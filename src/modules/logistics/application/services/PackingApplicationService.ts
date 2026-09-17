@@ -1,4 +1,4 @@
-import type { Order, Packing } from "@/core/entities";
+import type { InventoryTransfer, Order, Packing } from "@/core/entities";
 import { DeliveryMethod, OrderStatus, PackingStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
@@ -29,6 +29,7 @@ type PackingRepositories = Pick<
   | "orders"
   | "packings"
   | "storePickupDeliveries"
+  | "inventoryTransfers"
 >;
 
 export class PackingApplicationService {
@@ -55,20 +56,34 @@ export class PackingApplicationService {
     const orders = await this.repositories.orders.getByIdsScoped(
       context.tenantId,
       context.branchId,
-      packings.map((item) => item.orderId),
+      packings.filter((item) => item.sourceType !== "transfer")
+        .map((item) => item.orderId).filter((id): id is string => Boolean(id)),
     );
     const ordersById = new Map(orders.map((order) => [order.id, order]));
     return Promise.all(
       packings.map(async (packing) => {
-        const order = ordersById.get(packing.orderId);
+        if (packing.sourceType === "transfer") {
+          const transfer = await this.requireTransfer(context, packing);
+          if (transfer.transfer.status === "cancelled") return null;
+          return this.toTransferQueueItem(packing, transfer.transfer);
+        }
+        const order = packing.orderId ? ordersById.get(packing.orderId) : undefined;
         if (!order) throw new Error(`Order not found for authorized Packing: ${packing.id}`);
         return this.toQueueItem(packing, order);
       }),
-    );
+    ).then((items) => items.filter((item): item is PackingQueueItemDto => item !== null));
   }
 
   async getDetail(selectedBranchId: string, packingId: string): Promise<PackingDetailDto> {
     const context = await this.context(selectedBranchId, PACKING_READ);
+    const candidate = await this.repositories.packings.getById(context, packingId);
+    if (candidate?.sourceType === "transfer") {
+      const transfer = await this.requireTransfer(context, candidate);
+      if (transfer.transfer.status === "cancelled") {
+        throw new Error(`Transfer Packing was cancelled: ${candidate.id}`);
+      }
+      return this.toTransferDetail(candidate, transfer.transfer);
+    }
     const { packing, order } = await this.requireDetail(context, packingId);
     return this.toDetail(packing, order);
   }
@@ -105,6 +120,14 @@ export class PackingApplicationService {
     command: FinalizePackingCommand,
   ): Promise<FinalizePackingResultDto> {
     const context = await this.context(selectedBranchId, PACKING_FINALIZE);
+    const packing = await this.repositories.packings.getById(context, command.packingId);
+    if (packing?.sourceType === "transfer") {
+      const result = await this.repositories.packings.finalize({
+        ...command, ...context, sourceType: "transfer",
+      });
+      return { ...(await this.toActionResult(context, result.packing, result.idempotent)),
+        orderStatus: null, transferStatus: result.transfer.status };
+    }
     const result = await this.repositories.packings.finalize({ ...command, ...context });
     return {
       ...(await this.toActionResult(context, result.packing, result.idempotent)),
@@ -152,7 +175,7 @@ export class PackingApplicationService {
     const [order] = await this.repositories.orders.getByIdsScoped(
       context.tenantId,
       context.branchId,
-      [packing.orderId],
+      packing.orderId ? [packing.orderId] : [],
     );
     if (!order) throw new Error(`Order not found for authorized Packing: ${packing.id}`);
     return { packing, order };
@@ -163,8 +186,47 @@ export class PackingApplicationService {
     packing: Packing,
     idempotent: boolean,
   ): Promise<PackingActionResultDto> {
+    if (packing.sourceType === "transfer") {
+      const transfer = await this.requireTransfer(context, packing);
+      return { packing: await this.toTransferDetail(packing, transfer.transfer), idempotent };
+    }
     const { order } = await this.requireDetail(context, packing.id);
     return { packing: await this.toDetail(packing, order), idempotent };
+  }
+
+  private async requireTransfer(
+    context: { tenantId: string; branchId: string }, packing: Packing,
+  ) {
+    const transfer = await this.repositories.inventoryTransfers.getById(packing.sourceId!);
+    if (!transfer || transfer.transfer.tenantId !== context.tenantId ||
+      transfer.transfer.sourceBranchId !== context.branchId ||
+      packing.orderId !== undefined) {
+      throw new Error(`Transfer not found for authorized Packing: ${packing.id}`);
+    }
+    return transfer;
+  }
+
+  private async toTransferQueueItem(packing: Packing, transfer: InventoryTransfer): Promise<PackingQueueItemDto> {
+    const destination = await this.repositories.branches.getById(transfer.destinationBranchId);
+    return {
+      packingId: packing.id, orderReference: transfer.number,
+      customerName: destination?.tenantId === transfer.tenantId
+        ? destination.name : "Sucursal destino", storePickupContact: null,
+      deliveryMethod: "transfer", sourceType: "transfer", sourceId: transfer.id,
+      status: packing.status, version: packing.version,
+      startedAt: packing.startedAt, updatedAt: packing.updatedAt,
+    };
+  }
+
+  private async toTransferDetail(packing: Packing, transfer: InventoryTransfer): Promise<PackingDetailDto> {
+    return {
+      ...(await this.toTransferQueueItem(packing, transfer)), pickingOrderId: packing.pickingOrderId,
+      orderStatus: null, deliveryAddress: null, checklist: { ...packing.checklist },
+      totalWeight: packing.totalWeight ?? null, packageCount: packing.packageCount ?? null,
+      labelGenerationId: packing.labelGenerationId ?? null,
+      labelCode: packing.labelCode ?? null, labelGeneratedAt: packing.labelGeneratedAt ?? null,
+      labelPrintedAt: packing.labelPrintedAt ?? null, finalizedAt: packing.finalizedAt ?? null,
+    };
   }
 
   private async toQueueItem(packing: Packing, order: Order): Promise<PackingQueueItemDto> {

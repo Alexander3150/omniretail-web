@@ -1,6 +1,7 @@
-import type { Order, Packing, PackingOperation } from "@/core/entities";
+import type { InventoryTransfer, Order, Packing, PackingOperation } from "@/core/entities";
 import {
   DeliveryMethod,
+  InventoryTransferStatus,
   OrderStatus,
   PackingOperationType,
   PackingStatus,
@@ -10,6 +11,9 @@ import {
 import { assertOrderStatusTransition } from "@/core/orders/orderStatusTransitions";
 import type {
   FinalizePackingResult,
+  FinalizePackingInput,
+  FinalizeTransferPackingInput,
+  FinalizeTransferPackingResult,
   PackingMutationResult,
   PackingRepository,
   PackingScope,
@@ -33,17 +37,27 @@ interface PackingCreationDependencies {
 export function createPackingInDatabase(
   db: MockDatabase,
   input: PackingScope & {
-    orderId: string;
+    orderId?: string;
+    sourceType?: "order" | "transfer";
+    sourceId?: string;
     pickingOrderId: string;
     actorUserId: string;
   },
   dependencies: PackingCreationDependencies,
 ): { packing: Packing; created: boolean } {
+  if (input.sourceType === "transfer" && (!input.sourceId || input.orderId !== undefined)) {
+    throw new Error("Transfer Packing requires sourceId without orderId");
+  }
+  if (input.sourceType !== "transfer" && !input.orderId) {
+    throw new Error("Order Packing requires orderId");
+  }
   const existing = db.packings.find(
     (item) =>
       item.tenantId === input.tenantId &&
       item.branchId === input.branchId &&
-      item.orderId === input.orderId,
+      (input.sourceType === "transfer"
+        ? item.sourceType === "transfer" && item.sourceId === input.sourceId
+        : item.sourceType !== "transfer" && item.orderId === input.orderId),
   );
   if (existing) {
     if (existing.pickingOrderId !== input.pickingOrderId) {
@@ -63,7 +77,7 @@ export function createPackingInDatabase(
     id: dependencies.id("packing"),
     tenantId: input.tenantId,
     branchId: input.branchId,
-    orderId: input.orderId,
+    ...(input.sourceType === "transfer" ? { sourceType: "transfer" as const, sourceId: input.sourceId } : { orderId: input.orderId }),
     pickingOrderId: input.pickingOrderId,
     status: PackingStatus.in_progress,
     checklist: {
@@ -118,11 +132,18 @@ export class MockPackingRepository extends BaseMockRepository implements Packing
       (db) =>
         db.packings.find(
           (item) =>
-            item.orderId === orderId &&
+            item.sourceType !== "transfer" && item.orderId === orderId &&
             item.tenantId === scope.tenantId &&
             item.branchId === scope.branchId,
         ) ?? null,
     );
+  }
+
+  async getBySource(scope: PackingScope, sourceType: "order" | "transfer", sourceId: string) {
+    return this.read((db) => db.packings.find((item) =>
+      item.tenantId === scope.tenantId && item.branchId === scope.branchId &&
+      (item.sourceType ?? "order") === sourceType &&
+      (sourceType === "transfer" ? item.sourceId : item.sourceId ?? item.orderId) === sourceId) ?? null);
   }
 
   async savePreparation(
@@ -147,8 +168,11 @@ export class MockPackingRepository extends BaseMockRepository implements Packing
       );
       if (retry) return { packing, idempotent: true, changed: false };
       this.assertMutable(packing, input.expectedVersion);
-      const order = this.findPackingOrder(db, packing);
-      this.assertPreparationMatchesDelivery(order, normalized);
+      if (packing.sourceType === "transfer") {
+        this.findPackingTransfer(db, packing);
+      } else {
+        this.assertPreparationMatchesDelivery(this.findPackingOrder(db, packing), normalized);
+      }
       const labelDataChanged =
         packing.totalWeight !== normalized.totalWeight ||
         packing.packageCount !== normalized.packageCount;
@@ -179,6 +203,33 @@ export class MockPackingRepository extends BaseMockRepository implements Packing
   async generateLabel(
     input: Parameters<PackingRepository["generateLabel"]>[0],
   ): Promise<PackingMutationResult> {
+    if (this.read((db) => db.packings.some((item) => item.id === input.packingId &&
+      item.sourceType === "transfer"))) {
+      const result = this.store.transact((db) => {
+        const packing = this.findScopedPacking(db, input, input.packingId);
+        this.assertActor(input.actorUserId, input.tenantId, db);
+        const operationId = requireOperationId(input.operationId);
+        const type = PackingOperationType.generate_label;
+        const fingerprint = fingerprintFor(type, {});
+        if (this.findRetry(db, packing, operationId, fingerprint, type)) {
+          return { packing, idempotent: true, changed: false };
+        }
+        this.assertMutable(packing, input.expectedVersion);
+        const transfer = this.findPackingTransfer(db, packing);
+        assertChecklistComplete(packing);
+        assertHomeDeliveryMeasurements(packing);
+        packing.version += 1;
+        packing.labelGenerationId = this.id("packing-label-generation");
+        packing.labelCode = `LBL-${transfer.number}-${packing.version}`;
+        packing.labelGeneratedAt = this.now();
+        packing.labelPrintedAt = undefined;
+        packing.updatedAt = packing.labelGeneratedAt;
+        this.recordOperation(db, packing, operationId, fingerprint, type);
+        return { packing, idempotent: false, changed: true };
+      });
+      if (result.changed) this.emitPackingChanged(result.packing, "updated");
+      return { packing: result.packing, idempotent: result.idempotent };
+    }
     return this.mutate(input, PackingOperationType.generate_label, {}, (packing, order) => {
       if (order.deliveryMethod !== DeliveryMethod.home_delivery) {
         throw new Error("Packing label is only available for home delivery");
@@ -215,8 +266,10 @@ export class MockPackingRepository extends BaseMockRepository implements Packing
       if (!Number.isInteger(input.expectedVersion) || packing.version !== input.expectedVersion) {
         throw new Error(`Packing version conflict: ${packing.id}`);
       }
-      const order = this.findPackingOrder(db, packing);
-      if (order.deliveryMethod !== DeliveryMethod.home_delivery) {
+      const source = packing.sourceType === "transfer"
+        ? this.findPackingTransfer(db, packing)
+        : this.findPackingOrder(db, packing);
+      if ("deliveryMethod" in source && source.deliveryMethod !== DeliveryMethod.home_delivery) {
         throw new Error("Packing label is only available for home delivery");
       }
       if (!labelGenerationId || packing.labelGenerationId !== labelGenerationId) {
@@ -244,9 +297,12 @@ export class MockPackingRepository extends BaseMockRepository implements Packing
     return { packing: result.packing, idempotent: result.idempotent };
   }
 
+  finalize(input: FinalizePackingInput): Promise<FinalizePackingResult>;
+  finalize(input: FinalizeTransferPackingInput): Promise<FinalizeTransferPackingResult>;
   async finalize(
-    input: Parameters<PackingRepository["finalize"]>[0],
-  ): Promise<FinalizePackingResult> {
+    input: FinalizePackingInput | FinalizeTransferPackingInput,
+  ): Promise<FinalizePackingResult | FinalizeTransferPackingResult> {
+    if (input.sourceType === "transfer") return this.finalizeTransfer(input);
     const operationId = requireOperationId(input.operationId);
     const fingerprint = fingerprintFor(PackingOperationType.finalize, {});
     const result = this.store.transact((db) => {
@@ -352,6 +408,7 @@ export class MockPackingRepository extends BaseMockRepository implements Packing
   }
 
   private findPackingOrder(db: MockDatabase, packing: Packing): Order {
+    if (packing.sourceType === "transfer") throw new Error("Transfer Packing is not an Order");
     const order = db.orders.find(
       (item) =>
         item.id === packing.orderId &&
@@ -360,6 +417,49 @@ export class MockPackingRepository extends BaseMockRepository implements Packing
     );
     if (!order) throw new Error(`Order not found for Packing: ${packing.id}`);
     return order;
+  }
+
+  private findPackingTransfer(db: MockDatabase, packing: Packing): InventoryTransfer {
+    const transfer = db.inventoryTransfers.find((item) => item.id === packing.sourceId &&
+      item.tenantId === packing.tenantId && item.sourceBranchId === packing.branchId &&
+      (item.status === InventoryTransferStatus.preparing ||
+        (packing.status === PackingStatus.finalized &&
+          [InventoryTransferStatus.inTransit, InventoryTransferStatus.received].includes(item.status))));
+    if (!transfer || packing.orderId !== undefined) {
+      throw new Error(`Transfer not found for Packing: ${packing.id}`);
+    }
+    return transfer;
+  }
+
+  private finalizeTransfer(input: FinalizeTransferPackingInput): Promise<FinalizeTransferPackingResult> {
+    const operationId = requireOperationId(input.operationId);
+    const fingerprint = fingerprintFor(PackingOperationType.finalize, {});
+    const result = this.store.transact((db) => {
+      const packing = this.findScopedPacking(db, input, input.packingId);
+      if (packing.sourceType !== "transfer") throw new Error("Packing source conflict");
+      this.assertActor(input.actorUserId, input.tenantId, db);
+      const transfer = this.findPackingTransfer(db, packing);
+      const retry = this.findRetry(db, packing, operationId, fingerprint, PackingOperationType.finalize);
+      if (retry) {
+        if (packing.status !== PackingStatus.finalized) throw new Error("Transfer Packing retry conflict");
+        return { packing, transfer, idempotent: true, changed: false };
+      }
+      this.assertMutable(packing, input.expectedVersion);
+      assertChecklistComplete(packing);
+      assertHomeDeliveryMeasurements(packing);
+      if (!packing.labelGenerationId || !packing.labelGeneratedAt || !packing.labelPrintedAt ||
+        !packing.labelCode) throw new Error("Transfer Packing label and print are required");
+      packing.status = PackingStatus.finalized;
+      packing.finalizedByUserId = input.actorUserId;
+      packing.finalizedAt = this.now();
+      packing.version += 1;
+      packing.updatedAt = packing.finalizedAt;
+      this.recordOperation(db, packing, operationId, fingerprint, PackingOperationType.finalize);
+      return { packing, transfer, idempotent: false, changed: true };
+    });
+    if (result.changed) this.emitPackingChanged(result.packing, "status_changed");
+    return Promise.resolve({ packing: result.packing, transfer: result.transfer,
+      idempotent: result.idempotent });
   }
 
   private assertActor(actorUserId: string, tenantId: string, db: MockDatabase): void {

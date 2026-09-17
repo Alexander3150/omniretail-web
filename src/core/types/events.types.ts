@@ -70,14 +70,18 @@ export interface PickingChangedEventPayload extends DataEventPayload {
   tenantId: string;
   branchId: string;
   pickingOrderId: string;
-  orderId: string;
+  orderId?: string;
+  sourceType?: "order" | "transfer";
+  sourceId?: string;
 }
 
 export interface PackingChangedEventPayload extends DataEventPayload {
   tenantId: string;
   branchId: string;
   packingId: string;
-  orderId: string;
+  orderId?: string;
+  sourceType?: "order" | "transfer";
+  sourceId?: string;
 }
 
 export interface DataEventPayloadMap {

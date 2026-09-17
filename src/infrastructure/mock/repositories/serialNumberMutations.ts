@@ -168,14 +168,16 @@ export function planSerialConsumption(
   return available.slice(0, quantity);
 }
 
-export function consumePlannedSerials(serials: SerialNumber[], now: string): void {
+export function consumePlannedSerials(
+  serials: SerialNumber[], now: string, targetStatus: SerialStatus = SerialStatus.sold,
+): void {
   serials.forEach((serial) => {
     if (serial.status !== SerialStatus.available) {
       throw new Error(`Serial number is no longer available: ${serial.serialNumber}`);
     }
   });
   serials.forEach((serial) => {
-    serial.status = SerialStatus.sold;
+    serial.status = targetStatus;
     serial.updatedAt = now;
   });
 }

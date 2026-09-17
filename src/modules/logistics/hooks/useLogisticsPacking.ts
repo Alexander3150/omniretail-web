@@ -29,7 +29,9 @@ export function useLogisticsPacking() {
   const [submitting, setSubmitting] = useState(false);
   const [queueError, setQueueError] = useState<string | null>(null);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
-  const [completion, setCompletion] = useState<{ orderReference: string; orderStatus: OrderStatus } | null>(null);
+  const [completion, setCompletion] = useState<{
+    orderReference: string; orderStatus: OrderStatus | null; sourceType?: "transfer";
+  } | null>(null);
   const activeBranchIdRef = useRef<string | null>(currentBranch?.id ?? null);
   const selectedPackingIdRef = useRef<string | null>(null);
   const workspaceBranchIdRef = useRef<string | null>(null);
@@ -275,7 +277,8 @@ export function useLogisticsPacking() {
     setSelectedPackingId(null);
     setDetail(null);
     setWorkspaceError(null);
-    setCompletion({ orderReference, orderStatus: result.orderStatus });
+    setCompletion({ orderReference, orderStatus: result.orderStatus,
+      sourceType: deliveryMethod === "transfer" ? "transfer" : undefined });
     await reload();
     return true;
   }, [canFinalize, detail?.deliveryMethod, detail?.orderReference, executeMutation, reload, service]);

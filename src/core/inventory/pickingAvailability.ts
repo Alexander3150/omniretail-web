@@ -16,7 +16,9 @@ export function buildPickingInventoryAvailability(input: {
   tenantId: string;
   branchId: string;
   pickingOrderId: string;
-  orderId: string;
+  orderId?: string;
+  sourceType?: "order" | "transfer";
+  sourceId?: string;
   product: Product;
   balances: InventoryBalance[];
   reservations: InventoryReservation[];
@@ -36,7 +38,9 @@ export function buildPickingInventoryAvailability(input: {
     (reservation) =>
       reservation.tenantId === input.tenantId &&
       reservation.branchId === input.branchId &&
-      reservation.orderId === input.orderId &&
+      (input.sourceType === "transfer"
+        ? reservation.sourceType === "transfer" && reservation.sourceId === input.sourceId
+        : reservation.sourceType !== "transfer" && reservation.orderId === input.orderId) &&
       reservation.productId === input.product.id &&
       reservation.status !== InventoryReservationStatus.released,
   );

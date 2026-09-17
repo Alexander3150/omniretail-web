@@ -1,4 +1,4 @@
-import type { Order, Packing, PackingChecklist } from "@/core/entities";
+import type { InventoryTransfer, Order, Packing, PackingChecklist } from "@/core/entities";
 
 export interface PackingScope {
   tenantId: string;
@@ -24,7 +24,8 @@ export interface RegisterPackingLabelPrintInput extends PackingMutationInput {
   labelGenerationId: string;
 }
 
-export type FinalizePackingInput = PackingMutationInput;
+export type FinalizePackingInput = PackingMutationInput & { sourceType?: "order" };
+export type FinalizeTransferPackingInput = PackingMutationInput & { sourceType: "transfer" };
 
 export interface PackingMutationResult {
   packing: Packing;
@@ -35,12 +36,18 @@ export interface FinalizePackingResult extends PackingMutationResult {
   order: Order;
 }
 
+export interface FinalizeTransferPackingResult extends PackingMutationResult {
+  transfer: InventoryTransfer;
+}
+
 export interface PackingRepository {
   getQueue(scope: PackingScope): Promise<Packing[]>;
   getById(scope: PackingScope, packingId: string): Promise<Packing | null>;
   getByOrder(scope: PackingScope, orderId: string): Promise<Packing | null>;
+  getBySource(scope: PackingScope, sourceType: "order" | "transfer", sourceId: string): Promise<Packing | null>;
   savePreparation(input: SavePackingPreparationInput): Promise<PackingMutationResult>;
   generateLabel(input: GeneratePackingLabelInput): Promise<PackingMutationResult>;
   registerLabelPrint(input: RegisterPackingLabelPrintInput): Promise<PackingMutationResult>;
   finalize(input: FinalizePackingInput): Promise<FinalizePackingResult>;
+  finalize(input: FinalizeTransferPackingInput): Promise<FinalizeTransferPackingResult>;
 }

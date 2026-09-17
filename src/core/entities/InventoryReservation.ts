@@ -13,8 +13,10 @@ export interface InventoryReservation {
   id: string;
   tenantId: string;
   branchId: string;
-  orderId: string;
+  orderId?: string;
   orderItemId: string;
+  sourceType?: "order" | "transfer";
+  sourceId?: string;
   productId: string;
   status: InventoryReservationStatus;
   allocations: InventoryReservationAllocation[];

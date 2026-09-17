@@ -18,11 +18,13 @@ export interface PickingProgressDto {
 
 export interface PickingQueueItemDto {
   pickingOrderId: string;
-  orderId: string;
+  orderId?: string;
   orderReference: string;
   customerName: string;
   storePickupContact: StorePickupContactSnapshot | null;
-  deliveryMethod: DeliveryMethod;
+  deliveryMethod: DeliveryMethod | "transfer";
+  sourceType?: "order" | "transfer";
+  sourceId?: string;
   branchId: string;
   status: PickingStatus;
   priority: PickingPriority;
@@ -88,11 +90,13 @@ export interface PickingReleaseDto {
 
 export interface PickingDetailDto {
   pickingOrderId: string;
-  orderId: string;
+  orderId?: string;
   orderReference: string;
   customerName: string;
   storePickupContact: StorePickupContactSnapshot | null;
-  deliveryMethod: DeliveryMethod;
+  deliveryMethod: DeliveryMethod | "transfer";
+  sourceType?: "order" | "transfer";
+  sourceId?: string;
   branchId: string;
   status: PickingStatus;
   priority: PickingPriority;
@@ -109,7 +113,7 @@ export interface PickingDetailDto {
 
 export interface PickingActionResultDto {
   pickingOrderId: string;
-  orderId: string;
+  orderId?: string;
   status: PickingStatus;
   assignedUserId: string | null;
   updatedAt: string;
