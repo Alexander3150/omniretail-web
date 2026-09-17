@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { publicStorefrontSlug } from "@/config/publicStorefront";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { ProductType } from "@/core/enums";
@@ -335,7 +336,7 @@ async function main(): Promise<void> {
     tenantUnits.length > 0 && tenantUnits.every((unit) => unit.tenantId === TENANT_ID),
     "V: Storefront debe cargar unidades del tenant correcto",
   );
-  const discovery = await storefront.execute(TENANT_ID);
+  const discovery = await storefront.execute(publicStorefrontSlug, TENANT_ID);
   assert.equal(discovery.products.length, 30, "V: Ecommerce debe descubrir los 30 productos Web");
   assert.equal(discovery.categories.length, 10, "W: Ecommerce debe descubrir las 10 categorías");
   assert.ok(discovery.products.every(({ imageSource }) => imageSource?.kind === "url"));
@@ -360,7 +361,7 @@ async function main(): Promise<void> {
   // ANTES de leer cualquier dato -- un tenantId que no es el tenant público real se rechaza
   // directamente, nunca llega a devolver (ni vacío) catálogo de otro tenant.
   await assert.rejects(
-    storefront.execute("tenant-other"),
+    storefront.execute(publicStorefrontSlug, "tenant-other"),
     "X: un tenantId que no es el Storefront público real debe ser rechazado, nunca devolver datos",
   );
 

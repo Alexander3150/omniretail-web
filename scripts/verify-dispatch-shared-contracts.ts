@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { publicStorefrontSlug } from "@/config/publicStorefront";
 import type { OrderNotificationContact } from "@/core/types/orderNotification.types";
 import {
   DeliveryMethod,
@@ -20,7 +21,10 @@ import {
   MockNotificationRepository,
   MockOrderRepository,
   MockPickingRepository,
+  MockPlanRepository,
   MockRoleRepository,
+  MockTenantRepository,
+  MockTenantSubscriptionRepository,
   MockUserRepository,
 } from "@/infrastructure/mock/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
@@ -65,6 +69,9 @@ async function main() {
     orders,
     picking,
     roles: new MockRoleRepository(store, eventBus),
+    plans: new MockPlanRepository(store, eventBus),
+    tenants: new MockTenantRepository(store, eventBus),
+    tenantSubscriptions: new MockTenantSubscriptionRepository(store, eventBus),
     users: new MockUserRepository(store, eventBus),
   } as unknown as RepositoryRegistry;
   const service = new DispatchApplicationService(repositories);
@@ -128,7 +135,7 @@ async function main() {
 
   const trackingProgress = await createTrackingProgressOrder(orders, picking);
   assert.equal(
-    (await trackingService.execute(tenantId, trackingProgress.trackingToken))?.tracking.status,
+      (await trackingService.execute({ tenantSlug: publicStorefrontSlug, trackingToken: trackingProgress.trackingToken }))?.tracking.status,
     OrderStatus.preparing,
   );
   await picking.updateItem({
@@ -141,7 +148,7 @@ async function main() {
     performedByUserId: actorId,
   });
   assert.equal(
-    (await trackingService.execute(tenantId, trackingProgress.trackingToken))?.tracking.status,
+      (await trackingService.execute({ tenantSlug: publicStorefrontSlug, trackingToken: trackingProgress.trackingToken }))?.tracking.status,
     OrderStatus.picking,
   );
 
@@ -156,7 +163,7 @@ async function main() {
   assert.equal(thirdParty.statusAfterFirstPick, OrderStatus.picking);
   assert.equal(thirdParty.completed.status, OrderStatus.ready_for_dispatch);
   assert.equal(
-    (await trackingService.execute(tenantId, thirdParty.completed.trackingToken))?.tracking.status,
+      (await trackingService.execute({ tenantSlug: publicStorefrontSlug, trackingToken: thirdParty.completed.trackingToken }))?.tracking.status,
     OrderStatus.ready_for_dispatch,
   );
 
@@ -260,7 +267,7 @@ async function main() {
   assert.equal(confirmed.notificationStatus, "simulated_sent");
   assert.equal(confirmed.notification?.recipientEmail, "shipment@example.com");
   assert.equal(
-    (await trackingService.execute(tenantId, thirdParty.completed.trackingToken))?.tracking.status,
+      (await trackingService.execute({ tenantSlug: publicStorefrontSlug, trackingToken: thirdParty.completed.trackingToken }))?.tracking.status,
     OrderStatus.dispatched,
   );
   assert.deepEqual(inventorySnapshot(store), inventoryBefore);
@@ -320,7 +327,7 @@ async function main() {
   assert.equal(persistedDeliveredDispatch?.carrierName, "Carrier QA");
   assert.equal(persistedDeliveredDispatch?.trackingNumber, "TRACK-001");
   assert.equal(
-    (await trackingService.execute(tenantId, thirdParty.completed.trackingToken))?.tracking.status,
+      (await trackingService.execute({ tenantSlug: publicStorefrontSlug, trackingToken: thirdParty.completed.trackingToken }))?.tracking.status,
     OrderStatus.delivered,
   );
   await assert.rejects(

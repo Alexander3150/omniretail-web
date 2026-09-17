@@ -60,7 +60,7 @@ function selectPromotion(promotions: Promotion[], basePrice: number): Promotion 
 export function useStorefrontOffers() {
   const repositories = useRepositories();
   const eventBus = useDataEventBus();
-  const { tenantId, loading: tenantLoading, error: tenantError } = usePublicTenant();
+  const { tenantId, tenantSlug, loading: tenantLoading, error: tenantError } = usePublicTenant();
   const [items, setItems] = useState<StorefrontOfferItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -81,7 +81,7 @@ export function useStorefrontOffers() {
       try {
         // Auditoría §15/§30 (BLOCKER): esta lectura pública lee productos/precios directo del
         // repositorio (sin pasar por Discovery/ProductDetail) -- mismo bypass, mismo guard.
-        await ensurePublicStorefrontTenant(repositories, tenantId);
+        await ensurePublicStorefrontTenant(repositories, tenantSlug, tenantId);
         const ecommerceConfig = await repositories.businessConfig.getEcommerceConfig(tenantId);
         if (!ecommerceConfig?.enabled || !ecommerceConfig.defaultBranchId)
           throw new Error("E-commerce branch is not configured");
@@ -155,7 +155,7 @@ export function useStorefrontOffers() {
       active = false;
       unsubscribe();
     };
-  }, [eventBus, repositories, tenantError, tenantId, tenantLoading]);
+  }, [eventBus, repositories, tenantError, tenantId, tenantLoading, tenantSlug]);
 
   return useMemo(
     () => ({ items, loading: tenantLoading || loading, error }),

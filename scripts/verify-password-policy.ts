@@ -5,6 +5,7 @@
  *   npx tsx scripts/verify-password-policy.ts
  */
 import assert from "node:assert/strict";
+import { publicStorefrontSlug } from "@/config/publicStorefront";
 import {
   CUSTOMER_PASSWORD_POLICY,
   EMPLOYEE_PASSWORD_POLICY,
@@ -138,6 +139,7 @@ async function verifyCustomerRegistration() {
   const before = store.getSnapshot();
   await expectPolicyError(
     auth.registerCustomer({
+      tenantSlug: publicStorefrontSlug,
       name: "Cliente débil",
       email: "weak-customer@example.test",
       passwordMock: "Abcdefg1",
@@ -149,6 +151,7 @@ async function verifyCustomerRegistration() {
   assert.equal(afterWeak.authAccounts.length, before.authAccounts.length);
 
   const result = await auth.registerCustomer({
+    tenantSlug: publicStorefrontSlug,
     name: "Cliente seguro",
     email: "strong-customer@example.test",
     passwordMock: CUSTOMER_VALID_8,

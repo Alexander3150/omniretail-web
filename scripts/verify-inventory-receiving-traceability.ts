@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { publicStorefrontSlug } from "@/config/publicStorefront";
 import {
   InventoryAdjustmentType,
   PurchaseOrderStatus,
@@ -516,7 +517,7 @@ async function main() {
   const posScrews = posProducts.find((item) => item.productId === "prod-screws");
   assert.equal(posScrews?.availableQuantity, 1.2);
   assert.equal(posScrews?.saleUnitId, "unit-box");
-  const storefront = await new GetStorefrontDiscoveryService(repositories).execute("tenant-demo");
+  const storefront = await new GetStorefrontDiscoveryService(repositories).execute(publicStorefrontSlug, "tenant-demo");
   const storefrontScrews = storefront.products.find((item) => item.id === "prod-screws");
   assert.equal(storefrontScrews?.availableQuantity, 1.2);
   assert.equal(storefrontScrews?.saleUnitId, "unit-box");

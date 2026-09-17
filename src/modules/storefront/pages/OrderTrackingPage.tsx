@@ -4,8 +4,10 @@ import Link from "next/link";
 import { statusesConfig } from "@/config/statuses";
 import { StorefrontOrderProgress } from "@/modules/storefront/components/StorefrontOrderProgress";
 import { useStorefrontOrderTracking } from "@/modules/storefront/hooks/useStorefrontOrderTracking";
+import { useStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 
 export function OrderTrackingPage({ trackingToken }: { trackingToken: string }) {
+  const routes = useStorefrontRoutes();
   const { data, loading, error, reload } = useStorefrontOrderTracking(trackingToken);
 
   if (loading)
@@ -31,7 +33,7 @@ export function OrderTrackingPage({ trackingToken }: { trackingToken: string }) 
           </button>
           <Link
             className="rounded-xl border border-[var(--color-border)] px-4 py-3 font-bold"
-            href="/catalogo"
+            href={routes.catalog()}
           >
             Ver catálogo
           </Link>
@@ -42,7 +44,7 @@ export function OrderTrackingPage({ trackingToken }: { trackingToken: string }) 
   const status = statusesConfig[data.status];
   return (
     <main className="mx-auto max-w-4xl px-5 py-10">
-      <Link className="text-sm font-bold text-[var(--color-title)]" href="/catalogo">
+      <Link className="text-sm font-bold text-[var(--color-title)]" href={routes.catalog()}>
         ← Seguir comprando
       </Link>
       <section className="mt-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm sm:p-8">

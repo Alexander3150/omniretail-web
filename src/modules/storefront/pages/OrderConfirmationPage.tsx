@@ -7,8 +7,10 @@ import { StorefrontOrderProgress } from "@/modules/storefront/components/Storefr
 import { downloadStorefrontReceiptPdf } from "@/modules/storefront/application/services/StorefrontReceiptPdfService";
 import { useStorefrontCheckoutConfirmation } from "@/modules/storefront/providers/StorefrontCheckoutConfirmationProvider";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
+import { useStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 
 export function OrderConfirmationPage() {
+  const routes = useStorefrontRoutes();
   const { result } = useStorefrontCheckoutConfirmation();
   const { config } = usePublicTenant();
   const orderNumber = result?.orderNumber;
@@ -33,7 +35,7 @@ export function OrderConfirmationPage() {
           </p>
           <Link
             className="mt-6 inline-block rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)]"
-            href="/catalogo"
+          href={routes.catalog()}
           >
             Ver catálogo
           </Link>
@@ -166,7 +168,7 @@ export function OrderConfirmationPage() {
           {trackingToken ? (
             <Link
               className="rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)]"
-              href={`/pedido/seguimiento/${trackingToken}`}
+              href={routes.tracking(trackingToken)}
             >
               Ver seguimiento
             </Link>
@@ -185,7 +187,7 @@ export function OrderConfirmationPage() {
           </button>
           <Link
             className="rounded-xl border border-[var(--color-border)] px-5 py-3 font-bold text-[var(--color-text)]"
-            href="/catalogo"
+          href={routes.catalog()}
           >
             Seguir comprando
           </Link>

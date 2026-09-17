@@ -1,6 +1,5 @@
 import type { EcommerceConfig } from "@/core/entities";
 import { SaasCapabilityKey, TenantStatus } from "@/core/enums";
-import { publicStorefrontSlug } from "@/config/publicStorefront";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { ensureTenantCapability } from "@/shared/application/services/entitlementGuards";
 import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
@@ -31,8 +30,8 @@ export interface PublicStorefrontContext {
 export class ResolvePublicStorefrontContextService {
   constructor(private readonly repositories: PublicStorefrontRepositories) {}
 
-  async execute(options: { allowDisabled?: boolean } = {}): Promise<PublicStorefrontContext> {
-    const tenant = await this.repositories.tenants.getBySlug(publicStorefrontSlug);
+  async execute({ tenantSlug, allowDisabled = false }: { tenantSlug: string; allowDisabled?: boolean }): Promise<PublicStorefrontContext> {
+    const tenant = await this.repositories.tenants.getBySlug(tenantSlug);
     if (!tenant || tenant.status !== TenantStatus.active) {
       throw new Error("La tienda pública no está disponible.");
     }
@@ -41,12 +40,12 @@ export class ResolvePublicStorefrontContextService {
     if (
       !ecommerceConfig ||
       ecommerceConfig.tenantId !== tenant.id ||
-      (!options.allowDisabled && !ecommerceConfig.enabled)
+      (!allowDisabled && !ecommerceConfig.enabled)
     ) {
       throw new Error("La tienda pública no está disponible.");
     }
 
-    if (!options.allowDisabled) {
+    if (!allowDisabled) {
       const entitlements = await new ResolveTenantEntitlementsService(
         this.repositories as RepositoryRegistry,
       ).execute(tenant.id);
@@ -68,9 +67,10 @@ export class ResolvePublicStorefrontContextService {
  */
 export async function ensurePublicStorefrontTenant(
   repositories: PublicStorefrontRepositories,
+  tenantSlug: string,
   tenantId: string,
 ): Promise<void> {
-  const context = await new ResolvePublicStorefrontContextService(repositories).execute();
+  const context = await new ResolvePublicStorefrontContextService(repositories).execute({ tenantSlug });
   if (context.tenantId !== tenantId) {
     throw new Error("La tienda pública no está disponible.");
   }

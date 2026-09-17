@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { publicStorefrontSlug } from "@/config/publicStorefront";
 import {
   DeliveryMethod, OrderSource, OrderStatus, PaymentMethod, PaymentStatus,
   PickingPriority, SaasCapabilityKey, TransportMode,
@@ -85,7 +86,7 @@ async function main() {
 
   const entitlements = new ResolveTenantEntitlementsService(repositories);
   assert((await entitlements.execute(tenantId)).effectiveCapabilities.includes(SaasCapabilityKey.ecommerce));
-  assert.equal((await new GetPublicStorefrontConfigService(repositories).execute()).storeEnabled, true);
+  assert.equal((await new GetPublicStorefrontConfigService(repositories).execute(publicStorefrontSlug)).storeEnabled, true);
   const order = await orders.create({
     tenantId, branchId, orderNumber: "WEB-INFLIGHT-001", source: OrderSource.ecommerce,
     customerId: "customer-ana", status: OrderStatus.confirmed,
@@ -107,16 +108,17 @@ async function main() {
   const update = new UpdateTenantSubscriptionService(repositories);
   await update.execute(tenantId, ["advanced_reports"], ["admin.plans.read", "admin.plans.manage"], actorUserId);
   assert(!(await entitlements.execute(tenantId)).effectiveCapabilities.includes(SaasCapabilityKey.ecommerce));
-  assert.equal((await new GetPublicStorefrontConfigService(repositories).execute()).storeEnabled, false);
+  assert.equal((await new GetPublicStorefrontConfigService(repositories).execute(publicStorefrontSlug)).storeEnabled, false);
   assert((await entitlements.execute("tenant-other")).effectiveCapabilities.includes(SaasCapabilityKey.ecommerce));
   const ordersBeforeDeniedCheckout = (await orders.listByTenant(tenantId)).length;
   await assert.rejects(() => new CreateStorefrontCheckoutService(repositories).execute({
+    tenantSlug: publicStorefrontSlug,
     items: [], idempotencyKey: "no-new-checkout", form: {
       fullName: "Cliente Checkout", email: "checkout@example.com", phone: "55550000",
       addressLine1: "Zona 1", city: "Guatemala", cardholderName: "Cliente Checkout", cardLastFour: "4242",
     },
   }));
-  await assert.rejects(() => new GetStorefrontDiscoveryService(repositories).execute(tenantId));
+  await assert.rejects(() => new GetStorefrontDiscoveryService(repositories).execute(publicStorefrontSlug, tenantId));
   assert.equal((await orders.listByTenant(tenantId)).length, ordersBeforeDeniedCheckout);
 
   actorUserId = "user-warehouse";
@@ -142,14 +144,19 @@ async function main() {
   assert.equal(dispatched.notificationStatus, "simulated_sent");
   assert.equal(dispatched.notification?.recipientEmail, "ana@example.com");
   assert.equal((await dispatchService.getDispatchDetail(branchId, order.id)).orderStatus, OrderStatus.dispatched);
-  assert((await new GetStorefrontOrderTrackingService(repositories).execute(tenantId, order.trackingToken))?.orderId === order.id);
-  assert.equal(await new GetStorefrontOrderTrackingService(repositories).execute("tenant-other", order.trackingToken), null);
+  assert((await new GetStorefrontOrderTrackingService(repositories).execute({ tenantSlug: publicStorefrontSlug, trackingToken: order.trackingToken }))?.orderId === order.id);
+  await assert.rejects(
+    () => new GetStorefrontOrderTrackingService(repositories).execute({ tenantSlug: "tenant-other", trackingToken: order.trackingToken }),
+  );
   store.mutate((db) => {
     db.tenants.push({ ...db.tenants[0], id: "tenant-other", slug: "tenant-other" });
     db.ecommerceConfigs.push({ ...db.ecommerceConfigs[0], tenantId: "tenant-other" });
     db.orders.push({ ...order, id: "other-order", tenantId: "tenant-other", trackingToken: "TRACK-OTHER-001" });
   });
-  assert.equal(await new GetStorefrontOrderTrackingService(repositories).execute("tenant-other", "TRACK-OTHER-001"), null);
+  assert.equal(
+    (await new GetStorefrontOrderTrackingService(repositories).execute({ tenantSlug: "tenant-other", trackingToken: "TRACK-OTHER-001" }))?.orderId,
+    "other-order",
+  );
 
   actorUserId = "user-customer";
   assert((await getCurrentCustomerOrders(repositories)).some((item) => item.id === order.id));

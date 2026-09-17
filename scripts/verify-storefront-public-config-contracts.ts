@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { publicStorefrontSlug } from "@/config/publicStorefront";
 import { existsSync, readFileSync } from "node:fs";
 import type { Session } from "@/core/entities";
 import {
@@ -175,7 +176,7 @@ async function main() {
   assert.equal(saved.contactEmail, "contacto@ejemplo.com", "B: email debe normalizarse");
   assert.equal((await adminGet.execute()).storeName, saved.storeName);
 
-  const publicDto = await publicConfig.execute();
+  const publicDto = await publicConfig.execute(publicStorefrontSlug);
   assert.equal(publicDto.storeName, "Mi Tienda Publica", "A: Storefront debe leer storeName admin");
   assert.equal(publicDto.contactPhone, "+502 2345-6789", "B: debe publicar telefono configurado");
   assert.equal(publicDto.contactEmail, "contacto@ejemplo.com", "B: debe publicar email configurado");
@@ -202,7 +203,7 @@ async function main() {
     ["branch-norte"],
     "D-H: solo debe aparecer la tienda activa del tenant publico",
   );
-  assert.equal(GetPublicStorefrontConfigService.prototype.execute.length, 0, "I: execute no acepta tenant");
+  assert.equal(GetPublicStorefrontConfigService.prototype.execute.length, 1, "I: execute recibe tenantSlug");
 
   currentUserId = "user-inventory";
   await expectDenied(() => adminSave.execute(editableConfig(initialConfig)), "J: usuario sin permiso");
@@ -235,8 +236,8 @@ async function main() {
     tenantId,
     editableConfig(allowlisted, { enabled: false }),
   );
-  assert.equal((await publicConfig.execute()).storeEnabled, false, "M: DTO refleja tienda deshabilitada");
-  await assert.rejects(() => publicContext.execute(), /no est.* disponible/i, "M: boundary bloquea tienda");
+  assert.equal((await publicConfig.execute(publicStorefrontSlug)).storeEnabled, false, "M: DTO refleja tienda deshabilitada");
+  await assert.rejects(() => publicContext.execute({ tenantSlug: publicStorefrontSlug }), /no est.* disponible/i, "M: boundary bloquea tienda");
 
   const disabledConfig = await businessConfig.getEcommerceConfig(tenantId);
   await businessConfig.updateEcommerceConfig(
@@ -248,6 +249,7 @@ async function main() {
   await assert.rejects(
     () =>
       checkout.execute({
+        tenantSlug: publicStorefrontSlug,
         items: [],
         idempotencyKey: "account-required-check",
         form: {
@@ -270,13 +272,13 @@ async function main() {
     tenantId,
     editableConfig(accountRequiredConfig, { guestTrackingEnabled: false }),
   );
-  assert.equal(await tracking.execute(tenantId, "TRACK-WEB-002"), null, "O: tracking invitado bloqueado");
+  assert.equal(await tracking.execute({ tenantSlug: publicStorefrontSlug, trackingToken: "TRACK-WEB-002" }), null, "O: tracking invitado bloqueado");
   const trackingDisabledConfig = await businessConfig.getEcommerceConfig(tenantId);
   await businessConfig.updateEcommerceConfig(
     tenantId,
     editableConfig(trackingDisabledConfig, { guestTrackingEnabled: true }),
   );
-  assert.ok(await tracking.execute(tenantId, "TRACK-WEB-002"), "O: tracking invitado habilitado");
+  assert.ok(await tracking.execute({ tenantSlug: publicStorefrontSlug, trackingToken: "TRACK-WEB-002" }), "O: tracking invitado habilitado");
 
   let configRefreshes = 0;
   let branchRefreshes = 0;
@@ -285,7 +287,7 @@ async function main() {
     if (!shouldRefreshPublicConfig(eventTenantId, tenantId)) return;
     if (kind === "config") configRefreshes += 1;
     else branchRefreshes += 1;
-    pendingRefreshes.push(publicConfig.execute());
+    pendingRefreshes.push(publicConfig.execute(publicStorefrontSlug));
   };
   const unsubscribeConfig = eventBus.subscribe("business-config.changed", (event) =>
     refresh("config", event.tenantId),
@@ -337,11 +339,12 @@ async function main() {
     tenantId,
     editableConfig(routeConfig, { enabled: false, requireAccountForCheckout: false }),
   );
-  const disabledPublicContext = await publicContext.execute({ allowDisabled: true });
+  const disabledPublicContext = await publicContext.execute({ tenantSlug: publicStorefrontSlug, allowDisabled: true });
   assert.equal(disabledPublicContext.tenantId, tenantId, "T: tenant sigue resolviendose");
   assert.equal(disabledPublicContext.ecommerceConfig.enabled, false, "T: canal queda deshabilitado");
 
   const publicLayout = readFileSync("src/app/(public)/layout.tsx", "utf8");
+  const dynamicTenantLayout = readFileSync("src/app/tienda/[tenantSlug]/layout.tsx", "utf8");
   const commercialLayout = readFileSync(
     "src/app/(public)/(commercial)/layout.tsx",
     "utf8",
@@ -376,10 +379,20 @@ async function main() {
     1,
     "Y: existe un unico owner del Footer",
   );
-  assert.equal(
-    publicLayout.match(/<PublicTenantProvider>/g)?.length,
-    1,
-    "Y: existe un unico PublicTenantProvider",
+  assert.match(
+    publicLayout,
+    /<PublicTenantProvider tenantSlug=\{publicStorefrontSlug\}>/,
+    "Y: legacy usa explícitamente el slug demo",
+  );
+  assert.match(
+    dynamicTenantLayout,
+    /<PublicTenantProvider tenantSlug=\{tenantSlug\}>/,
+    "Y: layout dinámico usa el slug de params",
+  );
+  assert.doesNotMatch(
+    dynamicTenantLayout,
+    /publicStorefrontSlug/,
+    "Y: layout dinámico no usa fallback demo",
   );
   assert.match(
     publicTenantProvider,
@@ -465,6 +478,7 @@ async function main() {
   await assert.rejects(
     () =>
       disabledCheckout.execute({
+        tenantSlug: publicStorefrontSlug,
         items: [],
         idempotencyKey: "disabled-commercial-check",
         form: {
