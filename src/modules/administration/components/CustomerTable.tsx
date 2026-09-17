@@ -11,9 +11,10 @@ import { StatusBadge } from "@/shared/components/StatusBadge";
 
 interface CustomerTableProps {
   customers: CustomerDto[];
+  onSelect: (customer: CustomerDto) => void;
 }
 
-export function CustomerTable({ customers }: CustomerTableProps) {
+export function CustomerTable({ customers, onSelect }: CustomerTableProps) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<CustomerStatus | "all">("all");
   const filteredCustomers = useMemo(() => {
@@ -56,6 +57,14 @@ export function CustomerTable({ customers }: CustomerTableProps) {
       ),
     },
     {
+      key: "products",
+      header: "Productos",
+      className: "text-right",
+      cell: (customer) => (
+        <span className="text-[var(--color-text-muted)]">{customer.topProducts.length}</span>
+      ),
+    },
+    {
       key: "status",
       header: "Estado",
       cell: (customer) => <StatusBadge status={customer.status} />,
@@ -89,6 +98,8 @@ export function CustomerTable({ customers }: CustomerTableProps) {
         columns={columns}
         data={filteredCustomers}
         emptyMessage="No hay clientes para los filtros actuales."
+        headerClassName="bg-[var(--color-structure)] text-white [&_th]:text-white"
+        onRowClick={onSelect}
         rowKey={(customer) => customer.id}
       />
     </div>

@@ -31,7 +31,7 @@ export function ReportTable<T>({ columns, rows, rowKey }: ReportTableProps<T>) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[880px] border-collapse text-left text-sm">
-        <thead className="bg-[var(--color-app-background)] text-[var(--color-title)]">
+        <thead className="bg-[var(--color-structure)] text-white">
           <tr>
             {columns.map((column) => (
               <th className={cn("px-4 py-3 font-semibold", column.className)} key={column.key}>

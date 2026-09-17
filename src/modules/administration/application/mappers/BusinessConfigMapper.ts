@@ -13,6 +13,7 @@ export function toBusinessConfigDto(config: BusinessCapabilitiesConfig): Busines
     supportsProductAttributes: config.supportsProductAttributes,
     supportsKits: config.supportsKits,
     supportsServices: config.supportsServices,
+    allowedPosPaymentMethods: [...(config.allowedPosPaymentMethods ?? [])],
     defaultProductTracking: { ...config.defaultProductTracking },
   };
 }

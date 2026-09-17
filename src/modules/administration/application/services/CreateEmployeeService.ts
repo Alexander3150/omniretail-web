@@ -70,6 +70,17 @@ export class CreateEmployeeService {
       throw new AdministrationServiceError("Ya existe una cuenta con ese correo electrónico.");
     }
 
+    // 4.5. employeeCode único por tenant
+    const existingCode = await this.repositories.users.getByEmployeeCodeScoped(
+      tenantId,
+      normalizedInput.employeeCode,
+    );
+    if (existingCode) {
+      throw new AdministrationServiceError(
+        "Ya existe un empleado con ese código en este negocio.",
+      );
+    }
+
     // 5. validar Role destino
     const role = ensureRoleAssignable(
       await this.repositories.roles.getByIdScoped(tenantId, normalizedInput.roleId),
@@ -89,6 +100,7 @@ export class CreateEmployeeService {
       name: normalizedInput.name,
       email: normalizedInput.email,
       phone: normalizedInput.phone,
+      employeeCode: normalizedInput.employeeCode,
       type: UserType.employee,
       status: normalizedInput.status ?? UserStatus.active,
       roleId: role.id,

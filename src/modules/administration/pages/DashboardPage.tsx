@@ -2,9 +2,12 @@
 
 import { DashboardIncidents } from "@/modules/administration/components/DashboardIncidents";
 import { DashboardKpis } from "@/modules/administration/components/DashboardKpis";
+import { DashboardSalesSummary } from "@/modules/administration/components/DashboardSalesSummary";
+import { DashboardTopProducts } from "@/modules/administration/components/DashboardTopProducts";
 import { useDashboardSummary } from "@/modules/administration/hooks/useDashboardSummary";
 import { DASHBOARD_READ_PERMISSION } from "@/modules/administration/permissions";
 import { Button } from "@/shared/components/Button";
+import { RefreshIcon } from "@/shared/components/icons";
 import { PageHeader } from "@/shared/components/PageHeader";
 
 export function DashboardPage() {
@@ -41,11 +44,13 @@ export function DashboardPage() {
       <PageHeader
         actions={
           <Button
+            className="gap-2"
             disabled={loading}
             onClick={() => void reload()}
             type="button"
             variant="secondary"
           >
+            <RefreshIcon className="h-4 w-4" />
             {loading ? "Actualizando..." : "Actualizar"}
           </Button>
         }
@@ -66,6 +71,19 @@ export function DashboardPage() {
       ) : null}
 
       <DashboardKpis loading={loading} summary={summary} />
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,400px)]">
+        <DashboardTopProducts
+          loading={loading}
+          products={summary?.topProducts ?? []}
+        />
+        <DashboardSalesSummary
+          loading={loading}
+          salesToday={summary?.salesToday ?? { amount: 0, count: 0 }}
+          salesMonth={summary?.salesMonth ?? { amount: 0, count: 0 }}
+        />
+      </div>
+
       <DashboardIncidents incidents={summary?.latestIncidents ?? []} loading={loading} />
     </div>
   );

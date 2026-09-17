@@ -3,6 +3,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import type { CashShiftDto } from "@/modules/administration/application/dto/CashShiftDto";
 import { Button } from "@/shared/components/Button";
+import { XIcon } from "@/shared/components/icons";
 import { DataTable, type DataTableColumn } from "@/shared/components/DataTable";
 import { Modal } from "@/shared/components/Modal";
 import { StatusBadge } from "@/shared/components/StatusBadge";
@@ -77,20 +78,6 @@ export function CashShiftTable({ actorNames, branchNames, shifts }: CashShiftTab
         header: "Estado",
         cell: (shift) => <StatusBadge status={shift.status} />,
       },
-      {
-        key: "detail",
-        header: "",
-        cell: (shift) => (
-          <Button
-            className="min-h-9 px-3 py-1.5"
-            onClick={() => setSelectedShift(shift)}
-            type="button"
-            variant="secondary"
-          >
-            Detalle
-          </Button>
-        ),
-      },
     ],
     [actorNames, branchNames],
   );
@@ -101,6 +88,8 @@ export function CashShiftTable({ actorNames, branchNames, shifts }: CashShiftTab
         columns={columns}
         data={shifts}
         emptyMessage="No hay turnos de caja para los filtros actuales."
+        headerClassName="bg-[var(--color-structure)] text-white [&_th]:text-white"
+        onRowClick={setSelectedShift}
         rowKey={(shift) => shift.id}
       />
       <CashShiftDetailModal
@@ -134,7 +123,8 @@ function CashShiftDetailModal({
     <Modal
       footer={
         <div className="flex justify-end">
-          <Button onClick={onClose} type="button" variant="secondary">
+          <Button className="gap-2" onClick={onClose} type="button" variant="secondary">
+            <XIcon className="h-4 w-4" />
             Cerrar
           </Button>
         </div>
@@ -153,7 +143,6 @@ function CashShiftDetailModal({
           </div>
           <dl className="grid gap-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-4 sm:grid-cols-2 lg:grid-cols-3">
             <DetailItem label="Sucursal" value={branchName ?? shift.branchId} />
-            <DetailItem label="ID de sucursal" value={shift.branchId} />
             <DetailItem label="Cajero" value={actorName ?? shift.userId} />
             <DetailItem label="Caja" value={shift.registerCode} />
             <DetailItem label="Estado" value={<StatusBadge status={shift.status} />} />
@@ -166,8 +155,6 @@ function CashShiftDetailModal({
             <DetailItem label="Monto esperado" value={formatOptionalAmount(shift.expectedAmount)} />
             <DetailItem label="Monto contado" value={formatOptionalAmount(shift.countedAmount)} />
             <DetailItem label="Diferencia" value={formatOptionalAmount(shift.difference)} />
-            <DetailItem label="Creado" value={formatDate(shift.createdAt)} />
-            <DetailItem label="Actualizado" value={formatDate(shift.updatedAt)} />
           </dl>
           <p className="rounded-lg border border-[var(--color-warning)] bg-[var(--color-surface)] px-4 py-3 text-sm leading-5 text-[var(--color-text)]">
             El desglose de movimientos no está disponible: el contrato de caja no expone

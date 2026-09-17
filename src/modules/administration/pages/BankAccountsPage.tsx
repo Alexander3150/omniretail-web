@@ -5,21 +5,28 @@ import type {
   BankAccountDto,
   BankAccountInputDto,
 } from "@/modules/administration/application/dto/BankAccountDto";
+import { BankAccountDetailView } from "@/modules/administration/components/BankAccountDetailView";
 import { BankAccountForm } from "@/modules/administration/components/BankAccountForm";
 import { BankAccountTable } from "@/modules/administration/components/BankAccountTable";
 import { useBankAccounts } from "@/modules/administration/hooks/useBankAccounts";
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
+import { PlusIcon } from "@/shared/components/icons";
 import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { useToast } from "@/shared/components/Toast";
 
-type EditorState = { mode: "create" } | { mode: "edit"; account: BankAccountDto } | null;
+type ModalState =
+  | { mode: "view"; account: BankAccountDto }
+  | { mode: "create" }
+  | { mode: "edit"; account: BankAccountDto }
+  | null;
 
 export function BankAccountsPage() {
   const {
     accounts,
     archive,
+    branchNames,
     branchOptions,
     busy,
     canManage,
@@ -30,19 +37,19 @@ export function BankAccountsPage() {
     update,
   } = useBankAccounts();
   const { showToast } = useToast();
-  const [editor, setEditor] = useState<EditorState>(null);
+  const [modal, setModal] = useState<ModalState>(null);
   const [archiveTarget, setArchiveTarget] = useState<BankAccountDto | null>(null);
 
   async function handleSubmit(value: BankAccountInputDto) {
     try {
-      if (editor?.mode === "edit") {
-        await update(editor.account.id, value);
+      if (modal?.mode === "edit") {
+        await update(modal.account.id, value);
         showToast({ title: "Cuenta bancaria actualizada", tone: "success" });
       } else {
         await create(value);
         showToast({ title: "Cuenta bancaria creada", tone: "success" });
       }
-      setEditor(null);
+      setModal(null);
     } catch (caughtError) {
       showToast({
         title: "No se pudo guardar la cuenta bancaria",
@@ -66,6 +73,7 @@ export function BankAccountsPage() {
         tone: "success",
       });
       setArchiveTarget(null);
+      setModal(null);
     } catch (caughtError) {
       showToast({
         title: "No se pudo archivar la cuenta bancaria",
@@ -76,6 +84,18 @@ export function BankAccountsPage() {
         tone: "danger",
       });
     }
+  }
+
+  function openView(account: BankAccountDto) {
+    setModal({ mode: "view", account });
+  }
+
+  function openEditFromView(account: BankAccountDto) {
+    setModal({ mode: "edit", account });
+  }
+
+  function openArchiveFromView(account: BankAccountDto) {
+    setArchiveTarget(account);
   }
 
   if (!loading && !canManage) {
@@ -102,12 +122,25 @@ export function BankAccountsPage() {
     );
   }
 
+  const modalTitle =
+    modal?.mode === "edit"
+      ? "Editar cuenta bancaria"
+      : modal?.mode === "create"
+        ? "Nueva cuenta bancaria"
+        : "Detalle de cuenta bancaria";
+
+  const modalSubtitle =
+    modal?.mode === "view"
+      ? "Hacé clic en Editar o Archivar para realizar cambios."
+      : "Los cambios se aplican únicamente al negocio activo.";
+
   return (
     <div className="min-w-0 space-y-5">
       <PageHeader
         actions={
           canManage ? (
-            <Button onClick={() => setEditor({ mode: "create" })} type="button">
+            <Button className="gap-2" onClick={() => setModal({ mode: "create" })} type="button">
+              <PlusIcon className="h-4 w-4" />
               Nueva cuenta
             </Button>
           ) : null
@@ -140,28 +173,41 @@ export function BankAccountsPage() {
           Cargando cuentas bancarias...
         </div>
       ) : (
-        <BankAccountTable
-          accounts={accounts}
-          canManage={canManage}
-          onArchive={setArchiveTarget}
-          onEdit={(account) => setEditor({ mode: "edit", account })}
-        />
+        <BankAccountTable accounts={accounts} onSelect={openView} />
       )}
 
       <Modal
-        onClose={() => setEditor(null)}
-        open={Boolean(editor)}
+        onClose={() => setModal(null)}
+        open={Boolean(modal)}
         size="lg"
-        subtitle="Los cambios se aplican únicamente al negocio activo."
-        title={editor?.mode === "edit" ? "Editar cuenta bancaria" : "Nueva cuenta bancaria"}
+        subtitle={modalSubtitle}
+        title={modalTitle}
       >
-        {editor ? (
+        {modal?.mode === "view" ? (
+          <BankAccountDetailView
+            account={modal.account}
+            branchNames={branchNames}
+            busy={busy}
+            canManage={canManage}
+            onClose={() => setModal(null)}
+            onEdit={() => openEditFromView(modal.account)}
+            onArchive={() => openArchiveFromView(modal.account)}
+          />
+        ) : modal?.mode === "edit" ? (
           <BankAccountForm
-            account={editor.mode === "edit" ? editor.account : undefined}
+            account={modal.account}
             branchOptions={branchOptions}
             busy={busy}
-            key={editor.mode === "edit" ? editor.account.id : "new"}
-            onCancel={() => setEditor(null)}
+            key={modal.account.id}
+            onCancel={() => setModal({ mode: "view", account: modal.account })}
+            onSubmit={handleSubmit}
+          />
+        ) : modal?.mode === "create" ? (
+          <BankAccountForm
+            branchOptions={branchOptions}
+            busy={busy}
+            key="new"
+            onCancel={() => setModal(null)}
             onSubmit={handleSubmit}
           />
         ) : null}

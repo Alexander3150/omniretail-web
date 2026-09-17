@@ -1,32 +1,36 @@
 import type { SupplierDto } from "@/modules/administration/application/dto/SupplierDto";
-import { Button } from "@/shared/components/Button";
 import { DataTable, type DataTableColumn } from "@/shared/components/DataTable";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 
 interface SupplierTableProps {
   suppliers: SupplierDto[];
-  canManage: boolean;
-  onArchive: (supplier: SupplierDto) => void;
-  onEdit: (supplier: SupplierDto) => void;
+  onSelect: (supplier: SupplierDto) => void;
 }
 
-export function SupplierTable({ suppliers, canManage, onArchive, onEdit }: SupplierTableProps) {
+export function SupplierTable({ suppliers, onSelect }: SupplierTableProps) {
   const columns: DataTableColumn<SupplierDto>[] = [
     {
       key: "name",
       header: "Nombre",
       cell: (supplier) => (
-        <span className="font-semibold text-[var(--color-title)]">{supplier.name}</span>
+        <div>
+          <span className="font-semibold text-[var(--color-title)]">{supplier.name}</span>
+          {supplier.legalName ? (
+            <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{supplier.legalName}</p>
+          ) : null}
+        </div>
       ),
     },
     {
       key: "taxId",
-      header: "Identificación tributaria",
-      cell: (supplier) => <span className="text-[var(--color-text)]">{supplier.taxId || "—"}</span>,
+      header: "NIT",
+      cell: (supplier) => (
+        <span className="font-mono text-[var(--color-text)]">{supplier.taxId || "—"}</span>
+      ),
     },
     {
       key: "email",
-      header: "Correo electrónico",
+      header: "Correo",
       cell: (supplier) => <span className="text-[var(--color-text)]">{supplier.email || "—"}</span>,
     },
     {
@@ -35,47 +39,36 @@ export function SupplierTable({ suppliers, canManage, onArchive, onEdit }: Suppl
       cell: (supplier) => <span className="text-[var(--color-text)]">{supplier.phone || "—"}</span>,
     },
     {
+      key: "address",
+      header: "Dirección",
+      cell: (supplier) => (
+        <span className="text-[var(--color-text-muted)]">{supplier.address || "—"}</span>
+      ),
+    },
+    {
+      key: "leadTimeDays",
+      header: "Lead time",
+      className: "text-right",
+      cell: (supplier) => (
+        <span className="text-[var(--color-text)]">
+          {supplier.leadTimeDays != null ? `${supplier.leadTimeDays}d` : "—"}
+        </span>
+      ),
+    },
+    {
       key: "status",
       header: "Estado",
       cell: (supplier) => <StatusBadge status={supplier.status} />,
     },
   ];
 
-  if (canManage) {
-    columns.push({
-      key: "actions",
-      header: <span className="sr-only">Acciones</span>,
-      className: "text-right",
-      cell: (supplier) => (
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button
-            className="min-h-9 px-3 py-1.5"
-            onClick={() => onEdit(supplier)}
-            type="button"
-            variant="ghost"
-          >
-            Editar
-          </Button>
-          {supplier.status !== "archived" ? (
-            <Button
-              className="min-h-9 px-3 py-1.5"
-              onClick={() => onArchive(supplier)}
-              type="button"
-              variant="danger"
-            >
-              Archivar
-            </Button>
-          ) : null}
-        </div>
-      ),
-    });
-  }
-
   return (
     <DataTable
       columns={columns}
       data={suppliers}
       emptyMessage="Aún no hay proveedores registrados."
+      headerClassName="bg-[var(--color-structure)] text-white [&_th]:text-white"
+      onRowClick={onSelect}
       rowKey={(supplier) => supplier.id}
     />
   );

@@ -21,6 +21,16 @@ export class MockUserRepository extends BaseMockRepository implements UserReposi
       (db) => db.users.find((item) => item.id === id && item.tenantId === tenantId) ?? null,
     );
   }
+  async getByEmployeeCodeScoped(tenantId: string, employeeCode: string) {
+    return this.read(
+      (db) =>
+        db.users.find(
+          (item) =>
+            item.tenantId === tenantId &&
+            item.employeeCode?.toUpperCase() === employeeCode.toUpperCase(),
+        ) ?? null,
+    );
+  }
   async create(input: Parameters<UserRepository["create"]>[0]) {
     const item = this.store.mutate((db) => {
       const now = this.now();

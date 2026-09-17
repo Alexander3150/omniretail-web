@@ -18,6 +18,7 @@ export interface UserRepository {
    */
   listByTenant(tenantId: string): Promise<User[]>;
   getByIdScoped(tenantId: string, id: string): Promise<User | null>;
+  getByEmployeeCodeScoped(tenantId: string, employeeCode: string): Promise<User | null>;
   create(input: Omit<User, "id" | "createdAt" | "updatedAt">): Promise<User>;
   update(id: string, input: Partial<Omit<User, "id" | "createdAt" | "updatedAt">>): Promise<User>;
   /**

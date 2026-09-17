@@ -1,13 +1,10 @@
 import type { BankAccount } from "@/core/entities";
 
 /**
- * Proyección de lectura (listado y edición). Nunca incluye `accountNumber`: el número completo
- * solo debe llegar al consumidor que realmente lo necesita para compartirlo (el checkout de POS,
- * ver `pos/application/dto/CheckoutDto.ts#CheckoutBankAccountDto`), no al listado general de
- * administración, que tiene una audiencia más amplia (`admin.bank_accounts.manage`). El listado
- * solo puede mostrar `accountNumberMasked`.
+ * Proyección de lectura (listado y edición). Incluye `accountNumber` completo para que el
+ * administrador pueda verlo en el detalle. El listado muestra ambos: el completo y el enmascarado.
  */
-export type BankAccountDto = Omit<BankAccount, "tenantId" | "accountNumber">;
+export type BankAccountDto = Omit<BankAccount, "tenantId">;
 
 /**
  * Input de alta/edición. `accountNumber` es la única fuente de verdad: `accountNumberMasked` se

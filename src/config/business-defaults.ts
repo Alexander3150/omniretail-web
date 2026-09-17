@@ -1,4 +1,4 @@
-import { BusinessPreset } from "@/core/enums";
+import { BusinessPreset, PaymentMethod } from "@/core/enums";
 import type { BusinessCapabilitiesConfig } from "@/core/entities";
 
 type BusinessDefaults = Record<
@@ -11,6 +11,7 @@ const baseDefaults = {
   supportsProductAttributes: true,
   supportsKits: true,
   supportsServices: true,
+  allowedPosPaymentMethods: [PaymentMethod.cash, PaymentMethod.card, PaymentMethod.transfer] as PaymentMethod[],
 };
 
 export const businessDefaultsConfig: BusinessDefaults = {

@@ -146,6 +146,7 @@ async function main() {
   const employeeInput = {
     name: "Empleado sin cupo",
     email: "sin-cupo@ferrepharma.demo",
+    employeeCode: "SIN-CUPO",
     roleId: "role-cashier",
     allowedBranchIds: ["branch-centro"],
     status: UserStatus.active,
