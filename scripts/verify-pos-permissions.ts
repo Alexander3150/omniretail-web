@@ -522,13 +522,26 @@ function verifySourceInvariants() {
   }
 
   const checkoutDto = read("src/modules/pos/application/dto/CheckoutDto.ts");
-  const bankAccountDto = checkoutDto.match(/export interface CheckoutBankAccountDto \{[\s\S]*?\n\}/)?.[0] ?? "";
-  assert.equal(bankAccountDto.includes("accountNumber:"), false);
-  assert.ok(bankAccountDto.includes("accountNumberMasked"));
+  const bankAccountDto =
+    checkoutDto.match(/export interface CheckoutBankAccountDto \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  assert.ok(
+    bankAccountDto.includes("accountNumber:"),
+    "POS bank account DTO must expose full account number for transfer detail",
+  );
+
+  assert.ok(
+    bankAccountDto.includes("accountNumberMasked"),
+    "POS bank account DTO must preserve masked account number",
+  );
 
   const checkoutModal = read("src/modules/pos/components/CheckoutModal.tsx");
-  assert.equal(/account\.accountNumber(?!Masked)/.test(checkoutModal), false);
-  assert.ok(checkoutModal.includes("account.accountNumberMasked"));
+
+  assert.ok(
+    checkoutModal.includes('label="Cuenta"') &&
+      checkoutModal.includes("value={account.accountNumber}"),
+    "POS transfer detail must show the full account number",
+  );
 }
 
 async function main() {
