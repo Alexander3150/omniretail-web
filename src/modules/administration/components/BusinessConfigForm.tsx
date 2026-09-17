@@ -31,6 +31,11 @@ const posPaymentOptions: Array<{
     description: "Acepta pagos en efectivo directamente en caja.",
   },
   {
+    key: PaymentMethod.card,
+    label: "Pago con tarjeta",
+    description: "Acepta pagos con tarjeta de débito o crédito.",
+  },
+  {
     key: PaymentMethod.transfer,
     label: "Transferencia bancaria",
     description: "Acepta pagos mediante transferencia o depósito bancario.",

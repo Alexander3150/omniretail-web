@@ -11,7 +11,7 @@ const baseDefaults = {
   supportsProductAttributes: true,
   supportsKits: true,
   supportsServices: true,
-  allowedPosPaymentMethods: [PaymentMethod.cash, PaymentMethod.transfer] as PaymentMethod[],
+  allowedPosPaymentMethods: [PaymentMethod.cash, PaymentMethod.card, PaymentMethod.transfer] as PaymentMethod[],
 };
 
 export const businessDefaultsConfig: BusinessDefaults = {
