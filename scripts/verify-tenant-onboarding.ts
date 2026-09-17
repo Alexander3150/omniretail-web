@@ -43,6 +43,12 @@ import type { TenantOnboardingInputDto } from "@/modules/administration/applicat
 const NOW = "2026-09-15T12:00:00.000Z";
 const ACTIVE_PLAN_ID = "plan-onboarding-active";
 const ARCHIVED_PLAN_ID = "plan-onboarding-archived";
+const CANONICAL_INCIDENT_TYPES = [
+  ["DAMAGED", "Producto dañado"],
+  ["MISSING", "Producto faltante"],
+  ["UNSOLICITED", "Producto no solicitado"],
+  ["OTHER", "Otros"],
+] as const;
 
 class MemoryStorageAdapter extends LocalStorageAdapter {
   readonly values = new Map<string, string>();
@@ -139,6 +145,96 @@ function buildOnboardingInput(
     planId: ACTIVE_PLAN_ID,
     ...overrides,
   };
+}
+
+async function verifyIncidentTypeDefaultsAndNormalization() {
+  const harness = createHarness();
+  const resultA = await new TenantOnboardingService(harness.repositories).execute(
+    buildOnboardingInput(),
+  );
+  const resultB = await new TenantOnboardingService(harness.repositories).execute(
+    buildOnboardingInput(),
+  );
+  const onboardingSnapshot = harness.store.getSnapshot();
+  for (const tenantId of [resultA.tenantId, resultB.tenantId]) {
+    const defaults = onboardingSnapshot.incidentTypes.filter((item) => item.tenantId === tenantId);
+    assert.deepEqual(
+      defaults.map(({ code, name }) => [code, name]).sort(),
+      [...CANONICAL_INCIDENT_TYPES].sort(),
+      "cada Tenant nuevo debe recibir exactamente los cuatro tipos de incidencia canónicos",
+    );
+    assert.ok(defaults.every((item) => item.tenantId === tenantId && item.active));
+  }
+  assert.equal(
+    onboardingSnapshot.incidentTypes.some(
+      (item) => item.tenantId === resultA.tenantId &&
+        onboardingSnapshot.incidentTypes.some(
+          (other) => other.tenantId === resultB.tenantId && other.id === item.id,
+        ),
+    ),
+    false,
+    "los tipos de incidencia deben estar aislados por Tenant",
+  );
+
+  const storage = new MemoryStorageAdapter();
+  const seededStore = new MockDatabaseStore(storage);
+  const storageKey = [...storage.values.keys()][0];
+  assert.ok(storageKey, "el store debe persistir su snapshot bajo una clave estable");
+  const seededSnapshot = seededStore.getSnapshot();
+  assert.deepEqual(
+    seededSnapshot.incidentTypes
+      .filter((item) => item.tenantId === "tenant-demo")
+      .map(({ code, name }) => [code, name])
+      .sort(),
+    [...CANONICAL_INCIDENT_TYPES].sort(),
+    "el seed demo debe contener los cuatro tipos canónicos",
+  );
+
+  seededSnapshot.incidentTypes = [
+    {
+      id: "legacy-damaged",
+      tenantId: "tenant-demo",
+      code: "DAMAGED",
+      name: "Daño legado personalizado",
+      active: false,
+    },
+    {
+      id: "legacy-custom",
+      tenantId: "tenant-demo",
+      code: "CUSTOM_REVIEW",
+      name: "Revisión especial",
+      active: true,
+    },
+  ];
+  storage.set(storageKey, seededSnapshot);
+
+  const normalizedOnce = new MockDatabaseStore(storage).getSnapshot();
+  const demoTypes = normalizedOnce.incidentTypes.filter((item) => item.tenantId === "tenant-demo");
+  assert.deepEqual(
+    demoTypes.filter((item) => CANONICAL_INCIDENT_TYPES.some(([code]) => code === item.code))
+      .map((item) => item.code)
+      .sort(),
+    CANONICAL_INCIDENT_TYPES.map(([code]) => code).sort(),
+    "un estado parcial debe completarse sin duplicar DAMAGED",
+  );
+  assert.equal(demoTypes.filter((item) => item.code === "DAMAGED").length, 1);
+  assert.deepEqual(
+    demoTypes.find((item) => item.code === "DAMAGED"),
+    seededSnapshot.incidentTypes[0],
+    "un código existente debe conservar id, nombre y estado aunque haya sido renombrado",
+  );
+  assert.deepEqual(
+    demoTypes.find((item) => item.code === "CUSTOM_REVIEW"),
+    seededSnapshot.incidentTypes[1],
+    "la normalización debe preservar tipos personalizados",
+  );
+
+  const normalizedTwice = new MockDatabaseStore(storage).getSnapshot();
+  assert.deepEqual(
+    normalizedTwice.incidentTypes,
+    normalizedOnce.incidentTypes,
+    "normalizar dos veces debe ser idempotente",
+  );
 }
 
 // 1-17: onboarding exitoso + login end-to-end + resolución de sesión/rol/branch al Tenant nuevo.
@@ -442,6 +538,11 @@ async function verifyForcedRollbackAndSafeRetry() {
     "25: ningún EcommerceConfig debe quedar persistido",
   );
   assert.equal(
+    afterFailure.incidentTypes.length,
+    before.incidentTypes.length,
+    "25: ningún IncidentType debe quedar persistido",
+  );
+  assert.equal(
     await harness.repositories.tenants.getBySlug(input.tenantSlug),
     null,
     "25: el slug debe quedar disponible -- ningún Tenant a medio crear",
@@ -524,6 +625,8 @@ async function verifyAdminSelfSufficiency() {
 }
 
 async function main() {
+  await verifyIncidentTypeDefaultsAndNormalization();
+  console.log("incident types canónicos, aislamiento y normalización idempotente: PASS");
   await verifySuccessfulOnboardingAndLogin();
   console.log("1-17. onboarding exitoso, defaults, permisos canónicos, y login end-to-end: PASS");
   await verifyTenantIsolationAndNoDemoData();

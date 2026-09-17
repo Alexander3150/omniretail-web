@@ -91,7 +91,126 @@ const repositories = {
 } as unknown as RepositoryRegistry;
 const adjustmentService = new RegisterInventoryAdjustmentService(repositories);
 
+async function verifyPurchaseOrderReceivingStatus() {
+  let sequence = 0;
+  const createOrder = async (items: Array<{ productId: string; quantity: number }>) => {
+    sequence += 1;
+    return purchaseOrders.create({
+      tenantId: "tenant-demo",
+      branchId: "branch-centro",
+      supplierId: "supplier-tools",
+      status: PurchaseOrderStatus.approved,
+      subtotal: items.reduce((sum, item) => sum + item.quantity, 0),
+      total: items.reduce((sum, item) => sum + item.quantity, 0),
+      createdByUserId: "user-admin",
+      items: items.map((item) => ({
+        ...item,
+        unitId: "unit-unit",
+        purchaseToBaseFactor: 1,
+        unitCost: 1,
+        subtotal: item.quantity,
+      })),
+    });
+  };
+  const confirm = async (
+    purchaseOrderId: string,
+    suffix: string,
+    lines: Parameters<MockReceiptRepository["confirmReceiptInventory"]>[0]["lines"],
+    incidents: Parameters<MockReceiptRepository["confirmReceiptInventory"]>[0]["incidents"] = [],
+  ) => {
+    const receipt = await receipts.create({
+      tenantId: "tenant-demo",
+      branchId: "branch-centro",
+      number: `REC-STATUS-${suffix}`,
+      purchaseOrderId,
+      supplierId: "supplier-tools",
+      status: ReceiptStatus.in_progress,
+      receivedByUserId: "user-admin",
+    });
+    const input = {
+      tenantId: "tenant-demo",
+      receiptId: receipt.id,
+      confirmationId: `confirm-status-${suffix}`,
+      confirmationFingerprint: `status-${suffix}`,
+      receivedByUserId: "user-admin",
+      receivedAt: `2026-09-17T12:${String(sequence).padStart(2, "0")}:00.000Z`,
+      incidents,
+      lines,
+    };
+    return { receipt: await receipts.confirmReceiptInventory(input), input };
+  };
+  const line = (productId: string, orderedQuantity: number, receivedQuantity: number, inventoryQuantity = receivedQuantity) => ({
+    productId,
+    orderedQuantity,
+    receivedQuantity,
+    inventoryQuantity,
+    rejectedQuantity: Math.max(0, orderedQuantity - receivedQuantity),
+    status: receivedQuantity >= orderedQuantity ? ReceiptLineStatus.complete : ReceiptLineStatus.partial,
+    locationId: "loc-centro-a",
+  });
+
+  const singleOrder = await createOrder([{ productId: "prod-screws", quantity: 10 }]);
+  const single = await confirm(singleOrder.id, "single", [line("prod-screws", 10, 10)]);
+  assert.equal((await purchaseOrders.getById(singleOrder.id))?.status, PurchaseOrderStatus.received);
+  const singleMovements = store.getSnapshot().inventoryMovements.filter(
+    (item) => item.referenceType === "receipt" && item.referenceId === single.receipt.id,
+  );
+  await receipts.confirmReceiptInventory(single.input);
+  assert.equal(
+    store.getSnapshot().inventoryMovements.filter(
+      (item) => item.referenceType === "receipt" && item.referenceId === single.receipt.id,
+    ).length,
+    singleMovements.length,
+    "reconfirming the same receipt must not post inventory twice",
+  );
+
+  const splitOrder = await createOrder([{ productId: "prod-screws", quantity: 10 }]);
+  await confirm(splitOrder.id, "split-1", [line("prod-screws", 10, 4)]);
+  assert.equal((await purchaseOrders.getById(splitOrder.id))?.status, PurchaseOrderStatus.partially_received);
+  await confirm(splitOrder.id, "split-2", [line("prod-screws", 6, 6)]);
+  assert.equal((await purchaseOrders.getById(splitOrder.id))?.status, PurchaseOrderStatus.received);
+
+  const multiCompleteOrder = await createOrder([
+    { productId: "prod-screws", quantity: 3 },
+    { productId: "prod-screws", quantity: 7 },
+  ]);
+  await confirm(multiCompleteOrder.id, "multi-complete", [
+    line("prod-screws", 3, 3),
+    line("prod-screws", 7, 7),
+  ]);
+  assert.equal((await purchaseOrders.getById(multiCompleteOrder.id))?.status, PurchaseOrderStatus.received);
+
+  const multiPartialOrder = await createOrder([
+    { productId: "prod-screws", quantity: 3 },
+    { productId: "prod-screws", quantity: 7 },
+  ]);
+  await confirm(multiPartialOrder.id, "multi-partial", [
+    line("prod-screws", 3, 3),
+    line("prod-screws", 7, 6),
+  ]);
+  assert.equal(
+    (await purchaseOrders.getById(multiPartialOrder.id))?.status,
+    PurchaseOrderStatus.partially_received,
+  );
+
+  const incidentOrder = await createOrder([{ productId: "prod-screws", quantity: 10 }]);
+  await confirm(
+    incidentOrder.id,
+    "incident",
+    [line("prod-screws", 10, 10, 9)],
+    [{
+      productId: "prod-screws",
+      incidentTypeId: "incident-damaged",
+      description: "Una unidad dañada, documentada sin alterar la cantidad recibida.",
+      quantityAffected: 1,
+      createdByUserId: "user-admin",
+    }],
+  );
+  assert.equal((await purchaseOrders.getById(incidentOrder.id))?.status, PurchaseOrderStatus.received);
+}
+
 async function main() {
+  await verifyPurchaseOrderReceivingStatus();
   // Regression: product metadata persists across an account/session switch,
   // while stock remains strictly branch-scoped. The adjustment below is the
   // real application service; POS is queried through its normal read model.
@@ -615,7 +734,7 @@ async function main() {
     /mayor que cero/,
   );
 
-  console.log("Inventory/receiving traceability harness passed (26 scenarios).");
+  console.log("Inventory/receiving traceability harness passed (26 existing + 5 status scenarios).");
 }
 
 void main().catch((error) => {

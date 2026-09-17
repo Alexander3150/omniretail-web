@@ -3,6 +3,7 @@ import type {
   Branch,
   BusinessCapabilitiesConfig,
   EcommerceConfig,
+  IncidentType,
   Role,
   Tenant,
   TenantSubscription,
@@ -76,6 +77,7 @@ export class MockTenantOnboardingRepository
 
       const now = this.now();
       const tenant = this.pushTenant(db, input, now);
+      this.pushIncidentTypes(db, tenant.id);
       const branch = this.pushBranch(db, tenant.id, now);
       const role = this.pushRole(db, tenant.id, input.adminPermissions, now);
       this.pushCustomerRole(db, tenant.id, now);
@@ -142,6 +144,23 @@ export class MockTenantOnboardingRepository
     };
     db.tenants.push(tenant);
     return tenant;
+  }
+
+  protected pushIncidentTypes(db: MockDatabase, tenantId: string): IncidentType[] {
+    const incidentTypes: IncidentType[] = [
+      { code: "DAMAGED", name: "Producto dañado" },
+      { code: "MISSING", name: "Producto faltante" },
+      { code: "UNSOLICITED", name: "Producto no solicitado" },
+      { code: "OTHER", name: "Otros" },
+    ].map(({ code, name }) => ({
+      id: this.id("incident-type"),
+      tenantId,
+      code,
+      name,
+      active: true,
+    }));
+    db.incidentTypes.push(...incidentTypes);
+    return incidentTypes;
   }
 
   // Branch inicial ANTES del User -- User.branchId/allowedBranchIds la necesitan (auditoría §11).

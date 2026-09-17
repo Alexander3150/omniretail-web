@@ -51,6 +51,13 @@ type PersistedPurchaseOrderItem = Omit<PurchaseOrderItem, "purchaseToBaseFactor"
   purchaseToBaseFactor?: number;
 };
 
+const CANONICAL_INCIDENT_TYPES = [
+  { code: "DAMAGED", name: "Producto dañado" },
+  { code: "MISSING", name: "Producto faltante" },
+  { code: "UNSOLICITED", name: "Producto no solicitado" },
+  { code: "OTHER", name: "Otros" },
+] as const;
+
 type PersistedMockDatabase = Partial<
   Omit<
     MockDatabase,
@@ -158,6 +165,23 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
     ...role,
     status: role.status ?? RoleStatus.active,
   }));
+  normalized.incidentTypes = [...(database.incidentTypes ?? base.incidentTypes)];
+  normalized.tenants.forEach((tenant) => {
+    CANONICAL_INCIDENT_TYPES.forEach(({ code, name }) => {
+      const exists = normalized.incidentTypes.some(
+        (incidentType) => incidentType.tenantId === tenant.id && incidentType.code === code,
+      );
+      if (!exists) {
+        normalized.incidentTypes.push({
+          id: `incident-type-${tenant.id}-${code.toLowerCase()}`,
+          tenantId: tenant.id,
+          code,
+          name,
+          active: true,
+        });
+      }
+    });
+  });
   normalized.productSalesPriceTiers = database.productSalesPriceTiers ?? [];
   normalized.productInventorySettings = normalizeProductInventorySettings(database, normalized);
   normalized.inventoryAdjustments = normalizeInventoryAdjustments(database, normalized);
