@@ -42,6 +42,9 @@ import {
   ReceivingServiceError,
   resolveReceivingContext,
 } from "@/modules/receiving/application/services/serviceHelpers";
+import type { TenantEntitlementsDto } from "@/shared/application/dto/EntitlementDto";
+import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
+import { isEffectiveBusinessCapabilityEnabled } from "@/shared/application/services/businessCapabilityEntitlement";
 import { isQuantityCompatibleWithUnit, toFiniteNumber } from "@/shared/utils/numberInput";
 import {
   MAX_SAFE_INVENTORY_QUANTITY,
@@ -206,7 +209,10 @@ export class ReceivingDocumentDetailService {
         this.repositories.users.getAll(),
       ]);
     const branch = branches.find((item) => item.id === order.branchId);
-    const capabilities = await this.getCapabilities(order.tenantId);
+    const [capabilities, entitlements] = await Promise.all([
+      this.getCapabilities(order.tenantId),
+      new ResolveTenantEntitlementsService(this.repositories).execute(order.tenantId),
+    ]);
     const orderReceipts = receipts.filter(
       (receipt) =>
         receipt.purchaseOrderId === order.id &&
@@ -303,7 +309,7 @@ export class ReceivingDocumentDetailService {
         orderNumber: order.number,
         orderedTotal: (order.items ?? []).reduce((sum, item) => sum + item.quantity, 0),
       }),
-      capabilities: toCapabilityFlags(capabilities),
+      capabilities: toCapabilityFlags(capabilities, entitlements),
       readOnly: order.status === PurchaseOrderStatus.received,
     };
   }
@@ -334,7 +340,10 @@ export class ReceivingDocumentDetailService {
       this.repositories.units.getAll(),
       this.repositories.inventory.getLocations(transfer.transfer.destinationBranchId),
     ]);
-    const capabilities = await this.getCapabilities(transfer.transfer.tenantId);
+    const [capabilities, entitlements] = await Promise.all([
+      this.getCapabilities(transfer.transfer.tenantId),
+      new ResolveTenantEntitlementsService(this.repositories).execute(transfer.transfer.tenantId),
+    ]);
     const branchById = new Map(branches.map((branch) => [branch.id, branch]));
     const productById = new Map(products.map((product) => [product.id, product]));
     const unitById = new Map(units.map((unit) => [unit.id, unit]));
@@ -363,7 +372,7 @@ export class ReceivingDocumentDetailService {
       incidentTypes: [],
       incidents: [],
       previousReceipts: [],
-      capabilities: toCapabilityFlags(capabilities),
+      capabilities: toCapabilityFlags(capabilities, entitlements),
       readOnly: true,
     };
   }
@@ -933,12 +942,19 @@ function toLocationOptions(locations: StorageLocation[], capabilities: BusinessC
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
-function toCapabilityFlags(capabilities: BusinessCapabilitiesConfig): ReceivingCapabilityFlags {
+function toCapabilityFlags(
+  capabilities: BusinessCapabilitiesConfig,
+  entitlements: TenantEntitlementsDto,
+): ReceivingCapabilityFlags {
   return {
     supportsInventory: capabilities.supportsInventory,
-    supportsLots: capabilities.supportsLots,
-    supportsExpiration: capabilities.supportsExpiration,
-    supportsSerials: capabilities.supportsSerials,
+    supportsLots: isEffectiveBusinessCapabilityEnabled(entitlements, capabilities, "supportsLots"),
+    supportsExpiration: isEffectiveBusinessCapabilityEnabled(
+      entitlements,
+      capabilities,
+      "supportsExpiration",
+    ),
+    supportsSerials: isEffectiveBusinessCapabilityEnabled(entitlements, capabilities, "supportsSerials"),
     supportsMultipleLocations: capabilities.supportsMultipleLocations,
     supportsUnitsAndPackaging: capabilities.supportsUnitsAndPackaging,
   };

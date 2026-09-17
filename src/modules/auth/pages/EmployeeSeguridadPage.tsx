@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { EMPLOYEE_PASSWORD_POLICY, getPasswordRequirementsMessage } from "@/config/auth-policy";
 import { useChangePassword } from "@/modules/auth/hooks/useChangePassword";
 import { useMfaEnrollment } from "@/modules/auth/hooks/useMfaEnrollment";
 import type { ChangePasswordFormDto } from "@/modules/auth/application/dto/ChangePasswordFormDto";
@@ -16,6 +17,8 @@ import { PageHeader } from "@/shared/components/PageHeader";
 import { PasswordInput } from "@/shared/components/PasswordInput";
 import { useToast } from "@/shared/components/Toast";
 import { TwoFactorAuthSection } from "@/shared/components/TwoFactorAuthSection";
+
+const employeePasswordHint = getPasswordRequirementsMessage(EMPLOYEE_PASSWORD_POLICY);
 
 const EMPTY_FORM: ChangePasswordFormDto = {
   currentPassword: "",
@@ -73,21 +76,33 @@ export function EmployeeSeguridadPage() {
           void handleSubmit();
         }}
       >
-        <FormField error={fieldErrors.currentPassword} id="employee-security-current-password" label="Contraseña actual">
+        <FormField
+          error={fieldErrors.currentPassword}
+          id="employee-security-current-password"
+          label="Contraseña actual"
+        >
           <PasswordInput
             autoComplete="current-password"
             disabled={busy}
             id="employee-security-current-password"
-            onChange={(event) => setForm((prev) => ({ ...prev, currentPassword: event.target.value }))}
+            onChange={(event) =>
+              setForm((prev) => ({ ...prev, currentPassword: event.target.value }))
+            }
             value={form.currentPassword}
           />
         </FormField>
 
-        <FormField error={fieldErrors.newPassword} id="employee-security-new-password" label="Nueva contraseña">
+        <FormField
+          error={fieldErrors.newPassword}
+          hint={employeePasswordHint}
+          id="employee-security-new-password"
+          label="Nueva contraseña"
+        >
           <PasswordInput
             autoComplete="new-password"
             disabled={busy}
             id="employee-security-new-password"
+            maxLength={EMPLOYEE_PASSWORD_POLICY.MAX_LENGTH}
             onChange={(event) => setForm((prev) => ({ ...prev, newPassword: event.target.value }))}
             value={form.newPassword}
           />
@@ -102,6 +117,7 @@ export function EmployeeSeguridadPage() {
             autoComplete="new-password"
             disabled={busy}
             id="employee-security-confirm-password"
+            maxLength={EMPLOYEE_PASSWORD_POLICY.MAX_LENGTH}
             onChange={(event) =>
               setForm((prev) => ({ ...prev, confirmNewPassword: event.target.value }))
             }

@@ -274,7 +274,8 @@ export interface AuthRepository {
    * activateEmployeeAccount desde PR9, aunque acá el AuthAccount ya
    * identifica inequívocamente a quién se le cambia la contraseña, así
    * que el riesgo es solo de atribución de auditoría, no de identidad);
-   * valida la contraseña elegida contra PASSWORD_POLICY (para que una
+   * valida la contraseña elegida contra la policy de Customer o Employee resuelta desde el User
+   * asociado (para que una
    * llamada directa a este método no pueda saltarse lo que el formulario
    * ya exige, mismo patrón que activateEmployeeAccount); actualiza la
    * contraseña; revoca todas las sesiones existentes (R-A24); registra
@@ -352,7 +353,7 @@ export interface AuthRepository {
    * exista, siga siendo Employee, y siga perteneciendo al MISMO tenant
    * que tenía al momento de la invitación (EmployeeInvitation.tenantId,
    * nunca un fallback como "tenant-demo"); y que la contraseña elegida
-   * cumpla PASSWORD_POLICY (validatePasswordAgainstPolicy) -- la misma
+   * cumpla EMPLOYEE_PASSWORD_POLICY -- la misma
    * regla que ya aplica el formulario, para que una llamada directa a
    * este método no pueda saltársela. Cualquiera de esas condiciones que
    * falle produce el mismo error genérico -- /activar-cuenta/[token] no
@@ -371,12 +372,12 @@ export interface AuthRepository {
    * ADEMÁS exige `mfaCodeMock` válido (ver ChangePasswordInput.mfaCodeMock)
    * -- ambos factores, no uno u otro.
    *
-   * Válida newPasswordMock contra PASSWORD_POLICY (mismo patrón que
+   * Valida newPasswordMock contra la policy Customer/Employee resuelta desde la sesión (mismo patrón que
    * resetPassword/activateEmployeeAccount: la política se aplica en la capa
    * funcional, no solo en el formulario), y además rechaza que
    * newPasswordMock sea igual a currentPasswordMock -- regla de UX (no del
    * documento de arquitectura) confirmada por QA manual, aplicada aquí y
-   * no solo en el formulario por el mismo motivo que PASSWORD_POLICY.
+   * no solo en el formulario por el mismo motivo que la password policy.
    *
    * Revoca las SESIONES RESTANTES (todas menos la que se usó para hacer este
    * cambio) -- distinto de resetPassword(), que revoca TODAS sin excepción

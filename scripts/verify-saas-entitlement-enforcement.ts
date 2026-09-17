@@ -1444,7 +1444,7 @@ async function verifyPr102TenantResolvesOwnPlan() {
     tenantSlug: `tenant-onboarding-entitlement-${suffix}`,
     adminName: "Admin Onboarding",
     adminEmail: `admin-onboarding-entitlement-${suffix}@example.test`,
-    adminPasswordMock: "OnboardingPass1",
+    adminPasswordMock: "OnboardingPass1!",
     planId: "plan-pr102-onboarding",
   });
 
@@ -1496,6 +1496,9 @@ async function verifyTenantDemoRemainsOperational() {
       SaasCapabilityKey.purchasing,
       SaasCapabilityKey.receiving,
       SaasCapabilityKey.pos,
+      SaasCapabilityKey.traceabilityLots,
+      SaasCapabilityKey.traceabilityExpiration,
+      SaasCapabilityKey.traceabilitySerials,
       SaasCapabilityKey.ecommerce,
       SaasCapabilityKey.delivery,
       SaasCapabilityKey.advancedReports,

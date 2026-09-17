@@ -1,4 +1,4 @@
-import { validatePasswordAgainstPolicy } from "@/config/auth-policy";
+import { validateCustomerPassword } from "@/config/auth-policy";
 import { validatePhoneNumber } from "@/config/contact-policy";
 import type { RegisterFormDto } from "@/modules/auth/application/dto/RegisterFormDto";
 
@@ -37,13 +37,13 @@ export function validateRegisterForm(dto: RegisterFormDto): RegisterFormValidati
     errors.phone = phoneError;
   }
 
-  // Antes esto duplicaba a mano las reglas de PASSWORD_POLICY (longitud,
+  // Antes esto duplicaba a mano las reglas de Customer password (longitud,
   // espacios) en vez de llamar a la funcion canonica -- por eso una
   // regla nueva agregada ahi (rechazar solo-numeros) nunca llegaba a
   // este formulario. Mismo patron que el resto de los formularios de
   // auth (resetPassword.validation.ts, changePassword.validation.ts):
   // una sola fuente de verdad, la funcion canonica, nunca una copia.
-  const passwordError = validatePasswordAgainstPolicy(dto.password);
+  const passwordError = validateCustomerPassword(dto.password, dto.email);
   if (passwordError) {
     errors.password = passwordError;
   }

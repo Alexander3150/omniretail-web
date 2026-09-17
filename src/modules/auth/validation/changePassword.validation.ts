@@ -1,4 +1,4 @@
-import { validatePasswordAgainstPolicy } from "@/config/auth-policy";
+import { validateEmployeePassword } from "@/config/auth-policy";
 import type { ChangePasswordFormDto } from "@/modules/auth/application/dto/ChangePasswordFormDto";
 
 export type ChangePasswordValidationErrors = Partial<
@@ -10,7 +10,7 @@ export type ChangePasswordValidationErrors = Partial<
  * (mismo flujo de cambio de contraseña para Employee/Admin) -- no se
  * reutiliza ese archivo directamente para no acoplar el modulo auth al
  * modulo customer; la unica regla real (PASSWORD_POLICY) ya vive
- * centralizada en config/auth-policy.ts y ambas copias la consumen desde
+ * centralizada en config/auth-policy.ts; esta superficie Employee consume su wrapper desde
  * ahi, nunca duplicada.
  */
 export function validateChangePasswordForm(
@@ -22,7 +22,7 @@ export function validateChangePasswordForm(
     errors.currentPassword = "Ingresa tu contraseña actual.";
   }
 
-  const passwordError = validatePasswordAgainstPolicy(dto.newPassword);
+  const passwordError = validateEmployeePassword(dto.newPassword);
   if (passwordError) {
     errors.newPassword = passwordError;
   } else if (dto.currentPassword && dto.newPassword === dto.currentPassword) {

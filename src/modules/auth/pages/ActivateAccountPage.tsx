@@ -1,12 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { EMPLOYEE_PASSWORD_POLICY, getPasswordRequirementsMessage } from "@/config/auth-policy";
 import { useActivateAccount } from "@/modules/auth/hooks/useActivateAccount";
 import { BrandMark } from "@/shared/components/BrandMark";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PasswordInput } from "@/shared/components/PasswordInput";
+
+const employeePasswordHint = getPasswordRequirementsMessage(EMPLOYEE_PASSWORD_POLICY);
 
 export function ActivateAccountPage({ token }: { token: string }) {
   const {
@@ -59,11 +62,17 @@ export function ActivateAccountPage({ token }: { token: string }) {
         >
           {formError ? <InlineAlert title={formError} tone="danger" /> : null}
 
-          <FormField error={fieldErrors.password} id="activate-password" label="Contraseña">
+          <FormField
+            error={fieldErrors.password}
+            hint={employeePasswordHint}
+            id="activate-password"
+            label="Contraseña"
+          >
             <PasswordInput
               autoComplete="new-password"
               disabled={isSubmitting}
               id="activate-password"
+              maxLength={EMPLOYEE_PASSWORD_POLICY.MAX_LENGTH}
               onChange={(event) => setPassword(event.target.value)}
               value={password}
             />
@@ -78,6 +87,7 @@ export function ActivateAccountPage({ token }: { token: string }) {
               autoComplete="new-password"
               disabled={isSubmitting}
               id="activate-confirm-password"
+              maxLength={EMPLOYEE_PASSWORD_POLICY.MAX_LENGTH}
               onChange={(event) => setConfirmPassword(event.target.value)}
               value={confirmPassword}
             />

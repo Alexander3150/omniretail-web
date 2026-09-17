@@ -1,5 +1,6 @@
 import { SaasCapabilityKey } from "@/core/enums";
 
+export const BASE_PLAN_ID = "plan-basic";
 export const BASE_MONTHLY_QUETZALES = 199;
 export const SUBSCRIPTION_ADDONS = [
   {

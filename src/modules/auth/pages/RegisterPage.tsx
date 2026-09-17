@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { CUSTOMER_PASSWORD_POLICY, getPasswordRequirementsMessage } from "@/config/auth-policy";
 import { useRegister } from "@/modules/auth/hooks/useRegister";
 import { BrandMark } from "@/shared/components/BrandMark";
 import { Button } from "@/shared/components/Button";
@@ -8,6 +9,8 @@ import { FormField } from "@/shared/components/FormField";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Input } from "@/shared/components/Input";
 import { PasswordInput } from "@/shared/components/PasswordInput";
+
+const customerPasswordHint = getPasswordRequirementsMessage(CUSTOMER_PASSWORD_POLICY);
 
 export function RegisterPage() {
   const {
@@ -135,11 +138,17 @@ export function RegisterPage() {
             />
           </FormField>
 
-          <FormField error={fieldErrors.password} id="register-password" label="Contraseña">
+          <FormField
+            error={fieldErrors.password}
+            hint={customerPasswordHint}
+            id="register-password"
+            label="Contraseña"
+          >
             <PasswordInput
               autoComplete="new-password"
               disabled={isSubmitting}
               id="register-password"
+              maxLength={CUSTOMER_PASSWORD_POLICY.MAX_LENGTH}
               onChange={(event) => setPassword(event.target.value)}
               value={password}
             />
@@ -154,6 +163,7 @@ export function RegisterPage() {
               autoComplete="new-password"
               disabled={isSubmitting}
               id="register-confirm-password"
+              maxLength={CUSTOMER_PASSWORD_POLICY.MAX_LENGTH}
               onChange={(event) => setConfirmPassword(event.target.value)}
               value={confirmPassword}
             />
