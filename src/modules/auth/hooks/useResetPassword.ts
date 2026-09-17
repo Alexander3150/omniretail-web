@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { PasswordPolicyError } from "@/config/auth-policy";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import {
   hasResetPasswordValidationErrors,
@@ -34,7 +35,11 @@ export function useResetPassword(token: string) {
     try {
       await repositories.auth.resetPassword(token, dto.password);
       setCompleted(true);
-    } catch {
+    } catch (error) {
+      if (error instanceof PasswordPolicyError) {
+        setFormError(error.message);
+        return;
+      }
       // Mismo criterio que verifyEmail/activateEmployeeAccount: token
       // inexistente, ya usado, superseded o vencido producen el mismo
       // mensaje genérico.

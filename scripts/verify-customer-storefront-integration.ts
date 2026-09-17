@@ -507,7 +507,7 @@ async function verifyRegistrationProvisioning() {
     name: "Nuevo Cliente",
     email: "nuevo@example.com",
     phone: "12345678",
-    passwordMock: "NuevoCliente123",
+    passwordMock: "NuevoCliente123!",
   });
 
   assert.equal(registerResult.user.type, UserType.customer);

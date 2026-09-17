@@ -1,11 +1,18 @@
 "use client";
 
+import {
+  CUSTOMER_PASSWORD_POLICY,
+  EMPLOYEE_PASSWORD_POLICY,
+  getPasswordRequirementsMessage,
+} from "@/config/auth-policy";
 import { useResetPassword } from "@/modules/auth/hooks/useResetPassword";
 import { BrandMark } from "@/shared/components/BrandMark";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PasswordInput } from "@/shared/components/PasswordInput";
+
+const resetPasswordHint = `Clientes: ${getPasswordRequirementsMessage(CUSTOMER_PASSWORD_POLICY)} Personal: ${getPasswordRequirementsMessage(EMPLOYEE_PASSWORD_POLICY)}`;
 
 export function ResetPasswordPage({ token }: { token: string }) {
   const {
@@ -59,11 +66,17 @@ export function ResetPasswordPage({ token }: { token: string }) {
         >
           {formError ? <InlineAlert title={formError} tone="danger" /> : null}
 
-          <FormField error={fieldErrors.password} id="reset-password" label="Nueva contraseña">
+          <FormField
+            error={fieldErrors.password}
+            hint={resetPasswordHint}
+            id="reset-password"
+            label="Nueva contraseña"
+          >
             <PasswordInput
               autoComplete="new-password"
               disabled={isSubmitting}
               id="reset-password"
+              maxLength={CUSTOMER_PASSWORD_POLICY.MAX_LENGTH}
               onChange={(event) => setPassword(event.target.value)}
               value={password}
             />
@@ -78,6 +91,7 @@ export function ResetPasswordPage({ token }: { token: string }) {
               autoComplete="new-password"
               disabled={isSubmitting}
               id="reset-confirm-password"
+              maxLength={CUSTOMER_PASSWORD_POLICY.MAX_LENGTH}
               onChange={(event) => setConfirmPassword(event.target.value)}
               value={confirmPassword}
             />

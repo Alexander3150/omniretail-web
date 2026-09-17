@@ -3,7 +3,7 @@
  * Profile.name y PaymentMethod.cardholderName. Antes ninguno de estos
  * campos tenia limite (ni en el input ni en la validacion funcional), lo
  * que permitia guardar strings arbitrariamente largos. Mismo criterio que
- * PASSWORD_POLICY en auth-policy.ts y PHONE_POLICY en contact-policy.ts:
+ * las password policies en auth-policy.ts y PHONE_POLICY en contact-policy.ts:
  * una sola funcion, un solo lugar para cambiarla.
  *
  * Las direcciones (label/recipientName/line1/line2/references) tienen su
