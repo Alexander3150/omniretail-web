@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { BranchSelector } from "@/shared/navigation/PrivateHeader/BranchSelector";
 import { MenuIcon } from "@/shared/navigation/PrivateHeader/icons";
 import { NotificationButton } from "@/shared/navigation/PrivateHeader/NotificationButton";
 import { UserMenu } from "@/shared/navigation/PrivateHeader/UserMenu";
@@ -10,6 +11,7 @@ type PrivateHeaderProps = {
   homeLabel?: string;
   onLogout?: () => void;
   onOpenSidebar: () => void;
+  showBranchSelector?: boolean;
   sidebarId: string;
   sidebarOpen: boolean;
   userMenuDescription?: string;
@@ -21,6 +23,7 @@ export function PrivateHeader({
   homeLabel,
   onLogout,
   onOpenSidebar,
+  showBranchSelector = true,
   sidebarId,
   sidebarOpen,
   userMenuDescription,
@@ -46,6 +49,11 @@ export function PrivateHeader({
           >
             {homeLabel ?? "Volver al inicio"}
           </Link>
+        ) : null}
+        {showBranchSelector ? (
+          <div className="flex min-w-0 flex-1 justify-end">
+            <BranchSelector />
+          </div>
         ) : null}
         <NotificationButton />
         <UserMenu description={userMenuDescription} label={userMenuLabel} onLogout={onLogout} />

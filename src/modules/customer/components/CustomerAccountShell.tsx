@@ -62,6 +62,7 @@ export function CustomerAccountShell({ children, navigationItems }: CustomerAcco
         homeLabel="Volver al inicio"
         navigationItems={navigationItems}
         onLogout={handleLogout}
+        showBranchSelector={false}
         userMenuDescription={user?.email}
         userMenuLabel={user?.name}
       >

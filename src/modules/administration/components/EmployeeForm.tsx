@@ -82,6 +82,23 @@ export function EmployeeForm({
         </FormField>
 
         <FormField
+          hint={isEdit ? "El código no se puede cambiar después de crear el empleado." : "Letras, números, guión y guión bajo."}
+          id="employee-code"
+          label="Código de empleado"
+        >
+          <Input
+            autoComplete="off"
+            disabled={busy || isEdit}
+            id="employee-code"
+            maxLength={ADMIN_FIELD_LIMITS.employee.employeeCode}
+            onChange={(event) => setField("employeeCode", event.target.value)}
+            placeholder="EMP-001"
+            required
+            value={value.employeeCode}
+          />
+        </FormField>
+
+        <FormField
           hint={isEdit ? "El correo no se puede cambiar desde acá." : undefined}
           id="employee-email"
           label="Correo electrónico"
@@ -193,6 +210,7 @@ function toEmployeeInput(employee?: EmployeeDto): EmployeeInputDto {
       name: employee.name,
       email: employee.email,
       phone: employee.phone,
+      employeeCode: employee.employeeCode ?? "",
       roleId: employee.roleId ?? "",
       allowedBranchIds: [...employee.allowedBranchIds],
       status: employee.status,
@@ -203,6 +221,7 @@ function toEmployeeInput(employee?: EmployeeDto): EmployeeInputDto {
     name: "",
     email: "",
     phone: "",
+    employeeCode: "",
     roleId: "",
     allowedBranchIds: [],
     status: UserStatus.active,

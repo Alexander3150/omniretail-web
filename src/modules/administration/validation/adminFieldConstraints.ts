@@ -10,6 +10,7 @@ export const ADMIN_FIELD_LIMITS = {
     name: 120,
     email: 254,
     phone: 9,
+    employeeCode: 20,
   },
   supplier: {
     name: 120,

@@ -14,6 +14,7 @@ const EDITABLE_STATUSES: readonly UserStatus[] = [
   UserStatus.blocked,
 ];
 const EMAIL_FORMAT = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMPLOYEE_CODE_FORMAT = /^[A-Za-z0-9_-]+$/;
 const LIMITS = ADMIN_FIELD_LIMITS.employee;
 
 /**
@@ -31,6 +32,18 @@ export function validateEmployeeInput(dto: EmployeeInputDto) {
   const email = dto.email.trim();
   if (!email || email.length > LIMITS.email || !EMAIL_FORMAT.test(email)) {
     throw new AdministrationServiceError("El correo del empleado no es válido.");
+  }
+  const employeeCode = dto.employeeCode.trim();
+  if (!employeeCode) {
+    throw new AdministrationServiceError("El código de empleado es obligatorio.");
+  }
+  if (employeeCode.length > LIMITS.employeeCode) {
+    throw new AdministrationServiceError("El código de empleado no puede exceder 20 caracteres.");
+  }
+  if (!EMPLOYEE_CODE_FORMAT.test(employeeCode)) {
+    throw new AdministrationServiceError(
+      "El código de empleado solo puede contener letras, números, guión y guión bajo.",
+    );
   }
   const phone = dto.phone?.trim();
   if (phone && !isValidGuatemalaPhone(phone)) {
@@ -56,6 +69,7 @@ export function normalizeEmployeeInput(dto: EmployeeInputDto): EmployeeInputDto 
     name: dto.name.trim(),
     email: dto.email.trim().toLowerCase(),
     phone: dto.phone?.trim() ? normalizeGuatemalaPhone(dto.phone) : undefined,
+    employeeCode: dto.employeeCode.trim().toUpperCase(),
     roleId: dto.roleId.trim(),
     allowedBranchIds: Array.from(
       new Set(dto.allowedBranchIds.map((id) => id.trim()).filter(Boolean)),

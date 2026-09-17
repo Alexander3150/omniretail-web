@@ -6,6 +6,7 @@ import { CashShiftTable } from "@/modules/administration/components/CashShiftTab
 import { useCashShifts } from "@/modules/administration/hooks/useCashShifts";
 import { CASH_READ_PERMISSION } from "@/modules/administration/permissions";
 import { Button } from "@/shared/components/Button";
+import { RefreshIcon } from "@/shared/components/icons";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { TablePagination, type TablePageSize } from "@/shared/components/TablePagination";
 
@@ -71,6 +72,18 @@ export function CashShiftsPage() {
   return (
     <div className="min-w-0 space-y-5">
       <PageHeader
+        actions={
+          <Button
+            className="gap-2"
+            disabled={loading}
+            onClick={() => void reload()}
+            title="Actualizar"
+            type="button"
+            variant="secondary"
+          >
+            <RefreshIcon className="h-4 w-4" />
+          </Button>
+        }
         description="Consultá aperturas, cierres y diferencias de los turnos de caja."
         title="Caja"
       />

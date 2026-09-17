@@ -23,7 +23,7 @@ import { ReportTotals } from "@/modules/administration/components/ReportTotals";
 import { useReports } from "@/modules/administration/hooks/useReports";
 import { REPORTS_READ_PERMISSION } from "@/modules/administration/permissions";
 import { Button } from "@/shared/components/Button";
-import { DownloadIcon } from "@/shared/components/icons";
+import { DownloadIcon, RefreshIcon } from "@/shared/components/icons";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { TablePagination, type TablePageSize } from "@/shared/components/TablePagination";
 
@@ -39,6 +39,7 @@ export function ReportsPage() {
     filter,
     kind,
     loading,
+    reload,
     resetFilter,
     rows,
     setFilter,
@@ -97,7 +98,18 @@ export function ReportsPage() {
     <div className="min-w-0 space-y-5">
       <PageHeader
         actions={
-          <div className="flex flex-col items-end gap-1">
+          <>
+            <Button
+              className="gap-2"
+              disabled={loading}
+              onClick={() => void reload()}
+              title="Actualizar"
+              type="button"
+              variant="secondary"
+            >
+              <RefreshIcon className="h-4 w-4" />
+            </Button>
+            <div className="flex flex-col items-end gap-1">
             <Button
               className="gap-2"
               disabled={!canExport || rows.length === 0 || loading}
@@ -113,7 +125,8 @@ export function ReportsPage() {
                 Requerí el módulo Reportes avanzados para exportar.
               </p>
             ) : null}
-          </div>
+            </div>
+          </>
         }
         description="Consultá información consolidada de ventas, compras, inventario y pagos."
         title="Reportes"
@@ -125,6 +138,9 @@ export function ReportsPage() {
           role="alert"
         >
           <p className="text-sm font-medium text-[var(--color-danger)]">{error}</p>
+          <Button onClick={() => void reload()} type="button" variant="secondary">
+            Reintentar
+          </Button>
         </div>
       ) : null}
 

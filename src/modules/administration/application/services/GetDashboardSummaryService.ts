@@ -53,7 +53,7 @@ export class GetDashboardSummaryService {
       { outOfStock: 0, lowStock: 0 },
     );
 
-    const topProducts = aggregateTopProducts(tenantSales);
+    const topProducts = aggregateTopProducts(monthSales);
 
     return {
       salesToday: summarizeSales(todaySales),

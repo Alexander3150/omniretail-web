@@ -36,7 +36,7 @@ export function BankAccountTable({ accounts, onSelect }: BankAccountTableProps) 
       key: "accountNumber",
       header: "Número",
       cell: (account) => (
-        <span className="font-mono text-[var(--color-text)]">{account.accountNumber}</span>
+        <span className="font-mono text-[var(--color-text)]">{account.accountNumberMasked}</span>
       ),
     },
     {
