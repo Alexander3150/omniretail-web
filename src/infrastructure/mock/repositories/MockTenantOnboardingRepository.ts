@@ -3,6 +3,7 @@ import type {
   Branch,
   BusinessCapabilitiesConfig,
   EcommerceConfig,
+  HeroBannerConfig,
   Role,
   Tenant,
   TenantSubscription,
@@ -82,6 +83,7 @@ export class MockTenantOnboardingRepository
       const authAccount = this.pushAuthAccount(db, user, input.adminPasswordMock, now);
       const businessCapabilities = this.pushBusinessCapabilities(db, tenant.id);
       const ecommerceConfig = this.pushEcommerceConfig(db, tenant, now);
+      this.pushHeroBanner(db, tenant.id, now);
       const subscription = this.pushSubscription(db, tenant.id, input.planId, now);
 
       return {
@@ -263,6 +265,22 @@ export class MockTenantOnboardingRepository
     };
     db.ecommerceConfigs.push(ecommerceConfig);
     return ecommerceConfig;
+  }
+
+  // Arranca neutro (sin copy de ningun rubro) -- el dueño configura sus propios textos/imagenes
+  // desde Diseño E-commerce antes de habilitar la tienda.
+  protected pushHeroBanner(db: MockDatabase, tenantId: string, now: string): HeroBannerConfig {
+    const heroBanner: HeroBannerConfig = {
+      tenantId,
+      slides: [
+        { title: "", description: "" },
+        { title: "", description: "" },
+        { title: "", description: "" },
+      ],
+      updatedAt: now,
+    };
+    db.heroBanners.push(heroBanner);
+    return heroBanner;
   }
 
   // Sólo crea/asocia -- nunca aplica capabilities/limits (eso queda para el enforcement futuro

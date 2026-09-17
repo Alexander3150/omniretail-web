@@ -37,6 +37,10 @@ export const ADMIN_FIELD_LIMITS = {
     contactPhone: 14,
     contactEmail: 254,
   },
+  heroBanner: {
+    title: 80,
+    description: 160,
+  },
 } as const;
 
 const PHONE_DIGIT_LIMIT = 8;

@@ -16,6 +16,7 @@ import type {
   EcommerceConfig,
   EmailVerification,
   EmployeeInvitation,
+  HeroBannerConfig,
   IncidentType,
   InventoryBalance,
   InventoryAdjustment,
@@ -83,6 +84,7 @@ export interface MockDatabase {
   branches: Branch[];
   businessCapabilities: BusinessCapabilitiesConfig[];
   ecommerceConfigs: EcommerceConfig[];
+  heroBanners: HeroBannerConfig[];
   planDefinitions: PlanDefinition[];
   tenantSubscriptions: TenantSubscription[];
   subscriptionInvoices: SubscriptionInvoice[];

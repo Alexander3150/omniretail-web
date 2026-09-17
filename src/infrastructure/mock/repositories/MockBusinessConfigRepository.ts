@@ -58,6 +58,7 @@ export class MockBusinessConfigRepository
         ...db.ecommerceConfigs[index],
         enabled: input.enabled,
         storeName: input.storeName,
+        logo: input.logo,
         contactPhone: input.contactPhone,
         contactEmail: input.contactEmail,
         requireAccountForCheckout: input.requireAccountForCheckout,
@@ -68,6 +69,35 @@ export class MockBusinessConfigRepository
         updatedAt: this.now(),
       };
       return db.ecommerceConfigs[index];
+    });
+    this.emit("business-config.changed", { tenantId, action: "updated" });
+    return updated;
+  }
+  async getHeroBanner(tenantId: string) {
+    return this.read((db) => db.heroBanners.find((item) => item.tenantId === tenantId) ?? null);
+  }
+  async createHeroBanner(input: Parameters<BusinessConfigRepository["createHeroBanner"]>[0]) {
+    const created = this.store.mutate((db) => {
+      const item = { ...input, updatedAt: this.now() };
+      db.heroBanners.push(item);
+      return item;
+    });
+    this.emit("business-config.changed", { tenantId: input.tenantId, action: "created" });
+    return created;
+  }
+  async updateHeroBanner(
+    tenantId: string,
+    input: Parameters<BusinessConfigRepository["updateHeroBanner"]>[1],
+  ) {
+    const updated = this.store.mutate((db) => {
+      const index = db.heroBanners.findIndex((item) => item.tenantId === tenantId);
+      if (index < 0) throw this.missing("HeroBannerConfig", tenantId);
+      db.heroBanners[index] = {
+        ...db.heroBanners[index],
+        slides: input.slides,
+        updatedAt: this.now(),
+      };
+      return db.heroBanners[index];
     });
     this.emit("business-config.changed", { tenantId, action: "updated" });
     return updated;

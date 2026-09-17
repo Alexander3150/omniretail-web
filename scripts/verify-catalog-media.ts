@@ -40,13 +40,13 @@ import type { ProductEditorDto } from "@/modules/catalog/application/dto/Product
 import { CreateProductWithCommercialDataService } from "@/modules/catalog/application/services/CreateProductWithCommercialDataService";
 import { GetProductDetailService } from "@/modules/catalog/application/services/GetProductDetailService";
 import { GetProductEditorDataService } from "@/modules/catalog/application/services/GetProductEditorDataService";
-import {
-  processCatalogImage,
-  type CatalogImageCodec,
-} from "@/modules/catalog/application/services/processCatalogImage";
 import { SaveCategoryService } from "@/modules/catalog/application/services/SaveCategoryService";
 import { UpdateProductWithCommercialDataService } from "@/modules/catalog/application/services/UpdateProductWithCommercialDataService";
 import { syncProductMedia } from "@/modules/catalog/application/services/productEditorHelpers";
+import {
+  processImageUpload,
+  type ImageUploadCodec,
+} from "@/shared/application/services/processImageUpload";
 
 const TENANT_A = "tenant-demo";
 const TENANT_B = "tenant-other";
@@ -394,31 +394,31 @@ async function verifyCategoryLifecycle() {
 
 async function verifyProcessingAndLegacyNormalization() {
   // K. MIME fuera de allowlist (incluido SVG/HTML) se rechaza antes de decodificar.
-  const neverCodec: CatalogImageCodec = {
+  const neverCodec: ImageUploadCodec = {
     async decodeAndResize() {
       throw new Error("decoder should not run");
     },
   };
   await assert.rejects(
-    processCatalogImage(new Blob(["<svg/>"], { type: "image/svg+xml" }), neverCodec),
+    processImageUpload(new Blob(["<svg/>"], { type: "image/svg+xml" }), neverCodec),
     /Formato no permitido/,
   );
   await assert.rejects(
-    processCatalogImage(new Blob(["<html/>"], { type: "text/html" }), neverCodec),
+    processImageUpload(new Blob(["<html/>"], { type: "text/html" }), neverCodec),
     /Formato no permitido/,
   );
   await assert.rejects(
-    processCatalogImage(new Blob(["not-an-image"], { type: "image/png" }), neverCodec),
+    processImageUpload(new Blob(["not-an-image"], { type: "image/png" }), neverCodec),
     /no contiene una imagen decodificable/,
   );
   let preservePng = false;
-  const validCodec: CatalogImageCodec = {
+  const validCodec: ImageUploadCodec = {
     async decodeAndResize(blob, options) {
       preservePng = options.preservePng;
       return { blob, width: 800, height: 600 };
     },
   };
-  const processed = await processCatalogImage(localDraft().blob, validCodec);
+  const processed = await processImageUpload(localDraft().blob, validCodec);
   assert.equal(preservePng, true);
   assert.equal(processed.mimeType, "image/png");
 

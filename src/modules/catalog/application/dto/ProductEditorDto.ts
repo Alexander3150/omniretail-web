@@ -13,7 +13,7 @@ import type {
 import type { CreateProductDto } from "@/modules/catalog/application/dto/CreateProductDto";
 import type { ProductDetailViewModel } from "@/modules/catalog/types/catalog.types";
 import type { NumericInputValue } from "@/shared/utils/numberInput";
-import type { CatalogImageUploadDraft } from "@/modules/catalog/application/dto/CatalogImageUploadDraft";
+import type { ImageUploadDraft } from "@/shared/application/dto/ImageUploadDraft";
 
 export interface ProductAttributeEditorValue {
   attributeDefinitionId?: string;
@@ -66,7 +66,7 @@ export type ProductMediaEditorValue = Pick<
   "type" | "url" | "source" | "alt" | "isPrimary" | "sortOrder"
 > & {
   id?: string;
-  pendingUpload?: CatalogImageUploadDraft;
+  pendingUpload?: ImageUploadDraft;
 };
 
 export interface ProductInventorySettingsEditorValue {

@@ -143,6 +143,7 @@ export function useEcommerceConfig() {
     config,
     branchOptions,
     canManage,
+    tenantId,
     save,
     reload,
   };

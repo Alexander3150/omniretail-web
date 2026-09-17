@@ -5,55 +5,26 @@ import { useEffect, useMemo, useState } from "react";
 import { StorefrontProductCard } from "@/modules/storefront/components/StorefrontProductCard";
 import { StorefrontCatalogImage } from "@/modules/storefront/components/StorefrontCatalogImage";
 import { StorefrontHorizontalCarousel } from "@/modules/storefront/components/StorefrontHorizontalCarousel";
+import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
 import { useStorefrontOffers } from "@/modules/storefront/hooks/useStorefrontOffers";
 import { useStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 
-const hardwareHeroMessages = [
-  {
-    badge: "Mayoreo B2B",
-    title: "Herramientas de alto rendimiento",
-    description:
-      "Equipamiento industrial para contratistas, talleres y constructoras con precios escalonados por volumen.",
-  },
-  {
-    badge: "Para tu proyecto",
-    title: "Todo para construir con confianza",
-    description: "Encuentra herramientas, fijación y suministros para cada etapa de tu obra.",
-  },
-  {
-    badge: "Compra inteligente",
-    title: "Calidad que impulsa tu trabajo",
-    description:
-      "Productos seleccionados para profesionales que buscan disponibilidad y rendimiento.",
-  },
-] as const;
+const FALLBACK_HERO_SLIDE = {
+  title: "Bienvenido a nuestra tienda",
+  description: "Descubrí los productos disponibles para comprar en línea.",
+  imageSource: undefined,
+} as const;
 
 export function HomePage() {
   const routes = useStorefrontRoutes();
+  const { config } = usePublicTenant();
   const { categories, products, loading, error } = useStorefrontDiscovery();
   const { items: offers } = useStorefrontOffers();
-  const hardwareImages = useMemo(
-    () =>
-      products
-        .filter(
-          (product) =>
-            product.imageSource &&
-            /herramient|ferreter|construcc|fijaci/i.test(
-              `${product.categoryName ?? ""} ${product.name}`,
-            ),
-        )
-        .slice(0, 3),
-    [products],
-  );
-  const slides = useMemo(
-    () =>
-      hardwareHeroMessages.map((message, index) => {
-        const image = hardwareImages[index % Math.max(hardwareImages.length, 1)];
-        return { ...message, imageSource: image?.imageSource, imageAlt: image?.imageAlt };
-      }),
-    [hardwareImages],
-  );
+  const slides = useMemo(() => {
+    const configuredSlides = config?.heroBanner.slides ?? [];
+    return configuredSlides.length > 0 ? configuredSlides : [FALLBACK_HERO_SLIDE];
+  }, [config]);
   const [activeSlide, setActiveSlide] = useState(0);
   const slide = slides[activeSlide % Math.max(slides.length, 1)];
   const featuredProducts = useMemo(() => {
@@ -86,14 +57,11 @@ export function HomePage() {
             <>
               <div className="absolute inset-y-0 right-0 z-10 w-full bg-gradient-to-r from-white via-white/90 to-white/10 sm:w-3/4" />
               <StorefrontCatalogImage
-                alt={slide.imageAlt ?? "Imagen promocional de ferretería"}
+                alt={slide.title}
                 className="absolute inset-0 z-0 h-full w-full object-contain object-right p-5 sm:p-8"
                 source={slide.imageSource}
               />
               <div className="relative z-20 flex min-h-[26rem] max-w-xl flex-col justify-center px-7 py-14 sm:min-h-[30rem] sm:px-12">
-                <p className="inline-flex w-fit rounded-md bg-amber-300 px-3 py-1 text-xs font-black uppercase tracking-wider text-[var(--color-title)]">
-                  {slide.badge}
-                </p>
                 <h1 className="mt-5 text-4xl font-black leading-tight text-[var(--color-text)] sm:text-5xl">
                   {slide.title}
                 </h1>
@@ -112,12 +80,14 @@ export function HomePage() {
             </>
           ) : (
             <div className="flex min-h-[26rem] flex-col justify-center px-7 sm:min-h-[30rem] sm:px-12">
-              <p className="text-sm font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">
-                Ferretería profesional
-              </p>
               <h1 className="mt-4 text-4xl font-black text-[var(--color-text)] sm:text-5xl">
-                Herramientas de alto rendimiento
+                {slide.title}
               </h1>
+              {slide.description ? (
+                <p className="mt-4 max-w-lg text-base leading-7 text-[var(--color-text-muted)] sm:text-lg">
+                  {slide.description}
+                </p>
+              ) : null}
               <Link
                 className="mt-7 w-fit rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)]"
           href={routes.catalog()}
@@ -133,7 +103,7 @@ export function HomePage() {
                   <button
                     aria-label={`Ver diapositiva ${index + 1}`}
                     className={`h-2.5 rounded-full transition ${index === activeSlide ? "w-7 bg-[var(--color-primary-hover)]" : "w-2.5 bg-[var(--color-border)]"}`}
-                    key={item.title}
+                    key={`${item.title}-${index}`}
                     onClick={() => setActiveSlide(index)}
                     type="button"
                   />

@@ -1,19 +1,34 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
+import type { HeroBannerSlide } from "@/core/entities";
 import type { EcommerceConfigInputDto } from "@/modules/administration/application/dto/EcommerceConfigDto";
+import type { HeroBannerConfigInputDto } from "@/modules/administration/application/dto/HeroBannerConfigDto";
 import { EcommerceConfigForm } from "@/modules/administration/components/EcommerceConfigForm";
+import { HeroBannerConfigForm } from "@/modules/administration/components/HeroBannerConfigForm";
 import { useEcommerceConfig } from "@/modules/administration/hooks/useEcommerceConfig";
+import { useHeroBannerConfig } from "@/modules/administration/hooks/useHeroBannerConfig";
 import { Button } from "@/shared/components/Button";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { useToast } from "@/shared/components/Toast";
 
 export function EcommerceConfigPage() {
-  const { branchOptions, canManage, config, error, loading, reload, save, saving } =
+  const { branchOptions, canManage, config, error, loading, reload, save, saving, tenantId } =
     useEcommerceConfig();
+  const {
+    config: heroBannerConfig,
+    error: heroBannerError,
+    loading: heroBannerLoading,
+    preset: heroBannerPreset,
+    reload: reloadHeroBanner,
+    save: saveHeroBanner,
+    saving: savingHeroBanner,
+  } = useHeroBannerConfig();
   const { showToast } = useToast();
   const [value, setValue] = useState<EcommerceConfigInputDto | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [heroBannerValue, setHeroBannerValue] = useState<HeroBannerConfigInputDto | null>(null);
+  const [heroBannerDirty, setHeroBannerDirty] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -28,18 +43,42 @@ export function EcommerceConfigPage() {
     };
   }, [config, dirty]);
 
+  useEffect(() => {
+    let active = true;
+
+    window.queueMicrotask(() => {
+      if (!active || heroBannerDirty) return;
+      setHeroBannerValue(heroBannerConfig ? toHeroBannerInputDto(heroBannerConfig.slides) : null);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [heroBannerConfig, heroBannerDirty]);
+
   function handleChange(nextValue: EcommerceConfigInputDto) {
     setValue(nextValue);
     setDirty(true);
   }
 
-  async function handleSubmit() {
-    if (!value) return;
+  function handleHeroBannerChange(nextValue: HeroBannerConfigInputDto) {
+    setHeroBannerValue(nextValue);
+    setHeroBannerDirty(true);
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!value || !heroBannerValue) return;
 
     try {
-      const savedConfig = await save(value);
+      const [savedConfig, savedHeroBanner] = await Promise.all([
+        save(value),
+        saveHeroBanner(heroBannerValue),
+      ]);
       setValue(toInputDto(savedConfig));
       setDirty(false);
+      setHeroBannerValue(toHeroBannerInputDto(savedHeroBanner.slides));
+      setHeroBannerDirty(false);
       showToast({
         title: "Diseño e-commerce actualizado",
         description: "La configuración de la tienda se guardó correctamente.",
@@ -57,7 +96,8 @@ export function EcommerceConfigPage() {
     }
   }
 
-  const showInitialLoading = loading && !value;
+  const isSaving = saving || savingHeroBanner;
+  const showInitialLoading = (loading || heroBannerLoading) && (!value || !heroBannerValue);
 
   if (!loading && !canManage) {
     return (
@@ -104,6 +144,18 @@ export function EcommerceConfigPage() {
         </div>
       ) : null}
 
+      {heroBannerError ? (
+        <div
+          className="flex flex-col gap-3 rounded-lg border border-[var(--color-danger)] bg-[var(--color-surface)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+          role="alert"
+        >
+          <p className="text-sm font-medium text-[var(--color-danger)]">{heroBannerError}</p>
+          <Button onClick={() => void reloadHeroBanner()} type="button" variant="secondary">
+            Reintentar
+          </Button>
+        </div>
+      ) : null}
+
       {showInitialLoading ? (
         <div
           aria-live="polite"
@@ -115,15 +167,29 @@ export function EcommerceConfigPage() {
           />
           Cargando configuración de e-commerce...
         </div>
-      ) : value ? (
-        <EcommerceConfigForm
-          branchOptions={branchOptions}
-          onChange={handleChange}
-          onSubmit={handleSubmit}
-          saving={saving}
-          value={value}
-        />
-      ) : !error ? (
+      ) : value && heroBannerValue ? (
+        <form className="space-y-5" onSubmit={handleSubmit}>
+          <EcommerceConfigForm
+            branchOptions={branchOptions}
+            onChange={handleChange}
+            saving={isSaving}
+            tenantId={tenantId}
+            value={value}
+          />
+          <HeroBannerConfigForm
+            onChange={handleHeroBannerChange}
+            preset={heroBannerPreset}
+            saving={isSaving}
+            tenantId={tenantId}
+            value={heroBannerValue}
+          />
+          <div className="flex justify-end">
+            <Button disabled={isSaving} type="submit">
+              {isSaving ? "Guardando..." : "Guardar cambios"}
+            </Button>
+          </div>
+        </form>
+      ) : !error && !heroBannerError ? (
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-sm text-[var(--color-text-muted)] shadow-sm">
           No hay una configuración de e-commerce disponible para el negocio actual.
         </div>
@@ -132,10 +198,21 @@ export function EcommerceConfigPage() {
   );
 }
 
+function toHeroBannerInputDto(slides: HeroBannerSlide[]): HeroBannerConfigInputDto {
+  return {
+    slides: slides.map((slide) => ({
+      title: slide.title,
+      description: slide.description,
+      image: slide.image,
+    })),
+  };
+}
+
 function toInputDto(config: EcommerceConfigInputDto): EcommerceConfigInputDto {
   return {
     enabled: config.enabled,
     storeName: config.storeName,
+    logo: config.logo,
     contactPhone: config.contactPhone,
     contactEmail: config.contactEmail,
     requireAccountForCheckout: config.requireAccountForCheckout,

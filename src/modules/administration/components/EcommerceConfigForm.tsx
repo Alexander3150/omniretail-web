@@ -1,4 +1,4 @@
-import type { FormEvent } from "react";
+import { useState } from "react";
 import type { EcommerceConfigInputDto } from "@/modules/administration/application/dto/EcommerceConfigDto";
 import { BusinessConfigToggle } from "@/modules/administration/components/BusinessConfigToggle";
 import type { EcommerceBranchOption } from "@/modules/administration/hooks/useEcommerceConfig";
@@ -6,6 +6,8 @@ import {
   ADMIN_FIELD_LIMITS,
   formatGuatemalaPhoneInput,
 } from "@/modules/administration/validation/adminFieldConstraints";
+import { useBlobPreviewUrl, useCatalogImageUrl } from "@/infrastructure/media/useCatalogImageUrl";
+import { processImageUpload } from "@/shared/application/services/processImageUpload";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
@@ -14,23 +16,28 @@ import { Select } from "@/shared/components/Select";
 interface EcommerceConfigFormProps {
   value: EcommerceConfigInputDto;
   branchOptions: EcommerceBranchOption[];
+  tenantId: string | null;
   saving: boolean;
   onChange: (value: EcommerceConfigInputDto) => void;
-  onSubmit: () => Promise<void>;
 }
 
 export function EcommerceConfigForm({
   value,
   branchOptions,
+  tenantId,
   saving,
   onChange,
-  onSubmit,
 }: EcommerceConfigFormProps) {
   const activeBranchIds = new Set(branchOptions.map((option) => option.id));
   const preservedDefaultBranchId =
     value.defaultBranchId && !activeBranchIds.has(value.defaultBranchId)
       ? value.defaultBranchId
       : null;
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const previewBlobUrl = useBlobPreviewUrl(value.pendingLogo?.blob);
+  const persistedLogoUrl = useCatalogImageUrl(tenantId, value.removeLogo ? undefined : value.logo, "");
+  const logoPreviewUrl = previewBlobUrl ?? persistedLogoUrl;
+  const hasLogo = Boolean(value.pendingLogo || (value.logo && !value.removeLogo));
 
   function setField<Key extends keyof EcommerceConfigInputDto>(
     key: Key,
@@ -39,13 +46,23 @@ export function EcommerceConfigForm({
     onChange({ ...value, [key]: fieldValue });
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    void onSubmit();
+  async function selectLogo(file: File | undefined) {
+    if (!file) return;
+    setLogoError(null);
+    try {
+      const pendingLogo = await processImageUpload(file);
+      onChange({ ...value, pendingLogo, removeLogo: false });
+    } catch (error) {
+      setLogoError(error instanceof Error ? error.message : "No se pudo procesar la imagen.");
+    }
+  }
+
+  function removeLogo() {
+    onChange({ ...value, logo: undefined, pendingLogo: undefined, removeLogo: true });
   }
 
   return (
-    <form className="space-y-5" onSubmit={handleSubmit}>
+    <div className="space-y-5">
       <section className="space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
         <h2 className="text-lg font-bold text-[var(--color-title)]">Configuración general</h2>
 
@@ -58,6 +75,43 @@ export function EcommerceConfigForm({
             required
             value={value.storeName}
           />
+        </FormField>
+
+        <FormField id="ecommerce-logo" label="Logo de la tienda">
+          <div className="flex items-center gap-4">
+            {logoPreviewUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                alt=""
+                className="h-20 w-20 shrink-0 rounded-md border border-[var(--color-border)] bg-white object-contain p-1"
+                src={logoPreviewUrl}
+              />
+            ) : (
+              <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-md border border-dashed border-[var(--color-border)] text-[10px] text-[var(--color-text-muted)]">
+                Sin logo
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <label className="inline-flex min-h-10 cursor-pointer items-center justify-center rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-white">
+                {hasLogo ? "Reemplazar logo" : "Seleccionar logo"}
+                <input
+                  accept="image/jpeg,image/png,image/webp"
+                  className="sr-only"
+                  onChange={(event) => {
+                    void selectLogo(event.target.files?.[0]);
+                    event.target.value = "";
+                  }}
+                  type="file"
+                />
+              </label>
+              {hasLogo ? (
+                <Button disabled={saving} onClick={removeLogo} type="button" variant="danger">
+                  Eliminar logo
+                </Button>
+              ) : null}
+            </div>
+          </div>
+          {logoError ? <p className="mt-2 text-sm text-[var(--color-danger)]">{logoError}</p> : null}
         </FormField>
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -155,12 +209,6 @@ export function EcommerceConfigForm({
           </Select>
         </FormField>
       </section>
-
-      <div className="flex justify-end">
-        <Button disabled={saving} type="submit">
-          {saving ? "Guardando..." : "Guardar cambios"}
-        </Button>
-      </div>
-    </form>
+    </div>
   );
 }
