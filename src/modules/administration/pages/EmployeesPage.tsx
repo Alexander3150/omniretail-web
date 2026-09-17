@@ -9,6 +9,7 @@ import { EmployeeForm } from "@/modules/administration/components/EmployeeForm";
 import { EmployeeTable } from "@/modules/administration/components/EmployeeTable";
 import { useEmployees } from "@/modules/administration/hooks/useEmployees";
 import { Button } from "@/shared/components/Button";
+import { UserPlusIcon } from "@/shared/components/icons";
 import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { useToast } from "@/shared/components/Toast";
@@ -147,7 +148,8 @@ export function EmployeesPage() {
       <PageHeader
         actions={
           canManage ? (
-            <Button onClick={() => setEditor({ mode: "create" })} type="button">
+            <Button className="gap-2" onClick={() => setEditor({ mode: "create" })} type="button">
+              <UserPlusIcon className="h-4 w-4" />
               Nuevo empleado
             </Button>
           ) : null

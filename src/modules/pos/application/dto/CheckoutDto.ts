@@ -50,6 +50,7 @@ export interface CheckoutBankAccountDto {
   bankName: string;
   accountType: BankAccountType;
   holderName: string;
+  accountNumber: string;
   accountNumberMasked: string;
   currency: CurrencyCode;
 }

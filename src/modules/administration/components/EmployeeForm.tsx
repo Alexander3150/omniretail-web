@@ -8,6 +8,10 @@ import type {
   EmployeeInputDto,
 } from "@/modules/administration/application/dto/EmployeeDto";
 import type { BranchOption, RoleOption } from "@/modules/administration/hooks/useEmployees";
+import {
+  ADMIN_FIELD_LIMITS,
+  formatGuatemalaPhoneInput,
+} from "@/modules/administration/validation/adminFieldConstraints";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
@@ -70,9 +74,27 @@ export function EmployeeForm({
           <Input
             disabled={busy}
             id="employee-name"
+            maxLength={ADMIN_FIELD_LIMITS.employee.name}
             onChange={(event) => setField("name", event.target.value)}
             required
             value={value.name}
+          />
+        </FormField>
+
+        <FormField
+          hint={isEdit ? "El código no se puede cambiar después de crear el empleado." : "Letras, números, guión y guión bajo."}
+          id="employee-code"
+          label="Código de empleado"
+        >
+          <Input
+            autoComplete="off"
+            disabled={busy || isEdit}
+            id="employee-code"
+            maxLength={ADMIN_FIELD_LIMITS.employee.employeeCode}
+            onChange={(event) => setField("employeeCode", event.target.value)}
+            placeholder="EMP-001"
+            required
+            value={value.employeeCode}
           />
         </FormField>
 
@@ -84,6 +106,7 @@ export function EmployeeForm({
           <Input
             disabled={busy || isEdit}
             id="employee-email"
+            maxLength={ADMIN_FIELD_LIMITS.employee.email}
             onChange={(event) => setField("email", event.target.value)}
             required
             type="email"
@@ -95,7 +118,9 @@ export function EmployeeForm({
           <Input
             disabled={busy}
             id="employee-phone"
-            onChange={(event) => setField("phone", event.target.value)}
+            maxLength={ADMIN_FIELD_LIMITS.employee.phone}
+            onChange={(event) => setField("phone", formatGuatemalaPhoneInput(event.target.value))}
+            placeholder="0000-0000"
             type="tel"
             value={value.phone ?? ""}
           />
@@ -185,6 +210,7 @@ function toEmployeeInput(employee?: EmployeeDto): EmployeeInputDto {
       name: employee.name,
       email: employee.email,
       phone: employee.phone,
+      employeeCode: employee.employeeCode ?? "",
       roleId: employee.roleId ?? "",
       allowedBranchIds: [...employee.allowedBranchIds],
       status: employee.status,
@@ -195,6 +221,7 @@ function toEmployeeInput(employee?: EmployeeDto): EmployeeInputDto {
     name: "",
     email: "",
     phone: "",
+    employeeCode: "",
     roleId: "",
     allowedBranchIds: [],
     status: UserStatus.active,

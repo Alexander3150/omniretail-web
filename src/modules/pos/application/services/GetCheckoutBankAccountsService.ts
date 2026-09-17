@@ -42,6 +42,7 @@ export class GetCheckoutBankAccountsService {
         bankName: account.bankName,
         accountType: account.accountType,
         holderName: account.holderName,
+        accountNumber: account.accountNumber,
         accountNumberMasked: account.accountNumberMasked,
         currency: account.currency,
       }));

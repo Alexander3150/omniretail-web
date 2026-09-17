@@ -2,16 +2,18 @@ import type { BankAccountStatus, BankAccountType } from "@/core/entities";
 import type { CurrencyCode } from "@/core/types/common.types";
 import type { BankAccountInputDto } from "@/modules/administration/application/dto/BankAccountDto";
 import { AdministrationServiceError } from "@/modules/administration/application/services/serviceHelpers";
+import { ADMIN_FIELD_LIMITS } from "@/modules/administration/validation/adminFieldConstraints";
 
 const ACCOUNT_TYPES: readonly BankAccountType[] = ["monetary", "savings"];
 const CURRENCIES: readonly string[] = ["GTQ", "USD"];
 const STATUSES: readonly BankAccountStatus[] = ["active", "inactive", "archived"];
+const LIMITS = ADMIN_FIELD_LIMITS.bankAccount;
 
 const ACCOUNT_NUMBER_SEPARATORS = /[\s-]/g;
 /**
- * El proyecto no define un rango de longitud de negocio (ni IBAN, ni reglas por banco/país): el
- * único requisito real es que sea una cadena de dígitos, preservando ceros iniciales. Imponer un
- * mínimo/máximo arbitrario rechazaría números válidos sin ninguna regla que lo respalde.
+ * El contrato todavía no define IBAN ni reglas por banco/país. Para esta primera capa se exige
+ * solo dígitos, preservando ceros iniciales, y se aplica un máximo prudente documentado para
+ * evitar entradas excesivas hasta que backend confirme reglas bancarias definitivas.
  */
 const ACCOUNT_NUMBER_FORMAT = /^\d+$/;
 
@@ -48,25 +50,49 @@ export function maskAccountNumber(accountNumber: string): string {
  * que en alta.
  */
 export function validateBankAccountInput(dto: BankAccountInputDto, mode: "create" | "update") {
-  if (!dto.bankName.trim()) {
+  const bankName = dto.bankName.trim();
+  const holderName = dto.holderName.trim();
+  if (!bankName) {
     throw new AdministrationServiceError("El banco es obligatorio.");
   }
-  if (!dto.holderName.trim()) {
+  if (bankName.length > LIMITS.bankName) {
+    throw new AdministrationServiceError("El banco no puede exceder 80 caracteres.");
+  }
+  if (!holderName) {
     throw new AdministrationServiceError("El titular de la cuenta es obligatorio.");
+  }
+  if (holderName.length > LIMITS.holderName) {
+    throw new AdministrationServiceError(
+      "El titular de la cuenta no puede exceder 120 caracteres.",
+    );
   }
 
   const accountNumberProvided = dto.accountNumber.trim().length > 0;
   if (mode === "create" && !accountNumberProvided) {
     throw new AdministrationServiceError("El número de cuenta es obligatorio.");
   }
-  if (accountNumberProvided && !isValidAccountNumber(normalizeAccountNumber(dto.accountNumber))) {
+  const normalizedAccountNumber = normalizeAccountNumber(dto.accountNumber);
+  if (accountNumberProvided && !isValidAccountNumber(normalizedAccountNumber)) {
     throw new AdministrationServiceError(
-      "El número de cuenta no es válido. Ingresá solo dígitos, sin letras.",
+      "El número de cuenta no es válido. Ingresa solo dígitos, sin letras.",
     );
   }
+  if (accountNumberProvided && normalizedAccountNumber.length > LIMITS.accountNumber) {
+    throw new AdministrationServiceError("El número de cuenta no puede exceder 24 dígitos.");
+  }
 
-  if (!dto.alias.trim()) {
+  const alias = dto.alias.trim();
+  if (!alias) {
     throw new AdministrationServiceError("El alias de la cuenta es obligatorio.");
+  }
+  if (alias.length > LIMITS.alias) {
+    throw new AdministrationServiceError("El alias de la cuenta no puede exceder 50 caracteres.");
+  }
+  const transferInstructions = dto.transferInstructions?.trim();
+  if (transferInstructions && transferInstructions.length > LIMITS.transferInstructions) {
+    throw new AdministrationServiceError(
+      "Las instrucciones de transferencia no pueden exceder 300 caracteres.",
+    );
   }
   if (!ACCOUNT_TYPES.includes(dto.accountType)) {
     throw new AdministrationServiceError("El tipo de cuenta no es válido.");

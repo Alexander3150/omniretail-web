@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { EMPLOYEE_HOME_ACCESS_PERMISSION, hasEmployeeHomeAccess } from "@/modules/auth/permissions";
@@ -28,6 +28,7 @@ export function AuthorizedPrivateShell({ children, navigationItems }: Authorized
   const { permissions, user } = useCurrentSession();
   const repositories = useRepositories();
   const router = useRouter();
+  const pathname = usePathname();
 
   const allowedPermissions = useMemo(() => {
     const set = new Set(permissions);
@@ -55,11 +56,14 @@ export function AuthorizedPrivateShell({ children, navigationItems }: Authorized
     }
   }, [repositories, router]);
 
+  const showBranchSelector = !pathname.startsWith("/administracion");
+
   return (
     <PrivateShell
       allowedPermissions={allowedPermissions}
       navigationItems={navigationItems}
       onLogout={handleLogout}
+      showBranchSelector={showBranchSelector}
       userMenuDescription={user?.email}
       userMenuLabel={user?.name}
     >

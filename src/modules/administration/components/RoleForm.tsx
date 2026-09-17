@@ -9,6 +9,7 @@ import {
   groupPermissionsByModule,
   permissionModuleLabels,
 } from "@/modules/administration/permissionModuleLabels";
+import { ADMIN_FIELD_LIMITS } from "@/modules/administration/validation/adminFieldConstraints";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
@@ -66,6 +67,7 @@ export function RoleForm({ role, busy, actorPermissions, onCancel, onSubmit }: R
           <Input
             disabled={busy}
             id="role-name"
+            maxLength={ADMIN_FIELD_LIMITS.role.name}
             onChange={(event) => setField("name", event.target.value)}
             required
             value={value.name}
@@ -76,9 +78,7 @@ export function RoleForm({ role, busy, actorPermissions, onCancel, onSubmit }: R
           <Select
             disabled={busy}
             id="role-status"
-            onChange={(event) =>
-              setField("status", event.target.value as RoleInputDto["status"])
-            }
+            onChange={(event) => setField("status", event.target.value as RoleInputDto["status"])}
             value={value.status}
           >
             {statusOptions.map((status) => (
@@ -95,6 +95,7 @@ export function RoleForm({ role, busy, actorPermissions, onCancel, onSubmit }: R
           className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={busy}
           id="role-description"
+          maxLength={ADMIN_FIELD_LIMITS.role.description}
           onChange={(event) => setField("description", event.target.value)}
           value={value.description ?? ""}
         />
@@ -130,9 +131,7 @@ export function RoleForm({ role, busy, actorPermissions, onCancel, onSubmit }: R
                       <input
                         checked={checked}
                         disabled={disabled}
-                        onChange={(event) =>
-                          togglePermission(permission.key, event.target.checked)
-                        }
+                        onChange={(event) => togglePermission(permission.key, event.target.checked)}
                         type="checkbox"
                       />
                       <span>

@@ -504,6 +504,7 @@ async function verifyAdminSelfSufficiency() {
       name: "Segundo Empleado",
       email: `second-employee-${Math.random().toString(36).slice(2, 9)}@example.test`,
       phone: undefined,
+      employeeCode: `SEC-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
       roleId: result.roleId,
       allowedBranchIds: [result.branchId],
       status: UserStatus.active,

@@ -30,6 +30,7 @@ export interface EmployeeInputDto {
   name: string;
   email: string;
   phone?: string;
+  employeeCode: string;
   roleId: string;
   allowedBranchIds: string[];
   status: UserStatus;

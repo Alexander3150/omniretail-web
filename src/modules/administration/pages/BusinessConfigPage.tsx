@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BusinessPreset } from "@/core/enums";
+import { BusinessPreset, PaymentMethod } from "@/core/enums";
 import type { BusinessConfigDto } from "@/modules/administration/application/dto/BusinessConfigDto";
 import {
   BusinessConfigForm,
@@ -67,6 +67,21 @@ export function BusinessConfigPage() {
           [tracking]: checked,
         },
       });
+    });
+    setDirty(true);
+  }
+
+  function handlePosPaymentChange(method: PaymentMethod, checked: boolean) {
+    setValue((current) => {
+      if (!current) return current;
+      const currentMethods = current.allowedPosPaymentMethods ?? [];
+      const nextMethods = checked
+        ? [...currentMethods, method]
+        : currentMethods.filter((m) => m !== method);
+      return {
+        ...current,
+        allowedPosPaymentMethods: nextMethods,
+      };
     });
     setDirty(true);
   }
@@ -165,6 +180,7 @@ export function BusinessConfigPage() {
           busy={busy}
           onCapabilityChange={handleCapabilityChange}
           onPresetChange={handlePresetChange}
+          onPosPaymentChange={handlePosPaymentChange}
           onSubmit={handleSubmit}
           onTrackingChange={handleTrackingChange}
           value={value}
