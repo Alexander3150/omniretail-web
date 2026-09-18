@@ -1,6 +1,7 @@
 import type { InventoryTransferRequest } from "@/core/entities";
-import { InventoryTransferRequestStatus } from "@/core/enums";
+import { BranchStatus, InventoryTransferRequestStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/services/resolveCurrentSessionSnapshot";
 import type { TransferRequestDto } from "@/modules/inventory/application/dto/InventoryAlertsDto";
 import { MAX_SAFE_INVENTORY_QUANTITY, TEXT_LIMITS } from "@/shared/utils/inputLimits";
 import { isQuantityCompatibleWithUnit } from "@/shared/utils/numberInput";
@@ -9,6 +10,7 @@ import {
   ensureInventoryBranchBelongsToTenant,
   ensureProductBelongsToTenant,
   ensureTenantCanUseInventory,
+  ensureTenantCanUseTracking,
   ensureUserCanOperateInventoryBranch,
   InventoryServiceError,
   resolveInventoryContext,
@@ -80,24 +82,61 @@ export function assertValidTransferQuantity(quantity: number, unitAllowsDecimals
 export class ApproveTransferRequestService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async execute(requestId: string): Promise<InventoryTransferRequest> {
+  async execute(requestId: string, operationId = `transfer-request:${requestId}`) {
     const { tenantId, actorUserId, user, permissions } = await resolveInventoryContext(
       this.repositories,
     );
     ensureCanManageTransfers(permissions);
-    await ensureTenantCanUseInventory(this.repositories, tenantId);
+    const entitlements = await ensureTenantCanUseInventory(this.repositories, tenantId);
 
-    const request = await ensureReviewableRequest(this.repositories, requestId, tenantId);
-    await ensureUserCanOperateInventoryBranch(this.repositories, user, request.sourceBranchId);
-    await ensureInventoryBranchBelongsToTenant(
+    const request = await this.repositories.inventoryTransferRequests.getById(requestId);
+    if (!request || request.tenantId !== tenantId) {
+      throw new InventoryServiceError("Solicitud de traslado no encontrada.");
+    }
+    const session = await resolveCurrentSessionSnapshot(this.repositories);
+    const activeBranchId = session.sessionId
+      ? (await this.repositories.auth.getSession(session.sessionId))?.activeBranchId
+      : undefined;
+    if (!activeBranchId || activeBranchId !== request.sourceBranchId) {
+      throw new InventoryServiceError("La sucursal proveedora debe estar activa para aceptar la solicitud.");
+    }
+    const source = await ensureUserCanOperateInventoryBranch(
+      this.repositories, user, request.sourceBranchId,
+    );
+    const destination = await ensureInventoryBranchBelongsToTenant(
       this.repositories,
       tenantId,
       request.requestingBranchId,
     );
+    if (source.id === destination.id || source.status !== BranchStatus.active ||
+      destination.status !== BranchStatus.active) {
+      throw new InventoryServiceError("Las sucursales del traslado deben estar activas y ser distintas.");
+    }
+    const product = ensureProductBelongsToTenant(
+      await this.repositories.products.getById(request.productId), tenantId,
+    );
+    const capabilities = await this.repositories.businessConfig.getCapabilities(tenantId);
+    if (!capabilities) throw new InventoryServiceError("Configuración de inventario no disponible.");
+    ensureTenantCanUseTracking(entitlements, capabilities, product);
+    const unit = await this.repositories.units.getByIdScoped(tenantId, product.baseUnitId);
+    if (!unit) throw new InventoryServiceError("La unidad base del producto no está disponible.");
+    assertValidTransferQuantity(request.requestedQuantity, unit.allowsDecimals);
+    if (!operationId.trim()) throw new InventoryServiceError("La operación requiere una identidad.");
 
-    return this.repositories.inventoryTransferRequests.approveRequest(request.id, {
-      reviewedByUserId: actorUserId,
+    const result = await this.repositories.inventoryTransfers.create({
+      tenantId,
+      sourceBranchId: request.sourceBranchId,
+      destinationBranchId: request.requestingBranchId,
+      operationId: operationId.trim(),
+      preparedByUserId: actorUserId,
+      sourceRequestIds: [request.id],
+      approveSourceRequest: { requestId: request.id, reviewedByUserId: actorUserId },
+      reason: request.reason,
+      notes: request.notes,
+      items: [{ productId: product.id, sourceRequestId: request.id,
+        requestedQuantity: request.requestedQuantity }],
     });
+    return result.transfer;
   }
 }
 

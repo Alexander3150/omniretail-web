@@ -1,23 +1,27 @@
 import assert from "node:assert/strict";
-import { InventoryTransferStatus, SerialStatus } from "@/core/enums";
+import { InventoryTransferReason, InventoryTransferStatus, SerialStatus } from "@/core/enums";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import { MockBranchRepository } from "@/infrastructure/mock/repositories/MockBranchRepository";
 import { MockBusinessConfigRepository } from "@/infrastructure/mock/repositories/MockBusinessConfigRepository";
+import { MockCategoryRepository } from "@/infrastructure/mock/repositories/MockCategoryRepository";
 import { MockCustomerRepository } from "@/infrastructure/mock/repositories/MockCustomerRepository";
 import { MockDispatchRepository } from "@/infrastructure/mock/repositories/MockDispatchRepository";
 import { MockIncidentTypeRepository } from "@/infrastructure/mock/repositories/MockIncidentTypeRepository";
 import { MockInventoryRepository } from "@/infrastructure/mock/repositories/MockInventoryRepository";
 import { MockInventoryTransferRepository } from "@/infrastructure/mock/repositories/MockInventoryTransferRepository";
+import { MockInventoryTransferRequestRepository } from "@/infrastructure/mock/repositories/MockInventoryTransferRequestRepository";
 import { MockOrderRepository } from "@/infrastructure/mock/repositories/MockOrderRepository";
 import { MockPackingRepository } from "@/infrastructure/mock/repositories/MockPackingRepository";
 import { MockPickingRepository } from "@/infrastructure/mock/repositories/MockPickingRepository";
 import { MockPlanRepository } from "@/infrastructure/mock/repositories/MockPlanRepository";
+import { MockProductKitComponentRepository } from "@/infrastructure/mock/repositories/MockProductKitComponentRepository";
 import { MockProductRepository } from "@/infrastructure/mock/repositories/MockProductRepository";
 import { MockPurchaseOrderRepository } from "@/infrastructure/mock/repositories/MockPurchaseOrderRepository";
 import { MockReceiptRepository } from "@/infrastructure/mock/repositories/MockReceiptRepository";
 import { MockRoleRepository } from "@/infrastructure/mock/repositories/MockRoleRepository";
 import { MockSupplierRepository } from "@/infrastructure/mock/repositories/MockSupplierRepository";
+import { MockSupplierProductRepository } from "@/infrastructure/mock/repositories/MockSupplierProductRepository";
 import { MockTenantRepository } from "@/infrastructure/mock/repositories/MockTenantRepository";
 import { MockTenantSubscriptionRepository } from "@/infrastructure/mock/repositories/MockTenantSubscriptionRepository";
 import { MockUnitRepository } from "@/infrastructure/mock/repositories/MockUnitRepository";
@@ -25,6 +29,8 @@ import { MockUserRepository } from "@/infrastructure/mock/repositories/MockUserR
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import { CreateInventoryTransferService, CancelInventoryTransferService } from "@/modules/inventory/application/services/InventoryTransferServices";
+import { GetInventoryAlertsService } from "@/modules/inventory/application/services/GetInventoryAlertsService";
+import { ApproveTransferRequestService, CreateTransferRequestService, RejectTransferRequestService } from "@/modules/inventory/application/services/TransferRequestServices";
 import { DispatchApplicationService } from "@/modules/logistics/application/services/DispatchApplicationService";
 import { PackingApplicationService } from "@/modules/logistics/application/services/PackingApplicationService";
 import { PickingApplicationService } from "@/modules/logistics/application/services/PickingApplicationService";
@@ -56,6 +62,7 @@ function fixture() {
   const store = new MockDatabaseStore(storage);
   store.transact((db) => {
     db.inventoryTransfers = [];
+    db.inventoryTransferRequests = [];
     db.inventoryTransferItems = [];
     db.inventoryReservations = [];
     db.inventoryReservationConsumeOperations = [];
@@ -110,20 +117,24 @@ function fixture() {
     auth,
     branches: new MockBranchRepository(store, bus),
     businessConfig: new MockBusinessConfigRepository(store, bus),
+    categories: new MockCategoryRepository(store, bus),
     customers: new MockCustomerRepository(store, bus),
     dispatches: new MockDispatchRepository(store, bus),
     incidentTypes: new MockIncidentTypeRepository(store, bus),
     inventory: new MockInventoryRepository(store, bus),
     inventoryTransfers: new MockInventoryTransferRepository(store, bus),
+    inventoryTransferRequests: new MockInventoryTransferRequestRepository(store, bus),
     orders: new MockOrderRepository(store, bus),
     packings: new MockPackingRepository(store, bus),
     picking: new MockPickingRepository(store, bus),
     plans: new MockPlanRepository(store, bus),
     products: new MockProductRepository(store, bus),
+    productKitComponents: new MockProductKitComponentRepository(store, bus),
     purchaseOrders: new MockPurchaseOrderRepository(store, bus),
     receipts: new MockReceiptRepository(store, bus),
     roles: new MockRoleRepository(store, bus),
     suppliers: new MockSupplierRepository(store, bus),
+    supplierProducts: new MockSupplierProductRepository(store, bus),
     tenants: new MockTenantRepository(store, bus),
     tenantSubscriptions: new MockTenantSubscriptionRepository(store, bus),
     units: new MockUnitRepository(store, bus),
@@ -308,7 +319,111 @@ async function exerciseTransfer(
   return created;
 }
 
+async function exerciseTransferRequests() {
+  const env = fixture();
+  const withActiveBranch = (branchId: string, sessionId = "transfer-session"): RepositoryRegistry => ({
+    ...env.repositories,
+    auth: {
+      ...env.repositories.auth,
+      getCurrentSessionId: async () => sessionId,
+      getSession: async () => ({
+        id: sessionId, userId: actorId,
+        createdAt: "2026-09-01T00:00:00.000Z",
+        expiresAt: "2099-01-01T00:00:00.000Z", rememberMe: false,
+        activeBranchId: branchId,
+      }),
+    },
+  } as RepositoryRegistry);
+  const requester = withActiveBranch(destinationBranchId);
+  const provider = withActiveBranch(sourceBranchId);
+  const requestInput = (suffix: string, quantity = 2) => ({
+    productId: "prod-screws", requesterBranchId: destinationBranchId,
+    providerBranchId: sourceBranchId, quantity,
+    reason: InventoryTransferReason.replenishment,
+    notes: suffix,
+  });
+  const counts = () => {
+    const db = env.store.getSnapshot();
+    return { transfers: db.inventoryTransfers.length,
+      reservations: db.inventoryReservations.length,
+      pickings: db.pickingOrders.length };
+  };
+  const requested = await new CreateTransferRequestService(requester).execute(requestInput("accept"));
+  assert.equal(requested.status, "requested");
+  assert.deepEqual(counts(), { transfers: 0, reservations: 0, pickings: 0 });
+  assert.ok((await new GetInventoryAlertsService(provider).execute(sourceBranchId))
+    .transferRequests.some((row) => row.id === requested.id && row.context === "received"));
+
+  const rejectedRequest = await new CreateTransferRequestService(requester)
+    .execute(requestInput("reject"));
+  assert.equal((await new RejectTransferRequestService(provider)
+    .execute(rejectedRequest.id, "Sin disponibilidad")).status, "rejected");
+  assert.deepEqual(counts(), { transfers: 0, reservations: 0, pickings: 0 });
+  await assert.rejects(new ApproveTransferRequestService(provider).execute(rejectedRequest.id),
+    /not reviewable/);
+
+  await assert.rejects(new ApproveTransferRequestService(requester).execute(requested.id),
+    /sucursal proveedora debe estar activa/);
+  env.store.transact((db) => {
+    db.inventoryTransferRequests.push({ ...requested, id: "foreign-transfer-request",
+      tenantId: "tenant-foreign" });
+  });
+  await assert.rejects(new ApproveTransferRequestService(provider)
+    .execute("foreign-transfer-request"), /no encontrada/);
+
+  const sourceBefore = physicalQuantity(env.store, sourceBranchId, "prod-screws");
+  const accepted = await new ApproveTransferRequestService(provider).execute(requested.id,
+    "request-accept-first");
+  assert.match(accepted.number, /^TR-\d{4}-\d+$/);
+  assert.deepEqual(accepted.sourceRequestIds, [requested.id]);
+  assert.equal(accepted.sourceBranchId, requested.sourceBranchId);
+  assert.equal(accepted.destinationBranchId, requested.requestingBranchId);
+  assert.equal(accepted.reason, requested.reason);
+  const afterAccept = env.store.getSnapshot();
+  const transferItems = afterAccept.inventoryTransferItems.filter((item) =>
+    item.transferId === accepted.id);
+  assert.equal(transferItems.length, 1);
+  assert.equal(transferItems[0].productId, requested.productId);
+  assert.equal(transferItems[0].requestedQuantity, requested.requestedQuantity);
+  assert.equal(transferItems[0].sourceRequestId, requested.id);
+  assert.equal(afterAccept.inventoryTransferRequests.find((item) =>
+    item.id === requested.id)?.status, "approved");
+  assert.deepEqual(counts(), { transfers: 1, reservations: 1, pickings: 1 });
+  assert.equal(afterAccept.pickingOrders[0].branchId, sourceBranchId);
+  assert.equal(afterAccept.pickingOrders[0].sourceId, accepted.id);
+  assert.equal(physicalQuantity(env.store, sourceBranchId, "prod-screws"), sourceBefore);
+  assert.equal(afterAccept.inventoryReservations[0].status, "active");
+  assert.equal((await new GetInventoryAlertsService(provider).execute(sourceBranchId))
+    .transferRequests.some((row) => row.id === requested.id), false);
+  assert.ok((await new GetInventoryAlertsService(requester).execute(destinationBranchId))
+    .transferRequests.some((row) => row.id === requested.id && row.status === "approved"));
+  const reloaded = new MockDatabaseStore(env.storage).getSnapshot();
+  assert.deepEqual(reloaded.inventoryTransfers[0].sourceRequestIds, [requested.id]);
+
+  const retry = new ApproveTransferRequestService(provider);
+  assert.equal((await retry.execute(requested.id, "request-accept-first")).id, accepted.id);
+  assert.equal((await retry.execute(requested.id, "request-accept-second")).id, accepted.id);
+  assert.deepEqual(counts(), { transfers: 1, reservations: 1, pickings: 1 });
+  const racedRequest = await new CreateTransferRequestService(requester)
+    .execute(requestInput("race"));
+  const raced = await Promise.all([
+    retry.execute(racedRequest.id, "race-first"),
+    new ApproveTransferRequestService(withActiveBranch(sourceBranchId, "second-session"))
+      .execute(racedRequest.id, "race-second"),
+  ]);
+  assert.equal(raced[0].id, raced[1].id);
+  assert.deepEqual(counts(), { transfers: 2, reservations: 2, pickings: 2 });
+
+  const insufficient = await new CreateTransferRequestService(requester)
+    .execute(requestInput("insufficient", sourceBefore + 1));
+  await assert.rejects(retry.execute(insufficient.id), /stock|disponible|balance/i);
+  assert.equal(env.store.getSnapshot().inventoryTransferRequests.find((item) =>
+    item.id === insufficient.id)?.status, "requested");
+  assert.deepEqual(counts(), { transfers: 2, reservations: 2, pickings: 2 });
+}
+
 async function main() {
+  await exerciseTransferRequests();
   const env = fixture();
   await assert.rejects(env.create.execute({ sourceBranchId: destinationBranchId,
     destinationBranchId: "branch-centro", productId: "prod-screws", quantity: 1,

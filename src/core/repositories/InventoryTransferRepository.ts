@@ -22,6 +22,8 @@ export interface CreateInventoryTransferInput {
   destinationBranchId: string;
   operationId: string;
   sourceRequestIds?: string[];
+  /** Approve this persisted request in the same transaction as Transfer, reservation and Picking. */
+  approveSourceRequest?: { requestId: string; reviewedByUserId: string };
   reason?: InventoryTransferReason;
   notes?: string;
   preparedByUserId: string;

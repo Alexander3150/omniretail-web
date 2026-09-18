@@ -118,6 +118,7 @@ class MemoryStorageAdapter extends LocalStorageAdapter {
 interface Session {
   id: string;
   userId: string;
+  activeBranchId?: string;
 }
 
 function createHarness() {
@@ -244,6 +245,16 @@ function createHarness() {
       reorderPoint: 0,
       updatedAt: NOW,
     });
+    db.inventoryBalances.push({
+      id: "bal-inventory-hardening-screws-norte",
+      tenantId: TENANT_A,
+      branchId: BRANCH_NORTE,
+      productId: PRODUCT_SCREWS,
+      locationId: LOCATION_NORTE,
+      quantity: 10,
+      reservedQuantity: 0,
+      updatedAt: NOW,
+    });
   });
 
   function buildRepositories(session: Session): RepositoryRegistry {
@@ -311,7 +322,7 @@ function createHarness() {
         updatedAt: NOW,
       });
     });
-    return buildRepositories({ id: sessionId, userId });
+    return buildRepositories({ id: sessionId, userId, activeBranchId: allowedBranchIds[0] });
   }
 
   return { store, createSession };
@@ -485,8 +496,10 @@ async function main() {
     [BRANCH_NORTE],
   );
   const approved = await new ApproveTransferRequestService(reviewer).execute(created.id);
-  assert.equal(approved.status, "approved");
-  assert.ok(approved.reviewedByUserId);
+  assert.equal(approved.sourceRequestIds?.[0], created.id);
+  const approvedRequest = await reviewer.inventoryTransferRequests.getById(created.id);
+  assert.equal(approvedRequest?.status, "approved");
+  assert.ok(approvedRequest?.reviewedByUserId);
 
   const createdForReject = await new CreateTransferRequestService(requester).execute({
     productId: PRODUCT_SCREWS,

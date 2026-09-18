@@ -50,6 +50,65 @@ export class MockInventoryTransferRepository
 
   async create(input: CreateInventoryTransferInput) {
     const item = this.store.transact((db) => {
+      const approval = input.approveSourceRequest;
+      const sourceRequest = approval
+        ? db.inventoryTransferRequests.find((entry) => entry.id === approval.requestId)
+        : undefined;
+      if (approval) {
+        if (!sourceRequest || sourceRequest.tenantId !== input.tenantId ||
+          sourceRequest.sourceBranchId !== input.sourceBranchId ||
+          sourceRequest.requestingBranchId !== input.destinationBranchId ||
+          input.sourceRequestIds?.length !== 1 ||
+          input.sourceRequestIds[0] !== approval.requestId ||
+          input.items.length !== 1 ||
+          input.items[0].sourceRequestId !== approval.requestId ||
+          input.items[0].productId !== sourceRequest.productId ||
+          input.items[0].requestedQuantity !== sourceRequest.requestedQuantity ||
+          approval.reviewedByUserId !== input.preparedByUserId) {
+          throw new Error("Transfer source request does not match the persisted request");
+        }
+        const linked = db.inventoryTransfers.filter((entry) =>
+          entry.sourceRequestIds?.includes(approval.requestId));
+        if (linked.length > 1) throw new Error("Transfer source request is linked more than once");
+        if (linked.length === 1) {
+          const linkedItems = db.inventoryTransferItems.filter((entry) =>
+            entry.transferId === linked[0].id);
+          const picking = db.pickingOrders.filter((entry) =>
+            entry.sourceType === "transfer" && entry.sourceId === linked[0].id);
+          const reservations = db.inventoryReservations.filter((entry) =>
+            entry.sourceType === "transfer" && entry.sourceId === linked[0].id);
+          if (sourceRequest.status !== InventoryTransferRequestStatus.approved ||
+            linked[0].tenantId !== input.tenantId ||
+            linked[0].sourceBranchId !== input.sourceBranchId ||
+            linked[0].destinationBranchId !== input.destinationBranchId ||
+            linkedItems.length !== 1 || linkedItems[0].sourceRequestId !== approval.requestId ||
+            linkedItems[0].productId !== sourceRequest.productId ||
+            linkedItems[0].requestedQuantity !== sourceRequest.requestedQuantity ||
+            picking.length !== 1 || reservations.length !== 1) {
+            throw new Error("Transfer source request has incomplete fulfillment");
+          }
+          return { ...this.toTransferWithItems(db, linked[0]), created: false,
+            approvedRequest: undefined };
+        }
+        if (![InventoryTransferRequestStatus.requested,
+          InventoryTransferRequestStatus.approved].includes(sourceRequest.status)) {
+          throw new Error("Transfer source request is not reviewable");
+        }
+        if (db.inventoryTransfers.some((entry) =>
+          entry.tenantId === input.tenantId && entry.operationId === input.operationId)) {
+          throw new Error(`Transfer operation conflict: ${input.operationId}`);
+        }
+      }
+      const approvedRequest = sourceRequest?.status === InventoryTransferRequestStatus.requested
+        ? sourceRequest : undefined;
+      if (approvedRequest && approval) {
+        const now = this.now();
+        approvedRequest.status = InventoryTransferRequestStatus.approved;
+        approvedRequest.reviewedAt = now;
+        approvedRequest.approvedAt = now;
+        approvedRequest.reviewedByUserId = approval.reviewedByUserId;
+        approvedRequest.updatedAt = now;
+      }
       this.assertValidCreateInput(db, input);
       const fingerprint = JSON.stringify({
         tenantId: input.tenantId, sourceBranchId: input.sourceBranchId,
@@ -68,10 +127,15 @@ export class MockInventoryTransferRepository
         const picking = db.pickingOrders.filter((entry) =>
           entry.sourceType === "transfer" && entry.sourceId === existing.id);
         if (picking.length !== 1) throw new Error(`Transfer Picking conflict: ${existing.id}`);
-        return { ...this.toTransferWithItems(db, existing), created: false };
+        return { ...this.toTransferWithItems(db, existing), created: false,
+          approvedRequest: undefined };
       }
       const now = this.now();
       const sourceRequestIds = this.getTransferSourceRequestIds(input);
+      if (sourceRequestIds.some((requestId) => db.inventoryTransfers.some((entry) =>
+        entry.sourceRequestIds?.includes(requestId)))) {
+        throw new Error("Transfer source request is already linked");
+      }
       const transfer: InventoryTransfer = {
         id: this.id("inventory-transfer"),
         tenantId: input.tenantId,
@@ -121,9 +185,19 @@ export class MockInventoryTransferRepository
           status: PickingItemStatus.pending,
         });
       }
-      return { transfer, items, created: true };
+      return { transfer, items, created: true, approvedRequest };
     });
     if (item.created) {
+      if (item.approvedRequest) {
+        try { this.emit("inventory-transfer-request.changed", {
+          entityId: item.approvedRequest.id, tenantId: item.approvedRequest.tenantId,
+          branchId: item.approvedRequest.sourceBranchId,
+          productId: item.approvedRequest.productId, action: "status_changed",
+          metadata: { requestingBranchId: item.approvedRequest.requestingBranchId,
+            sourceBranchId: item.approvedRequest.sourceBranchId,
+            status: item.approvedRequest.status },
+        }); } catch { /* Authoritative commit already succeeded. */ }
+      }
       this.emitChanged(item.transfer, "created");
       const picking = this.read((db) => db.pickingOrders.find((entry) =>
         entry.sourceType === "transfer" && entry.sourceId === item.transfer.id));

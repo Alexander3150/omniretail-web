@@ -26,7 +26,7 @@ Implementado en esta rama:
 - Existencia y reservado desde `InventoryBalance`; disponible desde el calculo canonico que respeta reservas y trazabilidad. Minimo y reposicion provienen de `ProductInventorySettings`.
 - Caducidad desde `StockLot.expirationDate` con regla local de proximidad de 30 dias.
 - Ajustes de entrada, salida/merma y conteo exacto mediante `InventoryRepository.registerMovement`.
-- Solicitudes de traslado entre sucursales mediante `InventoryTransferRequestRepository`: crear, aprobar y rechazar no modifican stock ni crean movimientos.
+- Solicitudes de traslado entre sucursales: crear y rechazar no reservan stock ni crean Picking; aceptar aprueba la solicitud y crea atómicamente Transfer, reserva y Picking. El stock físico sale únicamente en Dispatch.
 
 ## Estructura futura
 

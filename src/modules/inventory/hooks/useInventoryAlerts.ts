@@ -350,8 +350,9 @@ export function useInventoryAlerts() {
     setBusy(true);
     setError(null);
     try {
-      await transferServices.approve.execute(requestId);
-      await reload();
+      const transfer = await transferServices.approve.execute(requestId);
+      await Promise.all([reload(), reloadTransferHistory()]);
+      return transfer;
     } catch (caughtError) {
       const message = cleanInventoryError(caughtError, "No se pudo aprobar la solicitud.");
       setError(message);

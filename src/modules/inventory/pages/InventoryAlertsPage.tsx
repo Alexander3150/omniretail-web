@@ -477,11 +477,11 @@ export function InventoryAlertsPage() {
           busy={busy}
           canManageTransfers={canManageTransfers}
           onApprove={async () => {
-            await approveTransferRequest(selectedTransferRequest.id);
+            const transfer = await approveTransferRequest(selectedTransferRequest.id);
             setActionMode(null);
             showToast({
               title: "Solicitud aprobada",
-              description: "Queda pendiente de traslado.",
+              description: `Traslado ${transfer.number} creado y preparado para Picking.`,
               tone: "success",
             });
           }}
