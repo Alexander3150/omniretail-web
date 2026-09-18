@@ -59,11 +59,6 @@ const CANONICAL_INCIDENT_TYPES = [
   { code: "OTHER", name: "Otros" },
 ] as const;
 const SYSTEM_ADMIN_ROLE_NAME = "Administrador";
-const CUSTOMER_SELF_SERVICE_PERMISSION_KEYS = new Set(
-  permissionsConfig
-    .filter((permission) => permission.module === "customer" || permission.module === "storefront")
-    .map((permission) => permission.key),
-);
 
 type PersistedMockDatabase = Partial<
   Omit<
@@ -341,17 +336,6 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
       };
     }
     return user;
-  });
-
-  normalized.roles = normalized.roles.map((role) => {
-    if (!role.isSystem || role.name !== SYSTEM_ADMIN_ROLE_NAME) return role;
-
-    const permissions = role.permissions.filter(
-      (permission) => !CUSTOMER_SELF_SERVICE_PERMISSION_KEYS.has(permission),
-    );
-    return permissions.length === role.permissions.length
-      ? role
-      : { ...role, permissions, updatedAt: new Date().toISOString() };
   });
 
   return normalized;

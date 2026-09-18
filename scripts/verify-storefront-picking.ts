@@ -22,6 +22,8 @@ import {
 import { MockOrderRepository } from "@/infrastructure/mock/repositories/MockOrderRepository";
 import { MockPlanRepository } from "@/infrastructure/mock/repositories/MockPlanRepository";
 import { MockProductRepository } from "@/infrastructure/mock/repositories/MockProductRepository";
+import { MockProductSalesPriceTierRepository } from "@/infrastructure/mock/repositories/MockProductSalesPriceTierRepository";
+import { MockPromotionRepository } from "@/infrastructure/mock/repositories/MockPromotionRepository";
 import { MockRoleRepository } from "@/infrastructure/mock/repositories/MockRoleRepository";
 import { MockSaleConfirmationRepository } from "@/infrastructure/mock/repositories/MockSaleConfirmationRepository";
 import { MockTenantRepository } from "@/infrastructure/mock/repositories/MockTenantRepository";
@@ -135,6 +137,8 @@ function createHarness(testHooks: MockOrderPaymentConfirmationRepositoryTestHook
     orders: new MockOrderRepository(store, eventBus),
     plans: new MockPlanRepository(store, eventBus),
     products: new MockProductRepository(store, eventBus),
+    productSalesPriceTiers: new MockProductSalesPriceTierRepository(store, eventBus),
+    promotions: new MockPromotionRepository(store, eventBus),
     roles: new MockRoleRepository(store, eventBus),
     tenants: new MockTenantRepository(store, eventBus),
     tenantSubscriptions: new MockTenantSubscriptionRepository(store, eventBus),

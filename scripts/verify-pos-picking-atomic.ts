@@ -14,6 +14,7 @@ import { MockPlanRepository } from "@/infrastructure/mock/repositories/MockPlanR
 import { MockPickingRepository } from "@/infrastructure/mock/repositories/MockPickingRepository";
 import { MockPackingRepository } from "@/infrastructure/mock/repositories/MockPackingRepository";
 import { MockProductRepository } from "@/infrastructure/mock/repositories/MockProductRepository";
+import { MockProductSalesPriceTierRepository } from "@/infrastructure/mock/repositories/MockProductSalesPriceTierRepository";
 import { MockPromotionRepository } from "@/infrastructure/mock/repositories/MockPromotionRepository";
 import { MockUnitRepository } from "@/infrastructure/mock/repositories/MockUnitRepository";
 import { MockRoleRepository } from "@/infrastructure/mock/repositories/MockRoleRepository";
@@ -261,6 +262,7 @@ function createRepositories(
     picking: new MockPickingRepository(store, eventBus),
     packings: new MockPackingRepository(store, eventBus),
     products: new MockProductRepository(store, eventBus),
+    productSalesPriceTiers: new MockProductSalesPriceTierRepository(store, eventBus),
     promotions: new MockPromotionRepository(store, eventBus),
     roles: new MockRoleRepository(store, eventBus),
     saleConfirmations: new MockSaleConfirmationRepository(store, eventBus, saleHooks),
