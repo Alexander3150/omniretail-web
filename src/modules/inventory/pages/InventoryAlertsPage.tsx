@@ -96,6 +96,7 @@ export function InventoryAlertsPage() {
     kpis,
     rows,
     branchId,
+    currentBranchId,
     activeBranch,
     canCreateTransferForActiveBranch,
     branches,
@@ -126,6 +127,7 @@ export function InventoryAlertsPage() {
     rejectTransferRequest,
   } = useInventoryAlerts();
   const [panelMode, setPanelMode] = useState<AlertPanelMode>("alerts");
+  const [previousCurrentBranchId, setPreviousCurrentBranchId] = useState(currentBranchId);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [actionMode, setActionMode] = useState<ActionMode>(null);
   const [requestProviderBranchId, setRequestProviderBranchId] = useState<string | null>(null);
@@ -137,6 +139,13 @@ export function InventoryAlertsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [, setClockTick] = useState(0);
+  if (previousCurrentBranchId !== currentBranchId) {
+    setPreviousCurrentBranchId(currentBranchId);
+    setPanelMode("alerts");
+    setSelectedProductId(null);
+    setSelectedTransferRequestId(null);
+    setActionMode(null);
+  }
   const selectedRow =
     rows.find((row) => row.productId === selectedProductId) ??
     data.rows.find((row) => row.productId === selectedProductId) ??
@@ -331,6 +340,8 @@ export function InventoryAlertsPage() {
             onBranchChange={(value) => {
               setPage(1);
               setBranchId(value);
+              setPanelMode("alerts");
+              setSelectedProductId(null);
             }}
             onCategoryChange={(value) => {
               setPage(1);

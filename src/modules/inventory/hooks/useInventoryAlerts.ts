@@ -86,6 +86,12 @@ export function useInventoryAlerts() {
   const [transferHistoryError, setTransferHistoryError] = useState<string | null>(null);
   const transferHistoryRequest = useRef(0);
   const [branchId, setBranchIdState] = useState("");
+  const currentBranchId = currentBranch?.id ?? "";
+  const [previousCurrentBranchId, setPreviousCurrentBranchId] = useState(currentBranchId);
+  if (previousCurrentBranchId !== currentBranchId) {
+    setPreviousCurrentBranchId(currentBranchId);
+    setBranchIdState("");
+  }
   const [search, setSearchState] = useState("");
   const [categoryId, setCategoryIdState] = useState("all");
   const [status, setStatusState] = useState<InventoryStatusFilter>("all");
@@ -96,7 +102,8 @@ export function useInventoryAlerts() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [loadedBranchId, setLoadedBranchId] = useState("");
-  const effectiveBranchId = branchId || currentBranch?.id || "";
+  const effectiveBranchId =
+    previousCurrentBranchId === currentBranchId ? branchId || currentBranchId : currentBranchId;
   // UI action gating (feature/saas-entitlement-enforcement §7/§8): el permiso de Role sigue
   // siendo obligatorio, la capability SaaS se suma -- nunca lo sustituye. El backend
   // (RegisterInventoryAdjustmentService/TransferRequestServices) sigue siendo la autoridad final.
@@ -378,6 +385,7 @@ export function useInventoryAlerts() {
     kpis: filteredKpis,
     rows: filteredRows,
     branchId: effectiveBranchId,
+    currentBranchId,
     activeBranch,
     canCreateTransferForActiveBranch: Boolean(currentBranch && effectiveBranchId === currentBranch.id),
     branches: data.branches.length ? data.branches : headerBranches,
