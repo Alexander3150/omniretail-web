@@ -4,6 +4,7 @@ import type {
   BusinessCapabilitiesConfig,
   EcommerceConfig,
   HeroBannerConfig,
+  IncidentType,
   Role,
   Tenant,
   TenantSubscription,
@@ -20,6 +21,7 @@ import {
   UserStatus,
   UserType,
 } from "@/core/enums";
+import { businessDefaultsConfig } from "@/config/business-defaults";
 import type {
   TenantOnboardingInput,
   TenantOnboardingRepository,
@@ -77,11 +79,13 @@ export class MockTenantOnboardingRepository
 
       const now = this.now();
       const tenant = this.pushTenant(db, input, now);
+      this.pushIncidentTypes(db, tenant.id);
       const branch = this.pushBranch(db, tenant.id, now);
       const role = this.pushRole(db, tenant.id, input.adminPermissions, now);
+      this.pushCustomerRole(db, tenant.id, now);
       const user = this.pushUser(db, tenant.id, role.id, branch.id, input, now);
       const authAccount = this.pushAuthAccount(db, user, input.adminPasswordMock, now);
-      const businessCapabilities = this.pushBusinessCapabilities(db, tenant.id);
+      const businessCapabilities = this.pushBusinessCapabilities(db, tenant.id, input.businessPreset);
       const ecommerceConfig = this.pushEcommerceConfig(db, tenant, now);
       this.pushHeroBanner(db, tenant.id, now);
       const subscription = this.pushSubscription(db, tenant.id, input.planId, now);
@@ -145,6 +149,23 @@ export class MockTenantOnboardingRepository
     return tenant;
   }
 
+  protected pushIncidentTypes(db: MockDatabase, tenantId: string): IncidentType[] {
+    const incidentTypes: IncidentType[] = [
+      { code: "DAMAGED", name: "Producto dañado" },
+      { code: "MISSING", name: "Producto faltante" },
+      { code: "UNSOLICITED", name: "Producto no solicitado" },
+      { code: "OTHER", name: "Otros" },
+    ].map(({ code, name }) => ({
+      id: this.id("incident-type"),
+      tenantId,
+      code,
+      name,
+      active: true,
+    }));
+    db.incidentTypes.push(...incidentTypes);
+    return incidentTypes;
+  }
+
   // Branch inicial ANTES del User -- User.branchId/allowedBranchIds la necesitan (auditoría §11).
   protected pushBranch(db: MockDatabase, tenantId: string, now: string): Branch {
     const branch: Branch = {
@@ -174,6 +195,32 @@ export class MockTenantOnboardingRepository
       isSystem: true,
       permissions: [...permissions],
       branchScope: "all",
+      status: RoleStatus.active,
+      createdAt: now,
+      updatedAt: now,
+    };
+    db.roles.push(role);
+    return role;
+  }
+
+  protected pushCustomerRole(
+    db: MockDatabase,
+    tenantId: string,
+    now: string,
+  ): Role {
+    const role: Role = {
+      id: this.id("role"),
+      tenantId,
+      name: "Cliente",
+      isSystem: true,
+      permissions: [
+        "customer.account.read",
+        "customer.account.update",
+        "customer.address.manage",
+        "customer.payment_method.manage",
+        "storefront.orders.read",
+      ],
+      branchScope: "assigned",
       status: RoleStatus.active,
       createdAt: now,
       updatedAt: now,
@@ -231,8 +278,12 @@ export class MockTenantOnboardingRepository
 
   // Defaults técnicos mínimos -- nunca copiados de tenant-demo (auditoría §18) y sin ningún
   // entitlement/capability comercial (eso es SaasCapabilityKey vía Plan, no esto).
-  protected pushBusinessCapabilities(db: MockDatabase, tenantId: string): BusinessCapabilitiesConfig {
-    const capabilities: BusinessCapabilitiesConfig = {
+  protected pushBusinessCapabilities(
+    db: MockDatabase,
+    tenantId: string,
+    preset?: BusinessPreset,
+  ): BusinessCapabilitiesConfig {
+    const capabilities: BusinessCapabilitiesConfig = !preset ? {
       tenantId,
       preset: BusinessPreset.custom,
       supportsInventory: true,
@@ -245,7 +296,20 @@ export class MockTenantOnboardingRepository
       supportsKits: false,
       supportsServices: false,
       defaultProductTracking: { stock: true, lot: false, expiration: false, serial: false },
-    };
+    } : preset === BusinessPreset.custom ? {
+      tenantId,
+      preset: BusinessPreset.custom,
+      supportsInventory: true,
+      supportsLots: false,
+      supportsExpiration: false,
+      supportsSerials: false,
+      supportsMultipleLocations: false,
+      supportsUnitsAndPackaging: false,
+      supportsProductAttributes: false,
+      supportsKits: false,
+      supportsServices: false,
+      defaultProductTracking: { stock: true, lot: false, expiration: false, serial: false },
+    } : { ...businessDefaultsConfig[preset], tenantId };
     db.businessCapabilities.push(capabilities);
     return capabilities;
   }

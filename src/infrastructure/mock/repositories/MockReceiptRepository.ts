@@ -240,7 +240,10 @@ export class MockReceiptRepository extends BaseMockRepository implements Receipt
         db.inventoryMovements.push(movement);
         movements.push(movement);
       });
-      const totalOrdered = (order.items ?? []).reduce((sum, item) => sum + item.quantity, 0);
+      const orderItems = db.purchaseOrderItems.filter(
+        (item) => item.purchaseOrderId === order.id,
+      );
+      const totalOrdered = orderItems.reduce((sum, item) => sum + item.quantity, 0);
       const priorAccepted = db.receipts
         .filter(
           (item) =>

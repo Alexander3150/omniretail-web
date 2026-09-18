@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getLockoutMinutesForOccurrence, LOGIN_ATTEMPT_RULES } from "@/config/auth-policy";
 import { MfaChallengeUnavailableError } from "@/core/repositories/AuthRepository";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
-import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
+import { useOptionalPublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 import type { LoginFormDto } from "@/modules/auth/application/dto/LoginFormDto";
 import { resolvePostLoginDestination } from "@/modules/auth/application/services/postLoginNavigation";
 import {
@@ -26,6 +26,7 @@ const LOCKOUT_ATTEMPT_NUMBER =
 export function useLogin() {
   const repositories = useRepositories();
   const router = useRouter();
+  const searchParams = useSearchParams();
   // Este es el UNICO formulario de login, compartido por Customer y
   // Employee/Admin. tenantId (del storefront publico) solo alimenta la
   // resolucion Customer dentro de login() -- si el storefront no
@@ -35,7 +36,11 @@ export function useLogin() {
   // tenant-independiente de login() (ver AuthRepository.LoginInput.
   // tenantId). Por eso solo se bloquea el submit mientras esta
   // "loading" -- nunca por "error", eso ataria tambien al empleado.
-  const { tenantId, loading: tenantLoading, error: tenantError } = usePublicTenant();
+  const tenant = useOptionalPublicTenant();
+  const tenantId = tenant?.tenantId;
+  const tenantLoading = tenant?.loading ?? false;
+  const tenantError = tenant?.error;
+  const tenantSlug = tenant?.tenantSlug;
 
   const [email, setEmailState] = useState("");
   const [password, setPasswordState] = useState("");
@@ -46,7 +51,7 @@ export function useLogin() {
 
   // PR13 (MFA, R-A16): cuando login() responde "mfa_required" en vez de
   // crear sesión, el MISMO formulario pasa a un segundo paso (nunca una
-  // ruta nueva) pidiendo el código. demoCodeMock viaja acá solo porque
+  // ruta nueva) pidiendo el código. demoCodeMock viaja ací¡ solo porque
   // este entorno no tiene un canal real de entrega -- mismo criterio de
   // transparencia dummy que el resto del sistema (ver AuthRepository.
   // LoginResult).
@@ -140,9 +145,10 @@ export function useLogin() {
       setConsecutiveFailures(0);
       setPendingChallenge(null);
       setMfaCodeState("");
-      router.replace(resolvePostLoginDestination(authenticatedUser));
+      const returnUrl = searchParams?.get("returnUrl") || undefined;
+      router.replace(resolvePostLoginDestination(authenticatedUser, returnUrl, tenantSlug));
     },
-    [router],
+    [router, searchParams, tenantSlug],
   );
 
   const submit = useCallback(async () => {

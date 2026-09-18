@@ -209,6 +209,7 @@ function createHarness() {
       {
         id: "au-employee-a1",
         tenantId: TENANT_A,
+        employeeCode: "AU-A1",
         name: "Empleado A1",
         email: "au-employee-a1@example.test",
         type: UserType.employee,
@@ -221,12 +222,26 @@ function createHarness() {
       {
         id: "au-employee-b1",
         tenantId: TENANT_B,
+        employeeCode: "AU-CROSS",
         name: "Empleado B1",
         email: "au-employee-b1@example.test",
         type: UserType.employee,
         status: UserStatus.active,
         roleId: "au-role-tenant-b",
         allowedBranchIds: [],
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+      {
+        id: "au-employee-a2",
+        tenantId: TENANT_A,
+        employeeCode: "AU-DUPLICATE",
+        name: "Empleado A2",
+        email: "au-employee-a2@example.test",
+        type: UserType.employee,
+        status: UserStatus.active,
+        roleId: "au-role-ok",
+        allowedBranchIds: ["au-branch-a1"],
         createdAt: NOW,
         updatedAt: NOW,
       },
@@ -440,6 +455,52 @@ async function verifyUpdateEmployeeAndRevocation(harness: ReturnType<typeof crea
   const service = new UpdateEmployeeService(harness.repositories);
   const auth = harness.repositories.auth;
 
+  const original = await harness.repositories.users.getByIdScoped(TENANT_A, "au-employee-a1");
+  assert.ok(original);
+
+  // El mismo código es válido y no altera identidad técnica ni correo.
+  const sameCode = await service.execute(
+    TENANT_A,
+    "au-employee-a1",
+    baseInput({ employeeCode: "AU-A1", roleId: "au-role-ok", allowedBranchIds: ["au-branch-a1"], status: UserStatus.active }),
+    ACTOR_PERMISSIONS,
+    ACTOR_ID,
+  );
+  assert.equal(sameCode.id, original.id, "Actualizar el código no cambia user.id");
+  assert.equal(sameCode.email, original.email, "Actualizar el código no cambia el correo");
+
+  // Un código disponible del mismo tenant puede reasignarse.
+  const updatedCode = await service.execute(
+    TENANT_A,
+    "au-employee-a1",
+    baseInput({ employeeCode: "AU-UPDATED", roleId: "au-role-ok", allowedBranchIds: ["au-branch-a1"], status: UserStatus.active }),
+    ACTOR_PERMISSIONS,
+    ACTOR_ID,
+  );
+  assert.equal(updatedCode.employeeCode, "AU-UPDATED");
+
+  // Colisión en el mismo tenant se rechaza.
+  await assert.rejects(
+    () => service.execute(
+      TENANT_A,
+      "au-employee-a1",
+      baseInput({ employeeCode: "AU-DUPLICATE", roleId: "au-role-ok", allowedBranchIds: ["au-branch-a1"], status: UserStatus.active }),
+      ACTOR_PERMISSIONS,
+      ACTOR_ID,
+    ),
+    /ya existe un empleado con ese código/i,
+  );
+
+  // El mismo código de otro tenant no genera una colisión global.
+  const crossTenantCode = await service.execute(
+    TENANT_A,
+    "au-employee-a1",
+    baseInput({ employeeCode: "AU-CROSS", roleId: "au-role-ok", allowedBranchIds: ["au-branch-a1"], status: UserStatus.active }),
+    ACTOR_PERMISSIONS,
+    ACTOR_ID,
+  );
+  assert.equal(crossTenantCode.employeeCode, "AU-CROSS");
+
   function activeSessionCount(userId: string): number {
     return harness.store
       .getSnapshot()
@@ -461,6 +522,7 @@ async function verifyUpdateEmployeeAndRevocation(harness: ReturnType<typeof crea
     "au-employee-a1",
     baseInput({
       name: "Empleado A1 Renombrado",
+      employeeCode: "AU-CROSS",
       roleId: "au-role-ok",
       allowedBranchIds: ["au-branch-a1"],
       status: UserStatus.active,

@@ -5,9 +5,11 @@ import {
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  SalesChannel,
   TransportMode,
 } from "@/core/enums";
 import { InsufficientInventoryAvailabilityError } from "@/core/inventory/stockAvailability";
+import { calculateEffectivePrice, resolveQuantityPrice } from "@/core/pricing";
 import { toBaseQuantity } from "@/core/units";
 import { validatePhoneNumber } from "@/config/contact-policy";
 import { normalizeEmail, validateEmail } from "@/config/email-policy";
@@ -57,7 +59,9 @@ export class CreateStorefrontCheckoutService {
     const checkoutIdentity = idempotencyKey.trim();
     if (!checkoutIdentity) throw new Error("No se pudo inicializar el pedido.");
 
-    const { tenantId, ecommerceConfig } = await this.publicStorefrontContextService.execute({ tenantSlug });
+    const { tenantId, ecommerceConfig } = await this.publicStorefrontContextService.execute({
+      tenantSlug,
+    });
     const [products, customerContext] = await Promise.all([
       Promise.all(
         items.map(async (item) => ({
@@ -89,40 +93,62 @@ export class CreateStorefrontCheckoutService {
     }
 
     const checkoutToken = checkoutIdentity.replaceAll("-", "");
-    const orderItems = await Promise.all(products.map(async ({ item, product }, index) => {
-      if (!product) throw new Error("Uno de los productos ya no está disponible para e-commerce.");
-      if (
-        !Number.isFinite(item.quantity) ||
-        !Number.isInteger(item.quantity) ||
-        item.quantity <= 0
-      ) {
-        throw new Error("La cantidad de un producto no es válida.");
-      }
+    const orderItems = await Promise.all(
+      products.map(async ({ item, product }, index) => {
+        if (!product)
+          throw new Error("Uno de los productos ya no está disponible para e-commerce.");
+        if (
+          !Number.isFinite(item.quantity) ||
+          !Number.isInteger(item.quantity) ||
+          item.quantity <= 0
+        ) {
+          throw new Error("La cantidad de un producto no es válida.");
+        }
 
-      const unitPrice = product.salePrice;
-      const conversions = await this.repositories.units.getConversionsByProductScoped(
-        tenantId,
-        product.id,
-      );
-      const inventoryQuantity = toBaseQuantity(item.quantity, {
-        sourceUnitId: product.saleUnitId ?? product.baseUnitId,
-        baseUnitId: product.baseUnitId,
-        conversions,
-        requireInteger: product.tracking.stock,
-      });
-      return {
-        id: `storefront-item-${checkoutIdentity}-${index}`,
-        productId: product.id,
-        skuSnapshot: product.sku,
-        nameSnapshot: product.name,
-        quantity: item.quantity,
-        inventoryQuantity,
-        unitPrice,
-        discount: 0,
-        subtotal: unitPrice * item.quantity,
-      };
-    }));
+        const [promotion, salesPriceTiers, conversions] = await Promise.all([
+          this.repositories.promotions.getApplicable({
+            tenantId,
+            productId: product.id,
+            at: new Date().toISOString(),
+            channel: SalesChannel.ecommerce,
+            branchId: branch.id,
+          }),
+          this.repositories.productSalesPriceTiers.getByProduct(product.id),
+          this.repositories.units.getConversionsByProductScoped(tenantId, product.id),
+        ]);
+        const quantityPrice = resolveQuantityPrice({
+          basePrice: product.salePrice,
+          quantity: item.quantity,
+          tiers: salesPriceTiers.filter(
+            (tier) => tier.tenantId === tenantId && tier.productId === product.id,
+          ),
+        });
+        const price = calculateEffectivePrice(quantityPrice, promotion);
+        const unitPrice = price.effectivePrice;
+        const inventoryQuantity = toBaseQuantity(item.quantity, {
+          sourceUnitId: product.saleUnitId ?? product.baseUnitId,
+          baseUnitId: product.baseUnitId,
+          conversions,
+          requireInteger: product.tracking.stock,
+        });
+        return {
+          id: `storefront-item-${checkoutIdentity}-${index}`,
+          productId: product.id,
+          skuSnapshot: product.sku,
+          nameSnapshot: product.name,
+          quantity: item.quantity,
+          inventoryQuantity,
+          unitPrice,
+          discount: price.discountAmount,
+          subtotal: unitPrice * item.quantity,
+        };
+      }),
+    );
     const subtotal = orderItems.reduce((total, item) => total + item.subtotal, 0);
+    const discountTotal = orderItems.reduce(
+      (total, item) => total + item.discount * item.quantity,
+      0,
+    );
     const orderNumber = `WEB-${checkoutToken.slice(0, 10).toUpperCase()}`;
     const trackingToken = checkoutToken;
 
@@ -152,7 +178,7 @@ export class CreateStorefrontCheckoutService {
           references: buildReferences(form),
         },
         subtotal,
-        discountTotal: 0,
+        discountTotal,
         shippingTotal: 0,
         total: subtotal,
         trackingToken,
@@ -234,13 +260,19 @@ function assertCheckoutForm(form: StorefrontCheckoutFormDto): void {
   if (phoneError) throw new Error(phoneError);
   if (!form.addressLine1.trim()) throw new Error("Ingresa la dirección de entrega.");
   if (!isValidDeliveryAddress(form.addressLine1, "line1")) {
-    throw new Error(`La dirección permite letras, números, puntos y guiones; máximo ${DELIVERY_ADDRESS_LIMITS.line1} caracteres.`);
+    throw new Error(
+      `La dirección permite letras, números, puntos y guiones; máximo ${DELIVERY_ADDRESS_LIMITS.line1} caracteres.`,
+    );
   }
   if (form.addressLine2 && !isValidDeliveryAddress(form.addressLine2, "line2")) {
-    throw new Error(`El complemento permite solo letras, números y espacios; máximo ${DELIVERY_ADDRESS_LIMITS.line2} caracteres.`);
+    throw new Error(
+      `El complemento permite solo letras, números y espacios; máximo ${DELIVERY_ADDRESS_LIMITS.line2} caracteres.`,
+    );
   }
   if (form.references && !isValidDeliveryAddress(form.references, "references")) {
-    throw new Error(`Las referencias permiten letras, números, espacios y comas; máximo ${DELIVERY_ADDRESS_LIMITS.references} caracteres.`);
+    throw new Error(
+      `Las referencias permiten letras, números, espacios y comas; máximo ${DELIVERY_ADDRESS_LIMITS.references} caracteres.`,
+    );
   }
   if (!form.city.trim()) throw new Error("Ingresa la ciudad de entrega.");
   if (!form.cardholderName.trim()) throw new Error("Ingresa el titular de la tarjeta.");

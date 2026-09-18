@@ -25,7 +25,17 @@ export class GetStorefrontDiscoveryService {
     // revalidación, discovery seguía sirviendo catálogo aunque Subscription/Plan/capability
     // `ecommerce` ya no lo permitieran.
     await ensurePublicStorefrontTenant(this.repositories, tenantSlug, tenantId);
-    const [products, activeCategories, ecommerceConfig, allProducts, balances, locations, lots, serials, units] = await Promise.all([
+    const [
+      products,
+      activeCategories,
+      ecommerceConfig,
+      allProducts,
+      balances,
+      locations,
+      lots,
+      serials,
+      units,
+    ] = await Promise.all([
       this.repositories.products.getPublishedForEcommerce(tenantId),
       this.repositories.categories.getActive(),
       this.repositories.businessConfig.getEcommerceConfig(tenantId),
@@ -39,17 +49,20 @@ export class GetStorefrontDiscoveryService {
     const categories = activeCategories.filter((category) => category.tenantId === tenantId);
     const categoryNames = new Map(categories.map((category) => [category.id, category.name]));
     const productsById = new Map(
-      allProducts.filter((product) => product.tenantId === tenantId).map((product) => [product.id, product]),
+      allProducts
+        .filter((product) => product.tenantId === tenantId)
+        .map((product) => [product.id, product]),
     );
     const branchId = ecommerceConfig?.defaultBranchId;
     const at = new Date().toISOString();
     const productsWithMedia = await Promise.all(
       products.map(async (product): Promise<StorefrontDiscoveryProductDto> => {
-        const [productMedia, components] = await Promise.all([
+        const [productMedia, components, salesPriceTiers] = await Promise.all([
           this.repositories.productMedia.getByProduct(product.id),
           product.productType === ProductType.kit
             ? this.repositories.productKitComponents.getByKitProduct(product.id)
             : Promise.resolve([]),
+          this.repositories.productSalesPriceTiers.getByProduct(product.id),
         ]);
         const media = selectPrimaryProductMedia(
           productMedia.filter((item) => item.tenantId === tenantId),
@@ -90,6 +103,11 @@ export class GetStorefrontDiscoveryService {
           description: product.description,
           brand: product.brand,
           salePrice: product.salePrice,
+          salesPriceTiers: salesPriceTiers
+            .filter(
+              (tier) => tier.tenantId === tenantId && tier.productId === product.id && tier.active,
+            )
+            .map(({ minQuantity, unitPrice, active }) => ({ minQuantity, unitPrice, active })),
           categoryId: product.categoryId,
           categoryName: categoryNames.get(product.categoryId),
           imageSource: media ? (getProductMediaSource(media) ?? undefined) : undefined,
@@ -114,10 +132,24 @@ export class GetStorefrontDiscoveryService {
   }
 }
 
-function getAvailableQuantity({ product, components, productsById, tenantId, branchId, balances, lots, serials, locations, at }: {
+function getAvailableQuantity({
+  product,
+  components,
+  productsById,
+  tenantId,
+  branchId,
+  balances,
+  lots,
+  serials,
+  locations,
+  at,
+}: {
   product: Parameters<typeof getCanonicalProductAvailability>[0]["product"];
   components: Array<{ componentProductId: string; quantityPerKit: number }>;
-  productsById: ReadonlyMap<string, Parameters<typeof getCanonicalProductAvailability>[0]["product"]>;
+  productsById: ReadonlyMap<
+    string,
+    Parameters<typeof getCanonicalProductAvailability>[0]["product"]
+  >;
   tenantId: string;
   branchId?: string;
   balances: Parameters<typeof getCanonicalProductAvailability>[0]["balances"];
@@ -129,13 +161,31 @@ function getAvailableQuantity({ product, components, productsById, tenantId, bra
   if (product.productType === ProductType.service || !product.tracking.stock) return null;
   if (!branchId) return 0;
   if (product.productType === ProductType.physical) {
-    return getCanonicalProductAvailability({ product, tenantId, branchId, balances, lots, serials, locations, at });
+    return getCanonicalProductAvailability({
+      product,
+      tenantId,
+      branchId,
+      balances,
+      lots,
+      serials,
+      locations,
+      at,
+    });
   }
   const componentAvailability = new Map(
     components.map((component) => {
       const componentProduct = productsById.get(component.componentProductId);
       const available = componentProduct
-        ? getCanonicalProductAvailability({ product: componentProduct, tenantId, branchId, balances, lots, serials, locations, at })
+        ? getCanonicalProductAvailability({
+            product: componentProduct,
+            tenantId,
+            branchId,
+            balances,
+            lots,
+            serials,
+            locations,
+            at,
+          })
         : 0;
       return [component.componentProductId, available];
     }),

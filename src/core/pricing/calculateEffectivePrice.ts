@@ -1,5 +1,5 @@
 import { PromotionType } from "@/core/enums";
-import type { Promotion } from "@/core/entities";
+import type { ProductSalesPriceTier, Promotion } from "@/core/entities";
 
 export interface EffectivePriceResult {
   basePrice: number;
@@ -10,6 +10,31 @@ export interface EffectivePriceResult {
 
 function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+/** Resolves the commercial unit price before promotions are applied. */
+export function resolveQuantityPrice({
+  basePrice,
+  quantity,
+  tiers,
+}: {
+  basePrice: number;
+  quantity?: number;
+  tiers?: readonly Pick<ProductSalesPriceTier, "minQuantity" | "unitPrice" | "active">[];
+}): number {
+  const selectedTier = tiers?.reduce<
+    Pick<ProductSalesPriceTier, "minQuantity" | "unitPrice" | "active"> | undefined
+  >(
+    (selected, tier) =>
+      tier.active &&
+      Number.isFinite(quantity) &&
+      (quantity ?? 0) >= tier.minQuantity &&
+      (!selected || tier.minQuantity > selected.minQuantity)
+        ? tier
+        : selected,
+    undefined,
+  );
+  return roundMoney(selectedTier?.unitPrice ?? basePrice);
 }
 
 export function calculateEffectivePrice(

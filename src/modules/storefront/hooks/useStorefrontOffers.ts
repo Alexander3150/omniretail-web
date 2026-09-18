@@ -4,11 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import type { CatalogImageSource, Promotion } from "@/core/entities";
 import { getProductMediaSource, selectPrimaryProductMedia } from "@/core/media/catalogImage";
 import { BranchStatus, PromotionStatus, SalesChannel } from "@/core/enums";
-import { calculateEffectivePrice } from "@/core/pricing";
+import { calculateEffectivePrice, resolveQuantityPrice } from "@/core/pricing";
 import { isBranchScopedResourceAvailable } from "@/core/scopes/branchScope";
 import { useDataEventBus, useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { ensurePublicStorefrontTenant } from "@/modules/storefront/application/services/ResolvePublicStorefrontContextService";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
+import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
 
 export interface StorefrontOfferItem {
   productId: string;
@@ -21,6 +22,7 @@ export interface StorefrontOfferItem {
   effectivePrice: number;
   discount: number;
   promotionName: string;
+  promotion: Pick<Promotion, "id" | "type" | "value">;
 }
 
 function isApplicableEcommercePromotion(
@@ -57,10 +59,13 @@ function selectPromotion(promotions: Promotion[], basePrice: number): Promotion 
   }, undefined);
 }
 
-export function useStorefrontOffers() {
+export function useStorefrontOffers(quantityOverride?: { productId: string; quantity: number }) {
   const repositories = useRepositories();
   const eventBus = useDataEventBus();
   const { tenantId, tenantSlug, loading: tenantLoading, error: tenantError } = usePublicTenant();
+  const { items: cartItems } = useStorefrontCart();
+  const overrideProductId = quantityOverride?.productId;
+  const overrideQuantity = quantityOverride?.quantity;
   const [items, setItems] = useState<StorefrontOfferItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -103,6 +108,21 @@ export function useStorefrontOffers() {
         const offers = (
           await Promise.all(
             products.map(async (product) => {
+              const quantity =
+                product.id === overrideProductId && overrideQuantity !== undefined
+                  ? overrideQuantity
+                  : (cartItems.find((item) => item.productId === product.id)?.quantity ?? 1);
+              const salesPriceTiers = (
+                await repositories.productSalesPriceTiers.getByProduct(product.id)
+              ).filter(
+                (tier) =>
+                  tier.tenantId === tenantId && tier.productId === product.id && tier.active,
+              );
+              const quantityPrice = resolveQuantityPrice({
+                basePrice: product.salePrice,
+                quantity,
+                tiers: salesPriceTiers,
+              });
               const promotion = selectPromotion(
                 promotions.filter((item) =>
                   isApplicableEcommercePromotion(
@@ -113,12 +133,12 @@ export function useStorefrontOffers() {
                     now,
                   ),
                 ),
-                product.salePrice,
+                quantityPrice,
               );
               if (!promotion) return null;
               const [productMedia, price] = await Promise.all([
                 repositories.productMedia.getByProduct(product.id),
-                Promise.resolve(calculateEffectivePrice(product.salePrice, promotion)),
+                Promise.resolve(calculateEffectivePrice(quantityPrice, promotion)),
               ]);
               const media = selectPrimaryProductMedia(
                 productMedia.filter((item) => item.tenantId === tenantId),
@@ -134,6 +154,7 @@ export function useStorefrontOffers() {
                 effectivePrice: price.effectivePrice,
                 discount: price.discountAmount,
                 promotionName: promotion.name,
+                promotion,
               };
             }),
           )
@@ -155,7 +176,17 @@ export function useStorefrontOffers() {
       active = false;
       unsubscribe();
     };
-  }, [eventBus, repositories, tenantError, tenantId, tenantLoading, tenantSlug]);
+  }, [
+    cartItems,
+    eventBus,
+    overrideProductId,
+    overrideQuantity,
+    repositories,
+    tenantError,
+    tenantId,
+    tenantLoading,
+    tenantSlug,
+  ]);
 
   return useMemo(
     () => ({ items, loading: tenantLoading || loading, error }),

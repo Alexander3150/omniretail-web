@@ -91,7 +91,7 @@ export function PedidoDetallePage({ orderId }: { orderId: string }) {
           <StatusBadge status={order.status} />
         </header>
         <div className="flex flex-wrap gap-2 border-b border-[var(--color-border)] p-5 sm:px-7">
-          <Button href={`/pedido/seguimiento/${order.trackingToken}`} variant="secondary">
+          <Button href={routes.tracking(order.trackingToken)} variant="secondary">
             <CompassIcon className="h-4 w-4" />
             Ver seguimiento
           </Button>

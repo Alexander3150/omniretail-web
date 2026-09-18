@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   createContext,
@@ -108,4 +108,8 @@ export function usePublicTenant() {
   const context = useContext(PublicTenantContext);
   if (!context) throw new Error("usePublicTenant must be used inside PublicTenantProvider");
   return context;
+}
+
+export function useOptionalPublicTenant() {
+  return useContext(PublicTenantContext);
 }

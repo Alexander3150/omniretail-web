@@ -14,6 +14,8 @@ export interface TenantOnboardingInputDto {
   adminEmail: string;
   adminPasswordMock: string;
   planId: string;
+  /** Optional for existing internal callers; public contracting always supplies it. */
+  businessPreset?: BusinessPreset;
   defaultCurrency?: "GTQ" | "USD";
   timezone?: string;
 }
@@ -33,3 +35,4 @@ export interface TenantOnboardingResultDto {
   subscriptionId: string;
   planId: string;
 }
+import type { BusinessPreset } from "@/core/enums";

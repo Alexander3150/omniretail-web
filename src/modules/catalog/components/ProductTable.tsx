@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ProductStatus } from "@/core/enums";
+import { ProductStatus, ProductType } from "@/core/enums";
 import { ProductActionsMenu } from "@/modules/catalog/components/ProductActionsMenu";
 import { CatalogImage } from "@/modules/catalog/components/CatalogImage";
 import { GlobeIcon, MobileIcon, PosIcon, TagIcon } from "@/modules/catalog/components/CatalogIcons";
@@ -87,6 +87,16 @@ export function ProductTable({
                           <span className="inline-flex rounded-md bg-[var(--color-app-background)] px-2 py-1 text-xs font-semibold text-[var(--color-title)]">
                             {productTypeLabels[product.productType]}
                           </span>
+                          {product.productType === ProductType.physical &&
+                          product.tracking.stock && product.availableQuantity === 0 ? (
+                            <a
+                              className="inline-flex rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900 hover:underline"
+                              href={`/inventario/alertas?productId=${encodeURIComponent(product.id)}&openAdjustment=1`}
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              Sin existencia · Agregar existencia
+                            </a>
+                          ) : null}
                         </div>
                         <p className="mt-1 text-xs text-[var(--color-text-muted)]">
                           SKU {product.sku}

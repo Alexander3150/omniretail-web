@@ -54,6 +54,7 @@ import { publicStorefrontSlug } from "@/config/publicStorefront";
 import { buildPasswordHashMock } from "@/infrastructure/mock/shared/passwordHashMock";
 import { CreateStorefrontCheckoutService } from "@/modules/storefront/application/services/CreateStorefrontCheckoutService";
 import { GetStorefrontOrderTrackingService } from "@/modules/storefront/application/services/GetStorefrontOrderTrackingService";
+import { GetStorefrontOrderConfirmationService } from "@/modules/storefront/application/services/GetStorefrontOrderConfirmationService";
 import { GetStorefrontProductDetailService } from "@/modules/storefront/application/services/GetStorefrontProductDetailService";
 import { ResolvePublicStorefrontContextService } from "@/modules/storefront/application/services/ResolvePublicStorefrontContextService";
 import type { StorefrontCheckoutFormDto } from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
@@ -276,6 +277,7 @@ async function main() {
   const productDetailService = new GetStorefrontProductDetailService(repositories);
   const trackingService = new GetStorefrontOrderTrackingService(repositories);
   const checkoutService = new CreateStorefrontCheckoutService(repositories);
+  const confirmationService = new GetStorefrontOrderConfirmationService(repositories);
 
   // SCENARIO 1 – Context resolution
   await check("Context A", async () => {
@@ -346,6 +348,35 @@ async function main() {
     assert.ok(err.message.length > 0);
     const crossOrder = store.getSnapshot().orders.find((o) => o.tenantId === TENANT_B_ID && o.idempotencyKey === "checkout-cross-a");
     assert.equal(crossOrder, undefined);
+  });
+  await check("Confirmation F5 recovery: guest, customer, invalid and cross-tenant", async () => {
+    currentUserId.value = null;
+    const guest = await checkoutService.execute({
+      tenantSlug: TENANT_A_SLUG,
+      items: [{ productId: PRODUCT_A_ID, tenantId: TENANT_A_ID, sku: "PROD-A", name: "Producto A", unitPrice: 25, quantity: 1 }],
+      form: makeCheckoutForm({ email: "guest-confirmation@ferreteria-a.test" }),
+      idempotencyKey: "checkout-confirmation-guest",
+    });
+    assert.ok(guest.trackingToken);
+    // This lookup represents an F5: it receives no checkout-provider state.
+    const recoveredGuest = await confirmationService.execute({ tenantSlug: TENANT_A_SLUG, trackingToken: guest.trackingToken });
+    assert.ok(recoveredGuest);
+    assert.equal(recoveredGuest.orderNumber, guest.orderNumber);
+    assert.equal(recoveredGuest.total, guest.total);
+    assert.equal(await confirmationService.execute({ tenantSlug: TENANT_A_SLUG, trackingToken: "not-a-token" }), null);
+    assert.equal(await confirmationService.execute({ tenantSlug: TENANT_B_SLUG, trackingToken: guest.trackingToken }), null);
+
+    currentUserId.value = CUSTOMER_A_USER_ID;
+    const customer = await checkoutService.execute({
+      tenantSlug: TENANT_A_SLUG,
+      items: [{ productId: PRODUCT_A_ID, tenantId: TENANT_A_ID, sku: "PROD-A", name: "Producto A", unitPrice: 25, quantity: 1 }],
+      form: makeCheckoutForm({ email: CUSTOMER_A_EMAIL }),
+      idempotencyKey: "checkout-confirmation-customer",
+    });
+    const recoveredCustomer = await confirmationService.execute({ tenantSlug: TENANT_A_SLUG, trackingToken: customer.trackingToken });
+    assert.ok(recoveredCustomer);
+    assert.equal(recoveredCustomer.orderNumber, customer.orderNumber);
+    currentUserId.value = null;
   });
 
   // SCENARIO 4 – Registration

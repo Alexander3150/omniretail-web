@@ -8,11 +8,20 @@ import { downloadStorefrontReceiptPdf } from "@/modules/storefront/application/s
 import { useStorefrontCheckoutConfirmation } from "@/modules/storefront/providers/StorefrontCheckoutConfirmationProvider";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 import { useStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
+import { useStorefrontOrderConfirmation } from "@/modules/storefront/hooks/useStorefrontOrderConfirmation";
 
-export function OrderConfirmationPage() {
+export function OrderConfirmationPage({ trackingToken: routeTrackingToken }: { trackingToken?: string }) {
   const routes = useStorefrontRoutes();
-  const { result } = useStorefrontCheckoutConfirmation();
+  const { result: providerResult } = useStorefrontCheckoutConfirmation();
+  const { data: persistedResult, loading: loadingPersistedResult } =
+    useStorefrontOrderConfirmation(routeTrackingToken);
   const { config } = usePublicTenant();
+  // A result in memory is fast, but it is only valid for the token in this
+  // route. A refresh/direct link reconstructs the same narrow view securely.
+  const result = providerResult &&
+    (!routeTrackingToken || providerResult.trackingToken === routeTrackingToken)
+    ? providerResult
+    : persistedResult;
   const orderNumber = result?.orderNumber;
   const trackingToken = result?.guestTrackingEnabled ? result.trackingToken : undefined;
   const emailSent = result?.confirmationEmailSent ?? false;
@@ -22,6 +31,13 @@ export function OrderConfirmationPage() {
   const confirmedMessage = result?.hasInventoryReservations
     ? `Tu pedido ${orderNumber} fue confirmado y sus productos físicos quedaron reservados.`
     : `Tu pedido ${orderNumber} fue confirmado correctamente.`;
+
+  if (routeTrackingToken && !result && loadingPersistedResult)
+    return (
+      <main className="mx-auto max-w-3xl px-5 py-14 text-[var(--color-text-muted)]">
+        Cargando confirmaciÃ³n del pedido...
+      </main>
+    );
 
   if (!orderNumber)
     return (

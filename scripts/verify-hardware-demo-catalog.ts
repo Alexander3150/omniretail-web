@@ -15,6 +15,7 @@ import { MockPlanRepository } from "@/infrastructure/mock/repositories/MockPlanR
 import { MockProductKitComponentRepository } from "@/infrastructure/mock/repositories/MockProductKitComponentRepository";
 import { MockProductMediaRepository } from "@/infrastructure/mock/repositories/MockProductMediaRepository";
 import { MockProductRepository } from "@/infrastructure/mock/repositories/MockProductRepository";
+import { MockProductSalesPriceTierRepository } from "@/infrastructure/mock/repositories/MockProductSalesPriceTierRepository";
 import { MockTenantRepository } from "@/infrastructure/mock/repositories/MockTenantRepository";
 import { MockTenantSubscriptionRepository } from "@/infrastructure/mock/repositories/MockTenantSubscriptionRepository";
 import { MockUnitRepository } from "@/infrastructure/mock/repositories/MockUnitRepository";
@@ -176,6 +177,7 @@ async function main(): Promise<void> {
     products: new MockProductRepository(store, eventBus),
     categories: new MockCategoryRepository(store, eventBus),
     productMedia: new MockProductMediaRepository(store, eventBus),
+    productSalesPriceTiers: new MockProductSalesPriceTierRepository(store, eventBus),
     businessConfig: new MockBusinessConfigRepository(store, eventBus),
     inventory: new MockInventoryRepository(store, eventBus),
     productKitComponents: new MockProductKitComponentRepository(store, eventBus),

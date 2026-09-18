@@ -23,115 +23,128 @@ export class GetPosProductsService {
 
     const units = await this.repositories.units.getByTenant(input.tenantId);
     const items = await Promise.all(
-      products.map(async (product): Promise<PosProductDto & { canonicalAvailableQuantity: number | null }> => {
-        const [promotion, balances, lots, serials, kitComponents] = await Promise.all([
-          this.repositories.promotions.getApplicable({
-            tenantId: input.tenantId,
-            productId: product.id,
-            at,
-            channel: SalesChannel.pos,
-            branchId: input.branchId,
-          }),
-          product.tracking.stock
-            ? this.repositories.inventory.getBalanceByProduct(product.id, input.branchId)
-            : Promise.resolve([]),
-          product.tracking.lot
-            ? this.repositories.inventory.getLots(product.id)
-            : Promise.resolve([]),
-          product.tracking.serial
-            ? this.repositories.inventory.getSerialNumbers(product.id)
-            : Promise.resolve([]),
-          product.productType === ProductType.kit
-            ? this.repositories.productKitComponents.getByKitProduct(product.id)
-            : Promise.resolve([]),
-        ]);
-        const price = calculateEffectivePrice(product.salePrice, promotion);
-        const saleUnitId = product.saleUnitId ?? product.baseUnitId;
-        const conversions = await this.repositories.units.getConversionsByProductScoped(
-          input.tenantId,
-          product.id,
-        );
-        const tracksStock = product.tracking.stock || product.productType === ProductType.kit;
-        const physicalAvailableQuantity = product.tracking.stock
-          ? getCanonicalProductAvailability({
-              product,
-              tenantId: input.tenantId,
-              branchId: input.branchId,
-              balances,
-              lots,
-              serials,
-              locations,
-              at,
-            })
-          : null;
-        const kitAvailableQuantity =
-          product.productType === ProductType.kit && kitComponents.length > 0
-            ? Math.min(
-                ...(await Promise.all(
-                  kitComponents.map(async (component) => {
-                    const componentBalances = await this.repositories.inventory.getBalanceByProduct(
-                      component.componentProductId,
-                      input.branchId,
-                    );
-                    const available = getBranchAvailableQuantity({
-                      tenantId: input.tenantId,
-                      branchId: input.branchId,
-                      productId: component.componentProductId,
-                      balances: componentBalances,
-                      locations,
-                    });
-                    return Math.floor(available / component.quantityPerKit);
-                  }),
-                )),
-              )
+      products.map(
+        async (product): Promise<PosProductDto & { canonicalAvailableQuantity: number | null }> => {
+          const [promotion, salesPriceTiers, balances, lots, serials, kitComponents] =
+            await Promise.all([
+              this.repositories.promotions.getApplicable({
+                tenantId: input.tenantId,
+                productId: product.id,
+                at,
+                channel: SalesChannel.pos,
+                branchId: input.branchId,
+              }),
+              this.repositories.productSalesPriceTiers.getByProduct(product.id),
+              product.tracking.stock
+                ? this.repositories.inventory.getBalanceByProduct(product.id, input.branchId)
+                : Promise.resolve([]),
+              product.tracking.lot
+                ? this.repositories.inventory.getLots(product.id)
+                : Promise.resolve([]),
+              product.tracking.serial
+                ? this.repositories.inventory.getSerialNumbers(product.id)
+                : Promise.resolve([]),
+              product.productType === ProductType.kit
+                ? this.repositories.productKitComponents.getByKitProduct(product.id)
+                : Promise.resolve([]),
+            ]);
+          const price = calculateEffectivePrice(product.salePrice, promotion);
+          const saleUnitId = product.saleUnitId ?? product.baseUnitId;
+          const conversions = await this.repositories.units.getConversionsByProductScoped(
+            input.tenantId,
+            product.id,
+          );
+          const tracksStock = product.tracking.stock || product.productType === ProductType.kit;
+          const physicalAvailableQuantity = product.tracking.stock
+            ? getCanonicalProductAvailability({
+                product,
+                tenantId: input.tenantId,
+                branchId: input.branchId,
+                balances,
+                lots,
+                serials,
+                locations,
+                at,
+              })
             : null;
-        const canonicalAvailableQuantity =
-          product.productType === ProductType.kit
-            ? Number.isFinite(kitAvailableQuantity)
-              ? kitAvailableQuantity
-              : 0
-            : physicalAvailableQuantity;
-        let hasValidSaleConversion = true;
-        let availableQuantity: number | null = canonicalAvailableQuantity;
-        if (canonicalAvailableQuantity !== null) {
-          try {
-            availableQuantity = fromBaseQuantity(canonicalAvailableQuantity, {
-              targetUnitId: saleUnitId,
-              baseUnitId: product.baseUnitId,
-              conversions,
-            });
-          } catch {
-            hasValidSaleConversion = false;
-            availableQuantity = 0;
+          const kitAvailableQuantity =
+            product.productType === ProductType.kit && kitComponents.length > 0
+              ? Math.min(
+                  ...(await Promise.all(
+                    kitComponents.map(async (component) => {
+                      const componentBalances =
+                        await this.repositories.inventory.getBalanceByProduct(
+                          component.componentProductId,
+                          input.branchId,
+                        );
+                      const available = getBranchAvailableQuantity({
+                        tenantId: input.tenantId,
+                        branchId: input.branchId,
+                        productId: component.componentProductId,
+                        balances: componentBalances,
+                        locations,
+                      });
+                      return Math.floor(available / component.quantityPerKit);
+                    }),
+                  )),
+                )
+              : null;
+          const canonicalAvailableQuantity =
+            product.productType === ProductType.kit
+              ? Number.isFinite(kitAvailableQuantity)
+                ? kitAvailableQuantity
+                : 0
+              : physicalAvailableQuantity;
+          let hasValidSaleConversion = true;
+          let availableQuantity: number | null = canonicalAvailableQuantity;
+          if (canonicalAvailableQuantity !== null) {
+            try {
+              availableQuantity = fromBaseQuantity(canonicalAvailableQuantity, {
+                targetUnitId: saleUnitId,
+                baseUnitId: product.baseUnitId,
+                conversions,
+              });
+            } catch {
+              hasValidSaleConversion = false;
+              availableQuantity = 0;
+            }
           }
-        }
-        const requiresLot = product.tracking.lot;
-        const requiresSerial = product.tracking.serial;
-        const requiresUnsupportedTraceability = product.tracking.expiration && !requiresLot;
+          const requiresLot = product.tracking.lot;
+          const requiresSerial = product.tracking.serial;
+          const requiresUnsupportedTraceability = product.tracking.expiration && !requiresLot;
 
-        return {
-          productId: product.id,
-          sku: product.sku,
-          barcode: product.barcode,
-          name: product.name,
-          productType: product.productType,
-          basePrice: price.basePrice,
-          effectivePrice: price.effectivePrice,
-          discount: price.discountAmount,
-          availableQuantity,
-          saleUnitId,
-          saleUnitName: units.find((unit) => unit.id === saleUnitId)?.name ?? saleUnitId,
-          tracksStock,
-          requiresLot,
-          requiresSerial,
-          requiresUnsupportedTraceability,
-          isAvailableForSale:
-            hasValidSaleConversion && !requiresUnsupportedTraceability &&
-            (!(tracksStock || product.productType === ProductType.kit) ||
-              (availableQuantity !== null && availableQuantity > 0)),
-          canonicalAvailableQuantity,
-        };
-      }),
+          return {
+            productId: product.id,
+            sku: product.sku,
+            barcode: product.barcode,
+            name: product.name,
+            productType: product.productType,
+            basePrice: price.basePrice,
+            effectivePrice: price.effectivePrice,
+            discount: price.discountAmount,
+            salesPriceTiers: salesPriceTiers
+              .filter(
+                (tier) =>
+                  tier.tenantId === input.tenantId && tier.productId === product.id && tier.active,
+              )
+              .map(({ minQuantity, unitPrice, active }) => ({ minQuantity, unitPrice, active })),
+            promotion: promotion ?? undefined,
+            availableQuantity,
+            saleUnitId,
+            saleUnitName: units.find((unit) => unit.id === saleUnitId)?.name ?? saleUnitId,
+            tracksStock,
+            requiresLot,
+            requiresSerial,
+            requiresUnsupportedTraceability,
+            isAvailableForSale:
+              hasValidSaleConversion &&
+              !requiresUnsupportedTraceability &&
+              (!(tracksStock || product.productType === ProductType.kit) ||
+                (availableQuantity !== null && availableQuantity > 0)),
+            canonicalAvailableQuantity,
+          };
+        },
+      ),
     );
 
     const byProductId = new Map(items.map((item) => [item.productId, item]));
