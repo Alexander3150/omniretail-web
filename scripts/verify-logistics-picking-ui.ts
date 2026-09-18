@@ -34,7 +34,10 @@ import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapte
 import { DispatchApplicationService } from "@/modules/logistics/application/services/DispatchApplicationService";
 import { PickingApplicationService } from "@/modules/logistics/application/services/PickingApplicationService";
 import { PackingApplicationService } from "@/modules/logistics/application/services/PackingApplicationService";
-import { formatExpirationDate } from "@/modules/logistics/components/PickingLineList";
+import {
+  filterAvailableSerialNumbers,
+  formatExpirationDate,
+} from "@/modules/logistics/components/PickingLineList";
 import { normalizePickingSerialNumbers } from "@/modules/logistics/hooks/useLogisticsPicking";
 
 const tenantId = "tenant-demo";
@@ -46,6 +49,12 @@ const now = "2026-09-14T10:00:00.000Z";
 async function main() {
   assert.equal(formatExpirationDate("2028-08-15T00:00:00.000Z"), "15/08/2028");
   assert.equal(formatExpirationDate("2028-08-15"), "15/08/2028");
+  const availableSerialNumbers = ["SER-0008", "SER-0002", "SER-0006", "SER-0004", "SER-0005"];
+  assert.deepEqual(filterAvailableSerialNumbers(availableSerialNumbers, ""), availableSerialNumbers);
+  assert.deepEqual(filterAvailableSerialNumbers(availableSerialNumbers, "SER-000"), availableSerialNumbers);
+  assert.deepEqual(filterAvailableSerialNumbers(availableSerialNumbers, "6"), ["SER-0006"]);
+  assert.deepEqual(filterAvailableSerialNumbers(availableSerialNumbers, "0006"), ["SER-0006"]);
+  assert.deepEqual(filterAvailableSerialNumbers(availableSerialNumbers, "absent"), []);
 
   const store = new MockDatabaseStore(new LocalStorageAdapter());
   const eventBus = new DataEventBus();

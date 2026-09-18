@@ -59,6 +59,8 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
   const [selectedSerials, setSelectedSerials] = useState<string[]>([]);
   const [replacementSerials, setReplacementSerials] = useState<string[]>(line.serialNumbers);
   const [serialEntry, setSerialEntry] = useState("");
+  const [serialSearch, setSerialSearch] = useState("");
+  const [showAvailableSerials, setShowAvailableSerials] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const targetQuantity = Number(targetText);
   const serialDelta = Number.isFinite(targetQuantity)
@@ -67,6 +69,10 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
   const selectedLot = line.lot
     ? line.availableLots.find((candidate) => candidate.id === line.lot?.id)
     : null;
+  const visibleSerialNumbers = filterAvailableSerialNumbers(
+    line.availableSerialNumbers,
+    serialSearch,
+  );
 
   const submit = async () => {
     const validationError = validatePickingLineUpdate(line, targetQuantity, selectedSerials);
@@ -195,27 +201,82 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
                   placeholder="Escanear o escribir serie" value={serialEntry} />
                 <Button disabled={disabled || !serialEntry.trim()} onClick={addScannedSerial} type="button" variant="secondary">Agregar</Button>
               </div>
-              {line.availableSerialNumbers.length ? (
-                <div className="flex flex-wrap gap-2">
-                  {line.availableSerialNumbers.map((serial) => {
-                    const checked = selectedSerials.includes(serial);
-                    const limitReached = !checked && selectedSerials.length >= serialDelta;
-                    return (
-                      <label className="flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm" key={serial}>
-                        <input
-                          checked={checked}
-                          disabled={disabled || serialDelta <= 0 || limitReached}
-                          onChange={() => {
-                            setSelectedSerials((current) => checked ? current.filter((item) => item !== serial) : [...current, serial]);
-                            setError(null);
-                          }}
-                          type="checkbox"
-                        />
-                        {serial}
-                      </label>
-                    );
-                  })}
+              {selectedSerials.length > 0 ? (
+                <div aria-label="Series seleccionadas" className="flex flex-wrap gap-2">
+                  {selectedSerials.map((serial) => (
+                    <button
+                      aria-label={`Quitar serie ${serial}`}
+                      className="inline-flex items-center gap-1 rounded-full border border-[var(--color-primary)] bg-[var(--color-app-background)] px-3 py-1 text-sm text-[var(--color-title)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+                      disabled={disabled}
+                      key={serial}
+                      onClick={() => {
+                        setSelectedSerials((current) => current.filter((item) => item !== serial));
+                        setError(null);
+                      }}
+                      type="button"
+                    >
+                      {serial} <span aria-hidden="true">×</span>
+                    </button>
+                  ))}
                 </div>
+              ) : null}
+              {line.availableSerialNumbers.length ? (
+                <>
+                  <Button
+                    aria-controls={`available-serials-${line.pickingLineId}`}
+                    aria-expanded={showAvailableSerials}
+                    disabled={disabled}
+                    onClick={() => setShowAvailableSerials((current) => !current)}
+                    type="button"
+                    variant="secondary"
+                  >
+                    {showAvailableSerials
+                      ? "Ocultar series disponibles"
+                      : `Ver series disponibles (${line.availableSerialNumbers.length})`}
+                  </Button>
+                  {showAvailableSerials ? (
+                    <div
+                      className="space-y-2"
+                      id={`available-serials-${line.pickingLineId}`}
+                    >
+                      <Input
+                        aria-label="Buscar serie"
+                        onChange={(event) => setSerialSearch(event.target.value)}
+                        placeholder="Buscar serie..."
+                        value={serialSearch}
+                      />
+                      {serialSearch.trim() ? (
+                        <p className="text-xs text-[var(--color-text-muted)]">
+                          {visibleSerialNumbers.length} coincidencia{visibleSerialNumbers.length === 1 ? "" : "s"}
+                        </p>
+                      ) : null}
+                      {visibleSerialNumbers.length === 0 ? (
+                        <p className="text-sm text-[var(--color-text-muted)]">No se encontraron series.</p>
+                      ) : (
+                        <div className="flex max-h-64 flex-wrap content-start gap-2 overflow-y-auto pr-1">
+                          {visibleSerialNumbers.map((serial) => {
+                            const checked = selectedSerials.includes(serial);
+                            const limitReached = !checked && selectedSerials.length >= serialDelta;
+                            return (
+                              <label className="flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm" key={serial}>
+                                <input
+                                  checked={checked}
+                                  disabled={disabled || serialDelta <= 0 || limitReached}
+                                  onChange={() => {
+                                    setSelectedSerials((current) => checked ? current.filter((item) => item !== serial) : [...current, serial]);
+                                    setError(null);
+                                  }}
+                                  type="checkbox"
+                                />
+                                {serial}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                </>
               ) : <InlineAlert description="No hay series disponibles en la reserva actual." title="Series no disponibles" tone="warning" />}
             </fieldset>
           ) : null}
@@ -252,4 +313,10 @@ export function formatExpirationDate(value: string) {
   if (!match) return value;
   const [, year, month, day] = match;
   return `${day}/${month}/${year}`;
+}
+
+export function filterAvailableSerialNumbers(serialNumbers: string[], search: string) {
+  const normalizedSearch = search.trim().toLocaleLowerCase();
+  if (!normalizedSearch) return serialNumbers;
+  return serialNumbers.filter((serial) => serial.toLocaleLowerCase().includes(normalizedSearch));
 }
