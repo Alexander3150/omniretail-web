@@ -43,7 +43,6 @@ export const statusesConfig: Record<string, StatusDefinition> = {
   received: { label: "Recibido", tone: "success" },
   partial: { label: "Parcial", tone: "warning" },
   pending_approval: { label: "Pendiente de aprobación", tone: "warning" },
-  sent: { label: "Enviada", tone: "info" },
   partially_received: { label: "Recibida parcialmente", tone: "warning" },
   refunded: { label: "Reembolsado", tone: "neutral" },
   in_progress: { label: "En progreso", tone: "info" },
