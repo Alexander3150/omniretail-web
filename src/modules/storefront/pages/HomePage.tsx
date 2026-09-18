@@ -55,11 +55,14 @@ export function HomePage() {
         <div className="relative min-h-[26rem] overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm sm:min-h-[30rem]">
           {slide?.imageSource ? (
             <>
-              <div className="absolute inset-y-0 right-0 z-10 w-full bg-gradient-to-r from-white via-white/90 to-white/10 sm:w-3/4" />
               <StorefrontCatalogImage
                 alt={slide.title}
-                className="absolute inset-0 z-0 h-full w-full object-contain object-right p-5 sm:p-8"
+                className="absolute inset-0 z-0 h-full w-full object-cover object-center"
                 source={slide.imageSource}
+              />
+              <div
+                aria-hidden="true"
+                className="absolute inset-0 z-10 bg-gradient-to-r from-white via-white/25 via-35% to-transparent"
               />
               <div className="relative z-20 flex min-h-[26rem] max-w-xl flex-col justify-center px-7 py-14 sm:min-h-[30rem] sm:px-12">
                 <h1 className="mt-5 text-4xl font-black leading-tight text-[var(--color-text)] sm:text-5xl">
