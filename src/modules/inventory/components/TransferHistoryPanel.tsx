@@ -23,9 +23,11 @@ interface Props {
   canManageTransfers: boolean;
   busy: boolean;
   onCancel: (id: string, reason: string, operationId: string) => Promise<InventoryTransfer>;
+  onConfirmationChange?: (open: boolean) => void;
 }
 
-export function TransferHistoryPanel({ rows, loading, error, canManageTransfers, busy, onCancel }: Props) {
+export function TransferHistoryPanel({ rows, loading, error, canManageTransfers, busy,
+  onCancel, onConfirmationChange }: Props) {
   const { showToast } = useToast();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reason, setReason] = useState("");
@@ -35,12 +37,17 @@ export function TransferHistoryPanel({ rows, loading, error, canManageTransfers,
   const submitting = useRef(false);
   const selected = rows.find((row) => row.id === selectedId) ?? null;
 
+  function updateConfirmOpen(open: boolean) {
+    setConfirmOpen(open);
+    onConfirmationChange?.(open);
+  }
+
   function select(row: TransferHistoryRow) {
     if (busy || submitting.current) return;
     setSelectedId(row.id);
     setReason("");
     setSubmitError("");
-    setConfirmOpen(false);
+    updateConfirmOpen(false);
     operationId.current = null;
   }
 
@@ -49,7 +56,7 @@ export function TransferHistoryPanel({ rows, loading, error, canManageTransfers,
     const normalizedReason = reason.trim();
     if (!normalizedReason) {
       setSubmitError("Ingresa el motivo de cancelación.");
-      setConfirmOpen(false);
+      updateConfirmOpen(false);
       return;
     }
     submitting.current = true;
@@ -57,7 +64,7 @@ export function TransferHistoryPanel({ rows, loading, error, canManageTransfers,
     try {
       const transfer = await onCancel(selected.id, normalizedReason,
         operationId.current ??= crypto.randomUUID());
-      setConfirmOpen(false);
+      updateConfirmOpen(false);
       setReason("");
       operationId.current = null;
       showToast({ title: `Traslado ${transfer.number} cancelado`, tone: "success" });
@@ -69,33 +76,27 @@ export function TransferHistoryPanel({ rows, loading, error, canManageTransfers,
   }
 
   return (
-    <section className="space-y-3 rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm">
+    <section className="space-y-3">
       <div>
-        <h2 className="text-base font-bold text-[var(--color-title)]">Traslados entre sucursales</h2>
-        <p className="text-sm text-[var(--color-text-muted)]">Seguimiento de los traslados de la sucursal seleccionada.</p>
+        <h3 className="text-base font-bold text-[var(--color-title)]">Traslados materializados</h3>
       </div>
       {error ? <p className="text-sm text-[var(--color-danger)]" role="alert">{error}</p> : null}
       {loading ? <p className="text-sm text-[var(--color-text-muted)]">Cargando traslados...</p> : null}
       {!loading && rows.length === 0 ? <p className="text-sm text-[var(--color-text-muted)]">No hay traslados para esta sucursal.</p> : null}
       {!loading && rows.length > 0 ? (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-left text-sm">
-            <thead className="border-b border-[var(--color-border)] text-[var(--color-text-muted)]">
-              <tr><th className="py-2 pr-3">Traslado</th><th className="py-2 pr-3">Origen</th><th className="py-2 pr-3">Destino</th><th className="py-2 pr-3">Estado</th><th className="py-2 pr-3">Actualizado</th><th className="py-2">Detalle</th></tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr className="border-b border-[var(--color-border)]" key={row.id}>
-                  <td className="py-2 pr-3 font-semibold text-[var(--color-title)]">{row.number}</td>
-                  <td className="py-2 pr-3">{row.sourceBranchName}</td>
-                  <td className="py-2 pr-3">{row.destinationBranchName}</td>
-                  <td className="py-2 pr-3">{STATUS_LABELS[row.status]}</td>
-                  <td className="py-2 pr-3">{formatDate(row.updatedAt)}</td>
-                  <td className="py-2"><Button onClick={() => select(row)} type="button" variant="secondary">Ver</Button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-2">
+          {rows.map((row) => (
+            <article className="rounded-lg border border-[var(--color-border)] bg-white p-3 text-sm" key={row.id}>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="font-bold text-[var(--color-title)]">{row.number}</p>
+                  <p>{row.sourceBranchName} → {row.destinationBranchName}</p>
+                  <p className="text-[var(--color-text-muted)]">Cantidad: {row.requestedQuantity} · {STATUS_LABELS[row.status]} · {formatDate(row.updatedAt)}</p>
+                </div>
+                <Button onClick={() => select(row)} type="button" variant="secondary">Ver detalle</Button>
+              </div>
+            </article>
+          ))}
         </div>
       ) : null}
       {selected ? (
@@ -137,7 +138,7 @@ export function TransferHistoryPanel({ rows, loading, error, canManageTransfers,
               {submitError ? <p className="text-sm text-[var(--color-danger)]" role="alert">{submitError}</p> : null}
               <Button disabled={busy || !reason.trim()} onClick={() => {
                 operationId.current = crypto.randomUUID();
-                setConfirmOpen(true);
+                updateConfirmOpen(true);
               }} type="button" variant="danger">Cancelar traslado</Button>
             </div>
           ) : null}
@@ -147,7 +148,7 @@ export function TransferHistoryPanel({ rows, loading, error, canManageTransfers,
         cancelLabel="Volver"
         confirmLabel={busy ? "Cancelando..." : "Confirmar cancelación"}
         message={`¿Cancelar ${selected?.number ?? "este traslado"}? Se liberará su reserva en origen. Esta acción solo está disponible antes del despacho.`}
-        onCancel={() => { if (!busy && !submitting.current) setConfirmOpen(false); }}
+        onCancel={() => { if (!busy && !submitting.current) updateConfirmOpen(false); }}
         onConfirm={() => { void confirmCancel(); }}
         open={confirmOpen && Boolean(selected?.canCancel) && canManageTransfers}
         title="Cancelar traslado"

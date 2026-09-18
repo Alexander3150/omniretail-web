@@ -52,6 +52,7 @@ import { GetInventoryMovementsService } from "@/modules/inventory/application/se
 import { RegisterInventoryAdjustmentService } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
 import {
   ApproveTransferRequestService,
+  CancelTransferRequestService,
   CreateTransferRequestService,
   RejectTransferRequestService,
 } from "@/modules/inventory/application/services/TransferRequestServices";
@@ -491,6 +492,19 @@ async function main() {
   assert.equal(created.requestingBranchId, BRANCH_CENTRO);
   assert.equal(created.sourceBranchId, BRANCH_NORTE);
 
+  const ownPending = await new CreateTransferRequestService(requester).execute({
+    productId: PRODUCT_SCREWS,
+    requesterBranchId: BRANCH_CENTRO,
+    providerBranchId: BRANCH_NORTE,
+    quantity: 1,
+    reason: InventoryTransferReason.replenishment,
+    notes: "Withdrawal permission",
+  });
+  await expectDenied(() => new CancelTransferRequestService(readOnly).execute(ownPending.id),
+    /permiso.*traslados/i);
+  assert.equal((await new CancelTransferRequestService(requester)
+    .execute(ownPending.id)).status, "cancelled");
+
   const reviewer = harness.createSession(
     [...READ_PERMISSIONS, TRANSFER_PERMISSION],
     [BRANCH_NORTE],
@@ -500,6 +514,8 @@ async function main() {
   const approvedRequest = await reviewer.inventoryTransferRequests.getById(created.id);
   assert.equal(approvedRequest?.status, "approved");
   assert.ok(approvedRequest?.reviewedByUserId);
+  await expectDenied(() => new CancelTransferRequestService(requester).execute(created.id),
+    /Solo puede cancelarse/);
 
   const createdForReject = await new CreateTransferRequestService(requester).execute({
     productId: PRODUCT_SCREWS,
@@ -520,6 +536,7 @@ async function main() {
   assert.equal(hookSource.includes("inventoryTransferRequests.createRequest"), false);
   assert.equal(hookSource.includes("inventoryTransferRequests.approveRequest"), false);
   assert.equal(hookSource.includes("inventoryTransferRequests.rejectRequest"), false);
+  assert.equal(hookSource.includes("inventoryTransferRequests.cancelRequest"), false);
 
   await expectDenied(
     () =>

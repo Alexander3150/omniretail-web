@@ -30,7 +30,8 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import { CreateInventoryTransferService, CancelInventoryTransferService } from "@/modules/inventory/application/services/InventoryTransferServices";
 import { GetInventoryAlertsService } from "@/modules/inventory/application/services/GetInventoryAlertsService";
-import { ApproveTransferRequestService, CreateTransferRequestService, RejectTransferRequestService } from "@/modules/inventory/application/services/TransferRequestServices";
+import { GetInventoryProductTransfersService } from "@/modules/inventory/application/services/GetInventoryProductTransfersService";
+import { ApproveTransferRequestService, CancelTransferRequestService, CreateTransferRequestService, RejectTransferRequestService } from "@/modules/inventory/application/services/TransferRequestServices";
 import { DispatchApplicationService } from "@/modules/logistics/application/services/DispatchApplicationService";
 import { PackingApplicationService } from "@/modules/logistics/application/services/PackingApplicationService";
 import { PickingApplicationService } from "@/modules/logistics/application/services/PickingApplicationService";
@@ -353,6 +354,29 @@ async function exerciseTransferRequests() {
   assert.deepEqual(counts(), { transfers: 0, reservations: 0, pickings: 0 });
   assert.ok((await new GetInventoryAlertsService(provider).execute(sourceBranchId))
     .transferRequests.some((row) => row.id === requested.id && row.context === "received"));
+  const pendingView = await new GetInventoryProductTransfersService(requester)
+    .execute(destinationBranchId, "prod-screws");
+  assert.equal(pendingView.requests.find((row) => row.id === requested.id)?.linkedTransferNumber,
+    undefined);
+  assert.equal(pendingView.requests.find((row) => row.id === requested.id)?.canCancel, true);
+  assert.equal(pendingView.transfers.length, 0);
+  assert.ok((await new GetInventoryProductTransfersService(provider)
+    .execute(sourceBranchId, "prod-screws")).requests.some((row) =>
+      row.id === requested.id && row.canReview && !row.canCancel));
+  assert.equal((await new GetInventoryProductTransfersService(requester)
+    .execute(destinationBranchId, tracedProductId)).requests.length, 0);
+
+  const withdrawn = await new CreateTransferRequestService(requester)
+    .execute(requestInput("withdraw"));
+  await assert.rejects(new CancelTransferRequestService(provider).execute(withdrawn.id),
+    /sucursal solicitante debe estar activa/);
+  await assert.rejects(new CancelTransferRequestService(withActiveBranch("branch-other"))
+    .execute(withdrawn.id), /sucursal solicitante debe estar activa/);
+  assert.equal((await new CancelTransferRequestService(requester).execute(withdrawn.id)).status,
+    "cancelled");
+  assert.deepEqual(counts(), { transfers: 0, reservations: 0, pickings: 0 });
+  await assert.rejects(new ApproveTransferRequestService(provider).execute(withdrawn.id),
+    /not reviewable/);
 
   const rejectedRequest = await new CreateTransferRequestService(requester)
     .execute(requestInput("reject"));
@@ -370,6 +394,13 @@ async function exerciseTransferRequests() {
   });
   await assert.rejects(new ApproveTransferRequestService(provider)
     .execute("foreign-transfer-request"), /no encontrada/);
+  await assert.rejects(new CancelTransferRequestService(requester)
+    .execute("foreign-transfer-request"), /no encontrada/);
+  assert.equal((await new GetInventoryProductTransfersService(requester)
+    .execute(destinationBranchId, "prod-screws")).requests.some((row) =>
+      row.id === "foreign-transfer-request"), false);
+  await assert.rejects(new GetInventoryProductTransfersService(provider)
+    .execute("branch-other", "prod-screws"), /sucursal seleccionada|no est/i);
 
   const sourceBefore = physicalQuantity(env.store, sourceBranchId, "prod-screws");
   const accepted = await new ApproveTransferRequestService(provider).execute(requested.id,
@@ -393,6 +424,19 @@ async function exerciseTransferRequests() {
   assert.equal(afterAccept.pickingOrders[0].sourceId, accepted.id);
   assert.equal(physicalQuantity(env.store, sourceBranchId, "prod-screws"), sourceBefore);
   assert.equal(afterAccept.inventoryReservations[0].status, "active");
+  const materializedView = await new GetInventoryProductTransfersService(requester)
+    .execute(destinationBranchId, "prod-screws");
+  assert.equal(materializedView.requests.find((row) => row.id === requested.id)
+    ?.linkedTransferNumber, accepted.number);
+  assert.equal(materializedView.requests.find((row) => row.id === requested.id)?.canCancel, false);
+  assert.equal(materializedView.transfers.find((row) => row.id === accepted.id)
+    ?.requestedQuantity, requested.requestedQuantity);
+  assert.deepEqual(materializedView.transfers.find((row) => row.id === accepted.id)
+    ?.sourceRequestIds, [requested.id]);
+  await assert.rejects(new CancelTransferRequestService(requester).execute(requested.id),
+    /Solo puede cancelarse/);
+  await assert.rejects(env.repositories.inventoryTransferRequests.cancelRequest(requested.id),
+    /Cannot cancel/);
   assert.equal((await new GetInventoryAlertsService(provider).execute(sourceBranchId))
     .transferRequests.some((row) => row.id === requested.id), false);
   assert.ok((await new GetInventoryAlertsService(requester).execute(destinationBranchId))
@@ -414,12 +458,41 @@ async function exerciseTransferRequests() {
   assert.equal(raced[0].id, raced[1].id);
   assert.deepEqual(counts(), { transfers: 2, reservations: 2, pickings: 2 });
 
+  const raceRequest = await new CreateTransferRequestService(requester)
+    .execute(requestInput("accept-vs-cancel"));
+  const race = await Promise.allSettled([
+    new ApproveTransferRequestService(provider).execute(raceRequest.id, "race-accept-cancel"),
+    new CancelTransferRequestService(requester).execute(raceRequest.id),
+  ]);
+  assert.equal(race.filter((result) => result.status === "fulfilled").length, 1);
+  const racedStatus = env.store.getSnapshot().inventoryTransferRequests.find((item) =>
+    item.id === raceRequest.id)?.status;
+  const racedTransfer = env.store.getSnapshot().inventoryTransfers.find((item) =>
+    item.sourceRequestIds?.includes(raceRequest.id));
+  assert.equal(racedStatus === "cancelled" && Boolean(racedTransfer), false);
+  assert.equal(racedStatus === "approved", Boolean(racedTransfer));
+
+  const cancelledTransfer = await new CancelInventoryTransferService(provider)
+    .execute(accepted.id, "Prueba de cancelación", "cancel-materialized-transfer");
+  assert.equal(cancelledTransfer.transfer.status, InventoryTransferStatus.cancelled);
+  const countsBeforeInsufficient = counts();
+
   const insufficient = await new CreateTransferRequestService(requester)
     .execute(requestInput("insufficient", sourceBefore + 1));
   await assert.rejects(retry.execute(insufficient.id), /stock|disponible|balance/i);
   assert.equal(env.store.getSnapshot().inventoryTransferRequests.find((item) =>
     item.id === insufficient.id)?.status, "requested");
-  assert.deepEqual(counts(), { transfers: 2, reservations: 2, pickings: 2 });
+  assert.deepEqual(counts(), countsBeforeInsufficient);
+
+  const tracedRequest = await new CreateTransferRequestService(requester).execute({
+    ...requestInput("other-product", 1), productId: tracedProductId,
+  });
+  const tracedTransfer = await new ApproveTransferRequestService(provider)
+    .execute(tracedRequest.id);
+  const plainProductView = await new GetInventoryProductTransfersService(requester)
+    .execute(destinationBranchId, "prod-screws");
+  assert.equal(plainProductView.requests.some((row) => row.id === tracedRequest.id), false);
+  assert.equal(plainProductView.transfers.some((row) => row.id === tracedTransfer.id), false);
 }
 
 async function main() {

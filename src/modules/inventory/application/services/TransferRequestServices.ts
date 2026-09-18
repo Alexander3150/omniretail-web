@@ -170,6 +170,37 @@ export class RejectTransferRequestService {
   }
 }
 
+export class CancelTransferRequestService {
+  constructor(private readonly repositories: RepositoryRegistry) {}
+
+  async execute(requestId: string, reason?: string): Promise<InventoryTransferRequest> {
+    const { tenantId, user, permissions } = await resolveInventoryContext(this.repositories);
+    ensureCanManageTransfers(permissions);
+    await ensureTenantCanUseInventory(this.repositories, tenantId);
+    const request = await this.repositories.inventoryTransferRequests.getById(requestId);
+    if (!request || request.tenantId !== tenantId) {
+      throw new InventoryServiceError("Solicitud de traslado no encontrada.");
+    }
+    const session = await resolveCurrentSessionSnapshot(this.repositories);
+    const activeBranchId = session.sessionId
+      ? (await this.repositories.auth.getSession(session.sessionId))?.activeBranchId
+      : undefined;
+    if (!activeBranchId || activeBranchId !== request.requestingBranchId) {
+      throw new InventoryServiceError("La sucursal solicitante debe estar activa para cancelar la solicitud.");
+    }
+    await ensureUserCanOperateInventoryBranch(this.repositories, user, request.requestingBranchId);
+    await ensureInventoryBranchBelongsToTenant(this.repositories, tenantId, request.sourceBranchId);
+    if (request.status !== InventoryTransferRequestStatus.requested) {
+      throw new InventoryServiceError("Solo puede cancelarse una solicitud pendiente.");
+    }
+    if (reason && reason.trim().length > TEXT_LIMITS.reason) {
+      throw new InventoryServiceError("El motivo admite hasta 200 caracteres.");
+    }
+    // The repository repeats the status and linkage checks inside its transaction.
+    return this.repositories.inventoryTransferRequests.cancelRequest(request.id, reason?.trim());
+  }
+}
+
 async function ensureReviewableRequest(
   repositories: RepositoryRegistry,
   requestId: string,
