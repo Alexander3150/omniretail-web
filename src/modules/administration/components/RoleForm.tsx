@@ -6,6 +6,7 @@ import { statusesConfig } from "@/config/statuses";
 import { RoleStatus } from "@/core/enums";
 import type { RoleDto, RoleInputDto } from "@/modules/administration/application/dto/RoleDto";
 import {
+  getEmployeeAssignablePermissions,
   groupPermissionsByModule,
   permissionModuleLabels,
 } from "@/modules/administration/permissionModuleLabels";
@@ -39,7 +40,10 @@ interface RoleFormProps {
 export function RoleForm({ role, busy, actorPermissions, onCancel, onSubmit }: RoleFormProps) {
   const [value, setValue] = useState<RoleInputDto>(() => toRoleInput(role));
 
-  const permissionsByModule = useMemo(() => groupPermissionsByModule(permissionsConfig), []);
+  const permissionsByModule = useMemo(
+    () => groupPermissionsByModule(getEmployeeAssignablePermissions(permissionsConfig)),
+    [],
+  );
   const actorPermissionSet = useMemo(() => new Set(actorPermissions), [actorPermissions]);
 
   function setField<Key extends keyof RoleInputDto>(key: Key, fieldValue: RoleInputDto[Key]) {

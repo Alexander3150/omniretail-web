@@ -388,16 +388,18 @@ La ruta `/administracion/reportes` expone como **reportes básicos de MARJYM Bas
 filtros y totales existentes de ventas, compras, movimientos de inventario y pagos. Se integra en
 la navegación como `administration-reports` y exige `admin.reports.read`, pero no el complemento
 avanzado. La **única funcionalidad avanzada implementada actualmente** es exportar el resultado
-visible como CSV: requiere tanto `admin.reports.export` como
+visible como Excel (`.xlsx`): requiere tanto `admin.reports.export` como
 `SaasCapabilityKey.advancedReports` en la UI y en el service. No existen aún dashboards,
 comparativas ni otros reportes premium. La pantalla se refresca ante `sale.changed`,
 `purchase-order.changed`, `inventory.changed` y `payment.changed`.
 
 La pantalla solo consulta contratos compartidos y agrega sus resultados en memoria. No persiste
-reportes, no modifica las fuentes y no escribe auditoría. El helper CSV vive dentro de
-`administration`; no se promovió a `shared` porque esta entrega no establece una API transversal.
-La exportación conserva BOM UTF-8, escapa la estructura CSV y neutraliza texto que Excel o Sheets
-podrían interpretar como fórmula, sin alterar valores numéricos del dominio.
+reportes, no modifica las fuentes y no escribe auditoría. El helper de exportación vive dentro de
+`administration` (`reportXlsx.ts`, sobre `exceljs`, mismo patrón que
+`inventory/exportInventoryMovementsXlsx.ts`); no se promovió a `shared` porque esta entrega no
+establece una API transversal. Al ser un archivo binario `.xlsx` (no texto plano), no depende de
+BOM ni de codificación para los acentos y permite aplicar bordes y estilo real de tabla, algo que
+un CSV no soporta.
 
 ### Contrato de integracion
 
@@ -414,7 +416,7 @@ Decisiones y coordinación:
 
 - Lee contratos de Riquelme (`sales`, `payments`) y Melbyn (`purchaseOrders`, `inventory`,
   `suppliers`, `products`). Si cambian, esta agregación debe revisarse.
-- La generación y descarga de CSV permanecen como helpers module-local.
+- La generación y descarga del Excel permanecen como helpers module-local.
 - Compras permite filtrar por sucursal y movimientos por producto, usando los IDs ya disponibles
   en las entidades consultadas.
 - Los rangos y las fechas exportadas usan el mismo día calendario local que muestra la tabla.

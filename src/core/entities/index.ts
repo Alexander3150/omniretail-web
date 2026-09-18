@@ -2,6 +2,7 @@ export type * from "./Tenant";
 export type * from "./Branch";
 export type * from "./BusinessCapabilitiesConfig";
 export type * from "./EcommerceConfig";
+export type * from "./HeroBannerConfig";
 export type * from "./PlanDefinition";
 export type * from "./TenantSubscription";
 export type * from "./User";

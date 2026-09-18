@@ -49,6 +49,9 @@ export function normalizeEcommerceConfigInput(
   return {
     enabled: dto.enabled,
     storeName: dto.storeName.trim(),
+    logo: dto.logo,
+    pendingLogo: dto.pendingLogo,
+    removeLogo: dto.removeLogo,
     contactPhone: dto.contactPhone?.trim() ? normalizeGuatemalaPhone(dto.contactPhone) : undefined,
     contactEmail: dto.contactEmail?.trim().toLowerCase() || undefined,
     requireAccountForCheckout: dto.requireAccountForCheckout,

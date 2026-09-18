@@ -188,6 +188,8 @@ async function main() {
       "contactEmail",
       "contactPhone",
       "guestTrackingEnabled",
+      "heroBanner",
+      "logoImageSource",
       "storeEnabled",
       "storeName",
     ].sort(),

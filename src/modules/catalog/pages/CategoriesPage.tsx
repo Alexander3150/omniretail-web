@@ -12,7 +12,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
-import { processCatalogImage } from "@/modules/catalog/application/services/processCatalogImage";
+import { processImageUpload } from "@/shared/application/services/processImageUpload";
 import { CatalogImage } from "@/modules/catalog/components/CatalogImage";
 import { CategoryStatus } from "@/core/enums";
 import { Button } from "@/shared/components/Button";
@@ -808,7 +808,7 @@ function CategoryForm({
     if (!file) return;
     setImageError(null);
     try {
-      update({ pendingImage: await processCatalogImage(file), removeImage: false });
+      update({ pendingImage: await processImageUpload(file), removeImage: false });
     } catch (error) {
       setImageError(error instanceof Error ? error.message : "No se pudo procesar la imagen.");
     }

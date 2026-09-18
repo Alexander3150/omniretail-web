@@ -19,7 +19,7 @@ import { cn } from "@/shared/utils/cn";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
 import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
-import { processCatalogImage } from "@/modules/catalog/application/services/processCatalogImage";
+import { processImageUpload } from "@/shared/application/services/processImageUpload";
 import { CatalogImage } from "@/modules/catalog/components/CatalogImage";
 import {
   isPositiveInteger,
@@ -2023,7 +2023,7 @@ function MediaTab({
       return;
     }
     try {
-      const uploads = await Promise.all([...files].map((file) => processCatalogImage(file)));
+      const uploads = await Promise.all([...files].map((file) => processImageUpload(file)));
       onChange([
         ...value,
         ...uploads.map((pendingUpload, index) => ({
@@ -2046,7 +2046,7 @@ function MediaTab({
     setUploadError(null);
     try {
       update(index, {
-        pendingUpload: await processCatalogImage(file),
+        pendingUpload: await processImageUpload(file),
         source: undefined,
         url: "",
       });

@@ -5,6 +5,7 @@ export function toEcommerceConfigDto(config: EcommerceConfig): EcommerceConfigDt
   return {
     enabled: config.enabled,
     storeName: config.storeName,
+    logo: config.logo,
     contactPhone: config.contactPhone,
     contactEmail: config.contactEmail,
     requireAccountForCheckout: config.requireAccountForCheckout,

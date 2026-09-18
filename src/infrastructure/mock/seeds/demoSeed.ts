@@ -145,6 +145,31 @@ const legacyDemoSeedDatabase: MockDatabase = {
       updatedAt: now,
     },
   ],
+  heroBanners: [
+    {
+      tenantId: "tenant-demo",
+      slides: [
+        {
+          title: "Herramientas de alto rendimiento",
+          description:
+            "Equipamiento industrial para contratistas, talleres y constructoras con precios escalonados por volumen.",
+          image: { kind: "url", src: "/images/products/taladro-percutor.webp" },
+        },
+        {
+          title: "Todo para construir con confianza",
+          description: "Encuentra herramientas, fijación y suministros para cada etapa de tu obra.",
+          image: { kind: "url", src: "/images/products/tornillos.webp" },
+        },
+        {
+          title: "Calidad que impulsa tu trabajo",
+          description:
+            "Productos seleccionados para profesionales que buscan disponibilidad y rendimiento.",
+          image: { kind: "url", src: "/images/products/adhesivo.webp" },
+        },
+      ],
+      updatedAt: now,
+    },
+  ],
   /**
    * Enterprise queda archivado para migrar suscripciones legadas a Basic con ambos complementos.
    * Basic no fija cupos de empleados ni sucursales. Un tenant sin suscripción sigue fallando
