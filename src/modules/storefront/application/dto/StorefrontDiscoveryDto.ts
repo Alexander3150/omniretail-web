@@ -1,4 +1,4 @@
-import type { CatalogImageSource } from "@/core/entities";
+import type { CatalogImageSource, ProductSalesPriceTier } from "@/core/entities";
 
 export interface StorefrontCategoryDto {
   id: string;
@@ -15,6 +15,7 @@ export interface StorefrontDiscoveryProductDto {
   description?: string;
   brand?: string;
   salePrice: number;
+  salesPriceTiers: Array<Pick<ProductSalesPriceTier, "minQuantity" | "unitPrice" | "active">>;
   categoryId: string;
   categoryName?: string;
   imageSource?: CatalogImageSource;

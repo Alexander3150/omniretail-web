@@ -7,6 +7,7 @@ import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { EntitlementProvider } from "@/shared/providers/EntitlementProvider";
 import { PrivateShell } from "@/shared/navigation/PrivateShell";
 import type { NavigationItem } from "@/shared/types/navigation.types";
+import { useOptionalStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 
 interface CustomerAccountShellProps {
   children: ReactNode;
@@ -38,6 +39,7 @@ export function CustomerAccountShell({ children, navigationItems }: CustomerAcco
   const router = useRouter();
 
   const allowedPermissions = useMemo(() => new Set(permissions), [permissions]);
+  const storefrontRoutes = useOptionalStorefrontRoutes();
 
   const handleLogout = useCallback(async () => {
     try {
@@ -50,17 +52,43 @@ export function CustomerAccountShell({ children, navigationItems }: CustomerAcco
       // sesion y la navegacion a /iniciar-sesion ocurren pase lo que pase
       // con la revocacion remota.
       await repositories.auth.clearLocalSession();
-      router.replace("/iniciar-sesion");
+      router.replace(storefrontRoutes ? storefrontRoutes.login() : "/iniciar-sesion");
     }
-  }, [repositories, router]);
+  }, [repositories, router, storefrontRoutes]);
+
+  const localizedItems = useMemo(() => {
+    if (!storefrontRoutes) return navigationItems;
+
+    const mapHref = (href?: string) => {
+      if (!href) return href;
+      if (href === "/cuenta") return storefrontRoutes.account();
+      if (href === "/cuenta/perfil") return storefrontRoutes.accountProfile();
+      if (href === "/cuenta/direcciones") return storefrontRoutes.accountAddresses();
+      if (href === "/cuenta/metodos-pago") return storefrontRoutes.accountPaymentMethods();
+      if (href === "/cuenta/pedidos") return storefrontRoutes.accountOrders();
+      if (href === "/cuenta/seguridad") return storefrontRoutes.accountSecurity();
+      if (href === "/cuenta/soporte") return storefrontRoutes.accountSupport();
+      return href;
+    };
+
+    const mapItem = (item: NavigationItem): NavigationItem => ({
+      ...item,
+      href: mapHref(item.href),
+      children: item.children?.map(mapItem),
+    });
+
+    return navigationItems.map(mapItem);
+  }, [navigationItems, storefrontRoutes]);
+
+  const homeHref = storefrontRoutes ? storefrontRoutes.home() : "/";
 
   return (
     <EntitlementProvider>
       <PrivateShell
         allowedPermissions={allowedPermissions}
-        homeHref="/"
+        homeHref={homeHref}
         homeLabel="Volver al inicio"
-        navigationItems={navigationItems}
+        navigationItems={localizedItems}
         onLogout={handleLogout}
         showBranchSelector={false}
         userMenuDescription={user?.email}

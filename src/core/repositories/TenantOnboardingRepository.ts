@@ -8,6 +8,7 @@ import type {
   TenantSubscription,
   User,
 } from "@/core/entities";
+import type { BusinessPreset } from "@/core/enums";
 import type { CurrencyCode } from "@/core/types/common.types";
 
 /**
@@ -25,6 +26,7 @@ export interface TenantOnboardingInput {
   adminEmail: string;
   adminPasswordMock: string;
   planId: string;
+  businessPreset?: BusinessPreset;
   adminPermissions: string[];
 }
 

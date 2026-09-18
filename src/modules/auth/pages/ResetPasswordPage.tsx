@@ -11,6 +11,7 @@ import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PasswordInput } from "@/shared/components/PasswordInput";
+import { UserType } from "@/core/enums";
 
 const resetPasswordHint = `Clientes: ${getPasswordRequirementsMessage(CUSTOMER_PASSWORD_POLICY)} Personal: ${getPasswordRequirementsMessage(EMPLOYEE_PASSWORD_POLICY)}`;
 
@@ -24,6 +25,7 @@ export function ResetPasswordPage({ token }: { token: string }) {
     formError,
     isSubmitting,
     completed,
+    result,
     submit,
   } = useResetPassword(token);
 
@@ -40,7 +42,12 @@ export function ResetPasswordPage({ token }: { token: string }) {
             title="Ya puedes iniciar sesión con tu nueva contraseña."
             tone="success"
           />
-          <Button className="mt-6 w-full" href="/iniciar-sesion">
+          <Button
+            className="mt-6 w-full"
+            href={result?.userType === UserType.customer && result.tenantSlug
+              ? `/tienda/${encodeURIComponent(result.tenantSlug)}/iniciar-sesion`
+              : "/iniciar-sesion"}
+          >
             Iniciar sesión
           </Button>
         </section>

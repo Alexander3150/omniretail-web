@@ -2,6 +2,7 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import type { EmployeeDto, EmployeeInputDto } from "@/modules/administration/application/dto/EmployeeDto";
 import { toEmployeeDto } from "@/modules/administration/application/mappers/EmployeeMapper";
 import {
+  AdministrationServiceError,
   ensureCanManageEmployees,
   ensureEmployeeActor,
   ensureEmployeeBelongsToTenant,
@@ -22,8 +23,8 @@ function sameBranchSet(a: readonly string[], b: readonly string[]): boolean {
 }
 
 /**
- * Edición de empleado. Campos permitidos: `name`, `phone`, `roleId`, `allowedBranchIds`,
- * `status` (§13). `email` se valida por formato pero DELIBERADAMENTE no se persiste acá: `User.
+ * Edición de empleado. Campos permitidos: `name`, `employeeCode`, `phone`, `roleId`,
+ * `allowedBranchIds`, `status` (§13). `email` se valida por formato pero DELIBERADAMENTE no se persiste acá: `User.
  * email` y `AuthAccount.email` son campos separados (ver AuthAccount.ts) y no existe ningún
  * contrato que los mantenga sincronizados -- cambiar uno sin el otro dejaría el login
  * inconsistente (la cuenta seguiría respondiendo al email viejo). Sin un contrato de Auth
@@ -53,6 +54,19 @@ export class UpdateEmployeeService {
     const normalizedInput = normalizeEmployeeInput(dto);
     validateEmployeeInput(normalizedInput);
 
+    const employeeCodeChanged = current.employeeCode !== normalizedInput.employeeCode;
+    if (employeeCodeChanged) {
+      const employeeWithCode = await this.repositories.users.getByEmployeeCodeScoped(
+        tenantId,
+        normalizedInput.employeeCode,
+      );
+      if (employeeWithCode && employeeWithCode.id !== current.id) {
+        throw new AdministrationServiceError(
+          "Ya existe un empleado con ese código en este negocio.",
+        );
+      }
+    }
+
     const role = ensureRoleAssignable(
       await this.repositories.roles.getByIdScoped(tenantId, normalizedInput.roleId),
       tenantId,
@@ -79,6 +93,7 @@ export class UpdateEmployeeService {
 
     const updated = await this.repositories.users.updateScoped(tenantId, employeeId, {
       name: normalizedInput.name,
+      employeeCode: normalizedInput.employeeCode,
       phone: normalizedInput.phone,
       roleId: role.id,
       allowedBranchIds: normalizedInput.allowedBranchIds,
@@ -101,6 +116,7 @@ export class UpdateEmployeeService {
       entityId: updated.id,
       metadata: {
         statusChanged,
+        employeeCodeChanged,
         roleChanged,
         branchesChanged,
         sessionsRevoked: securitySensitive,

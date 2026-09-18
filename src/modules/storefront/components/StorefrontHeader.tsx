@@ -190,14 +190,14 @@ export function StorefrontHeader() {
           </Link>
           <Link
             className="rounded-lg px-2.5 py-2 text-slate-200 transition hover:bg-white/10 hover:text-white sm:px-3"
-            href="/sucursales"
+            href={routes.branches()}
           >
             <span aria-hidden="true">▥</span>
             <span className="ml-1">Sucursales</span>
           </Link>
           <Link
             className="rounded-lg px-2.5 py-2 text-slate-200 transition hover:bg-white/10 hover:text-white sm:px-3"
-            href="/ayuda"
+            href={routes.help()}
           >
             Ayuda
           </Link>

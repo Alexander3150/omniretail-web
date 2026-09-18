@@ -7,7 +7,8 @@ import { Button } from "@/shared/components/Button";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 
 export function VerifyEmailPage({ token }: { token: string }) {
-  const state = useVerifyEmail(token);
+  const { state, tenantSlug } = useVerifyEmail(token);
+  const loginUrl = tenantSlug ? `/tienda/${encodeURIComponent(tenantSlug)}/iniciar-sesion` : "/iniciar-sesion";
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[var(--color-app-background)] px-6 py-10">
@@ -26,7 +27,7 @@ export function VerifyEmailPage({ token }: { token: string }) {
               title="Tu cuenta quedó activa."
               tone="success"
             />
-            <Button className="mt-6 w-full" href="/iniciar-sesion">
+            <Button className="mt-6 w-full" href={loginUrl}>
               Iniciar sesión
             </Button>
           </>

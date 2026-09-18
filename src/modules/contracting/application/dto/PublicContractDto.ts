@@ -8,6 +8,7 @@ export interface CreatePublicContractInputDto {
   adminName: string;
   adminEmail: string;
   adminPassword: string;
+  businessPreset?: BusinessPreset;
 }
 
 /** Resultado público mínimo; no expone la cuenta Auth ni IDs internos de rol/sucursal/usuario. */
@@ -16,3 +17,4 @@ export interface CreatePublicContractResultDto {
   tenantSlug: string;
   planId: string;
 }
+import type { BusinessPreset } from "@/core/enums";

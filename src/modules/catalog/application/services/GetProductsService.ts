@@ -5,6 +5,8 @@ import { ProductStatus, PromotionStatus, PromotionType } from "@/core/enums";
 import type { Promotion } from "@/core/entities";
 import { calculateEffectivePrice } from "@/core/pricing";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
+import { getBranchAvailableQuantity } from "@/core/inventory/stockAvailability";
+import { ProductType } from "@/core/enums";
 import {
   ensureCanReadProducts,
   resolveTenantContext,
@@ -44,7 +46,7 @@ function formatPromotionLabel(promotion: Promotion) {
 export class GetProductsService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async execute(): Promise<ProductListItem[]> {
+  async execute(branchId?: string): Promise<ProductListItem[]> {
     const { tenantId, permissions } = await resolveTenantContext(this.repositories);
     ensureCanReadProducts(permissions);
     const [products, categories, promotions] = await Promise.all([
@@ -53,6 +55,7 @@ export class GetProductsService {
       this.repositories.promotions.getActiveByTenant(tenantId),
     ]);
     const units = await this.repositories.units.getByTenant(tenantId);
+    const locations = branchId ? await this.repositories.inventory.getLocations(branchId) : [];
     const mediaEntries = await Promise.all(
       products.map(
         async (product) =>
@@ -64,8 +67,7 @@ export class GetProductsService {
     const unitNames = new Map(units.map((unit) => [unit.id, unit.name]));
     const now = new Date();
 
-    return products
-      .map<ProductListItem>((product) => {
+    return Promise.all(products.map(async (product): Promise<ProductListItem> => {
         const activePromotion =
           product.status === ProductStatus.published
             ? getCurrentPromotion(product.id, product.tenantId, promotions, now)
@@ -74,6 +76,9 @@ export class GetProductsService {
           ? calculateEffectivePrice(product.salePrice, activePromotion).effectivePrice
           : product.salePrice;
 
+        const balances = branchId && product.productType === ProductType.physical && product.tracking.stock
+          ? await this.repositories.inventory.getBalanceByProduct(product.id, branchId)
+          : [];
         return {
           id: product.id,
           tenantId: product.tenantId,
@@ -102,9 +107,12 @@ export class GetProductsService {
             : undefined,
           status: product.status,
           tracking: product.tracking,
+          availableQuantity: branchId && product.productType === ProductType.physical && product.tracking.stock
+            ? getBranchAvailableQuantity({ tenantId, branchId, productId: product.id, balances, locations })
+            : undefined,
         };
-      })
-      .sort((left, right) => left.name.localeCompare(right.name));
+      }))
+      .then((items) => items.sort((left, right) => left.name.localeCompare(right.name)));
   }
 }
 

@@ -1,6 +1,6 @@
 import { validateEmployeePassword } from "@/config/auth-policy";
 import { permissionsConfig } from "@/config/permissions";
-import { PlanStatus } from "@/core/enums";
+import { BusinessPreset, PlanStatus } from "@/core/enums";
 import type { CurrencyCode } from "@/core/types/common.types";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
@@ -22,6 +22,7 @@ interface NormalizedTenantOnboardingInput {
   adminEmail: string;
   adminPasswordMock: string;
   planId: string;
+  businessPreset?: BusinessPreset;
   defaultCurrency: CurrencyCode;
   timezone: string;
 }
@@ -73,9 +74,14 @@ export class TenantOnboardingService {
       throw new AdministrationServiceError("El plan seleccionado no está activo.");
     }
 
-    // Catálogo canónico completo -- mismo criterio que DEMO_ADMIN_ROLE_PERMISSIONS en el seed,
-    // nunca una lista de permisos aceptada del caller (auditoría §6/§10).
-    const adminPermissions = permissionsConfig.map((permission) => permission.key);
+    // El rol Administrador es una identidad de negocio/empleado: conserva los permisos
+    // operativos del catálogo, pero no los de la identidad Customer ni su autoservicio Storefront.
+    // Las categorías vienen del catálogo canónico; no se mantienen listas locales de keys.
+    const adminPermissions = permissionsConfig
+      .filter(
+        (permission) => permission.module !== "customer" && permission.module !== "storefront",
+      )
+      .map((permission) => permission.key);
 
     const result = await this.repositories.tenantOnboarding.onboard({
       tenantName: normalized.tenantName,
@@ -86,6 +92,7 @@ export class TenantOnboardingService {
       adminEmail: normalized.adminEmail,
       adminPasswordMock: normalized.adminPasswordMock,
       planId: plan.id,
+      businessPreset: normalized.businessPreset,
       adminPermissions,
     });
 
@@ -140,6 +147,7 @@ export class TenantOnboardingService {
     }
 
     const timezone = input.timezone?.trim() || DEFAULT_TIMEZONE;
+    const businessPreset = input.businessPreset;
 
     return {
       tenantName,
@@ -150,6 +158,7 @@ export class TenantOnboardingService {
       planId,
       defaultCurrency,
       timezone,
+      businessPreset,
     };
   }
 }
