@@ -1,6 +1,6 @@
 import type { CatalogImageAsset } from "@/core/entities";
 
-export interface CatalogImageUploadDraft {
+export interface ImageUploadDraft {
   blob: Blob;
   mimeType: CatalogImageAsset["mimeType"];
   byteSize: number;

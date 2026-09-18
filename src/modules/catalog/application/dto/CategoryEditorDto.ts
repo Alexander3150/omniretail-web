@@ -1,5 +1,5 @@
 import type { Category } from "@/core/entities";
-import type { CatalogImageUploadDraft } from "@/modules/catalog/application/dto/CatalogImageUploadDraft";
+import type { ImageUploadDraft } from "@/shared/application/dto/ImageUploadDraft";
 
 export interface CategoryListItem {
   id: string;
@@ -22,7 +22,7 @@ export interface CategoryEditorDto {
   parentId: string;
   status: Category["status"];
   image?: Category["image"];
-  pendingImage?: CatalogImageUploadDraft;
+  pendingImage?: ImageUploadDraft;
   removeImage?: boolean;
 }
 

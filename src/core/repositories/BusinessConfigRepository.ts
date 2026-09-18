@@ -1,9 +1,14 @@
-import type { BusinessCapabilitiesConfig, EcommerceConfig } from "@/core/entities";
+import type {
+  BusinessCapabilitiesConfig,
+  EcommerceConfig,
+  HeroBannerConfig,
+} from "@/core/entities";
 
 export type UpdateEcommerceConfigInput = Pick<
   EcommerceConfig,
   | "enabled"
   | "storeName"
+  | "logo"
   | "contactPhone"
   | "contactEmail"
   | "requireAccountForCheckout"
@@ -37,4 +42,11 @@ export interface BusinessConfigRepository {
     tenantId: string,
     input: UpdateEcommerceConfigInput,
   ): Promise<EcommerceConfig>;
+  getHeroBanner(tenantId: string): Promise<HeroBannerConfig | null>;
+  /** Mismo motivo/alcance que `createCapabilities` -- ver esa docstring. */
+  createHeroBanner(input: Omit<HeroBannerConfig, "updatedAt">): Promise<HeroBannerConfig>;
+  updateHeroBanner(
+    tenantId: string,
+    input: Pick<HeroBannerConfig, "slides">,
+  ): Promise<HeroBannerConfig>;
 }

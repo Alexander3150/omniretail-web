@@ -25,3 +25,17 @@ export function groupPermissionsByModule(
   }
   return [...groups.entries()];
 }
+
+/**
+ * Módulos de solo consumo self-service (cuenta de cliente, storefront) que no son
+ * asignables a roles operativos de empleado. El catálogo y la evaluación de permisos
+ * permanecen intactos: esto sólo filtra qué se ofrece en el editor de roles de Admin.
+ */
+const EMPLOYEE_NON_ASSIGNABLE_MODULES = new Set(["customer", "storefront"]);
+
+/** Permisos que un administrador puede asignar a roles operativos de empleado. */
+export function getEmployeeAssignablePermissions(
+  permissions: readonly PermissionDefinition[],
+): PermissionDefinition[] {
+  return permissions.filter((permission) => !EMPLOYEE_NON_ASSIGNABLE_MODULES.has(permission.module));
+}

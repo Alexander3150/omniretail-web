@@ -1,4 +1,5 @@
 import {
+  BusinessPreset,
   CustomerPaymentMethodStatus,
   InventoryAdjustmentType,
   InventoryTransferReason,
@@ -15,6 +16,7 @@ import {
   UnitStatus,
   UserType,
 } from "@/core/enums";
+import { heroBannerDefaultsConfig } from "@/config/hero-banner-defaults";
 import { permissionsConfig } from "@/config/permissions";
 import type {
   Address,
@@ -111,6 +113,35 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
         PaymentMethod.transfer,
       ],
   }));
+  // Backfill per-tenant: el onboarding actual siempre crea el HeroBannerConfig del tenant, pero
+  // uno persistido antes de esta feature (o con la key ausente/incompleta en localStorage) no lo
+  // tiene. Sin este fallback, Diseño E-commerce queda en un error fatal sin salida ("No hay un
+  // carrusel configurado" -> Reintentar -> mismo error), igual que fail-closed en ecommerceConfigs.
+  // Reusa heroBannerDefaultsConfig (misma fuente que "Usar frases sugeridas" en el admin) como
+  // punto de partida acorde al rubro del negocio -- nunca una copia propia hardcodeada acá.
+  normalized.heroBanners = [...(database.heroBanners ?? base.heroBanners)];
+  normalized.tenants.forEach((tenant) => {
+    const hasHeroBanner = normalized.heroBanners.some((heroBanner) => heroBanner.tenantId === tenant.id);
+    if (!hasHeroBanner) {
+      const preset = normalized.businessCapabilities.find(
+        (capabilities) => capabilities.tenantId === tenant.id,
+      )?.preset;
+      const canonicalSlides =
+        preset && preset !== BusinessPreset.custom ? heroBannerDefaultsConfig[preset] : [];
+      normalized.heroBanners.push({
+        tenantId: tenant.id,
+        slides:
+          canonicalSlides.length > 0
+            ? canonicalSlides.map((slide) => ({ ...slide }))
+            : [
+                { title: "", description: "" },
+                { title: "", description: "" },
+                { title: "", description: "" },
+              ],
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  });
   // Mismo criterio que businessCapabilities/ecommerceConfigs: fallback al seed, NO a []. Un
   // storage persistido antes de esta feature no tiene la key -- sin este fallback, tenant-demo
   // quedaría sin PlanDefinition/TenantSubscription y el resolver fallaría fail-closed para una

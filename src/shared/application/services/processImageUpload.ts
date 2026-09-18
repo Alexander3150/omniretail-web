@@ -1,8 +1,8 @@
 import type { CatalogImageAsset } from "@/core/entities";
-import type { CatalogImageUploadDraft } from "@/modules/catalog/application/dto/CatalogImageUploadDraft";
+import type { ImageUploadDraft } from "@/shared/application/dto/ImageUploadDraft";
 
-export const CATALOG_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
-export const CATALOG_IMAGE_MAX_SIDE = 1600;
+export const IMAGE_UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
+export const IMAGE_UPLOAD_MAX_SIDE = 1600;
 const MAX_DECODED_SIDE = 12_000;
 const MAX_DECODED_PIXELS = 80_000_000;
 const ALLOWED_MIME_TYPES = new Set<CatalogImageAsset["mimeType"]>([
@@ -11,28 +11,28 @@ const ALLOWED_MIME_TYPES = new Set<CatalogImageAsset["mimeType"]>([
   "image/webp",
 ]);
 
-export interface CatalogImageCodec {
+export interface ImageUploadCodec {
   decodeAndResize(
     blob: Blob,
     options: { maxSide: number; preservePng: boolean },
   ): Promise<{ blob: Blob; width: number; height: number }>;
 }
 
-export async function processCatalogImage(
+export async function processImageUpload(
   input: Blob,
-  codec: CatalogImageCodec = browserCatalogImageCodec,
-): Promise<CatalogImageUploadDraft> {
+  codec: ImageUploadCodec = browserImageUploadCodec,
+): Promise<ImageUploadDraft> {
   if (!ALLOWED_MIME_TYPES.has(input.type as CatalogImageAsset["mimeType"])) {
     throw new Error("Formato no permitido. Usa JPEG, PNG o WebP.");
   }
-  if (input.size <= 0 || input.size > CATALOG_IMAGE_MAX_BYTES) {
+  if (input.size <= 0 || input.size > IMAGE_UPLOAD_MAX_BYTES) {
     throw new Error("La imagen debe pesar como maximo 5 MB.");
   }
 
-  let processed: Awaited<ReturnType<CatalogImageCodec["decodeAndResize"]>>;
+  let processed: Awaited<ReturnType<ImageUploadCodec["decodeAndResize"]>>;
   try {
     processed = await codec.decodeAndResize(input, {
-      maxSide: CATALOG_IMAGE_MAX_SIDE,
+      maxSide: IMAGE_UPLOAD_MAX_SIDE,
       preservePng: input.type === "image/png",
     });
   } catch {
@@ -62,7 +62,7 @@ export async function processCatalogImage(
   };
 }
 
-const browserCatalogImageCodec: CatalogImageCodec = {
+const browserImageUploadCodec: ImageUploadCodec = {
   async decodeAndResize(blob, { maxSide, preservePng }) {
     if (typeof createImageBitmap !== "function" || typeof document === "undefined") {
       throw new Error("No existe un decoder de imagen disponible.");

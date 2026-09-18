@@ -38,6 +38,8 @@ export class GetPublicStorefrontConfigService {
       if (!(error instanceof SaasEntitlementError)) throw error;
     }
 
+    const heroBanner = await this.repositories.businessConfig.getHeroBanner(tenantId);
+
     return {
       storeName: ecommerceConfig.storeName,
       storeEnabled: ecommerceConfig.enabled && commerciallyEnabled,
@@ -45,7 +47,17 @@ export class GetPublicStorefrontConfigService {
       guestTrackingEnabled: ecommerceConfig.guestTrackingEnabled,
       contactPhone: ecommerceConfig.contactPhone,
       contactEmail: ecommerceConfig.contactEmail,
+      logoImageSource: ecommerceConfig.logo,
       branches: branches.map(({ id, name, address }) => ({ id, name, address })),
+      heroBanner: {
+        slides: (heroBanner?.slides ?? [])
+          .filter((slide) => slide.title.trim().length > 0)
+          .map((slide) => ({
+            title: slide.title,
+            description: slide.description,
+            imageSource: slide.image,
+          })),
+      },
     };
   }
 }

@@ -54,9 +54,17 @@ export function StorefrontHeader() {
           className="flex shrink-0 items-center gap-2 text-lg font-black tracking-tight sm:text-xl"
           href={routes.home()}
         >
-          <span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--color-primary)] text-xs text-[var(--color-topbar)] shadow-sm">
-            OR
-          </span>
+          {config?.logoImageSource ? (
+            <StorefrontCatalogImage
+              alt={config.storeName}
+              className="h-9 w-9 shrink-0 rounded-xl border border-white/10 bg-white object-contain p-1"
+              source={config.logoImageSource}
+            />
+          ) : (
+            <span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--color-primary)] text-xs text-[var(--color-topbar)] shadow-sm">
+              OR
+            </span>
+          )}
           <span className="hidden min-[390px]:inline">{config?.storeName ?? "Tienda"}</span>
         </Link>
         <div className="ml-auto flex items-center gap-1 lg:order-4">

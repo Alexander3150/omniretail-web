@@ -29,10 +29,51 @@ export class SaveEcommerceConfigService {
       tenantId,
     );
 
-    const config = await this.repositories.businessConfig.updateEcommerceConfig(
-      tenantId,
-      normalizedInput,
-    );
+    const previousLogoAssetId =
+      normalizedInput.logo?.kind === "mockAsset" ? normalizedInput.logo.assetId : undefined;
+    let logo = normalizedInput.logo;
+    let newLogoAssetId: string | undefined;
+    if (normalizedInput.pendingLogo) {
+      newLogoAssetId = crypto.randomUUID();
+      await this.repositories.catalogImageAssets.put(
+        {
+          id: newLogoAssetId,
+          tenantId,
+          mimeType: normalizedInput.pendingLogo.mimeType,
+          byteSize: normalizedInput.pendingLogo.byteSize,
+          width: normalizedInput.pendingLogo.width,
+          height: normalizedInput.pendingLogo.height,
+          createdAt: new Date().toISOString(),
+        },
+        normalizedInput.pendingLogo.blob,
+      );
+      logo = { kind: "mockAsset", assetId: newLogoAssetId };
+    } else if (normalizedInput.removeLogo) {
+      logo = undefined;
+    }
+
+    let config;
+    try {
+      config = await this.repositories.businessConfig.updateEcommerceConfig(tenantId, {
+        enabled: normalizedInput.enabled,
+        storeName: normalizedInput.storeName,
+        logo,
+        contactPhone: normalizedInput.contactPhone,
+        contactEmail: normalizedInput.contactEmail,
+        requireAccountForCheckout: normalizedInput.requireAccountForCheckout,
+        guestTrackingEnabled: normalizedInput.guestTrackingEnabled,
+        allowedDeliveryMethods: normalizedInput.allowedDeliveryMethods,
+        allowedPaymentMethods: normalizedInput.allowedPaymentMethods,
+        defaultBranchId: normalizedInput.defaultBranchId,
+      });
+    } catch (error) {
+      if (newLogoAssetId) await this.repositories.catalogImageAssets.remove(tenantId, newLogoAssetId);
+      throw error;
+    }
+    if (previousLogoAssetId && (newLogoAssetId || normalizedInput.removeLogo)) {
+      await this.repositories.catalogImageAssets.remove(tenantId, previousLogoAssetId);
+    }
+
     await this.repositories.auditLogs.append({
       tenantId,
       actorUserId,

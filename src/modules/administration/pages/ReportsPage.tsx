@@ -35,7 +35,7 @@ export function ReportsPage() {
     canRead,
     data,
     error,
-    exportCsv,
+    exportXlsx,
     filter,
     kind,
     loading,
@@ -113,12 +113,12 @@ export function ReportsPage() {
             <Button
               className="gap-2"
               disabled={!canExport || rows.length === 0 || loading}
-              onClick={exportCsv}
-              title={canExport ? undefined : "Exportar CSV requiere Reportes avanzados y el permiso admin.reports.export"}
+              onClick={exportXlsx}
+              title={canExport ? undefined : "Exportar Excel requiere Reportes avanzados y el permiso admin.reports.export"}
               type="button"
             >
               <DownloadIcon className="h-4 w-4" />
-              Exportar CSV
+              Exportar Excel
             </Button>
             {!canExport ? (
               <p className="text-xs text-[var(--color-text-muted)]">
