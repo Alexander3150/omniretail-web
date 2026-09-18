@@ -9,6 +9,7 @@ interface PackingOrderSelectorProps {
   items: PackingQueueItemDto[];
   search: string;
   selectedPackingId: string | null;
+  onClear: () => void;
   onSearchChange: (value: string) => void;
   onSelect: (packingId: string) => void;
 }
@@ -25,6 +26,7 @@ export function PackingOrderSelector({
   items,
   search,
   selectedPackingId,
+  onClear,
   onSearchChange,
   onSelect,
 }: PackingOrderSelectorProps) {
@@ -33,31 +35,46 @@ export function PackingOrderSelector({
   );
   const hasSearch = search.trim().length > 0;
   const noMatches = hasSearch && items.length === 0;
+  const singleMatchSuggestion = selectedPackingId || items.length !== 1 ? null : items[0];
 
   return (
     <div className="space-y-2">
       <div className="grid gap-3 sm:grid-cols-2">
-        <FormField id="packing-search" label="Buscar pedido">
+        <FormField id="packing-search" label="Buscar pedido preparado">
           <SearchInput
             disabled={disabled}
             id="packing-search"
             onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Pedido o cliente"
+            placeholder="Buscar por pedido o cliente"
             value={search}
           />
         </FormField>
         <FormField id="packing-order" label="Pedido preparado">
           <Select
-            disabled={disabled || items.length === 0}
+            disabled={disabled || (items.length === 0 && !selectedPackingId)}
             id="packing-order"
-            onChange={(event) => onSelect(event.target.value)}
+            onChange={(event) => {
+              const packingId = event.target.value;
+              if (!packingId) {
+                onClear();
+                onSearchChange("");
+                return;
+              }
+              onSelect(packingId);
+            }}
             value={selectedPackingId ?? ""}
           >
             {!selectedIsVisible && selectedPackingId ? (
               <option value={selectedPackingId}>Pedido seleccionado · fuera del filtro actual</option>
             ) : null}
-            <option disabled value="">
-              {noMatches ? "No hay coincidencias" : items.length ? "Selecciona un pedido" : "No hay pedidos para Packing"}
+            <option disabled={!selectedPackingId} hidden={Boolean(singleMatchSuggestion)} value="">
+              {noMatches
+                ? "No hay coincidencias"
+                : singleMatchSuggestion
+                  ? `${singleMatchSuggestion.orderReference} · ${singleMatchSuggestion.customerName} · ${deliveryLabels[singleMatchSuggestion.deliveryMethod]}`
+                  : items.length
+                    ? "Selecciona un pedido"
+                    : "No hay pedidos para Packing"}
             </option>
             {items.map((item) => (
               <option key={item.packingId} value={item.packingId}>

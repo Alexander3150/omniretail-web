@@ -139,6 +139,18 @@ export function useLogisticsPacking() {
     await loadDetail(currentBranch.id, packingId);
   }, [canRead, currentBranch, hasBranchAccess, loadDetail]);
 
+  const clearSelection = useCallback(() => {
+    detailSequenceRef.current += 1;
+    mutationSequenceRef.current += 1;
+    workspaceBranchIdRef.current = null;
+    selectedPackingIdRef.current = null;
+    pendingOperationIdsRef.current.clear();
+    setSelectedPackingId(null);
+    setDetail(null);
+    setWorkspaceError(null);
+    setDetailLoading(false);
+  }, []);
+
   const executeMutation = useCallback(async <Result extends PackingActionResultDto>(
     allowed: boolean,
     actionKey: string,
@@ -360,6 +372,7 @@ export function useLogisticsPacking() {
     completion,
     reload,
     selectPacking,
+    clearSelection,
     savePreparation,
     generateLabel,
     registerLabelPrint,

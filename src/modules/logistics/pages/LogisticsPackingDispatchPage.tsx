@@ -37,6 +37,7 @@ export function LogisticsPackingDispatchPage() {
             <PackingOrderSelector
               disabled={packing.submitting}
               items={packing.queue}
+              onClear={packing.clearSelection}
               onSearchChange={packing.setSearch}
               onSelect={(packingId) => void packing.selectPacking(packingId)}
               search={packing.search}
