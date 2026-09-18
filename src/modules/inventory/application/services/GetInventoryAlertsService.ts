@@ -14,7 +14,6 @@ import {
   getAvailableQuantity,
   getBranchAvailableQuantity,
 } from "@/core/inventory/stockAvailability";
-import { getCanonicalProductAvailability } from "@/core/inventory/canonicalAvailability";
 import { fromBaseQuantity, resolveUnitConversion } from "@/core/units";
 import { canUserOperateBranch } from "@/core/scopes/userBranchAccess";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
@@ -117,19 +116,15 @@ export class GetInventoryAlertsService {
       lotsByProduct: groupLotsByProduct(lots.filter((lot) => lot.branchId === branchId)),
     };
 
-    const availabilityAt = new Date().toISOString();
     const availabilityByProduct = new Map(
       branchProducts.map((product) => [
         product.id,
-        getCanonicalProductAvailability({
-          product,
-          tenantId: product.tenantId,
+        getBranchAvailableQuantity({
+          tenantId,
           branchId,
+          productId: product.id,
           balances,
-          lots,
-          serials,
           locations: tenantLocations,
-          at: availabilityAt,
         }),
       ]),
     );
@@ -547,10 +542,13 @@ function buildOtherBranchStocks(
         (total, balance) => total + balance.reservedQuantity,
         0,
       );
-      const availableQuantity = branchBalances.reduce(
-        (total, balance) => total + getAvailableQuantity(balance),
-        0,
-      );
+      const availableQuantity = getBranchAvailableQuantity({
+        tenantId: branch.tenantId,
+        branchId: branch.id,
+        productId,
+        balances,
+        locations: [...maps.locations.values()],
+      });
       return {
         branchId: branch.id,
         branchName: branch.name,

@@ -477,11 +477,8 @@ async function exerciseTransferRequests() {
   assert.equal(cancelledTransfer.transfer.status, InventoryTransferStatus.cancelled);
   const countsBeforeInsufficient = counts();
 
-  const insufficient = await new CreateTransferRequestService(requester)
-    .execute(requestInput("insufficient", sourceBefore + 1));
-  await assert.rejects(retry.execute(insufficient.id), /stock|disponible|balance/i);
-  assert.equal(env.store.getSnapshot().inventoryTransferRequests.find((item) =>
-    item.id === insufficient.id)?.status, "requested");
+  await assert.rejects(new CreateTransferRequestService(requester)
+    .execute(requestInput("insufficient", sourceBefore + 1)), /stock disponible/i);
   assert.deepEqual(counts(), countsBeforeInsufficient);
 
   const tracedRequest = await new CreateTransferRequestService(requester).execute({
@@ -495,7 +492,56 @@ async function exerciseTransferRequests() {
   assert.equal(plainProductView.transfers.some((row) => row.id === tracedTransfer.id), false);
 }
 
+async function exerciseReservedTransferAvailability() {
+  const env = fixture();
+  env.store.transact((db) => {
+    const balance = db.inventoryBalances.find((item) => item.id === "bal-screws");
+    assert.ok(balance);
+    balance.quantity = 45;
+    balance.reservedQuantity = 40;
+    db.inventoryBalances.push({
+      ...balance, id: "foreign-reservation-balance", tenantId: "tenant-foreign",
+      quantity: 100, reservedQuantity: 100,
+    });
+  });
+  const requester = { ...env.repositories, auth: {
+    ...env.repositories.auth,
+    getSession: async () => ({ id: "transfer-session", userId: actorId,
+      createdAt: "2026-09-01T00:00:00.000Z", expiresAt: "2099-01-01T00:00:00.000Z",
+      rememberMe: false, activeBranchId: destinationBranchId }),
+  } } as RepositoryRegistry;
+  const sourceRow = (await new GetInventoryAlertsService(requester).execute(destinationBranchId))
+    .rows.find((row) => row.productId === "prod-screws");
+  assert.ok(sourceRow);
+  assert.equal(sourceRow.otherBranchStocks.find((stock) => stock.branchId === sourceBranchId)
+    ?.availableQuantity, 5);
+  const input = (quantity: number) => ({ productId: "prod-screws",
+    requesterBranchId: destinationBranchId, providerBranchId: sourceBranchId,
+    quantity, reason: InventoryTransferReason.replenishment, notes: "availability" });
+  const request = await new CreateTransferRequestService(requester).execute(input(5));
+  assert.equal(request.requestedQuantity, 5);
+  await assert.rejects(new CreateTransferRequestService(requester).execute(input(6)),
+    /stock disponible/i);
+  env.store.transact((db) => {
+    const balance = db.inventoryBalances.find((item) => item.id === "bal-screws");
+    assert.ok(balance);
+    balance.reservedQuantity = 41;
+  });
+  const provider = { ...env.repositories, auth: {
+    ...env.repositories.auth,
+    getSession: async () => ({ id: "transfer-session", userId: actorId,
+      createdAt: "2026-09-01T00:00:00.000Z", expiresAt: "2099-01-01T00:00:00.000Z",
+      rememberMe: false, activeBranchId: sourceBranchId }),
+  } } as RepositoryRegistry;
+  await assert.rejects(new ApproveTransferRequestService(provider).execute(request.id),
+    /stock disponible/i);
+  assert.equal(env.store.getSnapshot().inventoryTransfers.length, 0);
+  assert.equal(env.store.getSnapshot().inventoryTransferRequests.find((item) => item.id === request.id)
+    ?.status, "requested");
+}
+
 async function main() {
+  await exerciseReservedTransferAvailability();
   await exerciseTransferRequests();
   const env = fixture();
   await assert.rejects(env.create.execute({ sourceBranchId: destinationBranchId,

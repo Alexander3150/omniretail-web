@@ -43,8 +43,14 @@ export interface DispatchInventoryTransferInput {
 
 export interface ReceiveInventoryTransferItemInput {
   itemId: string;
+  /** Quantity accepted in this confirmation, not the cumulative received quantity. */
   receivedQuantity: number;
   locationId: string;
+  /** Semantic identity of the dispatched source lot; required for lot-tracked products. */
+  lotNumber?: string;
+  expirationDate?: string;
+  /** Exact dispatched serials physically received in this confirmation. */
+  serialNumbers?: string[];
 }
 
 export interface ReceiveInventoryTransferInput {

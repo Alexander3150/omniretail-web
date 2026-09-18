@@ -168,6 +168,9 @@ function getMovementDisplayType(
     if (movement.branchId === transfer.transfer.destinationBranchId) return "transfer_in";
     return "transfer";
   }
+  if (movement.referenceType === "return") return "return";
+  if (movement.referenceType === "void") return "void";
+  if (movement.referenceType === "order") return "store_pickup";
   if (movement.type === InventoryMovementType.in) {
     if (movement.referenceType === "receipt" || movement.referenceType === "purchase_order") {
       return "purchase_in";
@@ -200,6 +203,9 @@ function getMovementTypeLabel(type: InventoryMovementRow["displayType"]) {
     manual_out: "Salida manual",
     sale: "Venta",
     dispatch: "Despacho",
+    return: "Devolución",
+    void: "Anulación",
+    store_pickup: "Retiro en tienda",
     in: "Entrada",
     out: "Salida",
     adjustment: "Ajuste",
@@ -211,10 +217,24 @@ function getMovementTypeLabel(type: InventoryMovementRow["displayType"]) {
 function getMovementTypeTone(
   type: InventoryMovementRow["displayType"],
 ): InventoryMovementRow["typeTone"] {
-  if (type === "purchase_in" || type === "transfer_in" || type === "manual_in" || type === "in") {
+  if (
+    type === "purchase_in" ||
+    type === "transfer_in" ||
+    type === "manual_in" ||
+    type === "return" ||
+    type === "void" ||
+    type === "in"
+  ) {
     return "success";
   }
-  if (type === "sale" || type === "dispatch" || type === "transfer_out" || type === "manual_out" || type === "out") {
+  if (
+    type === "sale" ||
+    type === "dispatch" ||
+    type === "store_pickup" ||
+    type === "transfer_out" ||
+    type === "manual_out" ||
+    type === "out"
+  ) {
     return "danger";
   }
   if (type === "inventory_adjustment" || type === "shrinkage" || type === "adjustment") {

@@ -84,8 +84,9 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
     ? validateIncidentQuantities(lines, incidents, detail).length > 0
     : true;
   const confirmationInvalid = detail?.document.type === "transfer"
-    ? lines.length === 0 || lines.some((line) =>
-        line.receivedNow !== line.orderedQuantity - line.acceptedPreviously || !line.locationId)
+    ? !lines.some((line) => toFiniteNumber(line.receivedNow) > 0) ||
+      validateLines(lines, incidents, detail).length > 0 ||
+      lines.some((line) => toFiniteNumber(line.receivedNow) > 0 && !line.locationId)
     : detail ? validateLines(lines, incidents, detail).length > 0 : true;
 
   async function handleSaveProgress() {
@@ -407,7 +408,7 @@ function ReceivingLinesTable({
               </dl>
               <Field label={`Aceptado ahora (${line.unitName})`}>
                 <QuantityInput
-                  disabled={readOnly}
+                  disabled={readOnly || (detail.document.type === "transfer" && line.tracking.serial)}
                   line={line}
                   maximum={Math.max(0, pendingBefore - rejectedNow)}
                   value={line.receivedNow}
@@ -435,9 +436,8 @@ function ReceivingLinesTable({
                 </Field>
               ) : null}
               {detail.document.type === "transfer" ? (
-                <p className="text-xs text-[var(--color-text-muted)]">
-                  Lotes y series se conservan del despacho de origen.
-                </p>
+                <TransferTraceabilityFields detail={detail} line={line}
+                  readOnly={readOnly} onUpdateLine={onUpdateLine} />
               ) : <TrackingFields
                 capabilities={detail.capabilities}
                 line={line}
@@ -505,7 +505,7 @@ function ReceivingLinesTable({
                 </td>
                 <td className="px-2 py-2.5">
                   <QuantityInput
-                    disabled={readOnly}
+                    disabled={readOnly || (detail.document.type === "transfer" && line.tracking.serial)}
                     line={line}
                     maximum={Math.max(
                       0,
@@ -563,7 +563,8 @@ function ReceivingLinesTable({
                 </td>
                 <td className="px-2 py-2.5">
                   {detail.document.type === "transfer" ? (
-                    <MutedText>Lotes y series conservados del despacho de origen</MutedText>
+                    <TransferTraceabilityFields detail={detail} line={line}
+                      readOnly={readOnly} onUpdateLine={onUpdateLine} />
                   ) : <TrackingFields
                     capabilities={detail.capabilities}
                     line={line}
@@ -608,6 +609,52 @@ function QuantityInput({
       type="text"
       value={value}
     />
+  );
+}
+
+function TransferTraceabilityFields({
+  detail,
+  line,
+  readOnly,
+  onUpdateLine,
+}: {
+  detail: NonNullable<ReturnType<typeof useReceivingDocumentDetail>["detail"]>;
+  line: ReceivingDocumentLine;
+  readOnly: boolean;
+  onUpdateLine: (lineId: string, patch: Partial<ReceivingDocumentLine>) => void;
+}) {
+  const available = detail.lines.find((entry) => entry.id === line.id)?.serialNumbersText
+    .split(/\r?\n/).map((value) => value.trim()).filter(Boolean) ?? [];
+  const selected = toFiniteNumber(line.receivedNow) > 0
+    ? line.serialNumbersText.split(/\r?\n/).map((value) => value.trim()).filter(Boolean)
+    : [];
+  function toggle(serial: string) {
+    const next = selected.includes(serial)
+      ? selected.filter((value) => value !== serial)
+      : [...selected, serial];
+    onUpdateLine(line.id, { serialNumbersText: next.join("\n"), receivedNow: next.length });
+  }
+  return (
+    <div className="space-y-1 text-xs text-[var(--color-text)]">
+      {line.lotNumber ? <p>Lote: {line.lotNumber}</p> : null}
+      {line.expirationDate ? <p>Vence: {line.expirationDate}</p> : null}
+      {line.tracking.serial ? (
+        <div className="space-y-1">
+          <p className="font-semibold">
+            {readOnly ? "Series despachadas:" : "Series pendientes del despacho:"}
+          </p>
+          {available.length ? available.map((serial) => (
+            readOnly ? <p key={serial}>{serial}</p> : (
+              <label className="flex items-center gap-2" key={serial}>
+                <input checked={selected.includes(serial)}
+                  onChange={() => toggle(serial)} type="checkbox" />
+                <span>{serial}</span>
+              </label>
+            )
+          )) : <MutedText>Sin series pendientes</MutedText>}
+        </div>
+      ) : !line.lotNumber ? <MutedText>Sin trazabilidad requerida</MutedText> : null}
+    </div>
   );
 }
 

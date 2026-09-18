@@ -22,7 +22,10 @@ import {
 const PAGE_SIZE_OPTIONS = [20, 50, 100];
 const MOVEMENT_DISPLAY_ORDER: MovementDisplayType[] = [
   "sale",
+  "store_pickup",
   "dispatch",
+  "return",
+  "void",
   "purchase_in",
   "transfer_out",
   "transfer_in",
@@ -96,6 +99,24 @@ const movementDisplayConfig: Record<
     icon: TruckIcon,
     tone: "danger",
     badgeClassName: "border-blue-200 bg-blue-50 text-blue-800",
+  },
+  return: {
+    label: "Devolución",
+    icon: ArrowDownLeftIcon,
+    tone: "success",
+    badgeClassName: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  },
+  void: {
+    label: "Anulación",
+    icon: ReceiptIcon,
+    tone: "success",
+    badgeClassName: "border-teal-200 bg-teal-50 text-teal-800",
+  },
+  store_pickup: {
+    label: "Retiro en tienda",
+    icon: ArrowUpRightIcon,
+    tone: "danger",
+    badgeClassName: "border-amber-200 bg-amber-50 text-amber-900",
   },
   in: {
     label: "Entrada",

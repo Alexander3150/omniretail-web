@@ -1,5 +1,6 @@
 import type { InventoryTransferRequest } from "@/core/entities";
 import { BranchStatus, InventoryTransferRequestStatus } from "@/core/enums";
+import { getBranchAvailableQuantity } from "@/core/inventory/stockAvailability";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/services/resolveCurrentSessionSnapshot";
 import type { TransferRequestDto } from "@/modules/inventory/application/dto/InventoryAlertsDto";
@@ -41,6 +42,9 @@ export class CreateTransferRequestService {
       throw new InventoryServiceError("La unidad base del producto no esta disponible.");
     }
     assertValidTransferQuantity(dto.quantity, baseUnit.allowsDecimals);
+    await ensureProviderAvailability(
+      this.repositories, tenantId, dto.providerBranchId, product.id, dto.quantity,
+    );
     const reason = dto.reason.trim();
     if (!reason) throw new InventoryServiceError("Ingresa el motivo del traslado.");
     if (reason.length > TEXT_LIMITS.reason) {
@@ -121,6 +125,11 @@ export class ApproveTransferRequestService {
     const unit = await this.repositories.units.getByIdScoped(tenantId, product.baseUnitId);
     if (!unit) throw new InventoryServiceError("La unidad base del producto no está disponible.");
     assertValidTransferQuantity(request.requestedQuantity, unit.allowsDecimals);
+    if (request.status === InventoryTransferRequestStatus.requested) {
+      await ensureProviderAvailability(
+        this.repositories, tenantId, request.sourceBranchId, product.id, request.requestedQuantity,
+      );
+    }
     if (!operationId.trim()) throw new InventoryServiceError("La operación requiere una identidad.");
 
     const result = await this.repositories.inventoryTransfers.create({
@@ -137,6 +146,25 @@ export class ApproveTransferRequestService {
         requestedQuantity: request.requestedQuantity }],
     });
     return result.transfer;
+  }
+}
+
+async function ensureProviderAvailability(
+  repositories: RepositoryRegistry,
+  tenantId: string,
+  branchId: string,
+  productId: string,
+  quantity: number,
+) {
+  const [balances, locations] = await Promise.all([
+    repositories.inventory.getBalances(),
+    repositories.inventory.getLocations(),
+  ]);
+  const available = getBranchAvailableQuantity({
+    tenantId, branchId, productId, balances, locations,
+  });
+  if (quantity > available) {
+    throw new InventoryServiceError("La cantidad solicitada supera el stock disponible de la sucursal proveedora.");
   }
 }
 

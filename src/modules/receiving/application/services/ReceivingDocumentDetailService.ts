@@ -1,6 +1,7 @@
 import type {
   BusinessCapabilitiesConfig,
   InventoryTransferItem,
+  InventoryMovement,
   Product,
   PurchaseOrder,
   PurchaseOrderItem,
@@ -8,6 +9,8 @@ import type {
   ReceiptIncident,
   ReceiptLine,
   StorageLocation,
+  StockLot,
+  SerialNumber,
   Unit,
   User,
 } from "@/core/entities";
@@ -26,6 +29,7 @@ import {
   isExpirationBeforeOperationDate,
 } from "@/core/inventory/expirationDate";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/services/resolveCurrentSessionSnapshot";
 import type {
   ConfirmReceivingInput,
   ReceivingCapabilityFlags,
@@ -154,24 +158,35 @@ export class ReceivingDocumentDetailService {
     await ensureUserCanOperateBranch(
       this.repositories, user, transfer.transfer.destinationBranchId,
     );
+    const session = await resolveCurrentSessionSnapshot(this.repositories);
+    const activeBranchId = session.sessionId
+      ? (await this.repositories.auth.getSession(session.sessionId))?.activeBranchId
+      : undefined;
+    if (activeBranchId !== transfer.transfer.destinationBranchId) {
+      throw new ReceivingServiceError("La sucursal destino debe estar activa para recibir el traslado.");
+    }
     if (!(await this.hasTransferDispatchEvidence(transfer))) {
       throw new ReceivingServiceError("El traslado no tiene una salida de despacho verificable.");
     }
     if (input.incidents.length > 0) {
       throw new ReceivingServiceError("La recepción de traslado no admite incidencias parciales.");
     }
-    if (input.lines.length !== transfer.items.length) {
-      throw new ReceivingServiceError("Las líneas del traslado no coinciden con la recepción.");
-    }
-    const items = transfer.items.map((item) => {
-      const line = input.lines.find((entry) => entry.sourceLineId === item.id &&
-        entry.productId === item.productId);
-      if (!line || line.receivedNow !== item.dispatchedQuantity || !line.locationId) {
-        throw new ReceivingServiceError("Recibe la cantidad despachada en una ubicación válida.");
+    const items = input.lines.filter((line) => toFiniteNumber(line.receivedNow) > 0).map((line) => {
+      const item = transfer.items.find((entry) => entry.id === line.sourceLineId &&
+        entry.productId === line.productId);
+      const quantity = line.receivedNow;
+      if (!item || typeof quantity !== "number" || !Number.isFinite(quantity) ||
+        quantity <= 0 || !line.locationId) {
+        throw new ReceivingServiceError("Selecciona una cantidad y ubicación válidas.");
       }
-      return { itemId: item.id, receivedQuantity: item.dispatchedQuantity,
-        locationId: line.locationId };
+      return { itemId: item.id, receivedQuantity: quantity,
+        locationId: line.locationId, lotNumber: line.lotNumber,
+        expirationDate: line.expirationDate,
+        serialNumbers: parseSerialNumbers(line.serialNumbersText) };
     });
+    if (items.length === 0) {
+      throw new ReceivingServiceError("Selecciona al menos una cantidad para recibir.");
+    }
     await this.repositories.inventoryTransfers.markReceived(transfer.transfer.id, {
       receivedByUserId: actorUserId, confirmationId: input.confirmationId, items,
     });
@@ -375,11 +390,14 @@ export class ReceivingDocumentDetailService {
     if (activeBranchId && transfer.transfer.destinationBranchId !== activeBranchId) {
       throw new ReceivingServiceError("El traslado no pertenece a la sucursal activa.");
     }
-    const [branches, products, units, locations] = await Promise.all([
+    const [branches, products, units, locations, movements, lots, serials] = await Promise.all([
       this.repositories.branches.getAll(),
       this.repositories.products.getAll(),
       this.repositories.units.getAll(),
       this.repositories.inventory.getLocations(transfer.transfer.destinationBranchId),
+      this.repositories.inventory.getMovements(),
+      this.repositories.inventory.getLots(),
+      this.repositories.inventory.getSerialNumbers(),
     ]);
     const [capabilities, entitlements] = await Promise.all([
       this.getCapabilities(transfer.transfer.tenantId),
@@ -418,7 +436,7 @@ export class ReceivingDocumentDetailService {
             ? "Recibida"
             : "En transito",
       },
-      lines: transfer.items.map((item) => {
+      lines: transfer.items.flatMap((item) => {
         const productSettings = settings.get(item.productId);
         const configuredLocationId = productSettings?.tenantId === tenantId &&
           productSettings.branchId === transfer.transfer.destinationBranchId &&
@@ -426,8 +444,23 @@ export class ReceivingDocumentDetailService {
           activeDestinationLocations.some((location) => location.id === productSettings.defaultLocationId)
           ? productSettings.defaultLocationId
           : undefined;
-        return this.toTransferDetailLine(item, productById.get(item.productId), unitById,
-          configuredLocationId ?? activeDestinationLocations[0]?.id ?? "");
+        const product = productById.get(item.productId);
+        const outgoing = movements.filter((movement) =>
+          movement.tenantId === tenantId &&
+          movement.branchId === transfer.transfer.sourceBranchId &&
+          movement.productId === item.productId &&
+          movement.referenceType === "transfer" && movement.referenceId === documentId &&
+          movement.type === InventoryMovementType.out);
+        const incoming = movements.filter((movement) =>
+          movement.tenantId === tenantId &&
+          movement.branchId === transfer.transfer.destinationBranchId &&
+          movement.productId === item.productId &&
+          movement.referenceType === "transfer" && movement.referenceId === documentId &&
+          movement.type === InventoryMovementType.in);
+        const groups = buildTransferTraceabilityGroups(outgoing, incoming, lots, serials, product);
+        return (groups.length ? groups : [undefined]).map((group) =>
+          this.toTransferDetailLine(item, product, unitById,
+            configuredLocationId ?? activeDestinationLocations[0]?.id ?? "", group, !receivable));
       }),
       locations: toLocationOptions(locations, capabilities),
       incidentTypes: [],
@@ -513,12 +546,16 @@ export class ReceivingDocumentDetailService {
     product: Product | undefined,
     unitById: Map<string, Unit>,
     defaultLocationId: string,
+    group?: TransferTraceabilityGroup,
+    readOnly = false,
   ): ReceivingDocumentLine {
     const orderedQuantity =
-      item.dispatchedQuantity > 0 ? item.dispatchedQuantity : item.requestedQuantity;
+      group?.dispatchedQuantity ?? (item.dispatchedQuantity > 0 ? item.dispatchedQuantity : item.requestedQuantity);
     const baseUnit = product ? unitById.get(product.baseUnitId) : undefined;
+    const acceptedPreviously = group?.acceptedPreviously ?? item.receivedQuantity;
+    const pendingQuantity = Math.max(0, orderedQuantity - acceptedPreviously);
     return {
-      id: item.id,
+      id: group ? `${item.id}:${group.key}` : item.id,
       sourceLineId: item.id,
       productId: item.productId,
       productName: product?.name ?? "Producto no disponible",
@@ -529,14 +566,15 @@ export class ReceivingDocumentDetailService {
       baseUnitId: product?.baseUnitId ?? "",
       baseUnitName: baseUnit?.name ?? "Unidad base",
       orderedQuantity,
-      acceptedPreviously: item.receivedQuantity,
-      receivedNow: item.receivedQuantity > 0 ? "" : item.dispatchedQuantity,
-      pendingQuantity: Math.max(0, orderedQuantity - item.receivedQuantity),
+      acceptedPreviously,
+      receivedNow: group?.serialNumbers ? 0 : pendingQuantity,
+      pendingQuantity,
       locationId: defaultLocationId,
       tracking: product?.tracking ?? { stock: false, lot: false, expiration: false, serial: false },
-      lotNumber: "",
-      expirationDate: "",
-      serialNumbersText: "",
+      lotNumber: group?.lotNumber ?? "",
+      expirationDate: group?.expirationDate ?? "",
+      serialNumbersText: (readOnly ? group?.dispatchedSerialNumbers : group?.serialNumbers)
+        ?.join("\n") ?? "",
       notes: "",
       purchaseToBaseFactor: 1,
     };
@@ -610,6 +648,88 @@ export class ReceivingDocumentDetailService {
     );
     return new Map(entries);
   }
+}
+
+interface TransferTraceabilityGroup {
+  key: string;
+  lotNumber: string;
+  expirationDate: string;
+  dispatchedQuantity: number;
+  acceptedPreviously: number;
+  serialNumbers?: string[];
+  dispatchedSerialNumbers?: string[];
+}
+
+function buildTransferTraceabilityGroups(
+  outgoing: InventoryMovement[],
+  incoming: InventoryMovement[],
+  lots: StockLot[],
+  serials: SerialNumber[],
+  product?: Product,
+): TransferTraceabilityGroup[] {
+  const lotById = new Map(lots.map((lot) => [lot.id, lot]));
+  const serialById = new Map(serials.map((serial) => [serial.id, serial]));
+  const keyFor = (movement: InventoryMovement) => {
+    if (!product?.tracking.lot) return "";
+    const lot = movement.lotId ? lotById.get(movement.lotId) : undefined;
+    if (!lot || lot.tenantId !== movement.tenantId ||
+      lot.branchId !== movement.branchId || lot.productId !== movement.productId) {
+      throw new ReceivingServiceError("No se puede verificar el lote despachado del traslado.");
+    }
+    return JSON.stringify([lot.lotNumber, lot.expirationDate?.slice(0, 10) ?? ""]);
+  };
+  const receivedByKey = new Map<string, InventoryMovement[]>();
+  incoming.forEach((movement) => {
+    const key = keyFor(movement);
+    receivedByKey.set(key, [...(receivedByKey.get(key) ?? []), movement]);
+  });
+  const sentByKey = new Map<string, InventoryMovement[]>();
+  outgoing.forEach((movement) => {
+    const key = keyFor(movement);
+    sentByKey.set(key, [...(sentByKey.get(key) ?? []), movement]);
+  });
+  if ([...receivedByKey.keys()].some((key) => !sentByKey.has(key))) {
+    throw new ReceivingServiceError("La trazabilidad recibida no corresponde al despacho.");
+  }
+  return [...sentByKey.entries()].map(([key, sent]) => {
+    const received = receivedByKey.get(key) ?? [];
+    const dispatchedQuantity = sent.reduce((sum, movement) => sum + movement.quantity, 0);
+    const acceptedPreviously = received.reduce((sum, movement) => sum + movement.quantity, 0);
+    if (acceptedPreviously > dispatchedQuantity) {
+      throw new ReceivingServiceError("La recepción supera la cantidad despachada.");
+    }
+    const lot = sent[0].lotId ? lotById.get(sent[0].lotId) : undefined;
+    let pendingSerials: string[] | undefined;
+    let dispatchedSerialNumbers: string[] | undefined;
+    if (product?.tracking.serial) {
+      const receivedIds = new Set(received.map((movement) => movement.serialNumberId));
+      const sentIds = sent.map((movement) => movement.serialNumberId);
+      if (sentIds.some((id) => !id) || new Set(sentIds).size !== sentIds.length ||
+        received.some((movement) => !movement.serialNumberId ||
+          !sentIds.includes(movement.serialNumberId))) {
+        throw new ReceivingServiceError("Las series recibidas no coinciden con el despacho.");
+      }
+      dispatchedSerialNumbers = sent
+        .map((movement) => {
+          const serial = movement.serialNumberId ? serialById.get(movement.serialNumberId) : undefined;
+          if (!serial || serial.tenantId !== movement.tenantId ||
+            serial.productId !== movement.productId || movement.quantity !== 1) {
+            throw new ReceivingServiceError("No se puede verificar una serie despachada.");
+          }
+          return serial.serialNumber;
+        }).sort((a, b) => a.localeCompare(b));
+      pendingSerials = sent.filter((movement) => !receivedIds.has(movement.serialNumberId))
+        .map((movement) => serialById.get(movement.serialNumberId!)!.serialNumber)
+        .sort((a, b) => a.localeCompare(b));
+      if (pendingSerials.length !== dispatchedQuantity - acceptedPreviously) {
+        throw new ReceivingServiceError("La cantidad pendiente no coincide con sus series.");
+      }
+    }
+    return { key, lotNumber: lot?.lotNumber ?? "",
+      expirationDate: lot?.expirationDate?.slice(0, 10) ?? "",
+      dispatchedQuantity, acceptedPreviously, serialNumbers: pendingSerials,
+      dispatchedSerialNumbers };
+  });
 }
 
 function getReceivingConfirmationFingerprint(

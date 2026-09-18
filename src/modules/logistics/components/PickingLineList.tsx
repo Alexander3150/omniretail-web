@@ -126,7 +126,7 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
         <div>
           <p className="text-xs text-[var(--color-text-muted)]">Lote / vencimiento</p>
           <p>{line.lot?.number ?? (line.tracking.lot ? "Según FEFO" : "No aplica")}</p>
-          {selectedLot?.expirationDate ? <p className="text-xs text-[var(--color-text-muted)]">Vence {formatDate(selectedLot.expirationDate)}</p> : null}
+          {selectedLot?.expirationDate ? <p className="text-xs text-[var(--color-text-muted)]">Vence {formatExpirationDate(selectedLot.expirationDate)}</p> : null}
         </div>
         <div><p className="text-xs text-[var(--color-text-muted)]">Series recogidas</p><p>{!line.tracking.serial ? "No aplica" : line.serialNumbers.length ? line.serialNumbers.join(", ") : "Ninguna"}</p></div>
       </div>
@@ -156,7 +156,7 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
       {line.tracking.lot && line.availableLots.length > 0 ? (
         <div className="mt-2 text-xs text-[var(--color-text-muted)]">
           <span className="font-semibold text-[var(--color-text)]">Lotes canónicos: </span>
-          {line.availableLots.map((lot) => `${lot.number}${lot.expirationDate ? ` (vence ${formatDate(lot.expirationDate)})` : ""}`).join(" · ")}
+          {line.availableLots.map((lot) => `${lot.number}${lot.expirationDate ? ` (vence ${formatExpirationDate(lot.expirationDate)})` : ""}`).join(" · ")}
         </div>
       ) : null}
 
@@ -247,6 +247,9 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
   );
 }
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("es-GT", { dateStyle: "medium" }).format(new Date(value));
+export function formatExpirationDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim());
+  if (!match) return value;
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
 }

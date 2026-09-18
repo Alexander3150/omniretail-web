@@ -34,6 +34,7 @@ import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapte
 import { DispatchApplicationService } from "@/modules/logistics/application/services/DispatchApplicationService";
 import { PickingApplicationService } from "@/modules/logistics/application/services/PickingApplicationService";
 import { PackingApplicationService } from "@/modules/logistics/application/services/PackingApplicationService";
+import { formatExpirationDate } from "@/modules/logistics/components/PickingLineList";
 import { normalizePickingSerialNumbers } from "@/modules/logistics/hooks/useLogisticsPicking";
 
 const tenantId = "tenant-demo";
@@ -43,6 +44,9 @@ const actorB = "user-picking-ui-b";
 const now = "2026-09-14T10:00:00.000Z";
 
 async function main() {
+  assert.equal(formatExpirationDate("2028-08-15T00:00:00.000Z"), "15/08/2028");
+  assert.equal(formatExpirationDate("2028-08-15"), "15/08/2028");
+
   const store = new MockDatabaseStore(new LocalStorageAdapter());
   const eventBus = new DataEventBus();
   prepareDatabase(store);

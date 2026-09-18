@@ -196,7 +196,7 @@ async function main() {
   assert.equal(movement.reason, "Despacho de pedido WEB-TIMING");
   assert.equal(movement.performedByUserId, actorUserId);
   assert.equal(movement.fromLocationId, locationId);
-  const movementsView = await new GetInventoryMovementsService({
+  const getMovementsView = () => new GetInventoryMovementsService({
     auth: {
       getCurrentSessionId: async () => "dispatch-inventory-session",
       getSession: async () => ({ id: "dispatch-inventory-session", userId: "user-admin",
@@ -229,6 +229,7 @@ async function main() {
     inventoryAdjustments: { query: async () => store.getSnapshot().inventoryAdjustments },
     inventoryTransfers: { query: async () => [] },
   } as unknown as RepositoryRegistry).execute(branchId);
+  const movementsView = await getMovementsView();
   const movementRow = movementsView.rows.find((row) => row.id === movement.id);
   assert.equal(movementRow?.typeLabel, "Despacho");
   assert.equal(movementRow?.referenceLabel, "WEB-TIMING");
@@ -237,6 +238,41 @@ async function main() {
     actorUserId, operationId: "dispatch-timing" })).idempotent, true);
   assert.deepEqual(stock("bal-screws"), [8, 0, 8]);
   assert.equal(movements().length, 1);
+
+  // Semantic labels are determined by persisted referenceType, not by a reason string.
+  store.transact((db) => {
+    const createdAt = new Date().toISOString();
+    const base = {
+      tenantId,
+      branchId,
+      productId: "prod-screws",
+      quantity: 1,
+      performedByUserId: actorUserId,
+      createdAt,
+    };
+    db.inventoryMovements.push(
+      { ...base, id: "semantic-return", type: InventoryMovementType.in, reason: "Razon libre", referenceType: "return" },
+      { ...base, id: "semantic-void", type: InventoryMovementType.in, reason: "Razon libre", referenceType: "void" },
+      { ...base, id: "semantic-store-pickup", type: InventoryMovementType.out, reason: "Razon libre", referenceType: "order" },
+      { ...base, id: "semantic-manual-in", type: InventoryMovementType.in, reason: "Razon libre" },
+      { ...base, id: "semantic-manual-out", type: InventoryMovementType.out, reason: "Razon libre" },
+      { ...base, id: "semantic-sale", type: InventoryMovementType.out, reason: "Razon libre", referenceType: "sale" },
+      { ...base, id: "semantic-transfer-out", type: InventoryMovementType.out, reason: "Razon libre", referenceType: "transfer" },
+      { ...base, id: "semantic-transfer-in", type: InventoryMovementType.in, reason: "Razon libre", referenceType: "transfer" },
+      { ...base, id: "semantic-purchase", type: InventoryMovementType.in, reason: "Razon libre", referenceType: "receipt" },
+    );
+  });
+  const semanticRows = new Map((await getMovementsView()).rows.map((row) => [row.id, row]));
+  assert.equal(semanticRows.get("semantic-return")?.typeLabel, "Devolución");
+  assert.equal(semanticRows.get("semantic-void")?.typeLabel, "Anulación");
+  assert.equal(semanticRows.get("semantic-store-pickup")?.typeLabel, "Retiro en tienda");
+  assert.equal(semanticRows.get("semantic-manual-in")?.typeLabel, "Entrada manual");
+  assert.equal(semanticRows.get("semantic-manual-out")?.typeLabel, "Salida manual");
+  assert.equal(semanticRows.get("semantic-sale")?.typeLabel, "Venta");
+  assert.equal(semanticRows.get("semantic-transfer-out")?.typeLabel, "Salida por traslado");
+  assert.equal(semanticRows.get("semantic-transfer-in")?.typeLabel, "Entrada por traslado");
+  assert.equal(semanticRows.get("semantic-purchase")?.typeLabel, "Entrada por compra");
+  assert.equal(semanticRows.get(movement.id)?.typeLabel, "Despacho");
 
   // Selection locks real serials but does not sell them until Dispatch.
   const serialOrder = await createOrder("SERIAL", "dispatch-serial-product", 2);

@@ -7,6 +7,8 @@ import { BrandMark } from "@/shared/components/BrandMark";
 import { CloseIcon } from "@/shared/navigation/PrivateHeader/icons";
 import type { NavigationItem } from "@/shared/types/navigation.types";
 import { useEntitlementContext } from "@/shared/providers/EntitlementProvider";
+import { UserType } from "@/core/enums";
+import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 
 type SidebarProps = {
   allowedPermissions?: ReadonlySet<string>;
@@ -233,10 +235,17 @@ export function Sidebar({
   onNavigate,
 }: SidebarProps) {
   const pathname = usePathname();
+  const { user } = useCurrentSession();
   const { hasCapability } = useEntitlementContext();
   const visibleItems = useMemo(
-    () => filterByCapability(filterNavigationItemsByPermissions(items, allowedPermissions), hasCapability),
-    [allowedPermissions, items, hasCapability],
+    () => filterByCapability(
+      filterNavigationItemsByPermissions(
+        items.filter((item) => item.id !== "customer-account" || user?.type === UserType.customer),
+        allowedPermissions,
+      ),
+      hasCapability,
+    ),
+    [allowedPermissions, items, hasCapability, user?.type],
   );
 
   return (

@@ -228,7 +228,11 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
       }
     });
   });
-  normalized.productSalesPriceTiers = database.productSalesPriceTiers ?? [];
+  normalized.productSalesPriceTiers = (
+    Object.hasOwn(database, "productSalesPriceTiers")
+      ? database.productSalesPriceTiers ?? []
+      : base.productSalesPriceTiers
+  ).map((tier) => ({ ...tier }));
   normalized.productInventorySettings = normalizeProductInventorySettings(database, normalized);
   normalized.inventoryAdjustments = normalizeInventoryAdjustments(database, normalized);
   normalized.inventoryTransferRequests = normalizeInventoryTransferRequests(database, normalized);
