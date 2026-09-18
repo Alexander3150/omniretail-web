@@ -197,13 +197,13 @@ export function LoginPage() {
         >
           {isLockedOut ? (
             <InlineAlert title="Demasiados intentos fallidos." tone="danger">
-              <p>Podrí¡s intentarlo de nuevo en {lockoutDisplay}.</p>
+              <p>Podrías intentarlo de nuevo en {lockoutDisplay}.</p>
             </InlineAlert>
           ) : formError ? (
             <InlineAlert title={formError} tone="danger" />
           ) : null}
 
-          <FormField error={fieldErrors.email} id="login-email" label="Correo electronico">
+          <FormField error={fieldErrors.email} id="login-email" label="Correo electrónico">
             <Input
               autoComplete="email"
               disabled={isSubmitting || isLockedOut}
@@ -240,12 +240,12 @@ export function LoginPage() {
               className="font-semibold text-[var(--color-title)] hover:underline"
               href={routes ? routes.forgotPassword() : "/recuperar-contrasena"}
             >
-              Â¿Olvidaste tu contraseña?
+              ¿Olvidaste tu contraseña?
             </Link>
           </div>
 
           <Button className="w-full" disabled={isSubmitting || tenantLoading || isLockedOut} type="submit">
-            {isSubmitting ? "Ingresando..." : isLockedOut ? `Espera ${lockoutDisplay}` : "Iniciar sesion"}
+            {isSubmitting ? "Ingresando..." : isLockedOut ? `Espera ${lockoutDisplay}` : "Iniciar sesión"}
           </Button>
         </form>
 
@@ -266,12 +266,12 @@ export function LoginPage() {
         </Button>
 
         <p className="mt-6 text-center text-sm text-[var(--color-text-muted)]">
-          Â¿No tienes cuenta?{" "}
+          ¿No tienes cuenta?{" "}
           <Link
             className="font-semibold text-[var(--color-title)] hover:underline"
-            href={routes ? routes.register() : "/registro"}
+            href={routes ? routes.register() : "/contratar"}
           >
-            Registrate
+            Regístrate
           </Link>
         </p>
         <p className="mt-2 text-center text-sm text-[var(--color-text-muted)]">

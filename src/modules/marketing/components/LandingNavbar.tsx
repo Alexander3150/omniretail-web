@@ -1,76 +1,38 @@
 import Link from "next/link";
-import { BrandMark } from "@/shared/components/BrandMark";
+
+const links = [
+  ["Inicio", "/"],
+  ["Funcionalidades", "/#funcionalidades"],
+  ["Módulos", "/#modulos"],
+  ["Cómo funciona", "/#como-funciona"],
+  ["Precios", "/#precios"],
+  ["FAQ", "/#faq"],
+] as const;
 
 export default function LandingNavbar() {
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-[var(--color-border)] bg-[var(--color-app-background)]/90 backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center gap-8">
-          <Link href="/" className="flex items-center gap-2">
-            <BrandMark size="sm" />
-          </Link>
-
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-[var(--color-title)]">
-            <Link href="#funcionalidades" className="hover:text-[var(--color-primary)] transition-colors">
-              Funcionalidades
-            </Link>
-            <Link href="#precios" className="hover:text-[var(--color-primary)] transition-colors">
-              Precios
-            </Link>
-            <Link href="#faq" className="hover:text-[var(--color-primary)] transition-colors">
-              Preguntas frecuentes
-            </Link>
+    <header className="sticky top-0 z-50 border-b border-[rgba(157,184,255,.3)] bg-[rgba(255,244,214,.9)] py-4 backdrop-blur-xl">
+      <div className="mx-auto flex max-w-[1140px] items-center justify-between px-6">
+        <Link className="flex items-center gap-3 text-[1.4rem] font-extrabold tracking-[-.02em] text-[var(--mkt-primary)]" href="/">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--mkt-accent)] text-lg font-bold text-white shadow-[0_4px_10px_rgba(47,103,231,.3)]">M</span>
+          MARJYM
+        </Link>
+        <nav className="hidden items-center gap-9 lg:flex">
+          {links.map(([label, href]) => <Link className="text-[.95rem] font-semibold text-[var(--mkt-primary)] transition hover:text-[var(--mkt-accent)]" href={href} key={href}>{label}</Link>)}
+        </nav>
+        <div className="hidden items-center gap-4 md:flex">
+          <Link className="px-2 py-3 text-sm font-semibold text-[var(--mkt-primary)] hover:text-[var(--mkt-accent)]" href="/iniciar-sesion">Iniciar sesión</Link>
+          <Link className="inline-flex min-h-11 items-center rounded-md bg-[var(--mkt-accent)] px-6 text-sm font-semibold text-white shadow-[0_4px_6px_rgba(47,103,231,.25)] transition hover:-translate-y-px hover:bg-[var(--mkt-accent-hover)]" href="/contratar">Contratar MARJYM</Link>
+        </div>
+        <details className="group relative md:hidden">
+          <summary aria-label="Abrir navegación" className="flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-md border border-[var(--mkt-border)] text-[var(--mkt-primary)]">☰</summary>
+          <nav className="absolute right-0 top-14 flex w-60 flex-col gap-1 rounded-xl border border-[var(--mkt-border-light)] bg-white p-3 shadow-lg">
+            {links.map(([label, href]) => <Link className="rounded-md px-3 py-2 text-sm font-semibold text-[var(--mkt-primary)] hover:bg-[var(--mkt-accent-light)]" href={href} key={href}>{label}</Link>)}
+            <hr className="my-1 border-[var(--mkt-border-light)]" />
+            <Link className="rounded-md px-3 py-2 text-sm font-semibold text-[var(--mkt-primary)]" href="/iniciar-sesion">Iniciar sesión</Link>
+            <Link className="rounded-md bg-[var(--mkt-accent)] px-3 py-2 text-center text-sm font-semibold text-white" href="/contratar">Contratar MARJYM</Link>
           </nav>
-        </div>
-
-        <div className="hidden md:flex items-center gap-4">
-          <Link
-            href="/iniciar-sesion"
-            className="text-sm font-medium text-[var(--color-title)] hover:text-[var(--color-primary)] transition-colors"
-          >
-            Iniciar sesión
-          </Link>
-          <Link
-            href="/contratar"
-            className="inline-flex h-9 items-center justify-center rounded-md bg-[var(--color-primary)] px-4 text-sm font-medium text-white shadow transition-colors hover:bg-[var(--color-primary)]/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)] disabled:pointer-events-none disabled:opacity-50"
-          >
-            Contratar MARJYM
-          </Link>
-        </div>
-
-        {/* Mobile Menu */}
-        <div className="md:hidden flex items-center">
-          <details className="group relative">
-            <summary className="list-none cursor-pointer p-2">
-              <svg className="w-6 h-6 text-[var(--color-title)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </summary>
-            <div className="absolute right-0 top-full mt-2 w-56 origin-top-right rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-lg ring-1 ring-black ring-opacity-5">
-              <nav className="flex flex-col gap-4 text-sm font-medium text-[var(--color-title)]">
-                <Link href="#funcionalidades" className="hover:text-[var(--color-primary)]">
-                  Funcionalidades
-                </Link>
-                <Link href="#precios" className="hover:text-[var(--color-primary)]">
-                  Precios
-                </Link>
-                <Link href="#faq" className="hover:text-[var(--color-primary)]">
-                  Preguntas frecuentes
-                </Link>
-                <hr className="border-[var(--color-border)]" />
-                <Link href="/iniciar-sesion" className="hover:text-[var(--color-primary)]">
-                  Iniciar sesión
-                </Link>
-                <Link
-                  href="/contratar"
-                  className="inline-flex h-9 items-center justify-center rounded-md bg-[var(--color-primary)] px-4 text-sm font-medium text-white shadow hover:bg-[var(--color-primary)]/90"
-                >
-                  Contratar MARJYM
-                </Link>
-              </nav>
-            </div>
-          </details>
-        </div>
+        </details>
       </div>
     </header>
   );

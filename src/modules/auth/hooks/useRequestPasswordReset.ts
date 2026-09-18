@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
-import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
+import { useOptionalPublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 import {
   hasRequestPasswordResetValidationErrors,
   validateRequestPasswordResetForm,
@@ -15,7 +15,9 @@ export function useRequestPasswordReset() {
   // Igual que useLogin: solo bloquea el submit mientras esta "loading",
   // nunca por "error" -- el empleado no depende de que el storefront
   // publico resuelva.
-  const { tenantId, loading: tenantLoading } = usePublicTenant();
+  const tenant = useOptionalPublicTenant();
+  const tenantId = tenant?.tenantId;
+  const tenantLoading = tenant?.loading ?? false;
 
   const [email, setEmail] = useState("");
   const [fieldErrors, setFieldErrors] = useState<RequestPasswordResetValidationErrors>({});

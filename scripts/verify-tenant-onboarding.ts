@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { permissionsConfig } from "@/config/permissions";
 import type { AuthAccount } from "@/core/entities";
-import { AccountStatus, PlanCode, PlanStatus, TenantStatus, UserStatus, UserType } from "@/core/enums";
+import { AccountStatus, PlanCode, PlanStatus, RoleStatus, TenantStatus, UserStatus, UserType } from "@/core/enums";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import {
@@ -206,6 +206,23 @@ async function verifyIncidentTypeDefaultsAndNormalization() {
       active: true,
     },
   ];
+  const customerSelfServicePermissions = permissionsConfig
+    .filter((permission) => permission.module === "customer" || permission.module === "storefront")
+    .map((permission) => permission.key);
+  const legacyAdmin = seededSnapshot.roles.find((role) => role.id === "role-admin");
+  assert.ok(legacyAdmin, "el admin de sistema del seed debe existir");
+  legacyAdmin.permissions = [...legacyAdmin.permissions, ...customerSelfServicePermissions];
+  seededSnapshot.roles.push({
+    id: "custom-administrator-with-customer-permissions",
+    tenantId: "tenant-demo",
+    name: "Administrador",
+    isSystem: false,
+    permissions: [...customerSelfServicePermissions],
+    branchScope: "assigned",
+    status: RoleStatus.active,
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
   storage.set(storageKey, seededSnapshot);
 
   const normalizedOnce = new MockDatabaseStore(storage).getSnapshot();
@@ -227,6 +244,22 @@ async function verifyIncidentTypeDefaultsAndNormalization() {
     demoTypes.find((item) => item.code === "CUSTOM_REVIEW"),
     seededSnapshot.incidentTypes[1],
     "la normalización debe preservar tipos personalizados",
+  );
+  const normalizedAdmin = normalizedOnce.roles.find((role) => role.id === "role-admin");
+  assert.ok(normalizedAdmin, "el Administrador de sistema debe conservarse");
+  assert.equal(
+    customerSelfServicePermissions.some((permission) => normalizedAdmin.permissions.includes(permission)),
+    false,
+    "la normalización debe retirar autoservicio Customer/Storefront del Administrador de sistema",
+  );
+  const customAdministrator = normalizedOnce.roles.find(
+    (role) => role.id === "custom-administrator-with-customer-permissions",
+  );
+  assert.ok(customAdministrator, "el rol personalizado debe conservarse");
+  assert.deepEqual(
+    customAdministrator.permissions,
+    customerSelfServicePermissions,
+    "la normalización no debe alterar roles personalizados",
   );
 
   const normalizedTwice = new MockDatabaseStore(storage).getSnapshot();
@@ -267,11 +300,30 @@ async function verifySuccessfulOnboardingAndLogin() {
   assert.ok(role, "4: el Role admin debe existir y pertenecer al Tenant nuevo");
   assert.equal(role?.tenantId, result.tenantId);
   assert.equal(role?.isSystem, true, "4: el Role admin es un rol de plataforma (isSystem)");
-  const canonicalPermissions = permissionsConfig.map((permission) => permission.key);
+  const employeePermissions = permissionsConfig
+    .filter((permission) => permission.module !== "customer" && permission.module !== "storefront")
+    .map((permission) => permission.key);
+  const customerSelfServicePermissions = permissionsConfig
+    .filter((permission) => permission.module === "customer" || permission.module === "storefront")
+    .map((permission) => permission.key);
   assert.deepEqual(
     [...(role?.permissions ?? [])].sort(),
-    [...canonicalPermissions].sort(),
-    "5: el Role admin debe tener EXACTAMENTE el catálogo canónico de permisos",
+    [...employeePermissions].sort(),
+    "5: el Role admin debe tener exactamente los permisos canónicos de empleado",
+  );
+  assert.equal(
+    customerSelfServicePermissions.some((permission) => role?.permissions.includes(permission)),
+    false,
+    "5: el Role admin no debe recibir permisos de Customer/Storefront",
+  );
+  const customerRole = (await harness.repositories.roles.listByTenant(result.tenantId)).find(
+    (candidate) => candidate.isSystem && candidate.name === "Cliente",
+  );
+  assert.ok(customerRole, "5: el Role Cliente canónico debe existir");
+  assert.deepEqual(
+    [...(customerRole?.permissions ?? [])].sort(),
+    [...customerSelfServicePermissions].sort(),
+    "5: el Role Cliente conserva los permisos de autoservicio",
   );
 
   // 6. initial Branch created

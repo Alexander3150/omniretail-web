@@ -31,13 +31,13 @@ export default function LandingFaq() {
   ];
 
   return (
-    <section id="faq" className="py-16 md:py-24 bg-[var(--color-surface)] border-t border-[var(--color-border)]">
+    <section id="faq" className="border-t border-[var(--mkt-border-light)] bg-[var(--mkt-surface)] py-16 md:py-24">
       <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-[var(--color-title)] mb-4">
+          <h2 className="mb-4 text-3xl font-bold text-[var(--mkt-primary)] md:text-4xl">
             Preguntas frecuentes
           </h2>
-          <p className="text-lg text-[var(--color-title)]/70">
+          <p className="text-lg text-[var(--mkt-muted)]">
             Resuelve tus dudas sobre MARJYM y descubre cómo podemos ayudar a tu negocio.
           </p>
         </div>
@@ -46,9 +46,9 @@ export default function LandingFaq() {
           {faqs.map((faq, idx) => (
             <details
               key={idx}
-              className="group rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] [&_summary::-webkit-details-marker]:hidden"
+              className="group rounded-xl border border-[var(--mkt-border-light)] bg-[var(--mkt-bg-alt)] [&_summary::-webkit-details-marker]:hidden"
             >
-              <summary className="flex cursor-pointer items-center justify-between p-6 font-semibold text-[var(--color-title)]">
+              <summary className="flex cursor-pointer items-center justify-between p-5 font-semibold text-[var(--mkt-primary)]">
                 {faq.question}
                 <span className="relative ml-4 shrink-0">
                   <svg
@@ -73,7 +73,7 @@ export default function LandingFaq() {
                   </svg>
                 </span>
               </summary>
-              <div className="px-6 pb-6 text-[var(--color-title)]/70 leading-relaxed">
+              <div className="px-5 pb-5 leading-relaxed text-[var(--mkt-muted)]">
                 {faq.answer}
               </div>
             </details>

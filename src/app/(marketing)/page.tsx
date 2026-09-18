@@ -5,7 +5,7 @@ import LandingFaq from "@/modules/marketing/components/LandingFaq";
 
 export default function MarketingPage() {
   return (
-    <div className="bg-[var(--color-app-background)] min-h-screen">
+    <div className="min-h-screen bg-[var(--mkt-bg)]">
       <LandingHero />
       <LandingFeatures />
       <LandingPricing />

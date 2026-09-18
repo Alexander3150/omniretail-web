@@ -1,49 +1,14 @@
 import Link from "next/link";
-import { BrandMark } from "@/shared/components/BrandMark";
 
 export default function LandingFooter() {
-  const currentYear = new Date().getFullYear();
-
   return (
-    <footer className="bg-[var(--color-app-background)] border-t border-[var(--color-border)] py-12 md:py-16">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col md:flex-row justify-between items-center md:items-start gap-8">
-          <div className="flex flex-col items-center md:items-start gap-4">
-            <Link href="/" className="inline-block">
-              <BrandMark size="md" />
-            </Link>
-            <p className="text-[var(--color-title)]/60 text-sm text-center md:text-left max-w-xs">
-              Todo tu negocio, en un solo lugar. Gestión de inventario, ventas y compras para tu comercio.
-            </p>
-          </div>
-
-          <nav className="flex flex-wrap justify-center md:justify-end gap-x-8 gap-y-4 text-sm font-medium text-[var(--color-title)]/80">
-            <Link href="/" className="hover:text-[var(--color-primary)] transition-colors">
-              Inicio
-            </Link>
-            <Link href="#funcionalidades" className="hover:text-[var(--color-primary)] transition-colors">
-              Funcionalidades
-            </Link>
-            <Link href="#precios" className="hover:text-[var(--color-primary)] transition-colors">
-              Precios
-            </Link>
-            <Link href="#faq" className="hover:text-[var(--color-primary)] transition-colors">
-              FAQ
-            </Link>
-            <Link href="/iniciar-sesion" className="hover:text-[var(--color-primary)] transition-colors">
-              Iniciar sesión
-            </Link>
-            <Link href="/contratar" className="hover:text-[var(--color-primary)] transition-colors">
-              Contratar
-            </Link>
-          </nav>
+    <footer className="bg-[var(--mkt-primary)] py-16 text-white">
+      <div className="mx-auto max-w-[1140px] px-6">
+        <div className="flex flex-col justify-between gap-10 md:flex-row">
+          <div><Link className="flex items-center gap-3 text-xl font-extrabold" href="/"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--mkt-accent)] shadow">M</span>MARJYM</Link><p className="mt-4 max-w-sm text-sm leading-6 text-white/65">Todo tu negocio conectado en un solo lugar. Una operación comercial clara, segura y lista para crecer.</p></div>
+          <nav className="flex flex-wrap gap-x-8 gap-y-4 text-sm font-semibold text-white/75"><Link className="hover:text-white" href="/">Inicio</Link><Link className="hover:text-white" href="/#funcionalidades">Funcionalidades</Link><Link className="hover:text-white" href="/#como-funciona">Cómo funciona</Link><Link className="hover:text-white" href="/#precios">Precios</Link><Link className="hover:text-white" href="/#faq">FAQ</Link></nav>
         </div>
-
-        <div className="mt-12 pt-8 border-t border-[var(--color-border)] text-center md:flex md:justify-between md:items-center md:text-left">
-          <p className="text-sm text-[var(--color-title)]/50">
-            &copy; {currentYear} MARJYM. Todos los derechos reservados.
-          </p>
-        </div>
+        <div className="mt-12 border-t border-white/15 pt-8 text-sm text-white/50">© {new Date().getFullYear()} MARJYM. Todos los derechos reservados.</div>
       </div>
     </footer>
   );

@@ -20,6 +20,7 @@ import {
   UserStatus,
   UserType,
 } from "@/core/enums";
+import { businessDefaultsConfig } from "@/config/business-defaults";
 import type {
   TenantOnboardingInput,
   TenantOnboardingRepository,
@@ -83,7 +84,7 @@ export class MockTenantOnboardingRepository
       this.pushCustomerRole(db, tenant.id, now);
       const user = this.pushUser(db, tenant.id, role.id, branch.id, input, now);
       const authAccount = this.pushAuthAccount(db, user, input.adminPasswordMock, now);
-      const businessCapabilities = this.pushBusinessCapabilities(db, tenant.id);
+      const businessCapabilities = this.pushBusinessCapabilities(db, tenant.id, input.businessPreset);
       const ecommerceConfig = this.pushEcommerceConfig(db, tenant, now);
       const subscription = this.pushSubscription(db, tenant.id, input.planId, now);
 
@@ -275,8 +276,12 @@ export class MockTenantOnboardingRepository
 
   // Defaults técnicos mínimos -- nunca copiados de tenant-demo (auditoría §18) y sin ningún
   // entitlement/capability comercial (eso es SaasCapabilityKey vía Plan, no esto).
-  protected pushBusinessCapabilities(db: MockDatabase, tenantId: string): BusinessCapabilitiesConfig {
-    const capabilities: BusinessCapabilitiesConfig = {
+  protected pushBusinessCapabilities(
+    db: MockDatabase,
+    tenantId: string,
+    preset?: BusinessPreset,
+  ): BusinessCapabilitiesConfig {
+    const capabilities: BusinessCapabilitiesConfig = !preset ? {
       tenantId,
       preset: BusinessPreset.custom,
       supportsInventory: true,
@@ -289,7 +294,20 @@ export class MockTenantOnboardingRepository
       supportsKits: false,
       supportsServices: false,
       defaultProductTracking: { stock: true, lot: false, expiration: false, serial: false },
-    };
+    } : preset === BusinessPreset.custom ? {
+      tenantId,
+      preset: BusinessPreset.custom,
+      supportsInventory: true,
+      supportsLots: false,
+      supportsExpiration: false,
+      supportsSerials: false,
+      supportsMultipleLocations: false,
+      supportsUnitsAndPackaging: false,
+      supportsProductAttributes: false,
+      supportsKits: false,
+      supportsServices: false,
+      defaultProductTracking: { stock: true, lot: false, expiration: false, serial: false },
+    } : { ...businessDefaultsConfig[preset], tenantId };
     db.businessCapabilities.push(capabilities);
     return capabilities;
   }

@@ -92,6 +92,7 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
         };
         if (!existing)
           return [
+            ...current,
             withQuantityPrice(
               { ...createStorefrontCartItem(product, media), ...pricingContext },
               1,
