@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { CreatePublicContractService } from "@/modules/contracting/application/services/CreatePublicContractService";
+import type { BusinessPreset } from "@/core/enums";
 import {
   validatePublicContractForm,
   type PublicContractFormErrors,
@@ -24,6 +25,7 @@ export function usePublicContract() {
   const [formError, setFormError] = useState<string>();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [completedBusinessName, setCompletedBusinessName] = useState<string>();
+  const [businessPreset, setBusinessPreset] = useState<BusinessPreset>();
   const submittingRef = useRef(false);
 
   const setField = useCallback((field: keyof PublicContractFormValues, value: string) => {
@@ -38,7 +40,10 @@ export function usePublicContract() {
     const errors = validatePublicContractForm(values);
     setFieldErrors(errors);
     setFormError(undefined);
-    if (Object.keys(errors).length > 0) return;
+    if (Object.keys(errors).length > 0 || !businessPreset) {
+      if (!businessPreset) setFormError("Selecciona el rubro comercial principal.");
+      return;
+    }
 
     submittingRef.current = true;
     setIsSubmitting(true);
@@ -48,6 +53,7 @@ export function usePublicContract() {
         adminName: values.adminName,
         adminEmail: values.adminEmail,
         adminPassword: values.adminPassword,
+        businessPreset,
       });
       setCompletedBusinessName(values.businessName.trim());
     } catch (error) {
@@ -58,7 +64,7 @@ export function usePublicContract() {
       submittingRef.current = false;
       setIsSubmitting(false);
     }
-  }, [repositories, values]);
+  }, [businessPreset, repositories, values]);
 
   return {
     values,
@@ -67,6 +73,8 @@ export function usePublicContract() {
     formError,
     isSubmitting,
     completedBusinessName,
+    businessPreset,
+    setBusinessPreset,
     submit,
   };
 }

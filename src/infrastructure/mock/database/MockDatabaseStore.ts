@@ -13,6 +13,7 @@ import {
   SalesChannel,
   UnitCategory,
   UnitStatus,
+  UserType,
 } from "@/core/enums";
 import { permissionsConfig } from "@/config/permissions";
 import type {
@@ -50,6 +51,19 @@ type PersistedUnit = Partial<Unit>;
 type PersistedPurchaseOrderItem = Omit<PurchaseOrderItem, "purchaseToBaseFactor"> & {
   purchaseToBaseFactor?: number;
 };
+
+const CANONICAL_INCIDENT_TYPES = [
+  { code: "DAMAGED", name: "Producto dañado" },
+  { code: "MISSING", name: "Producto faltante" },
+  { code: "UNSOLICITED", name: "Producto no solicitado" },
+  { code: "OTHER", name: "Otros" },
+] as const;
+const SYSTEM_ADMIN_ROLE_NAME = "Administrador";
+const CUSTOMER_SELF_SERVICE_PERMISSION_KEYS = new Set(
+  permissionsConfig
+    .filter((permission) => permission.module === "customer" || permission.module === "storefront")
+    .map((permission) => permission.key),
+);
 
 type PersistedMockDatabase = Partial<
   Omit<
@@ -158,7 +172,7 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   // guardado en localStorage antes de este contrato quedaria con status undefined.
   normalized.roles = (database.roles ?? base.roles).map((role) => {
     const isCanonicalSystemAdmin =
-      role.isSystem && role.name === "Administrador" && role.branchScope === "all";
+      role.isSystem && role.name === SYSTEM_ADMIN_ROLE_NAME && role.branchScope === "all";
     const packingPermissions =
       role.id === "role-warehouse"
         ? ["logistics.packing.read", "logistics.packing.prepare", "logistics.packing.finalize"]
@@ -170,6 +184,23 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
         : [...new Set([...role.permissions, ...packingPermissions])],
       status: role.status ?? RoleStatus.active,
     };
+  });
+  normalized.incidentTypes = [...(database.incidentTypes ?? base.incidentTypes)];
+  normalized.tenants.forEach((tenant) => {
+    CANONICAL_INCIDENT_TYPES.forEach(({ code, name }) => {
+      const exists = normalized.incidentTypes.some(
+        (incidentType) => incidentType.tenantId === tenant.id && incidentType.code === code,
+      );
+      if (!exists) {
+        normalized.incidentTypes.push({
+          id: `incident-type-${tenant.id}-${code.toLowerCase()}`,
+          tenantId: tenant.id,
+          code,
+          name,
+          active: true,
+        });
+      }
+    });
   });
   normalized.productSalesPriceTiers = database.productSalesPriceTiers ?? [];
   normalized.productInventorySettings = normalizeProductInventorySettings(database, normalized);
@@ -258,6 +289,70 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
     type: String(promotion.type) === "fixed_amount" ? PromotionType.fixedDiscount : promotion.type,
     channels: promotion.channels ?? [SalesChannel.pos, SalesChannel.ecommerce],
   }));
+
+  const CUSTOMER_ROLE_NAME = "Cliente";
+  const CUSTOMER_ROLE_PERMISSIONS = [
+    "customer.account.read",
+    "customer.account.update",
+    "customer.address.manage",
+    "customer.payment_method.manage",
+    "storefront.orders.read",
+  ];
+
+  normalized.tenants.forEach((tenant) => {
+    const hasCustomerRole = normalized.roles.some(
+      (role) =>
+        role.tenantId === tenant.id &&
+        role.isSystem &&
+        role.permissions.includes("customer.account.read") &&
+        !role.permissions.some(
+          (p) => p.startsWith("admin.") || p.startsWith("pos.") || p.startsWith("inventory."),
+        ),
+    );
+    if (!hasCustomerRole) {
+      normalized.roles.push({
+        id: `role-customer-${tenant.id}`,
+        tenantId: tenant.id,
+        name: CUSTOMER_ROLE_NAME,
+        isSystem: true,
+        permissions: [...CUSTOMER_ROLE_PERMISSIONS],
+        branchScope: "assigned",
+        status: RoleStatus.active,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  });
+
+  normalized.users = (database.users ?? base.users).map((user) => {
+    if (user.type === UserType.customer && !user.roleId) {
+      const customerRole = normalized.roles.find(
+        (role) =>
+          role.tenantId === user.tenantId &&
+          role.isSystem &&
+          role.permissions.includes("customer.account.read") &&
+          !role.permissions.some(
+            (p) => p.startsWith("admin.") || p.startsWith("pos.") || p.startsWith("inventory."),
+          ),
+      );
+      return {
+        ...user,
+        roleId: customerRole?.id,
+      };
+    }
+    return user;
+  });
+
+  normalized.roles = normalized.roles.map((role) => {
+    if (!role.isSystem || role.name !== SYSTEM_ADMIN_ROLE_NAME) return role;
+
+    const permissions = role.permissions.filter(
+      (permission) => !CUSTOMER_SELF_SERVICE_PERMISSION_KEYS.has(permission),
+    );
+    return permissions.length === role.permissions.length
+      ? role
+      : { ...role, permissions, updatedAt: new Date().toISOString() };
+  });
 
   return normalized;
 }

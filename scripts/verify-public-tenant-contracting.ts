@@ -154,18 +154,31 @@ async function verifyContractsIsolationEntitlementsAndLogin() {
     assert.equal(branches[0].code, "MATRIZ");
     assert.equal(branches[0].name, "Matriz");
     assert.equal(branches[0].status, BranchStatus.active);
-    assert.equal(roles.length, 1);
-    assert.equal(roles[0].name, "Administrador");
-    assert.equal(roles[0].isSystem, true);
+    assert.equal(roles.length, 2, "el onboarding aprovisiona Administrador y Cliente");
+    const administratorRole = roles.find((role) => role.isSystem && role.name === "Administrador");
+    const customerRole = roles.find((role) => role.isSystem && role.name === "Cliente");
+    assert.ok(administratorRole, "debe existir el rol canónico Administrador");
+    assert.ok(customerRole, "debe existir el rol canónico Cliente");
+    const administratorPermissions = permissionsConfig
+      .filter((permission) => permission.module !== "customer" && permission.module !== "storefront")
+      .map((permission) => permission.key);
+    const customerSelfServicePermissions = permissionsConfig
+      .filter((permission) => permission.module === "customer" || permission.module === "storefront")
+      .map((permission) => permission.key);
     assert.deepEqual(
-      [...roles[0].permissions].sort(),
-      permissionsConfig.map((permission) => permission.key).sort(),
-      "el rol usa el catálogo canónico completo",
+      [...administratorRole.permissions].sort(),
+      [...administratorPermissions].sort(),
+      "el Administrador usa el catálogo canónico de permisos de empleado",
+    );
+    assert.deepEqual(
+      [...customerRole.permissions].sort(),
+      [...customerSelfServicePermissions].sort(),
+      "el Cliente conserva el catálogo canónico de autoservicio",
     );
     assert.equal(users.length, 1);
     assert.equal(users[0].email, expectedEmail);
     assert.equal(users[0].type, UserType.employee);
-    assert.equal(users[0].roleId, roles[0].id);
+    assert.equal(users[0].roleId, administratorRole.id);
     assert.deepEqual(users[0].allowedBranchIds, [branches[0].id]);
     assert.equal(subscription?.planId, BASE_PLAN_ID);
     assert.equal(subscription?.status, TenantSubscriptionStatus.active);
@@ -286,13 +299,18 @@ async function verifyMaliciousInputAndValidation() {
     result.tenantId,
   );
   assert.deepEqual(subscription?.addonCodes, []);
-  const [role] = await harness.repositories.roles.listByTenant(result.tenantId);
+  const roles = await harness.repositories.roles.listByTenant(result.tenantId);
+  const role = roles.find((candidate) => candidate.isSystem && candidate.name === "Administrador");
+  assert.ok(role, "el onboarding hostil debe conservar un Administrador canónico");
   const [branch] = await harness.repositories.branches.listByTenant(result.tenantId);
   assert.notEqual(role.id, "role-admin");
   assert.notEqual(branch.id, "branch-centro");
   assert.deepEqual(
     [...role.permissions].sort(),
-    permissionsConfig.map((permission) => permission.key).sort(),
+    permissionsConfig
+      .filter((permission) => permission.module !== "customer" && permission.module !== "storefront")
+      .map((permission) => permission.key)
+      .sort(),
   );
 
   await expectPublicError(

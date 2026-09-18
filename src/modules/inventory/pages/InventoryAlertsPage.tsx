@@ -11,7 +11,7 @@ import {
   type ReactNode,
   type SVGProps,
 } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { StorageLocation } from "@/core/entities";
 import { getLocalCalendarDate } from "@/core/inventory/expirationDate";
 import { InventoryTransferReason, InventoryTransferRequestStatus } from "@/core/enums";
@@ -86,6 +86,7 @@ const TRANSFER_REASONS: Array<{ value: InventoryTransferReason; label: string }>
 
 export function InventoryAlertsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { showToast } = useToast();
   const {
     data,
@@ -153,6 +154,21 @@ export function InventoryAlertsPage() {
     const timer = window.setInterval(() => setClockTick((current) => current + 1), 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  // Product creation hands off to this existing adjustment UI. It only
+  // selects a product; RegisterInventoryAdjustmentService remains the sole
+  // stock mutation boundary and retains all traceability validation.
+  useEffect(() => {
+    const productId = searchParams.get("productId");
+    if (!productId || !data.rows.some((row) => row.productId === productId)) return;
+    window.queueMicrotask(() => {
+      setSelectedProductId(productId);
+      setPanelMode("product-detail");
+      if (searchParams.get("openAdjustment") === "1" && canAdjustStock) {
+        setActionMode("adjust");
+      }
+    });
+  }, [canAdjustStock, data.rows, searchParams]);
 
   useEffect(() => {
     let active = true;

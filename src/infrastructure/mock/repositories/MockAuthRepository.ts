@@ -677,6 +677,10 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
           ),
       );
 
+      if (!customerRole) {
+        throw new Error("Critical: Missing canonical Customer system role in tenant.");
+      }
+
       const createdUser = {
         id: this.id("user"),
         tenantId,
@@ -686,7 +690,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         phone: input.phone,
         type: UserType.customer,
         status: UserStatus.active,
-        roleId: customerRole?.id,
+        roleId: customerRole.id,
         createdAt: now,
         updatedAt: now,
       };
@@ -832,7 +836,7 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     this.emit("auth.changed", { action: "created" });
   }
   async resetPassword(token: string, newPasswordMock: string) {
-    this.store.mutate((db) => {
+    const result = this.store.mutate((db) => {
       const now = new Date();
 
       const challenge = db.passwordResetChallenges.find(
@@ -955,12 +959,18 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
         createdAt: nowIso,
       });
 
-      return undefined;
+      return user.type === UserType.customer
+        ? {
+            userType: user.type,
+            tenantSlug: db.tenants.find((tenant) => tenant.id === user.tenantId)?.slug,
+          }
+        : { userType: user.type };
     });
     this.emit("auth.changed", { action: "updated" });
+    return result;
   }
   async verifyEmail(token: string) {
-    this.store.mutate((db) => {
+    const outcome = this.store.mutate((db) => {
       const verification = db.emailVerifications.find(
         (item) => item.token === token && !item.verifiedAt,
       );
@@ -975,9 +985,14 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       verification.verifiedAt = this.now();
       const account = db.authAccounts.find((item) => item.userId === verification.userId);
       if (account) account.status = AccountStatus.active;
-      return undefined;
+
+      const user = db.users.find((u) => u.id === verification.userId);
+      const tenant = user ? db.tenants.find((t) => t.id === user.tenantId) : undefined;
+
+      return { tenantSlug: tenant?.slug };
     });
     this.emit("auth.changed", { action: "updated" });
+    return outcome;
   }
   /**
    * Boundary estrecho exclusivo de onboarding -- ver docstring en `AuthRepository.ts`. Crea el

@@ -11,6 +11,8 @@ import { StorefrontCatalogImage } from "@/modules/storefront/components/Storefro
 import { ProductType } from "@/core/enums";
 import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
 import { useStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
+import { calculateEffectivePrice, resolveQuantityPrice } from "@/core/pricing";
+import { useStorefrontOffers } from "@/modules/storefront/hooks/useStorefrontOffers";
 
 export function ProductDetailPage({ productId }: { productId: string }) {
   const routes = useStorefrontRoutes();
@@ -19,6 +21,7 @@ export function ProductDetailPage({ productId }: { productId: string }) {
   const { products } = useStorefrontDiscovery();
   const { showToast } = useToast();
   const [quantity, setQuantity] = useState(1);
+  const { items: offers } = useStorefrontOffers({ productId, quantity });
   const [addedQuantity, setAddedQuantity] = useState<number | null>(null);
   const [unavailableQuantityModalOpen, setUnavailableQuantityModalOpen] = useState(false);
   if (loading)
@@ -53,6 +56,16 @@ export function ProductDetailPage({ productId }: { productId: string }) {
     );
   const { product, availability, categoryName, media, attributes } = data;
   const availableQuantity = products.find((item) => item.id === product.id)?.availableQuantity;
+  const discoveryProduct = products.find((item) => item.id === product.id);
+  const promotion = offers.find((item) => item.productId === product.id)?.promotion;
+  const price = calculateEffectivePrice(
+    resolveQuantityPrice({
+      basePrice: product.salePrice,
+      quantity,
+      tiers: discoveryProduct?.salesPriceTiers,
+    }),
+    promotion,
+  );
   const quantityAlreadyInCart = items.find((item) => item.productId === product.id)?.quantity ?? 0;
   const isOutOfStock =
     availableQuantity === 0 ||
@@ -126,12 +139,12 @@ export function ProductDetailPage({ productId }: { productId: string }) {
           <div className="mt-6 border-t border-[var(--color-border)] pt-5">
             <div className="flex items-end justify-between gap-4">
               <p className="text-3xl font-black text-[var(--color-title)]">
-                Q{product.salePrice.toFixed(2)}
+                Q{price.effectivePrice.toFixed(2)}
               </p>
               <div className="text-right">
                 <p className="text-sm text-[var(--color-text-muted)]">Total calculado</p>
                 <p className="text-2xl font-black text-[var(--color-title)]">
-                  Q{(product.salePrice * quantity).toFixed(2)}
+                  Q{(price.effectivePrice * quantity).toFixed(2)}
                 </p>
               </div>
             </div>

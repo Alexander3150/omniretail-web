@@ -28,6 +28,22 @@ type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
 const NAVIGATION_ICON_MAP: Record<string, IconComponent> = {
   home: HomeIcon,
+  administration: BuildingIcon,
+  "administration-dashboard": HomeIcon,
+  "administration-branches": BuildingIcon,
+  "administration-business-config": TagsIcon,
+  "administration-plan": CreditCardIcon,
+  "administration-roles": ShieldIcon,
+  "administration-users": UserIcon,
+  "administration-customers": UserIcon,
+  "administration-cash": CreditCardIcon,
+  "administration-reports": HistoryIcon,
+  "administration-ecommerce-config": TagsIcon,
+  "administration-bank-accounts": BuildingIcon,
+  "administration-suppliers": BuildingIcon,
+  "auth-profile": UserIcon,
+  "auth-profile-data": UserIcon,
+  "auth-profile-security": ShieldIcon,
   inventory: BoxesIcon,
   "inventory-alerts": PackageSearchIcon,
   catalog: TagsIcon,
@@ -41,6 +57,12 @@ const NAVIGATION_ICON_MAP: Record<string, IconComponent> = {
   "purchasing-orders": ClipboardListIcon,
   receiving: PackageCheckIcon,
   logistics: TruckIcon,
+  "logistics-dispatches": TruckIcon,
+  pos: ShoppingCartIcon,
+  "pos-terminal": CreditCardIcon,
+  "pos-cash-shift": CreditCardIcon,
+  "pos-returns": HistoryIcon,
+  "customer-account": UserIcon,
   "customer-account-profile": UserIcon,
   "customer-account-addresses": MapPinIcon,
   "customer-account-payment-methods": CreditCardIcon,
@@ -236,7 +258,7 @@ export function Sidebar({
           <CloseIcon />
         </button>
       </div>
-      <nav aria-label="Navegacion principal" className="min-h-0 flex-1 overflow-y-auto pr-1">
+      <nav aria-label="Navegacion principal" className="min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <ul className="space-y-1 pb-4">
           {visibleItems.map((item) => (
             <SidebarItem

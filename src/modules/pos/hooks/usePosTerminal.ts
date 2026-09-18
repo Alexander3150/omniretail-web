@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CashShift } from "@/core/entities";
+import { calculateEffectivePrice, resolveQuantityPrice } from "@/core/pricing";
 import {
   CashShiftStatus,
   DeliveryMethod,
@@ -366,13 +367,17 @@ export function usePosTerminal() {
           error: null,
           items: current.items.map((candidate) =>
             candidate.productId === productId
-              ? updateTicketItemQuantity(candidate, requestedQuantity)
+              ? updateTicketItemQuantity(
+                  candidate,
+                  requestedQuantity,
+                  products.find((product) => product.productId === productId),
+                )
               : candidate,
           ),
         };
       });
     },
-    [invalidateCheckoutValidation],
+    [invalidateCheckoutValidation, products],
   );
 
   const decreaseQuantity = useCallback(
@@ -392,13 +397,17 @@ export function usePosTerminal() {
           error: null,
           items: current.items.map((candidate) =>
             candidate.productId === productId
-              ? updateTicketItemQuantity(candidate, candidate.quantity - 1)
+              ? updateTicketItemQuantity(
+                  candidate,
+                  candidate.quantity - 1,
+                  products.find((product) => product.productId === productId),
+                )
               : candidate,
           ),
         };
       });
     },
-    [invalidateCheckoutValidation],
+    [invalidateCheckoutValidation, products],
   );
 
   const removeItem = useCallback(
@@ -940,15 +949,23 @@ function filterPosProducts(products: PosProductDto[], search: string) {
 }
 
 function createTicketItem(product: PosProductDto, quantity: number): SaleTicketItemDto {
+  const price = calculateEffectivePrice(
+    resolveQuantityPrice({
+      basePrice: product.basePrice,
+      quantity,
+      tiers: product.salesPriceTiers,
+    }),
+    product.promotion,
+  );
   return {
     productId: product.productId,
     sku: product.sku,
     name: product.name,
     quantity,
-    baseUnitPrice: product.basePrice,
-    unitPrice: product.effectivePrice,
-    discount: product.discount,
-    subtotal: fromCents(toCents(product.effectivePrice) * quantity),
+    baseUnitPrice: price.basePrice,
+    unitPrice: price.effectivePrice,
+    discount: price.discountAmount,
+    subtotal: fromCents(toCents(price.effectivePrice) * quantity),
     availableQuantity: product.availableQuantity,
     saleUnitId: product.saleUnitId,
     saleUnitName: product.saleUnitName,
@@ -957,7 +974,12 @@ function createTicketItem(product: PosProductDto, quantity: number): SaleTicketI
   };
 }
 
-function updateTicketItemQuantity(item: SaleTicketItemDto, quantity: number): SaleTicketItemDto {
+function updateTicketItemQuantity(
+  item: SaleTicketItemDto,
+  quantity: number,
+  product?: PosProductDto,
+): SaleTicketItemDto {
+  if (product) return createTicketItem(product, quantity);
   return {
     ...item,
     quantity,

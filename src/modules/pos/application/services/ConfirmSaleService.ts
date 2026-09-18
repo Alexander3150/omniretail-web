@@ -12,7 +12,7 @@ import {
   getBranchAvailableQuantity,
   planInventoryAllocation,
 } from "@/core/inventory/stockAvailability";
-import { calculateEffectivePrice } from "@/core/pricing";
+import { calculateEffectivePrice, resolveQuantityPrice } from "@/core/pricing";
 import { toBaseQuantity } from "@/core/units";
 import type {
   ConfirmSaleResult,
@@ -100,7 +100,10 @@ export class ConfirmSaleService {
       throw new Error("No existe configuración de métodos de pago para POS.");
     }
 
-    const checkoutValidation = validateCheckout(authorizedInput.checkout, authorizedInput.ticket.total);
+    const checkoutValidation = validateCheckout(
+      authorizedInput.checkout,
+      authorizedInput.ticket.total,
+    );
     if (!checkoutValidation.isValid) {
       throw new Error("El documento o los datos de pago deben revisarse antes de confirmar.");
     }
@@ -265,7 +268,9 @@ export class ConfirmSaleService {
     }
   }
 
-  private async validateAndBuildItems(input: AuthorizedConfirmPosSaleInput): Promise<ValidatedSaleItem[]> {
+  private async validateAndBuildItems(
+    input: AuthorizedConfirmPosSaleInput,
+  ): Promise<ValidatedSaleItem[]> {
     const availableProducts = await this.repositories.products.getAvailableForPos();
     const productsById = new Map(
       availableProducts
@@ -298,14 +303,25 @@ export class ConfirmSaleService {
           throw new Error(`${product.name} requiere trazabilidad no soportada en Terminal.`);
         }
 
-        const promotion = await this.repositories.promotions.getApplicable({
-          tenantId: input.currentBranch.tenantId,
-          productId: product.id,
-          at,
-          channel: SalesChannel.pos,
-          branchId: input.currentBranch.id,
+        const [promotion, salesPriceTiers] = await Promise.all([
+          this.repositories.promotions.getApplicable({
+            tenantId: input.currentBranch.tenantId,
+            productId: product.id,
+            at,
+            channel: SalesChannel.pos,
+            branchId: input.currentBranch.id,
+          }),
+          this.repositories.productSalesPriceTiers.getByProduct(product.id),
+        ]);
+        const quantityPrice = resolveQuantityPrice({
+          basePrice: product.salePrice,
+          quantity: ticketItem.quantity,
+          tiers: salesPriceTiers.filter(
+            (tier) =>
+              tier.tenantId === input.currentBranch.tenantId && tier.productId === product.id,
+          ),
         });
-        const price = calculateEffectivePrice(product.salePrice, promotion);
+        const price = calculateEffectivePrice(quantityPrice, promotion);
         assertPriceSnapshot(ticketItem, price);
         const saleUnitId = product.saleUnitId ?? product.baseUnitId;
         const conversions = await this.repositories.units.getConversionsByProductScoped(

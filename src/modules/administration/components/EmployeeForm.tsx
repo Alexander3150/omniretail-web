@@ -82,13 +82,13 @@ export function EmployeeForm({
         </FormField>
 
         <FormField
-          hint={isEdit ? "El código no se puede cambiar después de crear el empleado." : "Letras, números, guión y guión bajo."}
+          hint="Letras, números, guión y guión bajo."
           id="employee-code"
           label="Código de empleado"
         >
           <Input
             autoComplete="off"
-            disabled={busy || isEdit}
+            disabled={busy}
             id="employee-code"
             maxLength={ADMIN_FIELD_LIMITS.employee.employeeCode}
             onChange={(event) => setField("employeeCode", event.target.value)}

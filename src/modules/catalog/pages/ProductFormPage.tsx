@@ -2,6 +2,8 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
+import type { Product } from "@/core/entities";
+import { ProductType } from "@/core/enums";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { useToast } from "@/shared/components/Toast";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
@@ -32,6 +34,7 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
   );
   const mutations = useProductMutations();
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [createdZeroStockProduct, setCreatedZeroStockProduct] = useState<Product | null>(null);
 
   async function submit(dto: ProductEditorDto) {
     try {
@@ -47,8 +50,15 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
         : await mutations.createWithCommercialData(dtoWithActiveBranch);
       showToast({
         title: isEdit ? "Producto actualizado" : "Producto creado",
+        description: !isEdit && product.productType === ProductType.physical && product.tracking.stock
+          ? "Actualmente no tiene existencia."
+          : undefined,
         tone: "success",
       });
+      if (!isEdit && product.productType === ProductType.physical && product.tracking.stock) {
+        setCreatedZeroStockProduct(product);
+        return;
+      }
       router.push(`/catalogo/productos/${product.id}`);
     } catch (caughtError) {
       showToast({
@@ -160,6 +170,22 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
         confirmLabel="Archivar"
         onCancel={() => setConfirmArchive(false)}
         onConfirm={archiveProduct}
+      />
+      <ConfirmDialog
+        open={Boolean(createdZeroStockProduct)}
+        title="Producto creado. Actualmente no tiene existencia."
+        message={`La existencia pertenece a la sucursal activa (${currentBranch.name}). Registra el inventario inicial con el flujo de ajuste para mantener sus validaciones de lote, serie y vencimiento.`}
+        confirmLabel="Agregar existencia inicial"
+        onCancel={() => {
+          if (createdZeroStockProduct) router.push(`/catalogo/productos/${createdZeroStockProduct.id}`);
+          setCreatedZeroStockProduct(null);
+        }}
+        onConfirm={() => {
+          if (createdZeroStockProduct) {
+            router.push(`/inventario/alertas?productId=${encodeURIComponent(createdZeroStockProduct.id)}&openAdjustment=1`);
+          }
+          setCreatedZeroStockProduct(null);
+        }}
       />
     </>
   );

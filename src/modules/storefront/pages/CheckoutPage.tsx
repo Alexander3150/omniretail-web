@@ -157,9 +157,9 @@ export function CheckoutPage() {
   }, [completedByCurrentCheckout, result, setResult]);
   useEffect(() => {
     if (shouldShowCurrentCheckoutConfirmation(result, completedByCurrentCheckout)) {
-      router.replace("/pedido/confirmacion");
+      router.replace(routes.confirmation(result?.trackingToken));
     }
-  }, [completedByCurrentCheckout, result, router]);
+  }, [completedByCurrentCheckout, result, router, routes]);
   if (shouldShowCurrentCheckoutConfirmation(result, completedByCurrentCheckout))
     return <main className="mx-auto max-w-3xl px-5 py-12">Preparando confirmación...</main>;
   if (!items.length)
@@ -189,13 +189,13 @@ export function CheckoutPage() {
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <Link
               className="rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)]"
-              href="/iniciar-sesion"
+              href={routes.login()}
             >
               Iniciar sesión
             </Link>
             <Link
               className="rounded-xl border border-[var(--color-border)] px-5 py-3 font-bold text-[var(--color-text)]"
-              href="/registro"
+              href={routes.register()}
             >
               Crear cuenta
             </Link>

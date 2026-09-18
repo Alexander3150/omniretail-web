@@ -1,5 +1,5 @@
 import { validateEmployeePassword } from "@/config/auth-policy";
-import { PlanStatus } from "@/core/enums";
+import { BusinessPreset, PlanStatus } from "@/core/enums";
 import { BASE_PLAN_ID } from "@/core/subscription/catalog";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
@@ -38,6 +38,7 @@ interface NormalizedPublicContractInput {
   adminName: string;
   adminEmail: string;
   adminPassword: string;
+  businessPreset?: BusinessPreset;
 }
 
 /** Convierte el nombre visible a un identificador URL-safe estable, sin aceptar un slug externo. */
@@ -96,6 +97,7 @@ export class CreatePublicContractService {
         adminEmail: normalized.adminEmail,
         adminPasswordMock: normalized.adminPassword,
         planId: basePlan.id,
+        businessPreset: normalized.businessPreset,
       });
 
       return {
@@ -113,6 +115,7 @@ export class CreatePublicContractService {
     const adminName = input.adminName?.trim() ?? "";
     const adminEmail = input.adminEmail?.trim().toLowerCase() ?? "";
     const adminPassword = input.adminPassword ?? "";
+    const businessPreset = input.businessPreset;
 
     if (!businessName || !adminName || !adminEmail || !adminPassword) {
       throw new PublicContractError(
@@ -143,7 +146,7 @@ export class CreatePublicContractService {
       );
     }
 
-    return { businessName, tenantSlug, adminName, adminEmail, adminPassword };
+    return { businessName, tenantSlug, adminName, adminEmail, adminPassword, businessPreset };
   }
 
   private toPublicError(error: unknown): PublicContractError {

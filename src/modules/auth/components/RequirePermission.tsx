@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { navigationConfig } from "@/config/navigation";
+import { UserType } from "@/core/enums";
 import { canUserEnterPrivateRoute } from "@/modules/auth/application/services/postLoginNavigation";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { EMPLOYEE_HOME_ACCESS_PERMISSION, hasEmployeeHomeAccess } from "@/modules/auth/permissions";
@@ -96,6 +97,14 @@ function Denied() {
  * duplicado entre sidebar y guard de rutas. /cuenta (exacto) usa el
  * mismo espiritu: ver CUENTA_REDIRECT_ROUTE arriba.
  */
+export function normalizeCustomerPermissionPathname(pathname: string): string {
+  const tenantMatch = pathname.match(/^\/tienda\/[^/]+(\/cuenta(?:$|\/.*))/);
+  if (tenantMatch) {
+    return tenantMatch[1] === "/cuenta/" ? "/cuenta" : tenantMatch[1];
+  }
+  return pathname;
+}
+
 export function RequirePermission({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { permissions, user } = useCurrentSession();
@@ -105,11 +114,16 @@ export function RequirePermission({ children }: { children: ReactNode }) {
     return <Denied />;
   }
 
-  if (pathname === CUENTA_REDIRECT_ROUTE || isSessionOnlyRoute(pathname)) {
+  // Normalize dynamic tenant Customer account paths to legacy global paths for permission resolution
+  const resolvePathname = user?.type === UserType.customer
+    ? normalizeCustomerPermissionPathname(pathname)
+    : pathname;
+
+  if (resolvePathname === CUENTA_REDIRECT_ROUTE || isSessionOnlyRoute(resolvePathname)) {
     return <>{children}</>;
   }
 
-  const requiredItem = findRequiredPermissionItem(navigationConfig, pathname);
+  const requiredItem = findRequiredPermissionItem(navigationConfig, resolvePathname);
   const isAllowed =
     requiredItem?.permission === EMPLOYEE_HOME_ACCESS_PERMISSION
       ? hasEmployeeHomeAccess(user, permissions)

@@ -207,7 +207,7 @@ export function HomePage() {
               <Link
                 key={category.name}
                 className="group w-36 shrink-0 snap-start text-center sm:w-40"
-                href={`/catalogo?categoria=${category.id}`}
+                href={routes.catalogCategory(category.id)}
               >
                 <StorefrontCatalogImage
                   alt={category.name}

@@ -142,6 +142,11 @@ export interface RequestPasswordResetInput {
    */
   tenantId?: string;
 }
+export interface ResetPasswordResult {
+  userType: UserType;
+  /** Present only for a Customer, so the UI can return to the authoritative tenant storefront. */
+  tenantSlug?: string;
+}
 export interface ChangePasswordInput {
   /**
    * Se resuelve la identidad desde una sesión activa y no revocada, nunca
@@ -286,8 +291,8 @@ export interface AuthRepository {
    * active -- PERO NUNCA reactiva una cuenta disabled/archived (R-A25:
    * la contraseña cambia, el acceso no).
    */
-  resetPassword(token: string, newPasswordMock: string): Promise<void>;
-  verifyEmail(token: string): Promise<void>;
+  resetPassword(token: string, newPasswordMock: string): Promise<ResetPasswordResult>;
+  verifyEmail(token: string): Promise<{ tenantSlug?: string }>;
   /**
    * Invita (o reinvita) a un empleado YA EXISTENTE a activar su acceso.
    * Nunca crea el User -- eso es responsabilidad de la pantalla de

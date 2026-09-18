@@ -8,10 +8,13 @@ import { FormField } from "@/shared/components/FormField";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Input } from "@/shared/components/Input";
 import { GENERIC_RECOVERY_MESSAGE, PASSWORD_RESET_TOKEN_MINUTES } from "@/config/auth-policy";
+import { useOptionalStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 
 export function RequestPasswordResetPage() {
   const { email, setEmail, fieldErrors, isSubmitting, completed, submit } =
     useRequestPasswordReset();
+  const storefrontRoutes = useOptionalStorefrontRoutes();
+  const loginHref = storefrontRoutes ? storefrontRoutes.login() : "/iniciar-sesion";
 
   if (completed) {
     return (
@@ -42,7 +45,7 @@ export function RequestPasswordResetPage() {
           <p className="mt-6 text-sm text-[var(--color-text-muted)]">
             <Link
               className="font-semibold text-[var(--color-title)] hover:underline"
-              href="/iniciar-sesion"
+              href={loginHref}
             >
               Volver a iniciar sesión
             </Link>
@@ -91,7 +94,7 @@ export function RequestPasswordResetPage() {
         <p className="mt-6 text-center text-sm text-[var(--color-text-muted)]">
           <Link
             className="font-semibold text-[var(--color-title)] hover:underline"
-            href="/iniciar-sesion"
+            href={loginHref}
           >
             Volver a iniciar sesión
           </Link>

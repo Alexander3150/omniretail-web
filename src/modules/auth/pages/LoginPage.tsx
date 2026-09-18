@@ -1,8 +1,9 @@
-"use client";
+﻿"use client";
 
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useLogin } from "@/modules/auth/hooks/useLogin";
+import { useOptionalStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 import { BrandMark } from "@/shared/components/BrandMark";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
@@ -104,6 +105,7 @@ export function LoginPage() {
     cancelMfaChallenge,
   } = useLogin();
   const { showToast } = useToast();
+  const routes = useOptionalStorefrontRoutes();
   const isLockedOut = lockoutSecondsRemaining > 0;
   const lockoutMinutes = Math.floor(lockoutSecondsRemaining / 60);
   const lockoutSeconds = lockoutSecondsRemaining % 60;
@@ -195,13 +197,13 @@ export function LoginPage() {
         >
           {isLockedOut ? (
             <InlineAlert title="Demasiados intentos fallidos." tone="danger">
-              <p>Podrás intentarlo de nuevo en {lockoutDisplay}.</p>
+              <p>Podrías intentarlo de nuevo en {lockoutDisplay}.</p>
             </InlineAlert>
           ) : formError ? (
             <InlineAlert title={formError} tone="danger" />
           ) : null}
 
-          <FormField error={fieldErrors.email} id="login-email" label="Correo electronico">
+          <FormField error={fieldErrors.email} id="login-email" label="Correo electrónico">
             <Input
               autoComplete="email"
               disabled={isSubmitting || isLockedOut}
@@ -236,14 +238,14 @@ export function LoginPage() {
             </label>
             <Link
               className="font-semibold text-[var(--color-title)] hover:underline"
-              href="/recuperar-contrasena"
+              href={routes ? routes.forgotPassword() : "/recuperar-contrasena"}
             >
               ¿Olvidaste tu contraseña?
             </Link>
           </div>
 
           <Button className="w-full" disabled={isSubmitting || tenantLoading || isLockedOut} type="submit">
-            {isSubmitting ? "Ingresando..." : isLockedOut ? `Espera ${lockoutDisplay}` : "Iniciar sesion"}
+            {isSubmitting ? "Ingresando..." : isLockedOut ? `Espera ${lockoutDisplay}` : "Iniciar sesión"}
           </Button>
         </form>
 
@@ -267,13 +269,13 @@ export function LoginPage() {
           ¿No tienes cuenta?{" "}
           <Link
             className="font-semibold text-[var(--color-title)] hover:underline"
-            href="/registro"
+            href={routes ? routes.register() : "/contratar"}
           >
-            Registrate
+            Regístrate
           </Link>
         </p>
         <p className="mt-2 text-center text-sm text-[var(--color-text-muted)]">
-          <Link className="font-semibold text-[var(--color-title)] hover:underline" href="/">
+          <Link className="font-semibold text-[var(--color-title)] hover:underline" href={routes ? routes.home() : "/"}>
             Volver al inicio
           </Link>
         </p>

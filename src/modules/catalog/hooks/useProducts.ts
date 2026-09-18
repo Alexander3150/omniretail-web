@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ProductStatus, ProductType } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
+import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 import { GetProductsService } from "@/modules/catalog/application/services/GetProductsService";
 import type { ProductFiltersState, ProductListItem } from "@/modules/catalog/types/catalog.types";
 
@@ -21,6 +22,7 @@ const initialFilters: ProductFiltersState = {
 export function useProducts() {
   const repositories = useRepositories();
   const service = useMemo(() => new GetProductsService(repositories), [repositories]);
+  const { currentBranch } = useActiveBranch();
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState<ProductListItem[]>([]);
   const [filters, setFilters] = useState<ProductFiltersState>(initialFilters);
@@ -32,13 +34,13 @@ export function useProducts() {
     setLoading(true);
     setError(null);
     try {
-      setProducts(await service.execute());
+      setProducts(await service.execute(currentBranch?.id));
     } catch {
       setError("No se pudieron cargar los productos.");
     } finally {
       setLoading(false);
     }
-  }, [service]);
+  }, [currentBranch, service]);
 
   useDataEvent("product.changed", reload);
   useDataEvent("promotion.changed", reload);
@@ -46,7 +48,7 @@ export function useProducts() {
   useEffect(() => {
     let active = true;
     service
-      .execute()
+      .execute(currentBranch?.id)
       .then((nextProducts) => {
         if (!active) return;
         setProducts(nextProducts);
@@ -61,7 +63,7 @@ export function useProducts() {
     return () => {
       active = false;
     };
-  }, [service]);
+  }, [currentBranch, service]);
 
   const filteredProducts = useMemo(() => filterProducts(products, filters), [filters, products]);
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
