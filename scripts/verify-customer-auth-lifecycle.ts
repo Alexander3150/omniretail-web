@@ -152,6 +152,12 @@ async function runLifecycleTests() {
   const employeeUser = store.getSnapshot().users.find((u) => u.id === (employeeResult as { session: { userId: string } }).session.userId);
   const employeeDest = resolvePostLoginDestination(employeeUser!);
   assert.equal(employeeDest, "/inicio", "existing SaaS post-login destination still works");
+  assert.equal(canUserEnterPrivateRoute(employeeUser!, "/cuenta"), false, "Employee must not access /cuenta");
+  assert.equal(canUserEnterPrivateRoute(employeeUser!, "/cuenta/pedidos"), false, "Employee must not access /cuenta/pedidos");
+
+  const { isCustomerAccountIdentity } = await import("@/modules/customer/components/CustomerAccountShell");
+  assert.equal(isCustomerAccountIdentity(employeeUser!), false, "Employee must be blocked at Customer account boundary");
+  assert.equal(isCustomerAccountIdentity(verifiedUser!), true, "Customer remains allowed at Customer account boundary");
 
   // SCENARIO 11: REQUIREPERMISSION ROUTE NORMALIZATION
   const { normalizeCustomerPermissionPathname } = await import("@/modules/auth/components/RequirePermission");
