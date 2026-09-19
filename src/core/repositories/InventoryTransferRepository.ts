@@ -1,5 +1,5 @@
 import type { InventoryTransfer, InventoryTransferItem } from "@/core/entities";
-import type { InventoryTransferStatus } from "@/core/enums";
+import type { InventoryTransferReason, InventoryTransferStatus } from "@/core/enums";
 
 export interface InventoryTransferFilters {
   tenantId?: string;
@@ -20,9 +20,13 @@ export interface CreateInventoryTransferInput {
   tenantId: string;
   sourceBranchId: string;
   destinationBranchId: string;
+  operationId: string;
   sourceRequestIds?: string[];
+  /** Approve this persisted request in the same transaction as Transfer, reservation and Picking. */
+  approveSourceRequest?: { requestId: string; reviewedByUserId: string };
+  reason?: InventoryTransferReason;
   notes?: string;
-  preparedByUserId?: string;
+  preparedByUserId: string;
   items: CreateInventoryTransferItemInput[];
 }
 
@@ -32,17 +36,26 @@ export interface DispatchInventoryTransferItemInput {
 }
 
 export interface DispatchInventoryTransferInput {
-  dispatchedByUserId?: string;
+  dispatchedByUserId: string;
+  operationId: string;
   items: DispatchInventoryTransferItemInput[];
 }
 
 export interface ReceiveInventoryTransferItemInput {
   itemId: string;
+  /** Quantity accepted in this confirmation, not the cumulative received quantity. */
   receivedQuantity: number;
+  locationId: string;
+  /** Semantic identity of the dispatched source lot; required for lot-tracked products. */
+  lotNumber?: string;
+  expirationDate?: string;
+  /** Exact dispatched serials physically received in this confirmation. */
+  serialNumbers?: string[];
 }
 
 export interface ReceiveInventoryTransferInput {
-  receivedByUserId?: string;
+  receivedByUserId: string;
+  confirmationId: string;
   items: ReceiveInventoryTransferItemInput[];
 }
 
@@ -64,5 +77,9 @@ export interface InventoryTransferRepository {
     id: string,
     input: ReceiveInventoryTransferInput,
   ): Promise<InventoryTransferWithItems>;
-  cancel(id: string, reason?: string): Promise<InventoryTransferWithItems>;
+  cancel(id: string, input: {
+    reason: string;
+    actorUserId: string;
+    operationId: string;
+  }): Promise<InventoryTransferWithItems>;
 }

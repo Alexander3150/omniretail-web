@@ -25,6 +25,7 @@ import type {
   OrderPaymentConfirmationRepository,
   OrderRepository,
   PaymentRepository,
+  PackingRepository,
   PickingRepository,
   PlanRepository,
   ProductMediaRepository,
@@ -74,6 +75,7 @@ import {
   MockOrderPaymentConfirmationRepository,
   MockOrderRepository,
   MockPaymentRepository,
+  MockPackingRepository,
   MockPickingRepository,
   MockPlanRepository,
   MockProductMediaRepository,
@@ -141,6 +143,7 @@ export interface RepositoryRegistry {
   cashShifts: CashShiftRepository;
   cashMovements: CashMovementRepository;
   picking: PickingRepository;
+  packings: PackingRepository;
   productMedia: ProductMediaRepository;
   catalogImageAssets: CatalogImageAssetRepository;
   dispatches: DispatchRepository;
@@ -204,6 +207,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       cashShifts: new MockCashShiftRepository(store, eventBus),
       cashMovements: new MockCashMovementRepository(store, eventBus),
       picking: new MockPickingRepository(store, eventBus),
+      packings: new MockPackingRepository(store, eventBus),
       productMedia: new MockProductMediaRepository(store, eventBus),
       catalogImageAssets: new IndexedDbCatalogImageAssetRepository(),
       dispatches: new MockDispatchRepository(store, eventBus),

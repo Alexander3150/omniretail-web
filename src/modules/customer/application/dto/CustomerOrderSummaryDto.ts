@@ -1,5 +1,6 @@
 import type { Order } from "@/core/entities";
-import type { DeliveryMethod, OrderStatus } from "@/core/enums";
+import { mapOrderStatusToCustomerStatus, type CustomerOrderStatus } from "@/core/orders/mapOrderStatusToCustomerStatus";
+import type { DeliveryMethod } from "@/core/enums";
 
 /**
  * Vista de solo lectura para "Mis pedidos": expone unicamente lo que la
@@ -12,7 +13,7 @@ import type { DeliveryMethod, OrderStatus } from "@/core/enums";
 export interface CustomerOrderSummaryDto {
   id: string;
   orderNumber: string;
-  status: OrderStatus;
+  status: CustomerOrderStatus;
   itemCount: number;
   total: number;
   createdAt: string;
@@ -23,7 +24,7 @@ export function toCustomerOrderSummaryDto(order: Order): CustomerOrderSummaryDto
   return {
     id: order.id,
     orderNumber: order.orderNumber,
-    status: order.status,
+    status: mapOrderStatusToCustomerStatus(order.status),
     itemCount: order.items.length,
     total: order.total,
     createdAt: order.createdAt,

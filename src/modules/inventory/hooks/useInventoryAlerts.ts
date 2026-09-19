@@ -20,9 +20,11 @@ import {
 import { RegisterInventoryAdjustmentService } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
 import {
   ApproveTransferRequestService,
+  CancelTransferRequestService,
   CreateTransferRequestService,
   RejectTransferRequestService,
 } from "@/modules/inventory/application/services/TransferRequestServices";
+import { CancelInventoryTransferService } from "@/modules/inventory/application/services/InventoryTransferServices";
 import {
   INVENTORY_ADJUSTMENT_CREATE_PERMISSION,
   INVENTORY_TRANSFERS_MANAGE_PERMISSION,
@@ -61,12 +63,22 @@ export function useInventoryAlerts() {
     () => ({
       create: new CreateTransferRequestService(repositories),
       approve: new ApproveTransferRequestService(repositories),
+      cancel: new CancelTransferRequestService(repositories),
       reject: new RejectTransferRequestService(repositories),
     }),
     [repositories],
   );
+  const cancelInventoryTransferService = useMemo(
+    () => new CancelInventoryTransferService(repositories), [repositories],
+  );
   const [data, setData] = useState<InventoryAlertsData>(EMPTY_DATA);
   const [branchId, setBranchIdState] = useState("");
+  const currentBranchId = currentBranch?.id ?? "";
+  const [previousCurrentBranchId, setPreviousCurrentBranchId] = useState(currentBranchId);
+  if (previousCurrentBranchId !== currentBranchId) {
+    setPreviousCurrentBranchId(currentBranchId);
+    setBranchIdState("");
+  }
   const [search, setSearchState] = useState("");
   const [categoryId, setCategoryIdState] = useState("all");
   const [status, setStatusState] = useState<InventoryStatusFilter>("all");
@@ -77,7 +89,8 @@ export function useInventoryAlerts() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [loadedBranchId, setLoadedBranchId] = useState("");
-  const effectiveBranchId = branchId || currentBranch?.id || "";
+  const effectiveBranchId =
+    previousCurrentBranchId === currentBranchId ? branchId || currentBranchId : currentBranchId;
   // UI action gating (feature/saas-entitlement-enforcement §7/§8): el permiso de Role sigue
   // siendo obligatorio, la capability SaaS se suma -- nunca lo sustituye. El backend
   // (RegisterInventoryAdjustmentService/TransferRequestServices) sigue siendo la autoridad final.
@@ -135,6 +148,7 @@ export function useInventoryAlerts() {
   useDataEvent("inventory.changed", reload);
   useDataEvent("stock.changed", reload);
   useDataEvent("inventory-transfer-request.changed", reload);
+  useDataEvent("inventory-transfer.changed", reload);
   useDataEvent("product.changed", reload);
   useDataEvent("category.changed", reload);
   useDataEvent("business-config.changed", reload);
@@ -225,12 +239,30 @@ export function useInventoryAlerts() {
     }
   }
 
+  async function cancelTransfer(transferId: string, reason: string, operationId: string) {
+    if (busy) throw new Error("Hay otra operación en curso.");
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await cancelInventoryTransferService.execute(transferId, reason, operationId);
+      await reload();
+      return result.transfer;
+    } catch (caughtError) {
+      const message = cleanInventoryError(caughtError, "No se pudo cancelar el traslado.");
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function approveTransferRequest(requestId: string) {
     setBusy(true);
     setError(null);
     try {
-      await transferServices.approve.execute(requestId);
+      const transfer = await transferServices.approve.execute(requestId);
       await reload();
+      return transfer;
     } catch (caughtError) {
       const message = cleanInventoryError(caughtError, "No se pudo aprobar la solicitud.");
       setError(message);
@@ -255,11 +287,28 @@ export function useInventoryAlerts() {
     }
   }
 
+  async function cancelTransferRequest(requestId: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await transferServices.cancel.execute(requestId);
+      await reload();
+      return result;
+    } catch (caughtError) {
+      const message = cleanInventoryError(caughtError, "No se pudo cancelar la solicitud.");
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return {
     data,
     kpis: filteredKpis,
     rows: filteredRows,
     branchId: effectiveBranchId,
+    currentBranchId,
     activeBranch,
     branches: data.branches.length ? data.branches : headerBranches,
     categories: data.categories,
@@ -288,8 +337,10 @@ export function useInventoryAlerts() {
     canManageTransfers,
     adjustStock,
     requestTransfer,
+    cancelTransfer,
     approveTransferRequest,
     rejectTransferRequest,
+    cancelTransferRequest,
   };
 }
 

@@ -1,4 +1,5 @@
 import type {
+  DeliveryMethod,
   PickingIncidentStatus,
   PickingIncidentType,
   PickingItemStatus,
@@ -6,6 +7,7 @@ import type {
   PickingStatus,
 } from "@/core/enums";
 import type { PickingInventoryAvailability } from "@/core/repositories";
+import type { StorePickupContactSnapshot } from "@/core/types/storePickupContact.types";
 
 export interface PickingProgressDto {
   requiredQuantity: number;
@@ -16,8 +18,13 @@ export interface PickingProgressDto {
 
 export interface PickingQueueItemDto {
   pickingOrderId: string;
-  orderId: string;
+  orderId?: string;
   orderReference: string;
+  customerName: string;
+  storePickupContact: StorePickupContactSnapshot | null;
+  deliveryMethod: DeliveryMethod | "transfer";
+  sourceType?: "order" | "transfer";
+  sourceId?: string;
   branchId: string;
   status: PickingStatus;
   priority: PickingPriority;
@@ -83,10 +90,16 @@ export interface PickingReleaseDto {
 
 export interface PickingDetailDto {
   pickingOrderId: string;
-  orderId: string;
+  orderId?: string;
   orderReference: string;
+  customerName: string;
+  storePickupContact: StorePickupContactSnapshot | null;
+  deliveryMethod: DeliveryMethod | "transfer";
+  sourceType?: "order" | "transfer";
+  sourceId?: string;
   branchId: string;
   status: PickingStatus;
+  priority: PickingPriority;
   assignedUserId: string | null;
   progress: PickingProgressDto;
   startedAt: string | null;
@@ -100,7 +113,7 @@ export interface PickingDetailDto {
 
 export interface PickingActionResultDto {
   pickingOrderId: string;
-  orderId: string;
+  orderId?: string;
   status: PickingStatus;
   assignedUserId: string | null;
   updatedAt: string;

@@ -1,4 +1,4 @@
-import type { InventoryReservation, Order, Payment } from "@/core/entities";
+import type { InventoryReservation, Order, Payment, PickingOrder } from "@/core/entities";
 import { ecommercePaymentPolicy } from "@/config/ecommerce-payment-policy";
 import { BranchStatus, OrderSource, OrderStatus, PaymentStatus } from "@/core/enums";
 import { InsufficientInventoryAvailabilityError } from "@/core/inventory/stockAvailability";
@@ -8,14 +8,22 @@ import type {
   OrderPaymentConfirmationRepository,
 } from "@/core/repositories";
 import type { DataEventName, DataEventPayload } from "@/core/types/events.types";
+import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
+import type { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
 import type { InventoryReservationMutationResult } from "@/infrastructure/mock/repositories/inventoryReservationMutations";
-import { reserveStockTrackedOrderItemsInDatabase } from "@/infrastructure/mock/repositories/orderReservationMutations";
+import { scheduleDeferredFulfillmentInTransaction } from "@/infrastructure/mock/repositories/orderFulfillmentMutations";
+
+export interface MockOrderPaymentConfirmationRepositoryTestHooks {
+  afterPickingCreated?: () => void;
+}
 
 interface ConfirmationMutationResult extends ConfirmOrderPaymentResult {
   orderChanged: boolean;
   paymentChanged: boolean;
   reservationChanges: InventoryReservationMutationResult[];
+  pickingOrder?: PickingOrder;
+  pickingCreated: boolean;
 }
 
 interface DiscardedCheckout {
@@ -27,6 +35,14 @@ export class MockOrderPaymentConfirmationRepository
   extends BaseMockRepository
   implements OrderPaymentConfirmationRepository
 {
+  constructor(
+    store: MockDatabaseStore,
+    eventBus: DataEventBus,
+    private readonly testHooks: MockOrderPaymentConfirmationRepositoryTestHooks = {},
+  ) {
+    super(store, eventBus);
+  }
+
   async confirm(input: ConfirmOrderPaymentInput): Promise<ConfirmOrderPaymentResult> {
     assertInput(input);
 
@@ -76,11 +92,14 @@ export class MockOrderPaymentConfirmationRepository
           );
         }
 
-        const reservationChanges = reserveStockTrackedOrderItemsInDatabase(order, db, {
+        const fulfillment = scheduleDeferredFulfillmentInTransaction(order, db, {
           id: (prefix) => this.id(prefix),
           now: () => this.now(),
         });
-        const changedReservations = reservationChanges.filter((change) => change.changed);
+        if (fulfillment.pickingCreated) this.testHooks.afterPickingCreated?.();
+        const changedReservations = fulfillment.reservationChanges.filter(
+          (change) => change.changed,
+        );
         if (canConfirm) {
           const now = this.now();
           payment.status = PaymentStatus.approved;
@@ -91,11 +110,16 @@ export class MockOrderPaymentConfirmationRepository
         return {
           order,
           payment,
-          inventoryReservations: reservationChanges.map((change) => change.reservation),
-          idempotent: alreadyConfirmed && changedReservations.length === 0,
+          inventoryReservations: fulfillment.reservationChanges.map(
+            (change) => change.reservation,
+          ),
+          idempotent:
+            alreadyConfirmed && changedReservations.length === 0 && !fulfillment.pickingCreated,
           orderChanged: canConfirm,
           paymentChanged: canConfirm,
-          reservationChanges,
+          reservationChanges: fulfillment.reservationChanges,
+          pickingOrder: fulfillment.pickingOrder,
+          pickingCreated: fulfillment.pickingCreated,
         };
       });
     } catch (cause) {
@@ -186,6 +210,16 @@ export class MockOrderPaymentConfirmationRepository
         tenantId: result.order.tenantId,
         branchId: result.order.branchId,
         action: "status_changed",
+      });
+    }
+    if (result.pickingCreated && result.pickingOrder) {
+      this.emitSafely("picking.changed", {
+        entityId: result.pickingOrder.id,
+        tenantId: result.pickingOrder.tenantId,
+        branchId: result.pickingOrder.branchId,
+        orderId: result.order.id,
+        pickingOrderId: result.pickingOrder.id,
+        action: "created",
       });
     }
   }

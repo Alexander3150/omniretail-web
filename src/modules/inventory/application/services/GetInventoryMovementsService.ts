@@ -63,7 +63,7 @@ export class GetInventoryMovementsService {
       purchaseOrders,
       receipts,
       dispatches,
-      orders,
+      orders: orders.filter((order) => order.tenantId === tenantId),
       sales,
       inventoryAdjustments,
       inventoryTransfers,
@@ -168,6 +168,9 @@ function getMovementDisplayType(
     if (movement.branchId === transfer.transfer.destinationBranchId) return "transfer_in";
     return "transfer";
   }
+  if (movement.referenceType === "return") return "return";
+  if (movement.referenceType === "void") return "void";
+  if (movement.referenceType === "order") return "store_pickup";
   if (movement.type === InventoryMovementType.in) {
     if (movement.referenceType === "receipt" || movement.referenceType === "purchase_order") {
       return "purchase_in";
@@ -177,6 +180,7 @@ function getMovementDisplayType(
     return "manual_in";
   }
   if (movement.type === InventoryMovementType.out) {
+    if (movement.referenceType === "dispatch") return "dispatch";
     if (movement.referenceType === "sale") return "sale";
     if (movement.referenceType === "transfer") return "transfer_out";
     if (movement.referenceType === "stock_count") return "inventory_adjustment";
@@ -198,6 +202,10 @@ function getMovementTypeLabel(type: InventoryMovementRow["displayType"]) {
     manual_in: "Entrada manual",
     manual_out: "Salida manual",
     sale: "Venta",
+    dispatch: "Despacho",
+    return: "Devolución",
+    void: "Anulación",
+    store_pickup: "Retiro en tienda",
     in: "Entrada",
     out: "Salida",
     adjustment: "Ajuste",
@@ -209,10 +217,24 @@ function getMovementTypeLabel(type: InventoryMovementRow["displayType"]) {
 function getMovementTypeTone(
   type: InventoryMovementRow["displayType"],
 ): InventoryMovementRow["typeTone"] {
-  if (type === "purchase_in" || type === "transfer_in" || type === "manual_in" || type === "in") {
+  if (
+    type === "purchase_in" ||
+    type === "transfer_in" ||
+    type === "manual_in" ||
+    type === "return" ||
+    type === "void" ||
+    type === "in"
+  ) {
     return "success";
   }
-  if (type === "sale" || type === "transfer_out" || type === "manual_out" || type === "out") {
+  if (
+    type === "sale" ||
+    type === "dispatch" ||
+    type === "store_pickup" ||
+    type === "transfer_out" ||
+    type === "manual_out" ||
+    type === "out"
+  ) {
     return "danger";
   }
   if (type === "inventory_adjustment" || type === "shrinkage" || type === "adjustment") {
@@ -255,7 +277,7 @@ function buildReferenceResolver({
 }: {
   purchaseOrders: Array<{ id: string; number: string }>;
   receipts: Array<{ id: string; number: string }>;
-  dispatches: Array<{ id: string; trackingNumber?: string }>;
+  dispatches: Array<{ id: string; orderId?: string; trackingNumber?: string }>;
   orders: Array<{ id: string; orderNumber: string }>;
   sales: Array<{ id: string; number: string }>;
   inventoryAdjustments: InventoryAdjustment[];
@@ -263,8 +285,9 @@ function buildReferenceResolver({
 }) {
   const purchaseOrderById = new Map(purchaseOrders.map((item) => [item.id, item.number]));
   const receiptById = new Map(receipts.map((item) => [item.id, item.number]));
-  const dispatchById = new Map(dispatches.map((item) => [item.id, item.trackingNumber ?? item.id]));
   const orderById = new Map(orders.map((item) => [item.id, item.orderNumber]));
+  const dispatchById = new Map(dispatches.map((item) =>
+    [item.id, item.orderId ? orderById.get(item.orderId) : undefined]));
   const saleById = new Map(sales.map((item) => [item.id, item.number]));
   const adjustmentById = new Map(inventoryAdjustments.map((item) => [item.id, item.number]));
   const transferById = new Map(
@@ -282,7 +305,7 @@ function buildReferenceResolver({
     }
     if (referenceType === "dispatch") {
       const number = dispatchById.get(referenceId);
-      return number ? `Despacho ${number}` : "-";
+      return number ?? "-";
     }
     if (referenceType === "order") {
       const number = orderById.get(referenceId);

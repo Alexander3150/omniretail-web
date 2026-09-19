@@ -19,18 +19,45 @@ export interface DispatchValidationResult {
   trackingNumber?: string;
 }
 
-export function validateDispatchForm(
+export interface DispatchShipmentFormValues {
+  carrierName: string;
+  trackingNumber: string;
+}
+
+export interface DispatchShipmentValidationResult {
+  valid: boolean;
+  errors: Record<string, string>;
+  carrierName?: string;
+  trackingNumber?: string;
+}
+
+export function validateDispatchShipment(
   transportMode: TransportMode,
-  values: DispatchFormValues,
-): DispatchValidationResult {
+  values: DispatchShipmentFormValues,
+): DispatchShipmentValidationResult {
   const errors: Record<string, string> = {};
   const carrierName = values.carrierName.trim() || undefined;
   const trackingNumber = values.trackingNumber.trim() || undefined;
 
   if (transportMode === TransportMode.third_party) {
-    if (!carrierName) errors.carrierName = "El transportista es obligatorio.";
+    if (!carrierName) errors.carrierName = "El transporte es obligatorio.";
     if (!trackingNumber) errors.trackingNumber = "El número de guía es obligatorio.";
   }
+
+  return {
+    valid: Object.keys(errors).length === 0,
+    errors,
+    carrierName,
+    trackingNumber,
+  };
+}
+
+export function validateDispatchForm(
+  transportMode: TransportMode,
+  values: DispatchFormValues,
+): DispatchValidationResult {
+  const shipment = validateDispatchShipment(transportMode, values);
+  const errors: Record<string, string> = { ...shipment.errors };
   if (values.packages.length === 0) errors.packages = "Agrega al menos un paquete.";
 
   const seen = new Set<string>();
@@ -59,7 +86,7 @@ export function validateDispatchForm(
     valid: Object.keys(errors).length === 0,
     errors,
     packages,
-    carrierName,
-    trackingNumber,
+    carrierName: shipment.carrierName,
+    trackingNumber: shipment.trackingNumber,
   };
 }

@@ -61,6 +61,7 @@ interface CheckoutModalProps {
   onProcessCardPayment: (outcome: CardTerminalOutcome) => void;
   onInvoiceDataChange: (patch: Partial<CheckoutInvoiceDataDto>) => void;
   onDeliveryAddressChange: (patch: Partial<NonNullable<CheckoutDto["deliveryAddress"]>>) => void;
+  onStorePickupContactChange: (patch: Partial<NonNullable<CheckoutDto["storePickupContact"]>>) => void;
   onValidate: () => void;
   onConfirm: () => void;
 }
@@ -102,6 +103,7 @@ export function CheckoutModal({
   onProcessCardPayment,
   onInvoiceDataChange,
   onDeliveryAddressChange,
+  onStorePickupContactChange,
   onValidate,
   onConfirm,
 }: CheckoutModalProps) {
@@ -375,6 +377,35 @@ export function CheckoutModal({
                   />
                 </FormField>
               </div>
+            </div>
+          ) : null}
+          {checkout.deliveryMethod === DeliveryMethod.store_pickup ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <FormField
+                id="pickup-recipient"
+                label="Nombre de quien retira *"
+                error={errors.recipientName}
+              >
+                <Input
+                  id="pickup-recipient"
+                  maxLength={160}
+                  onChange={(event) =>
+                    onStorePickupContactChange({ recipientName: event.target.value })
+                  }
+                  value={checkout.storePickupContact?.recipientName ?? ""}
+                />
+              </FormField>
+              <FormField id="pickup-phone" label="Teléfono *" error={errors.recipientPhone}>
+                <Input
+                  id="pickup-phone"
+                  inputMode="numeric"
+                  maxLength={8}
+                  onChange={(event) =>
+                    onStorePickupContactChange({ recipientPhone: event.target.value })
+                  }
+                  value={checkout.storePickupContact?.recipientPhone ?? ""}
+                />
+              </FormField>
             </div>
           ) : null}
         </section>

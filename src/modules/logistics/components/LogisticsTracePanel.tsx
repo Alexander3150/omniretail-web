@@ -12,7 +12,7 @@ export function LogisticsTracePanel({ items, state, error }: LogisticsTracePanel
     <section className="space-y-3">
       <div>
         <h3 className="font-bold text-[var(--color-title)]">Trazabilidad de preparación</h3>
-        <p className="text-sm text-[var(--color-text-muted)]">Evidencia de inventario consumida durante Picking. Solo lectura.</p>
+        <p className="text-sm text-[var(--color-text-muted)]">Selección de Picking y movimientos físicos al finalizar la entrega. Solo lectura.</p>
       </div>
       {state === "loading" ? <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-muted)]">Consultando trazabilidad...</p> : null}
       {state === "unauthorized" ? <InlineAlert description="No tiene permisos para consultar la trazabilidad de picking." title="Trazabilidad restringida" tone="warning" /> : null}
@@ -31,8 +31,8 @@ export function LogisticsTracePanel({ items, state, error }: LogisticsTracePanel
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[640px] text-left text-sm">
                   <thead><tr className="border-t border-[var(--color-border)] text-xs text-[var(--color-text-muted)]"><th className="px-4 py-2">Cantidad</th><th className="px-4 py-2">Ubicación</th><th className="px-4 py-2">Lote</th><th className="px-4 py-2">Vencimiento</th><th className="px-4 py-2">Serie</th></tr></thead>
-                  <tbody>{item.allocations.map((allocation) => (
-                    <tr className="border-t border-[var(--color-border)]" key={allocation.inventoryMovementId}>
+                  <tbody>{item.allocations.map((allocation, index) => (
+                    <tr className="border-t border-[var(--color-border)]" key={allocation.inventoryMovementId ?? `${item.pickingItemId}-${index}`}>
                       <td className="px-4 py-2">{allocation.quantity}</td>
                       <td className="px-4 py-2">{allocation.location ? `${allocation.location.code} · ${allocation.location.name}` : "No aplica"}</td>
                       <td className="px-4 py-2">{allocation.lot?.number ?? "No aplica"}</td>

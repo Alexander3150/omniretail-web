@@ -13,13 +13,6 @@ export interface ConfirmDispatchInput {
   operationId: string;
   carrierName?: string;
   trackingNumber?: string;
-  packages?: ConfirmDispatchPackageInput[];
-}
-
-export interface ConfirmDispatchPackageInput {
-  number: string;
-  weight?: number;
-  description?: string;
 }
 
 export type DispatchNotificationStatus =

@@ -2,6 +2,8 @@
 
 import { useCallback, useMemo, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { UserType } from "@/core/enums";
+import type { User } from "@/core/entities";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { EntitlementProvider } from "@/shared/providers/EntitlementProvider";
@@ -12,6 +14,10 @@ import { useOptionalStorefrontRoutes } from "@/modules/storefront/hooks/useStore
 interface CustomerAccountShellProps {
   children: ReactNode;
   navigationItems: NavigationItem[];
+}
+
+export function isCustomerAccountIdentity(user: Pick<User, "type"> | null | undefined): boolean {
+  return user?.type === UserType.customer;
 }
 
 /**
@@ -81,6 +87,16 @@ export function CustomerAccountShell({ children, navigationItems }: CustomerAcco
   }, [navigationItems, storefrontRoutes]);
 
   const homeHref = storefrontRoutes ? storefrontRoutes.home() : "/";
+
+  if (!isCustomerAccountIdentity(user)) {
+    return (
+      <main className="flex min-h-[40vh] items-center justify-center">
+        <p className="text-sm text-[var(--color-text-muted)]">
+          No tienes permiso para acceder a esta seccion.
+        </p>
+      </main>
+    );
+  }
 
   return (
     <EntitlementProvider>

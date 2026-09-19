@@ -1,8 +1,8 @@
-import type { OrderStatus } from "@/core/enums";
+import type { CustomerOrderStatus } from "@/core/orders/mapOrderStatusToCustomerStatus";
 
 export interface StorefrontOrderTrackingDto {
   orderNumber: string;
-  status: OrderStatus;
+  status: CustomerOrderStatus;
   total: number;
   items: Array<{
     sku: string;

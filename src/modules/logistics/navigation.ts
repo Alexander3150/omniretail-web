@@ -4,13 +4,24 @@ export const logisticsNavigation = [
   {
     id: "logistics",
     label: "Logística",
-    permission: "logistics.dispatch.read",
     children: [
+      {
+        id: "logistics-picking",
+        label: "Mesa de Picking",
+        href: "/logistica/picking",
+        permission: "logistics.picking.read",
+      },
       {
         id: "logistics-dispatches",
         label: "Packing y Despacho",
         href: "/logistica/despachos",
-        permission: "logistics.dispatch.read",
+        permission: "logistics.packing.read",
+      },
+      {
+        id: "logistics-history",
+        label: "Historial de pedidos",
+        href: "/logistica/historial",
+        permission: "logistics.history.read",
       },
     ],
   },

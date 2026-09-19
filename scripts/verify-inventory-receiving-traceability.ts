@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { publicStorefrontSlug } from "@/config/publicStorefront";
 import {
   InventoryAdjustmentType,
+  InventoryTransferStatus,
   PurchaseOrderStatus,
   ReceiptLineStatus,
   ReceiptStatus,
+  SerialStatus,
 } from "@/core/enums";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { fromBaseQuantity, toBaseQuantity } from "@/core/units";
@@ -16,9 +18,17 @@ import {
   MockBusinessConfigRepository,
   MockCategoryRepository,
   MockInventoryRepository,
+  MockInventoryTransferRepository,
   MockInventoryTransferRequestRepository,
+  MockDispatchRepository,
+  MockPackingRepository,
+  MockPickingRepository,
+  MockOrderRepository,
+  MockCustomerRepository,
+  MockIncidentTypeRepository,
   MockPlanRepository,
   MockProductRepository,
+  MockProductSalesPriceTierRepository,
   MockProductMediaRepository,
   MockProductKitComponentRepository,
   MockPromotionRepository,
@@ -36,6 +46,11 @@ import { RegisterInventoryAdjustmentService } from "@/modules/inventory/applicat
 import { GetPosProductsService } from "@/modules/pos/application/services/GetPosProductsService";
 import { GetStorefrontDiscoveryService } from "@/modules/storefront/application/services/GetStorefrontDiscoveryService";
 import { GetInventoryAlertsService } from "@/modules/inventory/application/services/GetInventoryAlertsService";
+import { CreateInventoryTransferService } from "@/modules/inventory/application/services/InventoryTransferServices";
+import { PickingApplicationService } from "@/modules/logistics/application/services/PickingApplicationService";
+import { PackingApplicationService } from "@/modules/logistics/application/services/PackingApplicationService";
+import { DispatchApplicationService } from "@/modules/logistics/application/services/DispatchApplicationService";
+import { ReceivingDocumentDetailService } from "@/modules/receiving/application/services/ReceivingDocumentDetailService";
 import {
   validateLines,
 } from "@/modules/receiving/application/services/ReceivingDocumentDetailService";
@@ -75,6 +90,7 @@ const repositories = {
   roles: new MockRoleRepository(store, events),
   tenants: new MockTenantRepository(store, events),
   products: new MockProductRepository(store, events),
+  productSalesPriceTiers: new MockProductSalesPriceTierRepository(store, events),
   inventory: new MockInventoryRepository(store, events),
   inventoryAdjustments: adjustments,
   supplierProducts: new MockSupplierProductRepository(store, events),
@@ -207,6 +223,232 @@ async function verifyPurchaseOrderReceivingStatus() {
     }],
   );
   assert.equal((await purchaseOrders.getById(incidentOrder.id))?.status, PurchaseOrderStatus.received);
+}
+
+async function verifyTransferReceipt(kind: "plain" | "lot" | "multi_lot" | "serial", partial: boolean) {
+  const transferStorage = new MemoryStorageAdapter();
+  const transferStore = new MockDatabaseStore(transferStorage);
+  const productId = `receipt-${kind}-${partial ? "partial" : "full"}`;
+  const serials = Array.from({ length: 5 }, (_, index) => `RECEIPT-${kind}-${index + 1}`);
+  transferStore.transact((db) => {
+    const template = db.products.find((entry) => entry.id === "prod-screws");
+    assert.ok(template);
+    const admin = db.users.find((entry) => entry.id === "user-admin");
+    assert.ok(admin);
+    db.users.push({ ...admin, id: `foreign-${productId}`, tenantId: "tenant-foreign" });
+    db.products.push({ ...template, id: productId, sku: productId,
+      tracking: { stock: true, lot: kind !== "plain", expiration: kind !== "plain",
+        serial: kind === "serial" } });
+    db.inventoryBalances.push({ id: `${productId}-balance`, tenantId: "tenant-demo",
+      branchId: "branch-centro", productId, locationId: "loc-centro-a",
+      quantity: 5, reservedQuantity: 0, updatedAt: new Date().toISOString() });
+    if (kind !== "plain") {
+      db.stockLots.push({ id: `${productId}-lot`, tenantId: "tenant-demo",
+        branchId: "branch-centro", productId, locationId: "loc-centro-a",
+        lotNumber: "L-001", expirationDate: "2030-04-30T00:00:00.000Z",
+        quantity: kind === "multi_lot" ? 3 : 5, createdAt: new Date().toISOString() });
+    }
+    if (kind === "multi_lot") {
+      db.stockLots.push({ id: `${productId}-lot-next`, tenantId: "tenant-demo",
+        branchId: "branch-centro", productId, locationId: "loc-centro-a",
+        lotNumber: "L-002", expirationDate: "2031-04-30T00:00:00.000Z",
+        quantity: 2, createdAt: new Date().toISOString() });
+    }
+    if (kind === "serial") serials.forEach((serialNumber, index) => {
+      db.serialNumbers.push({ id: `${productId}-serial-${index}`, tenantId: "tenant-demo",
+        branchId: "branch-centro", productId, locationId: "loc-centro-a",
+        lotId: `${productId}-lot`, serialNumber, status: SerialStatus.available,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    });
+  });
+  const transferEvents = new DataEventBus();
+  let activeBranchId = "branch-norte";
+  const auth = { getCurrentSessionId: async () => "receipt-transfer-session",
+    getSession: async () => ({ id: "receipt-transfer-session", userId: "user-admin",
+      activeBranchId, createdAt: "2026-09-01T00:00:00.000Z",
+      expiresAt: "2099-01-01T00:00:00.000Z", rememberMe: false }) };
+  const repo = {
+    auth,
+    branches: new MockBranchRepository(transferStore, transferEvents),
+    businessConfig: new MockBusinessConfigRepository(transferStore, transferEvents),
+    categories: new MockCategoryRepository(transferStore, transferEvents),
+    customers: new MockCustomerRepository(transferStore, transferEvents),
+    dispatches: new MockDispatchRepository(transferStore, transferEvents),
+    incidentTypes: new MockIncidentTypeRepository(transferStore, transferEvents),
+    inventory: new MockInventoryRepository(transferStore, transferEvents),
+    inventoryTransfers: new MockInventoryTransferRepository(transferStore, transferEvents),
+    inventoryTransferRequests: new MockInventoryTransferRequestRepository(transferStore, transferEvents),
+    orders: new MockOrderRepository(transferStore, transferEvents),
+    packings: new MockPackingRepository(transferStore, transferEvents),
+    picking: new MockPickingRepository(transferStore, transferEvents),
+    plans: new MockPlanRepository(transferStore, transferEvents),
+    products: new MockProductRepository(transferStore, transferEvents),
+    productKitComponents: new MockProductKitComponentRepository(transferStore, transferEvents),
+    purchaseOrders: new MockPurchaseOrderRepository(transferStore, transferEvents),
+    receipts: new MockReceiptRepository(transferStore, transferEvents),
+    roles: new MockRoleRepository(transferStore, transferEvents),
+    supplierProducts: new MockSupplierProductRepository(transferStore, transferEvents),
+    tenants: new MockTenantRepository(transferStore, transferEvents),
+    tenantSubscriptions: new MockTenantSubscriptionRepository(transferStore, transferEvents),
+    units: new MockUnitRepository(transferStore, transferEvents),
+    users: new MockUserRepository(transferStore, transferEvents),
+  } as unknown as RepositoryRegistry;
+  const created = await new CreateInventoryTransferService(repo).execute({
+    destinationBranchId: "branch-norte", sourceBranchId: "branch-centro", productId,
+    quantity: 5, operationId: `receipt-create-${productId}`,
+  });
+  const transferId = created.transfer.id;
+  activeBranchId = "branch-centro";
+  const picking = new PickingApplicationService(repo);
+  const pickingOrder = transferStore.getSnapshot().pickingOrders.find((entry) =>
+    entry.sourceType === "transfer" && entry.sourceId === transferId);
+  assert.ok(pickingOrder);
+  await picking.assign("branch-centro", pickingOrder.id);
+  const pickingLine = (await picking.getDetail("branch-centro", pickingOrder.id)).lines[0];
+  await picking.updateLine("branch-centro", { pickingOrderId: pickingOrder.id,
+    pickingLineId: pickingLine.pickingLineId, pickedQuantity: 5,
+    serialNumbers: kind === "serial" ? serials : undefined,
+    operationId: `receipt-pick-${productId}` });
+  await picking.complete("branch-centro", pickingOrder.id);
+  const packing = new PackingApplicationService(repo);
+  const packingOrder = transferStore.getSnapshot().packings.find((entry) =>
+    entry.sourceType === "transfer" && entry.sourceId === transferId);
+  assert.ok(packingOrder);
+  let packingDetail = await packing.getDetail("branch-centro", packingOrder.id);
+  packingDetail = (await packing.savePreparation("branch-centro", {
+    packingId: packingOrder.id, operationId: `receipt-prepare-${productId}`,
+    expectedVersion: packingDetail.version,
+    checklist: { packageProtectionChecked: true, documentIncludedChecked: true,
+      recipientVerifiedChecked: true }, totalWeight: 1, packageCount: 1,
+  })).packing;
+  packingDetail = (await packing.generateLabel("branch-centro", {
+    packingId: packingOrder.id, operationId: `receipt-label-${productId}`,
+    expectedVersion: packingDetail.version,
+  })).packing;
+  packingDetail = (await packing.registerLabelPrint("branch-centro", {
+    packingId: packingOrder.id, operationId: `receipt-print-${productId}`,
+    expectedVersion: packingDetail.version,
+    labelGenerationId: packingDetail.labelGenerationId!,
+  })).packing;
+  await packing.finalize("branch-centro", { packingId: packingOrder.id,
+    operationId: `receipt-finalize-${productId}`, expectedVersion: packingDetail.version });
+  await new DispatchApplicationService(repo).confirmTransfer("branch-centro", transferId,
+    `receipt-dispatch-${productId}`);
+  activeBranchId = "branch-norte";
+  const receiving = new ReceivingDocumentDetailService(repo);
+  const detail = await receiving.getDocument("transfer", transferId, "branch-norte");
+  assert.equal(detail.readOnly, false);
+  if (kind === "multi_lot") {
+    assert.equal(detail.lines.length, 2);
+    const firstLot = detail.lines.find((entry) => entry.lotNumber === "L-001");
+    const nextLot = detail.lines.find((entry) => entry.lotNumber === "L-002");
+    assert.equal(firstLot?.orderedQuantity, 3);
+    assert.equal(nextLot?.orderedQuantity, 2);
+    assert.ok(firstLot);
+    await receiving.confirm({ documentType: "transfer", documentId: transferId,
+      confirmationId: `receipt-multi-first-${productId}`, incidents: [],
+      lines: [{ ...firstLot, receivedNow: 2, locationId: "loc-norte-a" }] });
+    const pending = await receiving.getDocument("transfer", transferId, "branch-norte");
+    assert.equal(pending.lines.find((entry) => entry.lotNumber === "L-001")?.pendingQuantity, 1);
+    assert.equal(pending.lines.find((entry) => entry.lotNumber === "L-002")?.pendingQuantity, 2);
+    await receiving.confirm({ documentType: "transfer", documentId: transferId,
+      confirmationId: `receipt-multi-second-${productId}`, incidents: [],
+      lines: pending.lines.map((entry) => ({ ...entry, receivedNow: entry.pendingQuantity,
+        locationId: "loc-norte-a" })) });
+    const final = transferStore.getSnapshot();
+    assert.equal(final.inventoryTransfers.find((entry) => entry.id === transferId)?.status,
+      InventoryTransferStatus.received);
+    assert.deepEqual(final.stockLots.filter((entry) => entry.productId === productId &&
+      entry.branchId === "branch-norte").map((entry) => [entry.lotNumber, entry.quantity]).sort(),
+    [["L-001", 3], ["L-002", 2]]);
+    return;
+  }
+  assert.equal(detail.lines.length, 1);
+  const line = detail.lines[0];
+  if (kind !== "plain") {
+    assert.equal(line.lotNumber, "L-001");
+    assert.equal(line.expirationDate, "2030-04-30");
+  }
+  if (kind === "serial") {
+    assert.deepEqual(line.serialNumbersText.split("\n"), serials);
+    assert.equal(line.receivedNow, 0);
+  }
+  const firstQuantity = partial ? 3 : 5;
+  const firstLine = { ...line, locationId: "loc-norte-a", receivedNow: firstQuantity,
+    serialNumbersText: kind === "serial" ? serials.slice(0, firstQuantity).join("\n") : "" };
+  const command = { documentType: "transfer" as const, documentId: transferId,
+    lines: [firstLine], incidents: [], confirmationId: `receipt-first-${productId}` };
+  activeBranchId = "branch-centro";
+  await assert.rejects(receiving.confirm({ ...command, confirmationId: `wrong-branch-${productId}` }),
+    /sucursal destino debe estar activa/i);
+  activeBranchId = "branch-norte";
+  await assert.rejects(repo.inventoryTransfers.markReceived(transferId, {
+    receivedByUserId: `foreign-${productId}`, confirmationId: `foreign-${productId}`,
+    items: [{ itemId: created.items[0].id, receivedQuantity: 1,
+      locationId: "loc-norte-a", lotNumber: line.lotNumber,
+      expirationDate: line.expirationDate,
+      serialNumbers: kind === "serial" ? [serials[0]] : [] }],
+  }), /actor is not active in tenant/);
+  await receiving.confirm(command);
+  await receiving.confirm(command);
+  const afterFirst = transferStore.getSnapshot();
+  const destinationQuantity = () => transferStore.getSnapshot().inventoryBalances
+    .filter((entry) => entry.productId === productId && entry.branchId === "branch-norte")
+    .reduce((sum, entry) => sum + entry.quantity, 0);
+  assert.equal(destinationQuantity(), firstQuantity);
+  assert.equal(afterFirst.inventoryTransfers.find((entry) => entry.id === transferId)?.status,
+    partial ? InventoryTransferStatus.inTransit : InventoryTransferStatus.received);
+  if (kind !== "plain") {
+    assert.equal(afterFirst.stockLots.find((entry) => entry.productId === productId &&
+      entry.branchId === "branch-norte")?.quantity, firstQuantity);
+  }
+  if (partial) {
+    const pending = await receiving.getDocument("transfer", transferId, "branch-norte");
+    assert.equal(pending.lines[0].acceptedPreviously, 3);
+    assert.equal(pending.lines[0].pendingQuantity, 2);
+    if (kind === "serial") {
+      assert.deepEqual(pending.lines[0].serialNumbersText.split("\n"), serials.slice(3));
+      await assert.rejects(receiving.confirm({ ...command,
+        confirmationId: `duplicate-serial-${productId}`,
+        lines: [{ ...pending.lines[0], locationId: "loc-norte-a", receivedNow: 1,
+          serialNumbersText: serials[0] }],
+      }), /serial was not dispatched or was already received/);
+      await assert.rejects(receiving.confirm({ ...command,
+        confirmationId: `foreign-serial-${productId}`,
+        lines: [{ ...pending.lines[0], locationId: "loc-norte-a", receivedNow: 1,
+          serialNumbersText: "S99" }],
+      }), /serial was not dispatched or was already received/);
+    }
+    await receiving.confirm({ ...command, confirmationId: `receipt-second-${productId}`,
+      lines: [{ ...pending.lines[0], locationId: "loc-norte-a", receivedNow: 2,
+        serialNumbersText: kind === "serial" ? serials.slice(3).join("\n") : "" }] });
+    assert.equal(destinationQuantity(), 5);
+    assert.equal(transferStore.getSnapshot().inventoryTransfers.find((entry) => entry.id === transferId)
+      ?.status, InventoryTransferStatus.received);
+  }
+  if (kind !== "plain") {
+    const destinationLots = transferStore.getSnapshot().stockLots.filter((entry) =>
+      entry.productId === productId && entry.branchId === "branch-norte");
+    assert.equal(destinationLots.length, 1);
+    assert.equal(destinationLots[0].lotNumber, "L-001");
+    assert.equal(destinationLots[0].expirationDate, "2030-04-30T00:00:00.000Z");
+    assert.equal(destinationLots[0].quantity, 5);
+  }
+  if (kind === "serial") {
+    const completed = await receiving.getDocument("transfer", transferId, "branch-norte");
+    assert.equal(completed.readOnly, true);
+    assert.deepEqual(completed.lines[0].serialNumbersText.split("\n"), serials);
+    const destinationSerials = transferStore.getSnapshot().serialNumbers.filter((entry) =>
+      entry.productId === productId && entry.branchId === "branch-norte");
+    assert.deepEqual(destinationSerials.map((entry) => entry.serialNumber).sort(), serials);
+    assert.ok(destinationSerials.every((entry) => entry.status === SerialStatus.available));
+    assert.equal(transferStore.getSnapshot().serialNumbers.filter((entry) =>
+      entry.productId === productId).length, 5);
+  }
+  assert.equal(transferStore.getSnapshot().inventoryMovements.filter((entry) =>
+    entry.referenceType === "transfer" && entry.referenceId === transferId &&
+    entry.branchId === "branch-norte" && entry.type === "in")
+    .reduce((sum, entry) => sum + entry.quantity, 0), 5);
 }
 
 async function main() {
@@ -734,7 +976,13 @@ async function main() {
     /mayor que cero/,
   );
 
-  console.log("Inventory/receiving traceability harness passed (26 existing + 5 status scenarios).");
+  await verifyTransferReceipt("plain", false);
+  await verifyTransferReceipt("lot", false);
+  await verifyTransferReceipt("lot", true);
+  await verifyTransferReceipt("multi_lot", true);
+  await verifyTransferReceipt("serial", false);
+  await verifyTransferReceipt("serial", true);
+  console.log("Inventory/receiving traceability harness passed (including full and partial Transfer receipts).");
 }
 
 void main().catch((error) => {

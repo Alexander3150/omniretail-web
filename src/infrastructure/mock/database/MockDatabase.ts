@@ -32,6 +32,8 @@ import type {
   Order,
   OrderItem,
   Package,
+  Packing,
+  PackingOperation,
   PasswordResetChallenge,
   Payment,
   Permission,
@@ -153,6 +155,8 @@ export interface MockDatabase {
   pickingItemUpdateOperations: PickingItemUpdateOperation[];
   pickingAssignmentReleases: PickingAssignmentRelease[];
   pickingIncidents: PickingIncident[];
+  packings: Packing[];
+  packingOperations: PackingOperation[];
   dispatches: Dispatch[];
   storePickupDeliveries: StorePickupDelivery[];
   packages: Package[];

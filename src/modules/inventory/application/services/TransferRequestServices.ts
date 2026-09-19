@@ -1,6 +1,8 @@
 import type { InventoryTransferRequest } from "@/core/entities";
-import { InventoryTransferRequestStatus } from "@/core/enums";
+import { BranchStatus, InventoryTransferRequestStatus } from "@/core/enums";
+import { getBranchAvailableQuantity } from "@/core/inventory/stockAvailability";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/services/resolveCurrentSessionSnapshot";
 import type { TransferRequestDto } from "@/modules/inventory/application/dto/InventoryAlertsDto";
 import { MAX_SAFE_INVENTORY_QUANTITY, TEXT_LIMITS } from "@/shared/utils/inputLimits";
 import { isQuantityCompatibleWithUnit } from "@/shared/utils/numberInput";
@@ -9,6 +11,7 @@ import {
   ensureInventoryBranchBelongsToTenant,
   ensureProductBelongsToTenant,
   ensureTenantCanUseInventory,
+  ensureTenantCanUseTracking,
   ensureUserCanOperateInventoryBranch,
   InventoryServiceError,
   resolveInventoryContext,
@@ -39,6 +42,9 @@ export class CreateTransferRequestService {
       throw new InventoryServiceError("La unidad base del producto no esta disponible.");
     }
     assertValidTransferQuantity(dto.quantity, baseUnit.allowsDecimals);
+    await ensureProviderAvailability(
+      this.repositories, tenantId, dto.providerBranchId, product.id, dto.quantity,
+    );
     const reason = dto.reason.trim();
     if (!reason) throw new InventoryServiceError("Ingresa el motivo del traslado.");
     if (reason.length > TEXT_LIMITS.reason) {
@@ -80,24 +86,85 @@ export function assertValidTransferQuantity(quantity: number, unitAllowsDecimals
 export class ApproveTransferRequestService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async execute(requestId: string): Promise<InventoryTransferRequest> {
+  async execute(requestId: string, operationId = `transfer-request:${requestId}`) {
     const { tenantId, actorUserId, user, permissions } = await resolveInventoryContext(
       this.repositories,
     );
     ensureCanManageTransfers(permissions);
-    await ensureTenantCanUseInventory(this.repositories, tenantId);
+    const entitlements = await ensureTenantCanUseInventory(this.repositories, tenantId);
 
-    const request = await ensureReviewableRequest(this.repositories, requestId, tenantId);
-    await ensureUserCanOperateInventoryBranch(this.repositories, user, request.sourceBranchId);
-    await ensureInventoryBranchBelongsToTenant(
+    const request = await this.repositories.inventoryTransferRequests.getById(requestId);
+    if (!request || request.tenantId !== tenantId) {
+      throw new InventoryServiceError("Solicitud de traslado no encontrada.");
+    }
+    const session = await resolveCurrentSessionSnapshot(this.repositories);
+    const activeBranchId = session.sessionId
+      ? (await this.repositories.auth.getSession(session.sessionId))?.activeBranchId
+      : undefined;
+    if (!activeBranchId || activeBranchId !== request.sourceBranchId) {
+      throw new InventoryServiceError("La sucursal proveedora debe estar activa para aceptar la solicitud.");
+    }
+    const source = await ensureUserCanOperateInventoryBranch(
+      this.repositories, user, request.sourceBranchId,
+    );
+    const destination = await ensureInventoryBranchBelongsToTenant(
       this.repositories,
       tenantId,
       request.requestingBranchId,
     );
+    if (source.id === destination.id || source.status !== BranchStatus.active ||
+      destination.status !== BranchStatus.active) {
+      throw new InventoryServiceError("Las sucursales del traslado deben estar activas y ser distintas.");
+    }
+    const product = ensureProductBelongsToTenant(
+      await this.repositories.products.getById(request.productId), tenantId,
+    );
+    const capabilities = await this.repositories.businessConfig.getCapabilities(tenantId);
+    if (!capabilities) throw new InventoryServiceError("Configuración de inventario no disponible.");
+    ensureTenantCanUseTracking(entitlements, capabilities, product);
+    const unit = await this.repositories.units.getByIdScoped(tenantId, product.baseUnitId);
+    if (!unit) throw new InventoryServiceError("La unidad base del producto no está disponible.");
+    assertValidTransferQuantity(request.requestedQuantity, unit.allowsDecimals);
+    if (request.status === InventoryTransferRequestStatus.requested) {
+      await ensureProviderAvailability(
+        this.repositories, tenantId, request.sourceBranchId, product.id, request.requestedQuantity,
+      );
+    }
+    if (!operationId.trim()) throw new InventoryServiceError("La operación requiere una identidad.");
 
-    return this.repositories.inventoryTransferRequests.approveRequest(request.id, {
-      reviewedByUserId: actorUserId,
+    const result = await this.repositories.inventoryTransfers.create({
+      tenantId,
+      sourceBranchId: request.sourceBranchId,
+      destinationBranchId: request.requestingBranchId,
+      operationId: operationId.trim(),
+      preparedByUserId: actorUserId,
+      sourceRequestIds: [request.id],
+      approveSourceRequest: { requestId: request.id, reviewedByUserId: actorUserId },
+      reason: request.reason,
+      notes: request.notes,
+      items: [{ productId: product.id, sourceRequestId: request.id,
+        requestedQuantity: request.requestedQuantity }],
     });
+    return result.transfer;
+  }
+}
+
+async function ensureProviderAvailability(
+  repositories: RepositoryRegistry,
+  tenantId: string,
+  branchId: string,
+  productId: string,
+  quantity: number,
+) {
+  const [balances, locations] = await Promise.all([
+    repositories.inventory.getBalances(),
+    repositories.inventory.getLocations(),
+  ]);
+  const available = getBranchAvailableQuantity({
+    tenantId, branchId, productId, balances, locations,
+  });
+  if (quantity > available) {
+    throw new InventoryServiceError("La cantidad solicitada supera el stock disponible de la sucursal proveedora.");
   }
 }
 
@@ -128,6 +195,37 @@ export class RejectTransferRequestService {
     return this.repositories.inventoryTransferRequests.rejectRequest(request.id, reason, {
       reviewedByUserId: actorUserId,
     });
+  }
+}
+
+export class CancelTransferRequestService {
+  constructor(private readonly repositories: RepositoryRegistry) {}
+
+  async execute(requestId: string, reason?: string): Promise<InventoryTransferRequest> {
+    const { tenantId, user, permissions } = await resolveInventoryContext(this.repositories);
+    ensureCanManageTransfers(permissions);
+    await ensureTenantCanUseInventory(this.repositories, tenantId);
+    const request = await this.repositories.inventoryTransferRequests.getById(requestId);
+    if (!request || request.tenantId !== tenantId) {
+      throw new InventoryServiceError("Solicitud de traslado no encontrada.");
+    }
+    const session = await resolveCurrentSessionSnapshot(this.repositories);
+    const activeBranchId = session.sessionId
+      ? (await this.repositories.auth.getSession(session.sessionId))?.activeBranchId
+      : undefined;
+    if (!activeBranchId || activeBranchId !== request.requestingBranchId) {
+      throw new InventoryServiceError("La sucursal solicitante debe estar activa para cancelar la solicitud.");
+    }
+    await ensureUserCanOperateInventoryBranch(this.repositories, user, request.requestingBranchId);
+    await ensureInventoryBranchBelongsToTenant(this.repositories, tenantId, request.sourceBranchId);
+    if (request.status !== InventoryTransferRequestStatus.requested) {
+      throw new InventoryServiceError("Solo puede cancelarse una solicitud pendiente.");
+    }
+    if (reason && reason.trim().length > TEXT_LIMITS.reason) {
+      throw new InventoryServiceError("El motivo admite hasta 200 caracteres.");
+    }
+    // The repository repeats the status and linkage checks inside its transaction.
+    return this.repositories.inventoryTransferRequests.cancelRequest(request.id, reason?.trim());
   }
 }
 

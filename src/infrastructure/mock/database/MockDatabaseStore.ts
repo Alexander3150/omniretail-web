@@ -61,11 +61,6 @@ const CANONICAL_INCIDENT_TYPES = [
   { code: "OTHER", name: "Otros" },
 ] as const;
 const SYSTEM_ADMIN_ROLE_NAME = "Administrador";
-const CUSTOMER_SELF_SERVICE_PERMISSION_KEYS = new Set(
-  permissionsConfig
-    .filter((permission) => permission.module === "customer" || permission.module === "storefront")
-    .map((permission) => permission.key),
-);
 
 type PersistedMockDatabase = Partial<
   Omit<
@@ -181,6 +176,8 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
     database.inventoryReservationConsumeOperations ?? [];
   normalized.pickingAssignmentReleases = database.pickingAssignmentReleases ?? [];
   normalized.pickingIncidents = database.pickingIncidents ?? [];
+  normalized.packings = database.packings ?? [];
+  normalized.packingOperations = database.packingOperations ?? [];
   normalized.storePickupDeliveries = database.storePickupDeliveries ?? [];
   normalized.products = (database.products ?? base.products).map((product) => ({
     ...product,
@@ -199,10 +196,21 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
   }));
   // Backfill para datos persistidos antes de que Role.status existiera -- sin esto, un rol
   // guardado en localStorage antes de este contrato quedaria con status undefined.
-  normalized.roles = (database.roles ?? base.roles).map((role) => ({
-    ...role,
-    status: role.status ?? RoleStatus.active,
-  }));
+  normalized.roles = (database.roles ?? base.roles).map((role) => {
+    const isCanonicalSystemAdmin =
+      role.isSystem && role.name === SYSTEM_ADMIN_ROLE_NAME && role.branchScope === "all";
+    const packingPermissions =
+      role.id === "role-warehouse"
+        ? ["logistics.packing.read", "logistics.packing.prepare", "logistics.packing.finalize"]
+        : [];
+    return {
+      ...role,
+      permissions: isCanonicalSystemAdmin
+        ? permissionsConfig.map((permission) => permission.key)
+        : [...new Set([...role.permissions, ...packingPermissions])],
+      status: role.status ?? RoleStatus.active,
+    };
+  });
   normalized.incidentTypes = [...(database.incidentTypes ?? base.incidentTypes)];
   normalized.tenants.forEach((tenant) => {
     CANONICAL_INCIDENT_TYPES.forEach(({ code, name }) => {
@@ -220,7 +228,11 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
       }
     });
   });
-  normalized.productSalesPriceTiers = database.productSalesPriceTiers ?? [];
+  normalized.productSalesPriceTiers = (
+    Object.hasOwn(database, "productSalesPriceTiers")
+      ? database.productSalesPriceTiers ?? []
+      : base.productSalesPriceTiers
+  ).map((tier) => ({ ...tier }));
   normalized.productInventorySettings = normalizeProductInventorySettings(database, normalized);
   normalized.inventoryAdjustments = normalizeInventoryAdjustments(database, normalized);
   normalized.inventoryTransferRequests = normalizeInventoryTransferRequests(database, normalized);
@@ -359,17 +371,6 @@ function normalizeMockDatabase(database: PersistedMockDatabase): MockDatabase {
       };
     }
     return user;
-  });
-
-  normalized.roles = normalized.roles.map((role) => {
-    if (!role.isSystem || role.name !== SYSTEM_ADMIN_ROLE_NAME) return role;
-
-    const permissions = role.permissions.filter(
-      (permission) => !CUSTOMER_SELF_SERVICE_PERMISSION_KEYS.has(permission),
-    );
-    return permissions.length === role.permissions.length
-      ? role
-      : { ...role, permissions, updatedAt: new Date().toISOString() };
   });
 
   return normalized;
@@ -516,7 +517,10 @@ function normalizePersistedInventoryTransfer(
     status: isInventoryTransferStatus(transfer.status)
       ? transfer.status
       : InventoryTransferStatus.preparing,
+    operationId: transfer.operationId,
+    operationFingerprint: transfer.operationFingerprint,
     sourceRequestIds: transfer.sourceRequestIds,
+    reason: transfer.reason,
     notes: transfer.notes,
     preparedByUserId: transfer.preparedByUserId,
     dispatchedByUserId: transfer.dispatchedByUserId,
@@ -526,6 +530,9 @@ function normalizePersistedInventoryTransfer(
     dispatchedAt: transfer.dispatchedAt,
     receivedAt: transfer.receivedAt,
     cancelledAt: transfer.cancelledAt,
+    cancelledByUserId: transfer.cancelledByUserId,
+    cancelOperationId: transfer.cancelOperationId,
+    cancelFingerprint: transfer.cancelFingerprint,
   };
 }
 

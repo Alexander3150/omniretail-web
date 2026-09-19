@@ -3,6 +3,7 @@ import { publicStorefrontSlug } from "@/config/publicStorefront";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { ProductType } from "@/core/enums";
+import { calculateEffectivePrice, resolveQuantityPrice } from "@/core/pricing";
 import type { CatalogImageSource } from "@/core/entities";
 import { getProductMediaSource, normalizeCatalogImageSource } from "@/core/media/catalogImage";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
@@ -21,6 +22,7 @@ import { MockTenantSubscriptionRepository } from "@/infrastructure/mock/reposito
 import { MockUnitRepository } from "@/infrastructure/mock/repositories/MockUnitRepository";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
+import { MOCK_DATABASE_STORAGE_KEY } from "@/infrastructure/storage/storageKeys";
 import { GetStorefrontDiscoveryService } from "@/modules/storefront/application/services/GetStorefrontDiscoveryService";
 
 const TENANT_ID = "tenant-demo";
@@ -160,15 +162,56 @@ function assertAllReferencesExist(db: ReturnType<typeof createMockDatabase>): vo
     assert.ok(pickingOrderIds.has(item.pickingOrderId), `picking order roto: ${item.id}`);
     assert.ok(orderItemIds.has(item.orderItemId), `picking item/order item roto: ${item.id}`);
   });
-  db.dispatches.forEach((item) =>
-    assert.ok(orderIds.has(item.orderId), `dispatch order rota: ${item.id}`),
+  db.dispatches.filter((item) => item.sourceType !== "transfer").forEach((item) =>
+    assert.ok(item.orderId && orderIds.has(item.orderId), `dispatch order rota: ${item.id}`),
   );
   db.packages.forEach((item) =>
     assert.ok(dispatchIds.has(item.dispatchId), `package dispatch roto: ${item.id}`),
   );
 }
 
+function verifyLegacyPriceTierNormalization(): void {
+  const seeded = createMockDatabase();
+  assert.ok(seeded.productSalesPriceTiers.length > 0);
+
+  const legacyStorage = new MemoryStorageAdapter();
+  const legacy: Partial<ReturnType<typeof createMockDatabase>> = createMockDatabase();
+  delete legacy.productSalesPriceTiers;
+  legacyStorage.set(MOCK_DATABASE_STORAGE_KEY, legacy);
+  const restored = new MockDatabaseStore(legacyStorage).getSnapshot();
+  assert.deepEqual(restored.productSalesPriceTiers, seeded.productSalesPriceTiers);
+  assert.deepEqual(
+    new MockDatabaseStore(legacyStorage).getSnapshot().productSalesPriceTiers,
+    restored.productSalesPriceTiers,
+  );
+  const seededTier = seeded.productSalesPriceTiers[0];
+  const tierProduct = restored.products.find((product) => product.id === seededTier.productId);
+  assert.ok(tierProduct);
+  const productTiers = restored.productSalesPriceTiers.filter((tier) => tier.productId === tierProduct.id);
+  const quantityPrice = resolveQuantityPrice({
+    basePrice: tierProduct.salePrice, quantity: seededTier.minQuantity, tiers: productTiers,
+  });
+  assert.equal(quantityPrice, seededTier.unitPrice);
+  assert.equal(calculateEffectivePrice(quantityPrice).effectivePrice, quantityPrice);
+
+  const emptyStorage = new MemoryStorageAdapter();
+  emptyStorage.set(MOCK_DATABASE_STORAGE_KEY, {
+    ...createMockDatabase(), productSalesPriceTiers: [],
+  });
+  assert.deepEqual(new MockDatabaseStore(emptyStorage).getSnapshot().productSalesPriceTiers, []);
+  assert.deepEqual(new MockDatabaseStore(emptyStorage).getSnapshot().productSalesPriceTiers, []);
+
+  const custom = [{ ...seeded.productSalesPriceTiers[0], id: "custom-tier", unitPrice: 321 }];
+  const customStorage = new MemoryStorageAdapter();
+  customStorage.set(MOCK_DATABASE_STORAGE_KEY, {
+    ...createMockDatabase(), productSalesPriceTiers: custom,
+  });
+  assert.deepEqual(new MockDatabaseStore(customStorage).getSnapshot().productSalesPriceTiers, custom);
+  assert.deepEqual(new MockDatabaseStore(customStorage).getSnapshot().productSalesPriceTiers, custom);
+}
+
 async function main(): Promise<void> {
+  verifyLegacyPriceTierNormalization();
   const storage = new MemoryStorageAdapter();
   const store = new MockDatabaseStore(storage);
   const db = store.getSnapshot();

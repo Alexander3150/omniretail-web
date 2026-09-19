@@ -4,6 +4,8 @@ import type {
   PickingIncident,
   PickingItem,
   PickingOrder,
+  Packing,
+  InventoryTransfer,
 } from "@/core/entities";
 import type { PickingIncidentType, PickingItemStatus, PickingPriority } from "@/core/enums";
 
@@ -71,11 +73,20 @@ export interface ResolvePickingIncidentInput extends PickingScope {
   resolvedBy: string;
 }
 
-export type CompletePickingOrderInput = AssignPickingOrderInput;
+export type CompletePickingOrderInput = AssignPickingOrderInput & { sourceType?: "order" };
+export type CompleteTransferPickingOrderInput = AssignPickingOrderInput & { sourceType: "transfer" };
 
 export interface CompletePickingOrderResult {
   pickingOrder: PickingOrder;
   order: Order;
+  packing: Packing;
+  idempotent: boolean;
+}
+
+export interface CompleteTransferPickingOrderResult {
+  pickingOrder: PickingOrder;
+  transfer: InventoryTransfer;
+  packing: Packing;
   idempotent: boolean;
 }
 
@@ -84,6 +95,7 @@ export interface PickingRepository {
   getQueue(scope: PickingScope): Promise<PickingOrder[]>;
   getById(scope: PickingScope, pickingOrderId: string): Promise<PickingOrder | null>;
   getByOrder(scope: PickingScope, orderId: string): Promise<PickingOrder | null>;
+  getBySource(scope: PickingScope, sourceType: "order" | "transfer", sourceId: string): Promise<PickingOrder | null>;
   getItems(scope: PickingScope, pickingOrderId: string): Promise<PickingItem[]>;
   create(input: CreatePickingOrderInput): Promise<PickingOrder>;
   assign(input: AssignPickingOrderInput): Promise<AssignPickingOrderResult>;
@@ -97,4 +109,5 @@ export interface PickingRepository {
   getIncidents(scope: PickingScope, pickingOrderId: string): Promise<PickingIncident[]>;
   resolveIncident(input: ResolvePickingIncidentInput): Promise<PickingIncident>;
   complete(input: CompletePickingOrderInput): Promise<CompletePickingOrderResult>;
+  complete(input: CompleteTransferPickingOrderInput): Promise<CompleteTransferPickingOrderResult>;
 }

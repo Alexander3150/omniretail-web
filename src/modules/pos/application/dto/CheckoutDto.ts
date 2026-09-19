@@ -3,6 +3,7 @@ import type { DeliveryMethod, TransportMode } from "@/core/enums";
 import type { CurrencyCode } from "@/core/types/common.types";
 import type { AddressSnapshot } from "@/core/types/address.types";
 import type { OrderNotificationContact } from "@/core/types/orderNotification.types";
+import type { StorePickupContactSnapshot } from "@/core/types/storePickupContact.types";
 
 export type CheckoutPaymentMode = "cash" | "card" | "transfer" | "mixed";
 export type CardTerminalStatus = "idle" | "processing" | "approved" | "rejected";
@@ -36,6 +37,7 @@ export interface CheckoutDto {
   deliveryMethod: DeliveryMethod;
   transportMode: TransportMode;
   deliveryAddress?: AddressSnapshot;
+  storePickupContact?: StorePickupContactSnapshot;
   notificationContact: OrderNotificationContact;
 }
 

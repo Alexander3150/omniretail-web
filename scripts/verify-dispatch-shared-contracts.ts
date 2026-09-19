@@ -8,6 +8,7 @@ import {
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  PackingStatus,
   PickingPriority,
   PickingStatus,
   TransportMode,
@@ -20,6 +21,7 @@ import {
   MockDispatchRepository,
   MockNotificationRepository,
   MockOrderRepository,
+  MockPackingRepository,
   MockPickingRepository,
   MockPlanRepository,
   MockRoleRepository,
@@ -31,6 +33,8 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import { DispatchApplicationService } from "@/modules/logistics/application/services/DispatchApplicationService";
 import { DispatchAuthorizationError } from "@/modules/logistics/application/services/DispatchAuthorizationContext";
+import { toCustomerOrderSummaryDto } from "@/modules/customer/application/dto/CustomerOrderSummaryDto";
+import { toCustomerOrderDetailDto } from "@/modules/customer/application/dto/CustomerOrderDetailDto";
 import { GetStorefrontOrderTrackingService } from "@/modules/storefront/application/services/GetStorefrontOrderTrackingService";
 
 const tenantId = "tenant-demo";
@@ -48,6 +52,7 @@ async function main() {
   prepareDatabase(store);
   const orders = new MockOrderRepository(store, eventBus);
   const picking = new MockPickingRepository(store, eventBus);
+  const packings = new MockPackingRepository(store, eventBus);
   const dispatches = new MockDispatchRepository(store, eventBus);
   const notifications = new MockNotificationRepository(store, eventBus);
   const auth = {
@@ -67,6 +72,7 @@ async function main() {
     dispatches,
     notifications,
     orders,
+    packings,
     picking,
     roles: new MockRoleRepository(store, eventBus),
     plans: new MockPlanRepository(store, eventBus),
@@ -76,17 +82,25 @@ async function main() {
   } as unknown as RepositoryRegistry;
   const service = new DispatchApplicationService(repositories);
   const trackingService = new GetStorefrontOrderTrackingService(repositories);
+  const assertPublicStatus = async (orderId: string, expected: string) => {
+    const order = await orders.getById(orderId);
+    assert.ok(order);
+    assert.equal((await trackingService.execute({ tenantSlug: publicStorefrontSlug, trackingToken: order.trackingToken }))?.tracking.status, expected);
+    assert.equal(toCustomerOrderSummaryDto(order).status, expected);
+    assert.equal(toCustomerOrderDetailDto(order).status, expected);
+  };
 
   // Initial status policy is distinct from lifecycle transition ownership.
   assert.equal(
     (await orders.create(orderInput("initial-pending", { status: OrderStatus.pending }))).status,
     OrderStatus.pending,
   );
-  assert.equal(
-    (await orders.create(orderInput("initial-confirmed", { status: OrderStatus.confirmed })))
-      .status,
-    OrderStatus.confirmed,
-  );
+  const initialConfirmed = await orders.create(orderInput("initial-confirmed", { status: OrderStatus.confirmed }));
+  assert.equal(initialConfirmed.status, OrderStatus.confirmed);
+  await assertPublicStatus(initialConfirmed.id, "confirmed");
+  const unassigned = await orders.create(orderInput("unassigned-picking", {}));
+  await picking.create({ tenantId, branchId, orderId: unassigned.id, priority: PickingPriority.normal });
+  await assertPublicStatus(unassigned.id, "confirmed");
   const initialPayment = await orders.createWithPayment({
     order: orderInput("initial-payment", { status: OrderStatus.pending }),
     payment: {
@@ -134,6 +148,9 @@ async function main() {
   assert.deepEqual(creationSnapshot(store), beforeRejectedCreation);
 
   const trackingProgress = await createTrackingProgressOrder(orders, picking);
+  const trackingOrder = await orders.getByTrackingToken(tenantId, trackingProgress.trackingToken);
+  assert.ok(trackingOrder);
+  await assertPublicStatus(trackingOrder.id, "preparing");
   assert.equal(
       (await trackingService.execute({ tenantSlug: publicStorefrontSlug, trackingToken: trackingProgress.trackingToken }))?.tracking.status,
     OrderStatus.preparing,
@@ -147,13 +164,14 @@ async function main() {
     operationId: "tracking-first-pick",
     performedByUserId: actorId,
   });
+  await assertPublicStatus(trackingOrder.id, "preparing");
   assert.equal(
-      (await trackingService.execute({ tenantSlug: publicStorefrontSlug, trackingToken: trackingProgress.trackingToken }))?.tracking.status,
-    OrderStatus.picking,
+    (await trackingService.execute({ tenantSlug: publicStorefrontSlug, trackingToken: trackingProgress.trackingToken }))?.tracking.status,
+    OrderStatus.preparing,
   );
 
   // E-H, I. Taking and first physical pick update Order in the same repository transaction.
-  const thirdParty = await prepareOrder(orders, picking, "third", {
+  const thirdParty = await prepareOrder(orders, picking, packings, "third", {
     deliveryMethod: DeliveryMethod.home_delivery,
     transportMode: TransportMode.third_party,
     notificationContact: { emailMode: "send", email: "shipment@example.com" },
@@ -162,12 +180,13 @@ async function main() {
   assert.equal(thirdParty.assignmentRetryIdempotent, true);
   assert.equal(thirdParty.statusAfterFirstPick, OrderStatus.picking);
   assert.equal(thirdParty.completed.status, OrderStatus.ready_for_dispatch);
+  await assertPublicStatus(thirdParty.completed.id, "preparing");
   assert.equal(
-      (await trackingService.execute({ tenantSlug: publicStorefrontSlug, trackingToken: thirdParty.completed.trackingToken }))?.tracking.status,
-    OrderStatus.ready_for_dispatch,
+    (await trackingService.execute({ tenantSlug: publicStorefrontSlug, trackingToken: thirdParty.completed.trackingToken }))?.tracking.status,
+    OrderStatus.preparing,
   );
 
-  const pickup = await prepareOrder(orders, picking, "pickup", {
+  const pickup = await prepareOrder(orders, picking, packings, "pickup", {
     deliveryMethod: DeliveryMethod.store_pickup,
     transportMode: TransportMode.customer,
     notificationContact: { emailMode: "not_applicable" },
@@ -231,7 +250,7 @@ async function main() {
     /authorized dispatch scope/,
   );
 
-  // L-O, T-Z, AF-AG. Dispatch owns no stock mutation and confirmation is atomic/idempotent.
+  // L-O, T-Z, AF-AG. Dispatch owns the atomic/idempotent stock mutation.
   await assert.rejects(
     service.confirm(branchId, {
       orderId: thirdParty.completed.id,
@@ -266,11 +285,15 @@ async function main() {
   assert.equal(confirmed.trackingNumber, "TRACK-001");
   assert.equal(confirmed.notificationStatus, "simulated_sent");
   assert.equal(confirmed.notification?.recipientEmail, "shipment@example.com");
+  await assertPublicStatus(thirdParty.completed.id, "sent");
   assert.equal(
-      (await trackingService.execute({ tenantSlug: publicStorefrontSlug, trackingToken: thirdParty.completed.trackingToken }))?.tracking.status,
-    OrderStatus.dispatched,
+    (await trackingService.execute({ tenantSlug: publicStorefrontSlug, trackingToken: thirdParty.completed.trackingToken }))?.tracking.status,
+    "sent",
   );
-  assert.deepEqual(inventorySnapshot(store), inventoryBefore);
+  const inventoryAfter = inventorySnapshot(store);
+  assert.equal(inventoryAfter.movementCount, inventoryBefore.movementCount + 1);
+  assert.equal(inventoryAfter.balances.find((item) => item.id === "bal-screws")?.quantity,
+    (inventoryBefore.balances.find((item) => item.id === "bal-screws")?.quantity ?? 0) - 1);
   const retry = await service.confirm(branchId, {
     orderId: thirdParty.completed.id,
     operationId: "dispatch-third-party",
@@ -351,7 +374,7 @@ async function main() {
     DispatchAuthorizationError,
   );
 
-  const notDispatched = await prepareOrder(orders, picking, "delivery-not-dispatched", {
+  const notDispatched = await prepareOrder(orders, picking, packings, "delivery-not-dispatched", {
     transportMode: TransportMode.own_fleet,
   });
   await assert.rejects(
@@ -379,7 +402,7 @@ async function main() {
     /Dispatch is not dispatched/,
   );
 
-  const ownFleet = await prepareOrder(orders, picking, "fleet", {
+  const ownFleet = await prepareOrder(orders, picking, packings, "fleet", {
     transportMode: TransportMode.own_fleet,
     notificationContact: { emailMode: "not_applicable" },
   });
@@ -392,9 +415,15 @@ async function main() {
   assert.equal(fleetResult.notification, null);
 
   for (const transportMode of [TransportMode.none, TransportMode.customer]) {
-    const unsupported = await prepareOrder(orders, picking, `unsupported-${transportMode}`, {
-      transportMode,
-    });
+    const unsupported = await prepareOrder(
+      orders,
+      picking,
+      packings,
+      `unsupported-${transportMode}`,
+      {
+        transportMode,
+      },
+    );
     await assert.rejects(
       service.confirm(branchId, {
         orderId: unsupported.completed.id,
@@ -404,7 +433,7 @@ async function main() {
     );
   }
 
-  const legacy = await prepareOrder(orders, picking, "legacy", {
+  const legacy = await prepareOrder(orders, picking, packings, "legacy", {
     transportMode: TransportMode.own_fleet,
   });
   const legacyResult = await service.confirm(branchId, {
@@ -429,17 +458,43 @@ async function main() {
   });
   await assert.rejects(
     service.confirm(branchId, { orderId: beforePicking.id, operationId: "too-early" }),
-    /Picking is not completed/,
+    /Packing not found/,
   );
   store.transact((db) => {
     const record = db.pickingOrders.find((item) => item.id === beforePickingRecord.id);
     assert.ok(record);
     record.status = PickingStatus.completed;
     record.completedAt = "2026-09-13T00:00:00.000Z";
+    db.packings.push({
+      id: "packing-pending-reservation",
+      tenantId,
+      branchId,
+      orderId: beforePicking.id,
+      pickingOrderId: record.id,
+      status: PackingStatus.finalized,
+      checklist: {
+        packageProtectionChecked: true,
+        documentIncludedChecked: true,
+        recipientVerifiedChecked: true,
+      },
+      totalWeight: 1,
+      packageCount: 1,
+      labelGenerationId: "pending-reservation-label",
+      labelCode: "PENDING-RESERVATION",
+      labelGeneratedAt: "2026-09-13T00:00:00.000Z",
+      labelPrintedAt: "2026-09-13T00:00:00.000Z",
+      startedByUserId: actorId,
+      finalizedByUserId: actorId,
+      startedAt: "2026-09-13T00:00:00.000Z",
+      finalizedAt: "2026-09-13T00:00:00.000Z",
+      version: 1,
+      createdAt: "2026-09-13T00:00:00.000Z",
+      updatedAt: "2026-09-13T00:00:00.000Z",
+    });
   });
   await assert.rejects(
     service.confirm(branchId, { orderId: beforePicking.id, operationId: "pending-reservation" }),
-    /reservation is not consumed/,
+    /Picking item is incomplete/,
   );
 
   assert.equal(await notifications.getByDispatch("tenant-foreign", confirmed.dispatchId), null);
@@ -475,7 +530,7 @@ async function main() {
 
   console.log("verify-dispatch-shared-contracts: PASS");
   console.log(
-    "initial-state policy, picking, dispatch, delivery, scope, notification and zero inventory mutation: PASS",
+    "initial-state policy, public status, picking, atomic dispatch inventory, delivery, scope and notification: PASS",
   );
 }
 
@@ -510,6 +565,8 @@ function prepareDatabase(store: MockDatabaseStore) {
     db.inventoryReservations = [];
     db.inventoryReservationConsumeOperations = [];
     db.inventoryMovements = [];
+    db.packings = [];
+    db.packingOperations = [];
     db.inventoryBalances.forEach((balance) => {
       balance.reservedQuantity = 0;
       if (balance.id === "bal-screws") balance.quantity = 100;
@@ -520,6 +577,9 @@ function prepareDatabase(store: MockDatabaseStore) {
       "logistics.picking.read",
       "logistics.picking.start",
       "logistics.picking.complete",
+      "logistics.packing.read",
+      "logistics.packing.prepare",
+      "logistics.packing.finalize",
       "logistics.dispatch.read",
       "logistics.dispatch.confirm",
     ];
@@ -529,6 +589,7 @@ function prepareDatabase(store: MockDatabaseStore) {
 async function prepareOrder(
   orders: MockOrderRepository,
   picking: MockPickingRepository,
+  packings: MockPackingRepository,
   suffix: string,
   options: {
     deliveryMethod?: DeliveryMethod;
@@ -543,7 +604,49 @@ async function prepareOrder(
     pickingOrderId: picked.pickingId,
     actorUserId: actorId,
   });
-  return { ...picked, completed: completed.order };
+  let prepared = await packings.savePreparation({
+    tenantId,
+    branchId,
+    actorUserId: actorId,
+    packingId: completed.packing.id,
+    operationId: `dispatch-packing-prepare-${suffix}`,
+    expectedVersion: completed.packing.version,
+    checklist: {
+      packageProtectionChecked: true,
+      documentIncludedChecked: true,
+      recipientVerifiedChecked: true,
+    },
+    totalWeight: completed.order.deliveryMethod === DeliveryMethod.home_delivery ? 1 : undefined,
+    packageCount: completed.order.deliveryMethod === DeliveryMethod.home_delivery ? 1 : undefined,
+  });
+  if (completed.order.deliveryMethod === DeliveryMethod.home_delivery) {
+    const generated = await packings.generateLabel({
+      tenantId,
+      branchId,
+      actorUserId: actorId,
+      packingId: completed.packing.id,
+      operationId: `dispatch-packing-label-${suffix}`,
+      expectedVersion: prepared.packing.version,
+    });
+    prepared = await packings.registerLabelPrint({
+      tenantId,
+      branchId,
+      actorUserId: actorId,
+      packingId: completed.packing.id,
+      labelGenerationId: generated.packing.labelGenerationId!,
+      operationId: `dispatch-packing-print-${suffix}`,
+      expectedVersion: generated.packing.version,
+    });
+  }
+  const finalized = await packings.finalize({
+    tenantId,
+    branchId,
+    actorUserId: actorId,
+    packingId: completed.packing.id,
+    operationId: `dispatch-packing-finalize-${suffix}`,
+    expectedVersion: prepared.packing.version,
+  });
+  return { ...picked, completed: finalized.order };
 }
 
 async function createTrackingProgressOrder(
@@ -658,6 +761,13 @@ function orderInput(
             line1: "Zona 1",
             city: "Guatemala",
             country: "Guatemala",
+          }
+        : undefined,
+    storePickupContact:
+      deliveryMethod === DeliveryMethod.store_pickup
+        ? {
+            recipientName: "Dispatch Pickup",
+            recipientPhone: "55550001",
           }
         : undefined,
     notificationContact: options.notificationContact,

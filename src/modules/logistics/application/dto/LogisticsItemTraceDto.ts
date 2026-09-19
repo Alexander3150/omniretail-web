@@ -16,13 +16,13 @@ export interface LogisticsTraceSerialDto {
 }
 
 export interface LogisticsTraceAllocationDto {
-  inventoryMovementId: string;
+  inventoryMovementId?: string;
   reservationId: string;
   quantity: number;
   location: LogisticsTraceLocationDto | null;
   lot: LogisticsTraceLotDto | null;
   serial: LogisticsTraceSerialDto | null;
-  consumedAt: string;
+  consumedAt?: string;
 }
 
 export interface LogisticsItemTraceDto {

@@ -93,7 +93,7 @@ PickingRepository.updateItem
 -> PickingItem + InventoryReservation + InventoryBalance + InventoryMovement
 ```
 
-La asignacion tambien cambia `Order.confirmed -> preparing` dentro de una sola transaccion. El primer incremento positivo agrega `Order.preparing -> picking` a la transaccion anterior, y completion cambia Picking+Order a `ready_for_dispatch` o `ready_for_pickup` sin tocar inventario.
+La asignacion tambien cambia `Order.confirmed -> preparing` dentro de una sola transaccion. El primer incremento positivo agrega `Order.preparing -> picking` a la transaccion anterior. Completion cambia `PickingOrder -> completed`, mueve la Order a `packing` y crea Packing `in_progress` atomicamente, sin tocar inventario. Packing persiste preparacion y finaliza junto con la Order hacia `ready_for_dispatch` o `ready_for_pickup`; tampoco consume inventario.
 
 ```text
 DispatchApplicationService

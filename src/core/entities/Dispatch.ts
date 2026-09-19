@@ -4,7 +4,9 @@ import type { ISODateString } from "@/core/types/common.types";
 export interface Dispatch {
   id: string;
   tenantId: string;
-  orderId: string;
+  orderId?: string;
+  sourceType?: "order" | "transfer";
+  sourceId?: string;
   branchId: string;
   status: DispatchStatus;
   transportMode: TransportMode;

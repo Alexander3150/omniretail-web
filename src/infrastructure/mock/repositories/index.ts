@@ -22,6 +22,7 @@ export * from "./MockOrderRepository";
 export * from "./MockOrderPaymentConfirmationRepository";
 export * from "./MockPaymentRepository";
 export * from "./MockPickingRepository";
+export * from "./MockPackingRepository";
 export * from "./MockPlanRepository";
 export * from "./MockProductMediaRepository";
 export * from "./MockProductRepository";

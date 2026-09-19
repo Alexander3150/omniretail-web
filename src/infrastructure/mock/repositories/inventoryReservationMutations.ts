@@ -1,4 +1,4 @@
-import { InventoryMovementType, InventoryReservationStatus } from "@/core/enums";
+import { InventoryMovementType, InventoryReservationStatus, SerialStatus } from "@/core/enums";
 import type {
   InventoryBalance,
   InventoryMovement,
@@ -17,6 +17,7 @@ import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import {
   consumePlannedStockLots,
   getLotAwareBalances,
+  isStockLotEligible,
   planStockLotConsumption,
 } from "@/infrastructure/mock/repositories/stockLotMutations";
 import {
@@ -26,6 +27,12 @@ import {
   planLotSerialConsumption,
   planSerialConsumption,
 } from "@/infrastructure/mock/repositories/serialNumberMutations";
+
+interface ReservationConsumptionOptions {
+  pickedLots?: Array<{ balanceId: string; lotId: string; quantity: number }>;
+  movement?: { reason: string; referenceType: string; referenceId: string };
+  serialStatus?: SerialStatus;
+}
 
 interface InventoryReservationMutationDependencies {
   id(prefix: string): string;
@@ -108,6 +115,8 @@ export function reserveOrderItemInDatabase(
     branchId: input.branchId,
     orderId: input.orderId,
     orderItemId: input.orderItemId,
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
     productId: input.productId,
     status: InventoryReservationStatus.active,
     allocations,
@@ -168,6 +177,7 @@ export function consumeInventoryReservationInDatabase(
   db: MockDatabase,
   input: ConsumeInventoryReservationInput,
   dependencies: InventoryReservationMutationDependencies,
+  options: ReservationConsumptionOptions = {},
 ): InventoryReservationConsumeMutationResult {
   assertConsumeInput(input);
   const fingerprint = getConsumeFingerprint(input);
@@ -233,9 +243,42 @@ export function consumeInventoryReservationInDatabase(
     if (balance.reservedQuantity < consumed.quantity) {
       throw new Error(`Insufficient reserved stock in balance: ${balance.id}`);
     }
+    const selectedLots = options.pickedLots?.filter((item) => item.balanceId === consumed.balanceId);
+    if (selectedLots && product.tracking.lot &&
+      selectedLots.reduce((total, item) => total + item.quantity, 0) !== consumed.quantity) {
+      throw new Error("Picked lot allocations do not match reserved balance quantity");
+    }
+    const exactLots = selectedLots?.map((selected) => {
+      const lot = db.stockLots.find((item) => item.id === selected.lotId &&
+        item.tenantId === reservation.tenantId && item.branchId === reservation.branchId &&
+        item.productId === reservation.productId &&
+        (item.locationId ?? null) === (allocation.locationId ?? null));
+      if (!lot || lot.quantity < selected.quantity || selected.quantity <= 0 ||
+        !isStockLotEligible(lot, product.tracking.expiration, dependencies.now())) {
+        throw new Error(`Picked lot is no longer available: ${selected.lotId}`);
+      }
+      return { lot, quantity: selected.quantity };
+    });
     const lotSerialAllocations =
       product.tracking.lot && product.tracking.serial
-        ? planLotSerialConsumption(
+        ? exactLots
+          ? exactLots.map((lotAllocation) => {
+              const selectedSerials = requestedSerialNumbers?.filter((number) =>
+                db.serialNumbers.some((serial) => serial.tenantId === reservation.tenantId &&
+                  serial.serialNumber === number && serial.lotId === lotAllocation.lot.id));
+              if (selectedSerials?.length !== lotAllocation.quantity) {
+                throw new Error("Picked serials do not match the selected lot");
+              }
+              return {
+                lotAllocation,
+                serialNumbers: planSerialConsumption(db, {
+                  tenantId: reservation.tenantId, branchId: reservation.branchId,
+                  productId: reservation.productId, locationId: allocation.locationId,
+                  lotId: lotAllocation.lot.id,
+                }, lotAllocation.quantity, selectedSerials),
+              };
+            })
+          : planLotSerialConsumption(
             db,
             {
               tenantId: reservation.tenantId,
@@ -251,7 +294,7 @@ export function consumeInventoryReservationInDatabase(
         : [];
     const lotAllocations =
       product.tracking.lot && !product.tracking.serial
-        ? planStockLotConsumption(
+        ? exactLots ?? planStockLotConsumption(
             db,
             {
               tenantId: reservation.tenantId,
@@ -328,6 +371,7 @@ export function consumeInventoryReservationInDatabase(
         consumePlannedSerials(
           lotSerialAllocations.flatMap((item) => item.serialNumbers),
           now,
+          options.serialStatus,
         );
         let movementBefore = quantityBefore;
         return lotSerialAllocations.flatMap(({ lotAllocation, serialNumbers: plannedSerials }) =>
@@ -347,7 +391,7 @@ export function consumeInventoryReservationInDatabase(
         );
       }
       if (serialNumbers.length > 0) {
-        consumePlannedSerials(serialNumbers, now);
+        consumePlannedSerials(serialNumbers, now, options.serialStatus);
         let movementBefore = quantityBefore;
         return serialNumbers.map((serial) => {
           const movementAfter = movementBefore - 1;
@@ -398,13 +442,13 @@ export function consumeInventoryReservationInDatabase(
           lotId,
           serialNumberId,
           type: InventoryMovementType.out,
-          reason: `Consumo de reserva ${reservation.id}`,
+          reason: options.movement?.reason ?? `Consumo de reserva ${reservation.id}`,
           quantity: movementQuantity,
           quantityBefore: movementQuantityBefore,
           quantityAfter: movementQuantityAfter,
           fromLocationId: allocation.locationId,
-          referenceType: "inventoryReservation",
-          referenceId: reservation.id,
+          referenceType: options.movement?.referenceType ?? "inventoryReservation",
+          referenceId: options.movement?.referenceId ?? reservation.id,
           performedByUserId: input.performedByUserId,
           createdAt: now,
         };
@@ -489,7 +533,6 @@ export function getInventoryReservationAllocationRemaining(
 function assertReservationReferences(input: ReserveOrderItemInput, db: MockDatabase): void {
   assertRequiredText(input.tenantId, "Reservation tenantId");
   assertRequiredText(input.branchId, "Reservation branchId");
-  assertRequiredText(input.orderId, "Reservation orderId");
   assertRequiredText(input.orderItemId, "Reservation orderItemId");
   assertRequiredText(input.productId, "Reservation productId");
 
@@ -503,6 +546,21 @@ function assertReservationReferences(input: ReserveOrderItemInput, db: MockDatab
   if (!product || product.tenantId !== input.tenantId) {
     throw new Error(`Product not found for tenant: ${input.productId}`);
   }
+  if (input.sourceType === "transfer") {
+    assertRequiredText(input.sourceId, "Transfer reservation sourceId");
+    if (input.orderId !== undefined) throw new Error("Transfer reservation cannot reference an Order");
+    const transfer = db.inventoryTransfers.find((item) =>
+      item.id === input.sourceId && item.tenantId === input.tenantId &&
+      item.sourceBranchId === input.branchId);
+    const transferItem = db.inventoryTransferItems.find((item) =>
+      item.id === input.orderItemId && item.transferId === transfer?.id &&
+      item.productId === input.productId);
+    if (!transferItem || input.quantity > transferItem.requestedQuantity) {
+      throw new Error(`Transfer item not found or quantity conflict: ${input.orderItemId}`);
+    }
+    return;
+  }
+  assertRequiredText(input.orderId, "Reservation orderId");
   const order = db.orders.find(
     (item) =>
       item.id === input.orderId &&
@@ -536,6 +594,8 @@ function assertMatchingReservation(
   if (
     reservation.branchId !== input.branchId ||
     reservation.orderId !== input.orderId ||
+    reservation.sourceId !== input.sourceId ||
+    (reservation.sourceType ?? "order") !== (input.sourceType ?? "order") ||
     reservation.productId !== input.productId ||
     reservedQuantity !== input.quantity
   ) {
@@ -549,8 +609,8 @@ function assertPositiveQuantity(quantity: number, label: string): void {
   }
 }
 
-function assertRequiredText(value: string, label: string): void {
-  if (!value.trim()) throw new Error(`${label} is required`);
+function assertRequiredText(value: string | undefined, label: string): asserts value is string {
+  if (!value?.trim()) throw new Error(`${label} is required`);
 }
 
 function assertConsumeInput(input: ConsumeInventoryReservationInput): void {

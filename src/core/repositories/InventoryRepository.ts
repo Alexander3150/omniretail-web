@@ -36,7 +36,7 @@ export interface PickingInventoryAvailability {
   tenantId: string;
   branchId: string;
   pickingOrderId: string;
-  orderId: string;
+  orderId?: string;
   productId: string;
   physicalQuantity: number;
   ownReservedQuantity: number;
@@ -50,7 +50,10 @@ export interface GetPickingInventoryAvailabilityInput {
   tenantId: string;
   branchId: string;
   pickingOrderId: string;
-  orderId: string;
+  pickingItemId?: string;
+  orderId?: string;
+  sourceType?: "order" | "transfer";
+  sourceId?: string;
   productId: string;
   at?: string;
 }
@@ -73,13 +76,13 @@ export interface PickingFulfillmentTraceSerial {
 }
 
 export interface PickingFulfillmentTraceAllocation {
-  inventoryMovementId: string;
+  inventoryMovementId?: string;
   reservationId: string;
   quantity: number;
   location?: PickingFulfillmentTraceLocation;
   lot?: PickingFulfillmentTraceLot;
   serial?: PickingFulfillmentTraceSerial;
-  consumedAt: string;
+  consumedAt?: string;
 }
 
 export interface PickingFulfillmentItemTrace {
@@ -117,10 +120,12 @@ export interface RegisterInventoryMovementInput {
 export interface ReserveOrderItemInput {
   tenantId: string;
   branchId: string;
-  orderId: string;
+  orderId?: string;
   orderItemId: string;
   productId: string;
   quantity: number;
+  sourceType?: "order" | "transfer";
+  sourceId?: string;
 }
 
 export interface ReleaseInventoryReservationInput {

@@ -1,9 +1,20 @@
-import type { InventoryMovement, OrderItem, Payment, Sale, SaleItem } from "@/core/entities";
+import type {
+  InventoryMovement,
+  InventoryReservation,
+  Order,
+  OrderItem,
+  Payment,
+  PickingOrder,
+  Sale,
+  SaleItem,
+} from "@/core/entities";
 import {
   CashMovementType,
   CashShiftStatus,
+  DeliveryMethod,
   InventoryMovementType,
   InventoryReservationStatus,
+  OrderSource,
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
@@ -11,6 +22,8 @@ import {
   SaleStatus,
 } from "@/core/enums";
 import { planInventoryAllocation } from "@/core/inventory/stockAvailability";
+import { expandKitDemand } from "@/core/kits/kitDemand";
+import { assertOrderDeliveryMethodAllowed } from "@/core/orders/orderDeliveryPolicy";
 import { isBranchScopedResourceAvailable } from "@/core/scopes/branchScope";
 import type {
   ConfirmSaleInput,
@@ -18,14 +31,18 @@ import type {
   SaleConfirmationRepository,
 } from "@/core/repositories";
 import type { DataEventName, DataEventPayload } from "@/core/types/events.types";
+import { validatePhoneNumber } from "@/config/contact-policy";
+import { normalizeEmail, validateEmail } from "@/config/email-policy";
+import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
+import type { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
 import { registerCashMovementInTransaction } from "@/infrastructure/mock/repositories/cashMovementMutations";
-import { expandKitDemand } from "@/core/kits/kitDemand";
 import {
   findInventoryReservationBalance,
   getInventoryReservationAllocationRemaining,
 } from "@/infrastructure/mock/repositories/inventoryReservationMutations";
+import { scheduleDeferredFulfillmentInTransaction } from "@/infrastructure/mock/repositories/orderFulfillmentMutations";
 import {
   consumePlannedStockLots,
   getLotAwareBalances,
@@ -40,10 +57,33 @@ import {
   planSerialConsumption,
 } from "@/infrastructure/mock/repositories/serialNumberMutations";
 
+export interface MockSaleConfirmationRepositoryTestHooks {
+  afterDeferredPickingCreated?: () => void;
+}
+
+interface DeferredFulfillmentResult {
+  order: Order;
+  pickingOrder: PickingOrder;
+  reservationChanges: Array<{ reservation: InventoryReservation; changed: boolean }>;
+}
+
+interface SaleConfirmationMutationResult extends ConfirmSaleResult {
+  reservationChanges: DeferredFulfillmentResult["reservationChanges"];
+  deferredFulfillmentCreated: boolean;
+}
+
 export class MockSaleConfirmationRepository
   extends BaseMockRepository
   implements SaleConfirmationRepository
 {
+  constructor(
+    store: MockDatabaseStore,
+    eventBus: DataEventBus,
+    private readonly testHooks: MockSaleConfirmationRepositoryTestHooks = {},
+  ) {
+    super(store, eventBus);
+  }
+
   async confirm(input: ConfirmSaleInput): Promise<ConfirmSaleResult> {
     this.assertBasicInput(input);
 
@@ -55,30 +95,49 @@ export class MockSaleConfirmationRepository
     );
     if (existing) return existing;
 
-    const result = this.store.transact((db) => {
+    const result = this.store.transact<SaleConfirmationMutationResult>((db) => {
       this.assertReferences(input, db);
-      const sourceOrderOwnsInventory = this.assertSourceOrderOwnership(input, db);
       this.assertPaymentMethods(input, db);
       this.assertPayments(input, db);
 
       const now = this.now();
       const saleId = this.id("sale");
+      const saleNumber = nextSaleNumber(db.sales, input.tenantId);
+
+      const deferredFulfillment = input.deferredOrder
+        ? this.createDeferredFulfillment(input, saleNumber, now, db)
+        : undefined;
+
+      const sourceOrderId = input.sourceOrderId ?? deferredFulfillment?.order.id;
+      const effectiveInput = sourceOrderId ? { ...input, sourceOrderId } : input;
+
+      const sourceOrderOwnsInventory = this.assertSourceOrderOwnership(
+        effectiveInput,
+        db,
+      );
+
       const saleItems: SaleItem[] = input.items.map((inputItem) => {
         const { inventoryQuantity, ...item } = inputItem;
         void inventoryQuantity;
-        return { ...item, id: this.id("sale-item"), saleId };
+
+        return {
+          ...item,
+          id: this.id("sale-item"),
+          saleId,
+        };
       });
+
       const sale: Sale = {
         id: saleId,
         tenantId: input.tenantId,
         branchId: input.branchId,
         customerId: input.customerId,
-        sourceOrderId: input.sourceOrderId,
+        sourceOrderId,
         confirmationId: input.confirmationId,
         confirmationFingerprint: fingerprint,
         cashShiftId: input.cashShiftId,
         items: saleItems,
-        number: nextSaleNumber(db.sales, input.tenantId),
+        number: saleNumber,
         status: SaleStatus.completed,
         document: input.document,
         subtotal: input.subtotal,
@@ -97,7 +156,7 @@ export class MockSaleConfirmationRepository
         id: this.id("payments"),
         tenantId: input.tenantId,
         saleId,
-        orderId: input.sourceOrderId,
+        orderId: sourceOrderId,
         method: paymentInput.method,
         status: paymentInput.status ?? PaymentStatus.approved,
         amount: paymentInput.amount,
@@ -148,7 +207,11 @@ export class MockSaleConfirmationRepository
         payments,
         inventoryMovements,
         cashMovement,
+        order: deferredFulfillment?.order,
+        pickingOrder: deferredFulfillment?.pickingOrder,
         idempotent: false,
+        reservationChanges: deferredFulfillment?.reservationChanges ?? [],
+        deferredFulfillmentCreated: Boolean(deferredFulfillment),
       };
     });
 
@@ -176,17 +239,178 @@ export class MockSaleConfirmationRepository
       const cashMovement = db.cashMovements.find(
         (movement) => movement.referenceType === "sale" && movement.referenceId === sale.id,
       );
+      const order = sale.sourceOrderId
+        ? db.orders.find(
+            (item) =>
+              item.id === sale.sourceOrderId &&
+              item.tenantId === sale.tenantId &&
+              item.branchId === sale.branchId,
+          )
+        : undefined;
+      const pickingOrder = order
+        ? db.pickingOrders.find(
+            (item) =>
+              item.orderId === order.id &&
+              item.tenantId === order.tenantId &&
+              item.branchId === order.branchId,
+          )
+        : undefined;
       if (payments.length === 0) {
         throw new Error(`La confirmacion ${confirmationId} existe en estado incompleto.`);
+      }
+      if (sale.sourceOrderId && !order) {
+        throw new Error(`La confirmacion ${confirmationId} no conserva su Order relacionada.`);
+      }
+      if (
+        order?.source === OrderSource.pos &&
+        order.orderNumber === sale.number &&
+        order.deliveryMethod !== DeliveryMethod.immediate &&
+        !pickingOrder
+      ) {
+        throw new Error(`La confirmacion ${confirmationId} no conserva su Picking relacionado.`);
       }
       return {
         sale,
         payments,
         inventoryMovements,
         cashMovement,
+        order,
+        pickingOrder,
         idempotent: true,
       };
     });
+  }
+
+  private createDeferredFulfillment(
+    input: ConfirmSaleInput,
+    saleNumber: string,
+    now: string,
+    db: MockDatabase,
+  ): DeferredFulfillmentResult {
+    const deferredOrder = input.deferredOrder;
+    if (!deferredOrder) throw new Error("Deferred Order input is required.");
+    const idempotencyKey = deferredOrder.idempotencyKey.trim();
+    if (
+      db.orders.some(
+        (order) => order.tenantId === input.tenantId && order.idempotencyKey === idempotencyKey,
+      )
+    ) {
+      throw new Error(`Order idempotency conflict: ${idempotencyKey}`);
+    }
+    if (
+      db.orders.some(
+        (order) => order.tenantId === input.tenantId && order.orderNumber === saleNumber,
+      )
+    ) {
+      throw new Error(`Order number already exists: ${saleNumber}`);
+    }
+
+    const trackingToken = `pos-${idempotencyKey}`;
+    if (
+      db.orders.some(
+        (order) => order.tenantId === input.tenantId && order.trackingToken === trackingToken,
+      )
+    ) {
+      throw new Error(`Order tracking token already exists: ${trackingToken}`);
+    }
+
+    const orderId = this.id("order");
+    const orderItems: OrderItem[] = input.items.map((item) => {
+      const product = db.products.find(
+        (entry) => entry.id === item.productId && entry.tenantId === input.tenantId,
+      );
+      if (!product) throw new Error(`Product not found for tenant: ${item.productId}`);
+      const fulfillmentComponents =
+        product.productType === ProductType.physical && product.tracking.stock
+          ? [{
+              productId: item.productId,
+              quantity: item.inventoryQuantity ?? item.quantity,
+            }]
+          : product.productType === ProductType.kit
+            ? expandKitDemand(
+                db.productKitComponents.filter(
+                  (component) =>
+                    component.tenantId === input.tenantId &&
+                    component.kitProductId === item.productId,
+                ),
+                item.inventoryQuantity ?? item.quantity,
+              )
+            : undefined;
+      return {
+        ...item,
+        id: this.id("order-item"),
+        orderId,
+        fulfillmentComponents,
+      };
+    });
+    const deliveryAddress = deferredOrder.deliveryAddress
+      ? {
+          ...deferredOrder.deliveryAddress,
+          recipientName: deferredOrder.deliveryAddress.recipientName.trim(),
+          recipientPhone: deferredOrder.deliveryAddress.recipientPhone?.trim(),
+          line1: deferredOrder.deliveryAddress.line1.trim(),
+          line2: deferredOrder.deliveryAddress.line2?.trim() || undefined,
+          city: deferredOrder.deliveryAddress.city.trim(),
+          stateOrDepartment: deferredOrder.deliveryAddress.stateOrDepartment?.trim() || undefined,
+          postalCode: deferredOrder.deliveryAddress.postalCode?.trim() || undefined,
+          country: deferredOrder.deliveryAddress.country.trim(),
+          references: deferredOrder.deliveryAddress.references?.trim() || undefined,
+        }
+      : undefined;
+    const notificationContact =
+      deferredOrder.notificationContact?.emailMode === "send"
+        ? {
+            emailMode: "send" as const,
+            email: normalizeEmail(deferredOrder.notificationContact.email),
+          }
+        : deferredOrder.notificationContact;
+    const storePickupContact = deferredOrder.storePickupContact
+      ? {
+          recipientName: deferredOrder.storePickupContact.recipientName.trim(),
+          recipientPhone: deferredOrder.storePickupContact.recipientPhone.trim(),
+        }
+      : undefined;
+    const order: Order = {
+      id: orderId,
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      orderNumber: saleNumber,
+      source: OrderSource.pos,
+      customerId: input.customerId,
+      items: orderItems,
+      status: OrderStatus.confirmed,
+      deliveryMethod: deferredOrder.deliveryMethod,
+      transportMode: deferredOrder.transportMode,
+      deliveryAddress,
+      storePickupContact,
+      notificationContact,
+      subtotal: input.subtotal,
+      discountTotal: input.discountTotal,
+      shippingTotal: 0,
+      total: input.total,
+      trackingToken,
+      idempotencyKey,
+      idempotencyFingerprint: getDeferredOrderFingerprint(input, saleNumber),
+      createdAt: now,
+      updatedAt: now,
+    };
+    db.orders.push(order);
+    const fulfillment = scheduleDeferredFulfillmentInTransaction(order, db, {
+      id: (prefix) => this.id(prefix),
+      now: () => now,
+    });
+    if (!fulfillment.pickingOrder) {
+      throw new Error(`Deferred Order has no physical fulfillment: ${order.id}`);
+    }
+    if (!fulfillment.pickingCreated) {
+      throw new Error(`PickingOrder already exists for new Order: ${order.id}`);
+    }
+    this.testHooks.afterDeferredPickingCreated?.();
+    return {
+      order,
+      pickingOrder: fulfillment.pickingOrder,
+      reservationChanges: fulfillment.reservationChanges,
+    };
   }
 
   private assertBasicInput(input: ConfirmSaleInput): void {
@@ -197,6 +421,19 @@ export class MockSaleConfirmationRepository
     if (!input.cashShiftId) throw new Error("cashShiftId es requerido.");
     if (input.items.length === 0) throw new Error("La venta debe tener al menos un item.");
     if (input.payments.length === 0) throw new Error("La venta debe tener al menos un pago.");
+    if (input.sourceOrderId && input.deferredOrder) {
+      throw new Error("La venta no puede recibir sourceOrderId y deferredOrder simultaneamente.");
+    }
+    if (input.deferredOrder) {
+      if (!input.deferredOrder.idempotencyKey.trim()) {
+        throw new Error("Deferred Order idempotencyKey es requerido.");
+      }
+      assertOrderDeliveryMethodAllowed(OrderSource.pos, input.deferredOrder.deliveryMethod);
+      if (input.deferredOrder.deliveryMethod === DeliveryMethod.immediate) {
+        throw new Error("Immediate POS delivery must not create an Order.");
+      }
+      this.assertDeferredContact(input.deferredOrder);
+    }
     input.items.forEach((item) => {
       if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
         throw new Error(`Cantidad invalida para ${item.productId}.`);
@@ -207,6 +444,48 @@ export class MockSaleConfirmationRepository
         throw new Error("Cada pago debe tener amount mayor a cero.");
       }
     });
+  }
+
+  private assertDeferredContact(input: NonNullable<ConfirmSaleInput["deferredOrder"]>): void {
+    if (input.deliveryMethod === DeliveryMethod.home_delivery) {
+      const address = input.deliveryAddress;
+      if (
+        !address?.recipientName.trim() ||
+        !address.recipientPhone?.trim() ||
+        !address.line1.trim() ||
+        !address.city.trim() ||
+        !address.country.trim()
+      ) {
+        throw new Error("Home delivery requires a complete delivery address.");
+      }
+      const phoneError = validatePhoneNumber(address.recipientPhone);
+      if (phoneError) throw new Error(phoneError);
+    } else if (input.deliveryAddress !== undefined) {
+      throw new Error("Only home delivery can persist a delivery address.");
+    }
+    if (input.deliveryMethod === DeliveryMethod.store_pickup) {
+      const contact = input.storePickupContact;
+      if (!contact?.recipientName?.trim()) {
+        throw new Error("Store pickup recipientName is required.");
+      }
+      if (!contact.recipientPhone?.trim()) {
+        throw new Error("Store pickup recipientPhone is required.");
+      }
+      const phoneError = validatePhoneNumber(contact.recipientPhone);
+      if (phoneError) throw new Error(phoneError);
+    } else if (input.storePickupContact !== undefined) {
+      throw new Error("Only store pickup can persist storePickupContact.");
+    }
+    if (input.notificationContact?.emailMode === "send") {
+      const emailError = validateEmail(input.notificationContact.email);
+      if (emailError) throw new Error(emailError);
+    } else if (
+      input.notificationContact?.emailMode === "not_applicable" &&
+      "email" in input.notificationContact &&
+      input.notificationContact.email !== undefined
+    ) {
+      throw new Error("Order notificationContact not_applicable cannot include email");
+    }
   }
 
   private assertReferences(input: ConfirmSaleInput, db: MockDatabase): void {
@@ -347,7 +626,7 @@ export class MockSaleConfirmationRepository
           (ownedRemainingByBalance.get(allocation.balanceId) ?? 0) + remaining,
         );
       });
-      if (committedQuantity !== orderItem.quantity) {
+      if (committedQuantity !== (orderItem.inventoryQuantity ?? orderItem.quantity)) {
         throw new Error(`InventoryReservation quantity conflict for OrderItem: ${orderItem.id}`);
       }
       if (
@@ -646,7 +925,7 @@ export class MockSaleConfirmationRepository
     return movements;
   }
 
-  private emitAfterCommit(result: ConfirmSaleResult): void {
+  private emitAfterCommit(result: SaleConfirmationMutationResult): void {
     this.emitSafely("sale.changed", {
       entityId: result.sale.id,
       tenantId: result.sale.tenantId,
@@ -681,6 +960,35 @@ export class MockSaleConfirmationRepository
         tenantId: result.sale.tenantId,
         branchId: result.sale.branchId,
         action: "updated",
+      });
+    }
+    result.reservationChanges
+      .filter((change) => change.changed)
+      .forEach((change) => {
+        this.emitSafely("stock.changed", {
+          entityId: change.reservation.id,
+          tenantId: change.reservation.tenantId,
+          branchId: change.reservation.branchId,
+          productId: change.reservation.productId,
+          action: "updated",
+          metadata: { entity: "InventoryReservation", status: change.reservation.status },
+        });
+      });
+    if (result.deferredFulfillmentCreated && result.order && result.pickingOrder) {
+      this.emitSafely("order.changed", {
+        entityId: result.order.id,
+        tenantId: result.order.tenantId,
+        branchId: result.order.branchId,
+        orderId: result.order.id,
+        action: "created",
+      });
+      this.emitSafely("picking.changed", {
+        entityId: result.pickingOrder.id,
+        tenantId: result.pickingOrder.tenantId,
+        branchId: result.pickingOrder.branchId,
+        orderId: result.order.id,
+        pickingOrderId: result.pickingOrder.id,
+        action: "created",
       });
     }
   }
@@ -756,6 +1064,45 @@ function getConfirmationFingerprint(input: ConfirmSaleInput): string {
     cashShiftId: input.cashShiftId,
     customerId: input.customerId ?? null,
     sourceOrderId: input.sourceOrderId ?? null,
+    ...(input.deferredOrder
+      ? {
+          deferredOrder: {
+            idempotencyKey: input.deferredOrder.idempotencyKey.trim(),
+            deliveryMethod: input.deferredOrder.deliveryMethod,
+            transportMode: input.deferredOrder.transportMode,
+            deliveryAddress: input.deferredOrder.deliveryAddress
+              ? {
+                  recipientName: input.deferredOrder.deliveryAddress.recipientName.trim(),
+                  recipientPhone:
+                    input.deferredOrder.deliveryAddress.recipientPhone?.trim() ?? null,
+                  line1: input.deferredOrder.deliveryAddress.line1.trim(),
+                  line2: input.deferredOrder.deliveryAddress.line2?.trim() || null,
+                  city: input.deferredOrder.deliveryAddress.city.trim(),
+                  stateOrDepartment:
+                    input.deferredOrder.deliveryAddress.stateOrDepartment?.trim() || null,
+                  postalCode: input.deferredOrder.deliveryAddress.postalCode?.trim() || null,
+                  country: input.deferredOrder.deliveryAddress.country.trim(),
+                  references: input.deferredOrder.deliveryAddress.references?.trim() || null,
+                }
+              : null,
+            ...(input.deferredOrder.storePickupContact
+              ? {
+                  storePickupContact: {
+                    recipientName: input.deferredOrder.storePickupContact.recipientName.trim(),
+                    recipientPhone: input.deferredOrder.storePickupContact.recipientPhone.trim(),
+                  },
+                }
+              : {}),
+            notificationContact:
+              input.deferredOrder.notificationContact?.emailMode === "send"
+                ? {
+                    emailMode: "send",
+                    email: normalizeEmail(input.deferredOrder.notificationContact.email),
+                  }
+                : (input.deferredOrder.notificationContact ?? null),
+          },
+        }
+      : {}),
     document: input.document ?? null,
     subtotal: roundMoney(input.subtotal),
     discountTotal: roundMoney(input.discountTotal),
@@ -785,6 +1132,43 @@ function getConfirmationFingerprint(input: ConfirmSaleInput): string {
               verifiedByUserId: payment.manualVerification.verifiedByUserId,
             }
           : null,
+      }))
+      .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
+  });
+}
+
+function getDeferredOrderFingerprint(input: ConfirmSaleInput, saleNumber: string): string {
+  const deferredOrder = input.deferredOrder
+    ? {
+        ...input.deferredOrder,
+        storePickupContact: input.deferredOrder.storePickupContact
+          ? {
+              recipientName: input.deferredOrder.storePickupContact.recipientName.trim(),
+              recipientPhone: input.deferredOrder.storePickupContact.recipientPhone.trim(),
+            }
+          : undefined,
+      }
+    : null;
+  return JSON.stringify({
+    tenantId: input.tenantId,
+    branchId: input.branchId,
+    orderNumber: saleNumber,
+    source: OrderSource.pos,
+    customerId: input.customerId ?? null,
+    deferredOrder,
+    subtotal: roundMoney(input.subtotal),
+    discountTotal: roundMoney(input.discountTotal),
+    shippingTotal: 0,
+    total: roundMoney(input.total),
+    items: input.items
+      .map((item) => ({
+        productId: item.productId,
+        skuSnapshot: item.skuSnapshot,
+        nameSnapshot: item.nameSnapshot,
+        quantity: item.quantity,
+        unitPrice: roundMoney(item.unitPrice),
+        discount: roundMoney(item.discount),
+        subtotal: roundMoney(item.subtotal),
       }))
       .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
   });

@@ -136,13 +136,12 @@ export class MockInventoryTransferRequestRepository
   }
 
   async cancelRequest(id: string, reason?: string) {
-    const item = this.store.mutate((db) => {
+    const item = this.store.transact((db) => {
       const current = this.findRequest(db, id);
-      this.assertStatus(
-        current,
-        [InventoryTransferRequestStatus.requested, InventoryTransferRequestStatus.approved],
-        "cancel",
-      );
+      this.assertStatus(current, [InventoryTransferRequestStatus.requested], "cancel");
+      if (db.inventoryTransfers.some((transfer) => transfer.sourceRequestIds?.includes(id))) {
+        throw new Error("Inventory transfer request already has a transfer");
+      }
       const now = this.now();
       return this.replaceRequest(db, {
         ...current,

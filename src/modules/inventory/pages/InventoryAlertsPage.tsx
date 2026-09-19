@@ -38,6 +38,7 @@ import type {
   TransferRequestDto,
 } from "@/modules/inventory/application/dto/InventoryAlertsDto";
 import { getSuggestedReorderQuantity } from "@/modules/inventory/application/services/GetInventoryAlertsService";
+import { InventoryProductTransfersModal } from "@/modules/inventory/components/InventoryProductTransfersModal";
 import {
   useInventoryAlerts,
   type InventoryKpiFilter,
@@ -52,7 +53,7 @@ import {
 } from "@/modules/inventory/validation/inventoryAlerts.validation";
 
 type ActionMode =
-  "adjust" | "other-branches" | "request-transfer" | "transfer-request-detail" | null;
+  "adjust" | "other-branches" | "request-transfer" | "product-transfers" | "transfer-request-detail" | null;
 
 type EditableAdjustStockDto = Omit<AdjustStockDto, "quantity" | "serialNumbers"> & {
   quantity: NumericInputValue;
@@ -92,6 +93,7 @@ export function InventoryAlertsPage() {
     kpis,
     rows,
     branchId,
+    currentBranchId,
     activeBranch,
     branches,
     categories,
@@ -115,10 +117,13 @@ export function InventoryAlertsPage() {
     canManageTransfers,
     adjustStock,
     requestTransfer,
+    cancelTransfer,
+    cancelTransferRequest,
     approveTransferRequest,
     rejectTransferRequest,
   } = useInventoryAlerts();
   const [panelMode, setPanelMode] = useState<AlertPanelMode>("alerts");
+  const [previousCurrentBranchId, setPreviousCurrentBranchId] = useState(currentBranchId);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [actionMode, setActionMode] = useState<ActionMode>(null);
   const [requestProviderBranchId, setRequestProviderBranchId] = useState<string | null>(null);
@@ -130,6 +135,13 @@ export function InventoryAlertsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [, setClockTick] = useState(0);
+  if (previousCurrentBranchId !== currentBranchId) {
+    setPreviousCurrentBranchId(currentBranchId);
+    setPanelMode("alerts");
+    setSelectedProductId(null);
+    setSelectedTransferRequestId(null);
+    setActionMode(null);
+  }
   const selectedRow =
     rows.find((row) => row.productId === selectedProductId) ??
     data.rows.find((row) => row.productId === selectedProductId) ??
@@ -303,6 +315,8 @@ export function InventoryAlertsPage() {
             onBranchChange={(value) => {
               setPage(1);
               setBranchId(value);
+              setPanelMode("alerts");
+              setSelectedProductId(null);
             }}
             onCategoryChange={(value) => {
               setPage(1);
@@ -363,6 +377,7 @@ export function InventoryAlertsPage() {
           onCreateOrder={() => selectedRow && openPurchaseOrder(selectedRow, "inventory-alert")}
           onOtherBranches={() => selectedRow && openOtherBranches(selectedRow)}
           onViewHistory={() => selectedRow && openMovementHistory(selectedRow)}
+          onViewProductTransfers={() => selectedRow && setActionMode("product-transfers")}
           onCloseProduct={() => {
             setSelectedProductId(null);
             setPanelMode("alerts");
@@ -411,6 +426,23 @@ export function InventoryAlertsPage() {
           onSubmit={addTransferRequest}
         />
       ) : null}
+      {selectedRow && actionMode === "product-transfers" ? (
+        <InventoryProductTransfersModal
+          key={`${branchId}:${selectedRow.productId}`}
+          branchId={branchId}
+          productId={selectedRow.productId}
+          productName={selectedRow.productName}
+          busy={busy}
+          canManageTransfers={canManageTransfers}
+          onClose={() => setActionMode(null)}
+          onReview={(requestId) => {
+            const request = data.transferRequests.find((item) => item.id === requestId);
+            if (request) openTransferRequestDetail(request);
+          }}
+          onCancelRequest={async (requestId) => { await cancelTransferRequest(requestId); }}
+          onCancelTransfer={cancelTransfer}
+        />
+      ) : null}
       {selectedTransferRequest && actionMode === "transfer-request-detail" ? (
         <TransferRequestDetailModal
           open
@@ -418,11 +450,11 @@ export function InventoryAlertsPage() {
           busy={busy}
           canManageTransfers={canManageTransfers}
           onApprove={async () => {
-            await approveTransferRequest(selectedTransferRequest.id);
+            const transfer = await approveTransferRequest(selectedTransferRequest.id);
             setActionMode(null);
             showToast({
               title: "Solicitud aprobada",
-              description: "Queda pendiente de traslado.",
+              description: `Traslado ${transfer.number} creado y preparado para Picking.`,
               tone: "success",
             });
           }}
@@ -1131,6 +1163,7 @@ function ContextPanel({
   onSelectProduct,
   onSelectTransferRequest,
   onViewHistory,
+  onViewProductTransfers,
 }: {
   activeBranchId: string;
   activeBranchName: string;
@@ -1150,6 +1183,7 @@ function ContextPanel({
   onSelectProduct: (productId: string) => void;
   onSelectTransferRequest: (request: InventoryTransferRequestRow) => void;
   onViewHistory: () => void;
+  onViewProductTransfers: () => void;
 }) {
   const productAlerts = row ? alerts.filter((alert) => alert.productId === row.productId) : [];
   const totalAlerts = alerts.length + transferRequests.length;
@@ -1189,6 +1223,7 @@ function ContextPanel({
           onClose={onCloseProduct}
           onOtherBranches={onOtherBranches}
           onViewHistory={onViewHistory}
+          onViewProductTransfers={onViewProductTransfers}
         />
       ) : null}
     </aside>
@@ -1323,6 +1358,7 @@ function ProductPanel({
   onClose,
   onOtherBranches,
   onViewHistory,
+  onViewProductTransfers,
 }: {
   activeBranchName: string;
   alerts: InventoryAlert[];
@@ -1334,6 +1370,7 @@ function ProductPanel({
   onClose: () => void;
   onOtherBranches: () => void;
   onViewHistory: () => void;
+  onViewProductTransfers: () => void;
 }) {
   if (row.isDerivedKit) {
     return (
@@ -1468,6 +1505,9 @@ function ProductPanel({
           ) : null}
           <Button onClick={onViewHistory} type="button" variant="secondary">
             Ver historial de movimientos
+          </Button>
+          <Button onClick={onViewProductTransfers} type="button" variant="secondary">
+            Ver solicitudes y traslados
           </Button>
           {canAdjustStock ? (
             <Button onClick={onAdjust} type="button">
@@ -1904,18 +1944,22 @@ function OtherBranchesStockModal({
 }
 
 function RequestTransferModal({
+  busy = false,
   open,
   providerBranchId,
   row,
   onClose,
   onSubmit,
 }: {
+  busy?: boolean;
   open: boolean;
   providerBranchId: string | null;
   row: InventoryProductRow;
   onClose: () => void;
-  onSubmit: (dto: TransferRequestDto) => void;
+  onSubmit: (dto: TransferRequestDto) => Promise<void>;
 }) {
+  const submittingRef = useRef(false);
+  const [submitError, setSubmitError] = useState("");
   const availableProviders = row.otherBranchStocks;
   const firstProviderWithStock = availableProviders.find((stock) => stock.availableQuantity > 0);
   const initialProvider =
@@ -1941,24 +1985,34 @@ function RequestTransferModal({
   function update(patch: Partial<EditableTransferRequestDto>) {
     setValue((current) => ({ ...current, ...patch }));
     setErrors({});
+    setSubmitError("");
   }
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrors(transferValidationErrors);
     if (transferInvalid) return;
-    onSubmit(transferDto);
+    if (busy || submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitError("");
+    try {
+      await onSubmit(transferDto);
+    } catch (cause) {
+      setSubmitError(cause instanceof Error ? cause.message : "No se pudo crear el traslado.");
+    } finally {
+      submittingRef.current = false;
+    }
   }
 
   return (
     <Modal
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button onClick={onClose} type="button" variant="secondary">
+          <Button disabled={busy} onClick={onClose} type="button" variant="secondary">
             Cerrar
           </Button>
           <Button
-            disabled={transferInvalid}
+            disabled={transferInvalid || busy}
             form="inventory-transfer-request-form"
             type="submit"
             variant="secondary"
@@ -1968,12 +2022,13 @@ function RequestTransferModal({
         </div>
       }
       maxWidth="600px"
-      onClose={onClose}
+      onClose={() => { if (!busy && !submittingRef.current) onClose(); }}
       open={open}
       subtitle={row.productName}
       title="Solicitar traslado de producto"
     >
       <form className="space-y-4" id="inventory-transfer-request-form" onSubmit={submit}>
+        {submitError ? <p className="text-sm text-[var(--color-danger)]" role="alert">{submitError}</p> : null}
         <div className="grid gap-3 md:grid-cols-2">
           <ReadonlyField label="Producto" value={row.productName} />
           <ReadonlyField label="Codigo" value={row.sku} />

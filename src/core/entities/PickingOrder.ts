@@ -4,7 +4,10 @@ import type { ISODateString } from "@/core/types/common.types";
 export interface PickingOrder {
   id: string;
   tenantId: string;
-  orderId: string;
+  orderId?: string;
+  /** Transfer identity lives only in sourceType/sourceId; Order keeps orderId. */
+  sourceType?: "order" | "transfer";
+  sourceId?: string;
   branchId: string;
   assignedUserId?: string;
   status: PickingStatus;

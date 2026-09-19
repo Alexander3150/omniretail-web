@@ -45,6 +45,7 @@ export type DataEventName =
   | "sale.voided"
   | "cash-shift.changed"
   | "picking.changed"
+  | "packing.changed"
   | "dispatch.changed"
   | "notification.changed"
   | "audit.changed";
@@ -56,6 +57,7 @@ export interface DataEventPayload {
   productId?: string;
   pickingOrderId?: string;
   pickingLineId?: string;
+  packingId?: string;
   orderId?: string;
   incidentId?: string;
   previousPrice?: number;
@@ -68,17 +70,27 @@ export interface PickingChangedEventPayload extends DataEventPayload {
   tenantId: string;
   branchId: string;
   pickingOrderId: string;
-  orderId: string;
+  orderId?: string;
+  sourceType?: "order" | "transfer";
+  sourceId?: string;
+}
+
+export interface PackingChangedEventPayload extends DataEventPayload {
+  tenantId: string;
+  branchId: string;
+  packingId: string;
+  orderId?: string;
+  sourceType?: "order" | "transfer";
+  sourceId?: string;
 }
 
 export interface DataEventPayloadMap {
   "picking.changed": PickingChangedEventPayload;
+  "packing.changed": PackingChangedEventPayload;
 }
 
 export type DataEventPayloadFor<EventName extends DataEventName> =
-  EventName extends keyof DataEventPayloadMap
-    ? DataEventPayloadMap[EventName]
-    : DataEventPayload;
+  EventName extends keyof DataEventPayloadMap ? DataEventPayloadMap[EventName] : DataEventPayload;
 
 export type DataEventArguments<EventName extends DataEventName> =
   EventName extends keyof DataEventPayloadMap

@@ -1,13 +1,12 @@
-import type { Dispatch, Notification, Package } from "@/core/entities";
+import type { Dispatch, InventoryMovement, Notification, Package } from "@/core/entities";
 import {
   DispatchStatus,
-  InventoryReservationStatus,
   NotificationChannel,
   NotificationStatus,
   OrderStatus,
+  PackingStatus,
   PickingIncidentStatus,
   PickingStatus,
-  ProductType,
   TransportMode,
   UserStatus,
   UserType,
@@ -24,13 +23,14 @@ import type {
 } from "@/core/repositories";
 import type { MockDatabase } from "@/infrastructure/mock/database/MockDatabase";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
-import { getInventoryReservationAllocationRemaining } from "@/infrastructure/mock/repositories/inventoryReservationMutations";
+import { commitPickedOrderInventoryInDatabase } from "@/infrastructure/mock/repositories/commitPickedOrderInventoryInDatabase";
 import type { DataEventName, DataEventPayload } from "@/core/types/events.types";
 
 interface DispatchMutationResult extends ConfirmDispatchResult {
   dispatchChanged: boolean;
   orderChanged: boolean;
   notificationChanged: boolean;
+  inventoryMovements?: InventoryMovement[];
 }
 
 export class MockDispatchRepository extends BaseMockRepository implements DispatchRepository {
@@ -86,7 +86,6 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
     if (!operationId) throw new Error("Dispatch operationId is required");
     const carrierName = normalizeOptional(input.carrierName);
     const trackingNumber = normalizeOptional(input.trackingNumber);
-    const packages = input.packages ? normalizePackages(input.packages) : undefined;
 
     const result = this.store.transact<DispatchMutationResult>((db) => {
       this.assertActor(input, db);
@@ -109,13 +108,40 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
         if (!trackingNumber) throw new Error("Third-party dispatch trackingNumber is required");
       }
 
+      const packing = db.packings.find(
+        (item) =>
+          item.orderId === order.id &&
+          item.tenantId === input.tenantId &&
+          item.branchId === input.branchId,
+      );
+      if (
+        !packing ||
+        packing.status !== PackingStatus.finalized ||
+        !packing.finalizedAt ||
+        packing.packageCount === undefined ||
+        packing.totalWeight === undefined ||
+        !packing.labelGenerationId ||
+        !packing.labelGeneratedAt ||
+        !packing.labelPrintedAt ||
+        !packing.labelCode
+      ) {
+        throw new Error(`Finalized home-delivery Packing not found for Order: ${order.id}`);
+      }
+      const packages = buildPackagesFromPacking({
+        labelCode: packing.labelCode,
+        packageCount: packing.packageCount,
+      });
+
       const fingerprint = getDispatchFingerprint({
         tenantId: input.tenantId,
         orderId: order.id,
         transportMode: order.transportMode,
         carrierName,
         trackingNumber,
-        packages: packages ?? [],
+        packingId: packing.id,
+        labelGenerationId: packing.labelGenerationId,
+        packageCount: packing.packageCount,
+        totalWeight: packing.totalWeight,
       });
       const operationConflict = db.dispatches.find(
         (item) =>
@@ -138,7 +164,7 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
         if (dispatch.confirmationFingerprint !== fingerprint) {
           throw new Error(`Dispatch operation conflict: ${operationId}`);
         }
-        return this.buildRetryResult(order, dispatch, db);
+        return { ...this.buildRetryResult(order, dispatch, db), dispatchChanged: false, orderChanged: false, notificationChanged: false };
       }
 
       if (order.status === OrderStatus.dispatched) {
@@ -149,15 +175,16 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
           throw new Error(`Dispatch data conflict for already dispatched Order: ${order.id}`);
         }
         if (
-          packages &&
           !packageDataMatches(
             db.packages.filter((item) => item.dispatchId === dispatch.id),
             packages,
           )
         ) {
-          throw new Error(`Dispatch Package data conflict for already dispatched Order: ${order.id}`);
+          throw new Error(
+            `Dispatch Package data conflict for already dispatched Order: ${order.id}`,
+          );
         }
-        return this.buildRetryResult(order, dispatch, db);
+        return { ...this.buildRetryResult(order, dispatch, db), dispatchChanged: false, orderChanged: false, notificationChanged: false };
       }
       if (order.status !== OrderStatus.ready_for_dispatch) {
         throw new Error(`Order is not ready for dispatch: ${order.id}`);
@@ -183,7 +210,6 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
       ) {
         throw new Error(`Picking has unresolved incidents for Order: ${order.id}`);
       }
-      this.assertReservationsConsumed(picking.id, order.id, input, db);
 
       const now = this.now();
       const dispatchChanged = true;
@@ -200,8 +226,8 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
           dispatchedByUserId: input.actorUserId,
           confirmationOperationId: operationId,
           confirmationFingerprint: fingerprint,
-          packageCount: packages?.length ?? 0,
-          weight: sumPackageWeight(packages ?? []),
+          packageCount: packing.packageCount,
+          weight: packing.totalWeight,
           dispatchedAt: now,
           createdAt: now,
           updatedAt: now,
@@ -219,29 +245,32 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
           dispatchedByUserId: input.actorUserId,
           confirmationOperationId: operationId,
           confirmationFingerprint: fingerprint,
-          packageCount: packages?.length ?? dispatch.packageCount,
-          weight: packages ? sumPackageWeight(packages) : dispatch.weight,
+          packageCount: packing.packageCount,
+          weight: packing.totalWeight,
           dispatchedAt: now,
           updatedAt: now,
         });
       }
 
-      if (packages) {
-        db.packages = db.packages.filter((item) => item.dispatchId !== dispatch.id);
-        db.packages.push(
-          ...packages.map<Package>((item) => ({
-            id: this.id("package"),
-            dispatchId: dispatch.id,
-            number: item.number,
-            weight: item.weight,
-            description: item.description,
-            createdAt: now,
-          })),
-        );
-      }
+      const inventoryMovements = commitPickedOrderInventoryInDatabase(db, {
+        order, picking, actorUserId: input.actorUserId, operationId,
+        referenceType: "dispatch", referenceId: dispatch.id,
+        reason: `Despacho de pedido ${order.orderNumber}`,
+      }, { id: (prefix) => this.id(prefix), now: () => this.now() });
+
+      db.packages = db.packages.filter((item) => item.dispatchId !== dispatch.id);
+      db.packages.push(
+        ...packages.map<Package>((item) => ({
+          id: this.id("package"),
+          dispatchId: dispatch.id,
+          number: item.number,
+          description: item.description,
+          createdAt: now,
+        })),
+      );
       const persistedPackages = db.packages.filter((item) => item.dispatchId === dispatch.id);
-      dispatch.packageCount = persistedPackages.length;
-      dispatch.weight = sumPackageWeight(persistedPackages);
+      dispatch.packageCount = packing.packageCount;
+      dispatch.weight = packing.totalWeight;
 
       assertOrderStatusTransition(order.status, OrderStatus.dispatched, "dispatch");
       order.status = OrderStatus.dispatched;
@@ -258,6 +287,7 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
         dispatchChanged,
         orderChanged: true,
         notificationChanged: notification !== undefined,
+        inventoryMovements,
       };
     });
 
@@ -279,6 +309,12 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
         action: "status_changed",
       });
     }
+    result.inventoryMovements?.forEach((movement) => {
+      const payload = { entityId: movement.id, tenantId: movement.tenantId,
+        branchId: movement.branchId, productId: movement.productId, action: "created" as const };
+      this.emitSafely("inventory.changed", payload);
+      this.emitSafely("stock.changed", payload);
+    });
     if (result.notificationChanged && result.notification) {
       this.emitSafely("notification.changed", {
         entityId: result.notification.id,
@@ -413,57 +449,6 @@ export class MockDispatchRepository extends BaseMockRepository implements Dispat
     if (!actor) throw new Error(`Dispatch actor not found for tenant: ${input.actorUserId}`);
   }
 
-  private assertReservationsConsumed(
-    pickingOrderId: string,
-    orderId: string,
-    input: ConfirmDispatchInput,
-    db: MockDatabase,
-  ): void {
-    db.inventoryReservations
-      .filter(
-        (reservation) =>
-          reservation.tenantId === input.tenantId &&
-          reservation.branchId === input.branchId &&
-          reservation.orderId === orderId,
-      )
-      .forEach((reservation) => {
-        const remaining = reservation.allocations.reduce(
-          (total, allocation) => total + getInventoryReservationAllocationRemaining(allocation),
-          0,
-        );
-        if (reservation.status !== InventoryReservationStatus.consumed || remaining !== 0) {
-          throw new Error(`Inventory reservation is not consumed for dispatch: ${reservation.id}`);
-        }
-      });
-    const items = db.pickingItems.filter((item) => item.pickingOrderId === pickingOrderId);
-    items.forEach((item) => {
-      const product = db.products.find(
-        (entry) => entry.id === item.productId && entry.tenantId === input.tenantId,
-      );
-      if (!product) throw new Error(`Product not found for dispatch validation: ${item.productId}`);
-      if (product.productType !== ProductType.physical || !product.tracking.stock) return;
-      const reservation = db.inventoryReservations.find(
-        (entry) =>
-          entry.tenantId === input.tenantId &&
-          entry.branchId === input.branchId &&
-          entry.orderId === orderId &&
-          entry.orderItemId === item.orderItemId &&
-          entry.productId === item.productId,
-      );
-      const remaining = reservation?.allocations.reduce(
-        (total, allocation) => total + getInventoryReservationAllocationRemaining(allocation),
-        0,
-      );
-      if (
-        !reservation ||
-        reservation.status !== InventoryReservationStatus.consumed ||
-        remaining !== 0
-      ) {
-        throw new Error(`Inventory reservation is not consumed for dispatch: ${item.id}`);
-      }
-    });
-  }
-
   private createNotificationIfApplicable(
     order: ConfirmDispatchResult["order"],
     dispatch: Dispatch,
@@ -550,7 +535,10 @@ function getDispatchFingerprint(input: {
   transportMode: TransportMode;
   carrierName?: string;
   trackingNumber?: string;
-  packages: Array<{ number: string; weight?: number; description?: string }>;
+  packingId: string;
+  labelGenerationId: string;
+  packageCount: number;
+  totalWeight: number;
 }): string {
   return JSON.stringify({
     tenantId: input.tenantId,
@@ -558,43 +546,11 @@ function getDispatchFingerprint(input: {
     transportMode: input.transportMode,
     carrierName: input.carrierName ?? null,
     trackingNumber: input.trackingNumber ?? null,
-    packages: input.packages.map((item) => ({
-      number: item.number,
-      weight: item.weight ?? null,
-      description: item.description ?? null,
-    })),
+    packingId: input.packingId,
+    labelGenerationId: input.labelGenerationId,
+    packageCount: input.packageCount,
+    totalWeight: input.totalWeight,
   });
-}
-
-function normalizePackages(
-  packages: NonNullable<ConfirmDispatchInput["packages"]>,
-): NonNullable<ConfirmDispatchInput["packages"]> {
-  if (packages.length === 0) throw new Error("At least one Package is required");
-  const normalized = packages.map((item) => {
-    const number = item.number.trim();
-    if (!number) throw new Error("Package number is required");
-    if (number.length > 80) throw new Error("Package number is too long");
-    if (item.weight !== undefined && (!Number.isFinite(item.weight) || item.weight <= 0)) {
-      throw new Error("Package weight must be positive");
-    }
-    const description = normalizeOptional(item.description);
-    if (description && description.length > 500) {
-      throw new Error("Package description is too long");
-    }
-    return { number, weight: item.weight, description };
-  });
-  const numbers = new Set<string>();
-  normalized.forEach((item) => {
-    const key = item.number.toLocaleLowerCase();
-    if (numbers.has(key)) throw new Error(`Duplicate Package number: ${item.number}`);
-    numbers.add(key);
-  });
-  return normalized;
-}
-
-function sumPackageWeight(packages: Array<{ weight?: number }>): number | undefined {
-  const weights = packages.flatMap((item) => (item.weight === undefined ? [] : [item.weight]));
-  return weights.length > 0 ? weights.reduce((total, weight) => total + weight, 0) : undefined;
 }
 
 function dispatchDataMatches(
@@ -612,21 +568,34 @@ function dispatchDataMatches(
 
 function packageDataMatches(
   persisted: Package[],
-  requested: NonNullable<ConfirmDispatchInput["packages"]>,
+  requested: Array<{ number: string; weight?: number; description?: string }>,
 ): boolean {
-  return JSON.stringify(
-    persisted.map((item) => ({
-      number: item.number,
-      weight: item.weight ?? null,
-      description: item.description ?? null,
-    })),
-  ) === JSON.stringify(
-    requested.map((item) => ({
-      number: item.number,
-      weight: item.weight ?? null,
-      description: item.description ?? null,
-    })),
+  return (
+    JSON.stringify(
+      persisted.map((item) => ({
+        number: item.number,
+        weight: item.weight ?? null,
+        description: item.description ?? null,
+      })),
+    ) ===
+    JSON.stringify(
+      requested.map((item) => ({
+        number: item.number,
+        weight: item.weight ?? null,
+        description: item.description ?? null,
+      })),
+    )
   );
+}
+
+function buildPackagesFromPacking(packing: {
+  labelCode: string;
+  packageCount: number;
+}): Array<{ number: string; description: string }> {
+  return Array.from({ length: packing.packageCount }, (_, index) => ({
+    number: `${packing.labelCode}-${index + 1}`,
+    description: `Bulto ${index + 1} de ${packing.packageCount}`,
+  }));
 }
 
 function getNotificationStatus(

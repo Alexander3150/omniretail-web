@@ -1,4 +1,4 @@
-import { PaymentStatus } from "@/core/enums";
+import { OrderStatus, PaymentStatus } from "@/core/enums";
 import type { StorefrontCheckoutResultDto } from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
 import type { CustomerOrderDetailDto } from "@/modules/customer/application/dto/CustomerOrderDetailDto";
 
@@ -23,7 +23,7 @@ export function toReceiptInput(order: CustomerOrderDetailDto): StorefrontCheckou
     guestTrackingEnabled: true,
     confirmationEmailSent: true,
     total: order.total,
-    orderStatus: order.status,
+    orderStatus: order.status === "sent" ? OrderStatus.dispatched : order.status,
     paymentStatus: (order.payment?.status as PaymentStatus | undefined) ?? PaymentStatus.pending,
     hasInventoryReservations: false,
     deliveryAddress: order.deliveryAddress

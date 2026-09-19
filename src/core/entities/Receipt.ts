@@ -7,7 +7,8 @@ export interface Receipt {
   branchId: string;
   number: string;
   purchaseOrderId?: string;
-  supplierId: string;
+  inventoryTransferId?: string;
+  supplierId?: string;
   status: ReceiptStatus;
   /** Stable idempotency identity for a completed receiving confirmation. */
   confirmationId?: string;

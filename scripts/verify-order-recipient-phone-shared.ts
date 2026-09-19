@@ -37,6 +37,7 @@ function createOrderInput(
     recipientPhone?: string;
     includeDeliveryAddress?: boolean;
     idempotencyKey?: string;
+    storePickupContact?: { recipientName: string; recipientPhone: string };
   } = {},
 ): CreateOrderInput {
   const deliveryMethod = options.deliveryMethod ?? DeliveryMethod.home_delivery;
@@ -73,6 +74,7 @@ function createOrderInput(
           country: "Guatemala",
         }
       : undefined,
+    storePickupContact: options.storePickupContact,
     subtotal: 24.99,
     discountTotal: 0,
     shippingTotal: 0,
@@ -114,9 +116,59 @@ async function verifyRecipientPhoneContract() {
       deliveryMethod: DeliveryMethod.store_pickup,
       source: OrderSource.pos,
       includeDeliveryAddress: false,
+      storePickupContact: {
+        recipientName: "  Persona que retira  ",
+        recipientPhone: " 55550003 ",
+      },
     }),
   );
   assert.equal(pickup.deliveryAddress, undefined);
+  assert.deepEqual(pickup.storePickupContact, {
+    recipientName: "Persona que retira",
+    recipientPhone: "55550003",
+  });
+  await assert.rejects(
+    orders.create(
+      createOrderInput("pickup-missing-contact", {
+        deliveryMethod: DeliveryMethod.store_pickup,
+        source: OrderSource.pos,
+        includeDeliveryAddress: false,
+      }),
+    ),
+    /recipientName is required/,
+  );
+  await assert.rejects(
+    orders.create(
+      createOrderInput("pickup-missing-phone", {
+        deliveryMethod: DeliveryMethod.store_pickup,
+        source: OrderSource.pos,
+        includeDeliveryAddress: false,
+        storePickupContact: { recipientName: "Persona que retira", recipientPhone: "" },
+      }),
+    ),
+    /recipientPhone is required/,
+  );
+  await assert.rejects(
+    orders.create(
+      createOrderInput("pickup-invalid-phone", {
+        deliveryMethod: DeliveryMethod.store_pickup,
+        source: OrderSource.pos,
+        includeDeliveryAddress: false,
+        storePickupContact: { recipientName: "Persona que retira", recipientPhone: "1234" },
+      }),
+    ),
+    /exactamente 8 dígitos/,
+  );
+  await assert.rejects(
+    orders.create({
+      ...validInput,
+      orderNumber: "ORDER-PHONE-HOME-CONTACT",
+      trackingToken: "tracking-phone-home-contact",
+      idempotencyKey: undefined,
+      storePickupContact: { recipientName: "No permitido", recipientPhone: "55550004" },
+    }),
+    /Only store pickup/,
+  );
 
   const posOrder = await orders.create(
     createOrderInput("pos", { recipientPhone: "55550002", source: OrderSource.pos }),
