@@ -50,6 +50,9 @@ export function BusinessConfigPage() {
       return enforceBusinessConfigCoherence({
         ...current,
         [capability]: checked,
+        ...(capability === "supportsLots" || capability === "supportsExpiration"
+          ? { supportsLots: checked, supportsExpiration: checked }
+          : {}),
         preset: BusinessPreset.custom,
       });
     });
@@ -65,6 +68,9 @@ export function BusinessConfigPage() {
         defaultProductTracking: {
           ...current.defaultProductTracking,
           [tracking]: checked,
+          ...(tracking === "lot" || tracking === "expiration"
+            ? { lot: checked, expiration: checked }
+            : {}),
         },
       });
     });
@@ -195,8 +201,8 @@ export function BusinessConfigPage() {
 }
 
 function cloneConfig(config: BusinessConfigDto): BusinessConfigDto {
-  return {
+  return enforceBusinessConfigCoherence({
     ...config,
     defaultProductTracking: { ...config.defaultProductTracking },
-  };
+  });
 }

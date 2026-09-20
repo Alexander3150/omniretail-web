@@ -75,6 +75,7 @@ import {
   validateProductDto,
   type ProductValidationErrors,
 } from "@/modules/catalog/validation/product.validation";
+import { validateProductFormPilot } from "@/modules/catalog/validation/productFormPilot.schema";
 
 interface ProductFormProps {
   mode: "create" | "edit";
@@ -237,12 +238,17 @@ export function ProductForm({
       options.businessCapabilities,
       existingCapabilityContext,
     );
-    const nextErrors = validateProductDto({
-      ...nextValue,
-      salePrice: toFiniteNumber(nextValue.salePrice),
-      primaryImageUrl: nextValue.media.find((item) => item.isPrimary)?.url,
-    });
-    const nextEditorError = validateEditor(nextValue, editorData, options.units);
+    const pilotErrors = validateProductFormPilot(nextValue);
+    const nextErrors = {
+      ...pilotErrors,
+      ...validateProductDto({
+        ...nextValue,
+        salePrice: toFiniteNumber(nextValue.salePrice),
+        primaryImageUrl: nextValue.media.find((item) => item.isPrimary)?.url,
+      }),
+    };
+    const nextEditorError =
+      pilotErrors.tracking ?? validateEditor(nextValue, editorData, options.units);
     setErrors(nextErrors);
     setEditorError(nextEditorError);
     if (hasValidationErrors(nextErrors) || nextEditorError) {
@@ -899,7 +905,13 @@ function TrackingTab({
   function toggle(key: keyof ProductEditorDto["tracking"], checked: boolean) {
     const tracking = applyTrackingRules(
       value.productType,
-      { ...value.tracking, [key]: checked },
+      {
+        ...value.tracking,
+        [key]: checked,
+        ...(key === "lot" || key === "expiration"
+          ? { lot: checked, expiration: checked }
+          : {}),
+      },
       capabilities,
     );
     onChange({
@@ -2557,6 +2569,8 @@ function routeToFirstError(
     setActiveTab("units");
   } else if (firstError === "salePrice") {
     setActiveTab("prices");
+  } else if (firstError === "tracking") {
+    setActiveTab("tracking");
   } else if (firstError === "primaryImageUrl") {
     setActiveTab("media");
   } else if (editorError) {
