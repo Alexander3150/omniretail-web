@@ -31,7 +31,7 @@ export class UpdateProductService {
     const baseErrors = validateProductDto(dto);
     if (hasValidationErrors(baseErrors)) {
       throw new CatalogServiceError(
-        Object.values(baseErrors)[0] ?? "Revisa los datos del producto.",
+        Object.values(baseErrors)[0] ?? "Revise los datos del producto.",
       );
     }
     const current = ensureProduct(

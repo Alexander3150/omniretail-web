@@ -58,7 +58,7 @@ export function ensureCanReadPurchaseOrders(permissions: readonly string[]) {
   ) {
     return;
   }
-  throw new PurchasingServiceError("No tenés permiso para consultar órdenes de compra.");
+  throw new PurchasingServiceError("No dispone de permisos para consultar órdenes de compra.");
 }
 
 /**
@@ -69,7 +69,7 @@ export function ensureCanReadPurchaseOrders(permissions: readonly string[]) {
  */
 export function ensureCanCreatePurchaseOrders(permissions: readonly string[]) {
   if (permissions.includes("purchasing.orders.create")) return;
-  throw new PurchasingServiceError("No tenés permiso para crear órdenes de compra.");
+  throw new PurchasingServiceError("No dispone de permisos para crear órdenes de compra.");
 }
 
 /**
@@ -82,7 +82,7 @@ export function ensureCanCreatePurchaseOrders(permissions: readonly string[]) {
  */
 export function ensureCanApprovePurchaseOrders(permissions: readonly string[]) {
   if (permissions.includes("purchasing.orders.approve")) return;
-  throw new PurchasingServiceError("No tenés permiso para aprobar órdenes de compra.");
+  throw new PurchasingServiceError("No dispone de permisos para aprobar órdenes de compra.");
 }
 
 /**
@@ -116,7 +116,7 @@ export async function ensureUserCanOperateBranch(
     );
   }
   if (!canUserOperateBranch(user, branch)) {
-    throw new PurchasingServiceError("No tenés acceso a la sucursal seleccionada.");
+    throw new PurchasingServiceError("No dispone de acceso a la sucursal seleccionada.");
   }
   return branch;
 }

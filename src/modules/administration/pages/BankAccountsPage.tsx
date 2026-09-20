@@ -56,7 +56,7 @@ export function BankAccountsPage() {
         description:
           caughtError instanceof Error
             ? caughtError.message
-            : "Intentá nuevamente en unos momentos.",
+            : "Inténtelo nuevamente en unos momentos.",
         tone: "danger",
       });
     }
@@ -80,7 +80,7 @@ export function BankAccountsPage() {
         description:
           caughtError instanceof Error
             ? caughtError.message
-            : "Intentá nuevamente en unos momentos.",
+            : "Inténtelo nuevamente en unos momentos.",
         tone: "danger",
       });
     }
@@ -110,7 +110,7 @@ export function BankAccountsPage() {
           role="alert"
         >
           <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No tenés acceso a las cuentas bancarias
+            No dispone de acceso a las cuentas bancarias
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             Gestionar cuentas bancarias requiere el permiso{" "}
@@ -131,7 +131,7 @@ export function BankAccountsPage() {
 
   const modalSubtitle =
     modal?.mode === "view"
-      ? "Hacé clic en Editar o Archivar para realizar cambios."
+      ? "Seleccione Editar o Archivar para realizar cambios."
       : "Los cambios se aplican únicamente al negocio activo.";
 
   return (

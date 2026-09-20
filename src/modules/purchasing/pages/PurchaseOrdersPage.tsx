@@ -276,9 +276,9 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
         supplierEmail,
       });
       showToast({
-        title: result.sent ? `Orden de compra enviada a ${result.to}` : "Orden aprobada",
+        title: result.sent ? "Orden de compra preparada" : "Orden aprobada",
         description: result.sent
-          ? `Envio simulado al proveedor. Adjunto: ${document.filename}`
+          ? `PDF preparado: ${document.filename}`
           : result.message,
         tone: result.sent ? "success" : "warning",
       });
@@ -287,8 +287,8 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
         title: "Orden aprobada",
         description:
           caughtError instanceof Error
-            ? `No se pudo preparar el PDF o envio simulado: ${caughtError.message}`
-            : "No se pudo preparar el PDF o envio simulado.",
+            ? `No se pudo preparar el PDF: ${caughtError.message}`
+            : "No se pudo preparar el PDF.",
         tone: "warning",
       });
     }

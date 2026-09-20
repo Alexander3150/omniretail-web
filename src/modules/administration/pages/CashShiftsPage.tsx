@@ -47,7 +47,7 @@ export function CashShiftsPage() {
           role="alert"
         >
           <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No tenés acceso a los turnos de caja
+            No dispone de acceso a los turnos de caja
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             Esta vista requiere el permiso{" "}

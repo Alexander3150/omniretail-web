@@ -45,7 +45,7 @@ export function SuppliersPage() {
         description:
           caughtError instanceof Error
             ? caughtError.message
-            : "Intentá nuevamente en unos momentos.",
+            : "Inténtelo nuevamente en unos momentos.",
         tone: "danger",
       });
     }
@@ -69,7 +69,7 @@ export function SuppliersPage() {
         description:
           caughtError instanceof Error
             ? caughtError.message
-            : "Intentá nuevamente en unos momentos.",
+            : "Inténtelo nuevamente en unos momentos.",
         tone: "danger",
       });
     }
@@ -99,7 +99,7 @@ export function SuppliersPage() {
           role="alert"
         >
           <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No tenés acceso a los proveedores
+            No dispone de acceso a los proveedores
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             Gestionar proveedores requiere el permiso{" "}
@@ -120,7 +120,7 @@ export function SuppliersPage() {
 
   const modalSubtitle =
     modal?.mode === "view"
-      ? "Hacé clic en Editar o Archivar para realizar cambios."
+      ? "Seleccione Editar o Archivar para realizar cambios."
       : "Los cambios se aplican únicamente al negocio activo.";
 
   return (

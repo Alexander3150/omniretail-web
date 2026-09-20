@@ -23,6 +23,6 @@ export const customerPermissions = [
     key: "customer.payment_method.manage",
     module: "customer",
     name: "Gestionar medios de pago",
-    description: "Permite administrar medios de pago simulados.",
+    description: "Permite administrar medios de pago.",
   },
 ] satisfies PermissionDefinition[];

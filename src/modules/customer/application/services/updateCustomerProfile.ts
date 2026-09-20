@@ -31,7 +31,7 @@ export async function updateCustomerProfile(
   const context = await resolveCustomerAuthorizationContext(repositories);
 
   if (!context.hasPermission(PROFILE_UPDATE_PERMISSION)) {
-    throw new ProfileUpdateNotAllowedError("No tienes permiso para actualizar el perfil.");
+    throw new ProfileUpdateNotAllowedError("No dispone de permisos para actualizar el perfil.");
   }
 
   return repositories.customers.updateProfileForCustomer(context.tenantId, context.customerId, {

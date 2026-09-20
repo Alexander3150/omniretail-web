@@ -189,7 +189,7 @@ export function CheckoutModal({
               </p>
             </div>
             <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-              Puedes revisar los datos, pero la venta no puede confirmarse desde esta terminal.
+              El cobro puede validarse, pero la venta no puede confirmarse con los elementos incluidos en el ticket.
             </p>
           </div>
         ) : null}

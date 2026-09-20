@@ -26,7 +26,7 @@ export function CustomersPage() {
           role="alert"
         >
           <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No tenés acceso a los clientes
+            No dispone de acceso a los clientes
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             Consultar clientes requiere el permiso{" "}

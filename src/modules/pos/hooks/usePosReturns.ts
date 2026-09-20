@@ -134,13 +134,13 @@ export function usePosReturns() {
     if (!normalizedDocument) {
       setLookup(null);
       setNotFound(false);
-      setLookupError("Ingresa el número de documento que deseas consultar.");
+      setLookupError("Ingrese el número de documento que desea consultar.");
       return false;
     }
     if (accessBlocked) {
       setLookup(null);
       setNotFound(false);
-      setLookupError("No tienes acceso para consultar devoluciones en la sucursal activa.");
+      setLookupError("No dispone de acceso para consultar devoluciones en la sucursal activa.");
       return false;
     }
     return Boolean(await loadLookup(normalizedDocument, true));
@@ -357,7 +357,7 @@ function getOperationBlockedReason({
   if (!mode) return null;
   if (!lookup) return "La venta ya no está disponible para completar esta operación.";
   if (mode === "return") {
-    if (!canProcessReturn) return "Ya no tienes permiso para procesar devoluciones.";
+    if (!canProcessReturn) return "Ya no dispone de permisos para procesar devoluciones.";
     if (!lookup.allowedOperations.partialReturn) {
       return (
         lookup.allowedOperations.returnBlockedReason ??
@@ -366,7 +366,7 @@ function getOperationBlockedReason({
     }
     return null;
   }
-  if (!canVoid) return "Ya no tienes permiso para anular ventas.";
+  if (!canVoid) return "Ya no dispone de permisos para anular ventas.";
   if (!lookup.allowedOperations.voidTotal) {
     return (
       lookup.allowedOperations.voidBlockedReason ??

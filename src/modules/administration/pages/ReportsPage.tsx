@@ -67,7 +67,7 @@ export function ReportsPage() {
           role="alert"
         >
           <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No tenés acceso a los reportes
+            No dispone de acceso a los reportes
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             Esta vista requiere el permiso{" "}

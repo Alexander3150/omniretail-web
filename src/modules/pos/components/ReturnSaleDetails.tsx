@@ -159,7 +159,7 @@ export function ReturnSaleDetails({
             label="Devolución parcial"
             reason={
               !canProcessReturn
-                ? "No tienes permiso para procesar devoluciones."
+                ? "No dispone de permisos para procesar devoluciones."
                 : returnBlockedNotice
                   ? undefined
                   : formatOperationReason(lookup.allowedOperations.returnBlockedReason)
@@ -173,7 +173,7 @@ export function ReturnSaleDetails({
             label="Anulación total"
             reason={
               !canVoid
-                ? "No tienes permiso para anular ventas."
+                ? "No dispone de permisos para anular ventas."
                 : formatOperationReason(lookup.allowedOperations.voidBlockedReason)
             }
             onClick={() => onBeginOperation("void")}

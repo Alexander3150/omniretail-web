@@ -122,7 +122,7 @@ export function LocationsPage() {
           role="alert"
         >
           <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No tenés acceso a ubicaciones
+            No dispone de acceso a ubicaciones
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             Consultar ubicaciones requiere el permiso{" "}

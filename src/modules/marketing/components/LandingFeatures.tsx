@@ -5,7 +5,7 @@ const essentials = [
   ["◎", "Control centralizado", "La información operativa de tus sucursales disponible en un solo lugar."],
 ];
 const businesses = [["🔧", "Ferreterías", "Catálogo amplio, precios e inventario controlado."], ["✚", "Farmacias", "Lotes, vencimientos y trazabilidad precisa."], ["▣", "Abarroterías", "Compras, existencias y venta rápida."], ["◇", "Servicios", "Una base flexible para organizar tu operación."]];
-const flow = [["01", "Registra tu negocio"], ["02", "Crea la cuenta propietaria"], ["03", "Configura tu entorno"], ["04", "Simula el pago del plan Base"], ["05", "Confirma y crea tu espacio"]];
+const flow = [["01", "Registre el negocio"], ["02", "Cree la cuenta propietaria"], ["03", "Configure el entorno"], ["04", "Confirme la información de pago"], ["05", "Confirme y cree el espacio"]];
 const modules = [
   ["▦", "Inventario y alertas", "Existencias y alertas para mantener el control operativo."],
   ["▤", "Catálogo y precios", "Productos, categorías y precios organizados para vender."],

@@ -49,7 +49,7 @@ export function ProductCommercialSection({
             onChange={(event) => onChange({ categoryId: event.target.value })}
             value={value.categoryId}
           >
-            <option value="">Selecciona una categoria</option>
+            <option value="">Seleccione una categoría</option>
             {categories.map((category) => (
               <option key={category.id} value={category.id}>
                 {category.name}
@@ -63,7 +63,7 @@ export function ProductCommercialSection({
             onChange={(event) => onChange({ baseUnitId: event.target.value })}
             value={value.baseUnitId}
           >
-            <option value="">Selecciona una unidad</option>
+            <option value="">Seleccione una unidad</option>
             {units.map((unit) => (
               <option key={unit.id} value={unit.id}>
                 {unit.name} ({unit.symbol})

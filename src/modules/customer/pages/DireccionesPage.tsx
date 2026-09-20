@@ -88,7 +88,7 @@ export function DireccionesPage() {
     } catch (caughtError) {
       showToast({
         title: "No se pudo guardar la dirección",
-        description: caughtError instanceof Error ? caughtError.message : "Intentá nuevamente.",
+        description: caughtError instanceof Error ? caughtError.message : "Inténtelo nuevamente.",
         tone: "danger",
       });
     }
@@ -103,7 +103,7 @@ export function DireccionesPage() {
     } catch (caughtError) {
       showToast({
         title: "No se pudo eliminar la dirección",
-        description: caughtError instanceof Error ? caughtError.message : "Intentá nuevamente.",
+        description: caughtError instanceof Error ? caughtError.message : "Inténtelo nuevamente.",
         tone: "danger",
       });
     }
@@ -116,7 +116,7 @@ export function DireccionesPage() {
     } catch (caughtError) {
       showToast({
         title: "No se pudo actualizar la dirección predeterminada",
-        description: caughtError instanceof Error ? caughtError.message : "Intentá nuevamente.",
+        description: caughtError instanceof Error ? caughtError.message : "Inténtelo nuevamente.",
         tone: "danger",
       });
     }
@@ -130,7 +130,7 @@ export function DireccionesPage() {
             Nueva dirección
           </Button>
         }
-        description="Direcciones reutilizables para tus próximas compras."
+        description="Direcciones reutilizables para próximas compras."
         title="Direcciones"
       />
 
@@ -156,7 +156,7 @@ export function DireccionesPage() {
         </div>
       ) : addresses.length === 0 ? (
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-sm text-[var(--color-text-muted)] shadow-sm">
-          Todavía no tenés direcciones guardadas.
+          Aún no tiene direcciones guardadas.
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">

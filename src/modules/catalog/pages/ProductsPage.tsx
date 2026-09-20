@@ -104,7 +104,7 @@ export function ProductsPage() {
           role="alert"
         >
           <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No tenés acceso a productos
+            No dispone de acceso a productos
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             Consultar productos requiere el permiso{" "}

@@ -15,7 +15,7 @@ export function validateLoginForm(dto: LoginFormDto): LoginFormValidationErrors 
   if (!dto.email.trim()) {
     errors.email = "El correo es obligatorio.";
   } else if (!EMAIL_PATTERN.test(dto.email.trim())) {
-    errors.email = "Ingresa un correo con formato válido.";
+    errors.email = "Ingrese un correo con formato válido.";
   }
 
   // .trim() aqui es SOLO para la comprobacion de vacio -- no muta dto.password.

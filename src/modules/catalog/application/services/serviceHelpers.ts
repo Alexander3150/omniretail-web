@@ -54,12 +54,12 @@ export function ensureCanReadCategories(permissions: readonly string[]) {
   ) {
     return;
   }
-  throw new CatalogServiceError("No tenés permiso para consultar categorías.");
+  throw new CatalogServiceError("No dispone de permisos para consultar categorías.");
 }
 
 export function ensureCanManageCategories(permissions: readonly string[]) {
   if (permissions.includes("catalog.categories.manage")) return;
-  throw new CatalogServiceError("No tenés permiso para gestionar categorías.");
+  throw new CatalogServiceError("No dispone de permisos para gestionar categorías.");
 }
 
 export function ensureCanReadLocations(permissions: readonly string[]) {
@@ -69,24 +69,24 @@ export function ensureCanReadLocations(permissions: readonly string[]) {
   ) {
     return;
   }
-  throw new CatalogServiceError("No tenés permiso para consultar ubicaciones.");
+  throw new CatalogServiceError("No dispone de permisos para consultar ubicaciones.");
 }
 
 export function ensureCanManageLocations(permissions: readonly string[]) {
   if (permissions.includes("catalog.locations.manage")) return;
-  throw new CatalogServiceError("No tenés permiso para gestionar ubicaciones.");
+  throw new CatalogServiceError("No dispone de permisos para gestionar ubicaciones.");
 }
 
 export function ensureCanReadUnits(permissions: readonly string[]) {
   if (permissions.includes("catalog.units.read") || permissions.includes("catalog.units.manage")) {
     return;
   }
-  throw new CatalogServiceError("No tenés permiso para consultar unidades.");
+  throw new CatalogServiceError("No dispone de permisos para consultar unidades.");
 }
 
 export function ensureCanManageUnits(permissions: readonly string[]) {
   if (permissions.includes("catalog.units.manage")) return;
-  throw new CatalogServiceError("No tenés permiso para gestionar unidades.");
+  throw new CatalogServiceError("No dispone de permisos para gestionar unidades.");
 }
 
 /**
@@ -108,17 +108,17 @@ export function ensureCanReadProducts(permissions: readonly string[]) {
   ) {
     return;
   }
-  throw new CatalogServiceError("No tenés permiso para consultar productos.");
+  throw new CatalogServiceError("No dispone de permisos para consultar productos.");
 }
 
 export function ensureCanCreateProducts(permissions: readonly string[]) {
   if (permissions.includes("catalog.products.create")) return;
-  throw new CatalogServiceError("No tenés permiso para crear productos.");
+  throw new CatalogServiceError("No dispone de permisos para crear productos.");
 }
 
 export function ensureCanUpdateProducts(permissions: readonly string[]) {
   if (permissions.includes("catalog.products.update")) return;
-  throw new CatalogServiceError("No tenés permiso para editar productos.");
+  throw new CatalogServiceError("No dispone de permisos para editar productos.");
 }
 
 export async function requireCapabilities(

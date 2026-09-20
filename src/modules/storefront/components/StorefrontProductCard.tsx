@@ -37,7 +37,7 @@ export function StorefrontProductCard({
     setAdded(true);
     showToast({
       title: "Producto agregado al carrito",
-      description: `${product.name} ya está en tu selección.`,
+      description: `${product.name} ya está en la selección.`,
       tone: "success",
     });
     window.setTimeout(() => setAdded(false), 1400);

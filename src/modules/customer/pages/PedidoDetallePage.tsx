@@ -60,7 +60,7 @@ export function PedidoDetallePage({ orderId }: { orderId: string }) {
     } catch {
       showToast({
         title: "No se pudo generar el comprobante",
-        description: "Intentá nuevamente.",
+        description: "Inténtelo nuevamente.",
         tone: "danger",
       });
     } finally {

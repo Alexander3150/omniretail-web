@@ -38,11 +38,11 @@ export const heroBannerDefaultsConfig: HeroBannerDefaults = {
     },
     {
       title: "Bienestar para toda la familia",
-      description: "Encuentra lo que necesitás para vos y los tuyos, con asesoría profesional.",
+      description: "Encuentre lo que necesita, con asesoría profesional.",
     },
     {
-      title: "Disponibilidad que podés confiar",
-      description: "Stock actualizado de tus productos de confianza, siempre a tiempo.",
+      title: "Disponibilidad en la que puede confiar",
+      description: "Stock actualizado de productos de confianza, siempre a tiempo.",
     },
   ],
   [BusinessPreset.grocery]: [
@@ -56,7 +56,7 @@ export const heroBannerDefaultsConfig: HeroBannerDefaults = {
     },
     {
       title: "Ahorra en tu compra de siempre",
-      description: "Ofertas y precios especiales en los productos que más comprás.",
+      description: "Ofertas y precios especiales en los productos más solicitados.",
     },
   ],
   [BusinessPreset.services]: [
@@ -65,12 +65,12 @@ export const heroBannerDefaultsConfig: HeroBannerDefaults = {
       description: "Soluciones confiables, agendadas fácilmente y con seguimiento cercano.",
     },
     {
-      title: "Experiencia que podés confiar",
-      description: "Profesionales calificados listos para resolver lo que necesitás.",
+      title: "Experiencia en la que puede confiar",
+      description: "Profesionales calificados listos para resolver sus necesidades.",
     },
     {
-      title: "Atención pensada para vos",
-      description: "Coordiná tu servicio y recibí acompañamiento en cada paso.",
+      title: "Atención personalizada",
+      description: "Coordine el servicio y reciba acompañamiento en cada etapa.",
     },
   ],
 };

@@ -26,7 +26,7 @@ export function PedidosPage() {
 
   return (
     <div className="min-w-0 space-y-5">
-      <PageHeader description="Historial de tus pedidos." title="Mis pedidos" />
+      <PageHeader description="Historial de pedidos." title="Mis pedidos" />
 
       {error ? (
         <div
@@ -50,7 +50,7 @@ export function PedidosPage() {
         </div>
       ) : orders.length === 0 ? (
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-sm text-[var(--color-text-muted)] shadow-sm">
-          Todavía no tenés pedidos.
+          Aún no tiene pedidos.
         </div>
       ) : (
         <div className="space-y-3">

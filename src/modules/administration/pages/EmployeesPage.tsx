@@ -69,7 +69,7 @@ export function EmployeesPage() {
         description:
           caughtError instanceof Error
             ? caughtError.message
-            : "Intentá nuevamente en unos momentos.",
+            : "Inténtelo nuevamente en unos momentos.",
         tone: "danger",
       });
     }
@@ -92,7 +92,7 @@ export function EmployeesPage() {
         description:
           caughtError instanceof Error
             ? caughtError.message
-            : "Intentá nuevamente en unos momentos.",
+            : "Inténtelo nuevamente en unos momentos.",
         tone: "danger",
       });
     }
@@ -116,7 +116,7 @@ export function EmployeesPage() {
         description:
           caughtError instanceof Error
             ? caughtError.message
-            : "Intentá nuevamente en unos momentos.",
+            : "Inténtelo nuevamente en unos momentos.",
         tone: "danger",
       });
     }
@@ -131,7 +131,7 @@ export function EmployeesPage() {
           role="alert"
         >
           <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No tenés acceso a usuarios
+            No dispone de acceso a usuarios
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             Consultar empleados requiere el permiso{" "}

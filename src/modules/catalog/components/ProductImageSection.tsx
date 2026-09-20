@@ -30,7 +30,7 @@ export function ProductImageSection({ value, errors, onChange }: ProductImageSec
           id="primaryImageUrl"
           label="Ruta o URL de imagen principal"
           error={errors.primaryImageUrl}
-          hint="Puedes usar /images/products/taladro-percutor.webp o una URL http(s). La carga de archivos se agregara cuando exista storage."
+          hint="Ingrese una ruta de imagen o una URL http(s) válida."
         >
           <Input
             id="primaryImageUrl"

@@ -52,7 +52,7 @@ export function SeguridadPage() {
     } catch (caughtError) {
       showToast({
         title: "No se pudo cambiar la contraseña",
-        description: caughtError instanceof Error ? caughtError.message : "Intentá nuevamente.",
+        description: caughtError instanceof Error ? caughtError.message : "Inténtelo nuevamente.",
         tone: "danger",
       });
     }

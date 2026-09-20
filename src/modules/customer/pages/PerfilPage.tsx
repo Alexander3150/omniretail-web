@@ -55,7 +55,7 @@ export function PerfilPage() {
     } catch (caughtError) {
       showToast({
         title: "No se pudieron guardar los datos",
-        description: caughtError instanceof Error ? caughtError.message : "Intentá nuevamente.",
+        description: caughtError instanceof Error ? caughtError.message : "Inténtelo nuevamente.",
         tone: "danger",
       });
     }

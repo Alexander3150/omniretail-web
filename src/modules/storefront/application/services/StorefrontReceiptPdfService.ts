@@ -76,7 +76,7 @@ export async function downloadStorefrontReceiptPdf({ storeName, result }: Receip
     columnWidth,
   ) as string[];
   const paymentLines = doc.splitTextToSize(
-    "Tarjeta de crédito o débito\nPago simulado · datos protegidos",
+    "Tarjeta de crédito o débito\nInformación de pago confirmada · datos protegidos",
     columnWidth,
   ) as string[];
   const deliveryBoxHeight = Math.max(30, 16 + Math.max(deliveryLines.length, paymentLines.length) * 4.2);

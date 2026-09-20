@@ -95,7 +95,7 @@ export function OrderConfirmationPage({ trackingToken: routeTrackingToken }: { t
         </div>
         {emailSent ? (
           <p className="mt-5 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
-            Te enviamos una confirmación simulada a tu correo registrado.
+            El pedido fue confirmado correctamente.
           </p>
         ) : null}
         <div className="mt-6 grid gap-5 md:grid-cols-2">
@@ -128,7 +128,7 @@ export function OrderConfirmationPage({ trackingToken: routeTrackingToken }: { t
             <p className="mt-3 text-sm text-[var(--color-text-muted)]">Método de pago</p>
             <p className="break-words font-bold text-[var(--color-text)] [overflow-wrap:anywhere]">Tarjeta de crédito o débito</p>
             <p className="mt-4 break-words rounded-lg border border-[var(--color-success)]/30 bg-[var(--color-success)]/10 px-3 py-2 text-sm font-semibold text-[var(--color-success)] [overflow-wrap:anywhere]">
-              ✓ Transacción autorizada y procesada con éxito.
+              ✓ Información de pago confirmada.
             </p>
             <p className="mt-4 text-sm text-[var(--color-text-muted)]">
               Total pagado:{" "}
@@ -245,7 +245,7 @@ export function OrderConfirmationPage({ trackingToken: routeTrackingToken }: { t
           <div className="sm:text-right">
             <p className="font-black uppercase tracking-wide text-slate-700">Método de pago</p>
             <p className="mt-2 font-bold text-slate-900">Tarjeta de crédito o débito</p>
-            <p className="mt-1 text-slate-600">Pago simulado</p>
+            <p className="mt-1 text-slate-600">Información de pago confirmada</p>
           </div>
         </div>
         <div className="overflow-x-auto px-6 pb-5 print:px-8">
@@ -291,7 +291,7 @@ export function OrderConfirmationPage({ trackingToken: routeTrackingToken }: { t
           </dl>
         </div>
         <footer className="border-t border-slate-200 px-6 py-4 text-center text-xs text-slate-500 print:px-8">
-          Gracias por tu compra. Este comprobante corresponde a una simulación de pedido.
+          Gracias por su compra. Este comprobante corresponde a su pedido.
         </footer>
       </section>
     </main>

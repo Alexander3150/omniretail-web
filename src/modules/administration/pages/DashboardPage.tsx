@@ -17,7 +17,7 @@ export function DashboardPage() {
     return (
       <div className="min-w-0 space-y-5">
         <PageHeader
-          description="Revisá los principales indicadores operativos del negocio."
+          description="Revise los principales indicadores operativos del negocio."
           title="Dashboard"
         />
         <div
@@ -25,7 +25,7 @@ export function DashboardPage() {
           role="alert"
         >
           <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No tenés acceso al resumen ejecutivo
+            No dispone de acceso al resumen ejecutivo
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             Esta vista requiere el permiso{" "}
@@ -54,7 +54,7 @@ export function DashboardPage() {
             {loading ? "Actualizando..." : "Actualizar"}
           </Button>
         }
-        description="Revisá los principales indicadores operativos del negocio."
+        description="Revise los principales indicadores operativos del negocio."
         title="Dashboard"
       />
 

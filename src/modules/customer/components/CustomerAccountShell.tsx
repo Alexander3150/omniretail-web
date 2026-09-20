@@ -92,7 +92,7 @@ export function CustomerAccountShell({ children, navigationItems }: CustomerAcco
     return (
       <main className="flex min-h-[40vh] items-center justify-center">
         <p className="text-sm text-[var(--color-text-muted)]">
-          No tienes permiso para acceder a esta seccion.
+          No dispone de permisos para acceder a esta sección.
         </p>
       </main>
     );

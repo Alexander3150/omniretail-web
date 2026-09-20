@@ -25,7 +25,7 @@ export function validateRegisterForm(dto: RegisterFormDto): RegisterFormValidati
   if (!dto.email.trim()) {
     errors.email = "El correo es obligatorio.";
   } else if (!EMAIL_PATTERN.test(dto.email.trim())) {
-    errors.email = "Ingresa un correo con formato válido.";
+    errors.email = "Ingrese un correo con formato válido.";
   }
 
   // Telefono es opcional (RegisterCustomerInput.phone?) -- solo se valida
@@ -49,7 +49,7 @@ export function validateRegisterForm(dto: RegisterFormDto): RegisterFormValidati
   }
 
   if (!dto.confirmPassword) {
-    errors.confirmPassword = "Confirma tu contraseña.";
+    errors.confirmPassword = "Confirme la contraseña.";
   } else if (dto.password && dto.confirmPassword !== dto.password) {
     errors.confirmPassword = "Las contraseñas no coinciden.";
   }

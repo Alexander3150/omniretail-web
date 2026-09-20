@@ -96,10 +96,10 @@ export class GetPosSalesHistoryService {
       throw new Error("La sucursal no está activa para este negocio.");
     }
     if (!role || role.status !== RoleStatus.active || !role.permissions.includes(POS_SALES_READ)) {
-      throw new Error("No tienes permiso para consultar el historial de ventas.");
+      throw new Error("No dispone de permisos para consultar el historial de ventas.");
     }
     if (!canUserAccessBranch(user, role, branch)) {
-      throw new Error("No tienes acceso a la sucursal seleccionada.");
+      throw new Error("No dispone de acceso a la sucursal seleccionada.");
     }
     return { tenantId: user.tenantId, branchId: branch.id };
   }

@@ -90,7 +90,7 @@ export function EcommerceConfigPage() {
         description:
           caughtError instanceof Error
             ? caughtError.message
-            : "Intentá nuevamente en unos momentos.",
+            : "Inténtelo nuevamente en unos momentos.",
         tone: "danger",
       });
     }
@@ -103,7 +103,7 @@ export function EcommerceConfigPage() {
     return (
       <div className="min-w-0 space-y-5">
         <PageHeader
-          description="Configurá la disponibilidad y las opciones operativas de la tienda en línea."
+          description="Configure la disponibilidad y las opciones operativas de la tienda en línea."
           title="Diseño E-commerce"
         />
         <div
@@ -111,7 +111,7 @@ export function EcommerceConfigPage() {
           role="alert"
         >
           <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No tenés acceso a esta configuración
+            No dispone de acceso a esta configuración
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             La configuración de e-commerce aplica a todo el tenant y requiere el permiso{" "}
@@ -128,7 +128,7 @@ export function EcommerceConfigPage() {
   return (
     <div className="min-w-0 space-y-5">
       <PageHeader
-        description="Configurá la disponibilidad y las opciones operativas de la tienda en línea."
+        description="Configure la disponibilidad y las opciones operativas de la tienda en línea."
         title="Diseño E-commerce"
       />
 

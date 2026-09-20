@@ -104,7 +104,7 @@ export function BankAccountForm({
           hint={
             isEdit
               ? `Dejar en blanco para conservar el número actual (${account?.accountNumberMasked}).`
-              : "Ingresá el número completo; el listado solo mostrará la versión enmascarada."
+              : "Ingrese el número completo; el listado solo mostrará la versión enmascarada."
           }
           id="bank-account-number"
           label="Número de cuenta"

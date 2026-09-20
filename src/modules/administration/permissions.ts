@@ -70,7 +70,7 @@ export const administrationPermissions = [
     key: "admin.bank_accounts.manage",
     module: "administration",
     name: "Gestionar cuentas bancarias",
-    description: "Permite administrar cuentas bancarias simuladas.",
+    description: "Permite administrar cuentas bancarias.",
   },
   {
     key: "admin.customers.read",

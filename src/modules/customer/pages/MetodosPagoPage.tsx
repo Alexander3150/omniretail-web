@@ -78,7 +78,7 @@ export function MetodosPagoPage() {
     } catch (caughtError) {
       showToast({
         title: "No se pudo guardar el método de pago",
-        description: caughtError instanceof Error ? caughtError.message : "Intentá nuevamente.",
+        description: caughtError instanceof Error ? caughtError.message : "Inténtelo nuevamente.",
         tone: "danger",
       });
     }
@@ -93,7 +93,7 @@ export function MetodosPagoPage() {
     } catch (caughtError) {
       showToast({
         title: "No se pudo eliminar el método de pago",
-        description: caughtError instanceof Error ? caughtError.message : "Intentá nuevamente.",
+        description: caughtError instanceof Error ? caughtError.message : "Inténtelo nuevamente.",
         tone: "danger",
       });
     }
@@ -106,7 +106,7 @@ export function MetodosPagoPage() {
     } catch (caughtError) {
       showToast({
         title: "No se pudo actualizar el método de pago predeterminado",
-        description: caughtError instanceof Error ? caughtError.message : "Intentá nuevamente.",
+        description: caughtError instanceof Error ? caughtError.message : "Inténtelo nuevamente.",
         tone: "danger",
       });
     }
@@ -120,7 +120,7 @@ export function MetodosPagoPage() {
             Nueva tarjeta
           </Button>
         }
-        description="Tarjetas guardadas para agilizar tus compras. Nunca guardamos el número completo ni el código de seguridad."
+        description="Tarjetas guardadas para agilizar las compras. Nunca se guarda el número completo ni el código de seguridad."
         title="Métodos de pago"
       />
 
@@ -146,7 +146,7 @@ export function MetodosPagoPage() {
         </div>
       ) : paymentMethods.length === 0 ? (
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-sm text-[var(--color-text-muted)] shadow-sm">
-          Todavía no tenés métodos de pago guardados.
+          Aún no tiene métodos de pago guardados.
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">

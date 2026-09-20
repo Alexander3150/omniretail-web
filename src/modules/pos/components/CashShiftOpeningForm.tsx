@@ -62,7 +62,7 @@ export function CashShiftOpeningForm({
           id="cash-opening-amount"
           label="Fondo inicial"
           error={errors.amount}
-          hint="Puedes abrir con Q 0.00 si la caja no tendrá fondo inicial."
+          hint="La caja puede abrirse con Q 0.00 si no tendrá fondo inicial."
         >
           <Input
             id="cash-opening-amount"
@@ -85,7 +85,7 @@ export function CashShiftOpeningForm({
         </div>
         {!canOpen ? (
           <p className="text-sm text-[var(--color-warning)] md:col-span-2">
-            No tienes permiso para abrir caja.
+            No dispone de permisos para abrir caja.
           </p>
         ) : null}
       </form>

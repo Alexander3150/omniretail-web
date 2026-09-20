@@ -50,7 +50,7 @@ export function useMfaEnrollment() {
   const requireSessionId = useCallback(async () => {
     const sessionId = await repositories.auth.getCurrentSessionId();
     if (!sessionId) {
-      throw new Error("Tu sesión ya no es válida. Vuelve a iniciar sesión.");
+      throw new Error("La sesión ya no es válida. Inicie sesión nuevamente.");
     }
     return sessionId;
   }, [repositories]);

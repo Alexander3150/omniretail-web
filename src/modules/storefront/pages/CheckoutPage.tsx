@@ -32,6 +32,20 @@ function formatGuatemalaPhone(value: string) {
   return digits ? `+502 ${digits}` : "+502 ";
 }
 
+function formatCardNumber(value: string) {
+  return value.replace(/\D/g, "").slice(0, 19).replace(/(.{4})/g, "$1 ").trim();
+}
+
+function formatCardExpiration(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 4);
+  return digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
+}
+
+function hasValidCardExpiration(value: string) {
+  const match = /^(0[1-9]|1[0-2])\/\d{2}$/.exec(value);
+  return Boolean(match);
+}
+
 const initialForm: StorefrontCheckoutFormDto = {
   fullName: "",
   email: "",
@@ -60,6 +74,10 @@ export function CheckoutPage() {
   const [customerEmail, setCustomerEmail] = useState("");
   const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState<string | "new">("new");
   const [selectedAddressId, setSelectedAddressId] = useState<string | "new">("new");
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardExpiration, setCardExpiration] = useState("");
+  const [cardSecurityCode, setCardSecurityCode] = useState("");
+  const [paymentError, setPaymentError] = useState<string | null>(null);
   const router = useRouter();
   useEffect(() => {
     let active = true;
@@ -119,6 +137,10 @@ export function CheckoutPage() {
 
   const selectSavedCard = (card: CustomerPaymentMethod) => {
     setSelectedPaymentMethodId(card.id);
+    setCardNumber("");
+    setCardExpiration("");
+    setCardSecurityCode("");
+    setPaymentError(null);
     setForm({
       ...form,
       cardholderName: card.cardholderName ?? "Titular registrado",
@@ -214,8 +236,33 @@ export function CheckoutPage() {
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (config?.accountRequired && !user) return;
+    const cardDigits = cardNumber.replace(/\D/g, "");
+    if (selectedPaymentMethodId === "new") {
+      if (!cardDigits) {
+        setPaymentError("Ingrese el número de tarjeta.");
+        return;
+      }
+      if (cardDigits.length < 13 || cardDigits.length > 19) {
+        setPaymentError("El número de tarjeta debe contener entre 13 y 19 dígitos.");
+        return;
+      }
+      if (!hasValidCardExpiration(cardExpiration)) {
+        setPaymentError("Ingrese una fecha de vencimiento válida en formato MM/AA.");
+        return;
+      }
+      if (!/^\d{3,4}$/.test(cardSecurityCode)) {
+        setPaymentError("Ingrese un código de seguridad de 3 o 4 dígitos.");
+        return;
+      }
+    }
+    setPaymentError(null);
     setCompletedByCurrentCheckout(true);
-    void submit({ ...form, phone: form.phone.replace(/\D/g, "").replace(/^502/, "") });
+    void submit({
+      ...form,
+      cardLastFour:
+        selectedPaymentMethodId === "new" ? cardDigits.slice(-4) : form.cardLastFour,
+      phone: form.phone.replace(/\D/g, "").replace(/^502/, ""),
+    });
   };
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-5 sm:py-10">
@@ -438,6 +485,10 @@ export function CheckoutPage() {
                         className="text-sm font-bold text-[var(--color-title)] underline"
                         onClick={() => {
                           setSelectedPaymentMethodId("new");
+                          setCardNumber("");
+                          setCardExpiration("");
+                          setCardSecurityCode("");
+                          setPaymentError(null);
                           setForm({ ...form, cardholderName: "", cardLastFour: "" });
                         }}
                         type="button"
@@ -449,43 +500,60 @@ export function CheckoutPage() {
                   {selectedPaymentMethodId === "new" ? (
                     <div className="mt-4 grid gap-4 sm:grid-cols-2">
                       <label className="grid gap-2 text-sm font-bold text-[var(--color-text)] sm:col-span-2">
-                        Número de tarjeta (últimos 4 dígitos)
+                        Número de tarjeta
                         <input
-                          autoComplete="off"
+                          autoComplete="cc-number"
                           className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-3 font-normal text-[var(--color-text)]"
                           inputMode="numeric"
-                          maxLength={4}
-                          onChange={(event) =>
-                            setForm({
-                              ...form,
-                              cardLastFour: event.target.value.replace(/\D/g, "").slice(0, 4),
-                            })
-                          }
-                          placeholder="1234"
-                          value={form.cardLastFour}
+                          maxLength={23}
+                          onChange={(event) => {
+                            setCardNumber(formatCardNumber(event.target.value));
+                            setPaymentError(null);
+                          }}
+                          placeholder="4242 4242 4242 4242"
+                          value={cardNumber}
                         />
                       </label>
                       <div className="sm:col-span-2">
                         <Field
                           label="Nombre del titular"
+                          autoComplete="cc-name"
                           value={form.cardholderName}
-                          onChange={(value) => setForm({ ...form, cardholderName: value })}
+                          onChange={(value) => {
+                            setForm({ ...form, cardholderName: value });
+                            setPaymentError(null);
+                          }}
                         />
                       </div>
                       <label className="grid gap-2 text-sm font-bold text-[var(--color-text)]">
-                        Vencimiento
+                        Fecha de vencimiento
                         <input
-                          className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-3 font-normal text-[var(--color-text-muted)]"
-                          readOnly
-                          value="MM/AA"
+                          autoComplete="cc-exp"
+                          className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-3 font-normal text-[var(--color-text)]"
+                          inputMode="numeric"
+                          maxLength={5}
+                          onChange={(event) => {
+                            setCardExpiration(formatCardExpiration(event.target.value));
+                            setPaymentError(null);
+                          }}
+                          placeholder="MM/AA"
+                          value={cardExpiration}
                         />
                       </label>
                       <label className="grid gap-2 text-sm font-bold text-[var(--color-text)]">
-                        CVV
+                        Código de seguridad (CVV)
                         <input
-                          className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-3 font-normal text-[var(--color-text-muted)]"
-                          readOnly
-                          value="•••"
+                          autoComplete="cc-csc"
+                          className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-3 font-normal text-[var(--color-text)]"
+                          inputMode="numeric"
+                          maxLength={4}
+                          onChange={(event) => {
+                            setCardSecurityCode(event.target.value.replace(/\D/g, "").slice(0, 4));
+                            setPaymentError(null);
+                          }}
+                          placeholder="•••"
+                          type="password"
+                          value={cardSecurityCode}
                         />
                       </label>
                     </div>
@@ -502,9 +570,9 @@ export function CheckoutPage() {
             >
               ← Volver a datos de envío
             </button>
-            {error ? (
+            {paymentError ?? error ? (
               <p className="w-full rounded-xl bg-red-50 p-3 text-sm text-[var(--color-danger)]">
-                {error}
+                {paymentError ?? error}
               </p>
             ) : null}
             <button
@@ -582,6 +650,7 @@ function Field({
   onChange,
   type = "text",
   required = true,
+  autoComplete,
   inputMode,
   maxLength,
   pattern,
@@ -592,6 +661,7 @@ function Field({
   onChange: (value: string) => void;
   type?: string;
   required?: boolean;
+  autoComplete?: string;
   inputMode?: "numeric";
   maxLength?: number;
   pattern?: string;
@@ -602,6 +672,7 @@ function Field({
       {label}
       <input
         className="rounded-xl border border-[var(--color-border)] bg-slate-50 px-3 py-3 font-normal outline-none focus:border-[var(--color-primary-hover)] focus:ring-4 focus:ring-[var(--color-primary)]/15"
+        autoComplete={autoComplete}
         inputMode={inputMode}
         maxLength={maxLength}
         pattern={pattern}

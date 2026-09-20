@@ -141,7 +141,7 @@ export class CreateEmployeeService {
 
     if (!invited) {
       throw new AdministrationServiceError(
-        `El empleado se creó, pero no se pudo enviar la invitación (${invitationError}). Reintentá la invitación para este empleado.`,
+        `El empleado se creó, pero no se pudo enviar la invitación (${invitationError}). Reintente la invitación para este empleado.`,
       );
     }
 

@@ -105,7 +105,7 @@ export function SaleTicket({
                   ) : null}
                   {item.requiresUnsupportedTraceability ? (
                     <p className="mt-1 font-semibold text-[var(--color-warning)]">
-                      Esta línea requiere un proceso de venta distinto.
+                      Esta línea no puede confirmarse.
                     </p>
                   ) : null}
                 </div>

@@ -38,10 +38,10 @@ export async function requireReturnOperationContext(
   }
   const role = user.roleId ? await repositories.roles.getByIdScoped(tenantId, user.roleId) : null;
   if (!role || role.status !== RoleStatus.active || !role.permissions.includes(permission)) {
-    throw new Error("No tienes permiso para realizar esta operacion.");
+    throw new Error("No dispone de permisos para realizar esta operación.");
   }
   if (!canUserAccessBranch(user, role, branch)) {
-    throw new Error("No tienes acceso a la sucursal seleccionada.");
+    throw new Error("No dispone de acceso a la sucursal seleccionada.");
   }
   // Entitlement SaaS (auditoría §10/§14): solo gatea mutaciones reales (crear devolución, anular
   // venta) -- `pos.returns.read` (búsqueda de la venta a devolver) permanece como lectura.

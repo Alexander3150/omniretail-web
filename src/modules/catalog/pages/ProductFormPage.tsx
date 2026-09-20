@@ -97,7 +97,7 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
         role="alert"
       >
         <h2 className="text-base font-semibold text-[var(--color-title)]">
-          No tenés acceso a {mode === "create" ? "crear productos" : "editar productos"}
+          No dispone de acceso a {mode === "create" ? "crear productos" : "editar productos"}
         </h2>
         <p className="mt-2 text-sm text-[var(--color-text-muted)]">
           Esta acción requiere el permiso{" "}

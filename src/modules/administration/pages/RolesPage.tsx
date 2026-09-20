@@ -53,7 +53,7 @@ export function RolesPage() {
         description:
           caughtError instanceof Error
             ? caughtError.message
-            : "Intentá nuevamente en unos momentos.",
+            : "Inténtelo nuevamente en unos momentos.",
         tone: "danger",
       });
     }
@@ -77,7 +77,7 @@ export function RolesPage() {
         description:
           caughtError instanceof Error
             ? caughtError.message
-            : "Intentá nuevamente en unos momentos.",
+            : "Inténtelo nuevamente en unos momentos.",
         tone: "danger",
       });
     }
@@ -107,7 +107,7 @@ export function RolesPage() {
           role="alert"
         >
           <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No tenés acceso a roles y permisos
+            No dispone de acceso a roles y permisos
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             Consultar roles requiere el permiso{" "}
@@ -128,7 +128,7 @@ export function RolesPage() {
 
   const modalSubtitle =
     modal?.mode === "view"
-      ? "Hacé clic en Editar o Archivar para realizar cambios."
+      ? "Seleccione Editar o Archivar para realizar cambios."
       : "Los cambios se aplican únicamente al negocio activo.";
 
   return (

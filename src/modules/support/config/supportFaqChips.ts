@@ -19,21 +19,21 @@ export const SUPPORT_FAQ_CHIPS: SupportFaqChip[] = [
   {
     id: "shipping",
     question: "¿Cuánto tarda el envío?",
-    answer: "PLACEHOLDER: reemplazar con los tiempos de envío reales del negocio.",
+    answer: "Consulte al negocio para conocer los tiempos de envío disponibles.",
   },
   {
     id: "returns",
     question: "¿Cómo hago un cambio o devolución?",
-    answer: "PLACEHOLDER: reemplazar con la política real de cambios y devoluciones.",
+    answer: "Consulte al negocio para conocer las condiciones de cambios y devoluciones.",
   },
   {
     id: "payment-methods",
     question: "¿Qué métodos de pago aceptan?",
-    answer: "PLACEHOLDER: reemplazar con los métodos de pago reales que acepta el negocio.",
+    answer: "Los métodos de pago disponibles se muestran al finalizar la compra.",
   },
   {
     id: "hours",
     question: "¿Cuál es el horario de atención?",
-    answer: "PLACEHOLDER: reemplazar con el horario real de atención al cliente.",
+    answer: "Consulte al negocio para conocer el horario de atención.",
   },
 ];

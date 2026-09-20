@@ -126,7 +126,7 @@ export function UnitsPage() {
           role="alert"
         >
           <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No tenés acceso a unidades
+            No dispone de acceso a unidades
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             Consultar unidades requiere el permiso{" "}
