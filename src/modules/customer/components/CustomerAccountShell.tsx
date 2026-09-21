@@ -10,6 +10,7 @@ import { EntitlementProvider } from "@/shared/providers/EntitlementProvider";
 import { PrivateShell } from "@/shared/navigation/PrivateShell";
 import type { NavigationItem } from "@/shared/types/navigation.types";
 import { useOptionalStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
+import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
 
 interface CustomerAccountShellProps {
   children: ReactNode;
@@ -89,13 +90,7 @@ export function CustomerAccountShell({ children, navigationItems }: CustomerAcco
   const homeHref = storefrontRoutes ? storefrontRoutes.home() : "/";
 
   if (!isCustomerAccountIdentity(user)) {
-    return (
-      <main className="flex min-h-[40vh] items-center justify-center">
-        <p className="text-sm text-[var(--color-text-muted)]">
-          No dispone de permisos para acceder a esta sección.
-        </p>
-      </main>
-    );
+    return <AccessDeniedState />;
   }
 
   return (

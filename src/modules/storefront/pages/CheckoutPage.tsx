@@ -24,6 +24,7 @@ import {
   sanitizeRecipientName,
 } from "@/config/delivery-address-policy";
 import { EMAIL_MAX_LENGTH } from "@/config/email-policy";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 
 const departments = Object.keys(municipalitiesByDepartment);
 
@@ -571,9 +572,7 @@ export function CheckoutPage() {
               ← Volver a datos de envío
             </button>
             {paymentError ?? error ? (
-              <p className="w-full rounded-xl bg-red-50 p-3 text-sm text-[var(--color-danger)]">
-                {paymentError ?? error}
-              </p>
+              <InlineAlert className="w-full" title={paymentError ?? error ?? ""} tone="danger" />
             ) : null}
             <button
               className="rounded-xl bg-[var(--color-primary-hover)] px-6 py-3 font-black text-white disabled:opacity-50"

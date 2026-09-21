@@ -10,6 +10,7 @@ import { EMPLOYEE_HOME_ACCESS_PERMISSION, hasEmployeeHomeAccess } from "@/module
 import { isNavigationItemActive, isNavigationItemEntitled, isNavigationItemPermitted } from "@/shared/navigation/Sidebar";
 import type { NavigationItem } from "@/shared/types/navigation.types";
 import { useEntitlementContext } from "@/shared/providers/EntitlementProvider";
+import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
 
 /**
  * Rutas privadas que solo exigen sesion valida, sin permiso operacional.
@@ -74,16 +75,6 @@ function findRequiredPermissionItem(
   return undefined;
 }
 
-function Denied() {
-  return (
-    <div className="flex min-h-[40vh] items-center justify-center">
-      <p className="text-sm text-[var(--color-text-muted)]">
-        No tienes permiso para acceder a esta seccion.
-      </p>
-    </div>
-  );
-}
-
 /**
  * Boundary de autorizacion por ruta, fail-closed por defecto: una ruta
  * privada sin item de navegacion asociado, o cuyo item no resuelve un
@@ -111,7 +102,7 @@ export function RequirePermission({ children }: { children: ReactNode }) {
   const { hasCapability } = useEntitlementContext();
 
   if (!canUserEnterPrivateRoute(user, pathname)) {
-    return <Denied />;
+    return <AccessDeniedState />;
   }
 
   // Normalize dynamic tenant Customer account paths to legacy global paths for permission resolution
@@ -132,5 +123,5 @@ export function RequirePermission({ children }: { children: ReactNode }) {
           isNavigationItemEntitled(requiredItem, hasCapability)
         : false;
 
-  return isAllowed ? <>{children}</> : <Denied />;
+  return isAllowed ? <>{children}</> : <AccessDeniedState />;
 }
