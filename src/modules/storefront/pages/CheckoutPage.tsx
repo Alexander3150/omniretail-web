@@ -234,10 +234,18 @@ export function CheckoutPage() {
     form.city &&
     form.department,
   );
+  const cardDigits = cardNumber.replace(/\D/g, "");
+  const paymentReady =
+    selectedPaymentMethodId !== "new" ||
+    (cardDigits.length >= 13 &&
+      cardDigits.length <= 19 &&
+      Boolean(form.cardholderName.trim()) &&
+      hasValidCardExpiration(cardExpiration) &&
+      /^\d{3,4}$/.test(cardSecurityCode));
+  const canSubmitOrder = ready && paymentReady;
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (config?.accountRequired && !user) return;
-    const cardDigits = cardNumber.replace(/\D/g, "");
     if (selectedPaymentMethodId === "new") {
       if (!cardDigits) {
         setPaymentError("Ingrese el número de tarjeta.");
@@ -278,7 +286,7 @@ export function CheckoutPage() {
         <Step active={false} number="3" label="Confirma" />
       </div>
       <div className="mt-8 grid gap-7 xl:grid-cols-[minmax(0,1fr)_27rem]">
-        <form className="space-y-5" onSubmit={handleSubmit}>
+        <form className="space-y-5" noValidate onSubmit={handleSubmit}>
           {step === 1 ? (
             <section className="min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm sm:p-7">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -576,7 +584,7 @@ export function CheckoutPage() {
             ) : null}
             <button
               className="rounded-xl bg-[var(--color-primary-hover)] px-6 py-3 font-black text-white disabled:opacity-50"
-              disabled={step !== 2 || submitting}
+              disabled={step !== 2 || submitting || !canSubmitOrder}
               type="submit"
             >
               {submitting ? "Procesando..." : `Realizar pedido (Q${subtotal.toFixed(2)})`}

@@ -4,17 +4,17 @@
  * directa no pueda guardar texto que la interfaz no permite capturar.
  */
 export const DELIVERY_ADDRESS_LIMITS = {
-  label: 40,
-  recipientName: 70,
-  line1: 50,
-  line2: 50,
-  references: 120,
+  label: 35,
+  recipientName: 60,
+  line1: 200,
+  line2: 200,
+  references: 300,
 } as const;
 
 const PERSON_NAME_CHARACTERS = /[^\p{L}\p{M} '-]/gu;
-const ADDRESS_LINE_CHARACTERS = /[^A-Za-z0-9 .-]/g;
-const ADDRESS_COMPLEMENT_CHARACTERS = /[^A-Za-z0-9 ]/g;
-const ADDRESS_REFERENCE_CHARACTERS = /[^A-Za-z0-9 ,]/g;
+const ADDRESS_LINE_CHARACTERS = /[^\p{L}\p{N} .,#!'/-]/gu;
+const ADDRESS_COMPLEMENT_CHARACTERS = /[^\p{L}\p{N} .,#!'/-]/gu;
+const ADDRESS_REFERENCE_CHARACTERS = /[^\p{L}\p{N} .,#!'/-]/gu;
 
 function normalizeSpaces(value: string): string {
   return value.replace(/\s{2,}/g, " ");
@@ -47,11 +47,7 @@ export function isValidDeliveryAddress(
 ): boolean {
   if (value.length > DELIVERY_ADDRESS_LIMITS[field]) return false;
   if (!value) return true;
-  if (field === "line1") {
-    return /^[A-Za-z0-9][A-Za-z0-9 .-]*$/.test(value) && !value.includes("--");
-  }
-  if (field === "line2") return /^[A-Za-z0-9][A-Za-z0-9 ]*$/.test(value);
-  return /^[A-Za-z0-9][A-Za-z0-9 ,]*$/.test(value);
+  return /^[\p{L}\p{N}][\p{L}\p{N} .,#!'/-]*$/u.test(value);
 }
 
 /** Correo de notificaciones: formato interoperable para los servicios de entrega. */

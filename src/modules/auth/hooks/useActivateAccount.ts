@@ -21,12 +21,28 @@ import {
 export function useActivateAccount(token: string) {
   const repositories = useRepositories();
 
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [password, setPasswordState] = useState("");
+  const [confirmPassword, setConfirmPasswordState] = useState("");
   const [fieldErrors, setFieldErrors] = useState<ActivateAccountValidationErrors>({});
   const [formError, setFormError] = useState<string | undefined>();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
+
+  const setPassword = useCallback((value: string) => {
+    setPasswordState(value);
+    setFieldErrors((current) => {
+      if (!current.password && !current.confirmPassword) return current;
+      const validation = validateActivateAccountForm({ password: value, confirmPassword });
+      return { ...current, password: validation.password, confirmPassword: validation.confirmPassword };
+    });
+  }, [confirmPassword]);
+  const setConfirmPassword = useCallback((value: string) => {
+    setConfirmPasswordState(value);
+    setFieldErrors((current) => {
+      if (!current.confirmPassword) return current;
+      return { ...current, confirmPassword: validateActivateAccountForm({ password, confirmPassword: value }).confirmPassword };
+    });
+  }, [password]);
 
   const submit = useCallback(async () => {
     setFormError(undefined);

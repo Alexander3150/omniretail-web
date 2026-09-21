@@ -11,7 +11,6 @@ import {
 } from "@/modules/customer/validation/paymentMethod.validation";
 import { CARD_BRANDS } from "@/config/card-brands";
 import { GUATEMALA_BANKS } from "@/config/guatemala-banks";
-import { TEXT_FIELD_POLICY } from "@/config/text-field-policy";
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { FormField } from "@/shared/components/FormField";
@@ -30,6 +29,22 @@ const EMPTY_FORM: PaymentMethodFormDto = {
   expirationYear: "",
   cardholderName: "",
 };
+
+function sanitizeExpirationMonth(value: string, currentValue: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 2);
+  if (digits.length === 2 && Number(digits) > 12) return currentValue;
+  return digits;
+}
+
+function sanitizeExpirationYear(value: string, currentValue: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 4);
+  if (digits.length === 4) {
+    const currentYear = new Date().getFullYear();
+    const year = Number(digits);
+    if (year < currentYear || year > currentYear + 20) return currentValue;
+  }
+  return digits;
+}
 
 function toFormDto(method: CustomerPaymentMethod): PaymentMethodFormDto {
   return {
@@ -82,6 +97,24 @@ export function MetodosPagoPage() {
         tone: "danger",
       });
     }
+  }
+
+  function updatePaymentMethod(patch: Partial<PaymentMethodFormDto>) {
+    const nextForm = { ...form, ...patch };
+    setForm(nextForm);
+    setFieldErrors((current) => {
+      const affectedFields = Object.keys(patch) as Array<keyof PaymentMethodValidationErrors>;
+      if (patch.expirationMonth !== undefined) affectedFields.push("expirationYear");
+      if (patch.expirationYear !== undefined) affectedFields.push("expirationMonth");
+      if (!affectedFields.some((field) => current[field])) return current;
+      const validation = validatePaymentMethodForm(nextForm);
+      const nextErrors = { ...current };
+      for (const field of affectedFields) {
+        if (!current[field]) continue;
+        nextErrors[field] = validation[field];
+      }
+      return nextErrors;
+    });
   }
 
   async function handleRemove() {
@@ -225,7 +258,7 @@ export function MetodosPagoPage() {
             <Select
               disabled={busy || editor?.mode === "edit"}
               id="payment-brand"
-              onChange={(event) => setForm((prev) => ({ ...prev, brand: event.target.value }))}
+              onChange={(event) => updatePaymentMethod({ brand: event.target.value })}
               value={form.brand}
             >
               <option value="">Selecciona una marca</option>
@@ -241,7 +274,7 @@ export function MetodosPagoPage() {
             <Select
               disabled={busy || editor?.mode === "edit"}
               id="payment-bank"
-              onChange={(event) => setForm((prev) => ({ ...prev, issuingBank: event.target.value }))}
+              onChange={(event) => updatePaymentMethod({ issuingBank: event.target.value })}
               value={form.issuingBank}
             >
               <option value="">Selecciona un banco</option>
@@ -259,7 +292,9 @@ export function MetodosPagoPage() {
               id="payment-last4"
               inputMode="numeric"
               maxLength={4}
-              onChange={(event) => setForm((prev) => ({ ...prev, last4: event.target.value }))}
+              onChange={(event) =>
+                updatePaymentMethod({ last4: event.target.value.replace(/\D/g, "").slice(0, 4) })
+              }
               value={form.last4}
             />
           </FormField>
@@ -274,8 +309,11 @@ export function MetodosPagoPage() {
                 disabled={busy}
                 id="payment-month"
                 inputMode="numeric"
+                maxLength={2}
                 onChange={(event) =>
-                  setForm((prev) => ({ ...prev, expirationMonth: event.target.value }))
+                  updatePaymentMethod({
+                    expirationMonth: sanitizeExpirationMonth(event.target.value, form.expirationMonth),
+                  })
                 }
                 placeholder="MM"
                 value={form.expirationMonth}
@@ -293,7 +331,9 @@ export function MetodosPagoPage() {
                 inputMode="numeric"
                 maxLength={4}
                 onChange={(event) =>
-                  setForm((prev) => ({ ...prev, expirationYear: event.target.value }))
+                  updatePaymentMethod({
+                    expirationYear: sanitizeExpirationYear(event.target.value, form.expirationYear),
+                  })
                 }
                 placeholder="AAAA"
                 value={form.expirationYear}
@@ -310,10 +350,8 @@ export function MetodosPagoPage() {
             <Input
               disabled={busy}
               id="payment-cardholder"
-              maxLength={TEXT_FIELD_POLICY.NAME_MAX_LENGTH}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, cardholderName: event.target.value }))
-              }
+              maxLength={60}
+              onChange={(event) => updatePaymentMethod({ cardholderName: event.target.value })}
               value={form.cardholderName}
             />
           </FormField>

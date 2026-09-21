@@ -27,15 +27,47 @@ export function useRegister() {
   const tenantLoading = tenant?.loading ?? false;
   const tenantError = tenant?.error;
 
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [name, setNameState] = useState("");
+  const [email, setEmailState] = useState("");
+  const [phone, setPhoneState] = useState("");
+  const [password, setPasswordState] = useState("");
+  const [confirmPassword, setConfirmPasswordState] = useState("");
   const [fieldErrors, setFieldErrors] = useState<RegisterFormValidationErrors>({});
   const [formError, setFormError] = useState<string | undefined>();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [completed, setCompleted] = useState<RegisterCompleted | null>(null);
+
+  const updateErrors = useCallback((next: RegisterFormDto, fields: Array<keyof RegisterFormValidationErrors>) => {
+    setFieldErrors((current) => {
+      const validation = validateRegisterForm(next);
+      const nextErrors = { ...current };
+      for (const field of fields) {
+        if (current[field]) nextErrors[field] = validation[field];
+      }
+      return nextErrors;
+    });
+  }, []);
+
+  const setName = useCallback((value: string) => {
+    setNameState(value);
+    updateErrors({ name: value, email, phone, password, confirmPassword }, ["name"]);
+  }, [confirmPassword, email, password, phone, updateErrors]);
+  const setEmail = useCallback((value: string) => {
+    setEmailState(value);
+    updateErrors({ name, email: value, phone, password, confirmPassword }, ["email", "password"]);
+  }, [confirmPassword, name, password, phone, updateErrors]);
+  const setPhone = useCallback((value: string) => {
+    setPhoneState(value);
+    updateErrors({ name, email, phone: value, password, confirmPassword }, ["phone"]);
+  }, [confirmPassword, email, name, password, updateErrors]);
+  const setPassword = useCallback((value: string) => {
+    setPasswordState(value);
+    updateErrors({ name, email, phone, password: value, confirmPassword }, ["password", "confirmPassword"]);
+  }, [confirmPassword, email, name, phone, updateErrors]);
+  const setConfirmPassword = useCallback((value: string) => {
+    setConfirmPasswordState(value);
+    updateErrors({ name, email, phone, password, confirmPassword: value }, ["confirmPassword"]);
+  }, [email, name, password, phone, updateErrors]);
 
   const submit = useCallback(async () => {
     setFormError(undefined);

@@ -19,10 +19,18 @@ export function useRequestPasswordReset() {
   const tenantId = tenant?.tenantId;
   const tenantLoading = tenant?.loading ?? false;
 
-  const [email, setEmail] = useState("");
+  const [email, setEmailState] = useState("");
   const [fieldErrors, setFieldErrors] = useState<RequestPasswordResetValidationErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
+
+  const setEmail = useCallback((value: string) => {
+    setEmailState(value);
+    setFieldErrors((current) => {
+      if (!current.email) return current;
+      return { ...current, email: validateRequestPasswordResetForm({ email: value }).email };
+    });
+  }, []);
 
   const submit = useCallback(async () => {
     if (tenantLoading) {

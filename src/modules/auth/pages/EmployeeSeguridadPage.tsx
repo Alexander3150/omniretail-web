@@ -61,6 +61,24 @@ export function EmployeeSeguridadPage() {
     }
   }
 
+  function updatePasswordField(
+    field: "currentPassword" | "newPassword" | "confirmNewPassword",
+    nextValue: string,
+  ) {
+    const nextForm = { ...form, [field]: nextValue };
+    setForm(nextForm);
+    setFieldErrors((current) => {
+      const fields: Array<keyof ChangePasswordValidationErrors> =
+        field === "newPassword" ? ["newPassword", "confirmNewPassword"] : [field];
+      if (!fields.some((key) => current[key])) return current;
+      const validation = validateChangePasswordForm(nextForm);
+      return {
+        ...current,
+        ...Object.fromEntries(fields.map((key) => [key, validation[key]])),
+      };
+    });
+  }
+
   return (
     <div className="min-w-0 space-y-5">
       <PageHeader
@@ -85,9 +103,7 @@ export function EmployeeSeguridadPage() {
             autoComplete="current-password"
             disabled={busy}
             id="employee-security-current-password"
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, currentPassword: event.target.value }))
-            }
+            onChange={(event) => updatePasswordField("currentPassword", event.target.value)}
             value={form.currentPassword}
           />
         </FormField>
@@ -103,7 +119,7 @@ export function EmployeeSeguridadPage() {
             disabled={busy}
             id="employee-security-new-password"
             maxLength={EMPLOYEE_PASSWORD_POLICY.MAX_LENGTH}
-            onChange={(event) => setForm((prev) => ({ ...prev, newPassword: event.target.value }))}
+            onChange={(event) => updatePasswordField("newPassword", event.target.value)}
             value={form.newPassword}
           />
         </FormField>
@@ -118,9 +134,7 @@ export function EmployeeSeguridadPage() {
             disabled={busy}
             id="employee-security-confirm-password"
             maxLength={EMPLOYEE_PASSWORD_POLICY.MAX_LENGTH}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, confirmNewPassword: event.target.value }))
-            }
+            onChange={(event) => updatePasswordField("confirmNewPassword", event.target.value)}
             value={form.confirmNewPassword}
           />
         </FormField>

@@ -94,6 +94,23 @@ export function DireccionesPage() {
     }
   }
 
+  function updateAddress(patch: Partial<AddressFormDto>) {
+    const nextForm = { ...form, ...patch };
+    setForm(nextForm);
+    setFieldErrors((current) => {
+      const affectedFields = Object.keys(patch) as Array<keyof AddressValidationErrors>;
+      if (patch.stateOrDepartment !== undefined) affectedFields.push("city");
+      if (!affectedFields.some((field) => current[field])) return current;
+      const validation = validateAddressForm(nextForm);
+      const nextErrors = { ...current };
+      for (const field of affectedFields) {
+        if (!current[field]) continue;
+        nextErrors[field] = validation[field];
+      }
+      return nextErrors;
+    });
+  }
+
   async function handleRemove() {
     if (!removeTarget) return;
     try {
@@ -237,7 +254,7 @@ export function DireccionesPage() {
               disabled={busy}
               id="address-label"
               maxLength={DELIVERY_ADDRESS_LIMITS.label}
-              onChange={(event) => setForm((prev) => ({ ...prev, label: event.target.value.slice(0, DELIVERY_ADDRESS_LIMITS.label) }))}
+              onChange={(event) => updateAddress({ label: event.target.value.slice(0, DELIVERY_ADDRESS_LIMITS.label) })}
               placeholder="Casa, Oficina..."
               value={form.label}
             />
@@ -248,9 +265,7 @@ export function DireccionesPage() {
               disabled={busy}
               id="address-recipient"
               maxLength={DELIVERY_ADDRESS_LIMITS.recipientName}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, recipientName: sanitizeRecipientName(event.target.value) }))
-              }
+              onChange={(event) => updateAddress({ recipientName: sanitizeRecipientName(event.target.value) })}
               value={form.recipientName}
             />
           </FormField>
@@ -260,7 +275,7 @@ export function DireccionesPage() {
               disabled={busy}
               id="address-line1"
               maxLength={DELIVERY_ADDRESS_LIMITS.line1}
-              onChange={(event) => setForm((prev) => ({ ...prev, line1: sanitizeDeliveryAddress(event.target.value, "line1") }))}
+              onChange={(event) => updateAddress({ line1: sanitizeDeliveryAddress(event.target.value, "line1") })}
               value={form.line1}
             />
           </FormField>
@@ -270,7 +285,7 @@ export function DireccionesPage() {
               disabled={busy}
               id="address-line2"
               maxLength={DELIVERY_ADDRESS_LIMITS.line2}
-              onChange={(event) => setForm((prev) => ({ ...prev, line2: sanitizeDeliveryAddress(event.target.value, "line2") }))}
+              onChange={(event) => updateAddress({ line2: sanitizeDeliveryAddress(event.target.value, "line2") })}
               value={form.line2}
             />
           </FormField>
@@ -289,7 +304,7 @@ export function DireccionesPage() {
                   // Cambiar de departamento invalida el municipio elegido
                   // antes -- Municipio siempre se resetea junto con el
                   // departamento para que nunca queden desincronizados.
-                  setForm((prev) => ({ ...prev, stateOrDepartment: nextDepartment, city: "" }));
+                  updateAddress({ stateOrDepartment: nextDepartment, city: "" });
                 }}
                 value={form.stateOrDepartment}
               >
@@ -306,7 +321,7 @@ export function DireccionesPage() {
               <Select
                 disabled={busy || !form.stateOrDepartment}
                 id="address-city"
-                onChange={(event) => setForm((prev) => ({ ...prev, city: event.target.value }))}
+                onChange={(event) => updateAddress({ city: event.target.value })}
                 value={form.city}
               >
                 <option value="">
@@ -333,9 +348,9 @@ export function DireccionesPage() {
               disabled={busy}
               id="address-postal"
               inputMode="numeric"
-              maxLength={5}
+              maxLength={10}
               onChange={(event) =>
-                setForm((prev) => ({ ...prev, postalCode: event.target.value }))
+                updateAddress({ postalCode: event.target.value.replace(/\D/g, "").slice(0, 10) })
               }
               placeholder="01001"
               value={form.postalCode}
@@ -347,7 +362,7 @@ export function DireccionesPage() {
               disabled={busy}
               id="address-references"
               maxLength={DELIVERY_ADDRESS_LIMITS.references}
-              onChange={(event) => setForm((prev) => ({ ...prev, references: sanitizeDeliveryAddress(event.target.value, "references") }))}
+              onChange={(event) => updateAddress({ references: sanitizeDeliveryAddress(event.target.value, "references") })}
               value={form.references}
             />
           </FormField>

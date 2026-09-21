@@ -61,6 +61,16 @@ export function PerfilPage() {
     }
   }
 
+  function updateProfileField(field: keyof ProfileFormDto, nextValue: string) {
+    const next = { name, phone, [field]: nextValue };
+    if (field === "name") setName(nextValue);
+    else setPhone(nextValue);
+    setFieldErrors((current) => {
+      if (!current[field]) return current;
+      return { ...current, [field]: validateProfileForm(next)[field] };
+    });
+  }
+
   function handleCancel() {
     if (customer) {
       setName(customer.name);
@@ -152,7 +162,7 @@ export function PerfilPage() {
                 disabled={saving}
                 id="profile-name"
                 maxLength={TEXT_FIELD_POLICY.NAME_MAX_LENGTH}
-                onChange={(event) => setName(event.target.value)}
+                onChange={(event) => updateProfileField("name", event.target.value)}
                 readOnly={!isEditing}
                 value={name}
               />
@@ -164,7 +174,7 @@ export function PerfilPage() {
                 id="profile-phone"
                 inputMode="numeric"
                 maxLength={8}
-                onChange={(event) => setPhone(event.target.value)}
+                onChange={(event) => updateProfileField("phone", event.target.value)}
                 readOnly={!isEditing}
                 type="tel"
                 value={phone}
