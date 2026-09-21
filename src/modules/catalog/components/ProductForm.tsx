@@ -87,6 +87,8 @@ interface ProductFormProps {
   onArchive?: () => void;
 }
 
+type ProductFormErrors = ProductValidationErrors & { defaultLocationId?: string };
+
 type ProductFormTab =
   "general" | "units" | "tracking" | "attributes" | "prices" | "promotion" | "suppliers" | "media";
 
@@ -128,7 +130,8 @@ export function ProductForm({
 }: ProductFormProps) {
   const initialValue = useMemo(() => buildInitialValue(options, editorData), [editorData, options]);
   const [value, setValue] = useState<ProductEditorDto>(initialValue);
-  const [errors, setErrors] = useState<ProductValidationErrors>({});
+  const [errors, setErrors] = useState<ProductFormErrors>({});
+  const [hasSubmitted, setHasSubmitted] = useState(false);
   const [editorError, setEditorError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ProductFormTab>("general");
   const { hasCapability } = useEntitlement();
@@ -197,41 +200,71 @@ export function ProductForm({
   const completionPercentage = Math.round((completedItems / preparationItems.length) * 100);
 
   function updateValue(patch: Partial<ProductEditorDto>) {
-    setValue((current) => {
-      const next = { ...current, ...patch };
-      if (patch.productType) {
-        next.tracking =
-          patch.productType === ProductType.physical
-            ? getDefaultTracking(options.businessCapabilities, patch.productType)
-            : applyTrackingRules(patch.productType, next.tracking, options.businessCapabilities);
-        if (patch.productType === ProductType.kit) {
-          const unitId = options.units.find((unit) => unit.category === "unit")?.id;
-          if (unitId) {
-            next.baseUnitId = unitId;
-            next.inventoryUnitId = unitId;
-            next.saleUnitId = unitId;
-            next.inventoryToBaseFactor = 1;
-            next.saleToBaseFactor = 1;
-          }
-          next.supplierProducts = [];
+    const next = { ...value, ...patch };
+    if (patch.productType) {
+      next.tracking =
+        patch.productType === ProductType.physical
+          ? getDefaultTracking(options.businessCapabilities, patch.productType)
+          : applyTrackingRules(patch.productType, next.tracking, options.businessCapabilities);
+      if (patch.productType === ProductType.kit) {
+        const unitId = options.units.find((unit) => unit.category === "unit")?.id;
+        if (unitId) {
+          next.baseUnitId = unitId;
+          next.inventoryUnitId = unitId;
+          next.saleUnitId = unitId;
+          next.inventoryToBaseFactor = 1;
+          next.saleToBaseFactor = 1;
         }
+        next.supplierProducts = [];
       }
-      next.saleUnitId = resolveSaleUnitId(
-        next.baseUnitId,
-        next.saleUnitId,
+    }
+    next.saleUnitId = resolveSaleUnitId(
+      next.baseUnitId,
+      next.saleUnitId,
+      options.businessCapabilities,
+      existingCapabilityContext?.saleUnitId,
+    );
+    if (next.baseUnitId === next.saleUnitId) {
+      next.saleToBaseFactor = 1;
+    }
+    if (next.baseUnitId === next.inventoryUnitId) next.inventoryToBaseFactor = 1;
+    setValue(next);
+
+    const affectedFields = Object.keys(patch) as (keyof ProductFormErrors)[];
+    if (patch.productType !== undefined) {
+      affectedFields.push("baseUnitId", "saleUnitId", "tracking", "defaultLocationId");
+    } else if (patch.baseUnitId !== undefined) {
+      affectedFields.push("saleUnitId");
+    }
+    if (patch.tracking !== undefined || patch.inventorySettings !== undefined) {
+      affectedFields.push("defaultLocationId");
+    }
+    if (patch.media !== undefined) affectedFields.push("primaryImageUrl");
+
+    setErrors((current) => {
+      if (!affectedFields.some((field) => current[field] ||
+        (hasSubmitted && (field === "salePrice" || field === "defaultLocationId")))) return current;
+
+      const validatedValue = applyCapabilityRulesToEditor(
+        next,
         options.businessCapabilities,
-        existingCapabilityContext?.saleUnitId,
+        existingCapabilityContext,
       );
-      if (next.baseUnitId === next.saleUnitId) {
-        next.saleToBaseFactor = 1;
+      const validation = validateProductFormFields(validatedValue);
+      const nextErrors = { ...current };
+      for (const field of affectedFields) {
+        if (!current[field] && !(hasSubmitted &&
+          (field === "salePrice" || field === "defaultLocationId"))) continue;
+        if (validation[field]) nextErrors[field] = validation[field];
+        else delete nextErrors[field];
       }
-      if (next.baseUnitId === next.inventoryUnitId) next.inventoryToBaseFactor = 1;
-      return next;
+      return nextErrors;
     });
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setHasSubmitted(true);
     setEditorError(null);
     const nextValue = applyCapabilityRulesToEditor(
       value,
@@ -239,14 +272,7 @@ export function ProductForm({
       existingCapabilityContext,
     );
     const pilotErrors = validateProductFormPilot(nextValue);
-    const nextErrors = {
-      ...pilotErrors,
-      ...validateProductDto({
-        ...nextValue,
-        salePrice: toFiniteNumber(nextValue.salePrice),
-        primaryImageUrl: nextValue.media.find((item) => item.isPrimary)?.url,
-      }),
-    };
+    const nextErrors = validateProductFormFields(nextValue);
     const nextEditorError =
       pilotErrors.tracking ?? validateEditor(nextValue, editorData, options.units);
     setErrors(nextErrors);
@@ -259,7 +285,7 @@ export function ProductForm({
   }
 
   return (
-    <form className="space-y-5" id="catalog-product-form" onSubmit={handleSubmit}>
+    <form className="space-y-5" id="catalog-product-form" noValidate onSubmit={handleSubmit}>
       <section className="rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 space-y-2">
@@ -363,6 +389,7 @@ export function ProductForm({
               capabilities={options.businessCapabilities}
               editorData={editorData}
               error={editorError}
+              errors={errors}
               onChange={updateValue}
               units={options.units}
               value={value}
@@ -857,6 +884,7 @@ function TrackingTab({
   capabilities,
   editorData,
   error,
+  errors,
   units,
   onChange,
 }: {
@@ -864,6 +892,7 @@ function TrackingTab({
   capabilities: ProductFormOptions["businessCapabilities"];
   editorData: ProductEditorData;
   error: string | null;
+  errors: ProductFormErrors;
   units: ProductFormOptions["units"];
   onChange: (value: Partial<ProductEditorDto>) => void;
 }) {
@@ -967,7 +996,7 @@ function TrackingTab({
               </p>
             )}
           </FormField>
-          <FormField id="default-location-id" label="Ubicacion predeterminada">
+          <FormField id="default-location-id" label="Ubicacion predeterminada" error={errors.defaultLocationId}>
             <Select
               id="default-location-id"
               onChange={(event) =>
@@ -2396,6 +2425,30 @@ function validatePromotionForm(state: PromotionFormState, salePrice: number) {
   return null;
 }
 
+function validateProductFormFields(value: ProductEditorDto): ProductFormErrors {
+  const errors: ProductFormErrors = {
+    ...validateProductFormPilot(value),
+    ...validateProductDto({
+      ...value,
+      salePrice: toFiniteNumber(value.salePrice),
+      primaryImageUrl: value.media.find((item) => item.isPrimary)?.url,
+    }),
+  };
+
+  if (value.salePrice === "") {
+    errors.salePrice = "Configure al menos un precio de venta.";
+  }
+  if (
+    value.productType === ProductType.physical &&
+    value.tracking.stock &&
+    !value.inventorySettings.defaultLocationId
+  ) {
+    errors.defaultLocationId = "Seleccione una ubicación predeterminada.";
+  }
+
+  return errors;
+}
+
 function validateEditor(
   value: ProductEditorDto,
   editorData: ProductEditorData,
@@ -2553,11 +2606,11 @@ function validateEditor(
 }
 
 function routeToFirstError(
-  errors: ProductValidationErrors,
+  errors: ProductFormErrors,
   editorError: string | null,
   setActiveTab: (tab: ProductFormTab) => void,
 ) {
-  const firstError = Object.keys(errors)[0] as keyof ProductValidationErrors | undefined;
+  const firstError = Object.keys(errors)[0] as keyof ProductFormErrors | undefined;
   if (
     firstError === "sku" ||
     firstError === "name" ||
@@ -2569,7 +2622,7 @@ function routeToFirstError(
     setActiveTab("units");
   } else if (firstError === "salePrice") {
     setActiveTab("prices");
-  } else if (firstError === "tracking") {
+  } else if (firstError === "tracking" || firstError === "defaultLocationId") {
     setActiveTab("tracking");
   } else if (firstError === "primaryImageUrl") {
     setActiveTab("media");
@@ -2680,7 +2733,7 @@ function buildInitialValue(
     saleUnitId: unitId,
     inventoryToBaseFactor: 1,
     saleToBaseFactor: 1,
-    salePrice: 0,
+    salePrice: "",
     status: ProductStatus.published,
     tracking: getDefaultTracking(options.businessCapabilities, ProductType.physical),
     inventorySettings,
