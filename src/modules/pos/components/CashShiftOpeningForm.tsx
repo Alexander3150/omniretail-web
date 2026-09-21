@@ -28,6 +28,32 @@ export function CashShiftOpeningForm({
   const [openingAmount, setOpeningAmount] = useState("");
   const [errors, setErrors] = useState<CashShiftFormErrors>({});
 
+  function updateRegisterCode(nextRegisterCode: string): void {
+    setRegisterCode(nextRegisterCode);
+    setErrors((current) => {
+      if (!current.registerCode) return current;
+
+      const numericAmount = openingAmount.trim() === "" ? Number.NaN : Number(openingAmount);
+      return {
+        ...current,
+        registerCode: validateOpenCashShift(nextRegisterCode, numericAmount).registerCode,
+      };
+    });
+  }
+
+  function updateOpeningAmount(nextOpeningAmount: string): void {
+    setOpeningAmount(nextOpeningAmount);
+    setErrors((current) => {
+      if (!current.amount) return current;
+
+      const numericAmount = nextOpeningAmount.trim() === "" ? Number.NaN : Number(nextOpeningAmount);
+      return {
+        ...current,
+        amount: validateOpenCashShift(registerCode, numericAmount).amount,
+      };
+    });
+  }
+
   return (
     <section className="rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm sm:p-5">
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-3">
@@ -55,7 +81,7 @@ export function CashShiftOpeningForm({
             maxLength={40}
             placeholder="Ej. CAJA-01"
             value={registerCode}
-            onChange={(event) => setRegisterCode(event.target.value)}
+            onChange={(event) => updateRegisterCode(event.target.value)}
           />
         </FormField>
         <FormField
@@ -72,7 +98,7 @@ export function CashShiftOpeningForm({
             step="0.01"
             type="number"
             value={openingAmount}
-            onChange={(event) => setOpeningAmount(event.target.value)}
+            onChange={(event) => updateOpeningAmount(event.target.value)}
           />
         </FormField>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] pt-3 md:col-span-2">
