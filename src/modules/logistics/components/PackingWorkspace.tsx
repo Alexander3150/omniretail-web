@@ -88,6 +88,16 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
     await props.onSave(validation);
   };
 
+  const updatePreparationValue = (field: "totalWeight" | "packageCount", nextValue: string) => {
+    const nextValues = { ...values, [field]: nextValue };
+    setValues(nextValues);
+    setErrors((current) => {
+      if (!current[field]) return current;
+      const validation = validatePackingPreparation(detail.deliveryMethod, nextValues);
+      return { ...current, [field]: validation.errors[field] };
+    });
+  };
+
   const updateChecklist = (key: keyof PackingPreparationFormValues["checklist"], checked: boolean) => {
     setValues((current) => ({
       ...current,
@@ -142,7 +152,7 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
                   disabled={!mutable || !props.canPrepare || props.submitting}
                   id="packing-weight"
                   min="0.01"
-                  onChange={(event) => { setValues((current) => ({ ...current, totalWeight: event.target.value })); setErrors((current) => ({ ...current, totalWeight: undefined })); }}
+                  onChange={(event) => updatePreparationValue("totalWeight", event.target.value)}
                   placeholder="0.00"
                   step="0.01"
                   type="number"
@@ -154,7 +164,7 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
                   disabled={!mutable || !props.canPrepare || props.submitting}
                   id="packing-package-count"
                   min="1"
-                  onChange={(event) => { setValues((current) => ({ ...current, packageCount: event.target.value })); setErrors((current) => ({ ...current, packageCount: undefined })); }}
+                  onChange={(event) => updatePreparationValue("packageCount", event.target.value)}
                   placeholder="1"
                   step="1"
                   type="number"

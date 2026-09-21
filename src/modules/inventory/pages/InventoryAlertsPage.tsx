@@ -1615,9 +1615,51 @@ function AdjustStockModal({
   }
 
   function update(patch: Partial<EditableAdjustStockDto>) {
-    setValue((current) => ({ ...current, ...patch }));
-    setErrors({});
-    setSubmitError(null);
+    const nextValue = { ...value, ...patch };
+    const nextSelectedUnit =
+      row.adjustmentUnits.find((option) => option.unitId === nextValue.unitId) ??
+      row.adjustmentUnits[0];
+    const nextCanonicalQuantity =
+      toFiniteNumber(nextValue.quantity) * (nextSelectedUnit?.toBaseFactor ?? 1);
+    const nextValidationErrors = validateAdjustment(
+      { ...toAdjustStockDto(nextValue), quantity: nextCanonicalQuantity },
+      row,
+      row.locationQuantities[nextValue.locationId] ?? 0,
+    );
+    const nextQuantityError = getUnitQuantityInputError(
+      nextValue.quantity,
+      nextSelectedUnit?.unitAllowsDecimals ?? false,
+    );
+    if (nextQuantityError) nextValidationErrors.quantity = nextQuantityError;
+    const affectedFields = new Set<keyof AdjustmentValidationErrors>();
+    if (patch.locationId !== undefined) {
+      affectedFields.add("locationId");
+      affectedFields.add("lotId");
+      affectedFields.add("serialNumbers");
+    }
+    if (patch.movementKind !== undefined || patch.unitId !== undefined || patch.quantity !== undefined) {
+      affectedFields.add("quantity");
+      affectedFields.add("lotId");
+      affectedFields.add("lotNumber");
+      affectedFields.add("expirationDate");
+      affectedFields.add("serialNumbers");
+    }
+    if (patch.lotId !== undefined) affectedFields.add("lotId");
+    if (patch.lotNumber !== undefined) affectedFields.add("lotNumber");
+    if (patch.expirationDate !== undefined) affectedFields.add("expirationDate");
+    if (patch.serialNumbersText !== undefined) affectedFields.add("serialNumbers");
+    if (patch.reason !== undefined) affectedFields.add("reason");
+    if (patch.notes !== undefined) affectedFields.add("notes");
+    setValue(nextValue);
+    setErrors((current) => {
+      const nextErrors = { ...current };
+      for (const field of affectedFields) {
+        if (!current[field]) continue;
+        if (nextValidationErrors[field]) nextErrors[field] = nextValidationErrors[field];
+        else delete nextErrors[field];
+      }
+      return nextErrors;
+    });
   }
 
   return (
@@ -1973,9 +2015,26 @@ function RequestTransferModal({
   const transferInvalid = hasValidationErrors(transferValidationErrors);
 
   function update(patch: Partial<EditableTransferRequestDto>) {
-    setValue((current) => ({ ...current, ...patch }));
-    setErrors({});
-    setSubmitError("");
+    const nextValue = { ...value, ...patch };
+    const nextDto = toTransferRequestDto(nextValue);
+    const nextValidationErrors = validateTransfer(nextDto, row);
+    const nextQuantityError = getUnitQuantityInputError(nextValue.quantity, row.unitAllowsDecimals);
+    if (nextQuantityError) nextValidationErrors.quantity = nextQuantityError;
+    const affectedFields = new Set<keyof TransferValidationErrors>();
+    if (patch.providerBranchId !== undefined) affectedFields.add("providerBranchId");
+    if (patch.quantity !== undefined) affectedFields.add("quantity");
+    if (patch.reason !== undefined) affectedFields.add("reason");
+    if (patch.notes !== undefined) affectedFields.add("notes");
+    setValue(nextValue);
+    setErrors((current) => {
+      const nextErrors = { ...current };
+      for (const field of affectedFields) {
+        if (!current[field]) continue;
+        if (nextValidationErrors[field]) nextErrors[field] = nextValidationErrors[field];
+        else delete nextErrors[field];
+      }
+      return nextErrors;
+    });
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {

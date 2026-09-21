@@ -59,6 +59,21 @@ export function PickingIncidentPanel({
     setErrors({});
   };
 
+  const updateValues = (patch: Partial<PickingIncidentFormValues>) => {
+    const nextValues = { ...values, ...patch };
+    setValues(nextValues);
+    setErrors((current) => {
+      const validation = validatePickingIncident(nextValues);
+      const nextErrors = { ...current };
+      for (const field of Object.keys(patch) as Array<keyof PickingIncidentFormValues>) {
+        if (!current[field]) continue;
+        if (validation.errors[field]) nextErrors[field] = validation.errors[field];
+        else delete nextErrors[field];
+      }
+      return nextErrors;
+    });
+  };
+
   return (
     <section className="space-y-3 rounded-xl border border-[var(--color-border)] bg-white p-3.5 shadow-sm">
       <div>
@@ -110,7 +125,7 @@ export function PickingIncidentPanel({
               <Select
                 disabled={disabled}
                 id="picking-incident-line"
-                onChange={(event) => setValues((current) => ({ ...current, pickingLineId: event.target.value }))}
+                onChange={(event) => updateValues({ pickingLineId: event.target.value })}
                 value={values.pickingLineId}
               >
                 <option value="">Incidencia general</option>
@@ -121,7 +136,7 @@ export function PickingIncidentPanel({
               <Select
                 disabled={disabled}
                 id="picking-incident-type"
-                onChange={(event) => setValues((current) => ({ ...current, type: event.target.value as PickingIncidentType }))}
+                onChange={(event) => updateValues({ type: event.target.value as PickingIncidentType })}
                 value={values.type}
               >
                 {Object.values(PickingIncidentType).map((type) => <option key={type} value={type}>{incidentTypeLabels[type]}</option>)}
@@ -132,7 +147,7 @@ export function PickingIncidentPanel({
                 disabled={disabled}
                 id="picking-incident-quantity"
                 min={1}
-                onChange={(event) => setValues((current) => ({ ...current, quantityAffected: event.target.value }))}
+                onChange={(event) => updateValues({ quantityAffected: event.target.value })}
                 step={1}
                 type="number"
                 value={values.quantityAffected}
@@ -144,7 +159,7 @@ export function PickingIncidentPanel({
                 disabled={disabled}
                 id="picking-incident-comment"
                 maxLength={500}
-                onChange={(event) => setValues((current) => ({ ...current, comment: event.target.value }))}
+                onChange={(event) => updateValues({ comment: event.target.value })}
                 value={values.comment}
               />
             </FormField>

@@ -82,6 +82,11 @@ export function PickingWorkspace(props: PickingWorkspaceProps) {
     setReleaseError(null);
   };
 
+  const updateReleaseReason = (nextReason: string) => {
+    setReleaseReason(nextReason);
+    if (releaseError) setReleaseError(validateReleaseReason(nextReason));
+  };
+
   return (
     <>
       <section className="min-w-0 rounded-xl border border-[var(--color-border)] bg-white shadow-sm">
@@ -198,7 +203,7 @@ export function PickingWorkspace(props: PickingWorkspaceProps) {
         title="Liberar picking"
       >
         <FormField error={releaseError ?? undefined} hint="El progreso y su trazabilidad se conservarán." id="picking-release-reason" label="Motivo *">
-          <Input disabled={props.submitting} id="picking-release-reason" maxLength={500} onChange={(event) => { setReleaseReason(event.target.value); setReleaseError(null); }} value={releaseReason} />
+          <Input disabled={props.submitting} id="picking-release-reason" maxLength={500} onChange={(event) => updateReleaseReason(event.target.value)} value={releaseReason} />
         </FormField>
       </Modal>
 

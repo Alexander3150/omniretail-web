@@ -10,6 +10,7 @@ import {
 } from "@/modules/pos/validation/cashShift.validation";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Input } from "@/shared/components/Input";
 import { Modal } from "@/shared/components/Modal";
 import { Select } from "@/shared/components/Select";
@@ -46,6 +47,32 @@ export function CashMovementModal({
     onClose();
   };
 
+  const updateAmount = (nextAmount: string) => {
+    setAmount(nextAmount);
+    setErrors((current) => {
+      if (!current.amount) return current;
+      const validation = validateCashMovement(
+        type,
+        nextAmount.trim() ? Number(nextAmount) : Number.NaN,
+        reason,
+      );
+      return { ...current, amount: validation.amount };
+    });
+  };
+
+  const updateReason = (nextReason: string) => {
+    setReason(nextReason);
+    setErrors((current) => {
+      if (!current.reason) return current;
+      const validation = validateCashMovement(
+        type,
+        amount.trim() ? Number(amount) : Number.NaN,
+        nextReason,
+      );
+      return { ...current, reason: validation.reason };
+    });
+  };
+
   return (
     <Modal
       footer={
@@ -76,11 +103,7 @@ export function CashMovementModal({
           if (await onSubmit({ type, amount: numericAmount, reason: reason.trim() })) closeModal();
         }}
       >
-        {error ? (
-          <p className="rounded-lg border border-[var(--color-danger)] p-3 text-sm font-semibold text-[var(--color-danger)]">
-            {error}
-          </p>
-        ) : null}
+        {error ? <InlineAlert description={error} title="No se pudo registrar el movimiento" /> : null}
         <div className="grid gap-3 sm:grid-cols-2">
           <FormField id="cash-movement-type" label="Tipo de movimiento">
             <Select
@@ -107,7 +130,7 @@ export function CashMovementModal({
               step="0.01"
               type="number"
               value={amount}
-              onChange={(event) => setAmount(event.target.value)}
+              onChange={(event) => updateAmount(event.target.value)}
             />
           </FormField>
         </div>
@@ -118,7 +141,7 @@ export function CashMovementModal({
             maxLength={160}
             placeholder="Describe el ingreso o egreso"
             value={reason}
-            onChange={(event) => setReason(event.target.value)}
+            onChange={(event) => updateReason(event.target.value)}
           />
         </FormField>
       </form>
