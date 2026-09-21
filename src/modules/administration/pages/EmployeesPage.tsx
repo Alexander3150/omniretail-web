@@ -10,6 +10,7 @@ import { EmployeeTable } from "@/modules/administration/components/EmployeeTable
 import { useEmployees } from "@/modules/administration/hooks/useEmployees";
 import { Button } from "@/shared/components/Button";
 import { UserPlusIcon } from "@/shared/components/icons";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { useToast } from "@/shared/components/Toast";
@@ -159,15 +160,11 @@ export function EmployeesPage() {
       />
 
       {error ? (
-        <div
-          className="flex flex-col gap-3 rounded-lg border border-[var(--color-danger)] bg-[var(--color-surface)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-          role="alert"
-        >
-          <p className="text-sm font-medium text-[var(--color-danger)]">{error}</p>
+        <InlineAlert className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" title={error} tone="danger">
           <Button onClick={() => void reload()} type="button" variant="secondary">
             Reintentar
           </Button>
-        </div>
+        </InlineAlert>
       ) : null}
 
       {loading ? (

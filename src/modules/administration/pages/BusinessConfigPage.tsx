@@ -11,6 +11,7 @@ import {
 import { useBusinessConfig } from "@/modules/administration/hooks/useBusinessConfig";
 import { enforceBusinessConfigCoherence } from "@/modules/administration/validation/businessConfig.validation";
 import { Button } from "@/shared/components/Button";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { useToast } from "@/shared/components/Toast";
 
@@ -157,17 +158,13 @@ export function BusinessConfigPage() {
       />
 
       {error ? (
-        <div
-          className="flex flex-col gap-3 rounded-lg border border-[var(--color-danger)] bg-[var(--color-surface)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-          role="alert"
-        >
-          <p className="text-sm font-medium text-[var(--color-danger)]">{error}</p>
+        <InlineAlert className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" title={error} tone="danger">
           {!value ? (
             <Button onClick={() => void reload()} type="button" variant="secondary">
               Reintentar
             </Button>
           ) : null}
-        </div>
+        </InlineAlert>
       ) : null}
 
       {showInitialLoading ? (

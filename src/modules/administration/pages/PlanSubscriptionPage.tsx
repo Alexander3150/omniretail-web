@@ -5,6 +5,8 @@ import { BASE_MONTHLY_QUETZALES, SUBSCRIPTION_ADDONS, subscriptionTotalQuetzales
 import { useTenantSubscription } from "@/modules/administration/hooks/useTenantSubscription";
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
+import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { useToast } from "@/shared/components/Toast";
@@ -41,8 +43,8 @@ export function PlanSubscriptionPage() {
 
   return <div className="min-w-0 space-y-5">
     <PageHeader title="Plan y suscripción" description="Configure los módulos del negocio y consulte la facturación." />
-    {!loading && !canRead ? <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6" role="alert">Se requiere el permiso admin.plans.read para consultar esta página.</div> : null}
-    {error ? <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-danger)] p-4" role="alert"><span>{error}</span><Button type="button" variant="secondary" onClick={() => void reload()}>Reintentar</Button></div> : null}
+      {!loading && !canRead ? <AccessDeniedState /> : null}
+    {error ? <InlineAlert className="flex items-center justify-between gap-3" title={error} tone="danger"><Button type="button" variant="secondary" onClick={() => void reload()}>Reintentar</Button></InlineAlert> : null}
     {loading ? <p aria-live="polite" className="rounded-xl border border-[var(--color-border)] p-6">Cargando suscripción…</p> : null}
     {details && canRead ? <>
       <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
