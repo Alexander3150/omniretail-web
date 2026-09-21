@@ -747,11 +747,30 @@ function LocationForm({
   }
 
   function update(patch: Partial<LocationEditorDto>) {
-    setValue((current) => ({ ...current, ...patch }));
+    const nextValue = { ...value, ...patch };
+    setValue(nextValue);
+    setErrors((currentErrors) => {
+      const validation = validateLocationDto(
+        {
+          ...nextValue,
+          branchId: location?.branchId ?? currentBranchId,
+          parentId: location?.parentId ?? "",
+        },
+        locations,
+        location?.id,
+      );
+      const nextErrors = { ...currentErrors };
+      for (const field of Object.keys(patch) as Array<keyof LocationValidationErrors>) {
+        if (!currentErrors[field]) continue;
+        if (validation[field]) nextErrors[field] = validation[field];
+        else delete nextErrors[field];
+      }
+      return nextErrors;
+    });
   }
 
   return (
-    <form className="space-y-4" id="catalog-location-form" onSubmit={submit}>
+    <form className="space-y-4" id="catalog-location-form" noValidate onSubmit={submit}>
       <Field id="location-name" label="Nombre *" error={errors.name}>
         <Input
           id="location-name"

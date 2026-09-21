@@ -14,6 +14,7 @@ import { ADMIN_FIELD_LIMITS } from "@/modules/administration/validation/adminFie
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Select } from "@/shared/components/Select";
 
 /**
@@ -39,6 +40,8 @@ interface RoleFormProps {
 
 export function RoleForm({ role, busy, actorPermissions, onCancel, onSubmit }: RoleFormProps) {
   const [value, setValue] = useState<RoleInputDto>(() => toRoleInput(role));
+  const [errors, setErrors] = useState<{ name?: string; permissions?: string }>({});
+  const [submitError, setSubmitError] = useState<string>();
 
   const permissionsByModule = useMemo(
     () => groupPermissionsByModule(getEmployeeAssignablePermissions(permissionsConfig)),
@@ -47,27 +50,52 @@ export function RoleForm({ role, busy, actorPermissions, onCancel, onSubmit }: R
   const actorPermissionSet = useMemo(() => new Set(actorPermissions), [actorPermissions]);
 
   function setField<Key extends keyof RoleInputDto>(key: Key, fieldValue: RoleInputDto[Key]) {
-    setValue((current) => ({ ...current, [key]: fieldValue }));
+    const nextValue = { ...value, [key]: fieldValue } as RoleInputDto;
+    setValue(nextValue);
+    if (key === "name" && errors.name) {
+      setErrors((current) => ({
+        ...current,
+        name: nextValue.name.trim() ? undefined : "Ingrese el nombre del rol.",
+      }));
+    }
   }
 
   function togglePermission(key: string, checked: boolean) {
-    setValue((current) => {
-      const next = new Set(current.permissions);
-      if (checked) next.add(key);
-      else next.delete(key);
-      return { ...current, permissions: [...next] };
-    });
+    const permissions = new Set(value.permissions);
+    if (checked) permissions.add(key);
+    else permissions.delete(key);
+    const nextValue = { ...value, permissions: [...permissions] };
+    setValue(nextValue);
+    if (errors.permissions) {
+      setErrors((current) => ({
+        ...current,
+        permissions: nextValue.permissions.length ? undefined : "Seleccione al menos un permiso.",
+      }));
+    }
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void onSubmit(value);
+    const nextErrors = {
+      name: value.name.trim() ? undefined : "Ingrese el nombre del rol.",
+      permissions: value.permissions.length ? undefined : "Seleccione al menos un permiso.",
+    };
+    setErrors(nextErrors);
+    if (nextErrors.name || nextErrors.permissions) return;
+
+    setSubmitError(undefined);
+    try {
+      await onSubmit(value);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "No se pudo guardar el rol.");
+    }
   }
 
   return (
-    <form className="space-y-5" onSubmit={handleSubmit}>
+    <form className="space-y-5" noValidate onSubmit={handleSubmit}>
+      {submitError ? <InlineAlert title={submitError} tone="danger" /> : null}
       <div className="grid gap-4 sm:grid-cols-2">
-        <FormField id="role-name" label="Nombre">
+        <FormField error={errors.name} id="role-name" label="Nombre">
           <Input
             disabled={busy}
             id="role-name"
@@ -107,6 +135,7 @@ export function RoleForm({ role, busy, actorPermissions, onCancel, onSubmit }: R
 
       <FormField
         hint="Los permisos no son texto libre: solo se pueden asignar los que ya existen en el catálogo de la app."
+        error={errors.permissions}
         id="role-permissions"
         label={`Permisos (${value.permissions.length} seleccionados)`}
       >

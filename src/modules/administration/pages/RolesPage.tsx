@@ -39,25 +39,14 @@ export function RolesPage() {
   const [archiveTarget, setArchiveTarget] = useState<RoleDto | null>(null);
 
   async function handleSubmit(value: RoleInputDto) {
-    try {
-      if (modal?.mode === "edit") {
-        await update(modal.role.id, value);
-        showToast({ title: "Rol actualizado", tone: "success" });
-      } else {
-        await create(value);
-        showToast({ title: "Rol creado", tone: "success" });
-      }
-      setModal(null);
-    } catch (caughtError) {
-      showToast({
-        title: "No se pudo guardar el rol",
-        description:
-          caughtError instanceof Error
-            ? caughtError.message
-            : "Inténtelo nuevamente en unos momentos.",
-        tone: "danger",
-      });
+    if (modal?.mode === "edit") {
+      await update(modal.role.id, value);
+      showToast({ title: "Rol actualizado", tone: "success" });
+    } else {
+      await create(value);
+      showToast({ title: "Rol creado", tone: "success" });
     }
+    setModal(null);
   }
 
   async function handleArchive() {

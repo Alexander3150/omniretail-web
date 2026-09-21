@@ -746,11 +746,22 @@ function UnitForm({
   }
 
   function update(patch: Partial<UnitEditorDto>) {
-    setValue((current) => ({ ...current, ...patch }));
+    const nextValue = { ...value, ...patch };
+    setValue(nextValue);
+    setErrors((currentErrors) => {
+      const validation = validateUnitDto(nextValue, units, unit?.id);
+      const nextErrors = { ...currentErrors };
+      for (const field of Object.keys(patch) as Array<keyof UnitValidationErrors>) {
+        if (!currentErrors[field]) continue;
+        if (validation[field]) nextErrors[field] = validation[field];
+        else delete nextErrors[field];
+      }
+      return nextErrors;
+    });
   }
 
   return (
-    <form className="space-y-4" id="catalog-unit-form" onSubmit={submit}>
+    <form className="space-y-4" id="catalog-unit-form" noValidate onSubmit={submit}>
       <Field error={errors.name} id="unit-name" label="Nombre *">
         <Input
           id="unit-name"

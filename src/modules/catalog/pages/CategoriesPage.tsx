@@ -787,7 +787,18 @@ function CategoryForm({
   }
 
   function update(patch: Partial<CategoryEditorDto>) {
-    setValue((current) => ({ ...current, ...patch }));
+    const nextValue = { ...value, ...patch };
+    setValue(nextValue);
+    setErrors((currentErrors) => {
+      const validation = validateCategoryDto(nextValue, allCategories, category?.id);
+      const nextErrors = { ...currentErrors };
+      for (const field of Object.keys(patch) as Array<keyof CategoryValidationErrors>) {
+        if (!currentErrors[field]) continue;
+        if (validation[field]) nextErrors[field] = validation[field];
+        else delete nextErrors[field];
+      }
+      return nextErrors;
+    });
   }
 
   async function selectImage(file: File | undefined) {
@@ -801,7 +812,7 @@ function CategoryForm({
   }
 
   return (
-    <form className="space-y-4" id="catalog-category-form" onSubmit={submit}>
+    <form className="space-y-4" id="catalog-category-form" noValidate onSubmit={submit}>
       <Field id="category-name" label="Nombre *" error={errors.name}>
         <Input
           id="category-name"
