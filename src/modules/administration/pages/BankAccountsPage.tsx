@@ -42,25 +42,14 @@ export function BankAccountsPage() {
   const [archiveTarget, setArchiveTarget] = useState<BankAccountDto | null>(null);
 
   async function handleSubmit(value: BankAccountInputDto) {
-    try {
-      if (modal?.mode === "edit") {
-        await update(modal.account.id, value);
-        showToast({ title: "Cuenta bancaria actualizada", tone: "success" });
-      } else {
-        await create(value);
-        showToast({ title: "Cuenta bancaria creada", tone: "success" });
-      }
-      setModal(null);
-    } catch (caughtError) {
-      showToast({
-        title: "No se pudo guardar la cuenta bancaria",
-        description:
-          caughtError instanceof Error
-            ? caughtError.message
-            : "Inténtelo nuevamente en unos momentos.",
-        tone: "danger",
-      });
+    if (modal?.mode === "edit") {
+      await update(modal.account.id, value);
+      showToast({ title: "Cuenta bancaria actualizada", tone: "success" });
+    } else {
+      await create(value);
+      showToast({ title: "Cuenta bancaria creada", tone: "success" });
     }
+    setModal(null);
   }
 
   async function handleArchive() {

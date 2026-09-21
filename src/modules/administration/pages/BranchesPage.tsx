@@ -28,25 +28,14 @@ export function BranchesPage() {
   const [archiveTarget, setArchiveTarget] = useState<BranchDto | null>(null);
 
   async function handleSubmit(value: BranchInputDto) {
-    try {
-      if (modal?.mode === "edit") {
-        await update(modal.branch.id, value);
-        showToast({ title: "Sucursal actualizada", tone: "success" });
-      } else {
-        await create(value);
-        showToast({ title: "Sucursal creada", tone: "success" });
-      }
-      setModal(null);
-    } catch (caughtError) {
-      showToast({
-        title: "No se pudo guardar la sucursal",
-        description:
-          caughtError instanceof Error
-            ? caughtError.message
-            : "Inténtelo nuevamente en unos momentos.",
-        tone: "danger",
-      });
+    if (modal?.mode === "edit") {
+      await update(modal.branch.id, value);
+      showToast({ title: "Sucursal actualizada", tone: "success" });
+    } else {
+      await create(value);
+      showToast({ title: "Sucursal creada", tone: "success" });
     }
+    setModal(null);
   }
 
   async function handleArchive() {

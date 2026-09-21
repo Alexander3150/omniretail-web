@@ -48,32 +48,21 @@ export function EmployeesPage() {
   );
 
   async function handleSubmit(value: EmployeeInputDto) {
-    try {
-      if (editor?.mode === "edit") {
-        await update(editor.employee.id, value);
-        showToast({ title: "Empleado actualizado", tone: "success" });
-      } else {
-        const result = await create(value);
-        showToast({
-          title: "Empleado creado",
-          description: "Se envió la invitación para que active su cuenta.",
-          tone: "success",
-        });
-        if (result.invitationToken) {
-          setInvitationLink({ employeeName: result.employee.name, token: result.invitationToken });
-        }
-      }
-      setEditor(null);
-    } catch (caughtError) {
+    if (editor?.mode === "edit") {
+      await update(editor.employee.id, value);
+      showToast({ title: "Empleado actualizado", tone: "success" });
+    } else {
+      const result = await create(value);
       showToast({
-        title: "No se pudo guardar el empleado",
-        description:
-          caughtError instanceof Error
-            ? caughtError.message
-            : "Inténtelo nuevamente en unos momentos.",
-        tone: "danger",
+        title: "Empleado creado",
+        description: "Se envió la invitación para que active su cuenta.",
+        tone: "success",
       });
+      if (result.invitationToken) {
+        setInvitationLink({ employeeName: result.employee.name, token: result.invitationToken });
+      }
     }
+    setEditor(null);
   }
 
   async function handleResendInvitation(employee: EmployeeDto) {

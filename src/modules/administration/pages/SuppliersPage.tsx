@@ -31,25 +31,14 @@ export function SuppliersPage() {
   const [archiveTarget, setArchiveTarget] = useState<SupplierDto | null>(null);
 
   async function handleSubmit(value: SupplierInputDto) {
-    try {
-      if (modal?.mode === "edit") {
-        await update(modal.supplier.id, value);
-        showToast({ title: "Proveedor actualizado", tone: "success" });
-      } else {
-        await create(value);
-        showToast({ title: "Proveedor creado", tone: "success" });
-      }
-      setModal(null);
-    } catch (caughtError) {
-      showToast({
-        title: "No se pudo guardar el proveedor",
-        description:
-          caughtError instanceof Error
-            ? caughtError.message
-            : "Inténtelo nuevamente en unos momentos.",
-        tone: "danger",
-      });
+    if (modal?.mode === "edit") {
+      await update(modal.supplier.id, value);
+      showToast({ title: "Proveedor actualizado", tone: "success" });
+    } else {
+      await create(value);
+      showToast({ title: "Proveedor creado", tone: "success" });
     }
+    setModal(null);
   }
 
   async function handleArchive() {

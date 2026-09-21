@@ -15,6 +15,7 @@ import { Select } from "@/shared/components/Select";
 
 interface EcommerceConfigFormProps {
   value: EcommerceConfigInputDto;
+  fieldErrors?: Partial<Record<keyof EcommerceConfigInputDto, string>>;
   branchOptions: EcommerceBranchOption[];
   tenantId: string | null;
   saving: boolean;
@@ -23,6 +24,7 @@ interface EcommerceConfigFormProps {
 
 export function EcommerceConfigForm({
   value,
+  fieldErrors,
   branchOptions,
   tenantId,
   saving,
@@ -66,7 +68,7 @@ export function EcommerceConfigForm({
       <section className="space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
         <h2 className="text-lg font-bold text-[var(--color-title)]">Configuración general</h2>
 
-        <FormField id="ecommerce-store-name" label="Nombre de la tienda">
+        <FormField error={fieldErrors?.storeName} id="ecommerce-store-name" label="Nombre de la tienda">
           <Input
             disabled={saving}
             id="ecommerce-store-name"
@@ -115,7 +117,7 @@ export function EcommerceConfigForm({
         </FormField>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <FormField id="ecommerce-contact-phone" label="Teléfono público">
+          <FormField error={fieldErrors?.contactPhone} id="ecommerce-contact-phone" label="Teléfono público">
             <Input
               autoComplete="tel"
               disabled={saving}
@@ -129,7 +131,7 @@ export function EcommerceConfigForm({
               value={value.contactPhone ?? ""}
             />
           </FormField>
-          <FormField id="ecommerce-contact-email" label="Correo público">
+          <FormField error={fieldErrors?.contactEmail} id="ecommerce-contact-email" label="Correo público">
             <Input
               autoComplete="email"
               disabled={saving}
@@ -180,6 +182,7 @@ export function EcommerceConfigForm({
 
       <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
         <FormField
+          error={fieldErrors?.defaultBranchId}
           hint={
             value.enabled
               ? "Obligatoria mientras la tienda está habilitada. Solo se muestran sucursales activas."

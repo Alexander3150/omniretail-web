@@ -11,10 +11,12 @@ import type { BranchOption, RoleOption } from "@/modules/administration/hooks/us
 import {
   ADMIN_FIELD_LIMITS,
   formatGuatemalaPhoneInput,
+  isValidGuatemalaPhone,
 } from "@/modules/administration/validation/adminFieldConstraints";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Select } from "@/shared/components/Select";
 
 /**
@@ -22,6 +24,11 @@ import { Select } from "@/shared/components/Select";
  * archivado en esta entrega (ver EmployeeDto.ts).
  */
 const statusOptions = [UserStatus.active, UserStatus.inactive, UserStatus.blocked];
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMPLOYEE_CODE_PATTERN = /^[A-Za-z0-9_-]+$/;
+type EmployeeFieldErrors = Partial<
+  Record<"name" | "employeeCode" | "email" | "phone" | "roleId", string>
+>;
 
 interface EmployeeFormProps {
   employee?: EmployeeDto;
@@ -41,6 +48,8 @@ export function EmployeeForm({
   onSubmit,
 }: EmployeeFormProps) {
   const [value, setValue] = useState<EmployeeInputDto>(() => toEmployeeInput(employee));
+  const [errors, setErrors] = useState<EmployeeFieldErrors>({});
+  const [submitError, setSubmitError] = useState<string>();
   const isEdit = Boolean(employee);
 
   const visibleBranchIds = new Set(branchOptions.map((option) => option.id));
@@ -50,7 +59,13 @@ export function EmployeeForm({
     key: Key,
     fieldValue: EmployeeInputDto[Key],
   ) {
-    setValue((current) => ({ ...current, [key]: fieldValue }));
+    const nextValue = { ...value, [key]: fieldValue } as EmployeeInputDto;
+    setValue(nextValue);
+    setErrors((currentErrors) => {
+      const field = key as keyof EmployeeFieldErrors;
+      if (!currentErrors[field]) return currentErrors;
+      return { ...currentErrors, [field]: validateEmployeeFields(nextValue)[field] };
+    });
   }
 
   function toggleBranch(branchId: string, checked: boolean) {
@@ -62,15 +77,25 @@ export function EmployeeForm({
     });
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void onSubmit(value);
+    const nextErrors = validateEmployeeFields(value);
+    setErrors(nextErrors);
+    if (Object.values(nextErrors).some(Boolean)) return;
+
+    setSubmitError(undefined);
+    try {
+      await onSubmit(value);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "No se pudo guardar el empleado.");
+    }
   }
 
   return (
-    <form className="space-y-5" onSubmit={handleSubmit}>
+    <form className="space-y-5" noValidate onSubmit={handleSubmit}>
+      {submitError ? <InlineAlert title={submitError} tone="danger" /> : null}
       <div className="grid gap-4 sm:grid-cols-2">
-        <FormField id="employee-name" label="Nombre">
+        <FormField error={errors.name} id="employee-name" label="Nombre">
           <Input
             disabled={busy}
             id="employee-name"
@@ -83,6 +108,7 @@ export function EmployeeForm({
 
         <FormField
           hint="Letras, números, guión y guión bajo."
+          error={errors.employeeCode}
           id="employee-code"
           label="Código de empleado"
         >
@@ -100,6 +126,7 @@ export function EmployeeForm({
 
         <FormField
           hint={isEdit ? "El correo no se puede cambiar desde acá." : undefined}
+          error={errors.email}
           id="employee-email"
           label="Correo electrónico"
         >
@@ -114,7 +141,7 @@ export function EmployeeForm({
           />
         </FormField>
 
-        <FormField id="employee-phone" label="Teléfono">
+        <FormField error={errors.phone} id="employee-phone" label="Teléfono">
           <Input
             disabled={busy}
             id="employee-phone"
@@ -126,7 +153,7 @@ export function EmployeeForm({
           />
         </FormField>
 
-        <FormField id="employee-role" label="Rol">
+        <FormField error={errors.roleId} id="employee-role" label="Rol">
           <Select
             disabled={busy}
             id="employee-role"
@@ -202,6 +229,23 @@ export function EmployeeForm({
       </div>
     </form>
   );
+}
+
+function validateEmployeeFields(value: EmployeeInputDto): EmployeeFieldErrors {
+  const errors: EmployeeFieldErrors = {};
+  if (!value.name.trim()) errors.name = "Ingrese el nombre del empleado.";
+  if (!value.employeeCode.trim()) errors.employeeCode = "Ingrese el código de empleado.";
+  else if (!EMPLOYEE_CODE_PATTERN.test(value.employeeCode.trim())) {
+    errors.employeeCode = "Use letras, números, guión y guión bajo.";
+  }
+  if (!value.email.trim() || !EMAIL_PATTERN.test(value.email.trim())) {
+    errors.email = "Ingrese un correo electrónico válido.";
+  }
+  if (value.phone?.trim() && !isValidGuatemalaPhone(value.phone)) {
+    errors.phone = "El teléfono del empleado debe tener 8 dígitos.";
+  }
+  if (!value.roleId.trim()) errors.roleId = "Seleccione un rol para el empleado.";
+  return errors;
 }
 
 function toEmployeeInput(employee?: EmployeeDto): EmployeeInputDto {
