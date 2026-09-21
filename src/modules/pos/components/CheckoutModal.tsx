@@ -586,9 +586,7 @@ export function CheckoutModal({
           ) : null}
 
           {errors.paymentTotal ? (
-            <p className="text-sm font-semibold text-[var(--color-danger)]">
-              {errors.paymentTotal}
-            </p>
+            <InlineAlert title={errors.paymentTotal} tone="danger" />
           ) : null}
         </section>
 
@@ -608,9 +606,7 @@ export function CheckoutModal({
         ) : null}
 
         {confirmationError ? (
-          <p className="rounded-lg border border-[var(--color-danger)] p-4 text-sm font-semibold text-[var(--color-danger)]">
-            {confirmationError}
-          </p>
+          <InlineAlert title={confirmationError} tone="danger" />
         ) : null}
       </form>
     </Modal>
@@ -653,19 +649,11 @@ function CashShiftStatusPanel({
   }
 
   if (error) {
-    return (
-      <p className="rounded-lg border border-[var(--color-danger)] p-4 text-sm font-semibold text-[var(--color-danger)]">
-        {error}
-      </p>
-    );
+    return <InlineAlert title={error} tone="danger" />;
   }
 
   if (!hasBranchAccess) {
-    return (
-      <p className="rounded-lg border border-[var(--color-warning)] p-4 text-sm font-semibold text-[var(--color-warning)]">
-        No tienes acceso a la sucursal activa.
-      </p>
-    );
+    return <InlineAlert title="No tiene acceso a la sucursal activa." tone="warning" />;
   }
 
   return (

@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import type { PurchaseOrderStatus } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { Button } from "@/shared/components/Button";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Input } from "@/shared/components/Input";
 import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
 import { PageHeader } from "@/shared/components/PageHeader";
@@ -319,11 +320,7 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
         onToggle={() => setSuggestionsExpanded((current) => !current)}
       />
 
-      {error ? (
-        <p className="rounded-md border border-[var(--color-danger)] bg-white px-4 py-3 text-sm font-medium text-[var(--color-danger)]">
-          {error}
-        </p>
-      ) : null}
+      {error ? <InlineAlert title={error} tone="danger" /> : null}
 
       <section className="rounded-lg border border-[var(--color-border)] bg-white p-2.5 shadow-sm">
         <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_220px_220px]">

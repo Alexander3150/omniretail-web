@@ -11,8 +11,10 @@ import {
 } from "react";
 import { LocationStatus } from "@/core/enums";
 import { Button } from "@/shared/components/Button";
+import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { Input } from "@/shared/components/Input";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Select } from "@/shared/components/Select";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { useToast } from "@/shared/components/Toast";
@@ -117,19 +119,7 @@ export function LocationsPage() {
           </p>
           <h1 className="mt-1 text-2xl font-bold text-[var(--color-title)]">Ubicaciones</h1>
         </header>
-        <div
-          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
-          role="alert"
-        >
-          <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No dispone de acceso a ubicaciones
-          </h2>
-          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            Consultar ubicaciones requiere el permiso{" "}
-            <span className="font-medium text-[var(--color-text)]">catalog.locations.read</span>.
-            Pedí acceso a un administrador.
-          </p>
-        </div>
+        <AccessDeniedState />
       </div>
     );
   }
@@ -161,11 +151,7 @@ export function LocationsPage() {
         ) : null}
       </header>
 
-      {error ? (
-        <p className="rounded-md border border-[var(--color-danger)] bg-white px-4 py-3 text-sm font-medium text-[var(--color-danger)]">
-          {error}
-        </p>
-      ) : null}
+      {error ? <InlineAlert title={error} tone="danger" /> : null}
 
       <section
         className={cn(

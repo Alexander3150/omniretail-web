@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, type ComponentType, type SVGProps } from "react";
 import type { ReceiptIncidentEvidence } from "@/core/entities";
 import { Button } from "@/shared/components/Button";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Input } from "@/shared/components/Input";
 import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
 import { Modal } from "@/shared/components/Modal";
@@ -85,11 +86,7 @@ export function SuppliersPage() {
         />
       </div>
 
-      {error ? (
-        <p className="rounded-md border border-[var(--color-danger)] bg-white px-4 py-3 text-sm font-medium text-[var(--color-danger)]">
-          {error}
-        </p>
-      ) : null}
+      {error ? <InlineAlert title={error} tone="danger" /> : null}
 
       <section className="rounded-lg border border-[var(--color-border)] bg-white p-3 shadow-sm">
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">

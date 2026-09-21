@@ -4,6 +4,7 @@ import { useMemo, useState, type SVGProps } from "react";
 import { SaasCapabilityKey } from "@/core/enums";
 import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import { Button } from "@/shared/components/Button";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { Input } from "@/shared/components/Input";
 import { Modal } from "@/shared/components/Modal";
@@ -126,9 +127,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
   if (error || !detail) {
     return (
       <section className="space-y-4 rounded-lg border border-[var(--color-border)] bg-white p-5 shadow-sm">
-        <p className="text-sm font-semibold text-[var(--color-danger)]">
-          {error ?? "No se encontro el documento."}
-        </p>
+        <InlineAlert title={error ?? "No se encontró el documento."} tone="danger" />
         <Button href="/compras/recepciones" variant="secondary">
           <ArrowLeftIcon />
           Volver a recepciones

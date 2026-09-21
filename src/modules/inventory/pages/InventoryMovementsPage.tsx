@@ -2,6 +2,7 @@
 
 import { useState, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { Button } from "@/shared/components/Button";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Input } from "@/shared/components/Input";
 import { Select } from "@/shared/components/Select";
 import { cn } from "@/shared/utils/cn";
@@ -236,11 +237,7 @@ export function InventoryMovementsPage() {
         </Button>
       </header>
 
-      {error ? (
-        <p className="rounded-md border border-[var(--color-danger)] bg-white px-4 py-3 text-sm font-medium text-[var(--color-danger)]">
-          {error}
-        </p>
-      ) : null}
+      {error ? <InlineAlert title={error} tone="danger" /> : null}
 
       <section className="max-w-full overflow-hidden rounded-lg border border-[var(--color-border)] bg-white shadow-sm">
         <MovementFilters

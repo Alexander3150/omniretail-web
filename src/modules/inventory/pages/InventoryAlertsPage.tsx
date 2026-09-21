@@ -16,6 +16,7 @@ import type { StorageLocation } from "@/core/entities";
 import { getLocalCalendarDate } from "@/core/inventory/expirationDate";
 import { InventoryTransferReason, InventoryTransferRequestStatus } from "@/core/enums";
 import { Button } from "@/shared/components/Button";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Input } from "@/shared/components/Input";
 import { Modal } from "@/shared/components/Modal";
 import { Select } from "@/shared/components/Select";
@@ -283,11 +284,7 @@ export function InventoryAlertsPage() {
         </div>
       </header>
 
-      {error ? (
-        <p className="rounded-md border border-[var(--color-danger)] bg-white px-4 py-3 text-sm font-medium text-[var(--color-danger)]">
-          {error}
-        </p>
-      ) : null}
+      {error ? <InlineAlert title={error} tone="danger" /> : null}
 
       <KpiGrid
         activeProducts={kpis.activeProducts}
@@ -1836,14 +1833,7 @@ function AdjustStockModal({
           <CharacterCount current={value.notes.length} maximum={TEXT_LIMITS.notes} />
         </Field>
         <AdjustmentSummary delta={delta} finalQuantity={finalQuantity} row={row} value={value} />
-        {submitError ? (
-          <p
-            role="alert"
-            className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-[var(--color-danger)]"
-          >
-            {submitError}
-          </p>
-        ) : null}
+        {submitError ? <InlineAlert title={submitError} tone="danger" /> : null}
       </form>
     </Modal>
   );
@@ -2028,7 +2018,7 @@ function RequestTransferModal({
       title="Solicitar traslado de producto"
     >
       <form className="space-y-4" id="inventory-transfer-request-form" onSubmit={submit}>
-        {submitError ? <p className="text-sm text-[var(--color-danger)]" role="alert">{submitError}</p> : null}
+        {submitError ? <InlineAlert title={submitError} tone="danger" /> : null}
         <div className="grid gap-3 md:grid-cols-2">
           <ReadonlyField label="Producto" value={row.productName} />
           <ReadonlyField label="Codigo" value={row.sku} />
