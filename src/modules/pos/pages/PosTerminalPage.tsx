@@ -17,7 +17,7 @@ export function PosTerminalPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="min-w-0 space-y-4">
       <PageHeader
         actions={
           <Button type="button" variant="secondary" onClick={() => setHistoryOpen(true)}>
@@ -46,27 +46,27 @@ export function PosTerminalPage() {
               terminal.confirmationResult.payments[0]?.currency,
             )}
             {terminal.confirmationResult.idempotent
-              ? " · Confirmación recuperada de forma idempotente."
+              ? " · Esta venta ya había sido confirmada."
               : " · Confirmación completada correctamente."}
           </p>
         </div>
       ) : null}
 
-      <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_400px] 2xl:grid-cols-[minmax(0,1fr)_430px]">
-        <div className="min-w-0 rounded-xl border border-[var(--color-border)] bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <section className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(23rem,27rem)] 2xl:grid-cols-[minmax(0,1fr)_28rem]">
+        <div className="min-w-0 rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm sm:p-5">
+          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 sm:flex sm:items-end sm:justify-between sm:gap-4">
             <div>
               <h2 className="text-lg font-bold text-[var(--color-title)]">Productos disponibles</h2>
-              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
                 Selecciona productos para agregarlos al ticket actual.
               </p>
             </div>
-            <div className="w-full sm:max-w-sm">
+            <div className="mt-3 w-full sm:mt-0 sm:max-w-md">
               <ProductSearch value={terminal.search} onChange={terminal.setSearch} />
             </div>
           </div>
 
-          <div className="mt-5">
+          <div className="mt-4">
             <QuickProductList
               error={terminal.error}
               hasProducts={terminal.products.length > 0}

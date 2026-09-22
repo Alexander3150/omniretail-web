@@ -31,11 +31,16 @@ export function QuickProductList({
 
   if (products.length === 0) {
     return (
-      <p className="text-sm text-[var(--color-text-muted)]">
-        {hasProducts
-          ? "No hay productos que coincidan con la búsqueda."
-          : "No hay productos disponibles para POS en esta sucursal."}
-      </p>
+      <div className="rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-4 py-8 text-center">
+        <p className="font-semibold text-[var(--color-text)]">
+          {hasProducts ? "No encontramos productos" : "No hay productos disponibles"}
+        </p>
+        <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+          {hasProducts
+            ? "Prueba con otro nombre, código, SKU o código de barras."
+            : "No hay productos disponibles para POS en esta sucursal."}
+        </p>
+      </div>
     );
   }
 
@@ -56,37 +61,41 @@ export function QuickProductList({
 
         return (
           <li
-            className="flex min-w-0 flex-col justify-between gap-4 rounded-lg border border-[var(--color-border)] p-4"
+            className="flex min-w-0 flex-col justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-white p-3 transition-shadow hover:shadow-sm"
             key={product.productId}
           >
             <div className="min-w-0">
-              <p className="truncate font-semibold text-[var(--color-text)]">{product.name}</p>
-              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              <p className="truncate font-semibold text-[var(--color-title)]">{product.name}</p>
+              <p className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]">
                 {product.sku}
                 {product.barcode ? ` · ${product.barcode}` : ""}
               </p>
-              <p className="mt-3 text-lg font-bold text-[var(--color-title)]">
-                {formatCurrency(product.effectivePrice)}
-              </p>
-              {product.discount > 0 ? (
-                <p className="text-xs text-[var(--color-text-muted)]">
-                  Antes {formatCurrency(product.basePrice)}
+              <div className="mt-3 flex items-end justify-between gap-3">
+                <div>
+                  <p className="text-lg font-bold leading-none text-[var(--color-title)]">
+                    {formatCurrency(product.effectivePrice)}
+                  </p>
+                  {product.discount > 0 ? (
+                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                      Antes {formatCurrency(product.basePrice)}
+                    </p>
+                  ) : null}
+                </div>
+                <p className="max-w-28 text-right text-xs font-medium text-[var(--color-text-muted)]">
+                  {product.tracksStock
+                    ? `${product.availableQuantity ?? 0} ${product.saleUnitName} disponibles`
+                    : "Sin control de existencia"}
                 </p>
-              ) : null}
-              <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-                {product.tracksStock
-                  ? `Disponible: ${product.availableQuantity ?? 0} ${product.saleUnitName}`
-                  : "Sin control de existencia"}
-              </p>
+              </div>
               {hasUnsupportedTraceability ? (
                 <p className="mt-2 text-xs font-semibold text-[var(--color-warning)]">
-                  Producto con trazabilidad especial no disponible en POS.
+                  Este producto requiere un proceso de venta distinto.
                 </p>
               ) : null}
             </div>
 
             <Button
-              className="w-full"
+              className="w-full sm:w-auto sm:self-end"
               disabled={!canAdd}
               onClick={() => onAdd(product)}
               type="button"

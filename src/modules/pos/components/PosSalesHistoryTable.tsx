@@ -25,7 +25,7 @@ export function PosSalesHistoryTable({
   }
 
   return (
-    <div className="max-h-[52dvh] overflow-y-auto rounded-lg border border-[var(--color-primary)]/35 bg-white">
+    <div className="max-h-[52dvh] overflow-y-auto rounded-xl border border-[var(--color-border)] bg-white shadow-sm">
       <table className="w-full table-fixed border-collapse text-left text-xs">
         <colgroup>
           <col className="w-[14%]" />
@@ -36,7 +36,7 @@ export function PosSalesHistoryTable({
           <col className="w-[13%]" />
           <col className="w-[16%]" />
         </colgroup>
-        <thead className="sticky top-0 z-10 bg-[var(--color-warning)]/15 text-[var(--color-title)]">
+        <thead className="sticky top-0 z-10 bg-[var(--color-app-background)] text-[var(--color-title)]">
           <tr>
             {[
               "Documento",
@@ -47,7 +47,7 @@ export function PosSalesHistoryTable({
               "Estado de venta",
               "Estado operativo",
             ].map((header) => (
-              <th className="break-words px-2 py-2.5 font-semibold leading-tight" key={header}>
+              <th className="break-words px-3 py-2.5 font-semibold leading-tight" key={header}>
                 {header}
               </th>
             ))}
@@ -67,8 +67,8 @@ export function PosSalesHistoryTable({
                 <tr
                   aria-selected={selected}
                   className={cn(
-                    "cursor-pointer border-t border-[var(--color-border)] outline-none transition hover:bg-[var(--color-warning)]/10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)]",
-                    selected && "bg-[var(--color-warning)]/15",
+                    "cursor-pointer border-t border-[var(--color-border)] outline-none transition hover:bg-[var(--color-app-background)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)]",
+                    selected && "bg-[var(--color-primary)]/10 shadow-[inset_3px_0_0_var(--color-primary)]",
                   )}
                   key={sale.saleId}
                   tabIndex={0}
@@ -76,25 +76,25 @@ export function PosSalesHistoryTable({
                   onDoubleClick={() => onOpenProducts(sale)}
                   onKeyDown={(event) => handleKeyDown(event, sale)}
                 >
-                  <td className="break-words px-2 py-2.5 font-semibold text-[var(--color-title)]">
+                  <td className="break-words px-3 py-3 font-semibold text-[var(--color-title)]">
                     {sale.documentNumber}
                   </td>
-                  <td className="break-words px-2 py-2.5 leading-tight">
+                  <td className="break-words px-3 py-3 leading-tight">
                     {formatDate(sale.createdAt)}
                   </td>
-                  <td className="break-words px-2 py-2.5 leading-tight">
+                  <td className="break-words px-3 py-3 leading-tight">
                     {sale.customerDisplayName}
                   </td>
-                  <td className="break-words px-2 py-2.5 leading-tight">
+                  <td className="break-words px-3 py-3 leading-tight">
                     {sale.deliveryMethodLabel}
                   </td>
-                  <td className="whitespace-nowrap px-2 py-2.5 text-right font-semibold">
+                  <td className="whitespace-nowrap px-3 py-3 text-right font-semibold">
                     {formatCurrency(sale.total)}
                   </td>
-                  <td className="break-words px-2 py-2.5 leading-tight [&>span]:whitespace-normal [&>span]:text-center [&>span]:leading-tight">
+                  <td className="break-words px-3 py-3 leading-tight [&>span]:whitespace-normal [&>span]:text-center [&>span]:leading-tight">
                     <StatusBadge status={sale.saleStatusLabel} tone={sale.saleStatusTone} />
                   </td>
-                  <td className="break-words px-2 py-2.5 leading-tight [&>span]:whitespace-normal [&>span]:text-center [&>span]:leading-tight">
+                  <td className="break-words px-3 py-3 leading-tight [&>span]:whitespace-normal [&>span]:text-center [&>span]:leading-tight">
                     {sale.sourceOrderId ? (
                       <StatusBadge
                         status={sale.operationalStatusLabel}
