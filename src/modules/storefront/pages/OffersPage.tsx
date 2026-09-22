@@ -8,8 +8,10 @@ import { useToast } from "@/shared/components/Toast";
 import { StorefrontCatalogImage } from "@/modules/storefront/components/StorefrontCatalogImage";
 import { StorefrontUnavailableQuantityModal } from "@/modules/storefront/components/StorefrontUnavailableQuantityModal";
 import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
+import { useStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 
 export function OffersPage() {
+  const routes = useStorefrontRoutes();
   const { items, loading, error } = useStorefrontOffers();
   const { addProduct, items: cartItems } = useStorefrontCart();
   const { products } = useStorefrontDiscovery();
@@ -96,7 +98,7 @@ export function OffersPage() {
                 key={item.productId}
                 className="group overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-md"
               >
-                <Link className="block" href={`/catalogo/${item.productId}`}>
+                <Link className="block" href={routes.product(item.productId)}>
                   <div className="relative bg-slate-50">
                     <StorefrontCatalogImage
                       alt={item.imageAlt ?? item.name}
