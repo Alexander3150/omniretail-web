@@ -11,10 +11,20 @@ import { PrivateShell } from "@/shared/navigation/PrivateShell";
 import type { NavigationItem } from "@/shared/types/navigation.types";
 import { useOptionalStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
+import { ExternalLinkIcon } from "@/shared/components/icons";
 
 interface CustomerAccountShellProps {
   children: ReactNode;
   navigationItems: NavigationItem[];
+}
+
+function getAccountInitials(name: string | undefined): string {
+  return name
+    ?.trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("") || "?";
 }
 
 export function isCustomerAccountIdentity(user: Pick<User, "type"> | null | undefined): boolean {
@@ -105,7 +115,39 @@ export function CustomerAccountShell({ children, navigationItems }: CustomerAcco
         userMenuDescription={user?.email}
         userMenuLabel={user?.name}
       >
-        {children}
+        <div className="min-w-0 space-y-6">
+          <section className="flex items-center gap-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm sm:p-6">
+            <span
+              aria-hidden="true"
+              className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[var(--color-topbar)] text-xl font-bold text-white"
+            >
+              {getAccountInitials(user?.name)}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold uppercase tracking-wider text-[var(--color-primary-hover)]">
+                Mi cuenta
+              </p>
+              <h1 className="mt-1 truncate text-2xl font-bold text-[var(--color-text)]">
+                {user?.name ?? "Tu cuenta"}
+              </h1>
+              {user?.email ? (
+                <p className="mt-1 truncate text-sm text-[var(--color-text-muted)]">
+                  {user.email}
+                </p>
+              ) : null}
+            </div>
+            <button
+              aria-label="Cerrar sesión"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] transition hover:border-red-200 hover:bg-red-50 hover:text-[var(--color-danger)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]"
+              onClick={() => void handleLogout()}
+              title="Cerrar sesión"
+              type="button"
+            >
+              <ExternalLinkIcon className="h-5 w-5" />
+            </button>
+          </section>
+          {children}
+        </div>
       </PrivateShell>
     </EntitlementProvider>
   );

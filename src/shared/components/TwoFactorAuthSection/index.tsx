@@ -92,14 +92,14 @@ export function TwoFactorAuthSection({
 
   if (loading) {
     return (
-      <div className="max-w-lg rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
+      <div className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
         <p className="text-sm text-[var(--color-text-muted)]">Cargando verificación en dos pasos...</p>
       </div>
     );
   }
 
   return (
-    <div className="max-w-lg space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
+    <div className="w-full space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <span

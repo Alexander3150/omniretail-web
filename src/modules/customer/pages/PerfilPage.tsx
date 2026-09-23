@@ -14,25 +14,14 @@ import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { useToast } from "@/shared/components/Toast";
-import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
-import { useRouter } from "next/navigation";
-
-function getInitials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "");
-  return initials.join("") || "?";
-}
 
 export function PerfilPage() {
   const { customer, email, loading, saving, error, update } = useCustomerProfile();
   const { showToast } = useToast();
-  const repositories = useRepositories();
-  const router = useRouter();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [fieldErrors, setFieldErrors] = useState<ProfileValidationErrors>({});
   const [isEditing, setIsEditing] = useState(false);
-  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     if (!customer) return;
@@ -80,19 +69,6 @@ export function PerfilPage() {
     setIsEditing(false);
   }
 
-  async function handleLogout() {
-    setLoggingOut(true);
-    try {
-      const sessionId = await repositories.auth.getCurrentSessionId();
-      if (sessionId) {
-        await repositories.auth.logout(sessionId);
-      }
-    } finally {
-      await repositories.auth.clearLocalSession();
-      router.replace("/iniciar-sesion");
-    }
-  }
-
   return (
     <div className="mx-auto w-full max-w-lg space-y-5">
       <PageHeader
@@ -122,21 +98,6 @@ export function PerfilPage() {
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="flex items-center gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-background)] p-5">
-            <span
-              aria-hidden="true"
-              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[var(--color-structure)] text-lg font-bold text-white"
-            >
-              {getInitials(customer?.name ?? "")}
-            </span>
-            <div className="min-w-0">
-              <p className="truncate font-semibold text-[var(--color-title)]">
-                {customer?.name || "Tu perfil"}
-              </p>
-              <p className="truncate text-sm text-[var(--color-text-muted)]">{email}</p>
-            </div>
-          </div>
-
           <form
             className="space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
             noValidate
@@ -149,16 +110,30 @@ export function PerfilPage() {
               }
             }}
           >
+            <div className="border-b border-[var(--color-border)] pb-4">
+              <h2 className="text-lg font-bold text-[var(--color-text)]">
+                Información de contacto
+              </h2>
+              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                Revisa tus datos y habilita la edición cuando necesites actualizarlos.
+              </p>
+            </div>
             <FormField
               hint="El correo no se puede editar desde aquí."
               id="profile-email"
               label="Correo electrónico"
             >
-              <Input id="profile-email" readOnly value={email ?? ""} />
+              <Input
+                className="bg-slate-100 text-[var(--color-text-muted)]"
+                id="profile-email"
+                readOnly
+                value={email ?? ""}
+              />
             </FormField>
 
             <FormField error={fieldErrors.name} id="profile-name" label="Nombre completo">
               <Input
+                className={isEditing ? undefined : "bg-slate-50 text-[var(--color-text-muted)]"}
                 disabled={saving}
                 id="profile-name"
                 maxLength={TEXT_FIELD_POLICY.NAME_MAX_LENGTH}
@@ -170,6 +145,7 @@ export function PerfilPage() {
 
             <FormField error={fieldErrors.phone} hint="Opcional" id="profile-phone" label="Teléfono">
               <Input
+                className={isEditing ? undefined : "bg-slate-50 text-[var(--color-text-muted)]"}
                 disabled={saving}
                 id="profile-phone"
                 inputMode="numeric"
@@ -181,33 +157,18 @@ export function PerfilPage() {
               />
             </FormField>
 
-            <div className="flex items-center gap-3 pt-2">
-              <Button disabled={saving} type="submit">
+            <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center">
+              <Button className="w-full sm:w-auto" disabled={saving} type="submit">
                 {isEditing ? (saving ? "Guardando..." : "Guardar cambios") : "Editar"}
               </Button>
               {isEditing && (
-                <Button disabled={saving} onClick={handleCancel} type="button" variant="secondary">
+                <Button className="w-full sm:w-auto" disabled={saving} onClick={handleCancel} type="button" variant="secondary">
                   Cancelar
                 </Button>
               )}
             </div>
           </form>
 
-          <hr className="border-t border-[var(--color-border)]" />
-
-          <div>
-            <Button
-              disabled={loggingOut}
-              onClick={() => {
-                void handleLogout();
-              }}
-              type="button"
-              variant="secondary"
-              className="text-[var(--color-danger)] hover:bg-red-50 hover:text-red-700 hover:border-red-200"
-            >
-              {loggingOut ? "Cerrando sesión..." : "Cerrar sesión"}
-            </Button>
-          </div>
         </div>
       )}
     </div>
