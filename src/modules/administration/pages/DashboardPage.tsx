@@ -7,7 +7,6 @@ import { DashboardTopProducts } from "@/modules/administration/components/Dashbo
 import { useDashboardSummary } from "@/modules/administration/hooks/useDashboardSummary";
 import { DASHBOARD_READ_PERMISSION } from "@/modules/administration/permissions";
 import { Button } from "@/shared/components/Button";
-import { RefreshIcon } from "@/shared/components/icons";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PageHeader } from "@/shared/components/PageHeader";
 
@@ -43,18 +42,6 @@ export function DashboardPage() {
   return (
     <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <PageHeader
-        actions={
-          <Button
-            className="gap-2"
-            disabled={loading}
-            onClick={() => void reload()}
-            type="button"
-            variant="secondary"
-          >
-            <RefreshIcon className="h-4 w-4" />
-            {loading ? "Actualizando..." : "Actualizar"}
-          </Button>
-        }
         description="Revise los principales indicadores operativos del negocio."
         title="Dashboard"
       />

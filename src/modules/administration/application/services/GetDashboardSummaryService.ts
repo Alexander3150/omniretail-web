@@ -14,14 +14,26 @@ export class GetDashboardSummaryService {
     ensureCanReadDashboard(permissions);
     ensureDashboardTenant(tenantId);
 
-    const [sales, pendingLogisticsOrders, branches, receipts, incidents, incidentTypes] =
-      await Promise.all([
+    const [
+      sales,
+      pendingLogisticsOrders,
+      branches,
+      receipts,
+      incidents,
+      incidentTypes,
+      purchaseOrders,
+      inventoryTransfers,
+      suppliers,
+    ] = await Promise.all([
         this.repositories.sales.getAll(),
         this.repositories.orders.getPendingForLogistics(),
         this.repositories.branches.getActive(),
         this.repositories.receipts.getAll(),
         this.repositories.receipts.getIncidents(),
         this.repositories.incidentTypes.getAll(),
+        this.repositories.purchaseOrders.getAll(),
+        this.repositories.inventoryTransfers.query({ tenantId }),
+        this.repositories.suppliers.getAll(),
       ]);
     const now = new Date();
     const tenantSales = sales.filter(
@@ -31,27 +43,88 @@ export class GetDashboardSummaryService {
     const monthSales = tenantSales.filter((sale) =>
       isSameLocalMonth(new Date(sale.createdAt), now),
     );
-    const tenantReceiptIds = new Set(
-      receipts.filter((receipt) => receipt.tenantId === tenantId).map((receipt) => receipt.id),
+    const tenantReceipts = receipts.filter((receipt) => receipt.tenantId === tenantId);
+    const receiptById = new Map(
+      tenantReceipts.map((receipt) => [receipt.id, receipt]),
     );
     const incidentTypeNames = new Map(
       incidentTypes
         .filter((incidentType) => incidentType.tenantId === tenantId)
         .map((incidentType) => [incidentType.id, incidentType.name]),
     );
+    const tenantPendingLogisticsOrders = pendingLogisticsOrders.filter(
+      (order) => order.tenantId === tenantId,
+    );
+    const pendingOrdersByStatus = {
+      confirmed: 0,
+      preparing: 0,
+      picking: 0,
+      packing: 0,
+      ready_for_dispatch: 0,
+    };
+
+    tenantPendingLogisticsOrders.forEach((order) => {
+      switch (order.status) {
+        case "confirmed":
+          pendingOrdersByStatus.confirmed += 1;
+          break;
+        case "preparing":
+          pendingOrdersByStatus.preparing += 1;
+          break;
+        case "picking":
+          pendingOrdersByStatus.picking += 1;
+          break;
+        case "packing":
+          pendingOrdersByStatus.packing += 1;
+          break;
+        case "ready_for_dispatch":
+          pendingOrdersByStatus.ready_for_dispatch += 1;
+          break;
+      }
+    });
 
     const tenantBranches = branches.filter((branch) => branch.tenantId === tenantId);
+    const branchNameById = new Map(
+      tenantBranches.map((branch) => [branch.id, branch.name]),
+    );
+    const purchaseOrderById = new Map(
+      purchaseOrders
+        .filter((purchaseOrder) => purchaseOrder.tenantId === tenantId)
+        .map((purchaseOrder) => [purchaseOrder.id, purchaseOrder]),
+    );
+    const inventoryTransferById = new Map(
+      inventoryTransfers.map((item) => [item.transfer.id, item.transfer]),
+    );
+    const supplierNameById = new Map(
+      suppliers
+        .filter((supplier) => supplier.tenantId === tenantId)
+        .map((supplier) => [supplier.id, supplier.name]),
+    );
     const inventoryAlertsService = new GetInventoryAlertsService(this.repositories);
     const branchAlerts = await Promise.all(
-      tenantBranches.map((branch) => inventoryAlertsService.execute(branch.id)),
+      tenantBranches.map(async (branch) => ({
+        branch,
+        data: await inventoryAlertsService.execute(branch.id),
+      })),
     );
     const stockAlerts = branchAlerts.reduce(
-      (totals, data) => ({
-        outOfStock: totals.outOfStock + data.kpis.outOfStock,
-        lowStock: totals.lowStock + data.kpis.lowStock,
+      (totals, result) => ({
+        outOfStock: totals.outOfStock + result.data.kpis.outOfStock,
+        lowStock: totals.lowStock + result.data.kpis.lowStock,
       }),
       { outOfStock: 0, lowStock: 0 },
     );
+    const stockAlertsByBranch = branchAlerts.map(({ branch, data }) => {
+      const branchStockAlerts = data.kpis;
+
+      return {
+        branchId: branch.id,
+        branchName: branch.name,
+        outOfStock: branchStockAlerts.outOfStock,
+        lowStock: branchStockAlerts.lowStock,
+        total: branchStockAlerts.outOfStock + branchStockAlerts.lowStock,
+      };
+    });
 
     const topProducts = aggregateTopProducts(monthSales);
 
@@ -59,16 +132,45 @@ export class GetDashboardSummaryService {
       salesToday: summarizeSales(todaySales),
       salesMonth: summarizeSales(monthSales),
       stockAlerts,
-      pendingOrders: pendingLogisticsOrders.filter((order) => order.tenantId === tenantId).length,
+      stockAlertsByBranch,
+      pendingOrders: tenantPendingLogisticsOrders.length,
+      pendingOrdersByStatus,
       latestIncidents: incidents
-        .filter((incident) => tenantReceiptIds.has(incident.receiptId))
+        .filter((incident) => receiptById.has(incident.receiptId))
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
         .slice(0, 5)
-        .map((incident) => ({
-          description: incident.description,
-          typeName: incidentTypeNames.get(incident.incidentTypeId) ?? incident.incidentTypeId,
-          createdAt: incident.createdAt,
-        })),
+        .map((incident) => {
+          const receipt = receiptById.get(incident.receiptId);
+          const purchaseOrder = receipt?.purchaseOrderId
+            ? purchaseOrderById.get(receipt.purchaseOrderId)
+            : undefined;
+          const transfer = receipt?.inventoryTransferId
+            ? inventoryTransferById.get(receipt.inventoryTransferId)
+            : undefined;
+          const branchName = receipt?.branchId
+            ? branchNameById.get(receipt.branchId)
+            : undefined;
+          const supplierName = purchaseOrder?.supplierId
+            ? supplierNameById.get(purchaseOrder.supplierId)
+            : undefined;
+          const originBranchName = transfer?.sourceBranchId
+            ? branchNameById.get(transfer.sourceBranchId)
+            : undefined;
+
+          return {
+            description: incident.description,
+            typeName: incidentTypeNames.get(incident.incidentTypeId) ?? incident.incidentTypeId,
+            createdAt: incident.createdAt,
+            ...(receipt?.number ? { receiptNumber: receipt.number } : {}),
+            ...(branchName ? { branchName } : {}),
+            ...(purchaseOrder?.number
+              ? { purchaseOrderNumber: purchaseOrder.number }
+              : {}),
+            ...(transfer?.number ? { transferNumber: transfer.number } : {}),
+            ...(supplierName ? { supplierName } : {}),
+            ...(originBranchName ? { originBranchName } : {}),
+          };
+        }),
       topProducts,
     };
   }
