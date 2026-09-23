@@ -3,7 +3,6 @@
 import { PickingQueue } from "@/modules/logistics/components/PickingQueueTable";
 import { PickingWorkspace } from "@/modules/logistics/components/PickingWorkspaceModal";
 import { useLogisticsPicking } from "@/modules/logistics/hooks/useLogisticsPicking";
-import { Button } from "@/shared/components/Button";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { useToast } from "@/shared/components/Toast";
@@ -15,7 +14,6 @@ export function LogisticsPickingPage() {
   return (
     <div className="min-w-0 space-y-5">
       <PageHeader
-        actions={<Button disabled={picking.loading || picking.submitting} onClick={() => void picking.reload()} type="button" variant="secondary">Actualizar</Button>}
         description={`Prepara pedidos de la sucursal ${picking.currentBranchName}.`}
         title="Mesa de Picking"
       />
@@ -26,7 +24,7 @@ export function LogisticsPickingPage() {
       {picking.loading ? <section className="rounded-xl border border-[var(--color-border)] bg-white p-5 text-sm text-[var(--color-text-muted)] shadow-sm">Consultando pedidos pendientes...</section> : null}
 
       {!picking.loading && picking.hasBranchAccess && picking.canRead ? (
-        <div className="grid min-w-0 gap-5 lg:grid-cols-[20rem_minmax(0,1fr)] lg:items-start">
+        <div className="grid min-w-0 gap-5 lg:grid-cols-[23rem_minmax(0,1fr)] lg:items-start xl:grid-cols-[24rem_minmax(0,1fr)]">
           <PickingQueue
             currentUserId={picking.currentUserId}
             disabled={picking.submitting}

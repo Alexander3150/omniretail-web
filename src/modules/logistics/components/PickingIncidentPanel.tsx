@@ -60,7 +60,7 @@ export function PickingIncidentPanel({
   };
 
   return (
-    <section className="space-y-4 rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm">
+    <section className="space-y-3 rounded-xl border border-[var(--color-border)] bg-white p-3.5 shadow-sm">
       <div>
         <h3 className="font-bold text-[var(--color-title)]">Incidencias</h3>
         <p className="text-sm text-[var(--color-text-muted)]">
@@ -69,7 +69,7 @@ export function PickingIncidentPanel({
       </div>
 
       {incidents.length === 0 ? (
-        <p className="rounded-lg bg-[var(--color-app-background)] p-3 text-sm text-[var(--color-text-muted)]">
+        <p className="rounded-lg bg-[var(--color-app-background)] px-3 py-2.5 text-sm text-[var(--color-text-muted)]">
           No hay incidencias registradas.
         </p>
       ) : (
@@ -77,7 +77,7 @@ export function PickingIncidentPanel({
           {incidents.map((incident) => {
             const line = lines.find((item) => item.pickingLineId === incident.pickingLineId);
             return (
-              <article className="rounded-lg border border-[var(--color-border)] p-3" key={incident.id}>
+              <article className="rounded-lg border border-[var(--color-border)] px-3 py-2.5" key={incident.id}>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -103,9 +103,9 @@ export function PickingIncidentPanel({
       )}
 
       {canManage ? (
-        <div className="space-y-3 border-t border-[var(--color-border)] pt-4">
+        <div className="space-y-2.5 border-t border-[var(--color-border)] pt-3">
           <h4 className="font-semibold text-[var(--color-title)]">Registrar incidencia</h4>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-2.5 sm:grid-cols-2">
             <FormField id="picking-incident-line" label="Producto">
               <Select
                 disabled={disabled}

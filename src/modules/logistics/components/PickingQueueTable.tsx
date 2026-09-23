@@ -60,12 +60,12 @@ export function PickingQueue({
 
   return (
     <aside className="rounded-xl border border-[var(--color-border)] bg-white shadow-sm lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)] lg:overflow-hidden">
-      <div className="border-b border-[var(--color-border)] p-4">
+      <div className="border-b border-[var(--color-border)] px-4 py-3.5">
         <h2 className="text-lg font-bold text-[var(--color-title)]">Cola de pedidos</h2>
         <p className="mt-1 text-sm text-[var(--color-text-muted)]">Ordenada por prioridad operativa.</p>
       </div>
 
-      <div className="space-y-3 border-b border-[var(--color-border)] p-4">
+      <div className="space-y-2.5 border-b border-[var(--color-border)] p-3.5">
         <FormField id="picking-search" label="Buscar pedido">
           <SearchInput
             aria-label="Buscar pedido de picking"
@@ -76,7 +76,7 @@ export function PickingQueue({
             value={search}
           />
         </FormField>
-        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+        <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
           <FormField id="picking-status-filter" label="Estado">
             <Select
               disabled={disabled}
@@ -91,7 +91,7 @@ export function PickingQueue({
             </Select>
           </FormField>
           <FormField
-            hint="El contrato actual no expone Ticket/Factura."
+            hint="El número de documento no está disponible para filtrar."
             id="picking-document-filter"
             label="Documento"
           >
@@ -115,7 +115,7 @@ export function PickingQueue({
         </div>
       </div>
 
-      <div className="space-y-2 overflow-y-auto p-3 lg:max-h-[calc(100dvh-28rem)]" aria-label="Pedidos de picking">
+      <div className="space-y-2 overflow-y-auto p-3 lg:max-h-[calc(100dvh-25rem)]" aria-label="Pedidos de picking">
         {filteredItems.length === 0 ? (
           <p className="rounded-lg bg-[var(--color-app-background)] p-4 text-center text-sm text-[var(--color-text-muted)]">
             No hay pedidos que coincidan con los filtros.
@@ -131,7 +131,7 @@ export function PickingQueue({
             <button
               aria-pressed={selected}
               className={cn(
-                "w-full rounded-lg border p-3 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
+                "w-full rounded-lg border px-3.5 py-3 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
                 selected
                   ? "border-[var(--color-primary)] bg-[var(--color-app-background)] shadow-sm"
                   : "border-[var(--color-border)] bg-white hover:border-[var(--color-structure)] hover:bg-[var(--color-app-background)]",
@@ -151,11 +151,11 @@ export function PickingQueue({
                   tone={item.priority === PickingPriority.urgent ? "danger" : item.priority === PickingPriority.high ? "warning" : "neutral"}
                 />
               </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
+              <div className="mt-2.5 flex flex-wrap items-center gap-2">
                 <StatusBadge status={statusLabels[item.status]} tone={item.status === PickingStatus.pending ? "warning" : "info"} />
                 <span className="text-xs text-[var(--color-text-muted)]">{deliveryLabels[item.deliveryMethod]}</span>
               </div>
-              <div className="mt-3">
+              <div className="mt-2.5">
                 <div className="flex justify-between text-xs text-[var(--color-text-muted)]">
                   <span>{item.progress.pickedQuantity}/{item.progress.requiredQuantity} unidades</span>
                   <span>{item.progress.percentage}%</span>
@@ -163,7 +163,7 @@ export function PickingQueue({
                 <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[var(--color-border)]">
                   <div className="h-full rounded-full bg-[var(--color-primary)]" style={{ width: `${item.progress.percentage}%` }} />
                 </div>
-                <p className="mt-2 text-xs font-medium text-[var(--color-text-muted)]">{assignment}</p>
+                <p className="mt-2 border-t border-[var(--color-border)] pt-2 text-xs font-medium text-[var(--color-text-muted)]">{assignment}</p>
               </div>
             </button>
           );
