@@ -56,19 +56,31 @@ export function DashboardPage() {
 
       <DashboardKpis loading={loading} summary={summary} />
 
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,400px)]">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(280px,0.8fr)_minmax(0,2fr)]">
         <DashboardTopProducts
           loading={loading}
           products={summary?.topProducts ?? []}
         />
         <DashboardSalesSummary
+          dailySalesMonth={summary?.dailySalesMonth ?? []}
           loading={loading}
+          salesByBranch={summary?.salesByBranch ?? []}
           salesToday={summary?.salesToday ?? { amount: 0, count: 0 }}
           salesMonth={summary?.salesMonth ?? { amount: 0, count: 0 }}
         />
       </div>
 
-      <DashboardIncidents incidents={summary?.latestIncidents ?? []} loading={loading} />
+      <DashboardIncidents
+        analytics={
+          summary?.incidentAnalytics ?? {
+            totalCurrentMonth: 0,
+            byType: [],
+            bySupplier: [],
+          }
+        }
+        incidents={summary?.latestIncidents ?? []}
+        loading={loading}
+      />
     </div>
   );
 }
