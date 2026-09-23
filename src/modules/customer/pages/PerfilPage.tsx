@@ -122,7 +122,7 @@ export function PerfilPage() {
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="flex items-center gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-primary)]/5 p-5 shadow-sm">
+          <div className="flex items-center gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-background)] p-5">
             <span
               aria-hidden="true"
               className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[var(--color-structure)] text-lg font-bold text-white"

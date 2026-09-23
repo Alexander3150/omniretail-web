@@ -22,17 +22,17 @@ export function DashboardSalesSummary({
 
       {loading ? (
         <div aria-live="polite" className="mt-4 space-y-3">
-          <div className="h-20 animate-pulse rounded-lg bg-[var(--color-app-background)]" />
-          <div className="h-20 animate-pulse rounded-lg bg-[var(--color-app-background)]" />
+          <div className="h-20 animate-pulse rounded-lg bg-slate-100" />
+          <div className="h-20 animate-pulse rounded-lg bg-slate-100" />
           <span className="sr-only">Cargando resumen...</span>
         </div>
       ) : (
         <div className="mt-4 space-y-4">
-          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-4">
+          <div className="rounded-lg border border-[var(--color-border)] bg-slate-50 p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">Hoy</p>
-                <p className="mt-1 text-2xl font-bold text-[var(--color-success)]">
+                <p className="mt-1 text-3xl font-bold tracking-tight text-[var(--color-success)]">
                   {formatCurrency(salesToday.amount)}
                 </p>
               </div>
@@ -53,13 +53,13 @@ export function DashboardSalesSummary({
             )}
           </div>
 
-          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-4">
+          <div className="rounded-lg border border-[var(--color-border)] bg-slate-50 p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">
                   Este mes
                 </p>
-                <p className="mt-1 text-2xl font-bold text-[var(--color-structure)]">
+                <p className="mt-1 text-3xl font-bold tracking-tight text-[var(--color-structure)]">
                   {formatCurrency(salesMonth.amount)}
                 </p>
               </div>

@@ -239,7 +239,7 @@ export function InventoryMovementsPage() {
 
       {error ? <InlineAlert title={error} tone="danger" /> : null}
 
-      <section className="max-w-full overflow-hidden rounded-lg border border-[var(--color-border)] bg-white shadow-sm">
+      <section className="max-w-full overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
         <MovementFilters
           branchId={branchId}
           branches={data.branches}
@@ -259,7 +259,7 @@ export function InventoryMovementsPage() {
 
       <MovementKpis incoming={kpis.incoming} net={kpis.net} outgoing={kpis.outgoing} />
 
-      <section className="max-w-full overflow-hidden rounded-lg border border-[var(--color-border)] bg-white shadow-sm">
+      <section className="max-w-full overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
         {loading ? (
           <p className="border-t border-[var(--color-border)] p-5 text-sm text-[var(--color-text-muted)]">
             Cargando movimientos...
@@ -343,18 +343,18 @@ function KpiCard({
   return (
     <div
       className={cn(
-        "rounded-lg border bg-white px-4 py-3 shadow-sm",
-        tone === "success" && "border-emerald-200",
-        tone === "danger" && "border-orange-200",
-        tone === "info" && "border-blue-200",
-        tone === "warning" && "border-indigo-200",
+        "rounded-lg border border-l-4 border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-sm",
+        tone === "success" && "border-l-emerald-400",
+        tone === "danger" && "border-l-orange-400",
+        tone === "info" && "border-l-blue-400",
+        tone === "warning" && "border-l-indigo-400",
       )}
     >
       <p className="flex items-center gap-2 text-xs font-bold uppercase text-[var(--color-text-muted)]">
         <Icon className="h-3.5 w-3.5" />
         {label}
       </p>
-      <strong className="mt-1 block text-2xl font-bold leading-none text-[var(--color-title)]">
+      <strong className="mt-1 block text-3xl font-bold leading-none tracking-tight text-[var(--color-title)]">
         {value}
       </strong>
     </div>

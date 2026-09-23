@@ -44,7 +44,7 @@ export function StorefrontProductCard({
   };
   return (
     <>
-    <article className={`group overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-[var(--color-title)]/10 ${uniformHeight ? "flex h-full min-h-[31rem] flex-col" : ""}`}>
+    <article className={`group overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-md ${uniformHeight ? "flex h-full min-h-[31rem] flex-col" : ""}`}>
       <Link className={uniformHeight ? "flex min-h-0 flex-1 flex-col text-left" : "block text-left"} href={routes.product(product.id)}>
         <div className="relative">
           <StorefrontCatalogImage
@@ -88,7 +88,7 @@ export function StorefrontProductCard({
         </div>
       </Link>
       <div
-        className={`flex items-end justify-between gap-3 ${compact ? "px-4 pb-4" : "px-5 pb-5"}`}
+        className={`flex items-end justify-between gap-3 border-t border-[var(--color-border)] pt-4 ${compact ? "px-4 pb-4" : "px-5 pb-5"}`}
       >
         <div>
           {offer ? (
@@ -96,7 +96,7 @@ export function StorefrontProductCard({
               Q{offer.originalPrice.toFixed(2)}
             </p>
           ) : null}
-          <p className="text-xl font-black text-[var(--color-title)]">
+          <p className="text-2xl font-black tracking-tight text-[var(--color-title)]">
             Q{product.salePrice.toFixed(2)}
           </p>
           {offer ? (
