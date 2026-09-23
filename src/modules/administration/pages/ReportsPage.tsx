@@ -23,7 +23,7 @@ import { ReportTotals } from "@/modules/administration/components/ReportTotals";
 import { useReports } from "@/modules/administration/hooks/useReports";
 import { REPORTS_READ_PERMISSION } from "@/modules/administration/permissions";
 import { Button } from "@/shared/components/Button";
-import { DownloadIcon, RefreshIcon } from "@/shared/components/icons";
+import { DownloadIcon } from "@/shared/components/icons";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { TablePagination, type TablePageSize } from "@/shared/components/TablePagination";
@@ -100,16 +100,6 @@ export function ReportsPage() {
       <PageHeader
         actions={
           <>
-            <Button
-              className="gap-2"
-              disabled={loading}
-              onClick={() => void reload()}
-              title="Actualizar"
-              type="button"
-              variant="secondary"
-            >
-              <RefreshIcon className="h-4 w-4" />
-            </Button>
             <div className="flex flex-col items-end gap-1">
             <Button
               className="gap-2"

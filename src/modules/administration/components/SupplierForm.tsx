@@ -64,7 +64,7 @@ export function SupplierForm({ supplier, busy, onCancel, onSubmit }: SupplierFor
   return (
     <form className="space-y-5" noValidate onSubmit={handleSubmit}>
       {submitError ? <InlineAlert title={submitError} tone="danger" /> : null}
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 rounded-xl bg-slate-50/70 p-4 sm:grid-cols-2">
         <FormField error={errors.name} id="supplier-name" label="Nombre">
           <Input
             disabled={busy}
@@ -137,7 +137,7 @@ export function SupplierForm({ supplier, busy, onCancel, onSubmit }: SupplierFor
 
       <FormField id="supplier-address" label="Dirección">
         <textarea
-          className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-20 w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={busy}
           id="supplier-address"
           maxLength={ADMIN_FIELD_LIMITS.supplier.address}
@@ -148,7 +148,7 @@ export function SupplierForm({ supplier, busy, onCancel, onSubmit }: SupplierFor
 
       <FormField id="supplier-notes" label="Notas">
         <textarea
-          className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-20 w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={busy}
           id="supplier-notes"
           maxLength={ADMIN_FIELD_LIMITS.supplier.notes}

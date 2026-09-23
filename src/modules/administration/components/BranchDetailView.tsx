@@ -1,7 +1,7 @@
 import { BranchStatus, BranchType } from "@/core/enums";
 import type { BranchDto } from "@/modules/administration/application/dto/BranchDto";
 import { Button } from "@/shared/components/Button";
-import { ArchiveIcon, MailIcon, MapPinIcon, PencilIcon, PhoneIcon, XIcon } from "@/shared/components/icons";
+import { ArchiveIcon, MailIcon, MapPinIcon, PencilIcon, PhoneIcon } from "@/shared/components/icons";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { cn } from "@/shared/utils/cn";
 
@@ -20,7 +20,7 @@ interface BranchDetailViewProps {
   onClose: () => void;
 }
 
-export function BranchDetailView({ branch, canManage, busy, onEdit, onArchive, onClose }: BranchDetailViewProps) {
+export function BranchDetailView({ branch, canManage, busy, onEdit, onArchive }: BranchDetailViewProps) {
   const isArchived = branch.status === BranchStatus.archived;
 
   return (
@@ -59,13 +59,8 @@ export function BranchDetailView({ branch, canManage, busy, onEdit, onArchive, o
         </div>
       </dl>
 
-      <div className="flex flex-col-reverse gap-2 border-t border-[var(--color-border)] pt-4 sm:flex-row sm:justify-end">
-        <Button className="gap-2" disabled={busy} onClick={onClose} type="button" variant="secondary">
-          <XIcon className="h-4 w-4" />
-          Cerrar
-        </Button>
-        {canManage ? (
-          <>
+      {canManage ? (
+        <div className="flex flex-col-reverse gap-2 border-t border-[var(--color-border)] pt-4 sm:flex-row sm:justify-end">
             {!isArchived ? (
               <Button className="gap-2" disabled={busy} onClick={onArchive} type="button" variant="danger">
                 <ArchiveIcon className="h-4 w-4" />
@@ -76,9 +71,8 @@ export function BranchDetailView({ branch, canManage, busy, onEdit, onArchive, o
               <PencilIcon className="h-4 w-4" />
               Editar
             </Button>
-          </>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -73,7 +73,7 @@ export function CustomerTable({ customers, onSelect }: CustomerTableProps) {
 
   return (
     <div className="space-y-4">
-      <section className="grid gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm sm:grid-cols-[minmax(0,1fr)_14rem]">
+      <section className="grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_14rem]">
         <SearchInput
           aria-label="Buscar clientes"
           onChange={(event) => setSearch(event.target.value)}

@@ -2,8 +2,6 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import type { CashShiftDto } from "@/modules/administration/application/dto/CashShiftDto";
-import { Button } from "@/shared/components/Button";
-import { XIcon } from "@/shared/components/icons";
 import { DataTable, type DataTableColumn } from "@/shared/components/DataTable";
 import { Modal } from "@/shared/components/Modal";
 import { StatusBadge } from "@/shared/components/StatusBadge";
@@ -121,14 +119,6 @@ function CashShiftDetailModal({
 }) {
   return (
     <Modal
-      footer={
-        <div className="flex justify-end">
-          <Button className="gap-2" onClick={onClose} type="button" variant="secondary">
-            <XIcon className="h-4 w-4" />
-            Cerrar
-          </Button>
-        </div>
-      }
       open={Boolean(shift)}
       size="lg"
       subtitle={shift ? `${branchName} · ${actorName}` : undefined}
