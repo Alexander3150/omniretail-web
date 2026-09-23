@@ -10,16 +10,21 @@ export function ReportTotals({ totals }: { totals: ReportTotals }) {
   const items = getTotalItems(totals);
 
   return (
-    <section aria-label="Totales del reporte" className="flex flex-wrap gap-3">
+    <section
+      aria-label="Totales del reporte"
+      className="grid grid-cols-2 items-stretch gap-3 sm:grid-cols-3 xl:grid-cols-5"
+    >
       {items.map((item) => (
         <div
-          className="min-w-36 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-sm"
+          className="flex min-w-0 flex-col justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3.5 shadow-sm"
           key={item.label}
         >
-          <p className="text-xs font-semibold uppercase text-[var(--color-text-muted)]">
+          <p className="text-xs font-semibold uppercase leading-5 tracking-wide text-[var(--color-text-muted)]">
             {item.label}
           </p>
-          <p className="mt-1 text-lg font-bold text-[var(--color-title)]">{item.value}</p>
+          <p className="mt-2 break-words text-xl font-bold tabular-nums leading-tight text-[var(--color-title)]">
+            {item.value}
+          </p>
         </div>
       ))}
     </section>

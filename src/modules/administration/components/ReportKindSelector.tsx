@@ -8,7 +8,7 @@ interface ReportKindSelectorProps {
 
 export function ReportKindSelector({ kind, onChange }: ReportKindSelectorProps) {
   return (
-    <label className="block max-w-sm space-y-1.5">
+    <label className="block min-w-0 space-y-1.5">
       <span className="block text-sm font-semibold text-[var(--color-text)]">Tipo de reporte</span>
       <Select onChange={(event) => onChange(event.target.value as ReportKind)} value={kind}>
         <option value="sales">Ventas</option>

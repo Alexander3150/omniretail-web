@@ -11,7 +11,6 @@ import type {
   SalesReportRow,
 } from "@/modules/administration/application/dto/ReportDto";
 import { ReportFilters } from "@/modules/administration/components/ReportFilters";
-import { ReportKindSelector } from "@/modules/administration/components/ReportKindSelector";
 import {
   movementReportColumns,
   paymentReportColumns,
@@ -21,7 +20,7 @@ import {
 } from "@/modules/administration/components/ReportTable";
 import { ReportTotals } from "@/modules/administration/components/ReportTotals";
 import { useReports } from "@/modules/administration/hooks/useReports";
-import { REPORTS_READ_PERMISSION } from "@/modules/administration/permissions";
+import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
 import { Button } from "@/shared/components/Button";
 import { DownloadIcon } from "@/shared/components/icons";
 import { InlineAlert } from "@/shared/components/InlineAlert";
@@ -57,27 +56,7 @@ export function ReportsPage() {
   );
 
   if (!loading && !canRead) {
-    return (
-      <div className="min-w-0 space-y-5">
-        <PageHeader
-          description="Consultá información consolidada de ventas, compras, inventario y pagos."
-          title="Reportes"
-        />
-        <div
-          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
-          role="alert"
-        >
-          <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No dispone de acceso a los reportes
-          </h2>
-          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            Esta vista requiere el permiso{" "}
-            <span className="font-medium text-[var(--color-text)]">{REPORTS_READ_PERMISSION}</span>.
-            Pedí acceso a un administrador.
-          </p>
-        </div>
-      </div>
-    );
+    return <AccessDeniedState />;
   }
 
   function changeKind(nextKind: ReportKind) {
@@ -96,11 +75,10 @@ export function ReportsPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto min-w-0 max-w-7xl space-y-5">
       <PageHeader
         actions={
-          <>
-            <div className="flex flex-col items-end gap-1">
+          <div className="flex flex-col items-end gap-1">
             <Button
               className="gap-2"
               disabled={!canExport || rows.length === 0 || loading}
@@ -116,8 +94,7 @@ export function ReportsPage() {
                 Requerí el módulo Reportes avanzados para exportar.
               </p>
             ) : null}
-            </div>
-          </>
+          </div>
         }
         description="Consultá información consolidada de ventas, compras, inventario y pagos."
         title="Reportes"
@@ -131,22 +108,19 @@ export function ReportsPage() {
         </InlineAlert>
       ) : null}
 
-      <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
-        <ReportKindSelector kind={kind} onChange={changeKind} />
-      </section>
-
       <ReportFilters
         data={data}
         filter={filter}
         kind={kind}
         onChange={changeFilter}
+        onKindChange={changeKind}
         onReset={clearFilter}
       />
 
       {loading ? (
         <div
           aria-live="polite"
-          className="flex min-h-56 items-center justify-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] text-sm font-medium text-[var(--color-text-muted)] shadow-sm"
+          className="flex min-h-48 items-center justify-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 text-sm font-medium text-[var(--color-text-muted)] shadow-sm"
         >
           <span
             aria-hidden="true"
