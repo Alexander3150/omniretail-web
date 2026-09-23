@@ -77,11 +77,27 @@ export function SeguridadPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-lg space-y-5">
+    <div className="mx-auto w-full max-w-2xl space-y-5">
       <PageHeader
         description="Cambia tu contraseña. Al confirmar, se cerrarán tus demás sesiones activas."
         title="Seguridad"
       />
+
+      <section className="flex flex-col gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-background)] p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="font-bold text-[var(--color-text)]">Protección de la cuenta</h2>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            Administra tu contraseña y la verificación en dos pasos.
+          </p>
+        </div>
+        {mfaEnrollment.status ? (
+          <span
+            className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${mfaEnrollment.status.enabled ? "bg-[var(--color-success)]/10 text-[var(--color-success)]" : "bg-white text-[var(--color-text-muted)]"}`}
+          >
+            {mfaEnrollment.status.enabled ? "Verificación activa" : "Verificación disponible"}
+          </span>
+        ) : null}
+      </section>
 
       <form
         className="space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
@@ -159,7 +175,7 @@ export function SeguridadPage() {
           </FormField>
         ) : null}
 
-        <Button disabled={busy} type="submit">
+        <Button className="w-full sm:w-auto" disabled={busy} type="submit">
           {busy ? "Actualizando..." : "Actualizar contraseña"}
         </Button>
       </form>

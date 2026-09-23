@@ -140,7 +140,7 @@ export function DireccionesPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-5xl space-y-5">
       <PageHeader
         actions={
           <Button onClick={() => setEditor({ mode: "create" })} type="button">
@@ -172,14 +172,23 @@ export function DireccionesPage() {
           Cargando direcciones...
         </div>
       ) : addresses.length === 0 ? (
-        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-sm text-[var(--color-text-muted)] shadow-sm">
-          Aún no tiene direcciones guardadas.
+        <div className="flex flex-col items-center rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-10 text-center">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-structure)]">
+            <MapPinIcon className="h-5 w-5" />
+          </span>
+          <h2 className="mt-3 font-bold text-[var(--color-text)]">Aún no tiene direcciones guardadas</h2>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            Agregue una dirección para reutilizarla en próximas compras.
+          </p>
+          <Button className="mt-5" onClick={() => setEditor({ mode: "create" })} type="button">
+            Nueva dirección
+          </Button>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {addresses.map((address) => (
             <article
-              className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm"
+              className="flex h-full flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm"
               key={address.id}
             >
               <div className="flex items-start justify-between gap-2">
@@ -190,7 +199,7 @@ export function DireccionesPage() {
                   >
                     <MapPinIcon className="h-4 w-4" />
                   </span>
-                  <h2 className="truncate font-semibold text-[var(--color-title)]">{address.label}</h2>
+                  <h2 className="truncate text-lg font-bold text-[var(--color-text)]">{address.label}</h2>
                 </div>
                 {address.isDefault ? (
                   <span className="shrink-0 rounded-md bg-[var(--color-success)]/10 px-2 py-1 text-xs font-semibold text-[var(--color-success)]">
@@ -198,7 +207,7 @@ export function DireccionesPage() {
                   </span>
                 ) : null}
               </div>
-              <p className="mt-2 break-words text-sm text-[var(--color-text)] [overflow-wrap:anywhere]">{address.recipientName}</p>
+              <p className="mt-3 break-words text-sm font-semibold text-[var(--color-text)] [overflow-wrap:anywhere]">{address.recipientName}</p>
               <p className="break-words text-sm text-[var(--color-text-muted)] [overflow-wrap:anywhere]">
                 {address.line1}
                 {address.line2 ? `, ${address.line2}` : ""}
@@ -209,7 +218,7 @@ export function DireccionesPage() {
                   .join(", ")}
               </p>
 
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="mt-auto flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-4">
                 <Button
                   onClick={() => setEditor({ mode: "edit", address })}
                   type="button"

@@ -25,7 +25,7 @@ export function PedidosPage() {
   const storefrontRoutes = useOptionalStorefrontRoutes();
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-5xl space-y-5">
       <PageHeader description="Historial de pedidos." title="Mis pedidos" />
 
       {error ? (
@@ -49,8 +49,14 @@ export function PedidosPage() {
           Cargando pedidos...
         </div>
       ) : orders.length === 0 ? (
-        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-sm text-[var(--color-text-muted)] shadow-sm">
-          Aún no tiene pedidos.
+        <div className="flex flex-col items-center rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-10 text-center">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-structure)]">
+            <PackageIcon className="h-5 w-5" />
+          </span>
+          <h2 className="mt-3 font-bold text-[var(--color-text)]">Aún no tiene pedidos</h2>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            Sus compras aparecerán aquí cuando complete un pedido.
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -59,7 +65,7 @@ export function PedidosPage() {
             return (
               <Link
                 href={href}
-                className="flex flex-col gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm transition hover:border-[var(--color-structure)] sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--color-structure)] hover:shadow-md sm:flex-row sm:items-center sm:justify-between"
                 key={order.id}
               >
                 <div className="flex min-w-0 items-center gap-3">
@@ -70,7 +76,7 @@ export function PedidosPage() {
                   <PackageIcon className="h-5 w-5" />
                 </span>
                 <div className="min-w-0">
-                  <p className="truncate font-semibold text-[var(--color-title)]">
+                  <p className="truncate text-lg font-bold text-[var(--color-text)]">
                     Pedido {order.orderNumber}
                   </p>
                   <p className="text-sm text-[var(--color-text-muted)]">
@@ -86,7 +92,7 @@ export function PedidosPage() {
               </div>
               <div className="flex shrink-0 items-center gap-3">
                 <StatusBadge status={order.status} />
-                <span className="font-semibold text-[var(--color-title)]">
+                <span className="text-lg font-black text-[var(--color-title)]">
                   Q{order.total.toFixed(2)}
                 </span>
               </div>

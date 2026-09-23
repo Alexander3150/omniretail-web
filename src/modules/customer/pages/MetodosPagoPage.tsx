@@ -146,7 +146,7 @@ export function MetodosPagoPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-5xl space-y-5">
       <PageHeader
         actions={
           <Button onClick={() => setEditor({ mode: "create" })} type="button">
@@ -178,14 +178,23 @@ export function MetodosPagoPage() {
           Cargando métodos de pago...
         </div>
       ) : paymentMethods.length === 0 ? (
-        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-sm text-[var(--color-text-muted)] shadow-sm">
-          Aún no tiene métodos de pago guardados.
+        <div className="flex flex-col items-center rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-10 text-center">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-structure)]">
+            <CreditCardIcon className="h-5 w-5" />
+          </span>
+          <h2 className="mt-3 font-bold text-[var(--color-text)]">Aún no tiene métodos de pago guardados</h2>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            Agregue una tarjeta para agilizar sus próximas compras.
+          </p>
+          <Button className="mt-5" onClick={() => setEditor({ mode: "create" })} type="button">
+            Nueva tarjeta
+          </Button>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {paymentMethods.map((method) => (
             <article
-              className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm"
+              className="flex h-full flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm"
               key={method.id}
             >
               <div className="flex items-start justify-between gap-2">
@@ -196,9 +205,14 @@ export function MetodosPagoPage() {
                   >
                     <CreditCardIcon className="h-4 w-4" />
                   </span>
-                  <h2 className="truncate font-semibold capitalize text-[var(--color-title)]">
-                    {method.brand} •••• {method.last4}
-                  </h2>
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+                      {method.brand}
+                    </p>
+                    <h2 className="truncate font-mono text-xl font-bold tracking-wide text-[var(--color-text)]">
+                      •••• {method.last4}
+                    </h2>
+                  </div>
                 </div>
                 {method.isDefault ? (
                   <span className="shrink-0 rounded-md bg-[var(--color-success)]/10 px-2 py-1 text-xs font-semibold text-[var(--color-success)]">
@@ -214,7 +228,7 @@ export function MetodosPagoPage() {
                 Vence {String(method.expirationMonth).padStart(2, "0")}/{method.expirationYear}
               </p>
 
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="mt-auto flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-4">
                 <Button
                   onClick={() => setEditor({ mode: "edit", method })}
                   type="button"
