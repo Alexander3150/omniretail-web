@@ -54,7 +54,7 @@ export function LogisticsHistoryDispatchModal({
   return (
     <Modal
       footer={
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <div className="flex flex-col-reverse gap-2 border-t border-[var(--color-border)] pt-3 sm:flex-row sm:justify-end">
           <Button disabled={submitting} type="button" variant="secondary" onClick={onClose}>
             Cancelar
           </Button>
@@ -80,10 +80,10 @@ export function LogisticsHistoryDispatchModal({
       ) : null}
       {error ? <InlineAlert description={error} title="No se pudo completar el despacho" /> : null}
       {detail ? (
-        <div className="space-y-5">
-          <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-4">
-            <h3 className="font-bold text-[var(--color-title)]">Pedido {detail.orderReference}</h3>
-            <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+        <div className="space-y-4">
+          <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-3.5">
+            <h3 className="text-sm font-bold text-[var(--color-title)]">Pedido {detail.orderReference}</h3>
+            <dl className="mt-2 grid gap-2.5 text-sm sm:grid-cols-2">
               <div>
                 <dt className="text-xs text-[var(--color-text-muted)]">Destinatario</dt>
                 <dd className="mt-1 font-medium">{detail.recipientName || "No disponible"}</dd>
@@ -97,14 +97,14 @@ export function LogisticsHistoryDispatchModal({
             </dl>
           </section>
 
-          <section>
-            <h3 className="font-bold text-[var(--color-title)]">Datos de salida</h3>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+          <section className="rounded-lg border border-[var(--color-border)] p-3.5">
+            <h3 className="text-sm font-bold text-[var(--color-title)]">Datos de salida</h3>
+            <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
               {thirdParty
                 ? "El transporte y el número de guía son obligatorios."
                 : "Para flota propia, el transporte y la guía son opcionales."}
             </p>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <FormField
                 error={errors.carrierName}
                 hint={thirdParty ? undefined : "Opcional para flota propia"}

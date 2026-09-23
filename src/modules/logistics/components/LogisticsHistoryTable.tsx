@@ -23,10 +23,11 @@ export function LogisticsHistoryTable({
     {
       key: "document",
       header: "Documento",
+      className: "w-[9%] px-2 py-2 align-top",
       cell: (item) => (
-        <div>
-          <span className="text-xs text-[var(--color-text-muted)]">Pedido</span>
-          <strong className="block whitespace-nowrap text-[var(--color-title)]">
+        <div className="min-w-0">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">Pedido</span>
+          <strong className="block whitespace-nowrap text-sm text-[var(--color-title)]">
             {item.orderReference}
           </strong>
         </div>
@@ -35,10 +36,11 @@ export function LogisticsHistoryTable({
     {
       key: "orderCustomer",
       header: "Pedido / Cliente",
+      className: "w-[17%] px-2 py-2 align-top",
       cell: (item) => (
-        <div className="min-w-44">
-          <strong className="block text-[var(--color-title)]">{item.contactName}</strong>
-          <span className="text-xs text-[var(--color-text-muted)]">
+        <div className="min-w-0 space-y-0.5">
+          <strong className="block break-words text-sm text-[var(--color-title)]">{item.contactName}</strong>
+          <span className="block text-xs text-[var(--color-text-muted)]">
             {item.deliveryMethod === DeliveryMethod.home_delivery
               ? "Envío a domicilio"
               : "Retiro en tienda/bodega"}
@@ -49,27 +51,36 @@ export function LogisticsHistoryTable({
     {
       key: "result",
       header: "Resultado",
-      cell: (item) => <StatusBadge status={item.operationalStatus} />,
+      className: "w-[13%] px-2 py-2 align-top",
+      cell: (item) => (
+        <div className="whitespace-nowrap">
+          <StatusBadge status={item.operationalStatus} />
+        </div>
+      ),
     },
     {
       key: "pickingCompleted",
-      header: "Picking finalizado",
-      cell: (item) => formatDateTime(item.pickingCompletedAt),
+      header: "Recolección finalizada",
+      className: "w-[13%] px-2 py-2 align-top",
+      cell: (item) => <span className="block text-sm leading-5">{formatDateTime(item.pickingCompletedAt)}</span>,
     },
     {
       key: "exit",
       header: "Salida",
+      className: "w-[12%] px-2 py-2 align-top",
       cell: (item) => <ExitSummary item={item} />,
     },
     {
       key: "responsible",
       header: "Responsable",
-      cell: (item) => item.responsibleUserName ?? "—",
+      className: "w-[12%] px-2 py-2 align-top",
+      cell: (item) => <span className="block break-words text-sm leading-5">{item.responsibleUserName ?? "—"}</span>,
     },
     {
       key: "package",
       header: "Paquete",
-      cell: (item) => packageSummary(item),
+      className: "w-[10%] px-2 py-2 align-top",
+      cell: (item) => <span className="block text-sm leading-5">{packageSummary(item)}</span>,
     },
   ];
 
@@ -77,9 +88,11 @@ export function LogisticsHistoryTable({
     columns.push({
       key: "action",
       header: "Acción",
+      className: "w-[14%] px-2 py-2 align-top",
       cell: (item) =>
         canAddGuide(item) ? (
           <Button
+            className="min-h-9 whitespace-nowrap px-3 py-1.5"
             disabled={!canConfirmDispatch}
             title={canConfirmDispatch ? undefined : "No tienes permiso para confirmar despachos."}
             type="button"
@@ -121,7 +134,7 @@ export function canAddGuide(item: LogisticsHistoryItemDto) {
 
 function ExitSummary({ item }: { item: LogisticsHistoryItemDto }) {
   const latestExitAt = item.deliveredAt ?? item.dispatchedAt ?? item.packingFinalizedAt;
-  return <span className="whitespace-nowrap">{formatDateTime(latestExitAt)}</span>;
+  return <span className="block text-sm leading-5">{formatDateTime(latestExitAt)}</span>;
 }
 
 function packageSummary(item: LogisticsHistoryItemDto) {

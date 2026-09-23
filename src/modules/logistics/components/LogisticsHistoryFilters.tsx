@@ -29,14 +29,19 @@ export function LogisticsHistoryFilters({
   onReset,
 }: LogisticsHistoryFiltersProps) {
   return (
-    <section className="rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm sm:p-5">
-      <div>
-        <h2 className="text-lg font-bold text-[var(--color-title)]">Filtros del historial</h2>
-        <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+    <section className="rounded-xl border border-[var(--color-border)] bg-white p-3 shadow-sm sm:p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-base font-bold text-[var(--color-title)] sm:text-lg">Filtros del historial</h2>
+          <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
           Localiza una operación preparada o finalizada.
-        </p>
+          </p>
+        </div>
+        <Button disabled={disabled} type="button" variant="ghost" onClick={onReset}>
+          Limpiar filtros
+        </Button>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="mt-3 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-5">
         <FilterField className="sm:col-span-2 xl:col-span-1" label="Buscar">
           <SearchInput
             disabled={disabled}
@@ -93,11 +98,6 @@ export function LogisticsHistoryFilters({
           />
         </FilterField>
       </div>
-      <div className="mt-3 flex justify-end">
-        <Button disabled={disabled} type="button" variant="ghost" onClick={onReset}>
-          Limpiar filtros
-        </Button>
-      </div>
     </section>
   );
 }
@@ -112,8 +112,8 @@ function FilterField({
   label: string;
 }) {
   return (
-    <label className={`space-y-1.5 ${className}`}>
-      <span className="text-sm font-semibold text-[var(--color-title)]">{label}</span>
+    <label className={`space-y-1 ${className}`}>
+      <span className="text-xs font-semibold text-[var(--color-title)]">{label}</span>
       {children}
     </label>
   );

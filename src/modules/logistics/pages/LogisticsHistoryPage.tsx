@@ -5,7 +5,6 @@ import { LogisticsHistoryDetailModal } from "@/modules/logistics/components/Logi
 import { LogisticsHistoryDispatchModal } from "@/modules/logistics/components/LogisticsHistoryDispatchModal";
 import { LogisticsHistoryTable } from "@/modules/logistics/components/LogisticsHistoryTable";
 import { useLogisticsHistory } from "@/modules/logistics/hooks/useLogisticsHistory";
-import { Button } from "@/shared/components/Button";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { useToast } from "@/shared/components/Toast";
@@ -17,16 +16,6 @@ export function LogisticsHistoryPage() {
   return (
     <div className="min-w-0 space-y-5">
       <PageHeader
-        actions={
-          <Button
-            disabled={history.loading}
-            type="button"
-            variant="secondary"
-            onClick={() => void history.reload()}
-          >
-            Actualizar
-          </Button>
-        }
         description={`Consulta pedidos preparados y finalizados de ${history.currentBranchName}.`}
         title="Historial de pedidos"
       />
@@ -42,17 +31,17 @@ export function LogisticsHistoryPage() {
         onReset={history.resetFilters}
       />
 
-      <section className="min-w-0 rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm sm:p-5">
-        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+      <section className="min-w-0 rounded-xl border border-[var(--color-border)] bg-white p-3 shadow-sm sm:p-4">
+        <div className="mb-3 flex flex-col gap-2 border-b border-[var(--color-border)] pb-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h2 className="text-lg font-bold text-[var(--color-title)]">
+            <h2 className="text-base font-bold text-[var(--color-title)] sm:text-lg">
               Pedidos preparados y finalizados
             </h2>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
               La tabla queda preparada para abrir el detalle mediante doble clic en una fila.
             </p>
           </div>
-          <span className="w-fit rounded-md bg-[var(--color-warning)]/20 px-3 py-1 text-xs font-semibold text-[var(--color-title)]">
+          <span className="w-fit rounded-md bg-[var(--color-warning)]/20 px-2.5 py-1 text-xs font-semibold text-[var(--color-title)]">
             {history.items.length} de {history.totalItems} pedidos
           </span>
         </div>
