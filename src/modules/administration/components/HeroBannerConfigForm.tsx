@@ -32,6 +32,7 @@ export function HeroBannerConfigForm({
   onChange,
 }: HeroBannerConfigFormProps) {
   const [uploadErrors, setUploadErrors] = useState<Record<number, string | undefined>>({});
+  const [showImageHelp, setShowImageHelp] = useState(false);
   const canSuggest = Boolean(preset && preset !== BusinessPreset.custom);
 
   function updateSlide(index: number, patch: Partial<HeroBannerSlideInput>) {
@@ -70,12 +71,24 @@ export function HeroBannerConfigForm({
 
   return (
     <div className="space-y-5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 border-b border-[var(--color-border)] pb-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-lg font-bold text-[var(--color-title)]">Carrusel principal</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-bold text-[var(--color-title)]">Carrusel principal</h2>
+            <button
+              aria-controls="hero-banner-image-guidance"
+              aria-expanded={showImageHelp}
+              aria-label="Mostrar recomendaciones para las imágenes"
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] bg-white text-xs font-bold text-[var(--color-text-muted)] transition hover:border-[var(--color-structure)] hover:text-[var(--color-structure)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]"
+              onClick={() => setShowImageHelp((current) => !current)}
+              title="Recomendaciones para las imágenes"
+              type="button"
+            >
+              <span aria-hidden="true">?</span>
+            </button>
+          </div>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-            Definí los títulos, descripciones e imágenes que se muestran en la portada de tu
-            tienda.
+            Defina los títulos, descripciones e imágenes que se mostrarán en la portada de su tienda.
           </p>
         </div>
         {canSuggest ? (
@@ -86,7 +99,50 @@ export function HeroBannerConfigForm({
         ) : null}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      {showImageHelp ? (
+        <div
+          className="rounded-lg bg-blue-50/70 px-4 py-3 text-sm text-[var(--color-text)]"
+          id="hero-banner-image-guidance"
+          role="note"
+        >
+          <div className="grid gap-2 sm:grid-cols-3">
+            <p>
+              <span className="block text-xs font-semibold text-[var(--color-text-muted)]">
+                Tamaño recomendado
+              </span>
+              <strong className="text-[var(--color-title)]">1600 × 900 px (16:9)</strong>
+            </p>
+            <p>
+              <span className="block text-xs font-semibold text-[var(--color-text-muted)]">
+                Formatos permitidos
+              </span>
+              <strong className="text-[var(--color-title)]">JPG, PNG o WebP</strong>
+            </p>
+            <p>
+              <span className="block text-xs font-semibold text-[var(--color-text-muted)]">
+                Tamaño máximo
+              </span>
+              <strong className="text-[var(--color-title)]">5 MB</strong>
+            </p>
+          </div>
+          <ul className="mt-3 list-disc space-y-1 pl-5 text-xs leading-5 text-[var(--color-text-muted)]">
+            <li>
+              Mantenga el producto o elemento principal cerca del centro de la imagen.
+            </li>
+            <li>
+              Las imágenes se adaptarán al tamaño de la pantalla y pueden recortarse ligeramente
+              en algunos dispositivos. Evite colocar texto, logotipos o elementos importantes
+              cerca de los bordes, especialmente en el lado izquierdo, donde se mostrará
+              información de la tienda.
+            </li>
+            <li>
+              Las imágenes de mayor tamaño serán ajustadas automáticamente por el sistema.
+            </li>
+          </ul>
+        </div>
+      ) : null}
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {value.slides.map((slide, index) => (
           <HeroBannerSlideFields
             index={index}
@@ -135,7 +191,7 @@ function HeroBannerSlideFields({
   const hasImage = Boolean(slide.pendingImage || (slide.image && !slide.removeImage));
 
   return (
-    <div className="space-y-3 rounded-lg border border-[var(--color-border)] p-4">
+    <div className="flex min-w-0 flex-col space-y-4 overflow-hidden rounded-xl bg-slate-50 p-4 shadow-sm">
       <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
         {SLIDE_LABELS[index]}
       </h3>
@@ -143,16 +199,16 @@ function HeroBannerSlideFields({
         {previewUrl ? (
           <img
             alt=""
-            className="h-28 w-full rounded-md border border-[var(--color-border)] bg-white object-cover"
+            className="aspect-[16/9] h-auto w-full rounded-lg bg-white object-cover shadow-sm"
             src={previewUrl}
           />
         ) : (
-          <div className="flex h-28 w-full items-center justify-center rounded-md border border-dashed border-[var(--color-border)] text-xs text-[var(--color-text-muted)]">
+          <div className="flex aspect-[16/9] h-auto w-full items-center justify-center rounded-lg border border-dashed border-[var(--color-border)] bg-white text-xs text-[var(--color-text-muted)]">
             Sin imagen
           </div>
         )}
         <div className="mt-2 flex flex-wrap gap-2">
-          <label className="inline-flex min-h-10 flex-1 cursor-pointer items-center justify-center rounded-md bg-[var(--color-primary)] px-3 py-2 text-center text-sm font-semibold text-white">
+          <label className="inline-flex min-h-10 flex-1 cursor-pointer items-center justify-center rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-center text-sm font-semibold text-[var(--color-text)] transition hover:bg-slate-50">
             {hasImage ? "Reemplazar imagen" : "Seleccionar imagen"}
             <input
               accept="image/jpeg,image/png,image/webp"
@@ -165,7 +221,7 @@ function HeroBannerSlideFields({
             />
           </label>
           {hasImage ? (
-            <Button disabled={saving} onClick={onRemoveImage} type="button" variant="danger">
+            <Button className="px-3" disabled={saving} onClick={onRemoveImage} type="button" variant="danger">
               Eliminar
             </Button>
           ) : null}
@@ -180,17 +236,20 @@ function HeroBannerSlideFields({
           onChange={(event) => onChangeTitle(event.target.value)}
           value={slide.title}
         />
+        <p className="mt-1 text-right text-xs tabular-nums text-[var(--color-text-muted)]">
+          {slide.title.length} / {LIMITS.title}
+        </p>
       </FormField>
       <FormField id={`hero-banner-description-${index}`} label="Descripción">
         <textarea
-          className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
+          className="min-h-24 w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
           disabled={saving}
           id={`hero-banner-description-${index}`}
           maxLength={LIMITS.description}
           onChange={(event) => onChangeDescription(event.target.value)}
           value={slide.description}
         />
-        <p className="text-right text-xs text-[var(--color-text-muted)]">
+        <p className="mt-1 text-right text-xs tabular-nums text-[var(--color-text-muted)]">
           {slide.description.length} / {LIMITS.description}
         </p>
       </FormField>

@@ -129,7 +129,7 @@ export function EcommerceConfigPage() {
 
   if (!loading && !canManage) {
     return (
-      <div className="min-w-0 space-y-5">
+      <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
         <PageHeader
           description="Configure la disponibilidad y las opciones operativas de la tienda en línea."
           title="Diseño E-commerce"
@@ -154,7 +154,7 @@ export function EcommerceConfigPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <PageHeader
         description="Configure la disponibilidad y las opciones operativas de la tienda en línea."
         title="Diseño E-commerce"
@@ -188,7 +188,7 @@ export function EcommerceConfigPage() {
           Cargando configuración de e-commerce...
         </div>
       ) : value && heroBannerValue ? (
-        <form className="space-y-5" noValidate onSubmit={handleSubmit}>
+        <form className="space-y-5 pb-2" noValidate onSubmit={handleSubmit}>
           {submitError ? <InlineAlert title={submitError} tone="danger" /> : null}
           <EcommerceConfigForm
             branchOptions={branchOptions}
@@ -205,8 +205,8 @@ export function EcommerceConfigPage() {
             tenantId={tenantId}
             value={heroBannerValue}
           />
-          <div className="flex justify-end">
-            <Button disabled={isSaving} type="submit">
+          <div className="sticky bottom-3 z-20 flex justify-end rounded-xl border border-[var(--color-border)] bg-white/95 p-3 shadow-lg backdrop-blur-sm">
+            <Button className="w-full sm:w-auto" disabled={isSaving} type="submit">
               {isSaving ? "Guardando..." : "Guardar cambios"}
             </Button>
           </div>

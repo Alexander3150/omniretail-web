@@ -203,7 +203,7 @@ export function BusinessConfigForm({
             múltiples ubicaciones y toda la trazabilidad permanecerán apagadas.
           </div>
         ) : null}
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 [&>*]:border-slate-200 [&>*]:bg-slate-50/70 [&>*]:shadow-none">
           {capabilityOptions.map((option) => {
             const disabledByInventory = option.requiresInventory && !value.supportsInventory;
 
@@ -229,7 +229,7 @@ export function BusinessConfigForm({
         description="Seleccione los métodos de pago que estarán disponibles en el punto de venta."
         title="Métodos de pago POS"
       >
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-2 [&>*]:border-slate-200 [&>*]:bg-slate-50/70 [&>*]:shadow-none">
           {posPaymentOptions.map((option) => {
             const checked = (value.allowedPosPaymentMethods ?? []).includes(option.key);
 
@@ -252,7 +252,7 @@ export function BusinessConfigForm({
         description="Seleccione los datos de trazabilidad que se activarán inicialmente al crear productos. Cada producto podrá conservar su propia configuración."
         title="Trazabilidad por defecto"
       >
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-2 [&>*]:border-slate-200 [&>*]:bg-slate-50/70 [&>*]:shadow-none">
           {trackingOptions.map((option) => {
             const disabledByInventory = !value.supportsInventory;
             const disabledByCapability = option.capability ? !value[option.capability] : false;
@@ -280,7 +280,7 @@ export function BusinessConfigForm({
         </div>
       </BusinessConfigSection>
 
-      <footer className="flex flex-col gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+      <footer className="sticky bottom-3 z-20 flex flex-col gap-3 rounded-xl border border-[var(--color-border)] bg-white/95 p-3 shadow-lg backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm leading-5 text-[var(--color-text-muted)]">
           Los cambios se aplicarán a todo el negocio después de guardar.
         </p>

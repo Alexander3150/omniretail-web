@@ -126,7 +126,7 @@ export function BusinessConfigPage() {
   // usuario puede gestionar la configuracion.
   if (!loading && !canManage) {
     return (
-      <div className="min-w-0 space-y-5">
+      <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
         <PageHeader
           description="Definí las capacidades operativas y la trazabilidad que utilizarán los productos del tenant."
           title="Configuración del negocio"
@@ -151,7 +151,7 @@ export function BusinessConfigPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <PageHeader
         description="Definí las capacidades operativas y la trazabilidad que utilizarán los productos del tenant."
         title="Configuración del negocio"
