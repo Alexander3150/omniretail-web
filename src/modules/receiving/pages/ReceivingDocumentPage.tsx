@@ -180,7 +180,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
       </div>
 
       <section className="rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm">
-        <div className="grid gap-4 md:grid-cols-5">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           <DetailItem label="Documento vinculado" value={detail.document.number} />
           <DetailItem label="Tipo" value={detail.document.typeLabel} />
           <DetailItem label={detail.document.originLabel} value={detail.document.originName} />
@@ -1132,7 +1132,7 @@ function PreviousReceiptsSection({
                   {receipt.statusLabel}
                 </span>
               </div>
-              <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
+              <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
                 <DetailItem label="Aceptadas" value={formatNumber(receipt.acceptedQuantity)} />
                 <DetailItem label="Incidencias" value={formatNumber(receipt.incidentQuantity)} />
                 <DetailItem label="Pendiente despues" value={formatNumber(receipt.pendingAfter)} />
