@@ -63,7 +63,7 @@ export function CartPage() {
       </div>
       <div className="mt-8 grid gap-6 2xl:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
-          <div className="hidden grid-cols-[minmax(14rem,1fr)_6rem_10rem_7rem_7rem_3rem] gap-3 border-b border-[var(--color-border)] bg-slate-50 px-5 py-4 text-xs font-black uppercase tracking-wider text-[var(--color-primary-hover)] xl:grid">
+          <div className="hidden grid-cols-[minmax(14rem,1fr)_6rem_10rem_7rem_7rem_3rem] gap-3 border-b border-[var(--color-border)] px-5 py-3 text-xs font-semibold text-[var(--color-text-muted)] xl:grid">
             <span>Producto</span>
             <span className="text-center">SKU</span>
             <span className="text-center">Cantidad</span>
@@ -75,19 +75,19 @@ export function CartPage() {
             return (
             <article
               key={item.productId}
-              className="grid min-h-32 gap-3 border-b border-[var(--color-border)] px-4 py-5 last:border-b-0 sm:px-5 xl:grid-cols-[minmax(14rem,1fr)_6rem_10rem_7rem_7rem_3rem] xl:items-center"
+              className="grid min-h-32 gap-3 border-b border-[var(--color-border)] px-4 py-5 transition last:border-b-0 hover:bg-slate-50/70 sm:px-5 xl:grid-cols-[minmax(14rem,1fr)_6rem_10rem_7rem_7rem_3rem] xl:items-center"
             >
               <div className="flex min-w-0 items-center gap-4">
                 {item.imageUrl ? (
                   <Image
                     alt={item.imageAlt ?? item.name}
-                    className="h-16 w-16 shrink-0 rounded-xl border border-[var(--color-border)] bg-slate-50 object-contain object-center p-1"
-                    height={64}
+                    className="h-20 w-20 shrink-0 rounded-xl border border-[var(--color-border)] bg-slate-50 object-contain object-center p-2"
+                    height={80}
                     src={item.imageUrl}
-                    width={64}
+                    width={80}
                   />
                 ) : (
-                  <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl border border-[var(--color-border)] bg-slate-50 text-center text-xs text-[var(--color-text-muted)]">
+                  <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl border border-[var(--color-border)] bg-slate-50 text-center text-xs text-[var(--color-text-muted)]">
                     Sin imagen
                   </div>
                 )}
@@ -164,12 +164,12 @@ export function CartPage() {
           </div>
           <div className="mt-4 flex items-end justify-between">
             <span className="font-black text-[var(--color-text)]">Total estimado</span>
-            <span className="text-xl font-black text-[var(--color-text)]">
+            <span className="text-3xl font-black tracking-tight text-[var(--color-title)]">
               Q{subtotal.toFixed(2)}
             </span>
           </div>
           <Link
-            className="mt-6 block rounded-xl bg-[var(--color-primary-hover)] px-4 py-3 text-center font-black text-white transition hover:brightness-110"
+            className="mt-6 block rounded-xl bg-[var(--color-primary)] px-4 py-3 text-center font-black text-[var(--color-topbar)] transition hover:bg-[var(--color-primary-hover)]"
           href={routes.checkout()}
           >
             Continuar al checkout

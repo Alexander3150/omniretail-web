@@ -279,11 +279,11 @@ export function CheckoutPage() {
         ← Volver al carrito
       </Link>
       <div className="mx-auto mt-4 flex max-w-xl items-center gap-2 sm:gap-4">
-        <Step active={step === 1} number="1" label="Envío y datos" />
-        <span className="h-px flex-1 bg-[var(--color-primary)]/50" />
-        <Step active={step === 2} number="2" label="Pago" />
-        <span className="h-px flex-1 bg-[var(--color-primary)]/50" />
-        <Step active={false} number="3" label="Confirma" />
+        <Step active={step === 1} completed={step > 1} number="1" label="Envío y datos" />
+        <span className={`h-0.5 flex-1 ${step > 1 ? "bg-[var(--color-success)]/60" : "bg-[var(--color-border)]"}`} />
+        <Step active={step === 2} completed={false} number="2" label="Pago" />
+        <span className="h-0.5 flex-1 bg-[var(--color-border)]" />
+        <Step active={false} completed={false} number="3" label="Confirma" />
       </div>
       <div className="mt-8 grid gap-7 xl:grid-cols-[minmax(0,1fr)_27rem]">
         <form className="space-y-5" noValidate onSubmit={handleSubmit}>
@@ -417,7 +417,7 @@ export function CheckoutPage() {
                 </div>
               )}
               <button
-                className="mt-6 rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)] disabled:opacity-50"
+                className="mt-6 w-full rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)] disabled:opacity-50 sm:w-auto"
                 disabled={!ready}
                 onClick={() => setStep(2)}
                 type="button"
@@ -431,7 +431,7 @@ export function CheckoutPage() {
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-xl font-black text-[var(--color-text)]">Método de pago</h2>
-              <span className="text-sm font-bold text-[var(--color-success)]">
+              <span className="rounded-full bg-[var(--color-success)]/10 px-3 py-1 text-sm font-bold text-[var(--color-success)]">
                 ♢ Pago 100% seguro
               </span>
             </div>
@@ -583,7 +583,7 @@ export function CheckoutPage() {
               <InlineAlert className="w-full" title={paymentError ?? error ?? ""} tone="danger" />
             ) : null}
             <button
-              className="rounded-xl bg-[var(--color-primary-hover)] px-6 py-3 font-black text-white disabled:opacity-50"
+              className="w-full rounded-xl bg-[var(--color-primary)] px-6 py-3 font-black text-[var(--color-topbar)] transition hover:bg-[var(--color-primary-hover)] disabled:opacity-50 sm:w-auto"
               disabled={step !== 2 || submitting || !canSubmitOrder}
               type="submit"
             >
@@ -591,7 +591,7 @@ export function CheckoutPage() {
             </button>
           </section>
         </form>
-        <aside className="h-fit min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm sm:p-6">
+        <aside className="h-fit min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm sm:p-6 xl:sticky xl:top-24">
           <p className="text-xl font-black text-[var(--color-text)]">Resumen del pedido</p>
           <div className="mt-4 space-y-3 border-t border-[var(--color-border)] pt-4">
             {items.map((item) => (
@@ -639,15 +639,25 @@ export function CheckoutPage() {
     </main>
   );
 }
-function Step({ active, number, label }: { active: boolean; number: string; label: string }) {
+function Step({
+  active,
+  completed,
+  number,
+  label,
+}: {
+  active: boolean;
+  completed: boolean;
+  number: string;
+  label: string;
+}) {
   return (
     <div className="flex items-center gap-2">
       <span
-        className={`grid h-7 w-7 place-items-center rounded-full text-xs font-black ${active ? "bg-[var(--color-primary)] text-[var(--color-topbar)]" : "bg-slate-200 text-[var(--color-text-muted)]"}`}
+        className={`grid h-7 w-7 place-items-center rounded-full text-xs font-black ${completed ? "bg-[var(--color-success)] text-white" : active ? "bg-[var(--color-primary)] text-[var(--color-topbar)] ring-4 ring-[var(--color-primary)]/20" : "bg-slate-200 text-[var(--color-text-muted)]"}`}
       >
         {number}
       </span>
-      <span className="hidden text-sm font-bold sm:block">{label}</span>
+      <span className={`hidden text-sm font-bold sm:block ${completed ? "text-[var(--color-success)]" : active ? "text-[var(--color-title)]" : "text-[var(--color-text-muted)]"}`}>{label}</span>
     </div>
   );
 }

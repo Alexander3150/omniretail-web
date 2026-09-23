@@ -44,8 +44,8 @@ export function StorefrontProductCard({
   };
   return (
     <>
-    <article className={`group overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-md ${uniformHeight ? "flex h-full min-h-[31rem] flex-col" : ""}`}>
-      <Link className={uniformHeight ? "flex min-h-0 flex-1 flex-col text-left" : "block text-left"} href={routes.product(product.id)}>
+    <article className={`group flex h-full flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-md ${uniformHeight ? "min-h-[31rem]" : ""}`}>
+      <Link className="flex min-h-0 flex-1 flex-col text-left" href={routes.product(product.id)}>
         <div className="relative">
           <StorefrontCatalogImage
             alt={product.imageAlt ?? product.name}
@@ -53,7 +53,7 @@ export function StorefrontProductCard({
             source={product.imageSource}
           />
           {offer ? (
-            <span className="absolute left-3 top-3 rounded-md bg-[var(--color-success)] px-2.5 py-1 text-xs font-black uppercase tracking-wider text-white">
+            <span className="absolute left-3 top-3 rounded-md bg-[var(--color-danger)] px-2.5 py-1 text-xs font-black uppercase tracking-wider text-white">
               Oferta
             </span>
           ) : null}
@@ -100,12 +100,12 @@ export function StorefrontProductCard({
             Q{product.salePrice.toFixed(2)}
           </p>
           {offer ? (
-            <p className="text-xs font-bold text-[var(--color-success)]">{offer.promotionName}</p>
+            <p className="text-xs font-bold text-[var(--color-danger)]">{offer.promotionName}</p>
           ) : null}
         </div>
         <button
           aria-label={`Agregar ${product.name} al carrito`}
-        className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-bold text-[var(--color-topbar)] transition hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600"
+        className="shrink-0 rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-bold text-[var(--color-topbar)] transition hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600"
           disabled={isOutOfStock}
           onClick={() => void add()}
           type="button"
