@@ -61,6 +61,8 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
   const [serialEntry, setSerialEntry] = useState("");
   const [serialSearch, setSerialSearch] = useState("");
   const [showAvailableSerials, setShowAvailableSerials] = useState(false);
+  const [replacementSerialSearch, setReplacementSerialSearch] = useState("");
+  const [showReplacementSerials, setShowReplacementSerials] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const targetQuantity = Number(targetText);
   const serialDelta = Number.isFinite(targetQuantity)
@@ -73,6 +75,16 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
     line.availableSerialNumbers,
     serialSearch,
   );
+  const replacementSerialOptions = [...new Set([
+    ...line.serialNumbers,
+    ...line.availableSerialNumbers,
+  ])];
+  const visibleReplacementSerialOptions = filterAvailableSerialNumbers(
+    replacementSerialOptions,
+    replacementSerialSearch,
+  );
+  const lockedSerials = selectedSerials.length > 0 ? selectedSerials : line.serialNumbers;
+  const serialControlsLocked = !editable || disabled;
 
   const submit = async () => {
     const validationError = validatePickingLineUpdate(line, targetQuantity, selectedSerials);
@@ -166,7 +178,7 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
         </div>
       ) : null}
 
-      {editable && line.remainingQuantity > 0 ? (
+      {editable && !disabled && line.remainingQuantity > 0 ? (
         <div className="mt-3 space-y-3 border-t border-[var(--color-border)] pt-3">
           <div className="grid gap-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
             <FormField id={`target-${line.pickingLineId}`} label="Cantidad total recogida">
@@ -236,7 +248,7 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
                   >
                     {showAvailableSerials
                       ? "Ocultar series disponibles"
-                      : `Ver series disponibles (${line.availableSerialNumbers.length})`}
+                      : `Mostrar series disponibles (${line.availableSerialNumbers.length})`}
                   </Button>
                   {showAvailableSerials ? (
                     <div
@@ -257,7 +269,7 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
                       {visibleSerialNumbers.length === 0 ? (
                         <p className="text-sm text-[var(--color-text-muted)]">No se encontraron series.</p>
                       ) : (
-                        <div className="grid max-h-56 grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] gap-1.5 overflow-y-auto pr-1">
+                        <div className="grid max-h-56 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-4">
                           {visibleSerialNumbers.map((serial) => {
                             const checked = selectedSerials.includes(serial);
                             const limitReached = !checked && selectedSerials.length >= serialDelta;
@@ -293,29 +305,111 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
           ) : null}
         </div>
       ) : null}
-      {editable && line.tracking.serial && line.pickedQuantity > 0 ? (
+      {line.tracking.serial && serialControlsLocked ? (
+        <SerialSelectionSummary
+          requiredCount={line.requiredQuantity}
+          selectedCount={lockedSerials.length}
+          serials={lockedSerials}
+        />
+      ) : null}
+      {editable && !disabled && line.tracking.serial && line.pickedQuantity > 0 ? (
         <div className="mt-3 space-y-2 border-t border-[var(--color-border)] pt-3 text-sm">
-          <p className="font-semibold">Corregir series recogidas · {replacementSerials.length} / {line.pickedQuantity}</p>
-          <div className="flex flex-wrap gap-2">
-            {[...new Set([...line.serialNumbers, ...line.availableSerialNumbers])].map((serial) => (
-              <label className="flex items-center gap-2 rounded-md border border-[var(--color-border)] px-3 py-2" key={serial}>
-                <input checked={replacementSerials.includes(serial)} disabled={disabled ||
-                  (!replacementSerials.includes(serial) && replacementSerials.length >= line.pickedQuantity)}
-                  onChange={() => setReplacementSerials((current) => current.includes(serial)
-                    ? current.filter((item) => item !== serial) : [...current, serial])} type="checkbox" />
-                {serial}
-              </label>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-semibold">Corregir series recogidas · {replacementSerials.length} / {line.pickedQuantity}</p>
+            <Button
+              aria-controls={`replacement-serials-${line.pickingLineId}`}
+              aria-expanded={showReplacementSerials}
+              className="px-3 py-1.5 text-xs"
+              onClick={() => setShowReplacementSerials((current) => !current)}
+              type="button"
+              variant="secondary"
+            >
+              {showReplacementSerials ? "Ocultar series disponibles" : "Ver series disponibles"}
+            </Button>
+          </div>
+          <div aria-label="Series recogidas" className="flex flex-wrap gap-1.5">
+            {replacementSerials.map((serial) => (
+              <span
+                className="rounded-full border border-[var(--color-primary)]/40 bg-[var(--color-app-background)] px-2.5 py-0.5 text-sm font-medium text-[var(--color-title)]"
+                key={serial}
+              >
+                ✓ {serial}
+              </span>
             ))}
           </div>
-          <Button disabled={disabled || replacementSerials.length !== line.pickedQuantity ||
-            replacementSerials.every((serial) => line.serialNumbers.includes(serial))}
-            onClick={() => void replaceSerials()} type="button" variant="secondary">
-            Guardar selección de series
-          </Button>
+          {showReplacementSerials ? (
+            <div
+              className="space-y-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-3"
+              id={`replacement-serials-${line.pickingLineId}`}
+            >
+              <Input
+                aria-label="Buscar serie para corregir"
+                onChange={(event) => setReplacementSerialSearch(event.target.value)}
+                placeholder="Buscar serie..."
+                value={replacementSerialSearch}
+              />
+              <div className="grid max-h-56 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-4">
+                {visibleReplacementSerialOptions.map((serial) => (
+                  <label
+                    className={`flex items-center gap-1.5 rounded-md border bg-white px-2.5 py-1.5 ${
+                      replacementSerials.includes(serial)
+                        ? "border-[var(--color-primary)] font-medium text-[var(--color-title)]"
+                        : "border-[var(--color-border)]"
+                    }`}
+                    key={serial}
+                  >
+                    <input checked={replacementSerials.includes(serial)} disabled={disabled ||
+                      (!replacementSerials.includes(serial) && replacementSerials.length >= line.pickedQuantity)}
+                      onChange={() => setReplacementSerials((current) => current.includes(serial)
+                        ? current.filter((item) => item !== serial) : [...current, serial])} type="checkbox" />
+                    {serial}
+                  </label>
+                ))}
+              </div>
+              <Button disabled={disabled || replacementSerials.length !== line.pickedQuantity ||
+                replacementSerials.every((serial) => line.serialNumbers.includes(serial))}
+                onClick={() => void replaceSerials()} type="button" variant="secondary">
+                Guardar selección de series
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
       {error ? <InlineAlert description={error} title="Revisa el progreso" tone="warning" /> : null}
     </article>
+  );
+}
+
+function SerialSelectionSummary({
+  serials,
+  selectedCount,
+  requiredCount,
+}: {
+  serials: string[];
+  selectedCount: number;
+  requiredCount: number;
+}) {
+  return (
+    <div className="rounded-lg border border-[var(--color-border)] bg-white px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-semibold text-[var(--color-text-muted)]">Series recogidas</p>
+        <span className="rounded-full bg-[var(--color-app-background)] px-2 py-0.5 text-xs font-bold text-[var(--color-title)]">
+          seleccionadas {selectedCount} / requeridas {requiredCount}
+        </span>
+      </div>
+      {serials.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {serials.map((serial) => (
+            <span
+              className="rounded-full border border-[var(--color-primary)]/40 bg-[var(--color-app-background)] px-2.5 py-0.5 text-sm font-medium text-[var(--color-title)]"
+              key={serial}
+            >
+              {serial}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
