@@ -27,25 +27,25 @@ export function BranchCard({ branch, onSelect }: BranchCardProps) {
   return (
     <button
       className={cn(
-        "flex w-full cursor-pointer flex-col gap-4 rounded-xl border p-5 text-left shadow-sm transition-all hover:shadow-md",
+        "flex h-full min-w-0 w-full cursor-pointer flex-col rounded-xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)] motion-reduce:transform-none motion-reduce:transition-none",
         isArchived
           ? "border-slate-200 bg-slate-50 opacity-75 hover:opacity-100"
-          : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-structure)]",
+          : "border-[var(--color-border)] bg-[var(--color-surface)]",
       )}
       onClick={() => onSelect(branch)}
       type="button"
     >
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="space-y-1">
+      <div className="flex w-full min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3
+            <span
               className={cn(
-                "text-base font-bold",
-                isArchived ? "text-slate-400" : "text-[var(--color-title)]",
+                "text-xs font-bold uppercase tracking-wide",
+                isArchived ? "text-slate-400" : "text-[var(--color-structure)]",
               )}
             >
               {branch.code}
-            </h3>
+            </span>
             <span
               className={cn(
                 "inline-flex rounded-md px-2 py-0.5 text-xs font-semibold",
@@ -56,35 +56,40 @@ export function BranchCard({ branch, onSelect }: BranchCardProps) {
               {branchTypeLabels[branch.type]}
             </span>
           </div>
-          <p
+          <h3
             className={cn(
-              "text-sm",
-              isArchived ? "text-slate-400" : "text-[var(--color-text)]",
+              "mt-2 break-words text-base font-bold leading-5",
+              isArchived ? "text-slate-400" : "text-[var(--color-title)]",
             )}
           >
             {branch.name}
-          </p>
+          </h3>
         </div>
         <StatusBadge status={branch.status} />
       </div>
 
-      <dl className={cn("space-y-2 text-sm", isArchived ? "text-slate-400" : "text-[var(--color-text-muted)]")}>
+      <dl
+        className={cn(
+          "mt-4 w-full min-w-0 flex-1 space-y-2 rounded-lg bg-slate-50 px-3 py-2.5 text-sm",
+          isArchived ? "text-slate-400" : "text-[var(--color-text-muted)]",
+        )}
+      >
         {branch.address ? (
-          <div className="flex items-start gap-2">
+          <div className="flex min-w-0 items-start gap-2">
             <MapPinIcon className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{branch.address}</span>
+            <dd className="min-w-0 break-words leading-5">{branch.address}</dd>
           </div>
         ) : null}
         {branch.phone ? (
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <PhoneIcon className="h-4 w-4 shrink-0" />
-            <span>{branch.phone}</span>
+            <dd className="min-w-0 break-words">{branch.phone}</dd>
           </div>
         ) : null}
         {branch.email ? (
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <MailIcon className="h-4 w-4 shrink-0" />
-            <span>{branch.email}</span>
+            <dd className="min-w-0 break-all">{branch.email}</dd>
           </div>
         ) : null}
         {!branch.address && !branch.phone && !branch.email ? (

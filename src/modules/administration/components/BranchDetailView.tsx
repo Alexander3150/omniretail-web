@@ -33,24 +33,26 @@ export function BranchDetailView({ branch, canManage, busy, onEdit, onArchive }:
         <StatusBadge status={branch.status} />
       </div>
 
-      <p className="text-sm text-[var(--color-text)]">{branch.name}</p>
+      <p className="rounded-lg bg-slate-50 px-4 py-3 text-sm font-semibold text-[var(--color-text)]">
+        {branch.name}
+      </p>
 
-      <dl className="space-y-3 text-sm">
-        <div className="flex items-start gap-3">
+      <dl className="grid gap-3 text-sm">
+        <div className="flex min-w-0 items-start gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
           <dt className="w-28 shrink-0 font-medium text-[var(--color-text-muted)]">Dirección</dt>
           <dd className={cn("flex items-center gap-2", !branch.address && "italic text-[var(--color-text-muted)]")}>
             {branch.address ? <MapPinIcon className="h-4 w-4 shrink-0" /> : null}
             {branch.address ?? "Sin dirección"}
           </dd>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
           <dt className="w-28 shrink-0 font-medium text-[var(--color-text-muted)]">Teléfono</dt>
           <dd className={cn("flex items-center gap-2", !branch.phone && "italic text-[var(--color-text-muted)]")}>
             {branch.phone ? <PhoneIcon className="h-4 w-4 shrink-0" /> : null}
             {branch.phone ?? "Sin teléfono"}
           </dd>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
           <dt className="w-28 shrink-0 font-medium text-[var(--color-text-muted)]">Email</dt>
           <dd className={cn("flex items-center gap-2", !branch.email && "italic text-[var(--color-text-muted)]")}>
             {branch.email ? <MailIcon className="h-4 w-4 shrink-0" /> : null}

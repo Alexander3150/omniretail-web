@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { CashShiftFilters } from "@/modules/administration/components/CashShiftFilters";
 import { CashShiftTable } from "@/modules/administration/components/CashShiftTable";
 import { useCashShifts } from "@/modules/administration/hooks/useCashShifts";
-import { CASH_READ_PERMISSION } from "@/modules/administration/permissions";
+import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
 import { Button } from "@/shared/components/Button";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PageHeader } from "@/shared/components/PageHeader";
@@ -36,27 +36,7 @@ export function CashShiftsPage() {
   );
 
   if (!loading && !canRead) {
-    return (
-      <div className="min-w-0 space-y-5">
-        <PageHeader
-          description="Consultá aperturas, cierres y diferencias de los turnos de caja."
-          title="Caja"
-        />
-        <div
-          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
-          role="alert"
-        >
-          <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No dispone de acceso a los turnos de caja
-          </h2>
-          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            Esta vista requiere el permiso{" "}
-            <span className="font-medium">{CASH_READ_PERMISSION}</span>. Pedí acceso a un
-            administrador.
-          </p>
-        </div>
-      </div>
-    );
+    return <AccessDeniedState />;
   }
 
   function updateFilter(nextFilter: typeof filter) {
@@ -70,9 +50,9 @@ export function CashShiftsPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <PageHeader
-        description="Consultá aperturas, cierres y diferencias de los turnos de caja."
+        description="Consulte aperturas, cierres y diferencias de los turnos de caja."
         title="Caja"
       />
 
@@ -85,7 +65,11 @@ export function CashShiftsPage() {
       />
 
       {error ? (
-        <InlineAlert className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" title={error} tone="danger">
+        <InlineAlert
+          className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+          title={error}
+          tone="danger"
+        >
           <Button onClick={() => void reload()} type="button" variant="secondary">
             Reintentar
           </Button>

@@ -88,7 +88,7 @@ export function BankAccountForm({
   return (
     <form className="space-y-5" noValidate onSubmit={handleSubmit}>
       {submitError ? <InlineAlert title={submitError} tone="danger" /> : null}
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 rounded-xl bg-slate-50/70 p-4 sm:grid-cols-2">
         <FormField error={errors.bankName} id="bank-account-bank" label="Banco">
           <Input
             disabled={busy}
@@ -198,13 +198,13 @@ export function BankAccountForm({
         id="bank-account-branches"
         label="Sucursales habilitadas"
       >
-        <div className="space-y-2 rounded-lg border border-[var(--color-border)] p-3">
+        <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-slate-50/70 p-2.5">
           {branchOptions.length === 0 ? (
             <p className="text-sm text-[var(--color-text-muted)]">No hay sucursales activas.</p>
           ) : (
             branchOptions.map((option) => (
               <label
-                className="flex items-center gap-2 text-sm text-[var(--color-text)]"
+                className="flex min-h-9 items-center gap-2 rounded-md px-2 text-sm text-[var(--color-text)] hover:bg-white"
                 key={option.id}
               >
                 <input
@@ -227,7 +227,7 @@ export function BankAccountForm({
 
       <FormField id="bank-account-instructions" label="Instrucciones de transferencia">
         <textarea
-          className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-20 w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={busy}
           id="bank-account-instructions"
           maxLength={ADMIN_FIELD_LIMITS.bankAccount.transferInstructions}

@@ -40,37 +40,39 @@ export function BankAccountDetailView({
       </div>
 
       {account.alias ? (
-        <p className="text-sm text-[var(--color-text-muted)]">{account.alias}</p>
+        <p className="rounded-lg bg-slate-50 px-4 py-3 text-sm font-medium text-[var(--color-text-muted)]">
+          {account.alias}
+        </p>
       ) : null}
 
       <dl className="grid gap-4 text-sm sm:grid-cols-2">
-        <div>
+        <div className="rounded-lg bg-slate-50 px-3 py-2.5">
           <dt className="font-medium text-[var(--color-text-muted)]">Titular</dt>
           <dd className="mt-0.5 text-[var(--color-text)]">{account.holderName}</dd>
         </div>
-        <div>
+        <div className="rounded-lg bg-slate-50 px-3 py-2.5">
           <dt className="font-medium text-[var(--color-text-muted)]">Tipo</dt>
           <dd className="mt-0.5 text-[var(--color-text)]">
             {accountTypeLabels[account.accountType]}
           </dd>
         </div>
-        <div>
+        <div className="rounded-lg bg-slate-50 px-3 py-2.5">
           <dt className="font-medium text-[var(--color-text-muted)]">Número de cuenta</dt>
           <dd className="mt-0.5 font-mono font-semibold text-[var(--color-title)]">
             {account.accountNumber}
           </dd>
         </div>
-        <div>
+        <div className="rounded-lg bg-slate-50 px-3 py-2.5">
           <dt className="font-medium text-[var(--color-text-muted)]">Enmascarado</dt>
           <dd className="mt-0.5 font-mono text-[var(--color-text-muted)]">
             {account.accountNumberMasked}
           </dd>
         </div>
-        <div>
+        <div className="rounded-lg bg-slate-50 px-3 py-2.5">
           <dt className="font-medium text-[var(--color-text-muted)]">Moneda</dt>
           <dd className="mt-0.5 text-[var(--color-text)]">{account.currency}</dd>
         </div>
-        <div>
+        <div className="rounded-lg bg-slate-50 px-3 py-2.5">
           <dt className="font-medium text-[var(--color-text-muted)]">Sucursales</dt>
           <dd className="mt-0.5 text-[var(--color-text)]">
             {assignedBranches.length > 0 ? assignedBranches.join(", ") : "—"}
@@ -79,7 +81,7 @@ export function BankAccountDetailView({
       </dl>
 
       {account.transferInstructions ? (
-        <div>
+        <div className="rounded-lg bg-slate-50 px-4 py-3">
           <h4 className="text-sm font-semibold text-[var(--color-title)]">
             Instrucciones de transferencia
           </h4>

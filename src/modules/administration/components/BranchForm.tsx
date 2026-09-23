@@ -55,7 +55,7 @@ export function BranchForm({ branch, busy, onCancel, onSubmit }: BranchFormProps
   return (
     <form className="space-y-5" noValidate onSubmit={handleSubmit}>
       {submitError ? <InlineAlert title={submitError} tone="danger" /> : null}
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 rounded-xl bg-slate-50/70 p-4 sm:grid-cols-2">
         <FormField error={errors.code} id="branch-code" label="Código">
           <Input
             autoComplete="off"
@@ -118,7 +118,7 @@ export function BranchForm({ branch, busy, onCancel, onSubmit }: BranchFormProps
         />
       </FormField>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 rounded-xl bg-slate-50/70 p-4 sm:grid-cols-2">
         <FormField id="branch-phone" label="Teléfono">
           <Input
             autoComplete="tel"

@@ -22,21 +22,37 @@ export function CashShiftTable({ actorNames, branchNames, shifts }: CashShiftTab
       {
         key: "branch",
         header: "Sucursal",
-        cell: (shift) => branchNames.get(shift.branchId) ?? shift.branchId,
+        cell: (shift) => (
+          <span className="font-medium text-[var(--color-title)]">
+            {branchNames.get(shift.branchId) ?? shift.branchId}
+          </span>
+        ),
       },
       {
         key: "cashier",
         header: "Cajero",
-        cell: (shift) => actorNames.get(shift.userId) ?? shift.userId,
+        cell: (shift) => (
+          <span className="text-[var(--color-text)]">
+            {actorNames.get(shift.userId) ?? shift.userId}
+          </span>
+        ),
       },
-      { key: "register", header: "Caja", cell: (shift) => shift.registerCode },
+      {
+        key: "register",
+        header: "Caja",
+        cell: (shift) => (
+          <span className="font-mono font-semibold text-[var(--color-title)]">
+            {shift.registerCode}
+          </span>
+        ),
+      },
       {
         key: "opening",
         header: "Apertura",
         cell: (shift) => (
           <div>
             <p className="font-medium text-[var(--color-title)]">{formatDate(shift.openedAt)}</p>
-            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+            <p className="mt-1 text-xs font-medium tabular-nums text-[var(--color-text-muted)]">
               {formatCurrency(shift.openingAmount)}
             </p>
           </div>
@@ -45,13 +61,17 @@ export function CashShiftTable({ actorNames, branchNames, shifts }: CashShiftTab
       {
         key: "expected",
         header: "Esperado",
-        cell: (shift) => formatOptionalAmount(shift.expectedAmount),
+        cell: (shift) => (
+          <span className="font-medium tabular-nums">{formatOptionalAmount(shift.expectedAmount)}</span>
+        ),
         className: "text-right whitespace-nowrap",
       },
       {
         key: "counted",
         header: "Contado",
-        cell: (shift) => formatOptionalAmount(shift.countedAmount),
+        cell: (shift) => (
+          <span className="font-medium tabular-nums">{formatOptionalAmount(shift.countedAmount)}</span>
+        ),
         className: "text-right whitespace-nowrap",
       },
       {
@@ -60,7 +80,7 @@ export function CashShiftTable({ actorNames, branchNames, shifts }: CashShiftTab
         cell: (shift) => (
           <span
             className={cn(
-              "font-semibold",
+              "font-semibold tabular-nums",
               shift.difference != null && shift.difference !== 0
                 ? "text-[var(--color-danger)]"
                 : "text-[var(--color-text)]",
@@ -131,7 +151,7 @@ function CashShiftDetailModal({
             <StatusBadge status={shift.status} />
             <span className="text-sm font-medium text-[var(--color-text-muted)]">{shift.id}</span>
           </div>
-          <dl className="grid gap-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-4 sm:grid-cols-2 lg:grid-cols-3">
+          <dl className="grid gap-3 rounded-lg bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-3">
             <DetailItem label="Sucursal" value={branchName ?? shift.branchId} />
             <DetailItem label="Cajero" value={actorName ?? shift.userId} />
             <DetailItem label="Caja" value={shift.registerCode} />

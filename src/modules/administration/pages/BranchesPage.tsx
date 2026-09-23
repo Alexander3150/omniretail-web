@@ -6,10 +6,11 @@ import { BranchCard } from "@/modules/administration/components/BranchCard";
 import { BranchDetailView } from "@/modules/administration/components/BranchDetailView";
 import { BranchForm } from "@/modules/administration/components/BranchForm";
 import { useBranches } from "@/modules/administration/hooks/useBranches";
+import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
-import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PlusIcon } from "@/shared/components/icons";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { useToast } from "@/shared/components/Toast";
@@ -75,28 +76,7 @@ export function BranchesPage() {
   }
 
   if (!loading && !canRead) {
-    return (
-      <div className="min-w-0 space-y-5">
-        <PageHeader
-          description="Administrá las sucursales operativas del negocio."
-          title="Sucursales"
-        />
-        <div
-          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
-          role="alert"
-        >
-          <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No dispone de acceso a las sucursales
-          </h2>
-          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            Consultar sucursales requiere el permiso{" "}
-            <span className="font-medium text-[var(--color-text)]">admin.branches.read</span> o{" "}
-            <span className="font-medium text-[var(--color-text)]">admin.branches.manage</span>.
-            Pedí acceso a un administrador.
-          </p>
-        </div>
-      </div>
-    );
+    return <AccessDeniedState />;
   }
 
   const modalTitle =
@@ -112,7 +92,7 @@ export function BranchesPage() {
       : "Los cambios se aplican únicamente al negocio activo.";
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <PageHeader
         actions={
           canManage ? (
@@ -122,12 +102,16 @@ export function BranchesPage() {
             </Button>
           ) : null
         }
-        description="Administrá las sucursales operativas del negocio."
+        description="Administre las sucursales operativas del negocio."
         title="Sucursales"
       />
 
       {error ? (
-        <InlineAlert className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" title={error} tone="danger">
+        <InlineAlert
+          className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+          title={error}
+          tone="danger"
+        >
           <Button onClick={() => void reload()} type="button" variant="secondary">
             Reintentar
           </Button>
@@ -150,7 +134,7 @@ export function BranchesPage() {
           Aún no hay sucursales registradas.
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid auto-rows-fr gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {branches.map((branch) => (
             <BranchCard key={branch.id} branch={branch} onSelect={openView} />
           ))}
