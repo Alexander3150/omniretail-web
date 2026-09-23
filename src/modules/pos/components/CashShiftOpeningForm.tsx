@@ -29,14 +29,16 @@ export function CashShiftOpeningForm({
   const [errors, setErrors] = useState<CashShiftFormErrors>({});
 
   return (
-    <section className="rounded-xl border border-[var(--color-border)] bg-white p-5 shadow-sm">
-      <h2 className="text-lg font-bold text-[var(--color-title)]">Abrir caja</h2>
-      <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-        Registra el fondo inicial para comenzar a operar en {branchName ?? "la sucursal activa"}.
-      </p>
+    <section className="rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm sm:p-5">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-3">
+        <h2 className="text-lg font-bold text-[var(--color-title)]">Abrir caja</h2>
+        <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
+          Registra el fondo inicial para comenzar a operar en {branchName ?? "la sucursal activa"}.
+        </p>
+      </div>
 
       <form
-        className="mt-5 grid gap-4 md:grid-cols-2"
+        className="mt-4 grid max-w-3xl gap-3 md:grid-cols-2"
         onSubmit={async (event) => {
           event.preventDefault();
           const amount = openingAmount.trim() ? Number(openingAmount) : Number.NaN;
@@ -73,16 +75,19 @@ export function CashShiftOpeningForm({
             onChange={(event) => setOpeningAmount(event.target.value)}
           />
         </FormField>
-        <div className="md:col-span-2">
-          <Button disabled={!canOpen || loading} type="submit">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] pt-3 md:col-span-2">
+          <p className="text-xs text-[var(--color-text-muted)]">
+            Código de caja y fondo inicial del nuevo turno.
+          </p>
+          <Button className="w-full sm:w-auto" disabled={!canOpen || loading} type="submit">
             {loading ? "Abriendo..." : "Abrir caja"}
           </Button>
-          {!canOpen ? (
-            <p className="mt-2 text-sm text-[var(--color-warning)]">
-              No tienes permiso para abrir caja.
-            </p>
-          ) : null}
         </div>
+        {!canOpen ? (
+          <p className="text-sm text-[var(--color-warning)] md:col-span-2">
+            No tienes permiso para abrir caja.
+          </p>
+        ) : null}
       </form>
     </section>
   );

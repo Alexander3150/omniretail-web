@@ -55,6 +55,7 @@ export function CashMovementList({ movements }: { movements: CashMovementDto[] }
       columns={columns}
       data={movements}
       emptyMessage="Este turno todavía no tiene movimientos."
+      headerClassName="text-xs uppercase tracking-wide"
       rowKey={(movement) => movement.id}
     />
   );

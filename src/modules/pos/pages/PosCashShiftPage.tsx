@@ -20,17 +20,8 @@ export function PosCashShiftPage() {
   const [closingModalOpen, setClosingModalOpen] = useState(false);
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="min-w-0 space-y-4">
       <PageHeader
-        actions={
-          <Button
-            disabled={cash.loading || cash.mutationLoading}
-            onClick={cash.reload}
-            variant="secondary"
-          >
-            Actualizar
-          </Button>
-        }
         description="Administra la apertura, los movimientos y el arqueo de la caja activa."
         title="Apertura y Arqueo de Caja"
       />
@@ -79,15 +70,15 @@ export function PosCashShiftPage() {
             summary={cash.summary}
           />
 
-          <section className="space-y-4 rounded-xl border border-[var(--color-border)] bg-white p-5 shadow-sm">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <section className="space-y-3 rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm sm:p-5">
+            <div className="flex flex-col gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="text-lg font-bold text-[var(--color-title)]">Movimientos</h2>
-                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
                   Ventas en efectivo e ingresos o egresos manuales del turno.
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 sm:shrink-0">
                 <Button
                   disabled={!cash.canRegisterMovement || cash.mutationLoading}
                   onClick={() => {
@@ -145,8 +136,8 @@ export function PosCashShiftPage() {
 function ClosedCashShiftResult({ cashShift }: { cashShift: CashShift }) {
   const difference = cashShift.difference ?? 0;
   return (
-    <section className="rounded-xl border border-[var(--color-border)] bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <section className="rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm sm:p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] pb-3">
         <div>
           <h2 className="text-lg font-bold text-[var(--color-title)]">
             Resultado del último arqueo
@@ -160,10 +151,11 @@ function ClosedCashShiftResult({ cashShift }: { cashShift: CashShift }) {
           tone={difference === 0 ? "success" : "warning"}
         />
       </div>
-      <dl className="mt-4 grid gap-3 sm:grid-cols-3">
+      <dl className="mt-3 grid gap-2 sm:grid-cols-3">
         <ResultValue label="Efectivo esperado" value={cashShift.expectedAmount ?? 0} />
         <ResultValue label="Efectivo contado" value={cashShift.countedAmount ?? 0} />
         <ResultValue
+          emphasis
           label={difference < 0 ? "Faltante" : difference > 0 ? "Sobrante" : "Diferencia"}
           value={Math.abs(difference)}
         />
@@ -172,11 +164,27 @@ function ClosedCashShiftResult({ cashShift }: { cashShift: CashShift }) {
   );
 }
 
-function ResultValue({ label, value }: { label: string; value: number }) {
+function ResultValue({
+  emphasis = false,
+  label,
+  value,
+}: {
+  emphasis?: boolean;
+  label: string;
+  value: number;
+}) {
   return (
-    <div className="rounded-lg bg-[var(--color-app-background)] p-3">
-      <dt className="text-xs font-semibold uppercase text-[var(--color-text-muted)]">{label}</dt>
-      <dd className="mt-1 font-bold text-[var(--color-title)]">{formatCurrency(value)}</dd>
+    <div
+      className={`rounded-lg border px-3 py-2.5 ${
+        emphasis
+          ? "border-[var(--color-structure)]/35 bg-[var(--color-app-background)]"
+          : "border-[var(--color-border)] bg-white"
+      }`}
+    >
+      <dt className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">{label}</dt>
+      <dd className={`mt-1 font-bold text-[var(--color-title)] ${emphasis ? "text-lg" : ""}`}>
+        {formatCurrency(value)}
+      </dd>
     </div>
   );
 }
