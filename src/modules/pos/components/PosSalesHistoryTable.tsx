@@ -25,8 +25,8 @@ export function PosSalesHistoryTable({
   }
 
   return (
-    <div className="max-h-[52dvh] overflow-y-auto rounded-xl border border-[var(--color-border)] bg-white shadow-sm">
-      <table className="w-full table-fixed border-collapse text-left text-xs">
+    <div className="max-h-[52dvh] max-w-full overflow-auto rounded-xl border border-[var(--color-border)] bg-white shadow-sm">
+      <table className="w-full min-w-[760px] table-fixed border-collapse text-left text-xs">
         <colgroup>
           <col className="w-[14%]" />
           <col className="w-[13%]" />
