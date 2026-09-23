@@ -31,14 +31,14 @@ export function ReturnSaleDetails({
   const returnBlockedNotice = isReturnBlockedNotice(
     lookup.allowedOperations.returnBlockedReason,
   )
-    ? lookup.allowedOperations.returnBlockedReason
+    ? formatOperationReason(lookup.allowedOperations.returnBlockedReason)
     : undefined;
   const columns: DataTableColumn<ReturnSaleLookupDto["items"][number]>[] = [
     {
       key: "product",
       header: "Producto",
       cell: (item) => (
-        <div>
+        <div className="min-w-44">
           <p className="font-semibold text-[var(--color-title)]">{item.name}</p>
           <p className="text-xs text-[var(--color-text-muted)]">{item.sku}</p>
           {item.blockedReason && !returnBlockedNotice ? (
@@ -63,9 +63,9 @@ export function ReturnSaleDetails({
 
   return (
     <div className="space-y-5">
-      <section className="rounded-xl border border-[var(--color-border)] bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
+      <section className="rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-xl font-bold text-[var(--color-title)]">Documento encontrado</h2>
               <StatusBadge
@@ -78,15 +78,20 @@ export function ReturnSaleDetails({
               />
             </div>
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              La elegibilidad y las cantidades provienen de la validación vigente de la venta.
+              Revisa las cantidades disponibles y las acciones permitidas para esta venta.
             </p>
           </div>
-          <p className="text-2xl font-bold text-[var(--color-title)]">
-            {formatCurrency(lookup.sale.total)}
-          </p>
+          <div className="rounded-lg bg-[var(--color-app-background)] px-4 py-3 lg:min-w-48 lg:text-right">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              Total de la venta
+            </p>
+            <p className="mt-1 text-2xl font-bold text-[var(--color-title)]">
+              {formatCurrency(lookup.sale.total)}
+            </p>
+          </div>
         </div>
 
-        <dl className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <dl className="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
           <SummaryValue label="Documento" value={lookup.sale.documentNumber} />
           <SummaryValue label="Fecha" value={formatDate(lookup.sale.date)} />
           <SummaryValue label="Cliente" value={lookup.sale.customerDisplayName} />
@@ -94,7 +99,7 @@ export function ReturnSaleDetails({
         </dl>
       </section>
 
-      <section className="space-y-4 rounded-xl border border-[var(--color-border)] bg-white p-5 shadow-sm">
+      <section className="space-y-3 rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm sm:p-5">
         <div>
           <h2 className="text-lg font-bold text-[var(--color-title)]">Productos de la venta</h2>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
@@ -104,17 +109,17 @@ export function ReturnSaleDetails({
         <DataTable columns={columns} data={lookup.items} rowKey={(item) => item.saleItemId} />
       </section>
 
-      <section className="space-y-4 rounded-xl border border-[var(--color-border)] bg-white p-5 shadow-sm">
-        <div>
+      <section className="space-y-3 rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
           <h2 className="text-lg font-bold text-[var(--color-title)]">Reembolso disponible</h2>
-          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+          <p className="text-sm text-[var(--color-text-muted)]">
             El sistema distribuirá el reembolso definitivo sobre los pagos originales.
           </p>
         </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="flex flex-wrap gap-2.5">
           {lookup.payments.map((payment) => (
             <div
-              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-3"
+              className="min-w-52 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2.5"
               key={payment.paymentId}
             >
               <p className="font-semibold text-[var(--color-title)]">
@@ -133,7 +138,7 @@ export function ReturnSaleDetails({
         </div>
       </section>
 
-      <section className="space-y-4 rounded-xl border border-[var(--color-border)] bg-white p-5 shadow-sm">
+      <section className="space-y-3 rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm sm:p-5">
         <div>
           <h2 className="text-lg font-bold text-[var(--color-title)]">Operación</h2>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
@@ -147,7 +152,7 @@ export function ReturnSaleDetails({
             tone="warning"
           />
         ) : null}
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-3 lg:grid-cols-2">
           <OperationCard
             description="Devuelve cantidades específicas y conserva el resto de la venta."
             disabled={!canProcessReturn || !lookup.allowedOperations.partialReturn}
@@ -157,7 +162,7 @@ export function ReturnSaleDetails({
                 ? "No tienes permiso para procesar devoluciones."
                 : returnBlockedNotice
                   ? undefined
-                  : lookup.allowedOperations.returnBlockedReason
+                  : formatOperationReason(lookup.allowedOperations.returnBlockedReason)
             }
             onClick={() => onBeginOperation("return")}
           />
@@ -169,14 +174,14 @@ export function ReturnSaleDetails({
             reason={
               !canVoid
                 ? "No tienes permiso para anular ventas."
-                : lookup.allowedOperations.voidBlockedReason
+                : formatOperationReason(lookup.allowedOperations.voidBlockedReason)
             }
             onClick={() => onBeginOperation("void")}
           />
         </div>
         {!lookup.allowedOperations.partialReturn && !lookup.allowedOperations.voidTotal ? (
           <InlineAlert
-            description="Consulta las razones mostradas en cada operación. La pantalla no puede forzar una reversión bloqueada."
+            description="Revisa la información mostrada en cada opción para conocer el motivo."
             title="La venta no tiene operaciones disponibles"
             tone="warning"
           />
@@ -188,8 +193,10 @@ export function ReturnSaleDetails({
 
 function SummaryValue({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg bg-[var(--color-app-background)] p-3">
-      <dt className="text-xs font-semibold uppercase text-[var(--color-text-muted)]">{label}</dt>
+    <div className="rounded-lg bg-[var(--color-app-background)] px-3 py-2.5">
+      <dt className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+        {label}
+      </dt>
       <dd className="mt-1 break-words font-semibold text-[var(--color-title)]">{value}</dd>
     </div>
   );
@@ -211,12 +218,18 @@ function OperationCard({
   onClick: () => void;
 }) {
   return (
-    <div className="flex flex-col rounded-lg border border-[var(--color-border)] p-4">
+    <div
+      className={`flex flex-col rounded-lg border p-3.5 ${
+        danger
+          ? "border-[var(--color-danger)]/35 bg-[var(--color-danger)]/5"
+          : "border-[var(--color-border)] bg-white"
+      }`}
+    >
       <h3 className="font-bold text-[var(--color-title)]">{label}</h3>
       <p className="mt-1 flex-1 text-sm text-[var(--color-text-muted)]">{description}</p>
-      {reason ? <p className="mt-3 text-xs text-[var(--color-warning)]">{reason}</p> : null}
+      {reason ? <p className="mt-2.5 text-xs text-[var(--color-warning)]">{reason}</p> : null}
       <Button
-        className="mt-4 w-full"
+        className="mt-3 w-full"
         disabled={disabled}
         type="button"
         variant={danger ? "danger" : "secondary"}
@@ -233,6 +246,20 @@ function formatPaymentSummary(summary: string) {
     .split(" + ")
     .map((method) => paymentLabels[method] ?? method)
     .join(" + ");
+}
+
+function formatOperationReason(reason: string | undefined) {
+  if (!reason) return reason;
+  if (
+    reason ===
+    "No es posible procesar la devolución porque no se puede validar de forma segura el movimiento de inventario de esta venta."
+  ) {
+    return "Esta venta no cumple actualmente con las condiciones necesarias para procesar una devolución.";
+  }
+  if (reason === "La venta contiene inventario sin una huella historica reversible segura.") {
+    return "Esta venta no cumple con las condiciones necesarias para realizar una anulación total.";
+  }
+  return reason;
 }
 
 function saleStatusLabel(status: ReturnSaleLookupDto["sale"]["status"]) {

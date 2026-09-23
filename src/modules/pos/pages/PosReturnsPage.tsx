@@ -63,9 +63,9 @@ export function PosReturnsPage() {
       !returns.isSearching &&
       !returns.notFound &&
       !returns.lookupError ? (
-        <section className="rounded-xl border border-dashed border-[var(--color-border)] bg-white p-8 text-center shadow-sm">
+        <section className="rounded-xl border border-dashed border-[var(--color-border)] bg-white px-5 py-7 text-center shadow-sm">
           <h2 className="font-bold text-[var(--color-title)]">Busca una venta para comenzar</h2>
-          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+          <p className="mx-auto mt-1 max-w-xl text-sm text-[var(--color-text-muted)]">
             Las operaciones disponibles se determinarán a partir del documento y el contexto actual.
           </p>
         </section>
