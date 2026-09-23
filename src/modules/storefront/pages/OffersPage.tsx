@@ -81,7 +81,7 @@ export function OffersPage() {
 
       {items.length > 0 ? (
         <section className="mt-9">
-          <div className="mb-5 flex items-end justify-between gap-4">
+          <div className="mb-5 flex flex-col items-start gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
             <div>
               <p className="text-sm font-semibold text-[var(--color-primary)]">Selección para ti</p>
               <h2 className="mt-1 text-2xl font-bold text-[var(--color-title)]">

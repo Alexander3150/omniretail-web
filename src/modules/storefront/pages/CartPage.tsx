@@ -92,7 +92,7 @@ export function CartPage() {
                   </div>
                 )}
                 <div className="min-w-0">
-                  <h2 className="mt-1 truncate text-lg font-black text-[var(--color-text)]">
+                  <h2 className="mt-1 break-words text-lg font-black text-[var(--color-text)] xl:truncate">
                     {item.name}
                   </h2>
                   <p className="mt-1 text-sm text-[var(--color-text-muted)]">
@@ -100,9 +100,9 @@ export function CartPage() {
                   </p>
                 </div>
               </div>
-              <p className="text-sm font-mono text-[var(--color-text-muted)] xl:text-center">{item.sku}</p>
-              <div className="flex items-center justify-between gap-4 md:block xl:justify-self-center">
-                <span className="text-sm font-bold text-[var(--color-text-muted)] md:hidden">
+              <p className="break-words text-sm font-mono text-[var(--color-text-muted)] xl:text-center">{item.sku}</p>
+              <div className="flex items-center justify-between gap-4 xl:block xl:justify-self-center">
+                <span className="text-sm font-bold text-[var(--color-text-muted)] xl:hidden">
                   Cantidad
                 </span>
                 <div className="flex w-fit items-center rounded-xl border border-[var(--color-border)] bg-slate-50">
@@ -125,14 +125,14 @@ export function CartPage() {
                   </button>
                 </div>
               </div>
-              <p className="flex justify-between text-base font-bold text-[var(--color-text)] lg:block lg:text-right">
-                <span className="text-sm font-bold text-[var(--color-text-muted)] lg:hidden">
+              <p className="flex justify-between text-base font-bold text-[var(--color-text)] xl:block xl:text-right">
+                <span className="text-sm font-bold text-[var(--color-text-muted)] xl:hidden">
                   Precio unitario
                 </span>
                 Q{item.unitPrice.toFixed(2)}
               </p>
-              <p className="flex justify-between text-lg font-black text-[var(--color-text)] md:block md:text-right">
-                <span className="text-sm font-bold text-[var(--color-text-muted)] md:hidden">
+              <p className="flex justify-between text-lg font-black text-[var(--color-text)] xl:block xl:text-right">
+                <span className="text-sm font-bold text-[var(--color-text-muted)] xl:hidden">
                   Total
                 </span>
                 Q{(item.unitPrice * item.quantity).toFixed(2)}

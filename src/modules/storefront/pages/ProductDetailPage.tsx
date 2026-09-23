@@ -137,11 +137,11 @@ export function ProductDetailPage({ productId }: { productId: string }) {
             {product.description ?? "Sin descripción disponible."}
           </p>
           <div className="mt-6 border-t border-[var(--color-border)] pt-5">
-            <div className="flex items-end justify-between gap-4">
+            <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
               <p className="text-3xl font-black text-[var(--color-title)]">
                 Q{price.effectivePrice.toFixed(2)}
               </p>
-              <div className="text-right">
+              <div className="text-left sm:text-right">
                 <p className="text-sm text-[var(--color-text-muted)]">Total calculado</p>
                 <p className="text-2xl font-black text-[var(--color-title)]">
                   Q{(price.effectivePrice * quantity).toFixed(2)}

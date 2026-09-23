@@ -51,7 +51,7 @@ export function StorefrontHeader() {
       </div>
       <div className="mx-auto flex max-w-[90rem] flex-wrap items-center gap-3 px-4 py-3 sm:px-5">
         <Link
-          className="flex shrink-0 items-center gap-2 text-lg font-black tracking-tight sm:text-xl"
+          className="order-1 flex min-w-0 w-full basis-full items-center gap-2 text-lg font-black tracking-tight sm:order-none sm:w-auto sm:basis-auto sm:max-w-xs sm:text-xl"
           href={routes.home()}
         >
           {config?.logoImageSource ? (
@@ -65,9 +65,9 @@ export function StorefrontHeader() {
               OR
             </span>
           )}
-          <span className="hidden min-[390px]:inline">{config?.storeName ?? "Tienda"}</span>
+          <span className="min-w-0 flex-1 truncate">{config?.storeName ?? "Tienda"}</span>
         </Link>
-        <div className="ml-auto flex items-center gap-1 lg:order-4">
+        <div className="order-2 flex w-full shrink-0 items-center justify-end gap-1 sm:order-none sm:ml-auto sm:w-auto sm:justify-start lg:order-4">
           <Link
             className="rounded-lg bg-white/10 px-2.5 py-2 text-sm font-semibold text-white transition hover:bg-white/20 sm:px-3"
             href={routes.cart()}

@@ -65,7 +65,7 @@ export function StorefrontHorizontalCarousel({
     <div className="relative mt-7">
       <div
         aria-label={ariaLabel}
-        className="flex snap-x snap-mandatory gap-5 overflow-x-auto scroll-smooth pb-3 pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain scroll-smooth pb-3 pr-4 sm:gap-5 sm:pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         onKeyDown={(event) => {
           if (event.key === "ArrowLeft") {
             event.preventDefault();
