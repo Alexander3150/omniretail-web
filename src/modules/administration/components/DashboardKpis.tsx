@@ -18,7 +18,7 @@ export function DashboardKpis({ loading, summary }: DashboardKpisProps) {
   return (
     <section
       aria-label="Indicadores ejecutivos"
-      className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+      className="grid items-stretch gap-3 sm:grid-cols-2 xl:grid-cols-4 [&>article]:h-full"
     >
       <KPICard
         hint={`${summary?.salesToday.count ?? 0} ventas`}

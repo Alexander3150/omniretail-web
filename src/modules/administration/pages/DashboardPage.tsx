@@ -16,7 +16,7 @@ export function DashboardPage() {
 
   if (!loading && !canRead) {
     return (
-      <div className="min-w-0 space-y-5">
+      <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
         <PageHeader
           description="Revise los principales indicadores operativos del negocio."
           title="Dashboard"
@@ -41,7 +41,7 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <PageHeader
         actions={
           <Button
@@ -69,7 +69,7 @@ export function DashboardPage() {
 
       <DashboardKpis loading={loading} summary={summary} />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,400px)]">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,400px)]">
         <DashboardTopProducts
           loading={loading}
           products={summary?.topProducts ?? []}

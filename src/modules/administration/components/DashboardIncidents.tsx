@@ -27,7 +27,7 @@ export function DashboardIncidents({ incidents, loading }: DashboardIncidentsPro
           <span className="sr-only">Cargando incidencias...</span>
         </div>
       ) : incidents.length === 0 ? (
-        <p className="mt-4 rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">
+        <p className="mt-4 rounded-lg border border-dashed border-[var(--color-border)] bg-slate-50 px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">
           No hay incidencias recientes.
         </p>
       ) : (
@@ -40,7 +40,7 @@ export function DashboardIncidents({ incidents, loading }: DashboardIncidentsPro
               <p className="break-words text-sm font-semibold text-[var(--color-text)]">
                 {incident.description}
               </p>
-              <p className="text-sm text-[var(--color-text-muted)]">{incident.typeName ?? "—"}</p>
+              <p className="w-fit rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-[var(--color-text-muted)]">{incident.typeName ?? "—"}</p>
               <time
                 className="text-sm text-[var(--color-text-muted)]"
                 dateTime={incident.createdAt}

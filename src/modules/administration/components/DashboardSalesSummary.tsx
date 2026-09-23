@@ -28,7 +28,7 @@ export function DashboardSalesSummary({
         </div>
       ) : (
         <div className="mt-4 space-y-4">
-          <div className="rounded-lg border border-[var(--color-border)] bg-slate-50 p-4">
+          <div className="rounded-lg bg-slate-50 p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">Hoy</p>
@@ -53,7 +53,7 @@ export function DashboardSalesSummary({
             )}
           </div>
 
-          <div className="rounded-lg border border-[var(--color-border)] bg-slate-50 p-4">
+          <div className="rounded-lg bg-slate-50 p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">

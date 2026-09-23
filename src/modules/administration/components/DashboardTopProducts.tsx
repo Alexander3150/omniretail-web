@@ -22,28 +22,28 @@ export function DashboardTopProducts({ loading, products }: DashboardTopProducts
         <div aria-live="polite" className="mt-4 space-y-3">
           {[0, 1, 2, 3, 4].map((item) => (
             <div
-              className="h-10 animate-pulse rounded-lg bg-[var(--color-app-background)]"
+              className="h-10 animate-pulse rounded-lg bg-slate-100"
               key={item}
             />
           ))}
           <span className="sr-only">Cargando productos...</span>
         </div>
       ) : products.length === 0 ? (
-        <p className="mt-4 rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">
+        <p className="mt-4 rounded-lg border border-dashed border-[var(--color-border)] bg-slate-50 px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">
           No hay ventas registradas este mes.
         </p>
       ) : (
-        <ul className="mt-4 space-y-2.5">
+        <ul className="mt-4 divide-y divide-[var(--color-border)]">
           {products.map((product, index) => {
             const barWidth = maxQuantity > 0
               ? Math.max(4, (product.totalQuantity / maxQuantity) * 100)
               : 0;
 
             return (
-              <li className="group" key={`${product.productName}-${index}`}>
+              <li className="group py-3 first:pt-0 last:pb-0" key={`${product.productName}-${index}`}>
                 <div className="flex items-center justify-between gap-3 text-sm">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-structure)] text-xs font-bold text-white">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-[var(--color-title)]">
                       {index + 1}
                     </span>
                     <span className="truncate font-medium text-[var(--color-text)]">
@@ -59,7 +59,7 @@ export function DashboardTopProducts({ loading, products }: DashboardTopProducts
                     </span>
                   </div>
                 </div>
-                <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-[var(--color-app-background)]">
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
                   <div
                     className="h-full rounded-full bg-[var(--color-structure)] transition-all duration-500"
                     style={{ width: `${barWidth}%` }}
