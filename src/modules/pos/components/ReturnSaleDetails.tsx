@@ -47,18 +47,34 @@ export function ReturnSaleDetails({
         </div>
       ),
     },
-    { key: "sold", header: "Vendida", cell: (item) => item.soldQuantity },
-    { key: "returned", header: "Devuelta", cell: (item) => item.returnedQuantity },
+    {
+      key: "sold",
+      header: "Vendida",
+      className: "whitespace-nowrap text-right tabular-nums",
+      cell: (item) => item.soldQuantity,
+    },
+    {
+      key: "returned",
+      header: "Devuelta",
+      className: "whitespace-nowrap text-right tabular-nums",
+      cell: (item) => item.returnedQuantity,
+    },
     {
       key: "returnable",
       header: "Retornable",
+      className: "whitespace-nowrap text-right tabular-nums",
       cell: (item) => (
         <span className={item.canReturn ? "font-bold text-[var(--color-title)]" : undefined}>
           {item.returnableQuantity}
         </span>
       ),
     },
-    { key: "subtotal", header: "Importe", cell: (item) => formatCurrency(item.subtotal) },
+    {
+      key: "subtotal",
+      header: "Importe",
+      className: "whitespace-nowrap text-right tabular-nums",
+      cell: (item) => formatCurrency(item.subtotal),
+    },
   ];
 
   return (
@@ -106,7 +122,12 @@ export function ReturnSaleDetails({
             Las cantidades retornables incluyen las devoluciones procesadas previamente.
           </p>
         </div>
-        <DataTable columns={columns} data={lookup.items} rowKey={(item) => item.saleItemId} />
+        <DataTable
+          columns={columns}
+          data={lookup.items}
+          headerClassName="bg-[var(--color-structure)] text-white [&_th]:text-white"
+          rowKey={(item) => item.saleItemId}
+        />
       </section>
 
       <section className="space-y-3 rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm sm:p-5">
@@ -116,10 +137,10 @@ export function ReturnSaleDetails({
             El sistema distribuirá el reembolso definitivo sobre los pagos originales.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2.5">
+        <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
           {lookup.payments.map((payment) => (
             <div
-              className="min-w-52 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2.5"
+              className="min-w-0 rounded-lg border border-[var(--color-border)] bg-white px-3 py-2.5 shadow-sm"
               key={payment.paymentId}
             >
               <p className="font-semibold text-[var(--color-title)]">
@@ -193,7 +214,7 @@ export function ReturnSaleDetails({
 
 function SummaryValue({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg bg-[var(--color-app-background)] px-3 py-2.5">
+    <div className="rounded-lg border border-[var(--color-border)] bg-white px-3 py-2.5">
       <dt className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
         {label}
       </dt>

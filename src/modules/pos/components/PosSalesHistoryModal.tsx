@@ -78,12 +78,14 @@ export function PosSalesHistoryModal({ open, onClose }: PosSalesHistoryModalProp
             />
           ) : null}
 
-          <PosSalesHistoryFilters
-            disabled={history.loading || history.accessBlocked}
-            filters={history.filters}
-            onChange={history.updateFilters}
-            onReset={history.resetFilters}
-          />
+          <div className="[&_:has(>button)]:hidden">
+            <PosSalesHistoryFilters
+              disabled={history.loading || history.accessBlocked}
+              filters={history.filters}
+              onChange={history.updateFilters}
+              onReset={history.resetFilters}
+            />
+          </div>
 
           {history.loading ? (
             <div

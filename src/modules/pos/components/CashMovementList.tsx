@@ -34,7 +34,7 @@ const columns: DataTableColumn<CashMovementDto>[] = [
   {
     key: "amount",
     header: "Monto",
-    className: "text-right",
+    className: "whitespace-nowrap text-right tabular-nums",
     cell: (movement) => (
       <span
         className={
@@ -55,7 +55,7 @@ export function CashMovementList({ movements }: { movements: CashMovementDto[] }
       columns={columns}
       data={movements}
       emptyMessage="Este turno todavía no tiene movimientos."
-      headerClassName="text-xs uppercase tracking-wide"
+      headerClassName="bg-[var(--color-structure)] text-xs uppercase tracking-wide text-white [&_th]:text-white"
       rowKey={(movement) => movement.id}
     />
   );

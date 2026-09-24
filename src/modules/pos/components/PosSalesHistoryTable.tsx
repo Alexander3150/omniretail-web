@@ -36,7 +36,7 @@ export function PosSalesHistoryTable({
           <col className="w-[13%]" />
           <col className="w-[16%]" />
         </colgroup>
-        <thead className="sticky top-0 z-10 bg-[var(--color-app-background)] text-[var(--color-title)]">
+        <thead className="sticky top-0 z-10 bg-[var(--color-structure)] text-white">
           <tr>
             {[
               "Documento",
@@ -47,7 +47,10 @@ export function PosSalesHistoryTable({
               "Estado de venta",
               "Estado operativo",
             ].map((header) => (
-              <th className="break-words px-3 py-2.5 font-semibold leading-tight" key={header}>
+              <th
+                className="break-words px-3 py-2.5 font-semibold leading-tight text-white"
+                key={header}
+              >
                 {header}
               </th>
             ))}
@@ -67,7 +70,7 @@ export function PosSalesHistoryTable({
                 <tr
                   aria-selected={selected}
                   className={cn(
-                    "cursor-pointer border-t border-[var(--color-border)] outline-none transition hover:bg-[var(--color-app-background)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)]",
+                    "cursor-pointer border-t border-[var(--color-border)] outline-none transition hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)]",
                     selected && "bg-[var(--color-primary)]/10 shadow-[inset_3px_0_0_var(--color-primary)]",
                   )}
                   key={sale.saleId}
