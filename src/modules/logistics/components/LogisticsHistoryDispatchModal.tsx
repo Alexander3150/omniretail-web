@@ -54,7 +54,7 @@ export function LogisticsHistoryDispatchModal({
   return (
     <Modal
       footer={
-        <div className="flex flex-col-reverse gap-2 border-t border-[var(--color-border)] pt-3 sm:flex-row sm:justify-end">
+        <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button disabled={submitting} type="button" variant="secondary" onClick={onClose}>
             Cancelar
           </Button>
@@ -81,7 +81,7 @@ export function LogisticsHistoryDispatchModal({
       {error ? <InlineAlert description={error} title="No se pudo completar el despacho" /> : null}
       {detail ? (
         <div className="space-y-4">
-          <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-3.5">
+          <section className="rounded-lg border border-[var(--color-border)] bg-slate-50 p-3.5">
             <h3 className="text-sm font-bold text-[var(--color-title)]">Pedido {detail.orderReference}</h3>
             <dl className="mt-2 grid gap-2.5 text-sm sm:grid-cols-2">
               <div>
@@ -97,7 +97,7 @@ export function LogisticsHistoryDispatchModal({
             </dl>
           </section>
 
-          <section className="rounded-lg border border-[var(--color-border)] p-3.5">
+          <section className="rounded-lg border border-t-4 border-[var(--color-border)] border-t-[var(--color-structure)] bg-white p-3.5">
             <h3 className="text-sm font-bold text-[var(--color-title)]">Datos de salida</h3>
             <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
               {thirdParty

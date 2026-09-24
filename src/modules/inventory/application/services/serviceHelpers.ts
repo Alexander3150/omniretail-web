@@ -49,22 +49,22 @@ export async function resolveInventoryContext(
 
 export function ensureCanReadStock(permissions: readonly string[]) {
   if (permissions.includes(INVENTORY_STOCK_READ_PERMISSION)) return;
-  throw new InventoryServiceError("No tenés permiso para consultar stock.");
+  throw new InventoryServiceError("No dispone de permisos para consultar stock.");
 }
 
 export function ensureCanReadMovements(permissions: readonly string[]) {
   if (permissions.includes(INVENTORY_MOVEMENTS_READ_PERMISSION)) return;
-  throw new InventoryServiceError("No tenés permiso para consultar movimientos de inventario.");
+  throw new InventoryServiceError("No dispone de permisos para consultar movimientos de inventario.");
 }
 
 export function ensureCanCreateAdjustment(permissions: readonly string[]) {
   if (permissions.includes(INVENTORY_ADJUSTMENT_CREATE_PERMISSION)) return;
-  throw new InventoryServiceError("No tenés permiso para registrar ajustes de inventario.");
+  throw new InventoryServiceError("No dispone de permisos para registrar ajustes de inventario.");
 }
 
 export function ensureCanManageTransfers(permissions: readonly string[]) {
   if (permissions.includes(INVENTORY_TRANSFERS_MANAGE_PERMISSION)) return;
-  throw new InventoryServiceError("No tenés permiso para gestionar traslados de inventario.");
+  throw new InventoryServiceError("No dispone de permisos para gestionar traslados de inventario.");
 }
 
 export async function ensureInventoryBranchBelongsToTenant(
@@ -86,7 +86,7 @@ export async function ensureUserCanOperateInventoryBranch(
 ): Promise<Branch> {
   const branch = await ensureInventoryBranchBelongsToTenant(repositories, user.tenantId, branchId);
   if (!canUserOperateBranch(user, branch)) {
-    throw new InventoryServiceError("No tenés acceso a la sucursal seleccionada.");
+    throw new InventoryServiceError("No dispone de acceso a la sucursal seleccionada.");
   }
   return branch;
 }

@@ -281,7 +281,7 @@ export class PurchaseOrderEmailSimulationService {
       to: input.supplierEmail,
       subject: `Orden de compra ${input.orderNumber}`,
       attachment: `${sanitizeFileName(input.orderNumber)}-orden-compra.pdf`,
-      message: `Envio simulado al proveedor ${input.supplierEmail}.`,
+      message: `Documento preparado para ${input.supplierEmail}.`,
     };
   }
 }
@@ -780,7 +780,7 @@ function addPageFooters(doc: PdfDocument) {
     doc.setFontSize(7);
     doc.setTextColor(...MUTED);
     doc.text(
-      `Documento generado por OmniRetail · Simulacion · ${generatedAt}`,
+      `Documento generado por OmniRetail · ${generatedAt}`,
       MARGIN,
       PAGE_HEIGHT - 8,
     );

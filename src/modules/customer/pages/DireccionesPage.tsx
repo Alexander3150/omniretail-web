@@ -88,10 +88,27 @@ export function DireccionesPage() {
     } catch (caughtError) {
       showToast({
         title: "No se pudo guardar la dirección",
-        description: caughtError instanceof Error ? caughtError.message : "Intentá nuevamente.",
+        description: caughtError instanceof Error ? caughtError.message : "Inténtelo nuevamente.",
         tone: "danger",
       });
     }
+  }
+
+  function updateAddress(patch: Partial<AddressFormDto>) {
+    const nextForm = { ...form, ...patch };
+    setForm(nextForm);
+    setFieldErrors((current) => {
+      const affectedFields = Object.keys(patch) as Array<keyof AddressValidationErrors>;
+      if (patch.stateOrDepartment !== undefined) affectedFields.push("city");
+      if (!affectedFields.some((field) => current[field])) return current;
+      const validation = validateAddressForm(nextForm);
+      const nextErrors = { ...current };
+      for (const field of affectedFields) {
+        if (!current[field]) continue;
+        nextErrors[field] = validation[field];
+      }
+      return nextErrors;
+    });
   }
 
   async function handleRemove() {
@@ -103,7 +120,7 @@ export function DireccionesPage() {
     } catch (caughtError) {
       showToast({
         title: "No se pudo eliminar la dirección",
-        description: caughtError instanceof Error ? caughtError.message : "Intentá nuevamente.",
+        description: caughtError instanceof Error ? caughtError.message : "Inténtelo nuevamente.",
         tone: "danger",
       });
     }
@@ -116,21 +133,21 @@ export function DireccionesPage() {
     } catch (caughtError) {
       showToast({
         title: "No se pudo actualizar la dirección predeterminada",
-        description: caughtError instanceof Error ? caughtError.message : "Intentá nuevamente.",
+        description: caughtError instanceof Error ? caughtError.message : "Inténtelo nuevamente.",
         tone: "danger",
       });
     }
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-5xl space-y-5">
       <PageHeader
         actions={
           <Button onClick={() => setEditor({ mode: "create" })} type="button">
             Nueva dirección
           </Button>
         }
-        description="Direcciones reutilizables para tus próximas compras."
+        description="Direcciones reutilizables para próximas compras."
         title="Direcciones"
       />
 
@@ -155,14 +172,23 @@ export function DireccionesPage() {
           Cargando direcciones...
         </div>
       ) : addresses.length === 0 ? (
-        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-sm text-[var(--color-text-muted)] shadow-sm">
-          Todavía no tenés direcciones guardadas.
+        <div className="flex flex-col items-center rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-10 text-center">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-structure)]">
+            <MapPinIcon className="h-5 w-5" />
+          </span>
+          <h2 className="mt-3 font-bold text-[var(--color-text)]">Aún no tiene direcciones guardadas</h2>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            Agregue una dirección para reutilizarla en próximas compras.
+          </p>
+          <Button className="mt-5" onClick={() => setEditor({ mode: "create" })} type="button">
+            Nueva dirección
+          </Button>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {addresses.map((address) => (
             <article
-              className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm"
+              className="flex h-full flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm"
               key={address.id}
             >
               <div className="flex items-start justify-between gap-2">
@@ -173,7 +199,7 @@ export function DireccionesPage() {
                   >
                     <MapPinIcon className="h-4 w-4" />
                   </span>
-                  <h2 className="truncate font-semibold text-[var(--color-title)]">{address.label}</h2>
+                  <h2 className="truncate text-lg font-bold text-[var(--color-text)]">{address.label}</h2>
                 </div>
                 {address.isDefault ? (
                   <span className="shrink-0 rounded-md bg-[var(--color-success)]/10 px-2 py-1 text-xs font-semibold text-[var(--color-success)]">
@@ -181,7 +207,7 @@ export function DireccionesPage() {
                   </span>
                 ) : null}
               </div>
-              <p className="mt-2 break-words text-sm text-[var(--color-text)] [overflow-wrap:anywhere]">{address.recipientName}</p>
+              <p className="mt-3 break-words text-sm font-semibold text-[var(--color-text)] [overflow-wrap:anywhere]">{address.recipientName}</p>
               <p className="break-words text-sm text-[var(--color-text-muted)] [overflow-wrap:anywhere]">
                 {address.line1}
                 {address.line2 ? `, ${address.line2}` : ""}
@@ -192,7 +218,7 @@ export function DireccionesPage() {
                   .join(", ")}
               </p>
 
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="mt-auto flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-4">
                 <Button
                   onClick={() => setEditor({ mode: "edit", address })}
                   type="button"
@@ -237,7 +263,7 @@ export function DireccionesPage() {
               disabled={busy}
               id="address-label"
               maxLength={DELIVERY_ADDRESS_LIMITS.label}
-              onChange={(event) => setForm((prev) => ({ ...prev, label: event.target.value.slice(0, DELIVERY_ADDRESS_LIMITS.label) }))}
+              onChange={(event) => updateAddress({ label: event.target.value.slice(0, DELIVERY_ADDRESS_LIMITS.label) })}
               placeholder="Casa, Oficina..."
               value={form.label}
             />
@@ -248,9 +274,7 @@ export function DireccionesPage() {
               disabled={busy}
               id="address-recipient"
               maxLength={DELIVERY_ADDRESS_LIMITS.recipientName}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, recipientName: sanitizeRecipientName(event.target.value) }))
-              }
+              onChange={(event) => updateAddress({ recipientName: sanitizeRecipientName(event.target.value) })}
               value={form.recipientName}
             />
           </FormField>
@@ -260,7 +284,7 @@ export function DireccionesPage() {
               disabled={busy}
               id="address-line1"
               maxLength={DELIVERY_ADDRESS_LIMITS.line1}
-              onChange={(event) => setForm((prev) => ({ ...prev, line1: sanitizeDeliveryAddress(event.target.value, "line1") }))}
+              onChange={(event) => updateAddress({ line1: sanitizeDeliveryAddress(event.target.value, "line1") })}
               value={form.line1}
             />
           </FormField>
@@ -270,7 +294,7 @@ export function DireccionesPage() {
               disabled={busy}
               id="address-line2"
               maxLength={DELIVERY_ADDRESS_LIMITS.line2}
-              onChange={(event) => setForm((prev) => ({ ...prev, line2: sanitizeDeliveryAddress(event.target.value, "line2") }))}
+              onChange={(event) => updateAddress({ line2: sanitizeDeliveryAddress(event.target.value, "line2") })}
               value={form.line2}
             />
           </FormField>
@@ -289,7 +313,7 @@ export function DireccionesPage() {
                   // Cambiar de departamento invalida el municipio elegido
                   // antes -- Municipio siempre se resetea junto con el
                   // departamento para que nunca queden desincronizados.
-                  setForm((prev) => ({ ...prev, stateOrDepartment: nextDepartment, city: "" }));
+                  updateAddress({ stateOrDepartment: nextDepartment, city: "" });
                 }}
                 value={form.stateOrDepartment}
               >
@@ -306,7 +330,7 @@ export function DireccionesPage() {
               <Select
                 disabled={busy || !form.stateOrDepartment}
                 id="address-city"
-                onChange={(event) => setForm((prev) => ({ ...prev, city: event.target.value }))}
+                onChange={(event) => updateAddress({ city: event.target.value })}
                 value={form.city}
               >
                 <option value="">
@@ -333,9 +357,9 @@ export function DireccionesPage() {
               disabled={busy}
               id="address-postal"
               inputMode="numeric"
-              maxLength={5}
+              maxLength={10}
               onChange={(event) =>
-                setForm((prev) => ({ ...prev, postalCode: event.target.value }))
+                updateAddress({ postalCode: event.target.value.replace(/\D/g, "").slice(0, 10) })
               }
               placeholder="01001"
               value={form.postalCode}
@@ -347,7 +371,7 @@ export function DireccionesPage() {
               disabled={busy}
               id="address-references"
               maxLength={DELIVERY_ADDRESS_LIMITS.references}
-              onChange={(event) => setForm((prev) => ({ ...prev, references: sanitizeDeliveryAddress(event.target.value, "references") }))}
+              onChange={(event) => updateAddress({ references: sanitizeDeliveryAddress(event.target.value, "references") })}
               value={form.references}
             />
           </FormField>

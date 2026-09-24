@@ -8,8 +8,10 @@ import type {
 import { EmployeeForm } from "@/modules/administration/components/EmployeeForm";
 import { EmployeeTable } from "@/modules/administration/components/EmployeeTable";
 import { useEmployees } from "@/modules/administration/hooks/useEmployees";
+import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
 import { Button } from "@/shared/components/Button";
 import { UserPlusIcon } from "@/shared/components/icons";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { useToast } from "@/shared/components/Toast";
@@ -35,44 +37,27 @@ export function EmployeesPage() {
   } = useEmployees();
   const { showToast } = useToast();
   const [editor, setEditor] = useState<EditorState>(null);
-  /**
-   * Invitación recién generada por ESTA acción (crear o reenviar) -- estado puramente local, nunca
-   * se persiste (ni localStorage ni una tabla nueva): al cerrar el modal o navegar fuera de la
-   * página, se pierde para siempre (mismo criterio invitation-scoped que `EmployeeInvitationResult`
-   * / `AuthRepository.inviteEmployee`). Sugerencia de scrum: "Crear empleado -> Invitación generada
-   * correctamente -> [copiar invitación]".
-   */
-  const [invitationLink, setInvitationLink] = useState<{ employeeName: string; token: string } | null>(
-    null,
-  );
+  const [invitationLink, setInvitationLink] = useState<{
+    employeeName: string;
+    token: string;
+  } | null>(null);
 
   async function handleSubmit(value: EmployeeInputDto) {
-    try {
-      if (editor?.mode === "edit") {
-        await update(editor.employee.id, value);
-        showToast({ title: "Empleado actualizado", tone: "success" });
-      } else {
-        const result = await create(value);
-        showToast({
-          title: "Empleado creado",
-          description: "Se envió la invitación para que active su cuenta.",
-          tone: "success",
-        });
-        if (result.invitationToken) {
-          setInvitationLink({ employeeName: result.employee.name, token: result.invitationToken });
-        }
-      }
-      setEditor(null);
-    } catch (caughtError) {
+    if (editor?.mode === "edit") {
+      await update(editor.employee.id, value);
+      showToast({ title: "Empleado actualizado", tone: "success" });
+    } else {
+      const result = await create(value);
       showToast({
-        title: "No se pudo guardar el empleado",
-        description:
-          caughtError instanceof Error
-            ? caughtError.message
-            : "Intentá nuevamente en unos momentos.",
-        tone: "danger",
+        title: "Empleado creado",
+        description: "Se envió la invitación para que active su cuenta.",
+        tone: "success",
       });
+      if (result.invitationToken) {
+        setInvitationLink({ employeeName: result.employee.name, token: result.invitationToken });
+      }
     }
+    setEditor(null);
   }
 
   async function handleResendInvitation(employee: EmployeeDto) {
@@ -92,7 +77,7 @@ export function EmployeesPage() {
         description:
           caughtError instanceof Error
             ? caughtError.message
-            : "Intentá nuevamente en unos momentos.",
+            : "Inténtelo nuevamente en unos momentos.",
         tone: "danger",
       });
     }
@@ -116,35 +101,18 @@ export function EmployeesPage() {
         description:
           caughtError instanceof Error
             ? caughtError.message
-            : "Intentá nuevamente en unos momentos.",
+            : "Inténtelo nuevamente en unos momentos.",
         tone: "danger",
       });
     }
   }
 
   if (!loading && !canRead) {
-    return (
-      <div className="min-w-0 space-y-5">
-        <PageHeader description="Administrá los empleados del negocio." title="Usuarios" />
-        <div
-          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
-          role="alert"
-        >
-          <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No tenés acceso a usuarios
-          </h2>
-          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            Consultar empleados requiere el permiso{" "}
-            <span className="font-medium text-[var(--color-text)]">admin.users.read</span>. Pedí
-            acceso a un administrador.
-          </p>
-        </div>
-      </div>
-    );
+    return <AccessDeniedState />;
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <PageHeader
         actions={
           canManage ? (
@@ -154,26 +122,26 @@ export function EmployeesPage() {
             </Button>
           ) : null
         }
-        description="Administrá los empleados del negocio."
+        description="Administre los empleados del negocio."
         title="Usuarios"
       />
 
       {error ? (
-        <div
-          className="flex flex-col gap-3 rounded-lg border border-[var(--color-danger)] bg-[var(--color-surface)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-          role="alert"
+        <InlineAlert
+          className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+          title={error}
+          tone="danger"
         >
-          <p className="text-sm font-medium text-[var(--color-danger)]">{error}</p>
           <Button onClick={() => void reload()} type="button" variant="secondary">
             Reintentar
           </Button>
-        </div>
+        </InlineAlert>
       ) : null}
 
       {loading ? (
         <div
           aria-live="polite"
-          className="flex min-h-56 items-center justify-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-sm font-medium text-[var(--color-text-muted)] shadow-sm"
+          className="flex min-h-48 items-center justify-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 text-sm font-medium text-[var(--color-text-muted)] shadow-sm"
         >
           <span
             aria-hidden="true"
@@ -182,16 +150,18 @@ export function EmployeesPage() {
           Cargando empleados...
         </div>
       ) : (
-        <EmployeeTable
-          branchNames={branchNames}
-          busy={busy}
-          canManage={canManage}
-          employees={employees}
-          onEdit={(employee) => setEditor({ mode: "edit", employee })}
-          onResendInvitation={(employee) => void handleResendInvitation(employee)}
-          onCopyInvitation={(employee) => void handleCopyInvitation(employee)}
-          roleNames={roleNames}
-        />
+        <section className="min-w-0">
+          <EmployeeTable
+            branchNames={branchNames}
+            busy={busy}
+            canManage={canManage}
+            employees={employees}
+            onEdit={(employee) => setEditor({ mode: "edit", employee })}
+            onResendInvitation={(employee) => void handleResendInvitation(employee)}
+            onCopyInvitation={(employee) => void handleCopyInvitation(employee)}
+            roleNames={roleNames}
+          />
+        </section>
       )}
 
       <Modal
@@ -214,20 +184,11 @@ export function EmployeesPage() {
         ) : null}
       </Modal>
 
-      <InvitationLinkModal
-        invitation={invitationLink}
-        onClose={() => setInvitationLink(null)}
-      />
+      <InvitationLinkModal invitation={invitationLink} onClose={() => setInvitationLink(null)} />
     </div>
   );
 }
 
-/**
- * Muestra el enlace de invitación UNA sola vez, recién generado por create/resend -- nunca lo lee
- * de ningún store persistente (ver el comentario de `invitationLink` en `EmployeesPage`). Cerrarlo
- * lo descarta: no hay forma de volver a verlo desde acá, coherente con "no mostrar el token como
- * información permanente".
- */
 function InvitationLinkModal({
   invitation,
   onClose,
@@ -254,7 +215,7 @@ function InvitationLinkModal({
       onClose={handleClose}
       open={Boolean(invitation)}
       size="md"
-      subtitle="Compartilo solo con la persona invitada -- no queda guardado en ningún lado, esta es la única vez que se muestra."
+      subtitle="Compártalo solo con la persona invitada; no queda guardado y esta es la única vez que se muestra."
       title="Invitación generada correctamente"
     >
       {invitation ? (
@@ -262,13 +223,10 @@ function InvitationLinkModal({
           <p className="text-sm text-[var(--color-text-muted)]">
             {invitation.employeeName} puede activar su cuenta con este enlace.
           </p>
-          <div className="break-all rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 text-xs text-[var(--color-text)]">
+          <div className="break-all rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 text-xs text-[var(--color-text)]">
             {link}
           </div>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button onClick={handleClose} type="button" variant="secondary">
-              Cerrar
-            </Button>
             <Button onClick={() => void handleCopy()} type="button" variant="secondary">
               {copied ? "Copiado ✓" : "Copiar enlace"}
             </Button>

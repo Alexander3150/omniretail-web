@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import type { PurchaseOrderStatus } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { Button } from "@/shared/components/Button";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Input } from "@/shared/components/Input";
 import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
 import { PageHeader } from "@/shared/components/PageHeader";
@@ -276,9 +277,9 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
         supplierEmail,
       });
       showToast({
-        title: result.sent ? `Orden de compra enviada a ${result.to}` : "Orden aprobada",
+        title: result.sent ? "Orden de compra preparada" : "Orden aprobada",
         description: result.sent
-          ? `Envio simulado al proveedor. Adjunto: ${document.filename}`
+          ? `PDF preparado: ${document.filename}`
           : result.message,
         tone: result.sent ? "success" : "warning",
       });
@@ -287,15 +288,15 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
         title: "Orden aprobada",
         description:
           caughtError instanceof Error
-            ? `No se pudo preparar el PDF o envio simulado: ${caughtError.message}`
-            : "No se pudo preparar el PDF o envio simulado.",
+            ? `No se pudo preparar el PDF: ${caughtError.message}`
+            : "No se pudo preparar el PDF.",
         tone: "warning",
       });
     }
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <div>
         <p className="mb-1 text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
           Compras
@@ -319,11 +320,7 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
         onToggle={() => setSuggestionsExpanded((current) => !current)}
       />
 
-      {error ? (
-        <p className="rounded-md border border-[var(--color-danger)] bg-white px-4 py-3 text-sm font-medium text-[var(--color-danger)]">
-          {error}
-        </p>
-      ) : null}
+      {error ? <InlineAlert title={error} tone="danger" /> : null}
 
       <section className="rounded-lg border border-[var(--color-border)] bg-white p-2.5 shadow-sm">
         <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_220px_220px]">

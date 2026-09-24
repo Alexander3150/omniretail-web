@@ -14,7 +14,7 @@ export function LogisticsPackingDispatchPage() {
   const { showToast } = useToast();
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <PageHeader
         description={`Prepara pedidos de la sucursal ${packing.currentBranchName}.`}
         title="Mesa de empaque"

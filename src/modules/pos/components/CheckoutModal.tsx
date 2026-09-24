@@ -120,20 +120,19 @@ export function CheckoutModal({
   return (
     <Modal
       footer={
-        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <Button disabled={confirmationLoading} onClick={onReset} type="button" variant="ghost">
+        <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <Button
+            className="w-full sm:w-auto"
+            disabled={confirmationLoading}
+            onClick={onReset}
+            type="button"
+            variant="ghost"
+          >
             Restablecer
           </Button>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+          <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-2">
             <Button
-              disabled={confirmationLoading}
-              onClick={onClose}
-              type="button"
-              variant="secondary"
-            >
-              Cerrar
-            </Button>
-            <Button
+              className="w-full"
               disabled={confirmationLoading}
               form="pos-checkout-form"
               type="submit"
@@ -142,7 +141,7 @@ export function CheckoutModal({
               Preparar cobro
             </Button>
             <Button
-              className="sm:min-w-36"
+              className="w-full sm:min-w-36"
               disabled={!readyToConfirm || confirmationLoading}
               onClick={onConfirm}
               type="button"
@@ -189,13 +188,13 @@ export function CheckoutModal({
               </p>
             </div>
             <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-              Puedes revisar los datos, pero la venta no puede confirmarse desde esta terminal.
+              El cobro puede validarse, pero la venta no puede confirmarse con los elementos incluidos en el ticket.
             </p>
           </div>
         ) : null}
 
         <div className="grid items-start gap-4 xl:grid-cols-2">
-          <section className="space-y-3 rounded-lg border border-[var(--color-border)] p-3 sm:p-4">
+          <section className="space-y-3 rounded-lg border border-[var(--color-border)] bg-white p-3 shadow-sm sm:p-4">
             <h3 className="font-bold text-[var(--color-title)]">Documento</h3>
           <FormField id="checkout-document-type" label="Tipo de documento">
             <Select
@@ -250,7 +249,7 @@ export function CheckoutModal({
             ) : null}
           </section>
 
-          <section className="space-y-3 rounded-lg border border-[var(--color-border)] p-3 sm:p-4">
+          <section className="space-y-3 rounded-lg border border-[var(--color-border)] bg-white p-3 shadow-sm sm:p-4">
             <h3 className="font-bold text-[var(--color-title)]">Entrega</h3>
           <FormField id="checkout-delivery-method" label="Modalidad">
             <Select
@@ -415,7 +414,7 @@ export function CheckoutModal({
           </section>
         </div>
 
-        <section className="space-y-3 rounded-lg border border-[var(--color-border)] p-3 sm:p-4">
+        <section className="space-y-3 rounded-lg border border-[var(--color-border)] bg-white p-3 shadow-sm sm:p-4">
           <h3 className="font-bold text-[var(--color-title)]">Método de pago</h3>
           <div className="w-full sm:max-w-sm">
             <FormField
@@ -443,7 +442,7 @@ export function CheckoutModal({
             </FormField>
           </div>
 
-          <div className="grid items-start gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid items-start gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,18rem),1fr))]">
             {showCash ? (
               <PaymentSection title="Efectivo">
                 {checkout.paymentMode === "mixed" ? (
@@ -586,9 +585,7 @@ export function CheckoutModal({
           ) : null}
 
           {errors.paymentTotal ? (
-            <p className="text-sm font-semibold text-[var(--color-danger)]">
-              {errors.paymentTotal}
-            </p>
+            <InlineAlert title={errors.paymentTotal} tone="danger" />
           ) : null}
         </section>
 
@@ -608,9 +605,7 @@ export function CheckoutModal({
         ) : null}
 
         {confirmationError ? (
-          <p className="rounded-lg border border-[var(--color-danger)] p-4 text-sm font-semibold text-[var(--color-danger)]">
-            {confirmationError}
-          </p>
+          <InlineAlert title={confirmationError} tone="danger" />
         ) : null}
       </form>
     </Modal>
@@ -653,19 +648,11 @@ function CashShiftStatusPanel({
   }
 
   if (error) {
-    return (
-      <p className="rounded-lg border border-[var(--color-danger)] p-4 text-sm font-semibold text-[var(--color-danger)]">
-        {error}
-      </p>
-    );
+    return <InlineAlert title={error} tone="danger" />;
   }
 
   if (!hasBranchAccess) {
-    return (
-      <p className="rounded-lg border border-[var(--color-warning)] p-4 text-sm font-semibold text-[var(--color-warning)]">
-        No tienes acceso a la sucursal activa.
-      </p>
-    );
+    return <InlineAlert title="No tiene acceso a la sucursal activa." tone="warning" />;
   }
 
   return (
@@ -748,7 +735,7 @@ function SelectedBankAccountDetail({ account }: { account?: CheckoutBankAccountD
   if (!account) return null;
 
   return (
-    <div className="space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 text-sm">
+    <div className="space-y-2 rounded-lg border border-[var(--color-border)] bg-slate-50 p-3 text-sm">
       <DetailRow label="Banco" value={account.bankName} />
       <DetailRow label="Tipo de cuenta" value={accountTypeLabels[account.accountType]} />
       <DetailRow label="Titular" value={account.holderName} />
@@ -881,7 +868,7 @@ function ReadonlyAmount({ label, value, error }: { label: string; value: number;
   return (
     <div>
       <p className="text-sm font-semibold text-[var(--color-text)]">{label}</p>
-      <p className="mt-1 rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm font-bold text-[var(--color-title)]">
+      <p className="mt-1 rounded-md bg-slate-50 px-3 py-2 text-sm font-bold text-[var(--color-title)]">
         {formatCurrency(value)}
       </p>
       {error ? (

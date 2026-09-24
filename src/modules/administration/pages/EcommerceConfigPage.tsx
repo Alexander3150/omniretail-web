@@ -8,7 +8,9 @@ import { EcommerceConfigForm } from "@/modules/administration/components/Ecommer
 import { HeroBannerConfigForm } from "@/modules/administration/components/HeroBannerConfigForm";
 import { useEcommerceConfig } from "@/modules/administration/hooks/useEcommerceConfig";
 import { useHeroBannerConfig } from "@/modules/administration/hooks/useHeroBannerConfig";
+import { isValidGuatemalaPhone } from "@/modules/administration/validation/adminFieldConstraints";
 import { Button } from "@/shared/components/Button";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { useToast } from "@/shared/components/Toast";
 
@@ -26,6 +28,10 @@ export function EcommerceConfigPage() {
   } = useHeroBannerConfig();
   const { showToast } = useToast();
   const [value, setValue] = useState<EcommerceConfigInputDto | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<
+    Partial<Record<keyof EcommerceConfigInputDto, string>>
+  >({});
+  const [submitError, setSubmitError] = useState<string>();
   const [dirty, setDirty] = useState(false);
   const [heroBannerValue, setHeroBannerValue] = useState<HeroBannerConfigInputDto | null>(null);
   const [heroBannerDirty, setHeroBannerDirty] = useState(false);
@@ -57,6 +63,26 @@ export function EcommerceConfigPage() {
   }, [heroBannerConfig, heroBannerDirty]);
 
   function handleChange(nextValue: EcommerceConfigInputDto) {
+    if (value) {
+      setFieldErrors((currentErrors) => {
+        const validation = validateEcommerceFields(nextValue);
+        const nextErrors = { ...currentErrors };
+        const changedFields = [
+          "storeName",
+          "contactPhone",
+          "contactEmail",
+          "defaultBranchId",
+        ] as const;
+        for (const field of changedFields) {
+          const fieldChanged = value[field] !== nextValue[field];
+          const defaultBranchDependencyChanged = field === "defaultBranchId" && value.enabled !== nextValue.enabled;
+          if (!currentErrors[field] || (!fieldChanged && !defaultBranchDependencyChanged)) continue;
+          if (validation[field]) nextErrors[field] = validation[field];
+          else delete nextErrors[field];
+        }
+        return nextErrors;
+      });
+    }
     setValue(nextValue);
     setDirty(true);
   }
@@ -70,6 +96,11 @@ export function EcommerceConfigPage() {
     event.preventDefault();
     if (!value || !heroBannerValue) return;
 
+    const nextErrors = validateEcommerceFields(value);
+    setFieldErrors(nextErrors);
+    if (Object.values(nextErrors).some(Boolean)) return;
+
+    setSubmitError(undefined);
     try {
       const [savedConfig, savedHeroBanner] = await Promise.all([
         save(value),
@@ -85,14 +116,11 @@ export function EcommerceConfigPage() {
         tone: "success",
       });
     } catch (caughtError) {
-      showToast({
-        title: "No se pudo guardar la configuración de e-commerce",
-        description:
-          caughtError instanceof Error
-            ? caughtError.message
-            : "Intentá nuevamente en unos momentos.",
-        tone: "danger",
-      });
+      setSubmitError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "No se pudo guardar la configuración de e-commerce.",
+      );
     }
   }
 
@@ -101,9 +129,9 @@ export function EcommerceConfigPage() {
 
   if (!loading && !canManage) {
     return (
-      <div className="min-w-0 space-y-5">
+      <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
         <PageHeader
-          description="Configurá la disponibilidad y las opciones operativas de la tienda en línea."
+          description="Configure la disponibilidad y las opciones operativas de la tienda en línea."
           title="Diseño E-commerce"
         />
         <div
@@ -111,7 +139,7 @@ export function EcommerceConfigPage() {
           role="alert"
         >
           <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No tenés acceso a esta configuración
+            No dispone de acceso a esta configuración
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             La configuración de e-commerce aplica a todo el tenant y requiere el permiso{" "}
@@ -126,34 +154,26 @@ export function EcommerceConfigPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <PageHeader
-        description="Configurá la disponibilidad y las opciones operativas de la tienda en línea."
+        description="Configure la disponibilidad y las opciones operativas de la tienda en línea."
         title="Diseño E-commerce"
       />
 
       {error ? (
-        <div
-          className="flex flex-col gap-3 rounded-lg border border-[var(--color-danger)] bg-[var(--color-surface)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-          role="alert"
-        >
-          <p className="text-sm font-medium text-[var(--color-danger)]">{error}</p>
+        <InlineAlert className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" title={error} tone="danger">
           <Button onClick={() => void reload()} type="button" variant="secondary">
             Reintentar
           </Button>
-        </div>
+        </InlineAlert>
       ) : null}
 
       {heroBannerError ? (
-        <div
-          className="flex flex-col gap-3 rounded-lg border border-[var(--color-danger)] bg-[var(--color-surface)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-          role="alert"
-        >
-          <p className="text-sm font-medium text-[var(--color-danger)]">{heroBannerError}</p>
+        <InlineAlert className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" title={heroBannerError} tone="danger">
           <Button onClick={() => void reloadHeroBanner()} type="button" variant="secondary">
             Reintentar
           </Button>
-        </div>
+        </InlineAlert>
       ) : null}
 
       {showInitialLoading ? (
@@ -168,9 +188,11 @@ export function EcommerceConfigPage() {
           Cargando configuración de e-commerce...
         </div>
       ) : value && heroBannerValue ? (
-        <form className="space-y-5" onSubmit={handleSubmit}>
+        <form className="space-y-5 pb-2" noValidate onSubmit={handleSubmit}>
+          {submitError ? <InlineAlert title={submitError} tone="danger" /> : null}
           <EcommerceConfigForm
             branchOptions={branchOptions}
+            fieldErrors={fieldErrors}
             onChange={handleChange}
             saving={isSaving}
             tenantId={tenantId}
@@ -183,8 +205,8 @@ export function EcommerceConfigPage() {
             tenantId={tenantId}
             value={heroBannerValue}
           />
-          <div className="flex justify-end">
-            <Button disabled={isSaving} type="submit">
+          <div className="sticky bottom-3 z-20 flex justify-end rounded-xl border border-[var(--color-border)] bg-white/95 p-3 shadow-lg backdrop-blur-sm">
+            <Button className="w-full sm:w-auto" disabled={isSaving} type="submit">
               {isSaving ? "Guardando..." : "Guardar cambios"}
             </Button>
           </div>
@@ -196,6 +218,23 @@ export function EcommerceConfigPage() {
       ) : null}
     </div>
   );
+}
+
+function validateEcommerceFields(
+  value: EcommerceConfigInputDto,
+): Partial<Record<keyof EcommerceConfigInputDto, string>> {
+  const errors: Partial<Record<keyof EcommerceConfigInputDto, string>> = {};
+  if (!value.storeName.trim()) errors.storeName = "Ingrese el nombre de la tienda.";
+  if (value.contactEmail?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.contactEmail.trim())) {
+    errors.contactEmail = "Ingrese un correo electrónico válido.";
+  }
+  if (value.contactPhone?.trim() && !isValidGuatemalaPhone(value.contactPhone)) {
+    errors.contactPhone = "El teléfono público debe tener 8 dígitos.";
+  }
+  if (value.enabled && !value.defaultBranchId?.trim()) {
+    errors.defaultBranchId = "Seleccione una sucursal predeterminada.";
+  }
+  return errors;
 }
 
 function toHeroBannerInputDto(slides: HeroBannerSlide[]): HeroBannerConfigInputDto {

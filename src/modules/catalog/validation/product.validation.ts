@@ -27,8 +27,8 @@ export function isValidProductImageUrl(value: string) {
  * `currentTracking` es lo YA PERSISTIDO para un producto existente (omitido para uno nuevo). Con
  * la capacidad apagada, un flag solo puede seguir en `true` si YA lo estaba (`tracking.x &&
  * currentTracking.x`): eso es conservar, no crear. Bajar un flag a `false` siempre se permite. Sin
- * `currentTracking` el resultado es identico al de antes (todo lo apagado da `false`), asi que
- * `CreateProductService`, `getDefaultTracking` y el resto de callers no cambian de comportamiento.
+ * `currentTracking` solo se activa el par lote/vencimiento si ambas capacidades estan disponibles.
+ * Con un producto existente que ya tenia cualquiera de los dos flags, se puede conservar el par.
  */
 export function applyTrackingRules(
   productType: ProductType,
@@ -40,14 +40,17 @@ export function applyTrackingRules(
     return { stock: false, lot: false, expiration: false, serial: false };
   }
 
+  const traceability =
+    (tracking.lot || tracking.expiration) &&
+    ((capabilities.supportsLots && capabilities.supportsExpiration) ||
+      Boolean(currentTracking?.lot || currentTracking?.expiration));
+
   return {
     stock: capabilities.supportsInventory
       ? tracking.stock
       : tracking.stock && Boolean(currentTracking?.stock),
-    lot: capabilities.supportsLots ? tracking.lot : tracking.lot && Boolean(currentTracking?.lot),
-    expiration: capabilities.supportsExpiration
-      ? tracking.expiration
-      : tracking.expiration && Boolean(currentTracking?.expiration),
+    lot: traceability,
+    expiration: traceability,
     serial: capabilities.supportsSerials
       ? tracking.serial
       : tracking.serial && Boolean(currentTracking?.serial),

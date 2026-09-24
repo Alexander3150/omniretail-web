@@ -52,18 +52,52 @@ export function SeguridadPage() {
     } catch (caughtError) {
       showToast({
         title: "No se pudo cambiar la contraseña",
-        description: caughtError instanceof Error ? caughtError.message : "Intentá nuevamente.",
+        description: caughtError instanceof Error ? caughtError.message : "Inténtelo nuevamente.",
         tone: "danger",
       });
     }
   }
 
+  function updatePasswordField(
+    field: "currentPassword" | "newPassword" | "confirmNewPassword",
+    nextValue: string,
+  ) {
+    const nextForm = { ...form, [field]: nextValue };
+    setForm(nextForm);
+    setFieldErrors((current) => {
+      const fields: Array<keyof ChangePasswordValidationErrors> =
+        field === "newPassword" ? ["newPassword", "confirmNewPassword"] : [field];
+      if (!fields.some((key) => current[key])) return current;
+      const validation = validateChangePasswordForm(nextForm);
+      return {
+        ...current,
+        ...Object.fromEntries(fields.map((key) => [key, validation[key]])),
+      };
+    });
+  }
+
   return (
-    <div className="mx-auto w-full max-w-lg space-y-5">
+    <div className="mx-auto w-full max-w-2xl space-y-5">
       <PageHeader
         description="Cambia tu contraseña. Al confirmar, se cerrarán tus demás sesiones activas."
         title="Seguridad"
       />
+
+      <section className="flex flex-col gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-app-background)] p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="font-bold text-[var(--color-text)]">Protección de la cuenta</h2>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            Administra tu contraseña y la verificación en dos pasos.
+          </p>
+        </div>
+        {mfaEnrollment.status ? (
+          <span
+            className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${mfaEnrollment.status.enabled ? "bg-[var(--color-success)]/10 text-[var(--color-success)]" : "bg-white text-[var(--color-text-muted)]"}`}
+          >
+            {mfaEnrollment.status.enabled ? "Verificación activa" : "Verificación disponible"}
+          </span>
+        ) : null}
+      </section>
 
       <form
         className="space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
@@ -92,9 +126,7 @@ export function SeguridadPage() {
             autoComplete="current-password"
             disabled={busy}
             id="security-current-password"
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, currentPassword: event.target.value }))
-            }
+            onChange={(event) => updatePasswordField("currentPassword", event.target.value)}
             value={form.currentPassword}
           />
         </FormField>
@@ -110,7 +142,7 @@ export function SeguridadPage() {
             disabled={busy}
             id="security-new-password"
             maxLength={CUSTOMER_PASSWORD_POLICY.MAX_LENGTH}
-            onChange={(event) => setForm((prev) => ({ ...prev, newPassword: event.target.value }))}
+            onChange={(event) => updatePasswordField("newPassword", event.target.value)}
             value={form.newPassword}
           />
         </FormField>
@@ -125,9 +157,7 @@ export function SeguridadPage() {
             disabled={busy}
             id="security-confirm-password"
             maxLength={CUSTOMER_PASSWORD_POLICY.MAX_LENGTH}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, confirmNewPassword: event.target.value }))
-            }
+            onChange={(event) => updatePasswordField("confirmNewPassword", event.target.value)}
             value={form.confirmNewPassword}
           />
         </FormField>
@@ -145,7 +175,7 @@ export function SeguridadPage() {
           </FormField>
         ) : null}
 
-        <Button disabled={busy} type="submit">
+        <Button className="w-full sm:w-auto" disabled={busy} type="submit">
           {busy ? "Actualizando..." : "Actualizar contraseña"}
         </Button>
       </form>

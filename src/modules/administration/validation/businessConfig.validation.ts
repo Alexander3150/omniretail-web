@@ -25,6 +25,14 @@ export function enforceBusinessConfigCoherence(dto: BusinessConfigDto): Business
     return coherentDto;
   }
 
+  const supportsTraceability = coherentDto.supportsLots || coherentDto.supportsExpiration;
+  coherentDto.supportsLots = supportsTraceability;
+  coherentDto.supportsExpiration = supportsTraceability;
+  const defaultTraceability =
+    coherentDto.defaultProductTracking.lot || coherentDto.defaultProductTracking.expiration;
+  coherentDto.defaultProductTracking.lot = defaultTraceability;
+  coherentDto.defaultProductTracking.expiration = defaultTraceability;
+
   if (!coherentDto.supportsLots) coherentDto.defaultProductTracking.lot = false;
   if (!coherentDto.supportsExpiration) coherentDto.defaultProductTracking.expiration = false;
   if (!coherentDto.supportsSerials) coherentDto.defaultProductTracking.serial = false;

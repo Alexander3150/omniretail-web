@@ -82,13 +82,18 @@ export function PickingWorkspace(props: PickingWorkspaceProps) {
     setReleaseError(null);
   };
 
+  const updateReleaseReason = (nextReason: string) => {
+    setReleaseReason(nextReason);
+    if (releaseError) setReleaseError(validateReleaseReason(nextReason));
+  };
+
   return (
     <>
       <section className="min-w-0 rounded-xl border border-[var(--color-border)] bg-white shadow-sm">
         {!props.selected ? (
-          <div className="flex min-h-[26rem] items-center justify-center bg-[var(--color-app-background)]/45 p-6 text-center sm:p-8">
-            <div className="max-w-xl rounded-xl border border-dashed border-[var(--color-border)] bg-white px-6 py-7 shadow-sm sm:px-10">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-app-background)] text-lg font-bold text-[var(--color-title)]">1</div>
+          <div className="flex min-h-64 items-center justify-center bg-white p-5 text-center sm:p-6">
+            <div className="max-w-lg rounded-xl border border-dashed border-[var(--color-border)] bg-slate-50 px-6 py-6 sm:px-8">
+              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-structure)] text-base font-bold text-white">1</div>
               <h2 className="mt-3 text-xl font-bold text-[var(--color-title)]">Selecciona un pedido</h2>
               <p className="mx-auto mt-2 max-w-md text-sm text-[var(--color-text-muted)]">
                 Elige un pedido de la cola para revisar los productos, ubicaciones y cantidades a recolectar.
@@ -112,7 +117,7 @@ export function PickingWorkspace(props: PickingWorkspaceProps) {
 
         {detail ? (
           <div>
-            <header className="border-b border-[var(--color-border)] bg-[var(--color-app-background)] p-3.5 sm:p-4">
+            <header className="border-b border-t-4 border-[var(--color-border)] border-t-[var(--color-structure)] bg-white p-3.5 sm:p-4">
               <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start">
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Hoja de recolección</p>
@@ -167,7 +172,7 @@ export function PickingWorkspace(props: PickingWorkspaceProps) {
                   <h3 className="font-bold text-[var(--color-title)]">Historial de liberaciones</h3>
                   <div className="mt-2.5 space-y-2">
                     {detail.releases.map((item) => (
-                      <div className="rounded-lg bg-[var(--color-app-background)] px-3 py-2.5 text-sm" key={item.id}>
+                      <div className="rounded-lg bg-slate-50 px-3 py-2.5 text-sm" key={item.id}>
                         <p>{item.reason}</p>
                         <p className="mt-1 text-xs text-[var(--color-text-muted)]">{formatDateTime(item.releasedAt)}</p>
                       </div>
@@ -198,7 +203,7 @@ export function PickingWorkspace(props: PickingWorkspaceProps) {
         title="Liberar picking"
       >
         <FormField error={releaseError ?? undefined} hint="El progreso y su trazabilidad se conservarán." id="picking-release-reason" label="Motivo *">
-          <Input disabled={props.submitting} id="picking-release-reason" maxLength={500} onChange={(event) => { setReleaseReason(event.target.value); setReleaseError(null); }} value={releaseReason} />
+          <Input disabled={props.submitting} id="picking-release-reason" maxLength={500} onChange={(event) => updateReleaseReason(event.target.value)} value={releaseReason} />
         </FormField>
       </Modal>
 

@@ -43,7 +43,7 @@ export function useStorefrontCheckout() {
         setError(
           message.includes("Inventory reservation conflict") ||
             message.includes("Insufficient stock")
-            ? "No se pudo reservar uno de los productos. Revisa la disponibilidad o ajusta el carrito."
+            ? "No se pudo reservar uno de los productos. Revise la disponibilidad o ajuste el carrito."
             : message || "No se pudo procesar el pedido.",
         );
       } finally {

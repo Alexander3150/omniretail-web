@@ -16,6 +16,7 @@ import type { StorageLocation } from "@/core/entities";
 import { getLocalCalendarDate } from "@/core/inventory/expirationDate";
 import { InventoryTransferReason, InventoryTransferRequestStatus } from "@/core/enums";
 import { Button } from "@/shared/components/Button";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Input } from "@/shared/components/Input";
 import { Modal } from "@/shared/components/Modal";
 import { Select } from "@/shared/components/Select";
@@ -123,6 +124,7 @@ export function InventoryAlertsPage() {
     rejectTransferRequest,
   } = useInventoryAlerts();
   const [panelMode, setPanelMode] = useState<AlertPanelMode>("alerts");
+  const [contextPanelExpanded, setContextPanelExpanded] = useState<boolean>(false);
   const [previousCurrentBranchId, setPreviousCurrentBranchId] = useState(currentBranchId);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [actionMode, setActionMode] = useState<ActionMode>(null);
@@ -154,6 +156,11 @@ export function InventoryAlertsPage() {
   const firstVisible = rows.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const lastVisible = Math.min(currentPage * pageSize, rows.length);
   const paginatedRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const unreadAlertCount = hasRestoredViewedTransferAlerts
+    ? data.transferRequests.filter(
+        (request) => !viewedTransferAlertKeys.has(getTransferAlertKey(branchId, request)),
+      ).length
+    : 0;
 
   useEffect(() => {
     const timer = window.setInterval(() => setClockTick((current) => current + 1), 60_000);
@@ -169,6 +176,7 @@ export function InventoryAlertsPage() {
     window.queueMicrotask(() => {
       setSelectedProductId(productId);
       setPanelMode("product-detail");
+      setContextPanelExpanded(true);
       if (searchParams.get("openAdjustment") === "1" && canAdjustStock) {
         setActionMode("adjust");
       }
@@ -190,11 +198,13 @@ export function InventoryAlertsPage() {
   function selectRow(row: InventoryProductRow) {
     setSelectedProductId(row.productId);
     setPanelMode("product-detail");
+    setContextPanelExpanded(true);
   }
 
   function selectProduct(productId: string) {
     setSelectedProductId(productId);
     setPanelMode("product-detail");
+    setContextPanelExpanded(true);
   }
 
   function openAdjust(row?: InventoryProductRow) {
@@ -252,7 +262,7 @@ export function InventoryAlertsPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-4">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-4">
       <header className="flex min-w-0 flex-col gap-3 border-b border-[var(--color-border)] pb-4 xl:flex-row xl:items-end xl:justify-between">
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
@@ -283,11 +293,7 @@ export function InventoryAlertsPage() {
         </div>
       </header>
 
-      {error ? (
-        <p className="rounded-md border border-[var(--color-danger)] bg-white px-4 py-3 text-sm font-medium text-[var(--color-danger)]">
-          {error}
-        </p>
-      ) : null}
+      {error ? <InlineAlert title={error} tone="danger" /> : null}
 
       <KpiGrid
         activeProducts={kpis.activeProducts}
@@ -302,7 +308,14 @@ export function InventoryAlertsPage() {
         }}
       />
 
-      <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_400px] 2xl:grid-cols-[minmax(0,1fr)_430px]">
+      <section
+        className={cn(
+          "grid min-w-0 items-start gap-4",
+          contextPanelExpanded
+            ? "xl:grid-cols-[minmax(0,1fr)_360px] xl:gap-3"
+            : "xl:grid-cols-[minmax(0,1fr)]",
+        )}
+      >
         <div className="min-w-0 overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-sm">
           <InventoryFilters
             branchId={branchId}
@@ -310,8 +323,11 @@ export function InventoryAlertsPage() {
             categories={categories}
             categoryId={categoryId}
             filtersOpen={filtersOpen}
+            compact={contextPanelExpanded}
             search={search}
+            showAlertsLauncher={!contextPanelExpanded}
             status={status}
+            unreadAlertCount={unreadAlertCount}
             onBranchChange={(value) => {
               setPage(1);
               setBranchId(value);
@@ -334,6 +350,10 @@ export function InventoryAlertsPage() {
               setPage(1);
               setFiltersOpen((current) => !current);
             }}
+            onOpenAlerts={() => {
+              setPanelMode("alerts");
+              setContextPanelExpanded(true);
+            }}
           />
           {loading ? (
             <p className="border-t border-[var(--color-border)] p-5 text-sm text-[var(--color-text-muted)]">
@@ -352,6 +372,7 @@ export function InventoryAlertsPage() {
               totalPages={totalPages}
               canAdjustStock={canAdjustStock}
               canManageTransfers={canManageTransfers}
+              compact={contextPanelExpanded}
               onAdjust={openAdjust}
               onOpen={selectRow}
               onPageChange={setPage}
@@ -373,6 +394,7 @@ export function InventoryAlertsPage() {
           row={selectedRow}
           canAdjustStock={canAdjustStock}
           canManageTransfers={canManageTransfers}
+          desktopExpanded={contextPanelExpanded}
           onAdjust={() => selectedRow && canAdjustStock && openAdjust(selectedRow)}
           onCreateOrder={() => selectedRow && openPurchaseOrder(selectedRow, "inventory-alert")}
           onOtherBranches={() => selectedRow && openOtherBranches(selectedRow)}
@@ -381,7 +403,9 @@ export function InventoryAlertsPage() {
           onCloseProduct={() => {
             setSelectedProductId(null);
             setPanelMode("alerts");
+            setContextPanelExpanded(false);
           }}
+          onCollapse={() => setContextPanelExpanded(false)}
           onModeChange={setPanelMode}
           onSelectProduct={selectProduct}
           onSelectTransferRequest={openTransferRequestDetail}
@@ -598,11 +622,15 @@ function InventoryFilters({
   branches,
   categories,
   categoryId,
+  compact,
   filtersOpen,
   search,
+  showAlertsLauncher,
   status,
+  unreadAlertCount,
   onBranchChange,
   onCategoryChange,
+  onOpenAlerts,
   onSearchChange,
   onStatusChange,
   onToggleFilters,
@@ -611,20 +639,62 @@ function InventoryFilters({
   branches: Array<{ id: string; name: string }>;
   categories: Array<{ id: string; name: string }>;
   categoryId: string;
+  compact: boolean;
   filtersOpen: boolean;
   search: string;
+  showAlertsLauncher: boolean;
   status: InventoryStatusFilter;
+  unreadAlertCount: number;
   onBranchChange: (value: string) => void;
   onCategoryChange: (value: string) => void;
+  onOpenAlerts: () => void;
   onSearchChange: (value: string) => void;
   onStatusChange: (value: InventoryStatusFilter) => void;
   onToggleFilters: () => void;
 }) {
   return (
-    <div className="space-y-3 p-4">
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_auto] lg:items-center">
+    <div
+      className={cn(
+        "relative space-y-3 p-4",
+        compact && "xl:p-3",
+        showAlertsLauncher && "xl:pr-16",
+      )}
+    >
+      {showAlertsLauncher ? (
+        <button
+          aria-label={
+            unreadAlertCount > 0
+              ? `Abrir alertas, ${unreadAlertCount} nuevas`
+              : "Abrir alertas"
+          }
+          className="absolute right-3 top-3 hidden h-11 w-11 items-center justify-center rounded-xl bg-[var(--color-structure)] text-white shadow-md transition hover:bg-[var(--color-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)] xl:inline-flex"
+          onClick={onOpenAlerts}
+          type="button"
+        >
+          <svg
+            aria-hidden="true"
+            className="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
+            <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+            <path d="M10 21h4" />
+          </svg>
+          {unreadAlertCount > 0 ? (
+            <span className="absolute -right-1 -top-1 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-white">
+              {unreadAlertCount > 9 ? "9+" : unreadAlertCount}
+            </span>
+          ) : null}
+        </button>
+      ) : null}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(18rem,2fr)_repeat(3,minmax(10rem,1fr))] xl:items-center">
         <Input
           aria-label="Buscar productos en inventario"
+          className="sm:col-span-2 xl:col-span-1"
           maxLength={TEXT_LIMITS.search}
           onChange={(event) => onSearchChange(event.target.value)}
           placeholder="Buscar por nombre, SKU, categoria o ubicacion..."
@@ -642,37 +712,35 @@ function InventoryFilters({
             </option>
           ))}
         </Select>
-        <Button onClick={onToggleFilters} type="button" variant="secondary">
+        <Select
+          aria-label="Categoria"
+          className={cn(!filtersOpen && "hidden xl:block")}
+          onChange={(event) => onCategoryChange(event.target.value)}
+          value={categoryId}
+        >
+          <option value="all">Todas las categorias</option>
+          {categories.map((category) => (
+            <option key={category.id} value={category.id}>
+              {category.name}
+            </option>
+          ))}
+        </Select>
+        <Select
+          aria-label="Estado"
+          className={cn(!filtersOpen && "hidden xl:block")}
+          onChange={(event) => onStatusChange(event.target.value as InventoryStatusFilter)}
+          value={status}
+        >
+          {STATUS_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </Select>
+        <Button className="xl:hidden" onClick={onToggleFilters} type="button" variant="secondary">
           Filtros
         </Button>
       </div>
-      {filtersOpen ? (
-        <div className="grid gap-3 border-t border-[var(--color-border)] pt-3 md:grid-cols-2">
-          <Select
-            aria-label="Categoria"
-            onChange={(event) => onCategoryChange(event.target.value)}
-            value={categoryId}
-          >
-            <option value="all">Todas las categorias</option>
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-              </option>
-            ))}
-          </Select>
-          <Select
-            aria-label="Estado"
-            onChange={(event) => onStatusChange(event.target.value as InventoryStatusFilter)}
-            value={status}
-          >
-            {STATUS_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </Select>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -689,6 +757,7 @@ function InventoryTable({
   totalPages,
   canAdjustStock,
   canManageTransfers,
+  compact,
   onAdjust,
   onOpen,
   onPageChange,
@@ -707,6 +776,7 @@ function InventoryTable({
   totalPages: number;
   canAdjustStock: boolean;
   canManageTransfers: boolean;
+  compact: boolean;
   onAdjust: (row: InventoryProductRow) => void;
   onOpen: (row: InventoryProductRow) => void;
   onPageChange: (page: number) => void;
@@ -717,22 +787,28 @@ function InventoryTable({
   return (
     <div className="border-t border-[var(--color-border)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] border-collapse text-left text-sm">
+        <table
+          className={cn(
+            "w-full min-w-[820px] border-collapse text-left text-sm",
+            compact &&
+              "xl:text-[13px] xl:[&_td]:px-2.5 xl:[&_td]:py-2.5 xl:[&_th]:px-2.5",
+          )}
+        >
           <thead className="bg-[var(--color-structure)] text-xs uppercase text-white">
             <tr>
-              <th className="px-4 py-3 font-semibold">Producto</th>
-              <th className="px-4 py-3 text-right font-semibold">Existencia</th>
-              <th className="px-4 py-3 text-right font-semibold">Reservado</th>
-              <th className="px-4 py-3 text-right font-semibold">Disponible</th>
-              <th className="hidden px-4 py-3 text-right font-semibold md:table-cell">
+              <th className="px-3 py-2.5 font-semibold">Producto</th>
+              <th className="px-3 py-2.5 text-right font-semibold">Existencia</th>
+              <th className="px-3 py-2.5 text-right font-semibold">Reservado</th>
+              <th className="px-3 py-2.5 text-right font-semibold">Disponible</th>
+              <th className="hidden px-3 py-2.5 text-right font-semibold md:table-cell">
                 Nivel minimo
               </th>
-              <th className="hidden px-4 py-3 font-semibold lg:table-cell">Ubicacion</th>
-              <th className="px-4 py-3 font-semibold">Estado</th>
+              <th className="hidden px-3 py-2.5 font-semibold lg:table-cell">Ubicacion</th>
+              <th className="px-3 py-2.5 font-semibold">Estado</th>
               {showExpiration ? (
-                <th className="hidden px-4 py-3 font-semibold lg:table-cell">Caducidad</th>
+                <th className="hidden px-3 py-2.5 font-semibold lg:table-cell">Caducidad</th>
               ) : null}
-              <th className="w-24 px-4 py-3 text-right font-semibold">Acciones</th>
+              <th className="w-20 px-3 py-2.5 text-right font-semibold">Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -759,13 +835,13 @@ function InventoryTable({
                   }}
                   tabIndex={0}
                 >
-                  <td className="min-w-[220px] px-4 py-3">
+                  <td className="min-w-[190px] px-3 py-3">
                     <p className="font-semibold text-[var(--color-title)]">{row.productName}</p>
                     <p className="mt-1 text-xs font-semibold uppercase text-[var(--color-text-muted)]">
                       {row.sku}
                     </p>
                   </td>
-                  <td className="px-4 py-4 text-right">
+                  <td className="px-3 py-3 text-right">
                     <p className="text-base font-bold text-[var(--color-title)]">
                       {row.sellableQuantity} {row.saleUnitName}
                     </p>
@@ -776,10 +852,10 @@ function InventoryTable({
                     ) : null}
                     <StockLevelBar row={row} />
                   </td>
-                  <td className="px-4 py-4 text-right font-semibold text-[var(--color-text)]">
+                  <td className="px-3 py-3 text-right font-semibold text-[var(--color-text)]">
                     {row.sellableReservedQuantity} {row.saleUnitName}
                   </td>
-                  <td className="px-4 py-4 text-right font-bold text-[var(--color-title)]">
+                  <td className="px-3 py-3 text-right font-bold text-[var(--color-title)]">
                     <p>
                       {row.sellableAvailableQuantity} {row.saleUnitName}
                     </p>
@@ -789,21 +865,21 @@ function InventoryTable({
                       </p>
                     ) : null}
                   </td>
-                  <td className="hidden px-4 py-4 text-right font-semibold text-[var(--color-text)] md:table-cell">
+                  <td className="hidden px-3 py-3 text-right font-semibold text-[var(--color-text)] md:table-cell">
                     {row.minStock}
                   </td>
-                  <td className="hidden px-4 py-4 font-semibold text-[var(--color-text)] lg:table-cell">
+                  <td className="hidden px-3 py-3 font-semibold text-[var(--color-text)] lg:table-cell">
                     {row.defaultLocationName}
                   </td>
-                  <td className="px-4 py-4">
+                  <td className="px-3 py-3">
                     <InventoryStatusBadge status={row.status} label={row.statusLabel} />
                   </td>
                   {showExpiration ? (
-                    <td className="hidden px-4 py-4 text-[var(--color-text)] lg:table-cell">
+                    <td className="hidden px-3 py-3 text-[var(--color-text)] lg:table-cell">
                       <ExpirationCell row={row} />
                     </td>
                   ) : null}
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-3">
                     {!row.isDerivedKit ? (
                       <RowActionsMenu
                         row={row}
@@ -1149,6 +1225,7 @@ function ContextPanel({
   activeBranchName,
   canAdjustStock,
   canManageTransfers,
+  desktopExpanded,
   alerts,
   mode,
   row,
@@ -1156,6 +1233,7 @@ function ContextPanel({
   hasRestoredViewedTransferAlerts,
   viewedTransferAlertKeys,
   onAdjust,
+  onCollapse,
   onCreateOrder,
   onCloseProduct,
   onModeChange,
@@ -1169,6 +1247,7 @@ function ContextPanel({
   activeBranchName: string;
   canAdjustStock: boolean;
   canManageTransfers: boolean;
+  desktopExpanded: boolean;
   alerts: InventoryAlert[];
   mode: AlertPanelMode;
   row: InventoryProductRow | null;
@@ -1176,6 +1255,7 @@ function ContextPanel({
   hasRestoredViewedTransferAlerts: boolean;
   viewedTransferAlertKeys: Set<string>;
   onAdjust: () => void;
+  onCollapse: () => void;
   onCreateOrder: () => void;
   onCloseProduct: () => void;
   onModeChange: (mode: AlertPanelMode) => void;
@@ -1188,8 +1268,27 @@ function ContextPanel({
   const productAlerts = row ? alerts.filter((alert) => alert.productId === row.productId) : [];
   const totalAlerts = alerts.length + transferRequests.length;
 
+  const showProduct = mode === "product-detail" && Boolean(row);
+
   return (
-    <aside className="min-w-0 self-start overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-sm">
+    <>
+      {showProduct ? (
+        <button
+          aria-label="Cerrar detalle de producto"
+          className="fixed inset-0 z-40 bg-slate-950/25 xl:hidden"
+          onClick={onCloseProduct}
+          type="button"
+        />
+      ) : null}
+      <aside
+        className={cn(
+          "min-w-0 overflow-hidden border border-[var(--color-border)] bg-white shadow-sm",
+          !desktopExpanded && "xl:hidden",
+          showProduct
+            ? "fixed inset-y-0 right-0 z-50 w-[min(100%,42rem)] overflow-y-auto rounded-none sm:rounded-l-xl xl:static xl:z-auto xl:w-auto xl:self-start xl:overflow-hidden xl:rounded-xl"
+            : "self-start rounded-xl",
+        )}
+      >
       {mode === "product-detail" ? (
         <button
           className="flex w-full items-center justify-between border-b border-[var(--color-border)] px-4 py-3 text-left text-sm font-bold text-[var(--color-title)] transition hover:bg-[var(--color-app-background)]"
@@ -1206,6 +1305,7 @@ function ContextPanel({
           transferRequests={transferRequests}
           hasRestoredViewedTransferAlerts={hasRestoredViewedTransferAlerts}
           viewedTransferAlertKeys={viewedTransferAlertKeys}
+          onCollapse={onCollapse}
           onSelectProduct={onSelectProduct}
           onSelectTransferRequest={onSelectTransferRequest}
         />
@@ -1226,7 +1326,8 @@ function ContextPanel({
           onViewProductTransfers={onViewProductTransfers}
         />
       ) : null}
-    </aside>
+      </aside>
+    </>
   );
 }
 
@@ -1236,6 +1337,7 @@ function AlertsPanel({
   transferRequests,
   hasRestoredViewedTransferAlerts,
   viewedTransferAlertKeys,
+  onCollapse,
   onSelectProduct,
   onSelectTransferRequest,
 }: {
@@ -1244,6 +1346,7 @@ function AlertsPanel({
   transferRequests: InventoryTransferRequestRow[];
   hasRestoredViewedTransferAlerts: boolean;
   viewedTransferAlertKeys: Set<string>;
+  onCollapse: () => void;
   onSelectProduct: (productId: string) => void;
   onSelectTransferRequest: (request: InventoryTransferRequestRow) => void;
 }) {
@@ -1257,7 +1360,7 @@ function AlertsPanel({
 
   return (
     <section>
-      <header className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
+      <header className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-app-background)]/45 px-4 py-3">
         <div>
           <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
             Alertas prioritarias
@@ -1266,11 +1369,19 @@ function AlertsPanel({
             Alertas {feedItems.length}
           </h2>
         </div>
-        <span aria-hidden="true" className="text-sm font-bold text-[var(--color-text-muted)]">
+        <button
+          aria-label="Cerrar panel de alertas"
+          className="hidden h-9 w-9 items-center justify-center rounded-md border border-[var(--color-border)] text-lg font-bold text-[var(--color-title)] transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)] xl:inline-flex"
+          onClick={onCollapse}
+          type="button"
+        >
+          ×
+        </button>
+        <span aria-hidden="true" className="text-sm font-bold text-[var(--color-text-muted)] xl:hidden">
           ^
         </span>
       </header>
-      <div className="max-h-[420px] space-y-3 overflow-y-auto p-4">
+      <div className="max-h-[420px] space-y-2.5 overflow-y-auto p-3 sm:p-4">
         {feedItems.length === 0 ? (
           <p className="rounded-md border border-[var(--color-border)] bg-white p-3 text-sm text-[var(--color-text-muted)]">
             No hay alertas prioritarias para la sucursal seleccionada.
@@ -1280,7 +1391,7 @@ function AlertsPanel({
             item.kind === "transfer" ? (
               <button
                 className={cn(
-                  "block w-full rounded-md border p-3 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
+                  "block w-full rounded-lg border border-l-4 bg-white p-3 text-left shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
                   getTransferRequestToneClass(item.request),
                 )}
                 key={item.id}
@@ -1298,7 +1409,7 @@ function AlertsPanel({
                     {getTransferRequestAlertTitle(item.request)}
                   </strong>
                   {item.isNew ? (
-                    <span className="rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-xs font-bold text-[var(--color-title)]">
+                    <span className="rounded-full bg-[var(--color-primary)] px-2 py-0.5 text-xs font-bold text-white">
                       Nueva
                     </span>
                   ) : null}
@@ -1318,7 +1429,7 @@ function AlertsPanel({
             ) : (
               <button
                 className={cn(
-                  "block w-full rounded-md border p-3 text-left transition hover:bg-[var(--color-app-background)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
+                  "block w-full rounded-lg border border-l-4 bg-white p-3 text-left shadow-sm transition hover:bg-[var(--color-app-background)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
                   item.alert.tone === "danger" && "border-red-200",
                   item.alert.tone === "warning" && "border-amber-200",
                   item.alert.tone === "info" && "border-blue-200",
@@ -1410,9 +1521,6 @@ function ProductPanel({
               Disponibilidad calculada a partir de sus componentes.
             </p>
           </section>
-          <Button onClick={onClose} type="button" variant="secondary">
-            Cerrar
-          </Button>
         </div>
       </section>
     );
@@ -1446,7 +1554,10 @@ function ProductPanel({
             <p className="text-sm font-bold text-[var(--color-title)]">Estado</p>
             <InventoryStatusBadge label={row.statusLabel} status={row.status} />
           </div>
-          <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+          <h3 className="mt-4 text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+            Existencias
+          </h3>
+          <dl className="mt-3 grid gap-4 sm:grid-cols-2">
             <DetailTile
               label="Existencia para venta"
               value={`${row.sellableQuantity} ${row.saleUnitName}`}
@@ -1466,6 +1577,11 @@ function ProductPanel({
               />
             ) : null}
             <DetailTile label="Nivel minimo" value={String(row.minStock)} />
+          </dl>
+          <h3 className="mt-5 border-t border-[var(--color-border)] pt-4 text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+            Información del producto
+          </h3>
+          <dl className="mt-3 grid gap-4 sm:grid-cols-2">
             <DetailTile label="Ubicacion" value={row.defaultLocationName} />
             <DetailTile label="Categoria" value={row.categoryName} />
             <DetailTile label="Unidad minima" value={row.unitName} />
@@ -1497,29 +1613,28 @@ function ProductPanel({
             </p>
           )}
         </section>
-        <div className="grid gap-2">
-          {canManageTransfers ? (
-            <Button onClick={onOtherBranches} type="button" variant="secondary">
-              Ver existencias en otras sucursales
-            </Button>
-          ) : null}
-          <Button onClick={onViewHistory} type="button" variant="secondary">
-            Ver historial de movimientos
-          </Button>
-          <Button onClick={onViewProductTransfers} type="button" variant="secondary">
-            Ver solicitudes y traslados
-          </Button>
+        <div className="space-y-2">
           {canAdjustStock ? (
-            <Button onClick={onAdjust} type="button">
+            <Button className="w-full" onClick={onAdjust} type="button">
               Ajustar existencias
             </Button>
           ) : null}
-          <Button onClick={onCreateOrder} type="button" variant="secondary">
+          <div className="grid gap-2 sm:grid-cols-2">
+          {canManageTransfers ? (
+            <Button className="w-full" onClick={onOtherBranches} type="button" variant="secondary">
+              Ver existencias en otras sucursales
+            </Button>
+          ) : null}
+          <Button className="w-full" onClick={onViewHistory} type="button" variant="secondary">
+            Ver historial de movimientos
+          </Button>
+          <Button className="w-full" onClick={onViewProductTransfers} type="button" variant="secondary">
+            Ver solicitudes y traslados
+          </Button>
+          <Button className="w-full" onClick={onCreateOrder} type="button" variant="secondary">
             Crear orden de compra
           </Button>
-          <Button onClick={onClose} type="button" variant="secondary">
-            Cerrar
-          </Button>
+          </div>
         </div>
       </div>
     </section>
@@ -1618,9 +1733,51 @@ function AdjustStockModal({
   }
 
   function update(patch: Partial<EditableAdjustStockDto>) {
-    setValue((current) => ({ ...current, ...patch }));
-    setErrors({});
-    setSubmitError(null);
+    const nextValue = { ...value, ...patch };
+    const nextSelectedUnit =
+      row.adjustmentUnits.find((option) => option.unitId === nextValue.unitId) ??
+      row.adjustmentUnits[0];
+    const nextCanonicalQuantity =
+      toFiniteNumber(nextValue.quantity) * (nextSelectedUnit?.toBaseFactor ?? 1);
+    const nextValidationErrors = validateAdjustment(
+      { ...toAdjustStockDto(nextValue), quantity: nextCanonicalQuantity },
+      row,
+      row.locationQuantities[nextValue.locationId] ?? 0,
+    );
+    const nextQuantityError = getUnitQuantityInputError(
+      nextValue.quantity,
+      nextSelectedUnit?.unitAllowsDecimals ?? false,
+    );
+    if (nextQuantityError) nextValidationErrors.quantity = nextQuantityError;
+    const affectedFields = new Set<keyof AdjustmentValidationErrors>();
+    if (patch.locationId !== undefined) {
+      affectedFields.add("locationId");
+      affectedFields.add("lotId");
+      affectedFields.add("serialNumbers");
+    }
+    if (patch.movementKind !== undefined || patch.unitId !== undefined || patch.quantity !== undefined) {
+      affectedFields.add("quantity");
+      affectedFields.add("lotId");
+      affectedFields.add("lotNumber");
+      affectedFields.add("expirationDate");
+      affectedFields.add("serialNumbers");
+    }
+    if (patch.lotId !== undefined) affectedFields.add("lotId");
+    if (patch.lotNumber !== undefined) affectedFields.add("lotNumber");
+    if (patch.expirationDate !== undefined) affectedFields.add("expirationDate");
+    if (patch.serialNumbersText !== undefined) affectedFields.add("serialNumbers");
+    if (patch.reason !== undefined) affectedFields.add("reason");
+    if (patch.notes !== undefined) affectedFields.add("notes");
+    setValue(nextValue);
+    setErrors((current) => {
+      const nextErrors = { ...current };
+      for (const field of affectedFields) {
+        if (!current[field]) continue;
+        if (nextValidationErrors[field]) nextErrors[field] = nextValidationErrors[field];
+        else delete nextErrors[field];
+      }
+      return nextErrors;
+    });
   }
 
   return (
@@ -1637,12 +1794,12 @@ function AdjustStockModal({
       }
       onClose={onClose}
       open={open}
-      maxWidth="520px"
+      maxWidth="720px"
       subtitle={row.productName}
       title="Registrar ajuste de inventario"
     >
       <form className="space-y-4" id="inventory-adjust-form" onSubmit={submit}>
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <ReadonlyField label="Producto" value={row.productName} />
           <ReadonlyField label="Codigo" value={row.sku} />
           <ReadonlyField label="Existencia actual" value={String(row.quantity)} />
@@ -1650,54 +1807,85 @@ function AdjustStockModal({
           <ReadonlyField label="Disponible" value={String(row.availableQuantity)} />
           <ReadonlyField label="Nivel minimo" value={String(row.minStock)} />
         </div>
-        <Field id="adjust-location" label="Ubicacion" error={errors.locationId}>
-          <Select
-            id="adjust-location"
-            onChange={(event) =>
-              update({ locationId: event.target.value, lotId: undefined, serialNumbersText: "" })
-            }
-            value={value.locationId}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field id="adjust-location" label="Ubicacion" error={errors.locationId}>
+            <Select
+              id="adjust-location"
+              onChange={(event) =>
+                update({ locationId: event.target.value, lotId: undefined, serialNumbersText: "" })
+              }
+              value={value.locationId}
+            >
+              {locations.map((location) => (
+                <option key={location.id} value={location.id}>
+                  {location.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field id="adjust-kind" label="Tipo de ajuste">
+            <Select
+              id="adjust-kind"
+              onChange={(event) =>
+                update({
+                  movementKind: event.target.value as AdjustStockDto["movementKind"],
+                  lotId: undefined,
+                  lotNumber: "",
+                  expirationDate: "",
+                  serialNumbersText: "",
+                })
+              }
+              value={value.movementKind}
+            >
+              <option value="in">Entrada manual</option>
+              <option value="out">Salida manual</option>
+              <option value="waste">Merma</option>
+              <option value="count">Conteo / Correccion exacta</option>
+            </Select>
+          </Field>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field id="adjust-unit" label="Unidad">
+            <Select
+              id="adjust-unit"
+              onChange={(event) => update({ unitId: event.target.value, serialNumbersText: "" })}
+              value={value.unitId}
+            >
+              {row.adjustmentUnits.map((option) => (
+                <option key={option.unitId} value={option.unitId}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field
+            id="adjust-quantity"
+            label="Cantidad"
+            error={errors.quantity ?? adjustmentValidationErrors.quantity}
           >
-            {locations.map((location) => (
-              <option key={location.id} value={location.id}>
-                {location.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field id="adjust-kind" label="Tipo de ajuste">
-          <Select
-            id="adjust-kind"
-            onChange={(event) =>
-              update({
-                movementKind: event.target.value as AdjustStockDto["movementKind"],
-                lotId: undefined,
-                lotNumber: "",
-                expirationDate: "",
-                serialNumbersText: "",
-              })
-            }
-            value={value.movementKind}
-          >
-            <option value="in">Entrada manual</option>
-            <option value="out">Salida manual</option>
-            <option value="waste">Merma</option>
-            <option value="count">Conteo / Correccion exacta</option>
-          </Select>
-        </Field>
-        <Field id="adjust-unit" label="Unidad">
-          <Select
-            id="adjust-unit"
-            onChange={(event) => update({ unitId: event.target.value, serialNumbersText: "" })}
-            value={value.unitId}
-          >
-            {row.adjustmentUnits.map((option) => (
-              <option key={option.unitId} value={option.unitId}>
-                {option.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
+            <Input
+              id="adjust-quantity"
+              inputMode={selectedUnit?.unitAllowsDecimals ? "decimal" : "numeric"}
+              maxLength={selectedUnit?.unitAllowsDecimals ? 12 : 6}
+              onChange={(event) =>
+                update({
+                  quantity: parseUnitQuantityInput(
+                    event.target.value,
+                    selectedUnit?.unitAllowsDecimals ?? false,
+                  ),
+                })
+              }
+              type="text"
+              value={value.quantity}
+            />
+          </Field>
+        </div>
+        {selectedUnit && selectedUnit.toBaseFactor !== 1 ? (
+          <p className="rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-title)]">
+            {toFiniteNumber(value.quantity)} {selectedUnit.unitName} = {canonicalInputQuantity}{" "}
+            {row.unitName}
+          </p>
+        ) : null}
         {row.tracking.lot && traceQuantity > 0 ? (
           isEntry ? (
             <Field id="adjust-lot-number" label="Lote *" error={errors.lotNumber}>
@@ -1788,33 +1976,6 @@ function AdjustStockModal({
             </p>
           </Field>
         ) : null}
-        <Field
-          id="adjust-quantity"
-          label="Cantidad"
-          error={errors.quantity ?? adjustmentValidationErrors.quantity}
-        >
-          <Input
-            id="adjust-quantity"
-            inputMode={selectedUnit?.unitAllowsDecimals ? "decimal" : "numeric"}
-            maxLength={selectedUnit?.unitAllowsDecimals ? 12 : 6}
-            onChange={(event) =>
-              update({
-                quantity: parseUnitQuantityInput(
-                  event.target.value,
-                  selectedUnit?.unitAllowsDecimals ?? false,
-                ),
-              })
-            }
-            type="text"
-            value={value.quantity}
-          />
-        </Field>
-        {selectedUnit && selectedUnit.toBaseFactor !== 1 ? (
-          <p className="rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-title)]">
-            {toFiniteNumber(value.quantity)} {selectedUnit.unitName} = {canonicalInputQuantity}{" "}
-            {row.unitName}
-          </p>
-        ) : null}
         <Field id="adjust-reason" label="Motivo *" error={errors.reason}>
           <textarea
             className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
@@ -1836,14 +1997,7 @@ function AdjustStockModal({
           <CharacterCount current={value.notes.length} maximum={TEXT_LIMITS.notes} />
         </Field>
         <AdjustmentSummary delta={delta} finalQuantity={finalQuantity} row={row} value={value} />
-        {submitError ? (
-          <p
-            role="alert"
-            className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-[var(--color-danger)]"
-          >
-            {submitError}
-          </p>
-        ) : null}
+        {submitError ? <InlineAlert title={submitError} tone="danger" /> : null}
       </form>
     </Modal>
   );
@@ -1983,9 +2137,26 @@ function RequestTransferModal({
   const transferInvalid = hasValidationErrors(transferValidationErrors);
 
   function update(patch: Partial<EditableTransferRequestDto>) {
-    setValue((current) => ({ ...current, ...patch }));
-    setErrors({});
-    setSubmitError("");
+    const nextValue = { ...value, ...patch };
+    const nextDto = toTransferRequestDto(nextValue);
+    const nextValidationErrors = validateTransfer(nextDto, row);
+    const nextQuantityError = getUnitQuantityInputError(nextValue.quantity, row.unitAllowsDecimals);
+    if (nextQuantityError) nextValidationErrors.quantity = nextQuantityError;
+    const affectedFields = new Set<keyof TransferValidationErrors>();
+    if (patch.providerBranchId !== undefined) affectedFields.add("providerBranchId");
+    if (patch.quantity !== undefined) affectedFields.add("quantity");
+    if (patch.reason !== undefined) affectedFields.add("reason");
+    if (patch.notes !== undefined) affectedFields.add("notes");
+    setValue(nextValue);
+    setErrors((current) => {
+      const nextErrors = { ...current };
+      for (const field of affectedFields) {
+        if (!current[field]) continue;
+        if (nextValidationErrors[field]) nextErrors[field] = nextValidationErrors[field];
+        else delete nextErrors[field];
+      }
+      return nextErrors;
+    });
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -2021,14 +2192,14 @@ function RequestTransferModal({
           </Button>
         </div>
       }
-      maxWidth="600px"
+      maxWidth="680px"
       onClose={() => { if (!busy && !submittingRef.current) onClose(); }}
       open={open}
       subtitle={row.productName}
       title="Solicitar traslado de producto"
     >
       <form className="space-y-4" id="inventory-transfer-request-form" onSubmit={submit}>
-        {submitError ? <p className="text-sm text-[var(--color-danger)]" role="alert">{submitError}</p> : null}
+        {submitError ? <InlineAlert title={submitError} tone="danger" /> : null}
         <div className="grid gap-3 md:grid-cols-2">
           <ReadonlyField label="Producto" value={row.productName} />
           <ReadonlyField label="Codigo" value={row.sku} />
@@ -2042,48 +2213,50 @@ function RequestTransferModal({
             value={`${selectedProvider?.availableQuantity ?? 0} ${row.unitName}`}
           />
         </div>
-        <Field
-          id="transfer-provider"
-          label="Solicitar a sucursal *"
-          error={errors.providerBranchId}
-        >
-          <Select
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field
             id="transfer-provider"
-            onChange={(event) => update({ providerBranchId: event.target.value })}
-            value={value.providerBranchId}
+            label="Sucursal proveedora *"
+            error={errors.providerBranchId}
           >
-            {availableProviders.length === 0 ? (
-              <option value="">Sin sucursales disponibles</option>
-            ) : null}
-            {availableProviders.map((stock) => (
-              <option
-                disabled={stock.availableQuantity <= 0}
-                key={stock.branchId}
-                value={stock.branchId}
-              >
-                {stock.branchName} - disponible {stock.availableQuantity}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field
-          id="transfer-quantity"
-          label="Cantidad solicitada *"
-          error={errors.quantity ?? transferValidationErrors.quantity}
-        >
-          <Input
+            <Select
+              id="transfer-provider"
+              onChange={(event) => update({ providerBranchId: event.target.value })}
+              value={value.providerBranchId}
+            >
+              {availableProviders.length === 0 ? (
+                <option value="">Sin sucursales disponibles</option>
+              ) : null}
+              {availableProviders.map((stock) => (
+                <option
+                  disabled={stock.availableQuantity <= 0}
+                  key={stock.branchId}
+                  value={stock.branchId}
+                >
+                  {stock.branchName} - disponible {stock.availableQuantity}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field
             id="transfer-quantity"
-            inputMode={row.unitAllowsDecimals ? "decimal" : "numeric"}
-            maxLength={row.unitAllowsDecimals ? 12 : 6}
-            onChange={(event) =>
-              update({
-                quantity: parseUnitQuantityInput(event.target.value, row.unitAllowsDecimals),
-              })
-            }
-            type="text"
-            value={value.quantity}
-          />
-        </Field>
+            label="Cantidad solicitada *"
+            error={errors.quantity ?? transferValidationErrors.quantity}
+          >
+            <Input
+              id="transfer-quantity"
+              inputMode={row.unitAllowsDecimals ? "decimal" : "numeric"}
+              maxLength={row.unitAllowsDecimals ? 12 : 6}
+              onChange={(event) =>
+                update({
+                  quantity: parseUnitQuantityInput(event.target.value, row.unitAllowsDecimals),
+                })
+              }
+              type="text"
+              value={value.quantity}
+            />
+          </Field>
+        </div>
         <Field id="transfer-reason" label="Motivo *" error={errors.reason}>
           <Select
             id="transfer-reason"

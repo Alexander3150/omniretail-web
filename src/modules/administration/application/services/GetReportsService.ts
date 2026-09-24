@@ -8,6 +8,7 @@ import {
   toPaymentReportRow,
   toPurchasesReportRow,
   toSalesReportRow,
+  toSalesReportRowFromOrder,
 } from "@/modules/administration/application/mappers/ReportMappers";
 import {
   AdministrationServiceError,
@@ -22,7 +23,7 @@ export class GetReportsService {
     const { tenantId, permissions } = await this.resolveAuthenticatedContext();
     ensureCanReadReports(permissions);
 
-    const [sales, purchases, movements, payments, branches, suppliers, products] =
+    const [sales, purchases, movements, payments, branches, suppliers, products, orders] =
       await Promise.all([
         this.repositories.sales.getAll(),
         this.repositories.purchaseOrders.getAll(),
@@ -31,6 +32,7 @@ export class GetReportsService {
         this.repositories.branches.getAll(),
         this.repositories.suppliers.getAll(),
         this.repositories.products.getAll(),
+        this.repositories.orders.getAll(),
       ]);
     const branchNames = new Map(
       branches
@@ -50,10 +52,10 @@ export class GetReportsService {
 
     return {
       tenantId,
-      sales: sales
-        .filter((sale) => sale.tenantId === tenantId)
-        .sort(byNewestFirst)
-        .map((sale) => toSalesReportRow(sale, branchNames)),
+      sales: [
+        ...sales.filter((sale) => sale.tenantId === tenantId).map((sale) => toSalesReportRow(sale, branchNames)),
+        ...orders.filter((order) => order.tenantId === tenantId && order.source !== "pos").map((order) => toSalesReportRowFromOrder(order, branchNames))
+      ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
       purchases: purchases
         .filter((purchase) => purchase.tenantId === tenantId)
         .sort(byNewestFirst)

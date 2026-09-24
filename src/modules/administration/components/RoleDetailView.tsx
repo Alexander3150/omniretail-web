@@ -7,7 +7,7 @@ import {
   permissionModuleLabels,
 } from "@/modules/administration/permissionModuleLabels";
 import { Button } from "@/shared/components/Button";
-import { ArchiveIcon, PencilIcon, XIcon } from "@/shared/components/icons";
+import { ArchiveIcon, PencilIcon } from "@/shared/components/icons";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 
 interface RoleDetailViewProps {
@@ -19,7 +19,7 @@ interface RoleDetailViewProps {
   onClose: () => void;
 }
 
-export function RoleDetailView({ role, canManage, busy, onEdit, onArchive, onClose }: RoleDetailViewProps) {
+export function RoleDetailView({ role, canManage, busy, onEdit, onArchive }: RoleDetailViewProps) {
   const rolePermissions = permissionsConfig.filter((p) => role.permissions.includes(p.key));
   const permissionsByModule = groupPermissionsByModule(rolePermissions);
   const isArchived = role.status === "archived";
@@ -72,13 +72,8 @@ export function RoleDetailView({ role, canManage, busy, onEdit, onArchive, onClo
         )}
       </div>
 
-      <div className="flex flex-col-reverse gap-2 border-t border-[var(--color-border)] pt-4 sm:flex-row sm:justify-end">
-        <Button className="gap-2" disabled={busy} onClick={onClose} type="button" variant="secondary">
-          <XIcon className="h-4 w-4" />
-          Cerrar
-        </Button>
-        {canManage && !role.isSystem ? (
-          <>
+      {canManage && !role.isSystem ? (
+        <div className="flex flex-col-reverse gap-2 border-t border-[var(--color-border)] pt-4 sm:flex-row sm:justify-end">
             {!isArchived ? (
               <Button className="gap-2" disabled={busy} onClick={onArchive} type="button" variant="danger">
                 <ArchiveIcon className="h-4 w-4" />
@@ -89,9 +84,8 @@ export function RoleDetailView({ role, canManage, busy, onEdit, onArchive, onClo
               <PencilIcon className="h-4 w-4" />
               Editar
             </Button>
-          </>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }

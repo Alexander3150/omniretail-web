@@ -1,7 +1,7 @@
 import { BranchStatus, BranchType } from "@/core/enums";
 import type { BranchDto } from "@/modules/administration/application/dto/BranchDto";
 import { Button } from "@/shared/components/Button";
-import { ArchiveIcon, MailIcon, MapPinIcon, PencilIcon, PhoneIcon, XIcon } from "@/shared/components/icons";
+import { ArchiveIcon, MailIcon, MapPinIcon, PencilIcon, PhoneIcon } from "@/shared/components/icons";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { cn } from "@/shared/utils/cn";
 
@@ -20,7 +20,7 @@ interface BranchDetailViewProps {
   onClose: () => void;
 }
 
-export function BranchDetailView({ branch, canManage, busy, onEdit, onArchive, onClose }: BranchDetailViewProps) {
+export function BranchDetailView({ branch, canManage, busy, onEdit, onArchive }: BranchDetailViewProps) {
   const isArchived = branch.status === BranchStatus.archived;
 
   return (
@@ -33,24 +33,26 @@ export function BranchDetailView({ branch, canManage, busy, onEdit, onArchive, o
         <StatusBadge status={branch.status} />
       </div>
 
-      <p className="text-sm text-[var(--color-text)]">{branch.name}</p>
+      <p className="rounded-lg bg-slate-50 px-4 py-3 text-sm font-semibold text-[var(--color-text)]">
+        {branch.name}
+      </p>
 
-      <dl className="space-y-3 text-sm">
-        <div className="flex items-start gap-3">
+      <dl className="grid gap-3 text-sm">
+        <div className="flex min-w-0 items-start gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
           <dt className="w-28 shrink-0 font-medium text-[var(--color-text-muted)]">Dirección</dt>
           <dd className={cn("flex items-center gap-2", !branch.address && "italic text-[var(--color-text-muted)]")}>
             {branch.address ? <MapPinIcon className="h-4 w-4 shrink-0" /> : null}
             {branch.address ?? "Sin dirección"}
           </dd>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
           <dt className="w-28 shrink-0 font-medium text-[var(--color-text-muted)]">Teléfono</dt>
           <dd className={cn("flex items-center gap-2", !branch.phone && "italic text-[var(--color-text-muted)]")}>
             {branch.phone ? <PhoneIcon className="h-4 w-4 shrink-0" /> : null}
             {branch.phone ?? "Sin teléfono"}
           </dd>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
           <dt className="w-28 shrink-0 font-medium text-[var(--color-text-muted)]">Email</dt>
           <dd className={cn("flex items-center gap-2", !branch.email && "italic text-[var(--color-text-muted)]")}>
             {branch.email ? <MailIcon className="h-4 w-4 shrink-0" /> : null}
@@ -59,13 +61,8 @@ export function BranchDetailView({ branch, canManage, busy, onEdit, onArchive, o
         </div>
       </dl>
 
-      <div className="flex flex-col-reverse gap-2 border-t border-[var(--color-border)] pt-4 sm:flex-row sm:justify-end">
-        <Button className="gap-2" disabled={busy} onClick={onClose} type="button" variant="secondary">
-          <XIcon className="h-4 w-4" />
-          Cerrar
-        </Button>
-        {canManage ? (
-          <>
+      {canManage ? (
+        <div className="flex flex-col-reverse gap-2 border-t border-[var(--color-border)] pt-4 sm:flex-row sm:justify-end">
             {!isArchived ? (
               <Button className="gap-2" disabled={busy} onClick={onArchive} type="button" variant="danger">
                 <ArchiveIcon className="h-4 w-4" />
@@ -76,9 +73,8 @@ export function BranchDetailView({ branch, canManage, busy, onEdit, onArchive, o
               <PencilIcon className="h-4 w-4" />
               Editar
             </Button>
-          </>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }

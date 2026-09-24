@@ -2,9 +2,11 @@ import type { DeliveryMethod, DispatchStatus, OrderStatus } from "@/core/enums";
 import type { LogisticsItemTraceDto } from "@/modules/logistics/application/dto/LogisticsItemTraceDto";
 
 export interface LogisticsHistoryItemDto {
+  sourceType: "order" | "transfer";
+  sourceId: string;
   orderId: string;
   orderReference: string;
-  deliveryMethod: DeliveryMethod;
+  deliveryMethod: DeliveryMethod | "transfer";
   operationalStatus: OrderStatus;
   contactName: string;
   contactPhone: string | null;

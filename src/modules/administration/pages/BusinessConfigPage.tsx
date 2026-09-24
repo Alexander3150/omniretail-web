@@ -11,6 +11,7 @@ import {
 import { useBusinessConfig } from "@/modules/administration/hooks/useBusinessConfig";
 import { enforceBusinessConfigCoherence } from "@/modules/administration/validation/businessConfig.validation";
 import { Button } from "@/shared/components/Button";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { useToast } from "@/shared/components/Toast";
 
@@ -50,6 +51,9 @@ export function BusinessConfigPage() {
       return enforceBusinessConfigCoherence({
         ...current,
         [capability]: checked,
+        ...(capability === "supportsLots" || capability === "supportsExpiration"
+          ? { supportsLots: checked, supportsExpiration: checked }
+          : {}),
         preset: BusinessPreset.custom,
       });
     });
@@ -65,6 +69,9 @@ export function BusinessConfigPage() {
         defaultProductTracking: {
           ...current.defaultProductTracking,
           [tracking]: checked,
+          ...(tracking === "lot" || tracking === "expiration"
+            ? { lot: checked, expiration: checked }
+            : {}),
         },
       });
     });
@@ -107,7 +114,7 @@ export function BusinessConfigPage() {
         description:
           caughtError instanceof Error
             ? caughtError.message
-            : "Intentá nuevamente en unos momentos.",
+            : "Inténtelo nuevamente en unos momentos.",
         tone: "danger",
       });
     }
@@ -119,7 +126,7 @@ export function BusinessConfigPage() {
   // usuario puede gestionar la configuracion.
   if (!loading && !canManage) {
     return (
-      <div className="min-w-0 space-y-5">
+      <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
         <PageHeader
           description="Definí las capacidades operativas y la trazabilidad que utilizarán los productos del tenant."
           title="Configuración del negocio"
@@ -129,7 +136,7 @@ export function BusinessConfigPage() {
           role="alert"
         >
           <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No tenés acceso a esta configuración
+            No dispone de acceso a esta configuración
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             La configuración del negocio aplica a todo el tenant y requiere el permiso{" "}
@@ -144,24 +151,20 @@ export function BusinessConfigPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <PageHeader
         description="Definí las capacidades operativas y la trazabilidad que utilizarán los productos del tenant."
         title="Configuración del negocio"
       />
 
       {error ? (
-        <div
-          className="flex flex-col gap-3 rounded-lg border border-[var(--color-danger)] bg-[var(--color-surface)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-          role="alert"
-        >
-          <p className="text-sm font-medium text-[var(--color-danger)]">{error}</p>
+        <InlineAlert className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" title={error} tone="danger">
           {!value ? (
             <Button onClick={() => void reload()} type="button" variant="secondary">
               Reintentar
             </Button>
           ) : null}
-        </div>
+        </InlineAlert>
       ) : null}
 
       {showInitialLoading ? (
@@ -195,8 +198,8 @@ export function BusinessConfigPage() {
 }
 
 function cloneConfig(config: BusinessConfigDto): BusinessConfigDto {
-  return {
+  return enforceBusinessConfigCoherence({
     ...config,
     defaultProductTracking: { ...config.defaultProductTracking },
-  };
+  });
 }

@@ -78,7 +78,7 @@ export async function validateEditorProduct(
   }
   const baseErrors = validateProductDto(toProductDto(normalizedDto));
   if (hasValidationErrors(baseErrors)) {
-    throw new CatalogServiceError(Object.values(baseErrors)[0] ?? "Revisa los datos del producto.");
+    throw new CatalogServiceError(Object.values(baseErrors)[0] ?? "Revise los datos del producto.");
   }
   if (normalizedDto.productType === "kit" && normalizedDto.status === "published") {
     if (normalizedDto.kitComponents.length === 0) {
@@ -465,7 +465,7 @@ export async function syncProductMedia(
 ) {
   const current = await repositories.productMedia.getByProduct(product.id);
   const nextIds = new Set<string>();
-  if (mediaValues.length > 6) throw new CatalogServiceError("Puedes guardar hasta 6 imagenes.");
+  if (mediaValues.length > 6) throw new CatalogServiceError("Se pueden guardar hasta 6 imágenes.");
   const normalizedMedia = mediaValues
     .filter((item) => item.pendingUpload || item.source || item.url.trim())
     .map((item, index) => ({
@@ -616,7 +616,7 @@ function assertSupplierProducts(
   const suppliers = new Set<string>();
   for (const supplierProduct of normalizedSupplierProducts) {
     if (suppliers.has(supplierProduct.supplierId)) {
-      throw new CatalogServiceError("No puedes asociar el mismo proveedor dos veces.");
+      throw new CatalogServiceError("No se puede asociar el mismo proveedor dos veces.");
     }
     suppliers.add(supplierProduct.supplierId);
     if (!isPositiveNumber(supplierProduct.purchaseToBaseFactor)) {

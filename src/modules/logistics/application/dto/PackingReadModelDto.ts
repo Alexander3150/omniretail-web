@@ -30,6 +30,15 @@ export interface PackingDetailDto extends PackingQueueItemDto {
   labelGeneratedAt: string | null;
   labelPrintedAt: string | null;
   finalizedAt: string | null;
+  preparedContents: PackingPreparedContentDto[];
+}
+
+export interface PackingPreparedContentDto {
+  productId: string;
+  sku: string;
+  name: string;
+  quantity: number;
+  serialNumbers: string[];
 }
 
 export interface SavePackingPreparationCommand {

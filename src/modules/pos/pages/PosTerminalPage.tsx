@@ -17,7 +17,7 @@ export function PosTerminalPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
 
   return (
-    <div className="min-w-0 space-y-4">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-4">
       <PageHeader
         actions={
           <Button type="button" variant="secondary" onClick={() => setHistoryOpen(true)}>
@@ -54,7 +54,7 @@ export function PosTerminalPage() {
 
       <section className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(23rem,27rem)] 2xl:grid-cols-[minmax(0,1fr)_28rem]">
         <div className="min-w-0 rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm sm:p-5">
-          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 sm:flex sm:items-end sm:justify-between sm:gap-4">
+          <div className="rounded-lg border border-[var(--color-border)] bg-white p-3 shadow-sm sm:flex sm:items-end sm:justify-between sm:gap-4">
             <div>
               <h2 className="text-lg font-bold text-[var(--color-title)]">Productos disponibles</h2>
               <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">

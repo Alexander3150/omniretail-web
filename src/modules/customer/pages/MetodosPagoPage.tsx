@@ -11,7 +11,6 @@ import {
 } from "@/modules/customer/validation/paymentMethod.validation";
 import { CARD_BRANDS } from "@/config/card-brands";
 import { GUATEMALA_BANKS } from "@/config/guatemala-banks";
-import { TEXT_FIELD_POLICY } from "@/config/text-field-policy";
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { FormField } from "@/shared/components/FormField";
@@ -30,6 +29,22 @@ const EMPTY_FORM: PaymentMethodFormDto = {
   expirationYear: "",
   cardholderName: "",
 };
+
+function sanitizeExpirationMonth(value: string, currentValue: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 2);
+  if (digits.length === 2 && Number(digits) > 12) return currentValue;
+  return digits;
+}
+
+function sanitizeExpirationYear(value: string, currentValue: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 4);
+  if (digits.length === 4) {
+    const currentYear = new Date().getFullYear();
+    const year = Number(digits);
+    if (year < currentYear || year > currentYear + 20) return currentValue;
+  }
+  return digits;
+}
 
 function toFormDto(method: CustomerPaymentMethod): PaymentMethodFormDto {
   return {
@@ -78,10 +93,28 @@ export function MetodosPagoPage() {
     } catch (caughtError) {
       showToast({
         title: "No se pudo guardar el método de pago",
-        description: caughtError instanceof Error ? caughtError.message : "Intentá nuevamente.",
+        description: caughtError instanceof Error ? caughtError.message : "Inténtelo nuevamente.",
         tone: "danger",
       });
     }
+  }
+
+  function updatePaymentMethod(patch: Partial<PaymentMethodFormDto>) {
+    const nextForm = { ...form, ...patch };
+    setForm(nextForm);
+    setFieldErrors((current) => {
+      const affectedFields = Object.keys(patch) as Array<keyof PaymentMethodValidationErrors>;
+      if (patch.expirationMonth !== undefined) affectedFields.push("expirationYear");
+      if (patch.expirationYear !== undefined) affectedFields.push("expirationMonth");
+      if (!affectedFields.some((field) => current[field])) return current;
+      const validation = validatePaymentMethodForm(nextForm);
+      const nextErrors = { ...current };
+      for (const field of affectedFields) {
+        if (!current[field]) continue;
+        nextErrors[field] = validation[field];
+      }
+      return nextErrors;
+    });
   }
 
   async function handleRemove() {
@@ -93,7 +126,7 @@ export function MetodosPagoPage() {
     } catch (caughtError) {
       showToast({
         title: "No se pudo eliminar el método de pago",
-        description: caughtError instanceof Error ? caughtError.message : "Intentá nuevamente.",
+        description: caughtError instanceof Error ? caughtError.message : "Inténtelo nuevamente.",
         tone: "danger",
       });
     }
@@ -106,21 +139,21 @@ export function MetodosPagoPage() {
     } catch (caughtError) {
       showToast({
         title: "No se pudo actualizar el método de pago predeterminado",
-        description: caughtError instanceof Error ? caughtError.message : "Intentá nuevamente.",
+        description: caughtError instanceof Error ? caughtError.message : "Inténtelo nuevamente.",
         tone: "danger",
       });
     }
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-5xl space-y-5">
       <PageHeader
         actions={
           <Button onClick={() => setEditor({ mode: "create" })} type="button">
             Nueva tarjeta
           </Button>
         }
-        description="Tarjetas guardadas para agilizar tus compras. Nunca guardamos el número completo ni el código de seguridad."
+        description="Tarjetas guardadas para agilizar las compras. Nunca se guarda el número completo ni el código de seguridad."
         title="Métodos de pago"
       />
 
@@ -145,14 +178,23 @@ export function MetodosPagoPage() {
           Cargando métodos de pago...
         </div>
       ) : paymentMethods.length === 0 ? (
-        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-sm text-[var(--color-text-muted)] shadow-sm">
-          Todavía no tenés métodos de pago guardados.
+        <div className="flex flex-col items-center rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-10 text-center">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-structure)]">
+            <CreditCardIcon className="h-5 w-5" />
+          </span>
+          <h2 className="mt-3 font-bold text-[var(--color-text)]">Aún no tiene métodos de pago guardados</h2>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            Agregue una tarjeta para agilizar sus próximas compras.
+          </p>
+          <Button className="mt-5" onClick={() => setEditor({ mode: "create" })} type="button">
+            Nueva tarjeta
+          </Button>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {paymentMethods.map((method) => (
             <article
-              className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm"
+              className="flex h-full flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm"
               key={method.id}
             >
               <div className="flex items-start justify-between gap-2">
@@ -163,9 +205,14 @@ export function MetodosPagoPage() {
                   >
                     <CreditCardIcon className="h-4 w-4" />
                   </span>
-                  <h2 className="truncate font-semibold capitalize text-[var(--color-title)]">
-                    {method.brand} •••• {method.last4}
-                  </h2>
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+                      {method.brand}
+                    </p>
+                    <h2 className="truncate font-mono text-xl font-bold tracking-wide text-[var(--color-text)]">
+                      •••• {method.last4}
+                    </h2>
+                  </div>
                 </div>
                 {method.isDefault ? (
                   <span className="shrink-0 rounded-md bg-[var(--color-success)]/10 px-2 py-1 text-xs font-semibold text-[var(--color-success)]">
@@ -181,7 +228,7 @@ export function MetodosPagoPage() {
                 Vence {String(method.expirationMonth).padStart(2, "0")}/{method.expirationYear}
               </p>
 
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="mt-auto flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-4">
                 <Button
                   onClick={() => setEditor({ mode: "edit", method })}
                   type="button"
@@ -225,7 +272,7 @@ export function MetodosPagoPage() {
             <Select
               disabled={busy || editor?.mode === "edit"}
               id="payment-brand"
-              onChange={(event) => setForm((prev) => ({ ...prev, brand: event.target.value }))}
+              onChange={(event) => updatePaymentMethod({ brand: event.target.value })}
               value={form.brand}
             >
               <option value="">Selecciona una marca</option>
@@ -241,7 +288,7 @@ export function MetodosPagoPage() {
             <Select
               disabled={busy || editor?.mode === "edit"}
               id="payment-bank"
-              onChange={(event) => setForm((prev) => ({ ...prev, issuingBank: event.target.value }))}
+              onChange={(event) => updatePaymentMethod({ issuingBank: event.target.value })}
               value={form.issuingBank}
             >
               <option value="">Selecciona un banco</option>
@@ -259,7 +306,9 @@ export function MetodosPagoPage() {
               id="payment-last4"
               inputMode="numeric"
               maxLength={4}
-              onChange={(event) => setForm((prev) => ({ ...prev, last4: event.target.value }))}
+              onChange={(event) =>
+                updatePaymentMethod({ last4: event.target.value.replace(/\D/g, "").slice(0, 4) })
+              }
               value={form.last4}
             />
           </FormField>
@@ -274,8 +323,11 @@ export function MetodosPagoPage() {
                 disabled={busy}
                 id="payment-month"
                 inputMode="numeric"
+                maxLength={2}
                 onChange={(event) =>
-                  setForm((prev) => ({ ...prev, expirationMonth: event.target.value }))
+                  updatePaymentMethod({
+                    expirationMonth: sanitizeExpirationMonth(event.target.value, form.expirationMonth),
+                  })
                 }
                 placeholder="MM"
                 value={form.expirationMonth}
@@ -293,7 +345,9 @@ export function MetodosPagoPage() {
                 inputMode="numeric"
                 maxLength={4}
                 onChange={(event) =>
-                  setForm((prev) => ({ ...prev, expirationYear: event.target.value }))
+                  updatePaymentMethod({
+                    expirationYear: sanitizeExpirationYear(event.target.value, form.expirationYear),
+                  })
                 }
                 placeholder="AAAA"
                 value={form.expirationYear}
@@ -310,10 +364,8 @@ export function MetodosPagoPage() {
             <Input
               disabled={busy}
               id="payment-cardholder"
-              maxLength={TEXT_FIELD_POLICY.NAME_MAX_LENGTH}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, cardholderName: event.target.value }))
-              }
+              maxLength={60}
+              onChange={(event) => updatePaymentMethod({ cardholderName: event.target.value })}
               value={form.cardholderName}
             />
           </FormField>

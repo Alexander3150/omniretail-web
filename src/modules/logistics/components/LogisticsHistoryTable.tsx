@@ -8,17 +8,31 @@ import { StatusBadge } from "@/shared/components/StatusBadge";
 interface LogisticsHistoryTableProps {
   items: LogisticsHistoryItemDto[];
   canConfirmDispatch: boolean;
+  currentPage: number;
+  pageSize: number;
   onAddGuide: (item: LogisticsHistoryItemDto) => void;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
   onRowDoubleClick?: (item: LogisticsHistoryItemDto) => void;
 }
 
 export function LogisticsHistoryTable({
   items,
   canConfirmDispatch,
+  currentPage,
+  pageSize,
   onAddGuide,
+  onPageChange,
+  onPageSizeChange,
   onRowDoubleClick,
 }: LogisticsHistoryTableProps) {
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const rangeStart = items.length === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const rangeEnd = Math.min(safePage * pageSize, items.length);
+  const visibleItems = items.slice(rangeStart === 0 ? 0 : rangeStart - 1, rangeEnd);
   const showActionColumn = items.some(canAddGuide);
+
   const columns: DataTableColumn<LogisticsHistoryItemDto>[] = [
     {
       key: "document",
@@ -112,13 +126,65 @@ export function LogisticsHistoryTable({
   }
 
   return (
-    <DataTable
-      columns={columns}
-      data={items}
-      emptyMessage="No hay pedidos que coincidan con los filtros actuales."
-      rowKey={(item) => item.orderId}
-      onRowDoubleClick={onRowDoubleClick}
-    />
+    <div className="min-w-0">
+      <DataTable
+        columns={columns}
+        data={visibleItems}
+        emptyMessage="No hay pedidos que coincidan con los filtros actuales."
+        headerClassName="bg-[var(--color-structure)] text-white [&_th]:text-white"
+        rowKey={(item) => item.orderId}
+        onRowDoubleClick={onRowDoubleClick}
+      />
+      <div className="mt-3 flex flex-col gap-3 border-t border-[var(--color-border)] pt-3 text-sm text-[var(--color-text-muted)] sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <p className="tabular-nums">
+            {items.length === 0
+              ? "Mostrando 0 de 0 registros"
+              : `Mostrando ${rangeStart}-${rangeEnd} de ${items.length} registros`}
+          </p>
+          <label className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-[var(--color-title)]">Filas</span>
+            <select
+              aria-label="Filas por página"
+              className="h-9 rounded-md border border-[var(--color-border)] bg-white px-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
+              value={pageSize}
+              onChange={(event) => {
+                onPageSizeChange(Number(event.target.value));
+              }}
+            >
+              {[10, 20, 50].map((size) => (
+                <option key={size} value={size}>{size}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="flex items-center gap-2 sm:ml-auto">
+          <Button
+              aria-label="Página anterior"
+              className="min-h-9 px-3 py-1.5"
+              disabled={safePage === 1}
+              onClick={() => onPageChange(Math.max(1, safePage - 1))}
+              type="button"
+              variant="secondary"
+            >
+              &lt;
+          </Button>
+          <span className="min-w-16 text-center font-semibold tabular-nums text-[var(--color-title)]">
+            {safePage} / {totalPages}
+          </span>
+          <Button
+              aria-label="Página siguiente"
+              className="min-h-9 px-3 py-1.5"
+              disabled={safePage === totalPages}
+              onClick={() => onPageChange(Math.min(totalPages, safePage + 1))}
+              type="button"
+              variant="secondary"
+            >
+              &gt;
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 

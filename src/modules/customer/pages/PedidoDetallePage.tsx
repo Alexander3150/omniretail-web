@@ -60,7 +60,7 @@ export function PedidoDetallePage({ orderId }: { orderId: string }) {
     } catch {
       showToast({
         title: "No se pudo generar el comprobante",
-        description: "Intentá nuevamente.",
+        description: "Inténtelo nuevamente.",
         tone: "danger",
       });
     } finally {
@@ -88,7 +88,12 @@ export function PedidoDetallePage({ orderId }: { orderId: string }) {
               })}
             </p>
           </div>
-          <StatusBadge status={order.status} />
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <StatusBadge status={order.status} />
+            <p className="text-2xl font-black tracking-tight text-[var(--color-title)]">
+              Q{order.total.toFixed(2)}
+            </p>
+          </div>
         </header>
         <div className="flex flex-wrap gap-2 border-b border-[var(--color-border)] p-5 sm:px-7">
           <Button href={routes.tracking(order.trackingToken)} variant="secondary">
@@ -102,7 +107,7 @@ export function PedidoDetallePage({ orderId }: { orderId: string }) {
         </div>
 
         <div className="grid gap-5 p-5 sm:p-7 md:grid-cols-2">
-          <section className="min-w-0 rounded-xl border border-[var(--color-border)] p-4">
+          <section className="min-w-0 rounded-xl border border-[var(--color-border)] bg-slate-50 p-4">
             <div className="flex items-center gap-2.5">
               <SectionIcon>
                 <TruckIcon className="h-4 w-4" />
@@ -129,7 +134,7 @@ export function PedidoDetallePage({ orderId }: { orderId: string }) {
             )}
           </section>
 
-          <section className="min-w-0 rounded-xl border border-[var(--color-border)] p-4">
+          <section className="min-w-0 rounded-xl border border-[var(--color-border)] bg-slate-50 p-4">
             <div className="flex items-center gap-2.5">
               <SectionIcon>
                 <CreditCardIcon className="h-4 w-4" />

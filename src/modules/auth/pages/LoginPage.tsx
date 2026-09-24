@@ -114,7 +114,7 @@ export function LoginPage() {
   function simulateGoogleLogin() {
     showToast({
       title: "Inicio de sesion con Google",
-      description: "Simulado -- no disponible en este entorno de demostracion.",
+      description: "El inicio de sesión con Google no está disponible actualmente.",
       tone: "info",
     });
   }
@@ -127,8 +127,7 @@ export function LoginPage() {
         <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-8 shadow-xl shadow-black/5">
           <h1 className="text-2xl font-bold text-[var(--color-title)]">Verificación en dos pasos</h1>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            Ingresa el código de tu{" "}
-            {pendingChallenge.method === "totp" ? "aplicación de autenticación" : "correo"}.
+            Ingrese el código de verificación.
           </p>
 
           {/* Solo existe porque este entorno de demostración no tiene un
@@ -136,7 +135,7 @@ export function LoginPage() {
               producción. Mismo criterio de transparencia dummy que ya se
               usa en registro/recuperación de contraseña. */}
           <p className="mt-3 rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
-            Modo demo: tu código es <strong>{pendingChallenge.demoCodeMock}</strong>
+            Código de verificación actual: <strong>{pendingChallenge.demoCodeMock}</strong>
           </p>
 
           <form

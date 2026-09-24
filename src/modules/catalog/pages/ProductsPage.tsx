@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import { ProductStatus } from "@/core/enums";
 import { Button } from "@/shared/components/Button";
+import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { Select } from "@/shared/components/Select";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { useToast } from "@/shared/components/Toast";
 import { getActiveProductFiltersCount } from "@/modules/catalog/components/ActiveProductFilters";
 import { ProductFilters } from "@/modules/catalog/components/ProductFilters";
@@ -92,32 +94,20 @@ export function ProductsPage() {
 
   if (!loading && !canRead) {
     return (
-      <div className="min-w-0 space-y-5">
+      <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
         <header className="border-b border-[var(--color-border)] pb-4">
           <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
             CATÁLOGO
           </p>
           <h1 className="mt-1 text-2xl font-bold text-[var(--color-title)]">Catálogo y precios</h1>
         </header>
-        <div
-          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
-          role="alert"
-        >
-          <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No tenés acceso a productos
-          </h2>
-          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            Consultar productos requiere el permiso{" "}
-            <span className="font-medium text-[var(--color-text)]">catalog.products.read</span>.
-            Pedí acceso a un administrador.
-          </p>
-        </div>
+        <AccessDeniedState />
       </div>
     );
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <ProductToolbar
         activeFiltersCount={activeFiltersCount}
         canCreate={canCreate}
@@ -133,11 +123,7 @@ export function ProductsPage() {
           onChange={updateFilters}
         />
       ) : null}
-      {error ? (
-        <p className="rounded-md border border-[var(--color-danger)] bg-white px-4 py-3 text-sm font-medium text-[var(--color-danger)]">
-          {error}
-        </p>
-      ) : null}
+      {error ? <InlineAlert title={error} tone="danger" /> : null}
       {loading ? (
         <p className="rounded-md border border-[var(--color-border)] bg-white p-5 text-sm text-[var(--color-text-muted)]">
           Cargando productos...

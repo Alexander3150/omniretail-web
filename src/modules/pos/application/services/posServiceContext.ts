@@ -45,7 +45,7 @@ export async function resolvePosSessionContext(
 
 export function ensurePosPermission(permissions: readonly string[], permission: string) {
   if (permissions.includes(permission)) return;
-  throw new PosServiceError("No tienes permiso para crear ventas POS.");
+  throw new PosServiceError("No dispone de permisos para crear ventas POS.");
 }
 
 export async function ensurePosBranchAccess(
@@ -58,7 +58,7 @@ export async function ensurePosBranchAccess(
     throw new PosServiceError("La sucursal no está disponible para este negocio.");
   }
   if (!canUserOperateBranch(user, branch)) {
-    throw new PosServiceError("No tienes acceso a la sucursal seleccionada.");
+    throw new PosServiceError("No dispone de acceso a la sucursal seleccionada.");
   }
   return branch;
 }

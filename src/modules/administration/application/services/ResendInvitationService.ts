@@ -64,7 +64,7 @@ export class ResendInvitationService {
       throw new AdministrationServiceError(
         caughtError instanceof Error
           ? caughtError.message
-          : "No se pudo enviar la invitación. Intentá nuevamente en unos momentos.",
+          : "No se pudo enviar la invitación. Inténtelo nuevamente en unos momentos.",
       );
     }
 

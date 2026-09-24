@@ -375,7 +375,7 @@ async function verifyAccumulatedReservationQaCase() {
       form: checkoutForm,
       idempotencyKey: "00000000-0000-4000-8000-000000000003",
     }),
-    /No hay suficiente disponibilidad para completar tu pedido/,
+    /No hay suficiente disponibilidad/,
   );
   snapshot = store.getSnapshot();
   balance = snapshot.inventoryBalances.find((item) => item.id === "bal-screws");

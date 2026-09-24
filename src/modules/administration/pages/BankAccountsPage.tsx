@@ -9,9 +9,11 @@ import { BankAccountDetailView } from "@/modules/administration/components/BankA
 import { BankAccountForm } from "@/modules/administration/components/BankAccountForm";
 import { BankAccountTable } from "@/modules/administration/components/BankAccountTable";
 import { useBankAccounts } from "@/modules/administration/hooks/useBankAccounts";
+import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { PlusIcon } from "@/shared/components/icons";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { useToast } from "@/shared/components/Toast";
@@ -41,25 +43,14 @@ export function BankAccountsPage() {
   const [archiveTarget, setArchiveTarget] = useState<BankAccountDto | null>(null);
 
   async function handleSubmit(value: BankAccountInputDto) {
-    try {
-      if (modal?.mode === "edit") {
-        await update(modal.account.id, value);
-        showToast({ title: "Cuenta bancaria actualizada", tone: "success" });
-      } else {
-        await create(value);
-        showToast({ title: "Cuenta bancaria creada", tone: "success" });
-      }
-      setModal(null);
-    } catch (caughtError) {
-      showToast({
-        title: "No se pudo guardar la cuenta bancaria",
-        description:
-          caughtError instanceof Error
-            ? caughtError.message
-            : "Intentá nuevamente en unos momentos.",
-        tone: "danger",
-      });
+    if (modal?.mode === "edit") {
+      await update(modal.account.id, value);
+      showToast({ title: "Cuenta bancaria actualizada", tone: "success" });
+    } else {
+      await create(value);
+      showToast({ title: "Cuenta bancaria creada", tone: "success" });
     }
+    setModal(null);
   }
 
   async function handleArchive() {
@@ -80,7 +71,7 @@ export function BankAccountsPage() {
         description:
           caughtError instanceof Error
             ? caughtError.message
-            : "Intentá nuevamente en unos momentos.",
+            : "Inténtelo nuevamente en unos momentos.",
         tone: "danger",
       });
     }
@@ -99,27 +90,7 @@ export function BankAccountsPage() {
   }
 
   if (!loading && !canManage) {
-    return (
-      <div className="min-w-0 space-y-5">
-        <PageHeader
-          description="Administrá el maestro de cuentas bancarias del negocio."
-          title="Cuentas bancarias"
-        />
-        <div
-          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
-          role="alert"
-        >
-          <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No tenés acceso a las cuentas bancarias
-          </h2>
-          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            Gestionar cuentas bancarias requiere el permiso{" "}
-            <span className="font-medium text-[var(--color-text)]">admin.bank_accounts.manage</span>
-            . Pedí acceso a un administrador.
-          </p>
-        </div>
-      </div>
-    );
+    return <AccessDeniedState />;
   }
 
   const modalTitle =
@@ -131,11 +102,11 @@ export function BankAccountsPage() {
 
   const modalSubtitle =
     modal?.mode === "view"
-      ? "Hacé clic en Editar o Archivar para realizar cambios."
+      ? "Seleccione Editar o Archivar para realizar cambios."
       : "Los cambios se aplican únicamente al negocio activo.";
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <PageHeader
         actions={
           canManage ? (
@@ -145,20 +116,20 @@ export function BankAccountsPage() {
             </Button>
           ) : null
         }
-        description="Administrá el maestro de cuentas bancarias del negocio."
+        description="Administre el maestro de cuentas bancarias del negocio."
         title="Cuentas bancarias"
       />
 
       {error ? (
-        <div
-          className="flex flex-col gap-3 rounded-lg border border-[var(--color-danger)] bg-[var(--color-surface)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-          role="alert"
+        <InlineAlert
+          className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+          title={error}
+          tone="danger"
         >
-          <p className="text-sm font-medium text-[var(--color-danger)]">{error}</p>
           <Button onClick={() => void reload()} type="button" variant="secondary">
             Reintentar
           </Button>
-        </div>
+        </InlineAlert>
       ) : null}
 
       {loading ? (

@@ -1,14 +1,11 @@
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type {
   ReportFilter,
   ReportKind,
   ReportsDataDto,
 } from "@/modules/administration/application/dto/ReportDto";
-import {
-  getMovementTypeLabel,
-  getPaymentMethodLabel,
-  getReportStatusLabel,
-} from "@/modules/administration/application/reportLabels";
+import { getDateRangeLabel, getOptions } from "@/modules/administration/application/reportHelpers";
+import { ReportKindSelector } from "@/modules/administration/components/ReportKindSelector";
 import { Button } from "@/shared/components/Button";
 import { BroomIcon } from "@/shared/components/icons";
 import { Input } from "@/shared/components/Input";
@@ -19,10 +16,18 @@ interface ReportFiltersProps {
   filter: ReportFilter;
   kind: ReportKind;
   onChange: (filter: ReportFilter) => void;
+  onKindChange: (kind: ReportKind) => void;
   onReset: () => void;
 }
 
-export function ReportFilters({ data, filter, kind, onChange, onReset }: ReportFiltersProps) {
+export function ReportFilters({
+  data,
+  filter,
+  kind,
+  onChange,
+  onKindChange,
+  onReset,
+}: ReportFiltersProps) {
   const options = useMemo(() => getOptions(data, kind), [data, kind]);
 
   function update(patch: Partial<ReportFilter>) {
@@ -31,26 +36,16 @@ export function ReportFilters({ data, filter, kind, onChange, onReset }: ReportF
 
   return (
     <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[repeat(3,minmax(150px,1fr))_auto] xl:items-end">
-        <FilterField htmlFor="report-from" label="Rango de fechas">
-          <div className="flex items-center gap-2">
-            <Input
-              id="report-from"
-              max={filter.to}
-              onChange={(event) => update({ from: event.target.value })}
-              type="date"
-              value={filter.from ?? ""}
-            />
-            <span className="shrink-0 text-sm text-[var(--color-text-muted)]">a</span>
-            <Input
-              id="report-to"
-              min={filter.from}
-              onChange={(event) => update({ to: event.target.value })}
-              type="date"
-              value={filter.to ?? ""}
-            />
-          </div>
-        </FilterField>
+      <div className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
+        <ReportKindSelector kind={kind} onChange={onKindChange} />
+
+        <DateRangeFilter
+          from={filter.from ?? ""}
+          onClear={() => update({ from: "", to: "" })}
+          onFromChange={(from) => update({ from })}
+          onToChange={(to) => update({ to })}
+          to={filter.to ?? ""}
+        />
 
         {kind === "sales" ? (
           <>
@@ -143,7 +138,7 @@ export function ReportFilters({ data, filter, kind, onChange, onReset }: ReportF
         ) : null}
 
         <Button
-          className="min-h-[2.6rem] gap-1.5 px-3"
+          className="min-h-[2.6rem] gap-1.5 px-3 sm:w-fit"
           onClick={onReset}
           title="Limpiar filtros"
           type="button"
@@ -153,6 +148,105 @@ export function ReportFilters({ data, filter, kind, onChange, onReset }: ReportF
         </Button>
       </div>
     </section>
+  );
+}
+
+function DateRangeFilter({
+  from,
+  onClear,
+  onFromChange,
+  onToChange,
+  to,
+}: {
+  from: string;
+  onClear: () => void;
+  onFromChange: (value: string) => void;
+  onToChange: (value: string) => void;
+  to: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverId = "report-date-range-popover";
+
+  useEffect(() => {
+    if (!open) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      triggerRef.current?.focus();
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative min-w-0 space-y-1.5" ref={containerRef}>
+      <span className="block text-sm font-semibold text-[var(--color-text)]">Rango de fechas</span>
+      <button
+        aria-controls={popoverId}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        className="flex min-h-[2.6rem] w-full items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-left text-sm text-[var(--color-text)] outline-none transition-colors hover:border-[var(--color-structure)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2"
+        onClick={() => setOpen((current) => !current)}
+        ref={triggerRef}
+        type="button"
+      >
+        <span className="min-w-0 truncate">{getDateRangeLabel(from, to)}</span>
+        <span aria-hidden="true" className="ml-2 text-xs text-[var(--color-text-muted)]">
+          {open ? "▲" : "▼"}
+        </span>
+      </button>
+
+      {open ? (
+        <div
+          aria-label="Seleccionar rango de fechas"
+          className="absolute left-0 z-30 mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-lg sm:left-auto sm:right-0"
+          id={popoverId}
+          role="dialog"
+        >
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FilterField htmlFor="report-from" label="Desde">
+              <Input
+                id="report-from"
+                max={to}
+                onChange={(event) => onFromChange(event.target.value)}
+                type="date"
+                value={from}
+              />
+            </FilterField>
+            <FilterField htmlFor="report-to" label="Hasta">
+              <Input
+                id="report-to"
+                min={from}
+                onChange={(event) => onToChange(event.target.value)}
+                type="date"
+                value={to}
+              />
+            </FilterField>
+          </div>
+          <div className="mt-3 flex justify-end border-t border-[var(--color-border)] pt-3">
+            <button
+              className="rounded-md px-2 py-1 text-sm font-medium text-[var(--color-primary)] hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+              onClick={onClear}
+              type="button"
+            >
+              Borrar
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -198,61 +292,4 @@ function FilterField({
       {children}
     </label>
   );
-}
-
-function getOptions(data: ReportsDataDto, kind: ReportKind) {
-  if (kind === "sales") {
-    return {
-      statuses: uniqueOptions(
-        data.sales.map((row) => [row.status, getReportStatusLabel(row.status)]),
-      ),
-      branches: uniqueOptions(data.sales.map((row) => [row.branchId, row.branchName])),
-      suppliers: [],
-      products: [],
-      movementTypes: [],
-      methods: [],
-    };
-  }
-  if (kind === "purchases") {
-    return {
-      statuses: uniqueOptions(
-        data.purchases.map((row) => [row.status, getReportStatusLabel(row.status)]),
-      ),
-      branches: uniqueOptions(data.purchases.map((row) => [row.branchId, row.branchName])),
-      suppliers: uniqueOptions(data.purchases.map((row) => [row.supplierId, row.supplierName])),
-      products: [],
-      movementTypes: [],
-      methods: [],
-    };
-  }
-  if (kind === "movements") {
-    return {
-      statuses: [],
-      branches: uniqueOptions(data.movements.map((row) => [row.branchId, row.branchName])),
-      suppliers: [],
-      products: uniqueOptions(data.movements.map((row) => [row.productId, row.productName])),
-      movementTypes: uniqueOptions(
-        data.movements.map((row) => [row.type, getMovementTypeLabel(row.type)]),
-      ),
-      methods: [],
-    };
-  }
-  return {
-    statuses: uniqueOptions(
-      data.payments.map((row) => [row.status, getReportStatusLabel(row.status)]),
-    ),
-    branches: [],
-    suppliers: [],
-    products: [],
-    movementTypes: [],
-    methods: uniqueOptions(
-      data.payments.map((row) => [row.method, getPaymentMethodLabel(row.method)]),
-    ),
-  };
-}
-
-function uniqueOptions(entries: string[][]) {
-  return [...new Map(entries.map(([value, label]) => [value, label])).entries()]
-    .map(([value, label]) => ({ value, label }))
-    .sort((left, right) => left.label.localeCompare(right.label, "es"));
 }

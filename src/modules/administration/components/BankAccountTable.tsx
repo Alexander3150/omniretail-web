@@ -36,7 +36,9 @@ export function BankAccountTable({ accounts, onSelect }: BankAccountTableProps) 
       key: "accountNumber",
       header: "Número",
       cell: (account) => (
-        <span className="font-mono text-[var(--color-text)]">{account.accountNumberMasked}</span>
+        <span className="whitespace-nowrap font-mono font-medium tracking-wide text-[var(--color-title)]">
+          {account.accountNumberMasked}
+        </span>
       ),
     },
     {
@@ -49,7 +51,9 @@ export function BankAccountTable({ accounts, onSelect }: BankAccountTableProps) 
     {
       key: "currency",
       header: "Moneda",
-      cell: (account) => <span className="text-[var(--color-text)]">{account.currency}</span>,
+      cell: (account) => (
+        <span className="font-semibold text-[var(--color-title)]">{account.currency}</span>
+      ),
     },
     {
       key: "status",

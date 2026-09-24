@@ -18,11 +18,11 @@ export function TransferDispatchPanel() {
       {dispatch.error ? <InlineAlert description={dispatch.error} title="Traslado no disponible" /> : null}
       {dispatch.loading ? <p className="mt-3 text-sm">Consultando traslados...</p> : null}
       {!dispatch.loading && dispatch.items.length === 0 ? (
-        <p className="mt-3 rounded-lg bg-[var(--color-app-background)] px-3 py-2.5 text-sm text-[var(--color-text-muted)]">No hay traslados listos para despacho.</p>
+        <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-[var(--color-text-muted)]">No hay traslados listos para despacho.</p>
       ) : null}
       <div className="mt-3 space-y-2">
         {dispatch.items.map((item) => (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] px-3 py-2.5" key={item.transferId}>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-white px-3 py-2.5 shadow-sm" key={item.transferId}>
             <div>
               <p className="font-semibold text-[var(--color-title)]">{item.reference}</p>
               <p className="text-sm text-[var(--color-text-muted)]">

@@ -20,22 +20,23 @@ export function StorefrontOrderProgress({ status }: { status: string }) {
     <section className="rounded-xl border border-[var(--color-border)] bg-slate-50 p-5 sm:p-7">
       <div className="grid grid-cols-3">
         {stages.map((stage, index) => {
-          const completed = currentIndex >= index;
+          const completed = currentIndex > index;
           const active = currentIndex === index;
+          const reached = currentIndex >= index;
           return (
             <div className="relative flex flex-col items-center text-center" key={stage.key}>
               {index > 0 ? (
                 <span
-                  className={`absolute right-1/2 top-5 h-1 w-full -translate-y-1/2 ${completed ? "bg-[var(--color-primary-hover)]" : "bg-[var(--color-border)]"}`}
+                  className={`absolute right-1/2 top-5 h-1 w-full -translate-y-1/2 ${reached ? "bg-[var(--color-success)]" : "bg-[var(--color-border)]"}`}
                 />
               ) : null}
               <span
-                className={`relative z-10 grid h-10 w-10 place-items-center rounded-full border-2 text-lg font-black ${completed ? "border-[var(--color-primary-hover)] bg-[var(--color-primary-hover)] text-white" : "border-[var(--color-primary)] bg-white text-[var(--color-text-muted)]"} ${active ? "ring-4 ring-[var(--color-primary)]/20" : ""}`}
+                className={`relative z-10 grid h-10 w-10 place-items-center rounded-full border-2 text-lg font-black ${completed ? "border-[var(--color-success)] bg-[var(--color-success)] text-white" : active ? "border-[var(--color-primary-hover)] bg-[var(--color-primary)] text-[var(--color-topbar)] ring-4 ring-[var(--color-primary)]/20" : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)]"}`}
               >
                 {stage.icon}
               </span>
               <p
-                className={`mt-3 text-sm font-black ${completed ? "text-[var(--color-title)]" : "text-[var(--color-text-muted)]"}`}
+                className={`mt-3 text-sm font-black ${completed ? "text-[var(--color-success)]" : active ? "text-[var(--color-title)]" : "text-[var(--color-text-muted)]"}`}
               >
                 {stage.label}
               </p>

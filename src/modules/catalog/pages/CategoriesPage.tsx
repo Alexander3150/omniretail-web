@@ -16,8 +16,10 @@ import { processImageUpload } from "@/shared/application/services/processImageUp
 import { CatalogImage } from "@/modules/catalog/components/CatalogImage";
 import { CategoryStatus } from "@/core/enums";
 import { Button } from "@/shared/components/Button";
+import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { Input } from "@/shared/components/Input";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Select } from "@/shared/components/Select";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { useToast } from "@/shared/components/Toast";
@@ -116,32 +118,20 @@ export function CategoriesPage() {
 
   if (!loading && !canRead) {
     return (
-      <div className="min-w-0 space-y-5">
+      <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
         <header className="border-b border-[var(--color-border)] pb-4">
           <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
             CATEGORÍA
           </p>
           <h1 className="mt-1 text-2xl font-bold text-[var(--color-title)]">Categorías</h1>
         </header>
-        <div
-          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
-          role="alert"
-        >
-          <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No tenés acceso a categorías
-          </h2>
-          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            Consultar categorías requiere el permiso{" "}
-            <span className="font-medium text-[var(--color-text)]">catalog.categories.read</span>.
-            Pedí acceso a un administrador.
-          </p>
-        </div>
+        <AccessDeniedState />
       </div>
     );
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <header className="flex min-w-0 flex-col gap-4 border-b border-[var(--color-border)] pb-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
@@ -166,11 +156,7 @@ export function CategoriesPage() {
         ) : null}
       </header>
 
-      {error ? (
-        <p className="rounded-md border border-[var(--color-danger)] bg-white px-4 py-3 text-sm font-medium text-[var(--color-danger)]">
-          {error}
-        </p>
-      ) : null}
+      {error ? <InlineAlert title={error} tone="danger" /> : null}
 
       <section
         className={cn(
@@ -801,7 +787,18 @@ function CategoryForm({
   }
 
   function update(patch: Partial<CategoryEditorDto>) {
-    setValue((current) => ({ ...current, ...patch }));
+    const nextValue = { ...value, ...patch };
+    setValue(nextValue);
+    setErrors((currentErrors) => {
+      const validation = validateCategoryDto(nextValue, allCategories, category?.id);
+      const nextErrors = { ...currentErrors };
+      for (const field of Object.keys(patch) as Array<keyof CategoryValidationErrors>) {
+        if (!currentErrors[field]) continue;
+        if (validation[field]) nextErrors[field] = validation[field];
+        else delete nextErrors[field];
+      }
+      return nextErrors;
+    });
   }
 
   async function selectImage(file: File | undefined) {
@@ -815,7 +812,7 @@ function CategoryForm({
   }
 
   return (
-    <form className="space-y-4" id="catalog-category-form" onSubmit={submit}>
+    <form className="space-y-4" id="catalog-category-form" noValidate onSubmit={submit}>
       <Field id="category-name" label="Nombre *" error={errors.name}>
         <Input
           id="category-name"

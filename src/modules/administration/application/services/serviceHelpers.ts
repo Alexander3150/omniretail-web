@@ -34,14 +34,14 @@ export function ensureCanManageBusinessConfig(permissions: readonly string[]) {
   if (permissions.includes(BUSINESS_CONFIG_MANAGE_PERMISSION)) return;
 
   throw new AdministrationServiceError(
-    "No tenés permiso para modificar la configuración del negocio.",
+    "No dispone de permisos para modificar la configuración del negocio.",
   );
 }
 
 export function ensureCanReadCustomers(permissions: readonly string[]) {
   if (permissions.includes("admin.customers.read")) return;
 
-  throw new AdministrationServiceError("No tenés permiso para consultar clientes.");
+  throw new AdministrationServiceError("No dispone de permisos para consultar clientes.");
 }
 
 export function ensureCustomerTenant(tenantId: string) {
@@ -53,7 +53,7 @@ export function ensureCustomerTenant(tenantId: string) {
 export function ensureCanReadCash(permissions: readonly string[]) {
   if (permissions.includes(CASH_READ_PERMISSION)) return;
 
-  throw new AdministrationServiceError("No tenés permiso para consultar los turnos de caja.");
+  throw new AdministrationServiceError("No dispone de permisos para consultar los turnos de caja.");
 }
 
 export function ensureCashTenant(tenantId: string) {
@@ -71,7 +71,7 @@ export function ensureCashActor(actorUserId: string) {
 export function ensureCanReadDashboard(permissions: readonly string[]) {
   if (permissions.includes(DASHBOARD_READ_PERMISSION)) return;
 
-  throw new AdministrationServiceError("No tenés permiso para consultar el dashboard.");
+  throw new AdministrationServiceError("No dispone de permisos para consultar el dashboard.");
 }
 
 export function ensureDashboardTenant(tenantId: string) {
@@ -83,20 +83,20 @@ export function ensureDashboardTenant(tenantId: string) {
 export function ensureCanReadReports(permissions: readonly string[]) {
   if (permissions.includes(REPORTS_READ_PERMISSION)) return;
 
-  throw new AdministrationServiceError("No tenés permiso para consultar los reportes.");
+  throw new AdministrationServiceError("No dispone de permisos para consultar los reportes.");
 }
 
 export function ensureCanExportReports(permissions: readonly string[]) {
   if (permissions.includes(REPORTS_EXPORT_PERMISSION)) return;
 
-  throw new AdministrationServiceError("No tenés permiso para exportar reportes.");
+  throw new AdministrationServiceError("No dispone de permisos para exportar reportes.");
 }
 
 export function ensureCanManageEcommerceConfig(permissions: readonly string[]) {
   if (permissions.includes("admin.ecommerce_config.manage")) return;
 
   throw new AdministrationServiceError(
-    "No tenés permiso para gestionar la configuración de e-commerce.",
+    "No dispone de permisos para gestionar la configuración de e-commerce.",
   );
 }
 
@@ -139,7 +139,7 @@ export function ensureEcommerceDefaultBranch(
 
   if (enabled) {
     throw new AdministrationServiceError(
-      "Seleccioná una sucursal predeterminada para habilitar el e-commerce.",
+      "Seleccione una sucursal predeterminada para habilitar el e-commerce.",
     );
   }
 }
@@ -151,7 +151,7 @@ export function ensureEcommerceDefaultBranch(
 export function ensureCanManageSuppliers(permissions: readonly string[]) {
   if (permissions.includes("admin.suppliers.manage")) return;
 
-  throw new AdministrationServiceError("No tenés permiso para gestionar proveedores.");
+  throw new AdministrationServiceError("No dispone de permisos para gestionar proveedores.");
 }
 
 export function ensureSupplierTenant(tenantId: string) {
@@ -182,7 +182,7 @@ export function ensureSupplierBelongsToTenant(
 export function ensureCanManageBranches(permissions: readonly string[]) {
   if (permissions.includes("admin.branches.manage")) return;
 
-  throw new AdministrationServiceError("No tenés permiso para gestionar sucursales.");
+  throw new AdministrationServiceError("No dispone de permisos para gestionar sucursales.");
 }
 
 export function ensureCanReadBranches(permissions: readonly string[]) {
@@ -193,7 +193,7 @@ export function ensureCanReadBranches(permissions: readonly string[]) {
     return;
   }
 
-  throw new AdministrationServiceError("No tenés permiso para consultar sucursales.");
+  throw new AdministrationServiceError("No dispone de permisos para consultar sucursales.");
 }
 
 export function ensureBranchTenant(tenantId: string) {
@@ -283,7 +283,7 @@ function normalizeOptionalText(value?: string) {
 export function ensureCanManageBankAccounts(permissions: readonly string[]) {
   if (permissions.includes("admin.bank_accounts.manage")) return;
 
-  throw new AdministrationServiceError("No tenés permiso para gestionar cuentas bancarias.");
+  throw new AdministrationServiceError("No dispone de permisos para gestionar cuentas bancarias.");
 }
 
 export function ensureBankAccountTenant(tenantId: string) {
@@ -350,13 +350,13 @@ export function ensureCanReadRoles(permissions: readonly string[]) {
     return;
   }
 
-  throw new AdministrationServiceError("No tenés permiso para consultar roles.");
+  throw new AdministrationServiceError("No dispone de permisos para consultar roles.");
 }
 
 export function ensureCanManageRoles(permissions: readonly string[]) {
   if (permissions.includes("admin.roles.manage")) return;
 
-  throw new AdministrationServiceError("No tenés permiso para gestionar roles.");
+  throw new AdministrationServiceError("No dispone de permisos para gestionar roles.");
 }
 
 export function ensureRoleTenant(tenantId: string) {
@@ -398,13 +398,13 @@ export function ensureCanReadEmployees(permissions: readonly string[]) {
     return;
   }
 
-  throw new AdministrationServiceError("No tenés permiso para consultar empleados.");
+  throw new AdministrationServiceError("No dispone de permisos para consultar empleados.");
 }
 
 export function ensureCanManageEmployees(permissions: readonly string[]) {
   if (permissions.includes("admin.users.manage")) return;
 
-  throw new AdministrationServiceError("No tenés permiso para gestionar empleados.");
+  throw new AdministrationServiceError("No dispone de permisos para gestionar empleados.");
 }
 
 export function ensureEmployeeTenant(tenantId: string) {
@@ -471,7 +471,7 @@ export function ensureEmployeeBranchIds(
 export function ensureCanReadPlans(permissions: readonly string[]) {
   if (permissions.includes(PLANS_READ_PERMISSION)) return;
 
-  throw new AdministrationServiceError("No tenés permiso para consultar el plan del negocio.");
+  throw new AdministrationServiceError("No dispone de permisos para consultar el plan del negocio.");
 }
 
 export function ensurePlanTenant(tenantId: string) {
@@ -488,7 +488,7 @@ export function ensurePlanTenant(tenantId: string) {
 export function ensureCanManagePlans(permissions: readonly string[]) {
   if (permissions.includes(PLANS_MANAGE_PERMISSION)) return;
 
-  throw new AdministrationServiceError("No tenés permiso para cambiar el plan del negocio.");
+  throw new AdministrationServiceError("No dispone de permisos para cambiar el plan del negocio.");
 }
 
 export function ensurePlanActor(actorUserId: string) {

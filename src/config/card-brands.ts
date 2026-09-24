@@ -20,4 +20,4 @@ export type CardBrand = (typeof CARD_BRANDS)[number];
  * fecha YA vencida, asi que un año como "2240" pasaba sin problema por no
  * estar en el pasado.
  */
-export const MAX_EXPIRATION_YEARS_AHEAD = 10;
+export const MAX_EXPIRATION_YEARS_AHEAD = 20;

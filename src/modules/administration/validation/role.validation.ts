@@ -42,7 +42,7 @@ export function validateRoleInput(dto: RoleInputDto) {
     );
   }
   if (!Array.isArray(dto.permissions) || dto.permissions.length === 0) {
-    throw new AdministrationServiceError("Seleccioná al menos un permiso para el rol.");
+    throw new AdministrationServiceError("Seleccione al menos un permiso para el rol.");
   }
   if (dto.permissions.some((key) => !VALID_PERMISSION_KEYS.has(key))) {
     throw new AdministrationServiceError("Alguno de los permisos seleccionados no es válido.");
@@ -71,7 +71,7 @@ export function ensureDelegatablePermissions(
   const nonDelegable = requestedPermissions.filter((key) => !actorPermissionSet.has(key));
   if (nonDelegable.length > 0) {
     throw new AdministrationServiceError(
-      "El rol contiene permisos que tu cuenta no puede asignar. Revisa los permisos seleccionados e inténtalo nuevamente.",
+      "El rol contiene permisos que la cuenta actual no puede asignar. Revise los permisos seleccionados e inténtelo nuevamente.",
     );
   }
 }

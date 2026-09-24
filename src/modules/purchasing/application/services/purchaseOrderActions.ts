@@ -105,6 +105,6 @@ function withPermission(
     enabled: permissionAllows,
     ...(permissionAllows
       ? {}
-      : { unavailableReason: "No tenés el permiso necesario para esta acción." }),
+      : { unavailableReason: "No dispone del permiso necesario para esta acción." }),
   };
 }

@@ -50,7 +50,7 @@ export function validateEmployeeInput(dto: EmployeeInputDto) {
     throw new AdministrationServiceError("El teléfono del empleado debe tener 8 dígitos.");
   }
   if (!dto.roleId.trim()) {
-    throw new AdministrationServiceError("Seleccioná un rol para el empleado.");
+    throw new AdministrationServiceError("Seleccione un rol para el empleado.");
   }
   if (!EDITABLE_STATUSES.includes(dto.status)) {
     throw new AdministrationServiceError(
@@ -99,7 +99,7 @@ export function ensureDelegatableRole(
   const nonDelegable = targetRole.permissions.filter((key) => !actorPermissionSet.has(key));
   if (nonDelegable.length > 0) {
     throw new AdministrationServiceError(
-      "El rol seleccionado otorga permisos que tu cuenta no puede asignar. Elegí otro rol o pedí que ajusten tus permisos.",
+      "El rol seleccionado otorga permisos que la cuenta actual no puede asignar. Seleccione otro rol o solicite el ajuste de permisos.",
     );
   }
 }
@@ -118,7 +118,7 @@ export function ensureRoleAssignable(role: Role | null, tenantId: string): Role 
   }
   if (role.status !== RoleStatus.active) {
     throw new AdministrationServiceError(
-      "Solo se pueden asignar roles activos. Activá el rol o elegí otro.",
+      "Solo se pueden asignar roles activos. Active el rol o seleccione otro.",
     );
   }
   return role;

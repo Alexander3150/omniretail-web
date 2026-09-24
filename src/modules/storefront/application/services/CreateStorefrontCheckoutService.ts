@@ -74,7 +74,7 @@ export class CreateStorefrontCheckoutService {
 
     const authenticatedCustomer = customerContext?.tenantId === tenantId ? customerContext : null;
     if (ecommerceConfig.requireAccountForCheckout && !authenticatedCustomer) {
-      throw new Error("Debes iniciar sesión con una cuenta de esta tienda para comprar.");
+      throw new Error("Debe iniciar sesión con una cuenta de esta tienda para comprar.");
     }
     if (!ecommerceConfig.allowedDeliveryMethods.includes(DeliveryMethod.home_delivery)) {
       throw new Error("El envío a domicilio no está disponible.");
@@ -85,7 +85,7 @@ export class CreateStorefrontCheckoutService {
     if (!ecommerceConfig.defaultBranchId) {
       throw new Error("No hay una sucursal configurada para despachar pedidos.");
     }
-    if (items.length === 0) throw new Error("Tu carrito está vacío.");
+    if (items.length === 0) throw new Error("El carrito está vacío.");
 
     const branch = await this.repositories.branches.getById(ecommerceConfig.defaultBranchId);
     if (!branch || branch.tenantId !== tenantId || branch.status !== BranchStatus.active) {
@@ -204,7 +204,7 @@ export class CreateStorefrontCheckoutService {
     } catch (cause) {
       if (cause instanceof InsufficientInventoryAvailabilityError) {
         throw new Error(
-          "No hay suficiente disponibilidad para completar tu pedido. Actualiza el carrito e inténtalo nuevamente.",
+          "No hay suficiente disponibilidad para completar el pedido. Actualice el carrito e inténtelo nuevamente.",
         );
       }
       throw cause;
@@ -248,17 +248,17 @@ function buildReferences(form: StorefrontCheckoutFormDto): string | undefined {
 }
 
 function assertCheckoutForm(form: StorefrontCheckoutFormDto): void {
-  if (!form.fullName.trim()) throw new Error("Ingresa tu nombre completo.");
+  if (!form.fullName.trim()) throw new Error("Ingrese el nombre completo.");
   if (!isValidRecipientName(form.fullName)) {
     throw new Error("El nombre contiene caracteres no permitidos o supera el límite permitido.");
   }
   if (validateEmail(form.email) || !isValidDeliveryNotificationEmail(form.email)) {
-    throw new Error("Ingresa un correo electrónico válido.");
+    throw new Error("Ingrese un correo electrónico válido.");
   }
-  if (!form.phone.trim()) throw new Error("Ingresa un teléfono de contacto.");
+  if (!form.phone.trim()) throw new Error("Ingrese un teléfono de contacto.");
   const phoneError = validatePhoneNumber(form.phone);
   if (phoneError) throw new Error(phoneError);
-  if (!form.addressLine1.trim()) throw new Error("Ingresa la dirección de entrega.");
+  if (!form.addressLine1.trim()) throw new Error("Ingrese la dirección de entrega.");
   if (!isValidDeliveryAddress(form.addressLine1, "line1")) {
     throw new Error(
       `La dirección permite letras, números, puntos y guiones; máximo ${DELIVERY_ADDRESS_LIMITS.line1} caracteres.`,
@@ -274,9 +274,9 @@ function assertCheckoutForm(form: StorefrontCheckoutFormDto): void {
       `Las referencias permiten letras, números, espacios y comas; máximo ${DELIVERY_ADDRESS_LIMITS.references} caracteres.`,
     );
   }
-  if (!form.city.trim()) throw new Error("Ingresa la ciudad de entrega.");
-  if (!form.cardholderName.trim()) throw new Error("Ingresa el titular de la tarjeta.");
+  if (!form.city.trim()) throw new Error("Ingrese la ciudad de entrega.");
+  if (!form.cardholderName.trim()) throw new Error("Ingrese el titular de la tarjeta.");
   if (!/^\d{4}$/.test(form.cardLastFour)) {
-    throw new Error("Ingresa los últimos 4 dígitos de la tarjeta.");
+    throw new Error("Ingrese los últimos 4 dígitos de la tarjeta.");
   }
 }

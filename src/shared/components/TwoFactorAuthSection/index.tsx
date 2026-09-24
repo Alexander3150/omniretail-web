@@ -92,14 +92,14 @@ export function TwoFactorAuthSection({
 
   if (loading) {
     return (
-      <div className="max-w-lg rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
+      <div className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
         <p className="text-sm text-[var(--color-text-muted)]">Cargando verificación en dos pasos...</p>
       </div>
     );
   }
 
   return (
-    <div className="max-w-lg space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
+    <div className="w-full space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <span
@@ -175,7 +175,7 @@ export function TwoFactorAuthSection({
               Mismo criterio de transparencia dummy que el resto del
               sistema. */}
           <p className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
-            Modo demo: tu código es <strong>{step.demoCodeMock}</strong>
+            Código de verificación actual: <strong>{step.demoCodeMock}</strong>
           </p>
           <FormField id="mfa-confirm-code" label="Código de confirmación">
             <Input

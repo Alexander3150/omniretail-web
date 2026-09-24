@@ -14,13 +14,29 @@ import {
 export function useResetPassword(token: string) {
   const repositories = useRepositories();
 
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [password, setPasswordState] = useState("");
+  const [confirmPassword, setConfirmPasswordState] = useState("");
   const [fieldErrors, setFieldErrors] = useState<ResetPasswordValidationErrors>({});
   const [formError, setFormError] = useState<string | undefined>();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [result, setResult] = useState<ResetPasswordResult | null>(null);
+
+  const setPassword = useCallback((value: string) => {
+    setPasswordState(value);
+    setFieldErrors((current) => {
+      if (!current.password && !current.confirmPassword) return current;
+      const validation = validateResetPasswordForm({ password: value, confirmPassword });
+      return { ...current, password: validation.password, confirmPassword: validation.confirmPassword };
+    });
+  }, [confirmPassword]);
+  const setConfirmPassword = useCallback((value: string) => {
+    setConfirmPasswordState(value);
+    setFieldErrors((current) => {
+      if (!current.confirmPassword) return current;
+      return { ...current, confirmPassword: validateResetPasswordForm({ password, confirmPassword: value }).confirmPassword };
+    });
+  }, [password]);
 
   const submit = useCallback(async () => {
     setFormError(undefined);

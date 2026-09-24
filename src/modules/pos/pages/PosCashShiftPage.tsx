@@ -20,7 +20,7 @@ export function PosCashShiftPage() {
   const [closingModalOpen, setClosingModalOpen] = useState(false);
 
   return (
-    <div className="min-w-0 space-y-4">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-4">
       <PageHeader
         description="Administra la apertura, los movimientos y el arqueo de la caja activa."
         title="Apertura y Arqueo de Caja"
@@ -53,12 +53,14 @@ export function PosCashShiftPage() {
       ) : null}
 
       {!cash.loading && !cash.cashShift && cash.hasBranchAccess ? (
-        <CashShiftOpeningForm
-          branchName={cash.currentBranchName}
-          canOpen={cash.canOpen}
-          loading={cash.mutationLoading}
-          onOpen={cash.openCashShift}
-        />
+        <div className="min-w-0 [&>section]:overflow-hidden [&>section]:bg-white [&>section>div:first-child]:border-b-0 [&>section>div:first-child]:bg-[var(--color-structure)] [&>section>div:first-child]:px-4 [&>section>div:first-child]:py-3 [&>section>div:first-child_h2]:text-white [&>section>div:first-child_p]:text-white/80 [&>section>form]:p-4 sm:[&>section>div:first-child]:px-5 sm:[&>section>form]:p-5">
+          <CashShiftOpeningForm
+            branchName={cash.currentBranchName}
+            canOpen={cash.canOpen}
+            loading={cash.mutationLoading}
+            onOpen={cash.openCashShift}
+          />
+        </div>
       ) : null}
 
       {!cash.loading && cash.cashShift && cash.summary ? (
@@ -71,7 +73,7 @@ export function PosCashShiftPage() {
           />
 
           <section className="space-y-3 rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm sm:p-5">
-            <div className="flex flex-col gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 rounded-lg border border-[var(--color-border)] bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="text-lg font-bold text-[var(--color-title)]">Movimientos</h2>
                 <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">

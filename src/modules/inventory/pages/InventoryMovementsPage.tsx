@@ -2,6 +2,7 @@
 
 import { useState, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { Button } from "@/shared/components/Button";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Input } from "@/shared/components/Input";
 import { Select } from "@/shared/components/Select";
 import { cn } from "@/shared/utils/cn";
@@ -211,7 +212,7 @@ export function InventoryMovementsPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <header className="flex min-w-0 flex-col gap-4 border-b border-[var(--color-border)] pb-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
@@ -236,13 +237,9 @@ export function InventoryMovementsPage() {
         </Button>
       </header>
 
-      {error ? (
-        <p className="rounded-md border border-[var(--color-danger)] bg-white px-4 py-3 text-sm font-medium text-[var(--color-danger)]">
-          {error}
-        </p>
-      ) : null}
+      {error ? <InlineAlert title={error} tone="danger" /> : null}
 
-      <section className="max-w-full overflow-hidden rounded-lg border border-[var(--color-border)] bg-white shadow-sm">
+      <section className="max-w-full overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
         <MovementFilters
           branchId={branchId}
           branches={data.branches}
@@ -262,7 +259,7 @@ export function InventoryMovementsPage() {
 
       <MovementKpis incoming={kpis.incoming} net={kpis.net} outgoing={kpis.outgoing} />
 
-      <section className="max-w-full overflow-hidden rounded-lg border border-[var(--color-border)] bg-white shadow-sm">
+      <section className="max-w-full overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
         {loading ? (
           <p className="border-t border-[var(--color-border)] p-5 text-sm text-[var(--color-text-muted)]">
             Cargando movimientos...
@@ -346,18 +343,18 @@ function KpiCard({
   return (
     <div
       className={cn(
-        "rounded-lg border bg-white px-4 py-3 shadow-sm",
-        tone === "success" && "border-emerald-200",
-        tone === "danger" && "border-orange-200",
-        tone === "info" && "border-blue-200",
-        tone === "warning" && "border-indigo-200",
+        "rounded-lg border border-l-4 border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-sm",
+        tone === "success" && "border-l-emerald-400",
+        tone === "danger" && "border-l-orange-400",
+        tone === "info" && "border-l-blue-400",
+        tone === "warning" && "border-l-indigo-400",
       )}
     >
       <p className="flex items-center gap-2 text-xs font-bold uppercase text-[var(--color-text-muted)]">
         <Icon className="h-3.5 w-3.5" />
         {label}
       </p>
-      <strong className="mt-1 block text-2xl font-bold leading-none text-[var(--color-title)]">
+      <strong className="mt-1 block text-3xl font-bold leading-none tracking-tight text-[var(--color-title)]">
         {value}
       </strong>
     </div>
@@ -498,15 +495,15 @@ function MovementTable({
         </colgroup>
         <thead className="bg-[var(--color-structure)] text-xs uppercase text-white">
           <tr>
-            <th className="px-4 py-3 font-semibold">Fecha y hora</th>
-            <th className="px-4 py-3 font-semibold">Producto</th>
-            <th className="px-4 py-3 font-semibold">Tipo</th>
-            <th className="hidden px-4 py-3 font-semibold md:table-cell">Referencia</th>
+            <th className="px-3 py-3 font-semibold">Fecha y hora</th>
+            <th className="px-3 py-3 font-semibold">Producto</th>
+            <th className="px-3 py-3 font-semibold">Tipo</th>
+            <th className="hidden px-3 py-3 font-semibold md:table-cell">Referencia</th>
             <th className="hidden px-3 py-3 text-right font-semibold xl:table-cell">Anterior</th>
-            <th className="px-4 py-3 text-right font-semibold">Cambio</th>
+            <th className="px-3 py-3 text-right font-semibold">Cambio</th>
             <th className="hidden px-3 py-3 text-right font-semibold lg:table-cell">Resultante</th>
-            <th className="hidden px-4 py-3 font-semibold lg:table-cell">Sucursal / ubicacion</th>
-            <th className="hidden px-4 py-3 font-semibold xl:table-cell">Usuario</th>
+            <th className="hidden px-3 py-3 font-semibold lg:table-cell">Sucursal / ubicacion</th>
+            <th className="hidden px-3 py-3 font-semibold xl:table-cell">Usuario</th>
           </tr>
         </thead>
         <tbody>
@@ -539,30 +536,30 @@ function MovementTable({
                   }}
                   tabIndex={0}
                 >
-                  <td className="px-4 py-2.5 font-medium text-[var(--color-text)]">
+                  <td className="px-3 py-2.5 font-medium text-[var(--color-text)]">
                     <span className="block truncate">{dateParts.date}</span>
                     <span className="mt-0.5 block truncate text-xs text-[var(--color-text-muted)]">
                       {dateParts.time}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5">
-                    <p className="truncate font-medium text-[var(--color-title)]">
+                  <td className="px-3 py-2.5">
+                    <p className="truncate font-medium text-[var(--color-title)]" title={row.productName}>
                       {row.productName}
                     </p>
-                    <p className="mt-0.5 truncate text-xs font-medium text-[var(--color-text-muted)]">
+                    <p className="mt-0.5 truncate text-xs font-medium text-[var(--color-text-muted)]" title={row.sku}>
                       {row.sku}
                     </p>
                   </td>
-                  <td className="px-4 py-2.5">
+                  <td className="px-3 py-2.5">
                     <MovementTypeBadge row={row} />
                   </td>
-                  <td className="hidden px-4 py-2.5 font-medium text-[var(--color-structure)] md:table-cell">
-                    <span className="block truncate">{row.referenceLabel}</span>
+                  <td className="hidden px-3 py-2.5 font-medium text-[var(--color-structure)] md:table-cell">
+                    <span className="block truncate" title={row.referenceLabel}>{row.referenceLabel}</span>
                   </td>
                   <td className="hidden px-3 py-2.5 text-right tabular-nums text-[var(--color-text-muted)] xl:table-cell">
                     {formatOptionalQuantity(row.quantityBefore)}
                   </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">
+                  <td className="px-3 py-2.5 text-right tabular-nums">
                     <span
                       className={cn(
                         "font-black",
@@ -575,15 +572,15 @@ function MovementTable({
                   <td className="hidden px-3 py-2.5 text-right tabular-nums text-[var(--color-text)] lg:table-cell">
                     {formatOptionalQuantity(row.quantityAfter)}
                   </td>
-                  <td className="hidden px-4 py-2.5 lg:table-cell">
-                    <p className="truncate font-medium text-[var(--color-title)]">
+                  <td className="hidden px-3 py-2.5 lg:table-cell">
+                    <p className="break-words font-medium leading-tight text-[var(--color-title)]">
                       {row.branchName}
                     </p>
-                    <p className="mt-0.5 truncate text-xs font-medium text-[var(--color-text-muted)]">
+                    <p className="mt-1 break-words text-xs font-medium leading-tight text-[var(--color-text-muted)]">
                       {row.locationLabel}
                     </p>
                   </td>
-                  <td className="hidden px-4 py-2.5 text-[var(--color-text)] xl:table-cell">
+                  <td className="hidden break-words px-3 py-2.5 leading-tight text-[var(--color-text)] xl:table-cell">
                     {row.userLabel}
                   </td>
                 </tr>

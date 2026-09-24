@@ -14,7 +14,8 @@ import type {
   ReportTotals,
   SalesReportRow,
 } from "@/modules/administration/application/dto/ReportDto";
-import { downloadReportXlsx } from "@/modules/administration/application/reportXlsx";
+import { downloadMultipleReportsXlsx, type ReportExportConfig } from "@/modules/administration/application/reportXlsx";
+import { getOptions, getFilterSummary } from "@/modules/administration/application/reportHelpers";
 import { GetReportsService } from "@/modules/administration/application/services/GetReportsService";
 import {
   AdministrationServiceError,
@@ -122,9 +123,7 @@ export function useReports() {
     setKindState(nextKind);
     setFilter({});
   }, []);
-  const exportXlsx = useCallback(async () => {
-    if (rows.length === 0) return;
-
+  const exportConfigs = useCallback(async (configs: { kind: ReportKind; filter: ReportFilter }[]) => {
     setError(null);
     try {
       const exportTenantId = await service.authorizeExport();
@@ -133,15 +132,34 @@ export function useReports() {
           "Los datos visibles ya no pertenecen a la sesión actual. Actualizá el reporte.",
         );
       }
-      await downloadReportXlsx(
-        `reporte-${kind}-${getLocalDateKey(new Date())}.xlsx`,
-        getReportTableData(kind, rows),
-        REPORT_KIND_SHEET_LABELS[kind],
-      );
+
+      const reports = configs.map(config => {
+        const configRows = filterRows(data, config.kind, config.filter);
+        const configTotals = calculateTotals(config.kind, configRows);
+        const options = getOptions(data, config.kind);
+        const filterSummary = getFilterSummary(config.filter, options);
+
+        return {
+          sheetName: REPORT_KIND_SHEET_LABELS[config.kind],
+          title: `Reporte de ${REPORT_KIND_SHEET_LABELS[config.kind]}`,
+          periodLabel: "",
+          filterSummary,
+          recordCount: configRows.length,
+          data: getReportTableData(config.kind, configRows),
+          totals: configTotals
+        } as ReportExportConfig;
+      });
+
+      const dateKey = getLocalDateKey(new Date());
+      const filename = reports.length > 1
+        ? `Reportes_Administrativos_${dateKey}.xlsx`
+        : `Reporte_${reports[0].sheetName}_${dateKey}.xlsx`;
+
+      await downloadMultipleReportsXlsx(filename, reports);
     } catch (caughtError) {
       setError(cleanError(caughtError));
     }
-  }, [data.tenantId, kind, rows, service]);
+  }, [data, service]);
 
   return {
     loading: loading || sessionLoading,
@@ -156,7 +174,7 @@ export function useReports() {
     totals,
     canRead,
     canExport,
-    exportXlsx,
+    exportConfigs,
     reload,
   };
 }
@@ -223,6 +241,7 @@ export function calculateTotals(kind: ReportKind, rows: ReportRow[]): ReportTota
       total: sum(effectiveSales.map((row) => row.total)),
       discountTotal: sum(effectiveSales.map((row) => row.discountTotal)),
       taxTotal: sum(effectiveSales.map((row) => row.taxTotal)),
+      byChannel: groupAmounts(effectiveSales, (row) => row.channel, (row) => row.total).map(({ key, count, amount }) => ({ channel: key, count, total: amount })),
     };
   }
   if (kind === "purchases") {
@@ -288,6 +307,8 @@ export function getReportTableData(
   if (kind === "sales") {
     return {
       headers: [
+        "Canal",
+        "Origen",
         "Número",
         "Fecha",
         "Sucursal",
@@ -298,6 +319,8 @@ export function getReportTableData(
         "Total",
       ],
       rows: (rows as SalesReportRow[]).map((row) => [
+        row.channel,
+        row.origin,
         row.number,
         getLocalDateKey(new Date(row.date)),
         row.branchName,

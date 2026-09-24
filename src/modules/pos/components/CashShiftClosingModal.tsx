@@ -8,6 +8,7 @@ import {
 } from "@/modules/pos/validation/cashShift.validation";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Input } from "@/shared/components/Input";
 import { Modal } from "@/shared/components/Modal";
 
@@ -37,6 +38,17 @@ export function CashShiftClosingModal({
   const closeModal = () => {
     resetForm();
     onClose();
+  };
+
+  const updateCountedAmount = (nextCountedAmount: string) => {
+    setCountedAmount(nextCountedAmount);
+    setErrors((current) => {
+      if (!current.amount) return current;
+      const validation = validateCashCount(
+        nextCountedAmount.trim() ? Number(nextCountedAmount) : Number.NaN,
+      );
+      return { ...current, amount: validation.amount };
+    });
   };
 
   return (
@@ -69,11 +81,7 @@ export function CashShiftClosingModal({
           if (await onConfirm(amount)) closeModal();
         }}
       >
-        {error ? (
-          <p className="rounded-lg border border-[var(--color-danger)] p-3 text-sm font-semibold text-[var(--color-danger)]">
-            {error}
-          </p>
-        ) : null}
+        {error ? <InlineAlert description={error} title="No se pudo cerrar la caja" /> : null}
         <FormField
           id="cash-counted-amount"
           label="Efectivo contado"
@@ -89,7 +97,7 @@ export function CashShiftClosingModal({
             step="0.01"
             type="number"
             value={countedAmount}
-            onChange={(event) => setCountedAmount(event.target.value)}
+            onChange={(event) => updateCountedAmount(event.target.value)}
           />
         </FormField>
         <p className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 text-sm text-[var(--color-text-muted)]">

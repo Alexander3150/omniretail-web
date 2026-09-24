@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { DeliveryMethod, PickingPriority, PickingStatus } from "@/core/enums";
+import { DeliveryMethod, PickingStatus } from "@/core/enums";
 import type { PickingQueueItemDto } from "@/modules/logistics/application/dto/PickingReadModelDto";
 import { FormField } from "@/shared/components/FormField";
 import { SearchInput } from "@/shared/components/SearchInput";
@@ -32,13 +32,6 @@ const statusLabels: Record<PickingStatus, string> = {
   [PickingStatus.cancelled]: "Cancelado",
 };
 
-const priorityLabels: Record<PickingPriority, string> = {
-  [PickingPriority.low]: "Baja",
-  [PickingPriority.normal]: "Normal",
-  [PickingPriority.high]: "Alta",
-  [PickingPriority.urgent]: "Urgente",
-};
-
 export function PickingQueue({
   currentUserId,
   disabled,
@@ -49,23 +42,19 @@ export function PickingQueue({
   onSelect,
 }: PickingQueueProps) {
   const [statusFilter, setStatusFilter] = useState<PickingStatus | "">("");
-  const [priorityFilter, setPriorityFilter] = useState<PickingPriority | "">("");
   const filteredItems = useMemo(
-    () => items.filter((item) =>
-      (!statusFilter || item.status === statusFilter) &&
-      (!priorityFilter || item.priority === priorityFilter),
-    ),
-    [items, priorityFilter, statusFilter],
+    () => items.filter((item) => !statusFilter || item.status === statusFilter),
+    [items, statusFilter],
   );
 
   return (
     <aside className="rounded-xl border border-[var(--color-border)] bg-white shadow-sm lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)] lg:overflow-hidden">
       <div className="border-b border-[var(--color-border)] px-4 py-3.5">
         <h2 className="text-lg font-bold text-[var(--color-title)]">Cola de pedidos</h2>
-        <p className="mt-1 text-sm text-[var(--color-text-muted)]">Ordenada por prioridad operativa.</p>
+        <p className="mt-1 text-sm text-[var(--color-text-muted)]">Pedidos disponibles para preparar.</p>
       </div>
 
-      <div className="space-y-2.5 border-b border-[var(--color-border)] p-3.5">
+      <div className="space-y-2 border-b border-[var(--color-border)] p-3">
         <FormField id="picking-search" label="Buscar pedido">
           <SearchInput
             aria-label="Buscar pedido de picking"
@@ -76,7 +65,7 @@ export function PickingQueue({
             value={search}
           />
         </FormField>
-        <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
           <FormField id="picking-status-filter" label="Estado">
             <Select
               disabled={disabled}
@@ -99,23 +88,10 @@ export function PickingQueue({
               <option value="">No disponible</option>
             </Select>
           </FormField>
-          <FormField id="picking-priority-filter" label="Prioridad">
-            <Select
-              disabled={disabled}
-              id="picking-priority-filter"
-              onChange={(event) => setPriorityFilter(event.target.value as PickingPriority | "")}
-              value={priorityFilter}
-            >
-              <option value="">Todas las prioridades</option>
-              {Object.values(PickingPriority).map((priority) => (
-                <option key={priority} value={priority}>{priorityLabels[priority]}</option>
-              ))}
-            </Select>
-          </FormField>
         </div>
       </div>
 
-      <div className="space-y-2 overflow-y-auto p-3 lg:max-h-[calc(100dvh-25rem)]" aria-label="Pedidos de picking">
+      <div className="space-y-2 overflow-y-auto p-3 lg:max-h-[calc(100dvh-23rem)]" aria-label="Pedidos de picking">
         {filteredItems.length === 0 ? (
           <p className="rounded-lg bg-[var(--color-app-background)] p-4 text-center text-sm text-[var(--color-text-muted)]">
             No hay pedidos que coincidan con los filtros.
@@ -133,8 +109,8 @@ export function PickingQueue({
               className={cn(
                 "w-full rounded-lg border px-3.5 py-3 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
                 selected
-                  ? "border-[var(--color-primary)] bg-[var(--color-app-background)] shadow-sm"
-                  : "border-[var(--color-border)] bg-white hover:border-[var(--color-structure)] hover:bg-[var(--color-app-background)]",
+                  ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10 shadow-sm"
+                  : "border-[var(--color-border)] bg-white hover:border-[var(--color-structure)] hover:bg-slate-50",
               )}
               disabled={disabled}
               key={item.pickingOrderId}
@@ -146,10 +122,6 @@ export function PickingQueue({
                   <p className="truncate font-bold text-[var(--color-title)]">{item.orderReference}</p>
                   <p className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]">{item.customerName}</p>
                 </div>
-                <StatusBadge
-                  status={priorityLabels[item.priority]}
-                  tone={item.priority === PickingPriority.urgent ? "danger" : item.priority === PickingPriority.high ? "warning" : "neutral"}
-                />
               </div>
               <div className="mt-2.5 flex flex-wrap items-center gap-2">
                 <StatusBadge status={statusLabels[item.status]} tone={item.status === PickingStatus.pending ? "warning" : "info"} />

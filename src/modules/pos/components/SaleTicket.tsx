@@ -29,7 +29,7 @@ export function SaleTicket({
 }: SaleTicketProps) {
   return (
     <aside className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-sm xl:sticky xl:top-4">
-      <div className="border-b border-[var(--color-border)] bg-[var(--color-app-background)] px-4 py-3 sm:px-5">
+      <div className="border-b border-[var(--color-border)] bg-white px-4 py-3 sm:px-5">
         <div className="flex items-baseline justify-between gap-3">
           <h2 className="text-lg font-bold text-[var(--color-title)]">Ticket de venta</h2>
           <p className="shrink-0 text-sm font-medium text-[var(--color-text-muted)]">
@@ -46,7 +46,7 @@ export function SaleTicket({
         ) : null}
 
         {items.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-5 py-10 text-center">
+          <div className="rounded-lg border border-dashed border-[var(--color-border)] bg-slate-50 px-5 py-8 text-center">
             <p className="font-semibold text-[var(--color-title)]">Tu ticket está vacío</p>
             <p className="mx-auto mt-1 max-w-xs text-sm text-[var(--color-text-muted)]">
               Busca o selecciona un producto para agregarlo a la venta.
@@ -105,7 +105,7 @@ export function SaleTicket({
                   ) : null}
                   {item.requiresUnsupportedTraceability ? (
                     <p className="mt-1 font-semibold text-[var(--color-warning)]">
-                      Esta línea requiere un proceso de venta distinto.
+                      Esta línea no puede confirmarse.
                     </p>
                   ) : null}
                 </div>
@@ -115,7 +115,7 @@ export function SaleTicket({
         )}
       </div>
 
-      <dl className="space-y-2 border-t border-[var(--color-border)] bg-[var(--color-app-background)] px-4 py-3 text-sm sm:px-5">
+      <dl className="space-y-2 border-t border-[var(--color-border)] bg-slate-50 px-4 py-3 text-sm sm:px-5">
         <div className="flex items-center justify-between gap-4">
           <dt className="text-[var(--color-text-muted)]">Subtotal</dt>
           <dd className="font-semibold text-[var(--color-text)]">{formatCurrency(subtotal)}</dd>
@@ -128,7 +128,7 @@ export function SaleTicket({
         </div>
         <div className="flex items-center justify-between gap-4 border-t border-[var(--color-border)] pt-2">
           <dt className="text-base font-bold text-[var(--color-title)]">Total</dt>
-          <dd className="text-xl font-bold text-[var(--color-title)]">{formatCurrency(total)}</dd>
+          <dd className="text-2xl font-bold text-[var(--color-title)]">{formatCurrency(total)}</dd>
         </div>
       </dl>
       <div className="border-t border-[var(--color-border)] p-4 sm:px-5">

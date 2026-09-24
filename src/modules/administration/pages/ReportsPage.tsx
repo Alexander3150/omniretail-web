@@ -11,7 +11,7 @@ import type {
   SalesReportRow,
 } from "@/modules/administration/application/dto/ReportDto";
 import { ReportFilters } from "@/modules/administration/components/ReportFilters";
-import { ReportKindSelector } from "@/modules/administration/components/ReportKindSelector";
+import { ReportsExportModal } from "@/modules/administration/components/ReportsExportModal";
 import {
   movementReportColumns,
   paymentReportColumns,
@@ -21,9 +21,10 @@ import {
 } from "@/modules/administration/components/ReportTable";
 import { ReportTotals } from "@/modules/administration/components/ReportTotals";
 import { useReports } from "@/modules/administration/hooks/useReports";
-import { REPORTS_READ_PERMISSION } from "@/modules/administration/permissions";
+import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
 import { Button } from "@/shared/components/Button";
-import { DownloadIcon, RefreshIcon } from "@/shared/components/icons";
+import { DownloadIcon } from "@/shared/components/icons";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { TablePagination, type TablePageSize } from "@/shared/components/TablePagination";
 
@@ -35,7 +36,7 @@ export function ReportsPage() {
     canRead,
     data,
     error,
-    exportXlsx,
+    exportConfigs,
     filter,
     kind,
     loading,
@@ -48,6 +49,8 @@ export function ReportsPage() {
   } = useReports();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<TablePageSize>(DEFAULT_PAGE_SIZE);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paginatedRows = useMemo(
@@ -56,27 +59,7 @@ export function ReportsPage() {
   );
 
   if (!loading && !canRead) {
-    return (
-      <div className="min-w-0 space-y-5">
-        <PageHeader
-          description="Consultá información consolidada de ventas, compras, inventario y pagos."
-          title="Reportes"
-        />
-        <div
-          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
-          role="alert"
-        >
-          <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No tenés acceso a los reportes
-          </h2>
-          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            Esta vista requiere el permiso{" "}
-            <span className="font-medium text-[var(--color-text)]">{REPORTS_READ_PERMISSION}</span>.
-            Pedí acceso a un administrador.
-          </p>
-        </div>
-      </div>
-    );
+    return <AccessDeniedState />;
   }
 
   function changeKind(nextKind: ReportKind) {
@@ -95,25 +78,14 @@ export function ReportsPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto min-w-0 max-w-7xl space-y-5">
       <PageHeader
         actions={
-          <>
+          <div className="flex flex-col items-end gap-1">
             <Button
               className="gap-2"
-              disabled={loading}
-              onClick={() => void reload()}
-              title="Actualizar"
-              type="button"
-              variant="secondary"
-            >
-              <RefreshIcon className="h-4 w-4" />
-            </Button>
-            <div className="flex flex-col items-end gap-1">
-            <Button
-              className="gap-2"
-              disabled={!canExport || rows.length === 0 || loading}
-              onClick={exportXlsx}
+              disabled={!canExport || loading}
+              onClick={() => setIsExportModalOpen(true)}
               title={canExport ? undefined : "Exportar Excel requiere Reportes avanzados y el permiso admin.reports.export"}
               type="button"
             >
@@ -125,41 +97,33 @@ export function ReportsPage() {
                 Requerí el módulo Reportes avanzados para exportar.
               </p>
             ) : null}
-            </div>
-          </>
+          </div>
         }
         description="Consultá información consolidada de ventas, compras, inventario y pagos."
         title="Reportes"
       />
 
       {error ? (
-        <div
-          className="flex flex-col gap-3 rounded-lg border border-[var(--color-danger)] bg-[var(--color-surface)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-          role="alert"
-        >
-          <p className="text-sm font-medium text-[var(--color-danger)]">{error}</p>
+        <InlineAlert className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" title={error} tone="danger">
           <Button onClick={() => void reload()} type="button" variant="secondary">
             Reintentar
           </Button>
-        </div>
+        </InlineAlert>
       ) : null}
-
-      <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
-        <ReportKindSelector kind={kind} onChange={changeKind} />
-      </section>
 
       <ReportFilters
         data={data}
         filter={filter}
         kind={kind}
         onChange={changeFilter}
+        onKindChange={changeKind}
         onReset={clearFilter}
       />
 
       {loading ? (
         <div
           aria-live="polite"
-          className="flex min-h-56 items-center justify-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] text-sm font-medium text-[var(--color-text-muted)] shadow-sm"
+          className="flex min-h-48 items-center justify-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 text-sm font-medium text-[var(--color-text-muted)] shadow-sm"
         >
           <span
             aria-hidden="true"
@@ -186,6 +150,17 @@ export function ReportsPage() {
             />
           </section>
         </>
+      )}
+
+      {isExportModalOpen && (
+        <ReportsExportModal
+          open={isExportModalOpen}
+          onClose={() => setIsExportModalOpen(false)}
+          data={data}
+          initialKind={kind}
+          initialFilter={filter}
+          onExport={exportConfigs}
+        />
       )}
     </div>
   );

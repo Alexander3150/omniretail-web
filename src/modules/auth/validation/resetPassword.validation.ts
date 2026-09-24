@@ -30,7 +30,7 @@ export function validateResetPasswordForm(
   }
 
   if (!dto.confirmPassword) {
-    errors.confirmPassword = "Confirma tu contraseña.";
+    errors.confirmPassword = "Confirme la contraseña.";
   } else if (dto.password && dto.confirmPassword !== dto.password) {
     errors.confirmPassword = "Las contraseñas no coinciden.";
   }

@@ -5,6 +5,9 @@ import { useState } from "react";
 import type { Product } from "@/core/entities";
 import { ProductType } from "@/core/enums";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
+import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
+import { InlineAlert } from "@/shared/components/InlineAlert";
+import { PageErrorState } from "@/shared/components/PageErrorState";
 import { useToast } from "@/shared/components/Toast";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 import { ProductForm } from "@/modules/catalog/components/ProductForm";
@@ -91,23 +94,7 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
   // esconder el botón "Nuevo producto"/"Editar" en las pantallas anteriores. No alcanza con
   // ocultar el botón: la ruta en sí debe denegar.
   if ((mode === "create" && !canCreate) || (mode === "edit" && !canUpdate)) {
-    return (
-      <div
-        className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
-        role="alert"
-      >
-        <h2 className="text-base font-semibold text-[var(--color-title)]">
-          No tenés acceso a {mode === "create" ? "crear productos" : "editar productos"}
-        </h2>
-        <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-          Esta acción requiere el permiso{" "}
-          <span className="font-medium text-[var(--color-text)]">
-            {mode === "create" ? "catalog.products.create" : "catalog.products.update"}
-          </span>
-          . Pedí acceso a un administrador.
-        </p>
-      </div>
-    );
+    return <AccessDeniedState />;
   }
 
   if (branchLoading || optionsState.loading || editorState.loading) {
@@ -119,27 +106,15 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
   }
 
   if (!optionsState.options || optionsState.error) {
-    return (
-      <p className="rounded-md border border-[var(--color-danger)] bg-white p-5 text-sm font-medium text-[var(--color-danger)]">
-        {optionsState.error ?? "No se pudieron cargar las opciones del formulario."}
-      </p>
-    );
+    return <PageErrorState description={optionsState.error ?? "No se pudieron cargar las opciones del formulario."} />;
   }
 
   if (!currentBranch) {
-    return (
-      <p className="rounded-md border border-[var(--color-danger)] bg-white p-5 text-sm font-medium text-[var(--color-danger)]">
-        Selecciona una sucursal activa para configurar inventario del producto.
-      </p>
-    );
+    return <InlineAlert description="Seleccione una sucursal activa para configurar el inventario del producto." title="Sucursal activa requerida" tone="warning" />;
   }
 
   if (editorState.error) {
-    return (
-      <p className="rounded-md border border-[var(--color-danger)] bg-white p-5 text-sm font-medium text-[var(--color-danger)]">
-        {editorState.error}
-      </p>
-    );
+    return <PageErrorState description={editorState.error} />;
   }
 
   if (!editorState.data || (isEdit && !editorState.data.detail)) {
@@ -153,16 +128,18 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
 
   return (
     <>
-      <ProductForm
-        busy={mutations.busy}
-        editorData={editorState.data}
-        error={mutations.error}
-        key={`${mode}-${productId || "new"}-${currentBranch.id}`}
-        mode={mode}
-        onArchive={() => setConfirmArchive(true)}
-        onSubmit={submit}
-        options={optionsState.options}
-      />
+      <div className="mx-auto w-full min-w-0 max-w-7xl xl:[&>form>nav]:overflow-visible xl:[&>form>nav>div]:min-w-0 xl:[&>form>nav>div]:flex-wrap xl:[&>form>nav>div]:gap-1 xl:[&>form>nav_button]:min-w-0 xl:[&>form>nav_button]:flex-1 xl:[&>form>nav_button]:justify-center xl:[&>form>nav_button]:gap-1.5 xl:[&>form>nav_button]:px-2 xl:[&>form>nav_button]:text-[13px] xl:[&>form>nav_button]:leading-tight xl:[&>form>nav_button>span]:shrink-0">
+        <ProductForm
+          busy={mutations.busy}
+          editorData={editorState.data}
+          error={mutations.error}
+          key={`${mode}-${productId || "new"}-${currentBranch.id}`}
+          mode={mode}
+          onArchive={() => setConfirmArchive(true)}
+          onSubmit={submit}
+          options={optionsState.options}
+        />
+      </div>
       <ConfirmDialog
         open={confirmArchive}
         title="Archivar producto"

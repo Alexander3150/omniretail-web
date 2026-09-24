@@ -62,19 +62,19 @@ export function OrderConfirmationPage({ trackingToken: routeTrackingToken }: { t
   return (
     <main className="mx-auto max-w-5xl px-4 py-8 print:max-w-none print:p-0 sm:px-5 sm:py-10">
       <section className="min-w-0 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm print:hidden sm:p-9">
-        <div className="text-center">
-          <span className="inline-grid h-14 w-14 place-items-center rounded-full border-2 border-[var(--color-primary)] bg-[var(--color-primary)]/15 text-3xl font-black text-[var(--color-primary-hover)]">
+        <div className="rounded-2xl bg-emerald-50/60 px-4 py-6 text-center sm:px-6">
+          <span className="inline-grid h-16 w-16 place-items-center rounded-full border-2 border-[var(--color-success)]/40 bg-[var(--color-success)]/15 text-3xl font-black text-[var(--color-success)]">
             ✓
           </span>
-          <h1 className="mt-5 text-3xl font-black text-[var(--color-text)] sm:text-4xl">
+          <h1 className="mt-5 text-4xl font-black tracking-tight text-[var(--color-text)] sm:text-5xl">
             ¡Gracias por tu compra!
           </h1>
           <div className="mt-3 flex flex-wrap justify-center gap-3 text-sm">
             <span className="text-[var(--color-text-muted)]">Número de pedido:</span>
-            <span className="rounded-md border border-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 font-black text-[var(--color-title)]">
+            <span className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 font-mono font-black text-[var(--color-title)]">
               {orderNumber}
             </span>
-            <span className="rounded-md border border-[var(--color-success)]/40 bg-[var(--color-success)]/10 px-2 py-0.5 font-bold text-[var(--color-success)]">
+            <span className={`rounded-md border px-3 py-1 font-bold ${paymentApproved ? "border-[var(--color-success)]/40 bg-[var(--color-success)]/10 text-[var(--color-success)]" : "border-amber-300 bg-amber-50 text-amber-800"}`}>
               Estado: {paymentApproved ? "Confirmado" : "Pendiente"}
             </span>
           </div>
@@ -95,7 +95,7 @@ export function OrderConfirmationPage({ trackingToken: routeTrackingToken }: { t
         </div>
         {emailSent ? (
           <p className="mt-5 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
-            Te enviamos una confirmación simulada a tu correo registrado.
+            El pedido fue confirmado correctamente.
           </p>
         ) : null}
         <div className="mt-6 grid gap-5 md:grid-cols-2">
@@ -128,7 +128,7 @@ export function OrderConfirmationPage({ trackingToken: routeTrackingToken }: { t
             <p className="mt-3 text-sm text-[var(--color-text-muted)]">Método de pago</p>
             <p className="break-words font-bold text-[var(--color-text)] [overflow-wrap:anywhere]">Tarjeta de crédito o débito</p>
             <p className="mt-4 break-words rounded-lg border border-[var(--color-success)]/30 bg-[var(--color-success)]/10 px-3 py-2 text-sm font-semibold text-[var(--color-success)] [overflow-wrap:anywhere]">
-              ✓ Transacción autorizada y procesada con éxito.
+              ✓ Información de pago confirmada.
             </p>
             <p className="mt-4 text-sm text-[var(--color-text-muted)]">
               Total pagado:{" "}
@@ -139,7 +139,7 @@ export function OrderConfirmationPage({ trackingToken: routeTrackingToken }: { t
           </section>
         </div>
         <section className="mt-6 overflow-hidden rounded-xl border border-[var(--color-border)]">
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-[var(--color-primary)]/10 px-4 py-3 sm:px-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 px-4 py-3 sm:px-5">
             <h2 className="font-black text-[var(--color-text)]">
               Productos en este pedido (
               {result.items.reduce((total, item) => total + item.quantity, 0)} unidades)
@@ -183,14 +183,14 @@ export function OrderConfirmationPage({ trackingToken: routeTrackingToken }: { t
         <div className="mt-7 flex flex-wrap justify-center gap-3">
           {trackingToken ? (
             <Link
-              className="rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)]"
+              className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-3 font-bold text-[var(--color-title)] transition hover:bg-slate-50"
               href={routes.tracking(trackingToken)}
             >
               Ver seguimiento
             </Link>
           ) : null}
           <button
-            className="rounded-xl border border-[var(--color-border)] px-5 py-3 font-bold text-[var(--color-text)]"
+            className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-3 font-bold text-[var(--color-text)] transition hover:bg-slate-50"
             onClick={() =>
               void downloadStorefrontReceiptPdf({
                 storeName: config?.storeName ?? "Tienda",
@@ -202,7 +202,7 @@ export function OrderConfirmationPage({ trackingToken: routeTrackingToken }: { t
             Descargar comprobante PDF
           </button>
           <Link
-            className="rounded-xl border border-[var(--color-border)] px-5 py-3 font-bold text-[var(--color-text)]"
+            className="rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)] transition hover:bg-[var(--color-primary-hover)]"
           href={routes.catalog()}
           >
             Seguir comprando
@@ -245,7 +245,7 @@ export function OrderConfirmationPage({ trackingToken: routeTrackingToken }: { t
           <div className="sm:text-right">
             <p className="font-black uppercase tracking-wide text-slate-700">Método de pago</p>
             <p className="mt-2 font-bold text-slate-900">Tarjeta de crédito o débito</p>
-            <p className="mt-1 text-slate-600">Pago simulado</p>
+            <p className="mt-1 text-slate-600">Información de pago confirmada</p>
           </div>
         </div>
         <div className="overflow-x-auto px-6 pb-5 print:px-8">
@@ -291,7 +291,7 @@ export function OrderConfirmationPage({ trackingToken: routeTrackingToken }: { t
           </dl>
         </div>
         <footer className="border-t border-slate-200 px-6 py-4 text-center text-xs text-slate-500 print:px-8">
-          Gracias por tu compra. Este comprobante corresponde a una simulación de pedido.
+          Gracias por su compra. Este comprobante corresponde a su pedido.
         </footer>
       </section>
     </main>

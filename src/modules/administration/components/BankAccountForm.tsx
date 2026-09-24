@@ -12,6 +12,7 @@ import { ADMIN_FIELD_LIMITS } from "@/modules/administration/validation/adminFie
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Select } from "@/shared/components/Select";
 
 const accountTypeLabels: Record<BankAccountType, string> = {
@@ -21,6 +22,9 @@ const accountTypeLabels: Record<BankAccountType, string> = {
 
 const currencyOptions = ["GTQ", "USD"] as const;
 const statusOptions: BankAccountStatus[] = ["active", "inactive", "archived"];
+type BankAccountFieldErrors = Partial<
+  Record<"bankName" | "holderName" | "alias" | "accountNumber", string>
+>;
 
 interface BankAccountFormProps {
   account?: BankAccountDto;
@@ -38,6 +42,8 @@ export function BankAccountForm({
   onSubmit,
 }: BankAccountFormProps) {
   const [value, setValue] = useState<BankAccountInputDto>(() => toBankAccountInput(account));
+  const [errors, setErrors] = useState<BankAccountFieldErrors>({});
+  const [submitError, setSubmitError] = useState<string>();
   const isEdit = Boolean(account);
 
   const visibleBranchIds = new Set(branchOptions.map((option) => option.id));
@@ -47,7 +53,13 @@ export function BankAccountForm({
     key: Key,
     fieldValue: BankAccountInputDto[Key],
   ) {
-    setValue((current) => ({ ...current, [key]: fieldValue }));
+    const nextValue = { ...value, [key]: fieldValue } as BankAccountInputDto;
+    setValue(nextValue);
+    setErrors((currentErrors) => {
+      const field = key as keyof BankAccountFieldErrors;
+      if (!currentErrors[field]) return currentErrors;
+      return { ...currentErrors, [field]: validateBankAccountFields(nextValue, isEdit)[field] };
+    });
   }
 
   function toggleBranch(branchId: string, checked: boolean) {
@@ -59,15 +71,25 @@ export function BankAccountForm({
     });
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void onSubmit(value);
+    const nextErrors = validateBankAccountFields(value, isEdit);
+    setErrors(nextErrors);
+    if (Object.values(nextErrors).some(Boolean)) return;
+
+    setSubmitError(undefined);
+    try {
+      await onSubmit(value);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "No se pudo guardar la cuenta bancaria.");
+    }
   }
 
   return (
-    <form className="space-y-5" onSubmit={handleSubmit}>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <FormField id="bank-account-bank" label="Banco">
+    <form className="space-y-5" noValidate onSubmit={handleSubmit}>
+      {submitError ? <InlineAlert title={submitError} tone="danger" /> : null}
+      <div className="grid gap-4 rounded-xl bg-slate-50/70 p-4 sm:grid-cols-2">
+        <FormField error={errors.bankName} id="bank-account-bank" label="Banco">
           <Input
             disabled={busy}
             id="bank-account-bank"
@@ -78,7 +100,7 @@ export function BankAccountForm({
           />
         </FormField>
 
-        <FormField id="bank-account-holder" label="Titular">
+        <FormField error={errors.holderName} id="bank-account-holder" label="Titular">
           <Input
             disabled={busy}
             id="bank-account-holder"
@@ -89,7 +111,7 @@ export function BankAccountForm({
           />
         </FormField>
 
-        <FormField id="bank-account-alias" label="Alias">
+        <FormField error={errors.alias} id="bank-account-alias" label="Alias">
           <Input
             disabled={busy}
             id="bank-account-alias"
@@ -104,8 +126,9 @@ export function BankAccountForm({
           hint={
             isEdit
               ? `Dejar en blanco para conservar el número actual (${account?.accountNumberMasked}).`
-              : "Ingresá el número completo; el listado solo mostrará la versión enmascarada."
+              : "Ingrese el número completo; el listado solo mostrará la versión enmascarada."
           }
+          error={errors.accountNumber}
           id="bank-account-number"
           label="Número de cuenta"
         >
@@ -175,13 +198,13 @@ export function BankAccountForm({
         id="bank-account-branches"
         label="Sucursales habilitadas"
       >
-        <div className="space-y-2 rounded-lg border border-[var(--color-border)] p-3">
+        <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-slate-50/70 p-2.5">
           {branchOptions.length === 0 ? (
             <p className="text-sm text-[var(--color-text-muted)]">No hay sucursales activas.</p>
           ) : (
             branchOptions.map((option) => (
               <label
-                className="flex items-center gap-2 text-sm text-[var(--color-text)]"
+                className="flex min-h-9 items-center gap-2 rounded-md px-2 text-sm text-[var(--color-text)] hover:bg-white"
                 key={option.id}
               >
                 <input
@@ -204,7 +227,7 @@ export function BankAccountForm({
 
       <FormField id="bank-account-instructions" label="Instrucciones de transferencia">
         <textarea
-          className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-20 w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={busy}
           id="bank-account-instructions"
           maxLength={ADMIN_FIELD_LIMITS.bankAccount.transferInstructions}
@@ -223,6 +246,20 @@ export function BankAccountForm({
       </div>
     </form>
   );
+}
+
+function validateBankAccountFields(
+  value: BankAccountInputDto,
+  isEdit: boolean,
+): BankAccountFieldErrors {
+  const errors: BankAccountFieldErrors = {};
+  if (!value.bankName.trim()) errors.bankName = "Ingrese el nombre del banco.";
+  if (!value.holderName.trim()) errors.holderName = "Ingrese el titular de la cuenta.";
+  if (!value.alias.trim()) errors.alias = "Ingrese el alias de la cuenta.";
+  if (!isEdit && !value.accountNumber.trim()) {
+    errors.accountNumber = "Ingrese el número de cuenta.";
+  }
+  return errors;
 }
 
 function toBankAccountInput(account?: BankAccountDto): BankAccountInputDto {

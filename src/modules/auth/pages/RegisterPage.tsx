@@ -50,8 +50,8 @@ export function RegisterPage() {
           {completed.verificationLink ? (
             <InlineAlert
               className="mt-6"
-              title="Modo demo: no se envió un correo real"
-              description="Puedes verificar tu cuenta usando este enlace."
+              title="Verifique su cuenta"
+              description="Use el siguiente enlace para verificar su cuenta."
               tone="info"
             >
               <Link

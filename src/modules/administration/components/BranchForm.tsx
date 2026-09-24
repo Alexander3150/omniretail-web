@@ -11,6 +11,7 @@ import {
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Select } from "@/shared/components/Select";
 
 interface BranchFormProps {
@@ -19,23 +20,43 @@ interface BranchFormProps {
   onCancel: () => void;
   onSubmit: (value: BranchInputDto) => Promise<void>;
 }
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+type BranchFieldErrors = Partial<Record<"code" | "name" | "email", string>>;
 
 export function BranchForm({ branch, busy, onCancel, onSubmit }: BranchFormProps) {
   const [value, setValue] = useState<BranchInputDto>(() => toBranchInput(branch));
+  const [errors, setErrors] = useState<BranchFieldErrors>({});
+  const [submitError, setSubmitError] = useState<string>();
 
   function setField<Key extends keyof BranchInputDto>(key: Key, fieldValue: BranchInputDto[Key]) {
-    setValue((current) => ({ ...current, [key]: fieldValue }));
+    const nextValue = { ...value, [key]: fieldValue } as BranchInputDto;
+    setValue(nextValue);
+    setErrors((currentErrors) => {
+      const field = key as keyof BranchFieldErrors;
+      if (!currentErrors[field]) return currentErrors;
+      return { ...currentErrors, [field]: validateBranchFields(nextValue)[field] };
+    });
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void onSubmit(value);
+    const nextErrors = validateBranchFields(value);
+    setErrors(nextErrors);
+    if (Object.values(nextErrors).some(Boolean)) return;
+
+    setSubmitError(undefined);
+    try {
+      await onSubmit(value);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "No se pudo guardar la sucursal.");
+    }
   }
 
   return (
-    <form className="space-y-5" onSubmit={handleSubmit}>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <FormField id="branch-code" label="Código">
+    <form className="space-y-5" noValidate onSubmit={handleSubmit}>
+      {submitError ? <InlineAlert title={submitError} tone="danger" /> : null}
+      <div className="grid gap-4 rounded-xl bg-slate-50/70 p-4 sm:grid-cols-2">
+        <FormField error={errors.code} id="branch-code" label="Código">
           <Input
             autoComplete="off"
             disabled={busy}
@@ -47,7 +68,7 @@ export function BranchForm({ branch, busy, onCancel, onSubmit }: BranchFormProps
           />
         </FormField>
 
-        <FormField id="branch-name" label="Nombre">
+        <FormField error={errors.name} id="branch-name" label="Nombre">
           <Input
             disabled={busy}
             id="branch-name"
@@ -97,7 +118,7 @@ export function BranchForm({ branch, busy, onCancel, onSubmit }: BranchFormProps
         />
       </FormField>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 rounded-xl bg-slate-50/70 p-4 sm:grid-cols-2">
         <FormField id="branch-phone" label="Teléfono">
           <Input
             autoComplete="tel"
@@ -111,7 +132,7 @@ export function BranchForm({ branch, busy, onCancel, onSubmit }: BranchFormProps
           />
         </FormField>
 
-        <FormField id="branch-email" label="Correo electrónico">
+        <FormField error={errors.email} id="branch-email" label="Correo electrónico">
           <Input
             autoComplete="email"
             disabled={busy}
@@ -134,6 +155,16 @@ export function BranchForm({ branch, busy, onCancel, onSubmit }: BranchFormProps
       </div>
     </form>
   );
+}
+
+function validateBranchFields(value: BranchInputDto): BranchFieldErrors {
+  const errors: BranchFieldErrors = {};
+  if (!value.code.trim()) errors.code = "Ingrese el código de la sucursal.";
+  if (!value.name.trim()) errors.name = "Ingrese el nombre de la sucursal.";
+  if (value.email?.trim() && !EMAIL_PATTERN.test(value.email.trim())) {
+    errors.email = "Ingrese un correo electrónico válido.";
+  }
+  return errors;
 }
 
 function toBranchInput(branch?: BranchDto): BranchInputDto {

@@ -52,7 +52,7 @@ export function ensureCanReadReceiving(permissions: readonly string[]) {
   ) {
     return;
   }
-  throw new ReceivingServiceError("No tenés permiso para consultar recepciones.");
+  throw new ReceivingServiceError("No dispone de permisos para consultar recepciones.");
 }
 
 /**
@@ -66,17 +66,17 @@ export function ensureCanSaveReceivingProgress(permissions: readonly string[]) {
   ) {
     return;
   }
-  throw new ReceivingServiceError("No tenés permiso para registrar avances de recepción.");
+  throw new ReceivingServiceError("No dispone de permisos para registrar avances de recepción.");
 }
 
 export function ensureCanConfirmReceiving(permissions: readonly string[]) {
   if (permissions.includes("receiving.receipts.confirm")) return;
-  throw new ReceivingServiceError("No tenés permiso para confirmar recepciones.");
+  throw new ReceivingServiceError("No dispone de permisos para confirmar recepciones.");
 }
 
 export function ensureCanManageIncidentTypes(permissions: readonly string[]) {
   if (permissions.includes("receiving.incidents.manage")) return;
-  throw new ReceivingServiceError("No tenés permiso para gestionar tipos de incidencia.");
+  throw new ReceivingServiceError("No dispone de permisos para gestionar tipos de incidencia.");
 }
 
 /** Validacion de sucursal contra `User.allowedBranchIds` (fuente autoritativa desde #94). */
@@ -92,7 +92,7 @@ export async function ensureUserCanOperateBranch(
     );
   }
   if (!canUserOperateBranch(user, branch)) {
-    throw new ReceivingServiceError("No tenés acceso a la sucursal seleccionada.");
+    throw new ReceivingServiceError("No dispone de acceso a la sucursal seleccionada.");
   }
   return branch;
 }

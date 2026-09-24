@@ -124,7 +124,7 @@ export function SupportAssistantWidget() {
             ) : (
               <div className="space-y-2 text-sm">
                 <p className="text-[var(--color-text-muted)]">
-                  Podés escribirnos directamente:
+                  Puede escribirnos directamente:
                 </p>
                 {config?.contactEmail ? <p>{config.contactEmail}</p> : null}
                 {config?.contactPhone ? <p>{config.contactPhone}</p> : null}

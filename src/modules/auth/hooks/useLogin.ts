@@ -105,16 +105,24 @@ export function useLogin() {
     (value: string) => {
       setEmailState(value);
       clearFormError();
+      setFieldErrors((current) => {
+        if (!current.email) return current;
+        return { ...current, email: validateLoginForm({ email: value, password, rememberMe }).email };
+      });
     },
-    [clearFormError],
+    [clearFormError, password, rememberMe],
   );
 
   const setPassword = useCallback(
     (value: string) => {
       setPasswordState(value);
       clearFormError();
+      setFieldErrors((current) => {
+        if (!current.password) return current;
+        return { ...current, password: validateLoginForm({ email, password: value, rememberMe }).password };
+      });
     },
-    [clearFormError],
+    [clearFormError, email, rememberMe],
   );
 
   const setMfaCode = useCallback(

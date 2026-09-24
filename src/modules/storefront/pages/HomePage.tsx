@@ -135,20 +135,20 @@ export function HomePage() {
         </div>
       </section>
       <section className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="mx-auto grid max-w-[90rem] gap-5 px-4 py-5 text-sm sm:px-5 sm:grid-cols-3">
-          <div>
+        <div className="mx-auto grid max-w-[90rem] grid-cols-1 gap-3 px-4 py-5 text-sm sm:grid-cols-3 sm:gap-5 sm:px-5">
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-app-background)] p-4 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0">
             <p className="font-bold text-[var(--color-title)]">Productos publicados</p>
             <p className="mt-1 text-[var(--color-text-muted)]">
               Consulta opciones disponibles para compra en línea.
             </p>
           </div>
-          <div>
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-app-background)] p-4 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0">
             <p className="font-bold text-[var(--color-title)]">Ofertas vigentes</p>
             <p className="mt-1 text-[var(--color-text-muted)]">
               Los precios promocionales se muestran con claridad.
             </p>
           </div>
-          <div>
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-app-background)] p-4 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0">
             <p className="font-bold text-[var(--color-title)]">Seguimiento de pedido</p>
             <p className="mt-1 text-[var(--color-text-muted)]">
               Mantente al tanto del estado de tu compra.
@@ -211,7 +211,7 @@ export function HomePage() {
           <StorefrontHorizontalCarousel ariaLabel="Productos destacados">
             {featuredProducts.map(({ product, offer }) => (
               <div
-                className="w-[84%] shrink-0 snap-start sm:w-[calc((100%-1.25rem)/2)] lg:w-[calc((100%-3.75rem)/4)]"
+                className="w-[92%] shrink-0 snap-start sm:w-[calc((100%_-_1.25rem)/2)] lg:w-[calc((100%_-_3.75rem)/4)]"
                 key={product.id}
               >
                 <StorefrontProductCard

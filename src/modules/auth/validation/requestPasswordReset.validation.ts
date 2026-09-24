@@ -14,7 +14,7 @@ export function validateRequestPasswordResetForm(
   if (!dto.email.trim()) {
     errors.email = "El correo es obligatorio.";
   } else if (!EMAIL_PATTERN.test(dto.email.trim())) {
-    errors.email = "Ingresa un correo con formato válido.";
+    errors.email = "Ingrese un correo con formato válido.";
   }
 
   return errors;

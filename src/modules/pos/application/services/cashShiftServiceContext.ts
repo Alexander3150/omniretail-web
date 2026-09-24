@@ -56,10 +56,10 @@ export async function requireCashContext(
     ? await repositories.roles.getByIdScoped(context.tenantId, user.roleId)
     : null;
   if (!role || role.status !== RoleStatus.active || !role.permissions.includes(permission)) {
-    throw new Error("No tienes permiso para realizar esta operación de caja.");
+    throw new Error("No dispone de permisos para realizar esta operación de caja.");
   }
   if (!canUserAccessBranch(user, role, branch)) {
-    throw new Error("No tienes acceso a la sucursal seleccionada.");
+    throw new Error("No dispone de acceso a la sucursal seleccionada.");
   }
 
   // Capa de entitlement SaaS (feature/saas-entitlement-enforcement, auditoría §14) -- se suma al

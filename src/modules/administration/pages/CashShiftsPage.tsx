@@ -4,9 +4,9 @@ import { useMemo, useState } from "react";
 import { CashShiftFilters } from "@/modules/administration/components/CashShiftFilters";
 import { CashShiftTable } from "@/modules/administration/components/CashShiftTable";
 import { useCashShifts } from "@/modules/administration/hooks/useCashShifts";
-import { CASH_READ_PERMISSION } from "@/modules/administration/permissions";
+import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
 import { Button } from "@/shared/components/Button";
-import { RefreshIcon } from "@/shared/components/icons";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { TablePagination, type TablePageSize } from "@/shared/components/TablePagination";
 
@@ -36,27 +36,7 @@ export function CashShiftsPage() {
   );
 
   if (!loading && !canRead) {
-    return (
-      <div className="min-w-0 space-y-5">
-        <PageHeader
-          description="Consultá aperturas, cierres y diferencias de los turnos de caja."
-          title="Caja"
-        />
-        <div
-          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
-          role="alert"
-        >
-          <h2 className="text-base font-semibold text-[var(--color-title)]">
-            No tenés acceso a los turnos de caja
-          </h2>
-          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            Esta vista requiere el permiso{" "}
-            <span className="font-medium">{CASH_READ_PERMISSION}</span>. Pedí acceso a un
-            administrador.
-          </p>
-        </div>
-      </div>
-    );
+    return <AccessDeniedState />;
   }
 
   function updateFilter(nextFilter: typeof filter) {
@@ -70,21 +50,9 @@ export function CashShiftsPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <PageHeader
-        actions={
-          <Button
-            className="gap-2"
-            disabled={loading}
-            onClick={() => void reload()}
-            title="Actualizar"
-            type="button"
-            variant="secondary"
-          >
-            <RefreshIcon className="h-4 w-4" />
-          </Button>
-        }
-        description="Consultá aperturas, cierres y diferencias de los turnos de caja."
+        description="Consulte aperturas, cierres y diferencias de los turnos de caja."
         title="Caja"
       />
 
@@ -97,15 +65,15 @@ export function CashShiftsPage() {
       />
 
       {error ? (
-        <div
-          className="flex flex-col gap-3 rounded-lg border border-[var(--color-danger)] bg-[var(--color-surface)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-          role="alert"
+        <InlineAlert
+          className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+          title={error}
+          tone="danger"
         >
-          <p className="text-sm font-medium text-[var(--color-danger)]">{error}</p>
           <Button onClick={() => void reload()} type="button" variant="secondary">
             Reintentar
           </Button>
-        </div>
+        </InlineAlert>
       ) : null}
 
       <section className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">

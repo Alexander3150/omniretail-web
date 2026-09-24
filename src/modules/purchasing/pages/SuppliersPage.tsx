@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, type ComponentType, type SVGProps } from "react";
 import type { ReceiptIncidentEvidence } from "@/core/entities";
 import { Button } from "@/shared/components/Button";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Input } from "@/shared/components/Input";
 import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
 import { Modal } from "@/shared/components/Modal";
@@ -74,7 +75,7 @@ export function SuppliersPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <div>
         <p className="mb-1 text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
           Compras
@@ -85,11 +86,7 @@ export function SuppliersPage() {
         />
       </div>
 
-      {error ? (
-        <p className="rounded-md border border-[var(--color-danger)] bg-white px-4 py-3 text-sm font-medium text-[var(--color-danger)]">
-          {error}
-        </p>
-      ) : null}
+      {error ? <InlineAlert title={error} tone="danger" /> : null}
 
       <section className="rounded-lg border border-[var(--color-border)] bg-white p-3 shadow-sm">
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
@@ -109,7 +106,7 @@ export function SuppliersPage() {
         className={cn(
           "grid min-w-0 overflow-hidden rounded-lg border border-[var(--color-border)] bg-white shadow-sm",
           selectedSupplier
-            ? "gap-0 xl:grid-cols-[minmax(0,3fr)_minmax(420px,2fr)]"
+            ? "gap-0 xl:grid-cols-[minmax(0,1fr)_370px]"
             : "xl:grid-cols-1",
         )}
       >
@@ -188,11 +185,11 @@ function SuppliersTable({
         </colgroup>
         <thead className="bg-[var(--color-structure)] text-xs uppercase text-white">
           <tr>
-            <th className="px-4 py-3 font-semibold">Proveedor</th>
-            <th className="px-4 py-3 font-semibold">NIT</th>
-            <th className="px-4 py-3 font-semibold">Contacto</th>
-            <th className="px-4 py-3 font-semibold">Condicion</th>
-            <th className="px-4 py-3 font-semibold">Entrega</th>
+            <th className="px-3 py-3 font-semibold">Proveedor</th>
+            <th className="px-3 py-3 font-semibold">NIT</th>
+            <th className="px-3 py-3 font-semibold">Contacto</th>
+            <th className="px-3 py-3 font-semibold">Condicion</th>
+            <th className="px-3 py-3 font-semibold">Entrega</th>
           </tr>
         </thead>
         <tbody>
@@ -222,34 +219,34 @@ function SuppliersTable({
                   }}
                   tabIndex={0}
                 >
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-3">
                     <div className="flex min-w-0 items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="truncate font-bold text-[var(--color-title)]">
+                        <p className="truncate font-bold text-[var(--color-title)]" title={supplier.name}>
                           {supplier.name}
                         </p>
-                        <p className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]">
+                        <p className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]" title={supplier.legalName ?? "Sin razon social"}>
                           {supplier.legalName ?? "Sin razon social"}
                         </p>
                       </div>
                       {supplier.archived ? <StatusBadge status={supplier.status} /> : null}
                     </div>
                   </td>
-                  <td className="px-4 py-3 font-medium text-[var(--color-text)]">
+                  <td className="whitespace-nowrap px-3 py-3 font-medium text-[var(--color-text)]">
                     {supplier.taxId ?? "-"}
                   </td>
-                  <td className="px-4 py-3">
-                    <p className="truncate font-medium text-[var(--color-title)]">
+                  <td className="px-3 py-3">
+                    <p className="truncate font-medium text-[var(--color-title)]" title={contact?.name ?? "Sin contacto"}>
                       {contact?.name ?? "Sin contacto"}
                     </p>
-                    <p className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]">
+                    <p className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]" title={formatContactLine(contact?.phone, contact?.email)}>
                       {formatContactLine(contact?.phone, contact?.email)}
                     </p>
                   </td>
-                  <td className="px-4 py-3 text-[var(--color-text)]">
+                  <td className="break-words px-3 py-3 leading-tight text-[var(--color-text)]">
                     {supplier.paymentConditionLabel}
                   </td>
-                  <td className="px-4 py-3 text-[var(--color-text)]">{supplier.deliveryLabel}</td>
+                  <td className="break-words px-3 py-3 leading-tight text-[var(--color-text)]">{supplier.deliveryLabel}</td>
                 </tr>
               );
             })

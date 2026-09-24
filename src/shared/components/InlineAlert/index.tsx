@@ -39,7 +39,7 @@ export function InlineAlert({
   return (
     <div
       className={cn("rounded-md border px-4 py-3 text-sm", toneClassNames[tone], className)}
-      role="alert"
+      role={tone === "danger" ? "alert" : undefined}
     >
       <p className="font-semibold">{title}</p>
       {description ? <p className="mt-1 text-[var(--color-text-muted)]">{description}</p> : null}

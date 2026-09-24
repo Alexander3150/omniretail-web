@@ -4,6 +4,7 @@ import { useMemo, useState, type SVGProps } from "react";
 import { SaasCapabilityKey } from "@/core/enums";
 import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import { Button } from "@/shared/components/Button";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { Input } from "@/shared/components/Input";
 import { Modal } from "@/shared/components/Modal";
@@ -117,7 +118,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
 
   if (loading) {
     return (
-      <section className="rounded-lg border border-[var(--color-border)] bg-white p-5 shadow-sm">
+      <section className="mx-auto w-full min-w-0 max-w-7xl rounded-lg border border-[var(--color-border)] bg-white p-5 shadow-sm">
         <p className="text-sm font-medium text-[var(--color-text-muted)]">Cargando recepcion...</p>
       </section>
     );
@@ -125,10 +126,8 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
 
   if (error || !detail) {
     return (
-      <section className="space-y-4 rounded-lg border border-[var(--color-border)] bg-white p-5 shadow-sm">
-        <p className="text-sm font-semibold text-[var(--color-danger)]">
-          {error ?? "No se encontro el documento."}
-        </p>
+      <section className="mx-auto w-full min-w-0 max-w-7xl space-y-4 rounded-lg border border-[var(--color-border)] bg-white p-5 shadow-sm">
+        <InlineAlert title={error ?? "No se encontró el documento."} tone="danger" />
         <Button href="/compras/recepciones" variant="secondary">
           <ArrowLeftIcon />
           Volver a recepciones
@@ -140,7 +139,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
   const readOnly = detail.readOnly;
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <div>
         <p className="mb-1 text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
           Recepciones &gt; Recepcion de mercaderia
@@ -181,7 +180,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
       </div>
 
       <section className="rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm">
-        <div className="grid gap-4 md:grid-cols-5">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           <DetailItem label="Documento vinculado" value={detail.document.number} />
           <DetailItem label="Tipo" value={detail.document.typeLabel} />
           <DetailItem label={detail.document.originLabel} value={detail.document.originName} />
@@ -200,7 +199,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
         />
       ) : null}
 
-      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_400px] 2xl:items-start">
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_300px] xl:items-start">
         <main className="min-w-0 space-y-5">
           <section className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-white shadow-sm">
             <div className="flex flex-col gap-3 border-b border-[var(--color-border)] p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -449,16 +448,16 @@ function ReceivingLinesTable({
         })}
       </div>
       <div className="hidden overflow-x-auto xl:block">
-        <table className="w-full min-w-[970px] table-fixed border-collapse text-left text-sm">
+        <table className="w-full min-w-[820px] table-fixed border-collapse text-left text-sm [&_td]:px-1.5 [&_th]:px-1.5">
           <colgroup>
-            <col className="w-[180px]" />
-            <col className="w-[78px]" />
-            <col className="w-[68px]" />
-            <col className="w-[96px]" />
+            <col className="w-[145px]" />
+            <col className="w-[62px]" />
+            <col className="w-[60px]" />
             <col className="w-[88px]" />
-            <col className="w-[72px]" />
-            <col className="w-[155px]" />
-            <col className="w-[233px]" />
+            <col className="w-[76px]" />
+            <col className="w-[60px]" />
+            <col className="w-[125px]" />
+            <col className="w-[204px]" />
           </colgroup>
           <thead className="bg-[var(--color-structure)] text-[11px] uppercase text-white">
             <tr>
@@ -960,21 +959,23 @@ function IncidentForm({
             </div>
           ) : null}
         </Field>
-        <div className="flex flex-col gap-2 border-t border-[var(--color-border)] pt-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="grid w-full min-w-0 gap-2 border-t border-[var(--color-border)] pt-3">
           {onDelete ? (
-            <Button
-              className="w-full justify-center px-3 sm:w-auto"
-              onClick={onDelete}
-              type="button"
-              variant="danger"
-            >
-              <TrashIcon />
-              Quitar
-            </Button>
+            <div className="flex min-w-0 justify-start">
+              <Button
+                className="w-full justify-center px-3 sm:w-auto"
+                onClick={onDelete}
+                type="button"
+                variant="danger"
+              >
+                <TrashIcon />
+                Quitar
+              </Button>
+            </div>
           ) : null}
-          <div className="grid grid-cols-2 gap-2 sm:ml-auto sm:flex sm:justify-end">
+          <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
             <Button
-              className="justify-center px-3"
+              className="w-full min-w-0 justify-center px-2"
               onClick={onCancel}
               type="button"
               variant="ghost"
@@ -983,7 +984,7 @@ function IncidentForm({
               Cancelar
             </Button>
             <Button
-              className="justify-center px-3"
+              className="w-full min-w-0 justify-center px-2 text-center leading-tight whitespace-normal"
               disabled={incidentInvalid}
               onClick={handleSave}
               type="button"
@@ -1133,7 +1134,7 @@ function PreviousReceiptsSection({
                   {receipt.statusLabel}
                 </span>
               </div>
-              <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
+              <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
                 <DetailItem label="Aceptadas" value={formatNumber(receipt.acceptedQuantity)} />
                 <DetailItem label="Incidencias" value={formatNumber(receipt.incidentQuantity)} />
                 <DetailItem label="Pendiente despues" value={formatNumber(receipt.pendingAfter)} />

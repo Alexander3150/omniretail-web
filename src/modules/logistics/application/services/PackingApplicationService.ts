@@ -28,6 +28,8 @@ type PackingRepositories = Pick<
   | "customers"
   | "orders"
   | "packings"
+  | "picking"
+  | "products"
   | "storePickupDeliveries"
   | "inventoryTransfers"
 >;
@@ -82,10 +84,10 @@ export class PackingApplicationService {
       if (transfer.transfer.status === "cancelled") {
         throw new Error(`Transfer Packing was cancelled: ${candidate.id}`);
       }
-      return this.toTransferDetail(candidate, transfer.transfer);
+      return this.toTransferDetail(context, candidate, transfer.transfer);
     }
     const { packing, order } = await this.requireDetail(context, packingId);
-    return this.toDetail(packing, order);
+    return this.toDetail(context, packing, order);
   }
 
   async savePreparation(
@@ -188,10 +190,13 @@ export class PackingApplicationService {
   ): Promise<PackingActionResultDto> {
     if (packing.sourceType === "transfer") {
       const transfer = await this.requireTransfer(context, packing);
-      return { packing: await this.toTransferDetail(packing, transfer.transfer), idempotent };
+      return {
+        packing: await this.toTransferDetail(context, packing, transfer.transfer),
+        idempotent,
+      };
     }
     const { order } = await this.requireDetail(context, packing.id);
-    return { packing: await this.toDetail(packing, order), idempotent };
+    return { packing: await this.toDetail(context, packing, order), idempotent };
   }
 
   private async requireTransfer(
@@ -218,7 +223,11 @@ export class PackingApplicationService {
     };
   }
 
-  private async toTransferDetail(packing: Packing, transfer: InventoryTransfer): Promise<PackingDetailDto> {
+  private async toTransferDetail(
+    context: { tenantId: string; branchId: string },
+    packing: Packing,
+    transfer: InventoryTransfer,
+  ): Promise<PackingDetailDto> {
     return {
       ...(await this.toTransferQueueItem(packing, transfer)), pickingOrderId: packing.pickingOrderId,
       orderStatus: null, deliveryAddress: null, checklist: { ...packing.checklist },
@@ -226,6 +235,7 @@ export class PackingApplicationService {
       labelGenerationId: packing.labelGenerationId ?? null,
       labelCode: packing.labelCode ?? null, labelGeneratedAt: packing.labelGeneratedAt ?? null,
       labelPrintedAt: packing.labelPrintedAt ?? null, finalizedAt: packing.finalizedAt ?? null,
+      preparedContents: await this.resolvePreparedContents(context, packing.pickingOrderId),
     };
   }
 
@@ -263,7 +273,11 @@ export class PackingApplicationService {
     };
   }
 
-  private async toDetail(packing: Packing, order: Order): Promise<PackingDetailDto> {
+  private async toDetail(
+    context: { tenantId: string; branchId: string },
+    packing: Packing,
+    order: Order,
+  ): Promise<PackingDetailDto> {
     return {
       ...(await this.toQueueItem(packing, order)),
       pickingOrderId: packing.pickingOrderId,
@@ -277,7 +291,31 @@ export class PackingApplicationService {
       labelGeneratedAt: packing.labelGeneratedAt ?? null,
       labelPrintedAt: packing.labelPrintedAt ?? null,
       finalizedAt: packing.finalizedAt ?? null,
+      preparedContents: await this.resolvePreparedContents(context, packing.pickingOrderId),
     };
+  }
+
+  private async resolvePreparedContents(
+    context: { tenantId: string; branchId: string },
+    pickingOrderId: string,
+  ) {
+    const [items, products] = await Promise.all([
+      this.repositories.picking.getItems(context, pickingOrderId),
+      this.repositories.products.getByTenant(context.tenantId),
+    ]);
+    const productById = new Map(products.map((product) => [product.id, product]));
+    return items
+      .filter((item) => item.pickedQuantity > 0)
+      .map((item) => {
+        const product = productById.get(item.productId);
+        return {
+          productId: item.productId,
+          sku: product?.sku ?? item.productId,
+          name: product?.name ?? "Producto no disponible",
+          quantity: item.pickedQuantity,
+          serialNumbers: [...(item.serialNumbers ?? [])],
+        };
+      });
   }
 
   private async resolveCustomerName(order: Order): Promise<string> {

@@ -24,12 +24,27 @@ import {
   sanitizeRecipientName,
 } from "@/config/delivery-address-policy";
 import { EMAIL_MAX_LENGTH } from "@/config/email-policy";
+import { InlineAlert } from "@/shared/components/InlineAlert";
 
 const departments = Object.keys(municipalitiesByDepartment);
 
 function formatGuatemalaPhone(value: string) {
   const digits = value.replace(/\D/g, "").replace(/^502/, "").slice(0, 8);
   return digits ? `+502 ${digits}` : "+502 ";
+}
+
+function formatCardNumber(value: string) {
+  return value.replace(/\D/g, "").slice(0, 19).replace(/(.{4})/g, "$1 ").trim();
+}
+
+function formatCardExpiration(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 4);
+  return digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
+}
+
+function hasValidCardExpiration(value: string) {
+  const match = /^(0[1-9]|1[0-2])\/\d{2}$/.exec(value);
+  return Boolean(match);
 }
 
 const initialForm: StorefrontCheckoutFormDto = {
@@ -60,6 +75,10 @@ export function CheckoutPage() {
   const [customerEmail, setCustomerEmail] = useState("");
   const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState<string | "new">("new");
   const [selectedAddressId, setSelectedAddressId] = useState<string | "new">("new");
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardExpiration, setCardExpiration] = useState("");
+  const [cardSecurityCode, setCardSecurityCode] = useState("");
+  const [paymentError, setPaymentError] = useState<string | null>(null);
   const router = useRouter();
   useEffect(() => {
     let active = true;
@@ -119,6 +138,10 @@ export function CheckoutPage() {
 
   const selectSavedCard = (card: CustomerPaymentMethod) => {
     setSelectedPaymentMethodId(card.id);
+    setCardNumber("");
+    setCardExpiration("");
+    setCardSecurityCode("");
+    setPaymentError(null);
     setForm({
       ...form,
       cardholderName: card.cardholderName ?? "Titular registrado",
@@ -211,11 +234,44 @@ export function CheckoutPage() {
     form.city &&
     form.department,
   );
+  const cardDigits = cardNumber.replace(/\D/g, "");
+  const paymentReady =
+    selectedPaymentMethodId !== "new" ||
+    (cardDigits.length >= 13 &&
+      cardDigits.length <= 19 &&
+      Boolean(form.cardholderName.trim()) &&
+      hasValidCardExpiration(cardExpiration) &&
+      /^\d{3,4}$/.test(cardSecurityCode));
+  const canSubmitOrder = ready && paymentReady;
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (config?.accountRequired && !user) return;
+    if (selectedPaymentMethodId === "new") {
+      if (!cardDigits) {
+        setPaymentError("Ingrese el número de tarjeta.");
+        return;
+      }
+      if (cardDigits.length < 13 || cardDigits.length > 19) {
+        setPaymentError("El número de tarjeta debe contener entre 13 y 19 dígitos.");
+        return;
+      }
+      if (!hasValidCardExpiration(cardExpiration)) {
+        setPaymentError("Ingrese una fecha de vencimiento válida en formato MM/AA.");
+        return;
+      }
+      if (!/^\d{3,4}$/.test(cardSecurityCode)) {
+        setPaymentError("Ingrese un código de seguridad de 3 o 4 dígitos.");
+        return;
+      }
+    }
+    setPaymentError(null);
     setCompletedByCurrentCheckout(true);
-    void submit({ ...form, phone: form.phone.replace(/\D/g, "").replace(/^502/, "") });
+    void submit({
+      ...form,
+      cardLastFour:
+        selectedPaymentMethodId === "new" ? cardDigits.slice(-4) : form.cardLastFour,
+      phone: form.phone.replace(/\D/g, "").replace(/^502/, ""),
+    });
   };
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-5 sm:py-10">
@@ -223,14 +279,14 @@ export function CheckoutPage() {
         ← Volver al carrito
       </Link>
       <div className="mx-auto mt-4 flex max-w-xl items-center gap-2 sm:gap-4">
-        <Step active={step === 1} number="1" label="Envío y datos" />
-        <span className="h-px flex-1 bg-[var(--color-primary)]/50" />
-        <Step active={step === 2} number="2" label="Pago" />
-        <span className="h-px flex-1 bg-[var(--color-primary)]/50" />
-        <Step active={false} number="3" label="Confirma" />
+        <Step active={step === 1} completed={step > 1} number="1" label="Envío y datos" />
+        <span className={`h-0.5 flex-1 ${step > 1 ? "bg-[var(--color-success)]/60" : "bg-[var(--color-border)]"}`} />
+        <Step active={step === 2} completed={false} number="2" label="Pago" />
+        <span className="h-0.5 flex-1 bg-[var(--color-border)]" />
+        <Step active={false} completed={false} number="3" label="Confirma" />
       </div>
       <div className="mt-8 grid gap-7 xl:grid-cols-[minmax(0,1fr)_27rem]">
-        <form className="space-y-5" onSubmit={handleSubmit}>
+        <form className="space-y-5" noValidate onSubmit={handleSubmit}>
           {step === 1 ? (
             <section className="min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm sm:p-7">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -361,7 +417,7 @@ export function CheckoutPage() {
                 </div>
               )}
               <button
-                className="mt-6 rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)] disabled:opacity-50"
+                className="mt-6 w-full rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)] disabled:opacity-50 sm:w-auto"
                 disabled={!ready}
                 onClick={() => setStep(2)}
                 type="button"
@@ -375,7 +431,7 @@ export function CheckoutPage() {
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-xl font-black text-[var(--color-text)]">Método de pago</h2>
-              <span className="text-sm font-bold text-[var(--color-success)]">
+              <span className="rounded-full bg-[var(--color-success)]/10 px-3 py-1 text-sm font-bold text-[var(--color-success)]">
                 ♢ Pago 100% seguro
               </span>
             </div>
@@ -438,6 +494,10 @@ export function CheckoutPage() {
                         className="text-sm font-bold text-[var(--color-title)] underline"
                         onClick={() => {
                           setSelectedPaymentMethodId("new");
+                          setCardNumber("");
+                          setCardExpiration("");
+                          setCardSecurityCode("");
+                          setPaymentError(null);
                           setForm({ ...form, cardholderName: "", cardLastFour: "" });
                         }}
                         type="button"
@@ -449,43 +509,60 @@ export function CheckoutPage() {
                   {selectedPaymentMethodId === "new" ? (
                     <div className="mt-4 grid gap-4 sm:grid-cols-2">
                       <label className="grid gap-2 text-sm font-bold text-[var(--color-text)] sm:col-span-2">
-                        Número de tarjeta (últimos 4 dígitos)
+                        Número de tarjeta
                         <input
-                          autoComplete="off"
+                          autoComplete="cc-number"
                           className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-3 font-normal text-[var(--color-text)]"
                           inputMode="numeric"
-                          maxLength={4}
-                          onChange={(event) =>
-                            setForm({
-                              ...form,
-                              cardLastFour: event.target.value.replace(/\D/g, "").slice(0, 4),
-                            })
-                          }
-                          placeholder="1234"
-                          value={form.cardLastFour}
+                          maxLength={23}
+                          onChange={(event) => {
+                            setCardNumber(formatCardNumber(event.target.value));
+                            setPaymentError(null);
+                          }}
+                          placeholder="4242 4242 4242 4242"
+                          value={cardNumber}
                         />
                       </label>
                       <div className="sm:col-span-2">
                         <Field
                           label="Nombre del titular"
+                          autoComplete="cc-name"
                           value={form.cardholderName}
-                          onChange={(value) => setForm({ ...form, cardholderName: value })}
+                          onChange={(value) => {
+                            setForm({ ...form, cardholderName: value });
+                            setPaymentError(null);
+                          }}
                         />
                       </div>
                       <label className="grid gap-2 text-sm font-bold text-[var(--color-text)]">
-                        Vencimiento
+                        Fecha de vencimiento
                         <input
-                          className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-3 font-normal text-[var(--color-text-muted)]"
-                          readOnly
-                          value="MM/AA"
+                          autoComplete="cc-exp"
+                          className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-3 font-normal text-[var(--color-text)]"
+                          inputMode="numeric"
+                          maxLength={5}
+                          onChange={(event) => {
+                            setCardExpiration(formatCardExpiration(event.target.value));
+                            setPaymentError(null);
+                          }}
+                          placeholder="MM/AA"
+                          value={cardExpiration}
                         />
                       </label>
                       <label className="grid gap-2 text-sm font-bold text-[var(--color-text)]">
-                        CVV
+                        Código de seguridad (CVV)
                         <input
-                          className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-3 font-normal text-[var(--color-text-muted)]"
-                          readOnly
-                          value="•••"
+                          autoComplete="cc-csc"
+                          className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-3 font-normal text-[var(--color-text)]"
+                          inputMode="numeric"
+                          maxLength={4}
+                          onChange={(event) => {
+                            setCardSecurityCode(event.target.value.replace(/\D/g, "").slice(0, 4));
+                            setPaymentError(null);
+                          }}
+                          placeholder="•••"
+                          type="password"
+                          value={cardSecurityCode}
                         />
                       </label>
                     </div>
@@ -502,21 +579,19 @@ export function CheckoutPage() {
             >
               ← Volver a datos de envío
             </button>
-            {error ? (
-              <p className="w-full rounded-xl bg-red-50 p-3 text-sm text-[var(--color-danger)]">
-                {error}
-              </p>
+            {paymentError ?? error ? (
+              <InlineAlert className="w-full" title={paymentError ?? error ?? ""} tone="danger" />
             ) : null}
             <button
-              className="rounded-xl bg-[var(--color-primary-hover)] px-6 py-3 font-black text-white disabled:opacity-50"
-              disabled={step !== 2 || submitting}
+              className="w-full rounded-xl bg-[var(--color-primary)] px-6 py-3 font-black text-[var(--color-topbar)] transition hover:bg-[var(--color-primary-hover)] disabled:opacity-50 sm:w-auto"
+              disabled={step !== 2 || submitting || !canSubmitOrder}
               type="submit"
             >
               {submitting ? "Procesando..." : `Realizar pedido (Q${subtotal.toFixed(2)})`}
             </button>
           </section>
         </form>
-        <aside className="h-fit min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm sm:p-6">
+        <aside className="h-fit min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm sm:p-6 xl:sticky xl:top-24">
           <p className="text-xl font-black text-[var(--color-text)]">Resumen del pedido</p>
           <div className="mt-4 space-y-3 border-t border-[var(--color-border)] pt-4">
             {items.map((item) => (
@@ -564,15 +639,25 @@ export function CheckoutPage() {
     </main>
   );
 }
-function Step({ active, number, label }: { active: boolean; number: string; label: string }) {
+function Step({
+  active,
+  completed,
+  number,
+  label,
+}: {
+  active: boolean;
+  completed: boolean;
+  number: string;
+  label: string;
+}) {
   return (
     <div className="flex items-center gap-2">
       <span
-        className={`grid h-7 w-7 place-items-center rounded-full text-xs font-black ${active ? "bg-[var(--color-primary)] text-[var(--color-topbar)]" : "bg-slate-200 text-[var(--color-text-muted)]"}`}
+        className={`grid h-7 w-7 place-items-center rounded-full text-xs font-black ${completed ? "bg-[var(--color-success)] text-white" : active ? "bg-[var(--color-primary)] text-[var(--color-topbar)] ring-4 ring-[var(--color-primary)]/20" : "bg-slate-200 text-[var(--color-text-muted)]"}`}
       >
         {number}
       </span>
-      <span className="hidden text-sm font-bold sm:block">{label}</span>
+      <span className={`hidden text-sm font-bold sm:block ${completed ? "text-[var(--color-success)]" : active ? "text-[var(--color-title)]" : "text-[var(--color-text-muted)]"}`}>{label}</span>
     </div>
   );
 }
@@ -582,6 +667,7 @@ function Field({
   onChange,
   type = "text",
   required = true,
+  autoComplete,
   inputMode,
   maxLength,
   pattern,
@@ -592,6 +678,7 @@ function Field({
   onChange: (value: string) => void;
   type?: string;
   required?: boolean;
+  autoComplete?: string;
   inputMode?: "numeric";
   maxLength?: number;
   pattern?: string;
@@ -602,6 +689,7 @@ function Field({
       {label}
       <input
         className="rounded-xl border border-[var(--color-border)] bg-slate-50 px-3 py-3 font-normal outline-none focus:border-[var(--color-primary-hover)] focus:ring-4 focus:ring-[var(--color-primary)]/15"
+        autoComplete={autoComplete}
         inputMode={inputMode}
         maxLength={maxLength}
         pattern={pattern}

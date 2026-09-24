@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { DeliveryMethod } from "@/core/enums";
 import type { LogisticsHistoryDetailDto } from "@/modules/logistics/application/dto/LogisticsHistoryDto";
 import { LogisticsTracePanel } from "@/modules/logistics/components/LogisticsTracePanel";
-import { Button } from "@/shared/components/Button";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Modal } from "@/shared/components/Modal";
 import { StatusBadge } from "@/shared/components/StatusBadge";
@@ -27,13 +26,6 @@ export function LogisticsHistoryDetailModal({
 
   return (
     <Modal
-      footer={
-        <div className="flex justify-end">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Cerrar
-          </Button>
-        </div>
-      }
       onClose={onClose}
       open={open}
       size="xl"
@@ -49,7 +41,7 @@ export function LogisticsHistoryDetailModal({
 
       {summary && detail ? (
         <div className="space-y-4">
-          <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-3.5">
+          <section className="rounded-lg border border-t-4 border-[var(--color-border)] border-t-[var(--color-structure)] bg-white p-3.5 shadow-sm">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">

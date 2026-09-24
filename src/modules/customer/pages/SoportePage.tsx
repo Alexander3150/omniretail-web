@@ -45,21 +45,21 @@ export function SoportePage() {
             const value = config?.[key] as string;
             return (
               <article
-                className="flex flex-col items-start gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
+                className="flex h-full flex-col items-start gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm"
                 key={key}
               >
                 <span
                   aria-hidden="true"
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-structure)]"
+                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary)]/10 text-[var(--color-structure)]"
                 >
-                  <Icon className="h-5 w-5" />
+                  <Icon className="h-6 w-6" />
                 </span>
                 <div>
-                  <p className="text-sm font-semibold text-[var(--color-title)]">{label}</p>
-                  <p className="text-sm text-[var(--color-text-muted)]">{value}</p>
+                  <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">{label}</p>
+                  <p className="mt-1 break-words font-semibold text-[var(--color-text)]">{value}</p>
                 </div>
                 <a
-                  className="mt-auto inline-flex min-h-9 items-center justify-center rounded-md border border-[var(--color-primary)] bg-white px-4 text-sm font-semibold text-[var(--color-title)] transition hover:bg-[var(--color-app-background)]"
+                  className="mt-auto inline-flex min-h-10 items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-4 text-sm font-semibold text-[var(--color-title)] transition hover:bg-[var(--color-app-background)]"
                   href={href(value)}
                 >
                   {cta}
