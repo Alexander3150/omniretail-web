@@ -5,7 +5,6 @@ import { PackingOrderSelector } from "@/modules/logistics/components/PackingOrde
 import { PackingWorkspace } from "@/modules/logistics/components/PackingWorkspace";
 import { TransferDispatchPanel } from "@/modules/logistics/components/TransferDispatchPanel";
 import { useLogisticsPacking } from "@/modules/logistics/hooks/useLogisticsPacking";
-import { Button } from "@/shared/components/Button";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { useToast } from "@/shared/components/Toast";
@@ -17,22 +16,21 @@ export function LogisticsPackingDispatchPage() {
   return (
     <div className="min-w-0 space-y-5">
       <PageHeader
-        actions={<Button disabled={packing.loading || packing.submitting} onClick={() => void packing.reload()} type="button" variant="secondary">Actualizar</Button>}
         description={`Prepara pedidos de la sucursal ${packing.currentBranchName}.`}
-        title="Mesa de Packing"
+        title="Mesa de empaque"
       />
 
-      {!packing.hasBranchAccess && !packing.loading ? <InlineAlert description="Selecciona una sucursal autorizada para consultar Packing." title="Sucursal no disponible" tone="warning" /> : null}
+      {!packing.hasBranchAccess && !packing.loading ? <InlineAlert description="Selecciona una sucursal autorizada para consultar la mesa de empaque." title="Sucursal no disponible" tone="warning" /> : null}
       {packing.hasBranchAccess && !packing.canRead && !packing.loading ? <InlineAlert description="Tu rol no posee logistics.packing.read." title="Acceso no autorizado" tone="warning" /> : null}
-      {packing.queueError ? <InlineAlert description={packing.queueError} title="No se pudo cargar Packing" /> : null}
+      {packing.queueError ? <InlineAlert description={packing.queueError} title="No se pudo cargar la mesa de empaque" /> : null}
       {packing.loading ? <section className="rounded-xl border border-[var(--color-border)] bg-white p-5 text-sm text-[var(--color-text-muted)] shadow-sm">Consultando pedidos preparados...</section> : null}
 
       {!packing.loading && packing.hasBranchAccess && packing.canRead ? (
         <>
-          <section className="rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm sm:p-5">
-            <div className="mb-4">
+          <section className="rounded-xl border border-[var(--color-border)] bg-white p-3.5 shadow-sm sm:p-4">
+            <div className="mb-3">
               <h2 className="text-lg font-bold text-[var(--color-title)]">Pedido para preparar</h2>
-              <p className="mt-1 text-sm text-[var(--color-text-muted)]">Solo preparaciones de Packing de la sucursal activa.</p>
+              <p className="mt-1 text-sm text-[var(--color-text-muted)]">Solo pedidos en preparación de la sucursal activa.</p>
             </div>
             <PackingOrderSelector
               disabled={packing.submitting}
@@ -83,7 +81,7 @@ export function LogisticsPackingDispatchPage() {
             }}
             onSave={async (values) => {
               const saved = await packing.savePreparation(values);
-              if (saved) showToast({ title: "Preparación guardada", description: "El checklist y los datos de Packing quedaron actualizados.", tone: "success" });
+              if (saved) showToast({ title: "Preparación guardada", description: "El checklist y los datos de empaque quedaron actualizados.", tone: "success" });
               return saved;
             }}
             selected={packing.selectedPackingId !== null}

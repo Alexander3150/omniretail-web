@@ -42,8 +42,8 @@ export function PosSalesHistoryModal({ open, onClose }: PosSalesHistoryModalProp
         title="Historial de ventas"
         onClose={closeHistory}
       >
-        <div className="space-y-4">
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="space-y-3">
+          <section className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5 [&>article]:rounded-lg [&>article]:p-3 [&>article>p:first-child]:text-xs [&>article>p:nth-child(2)]:mt-1 [&>article>p:nth-child(2)]:text-xl">
             <KPICard
               label="Total de ventas"
               loading={history.loading}
@@ -97,7 +97,7 @@ export function PosSalesHistoryModal({ open, onClose }: PosSalesHistoryModalProp
               Cargando historial de ventas...
             </div>
           ) : (
-            <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,7fr)_minmax(280px,3fr)]">
+            <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,7fr)_minmax(300px,3fr)]">
               <PosSalesHistoryTable
                 sales={history.sales}
                 selectedSaleId={selectedSale?.saleId}

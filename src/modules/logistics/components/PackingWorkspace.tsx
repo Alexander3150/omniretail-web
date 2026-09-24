@@ -42,7 +42,7 @@ export function PackingWorkspace(props: PackingWorkspaceProps) {
     return <section className="flex min-h-[30rem] items-center justify-center rounded-xl border border-[var(--color-border)] bg-white p-6 text-sm text-[var(--color-text-muted)] shadow-sm">Cargando preparación...</section>;
   }
   if (!props.detail) {
-    return <section className="rounded-xl border border-[var(--color-border)] bg-white p-5 shadow-sm">{props.error ? <InlineAlert description={props.error} title="No se pudo cargar Packing" /> : null}</section>;
+    return <section className="rounded-xl border border-[var(--color-border)] bg-white p-5 shadow-sm">{props.error ? <InlineAlert description={props.error} title="No se pudo cargar la preparación" /> : null}</section>;
   }
 
   return <PackingPreparation key={`${props.detail.packingId}:${props.detail.version}`} {...props} detail={props.detail} />;
@@ -96,10 +96,10 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
   };
 
   return (
-    <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,0.9fr)] xl:items-start">
+    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,0.9fr)] xl:items-start">
       <section className="rounded-xl border border-[var(--color-border)] bg-white shadow-sm">
-        <header className="border-b border-[var(--color-border)] bg-[var(--color-app-background)] p-4 sm:p-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <header className="border-b border-[var(--color-border)] bg-[var(--color-app-background)] p-3.5 sm:p-4">
+          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Preparación de pedido</p>
               <h2 className="mt-1 text-xl font-bold text-[var(--color-title)]">{detail.orderReference}</h2>
@@ -112,16 +112,16 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
           </div>
         </header>
 
-        <div className="space-y-5 p-4 sm:p-5">
+        <div className="space-y-4 p-3.5 sm:p-4">
           {props.error ? <InlineAlert description={props.error} title="No se pudo guardar la preparación" /> : null}
           {!props.canPrepare ? <InlineAlert description="Tu rol no posee logistics.packing.prepare. Puedes consultar la preparación, pero no modificarla." title="Acciones restringidas" tone="warning" /> : null}
 
           <section>
             <h3 className="font-bold text-[var(--color-title)]">Checklist de empaque</h3>
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">El avance se conserva para continuar después de una recarga.</p>
-            <div className="mt-3 space-y-2">
+            <div className="mt-2.5 space-y-1.5">
               {(Object.keys(visibleChecklistLabels) as Array<keyof typeof visibleChecklistLabels>).map((key) => (
-                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--color-border)] p-3 text-sm" key={key}>
+                <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2.5 text-sm" key={key}>
                   <input
                     checked={values.checklist[key]}
                     className="mt-0.5 h-5 w-5 accent-[var(--color-primary)]"
@@ -136,8 +136,8 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
           </section>
 
           {homeDelivery ? (
-            <section className="grid gap-3 border-t border-[var(--color-border)] pt-5 sm:grid-cols-2">
-              <FormField error={errors.totalWeight} hint="Será obligatorio antes de finalizar Packing." id="packing-weight" label="Peso total (kg)">
+            <section className="grid gap-2.5 border-t border-[var(--color-border)] pt-4 sm:grid-cols-2">
+              <FormField error={errors.totalWeight} hint="Será obligatorio antes de finalizar el empaque." id="packing-weight" label="Peso total (kg)">
                 <Input
                   disabled={!mutable || !props.canPrepare || props.submitting}
                   id="packing-weight"
@@ -149,7 +149,7 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
                   value={values.totalWeight}
                 />
               </FormField>
-              <FormField error={errors.packageCount} hint="Será obligatorio antes de finalizar Packing." id="packing-package-count" label="Cantidad de bultos">
+              <FormField error={errors.packageCount} hint="Será obligatorio antes de finalizar el empaque." id="packing-package-count" label="Cantidad de bultos">
                 <Input
                   disabled={!mutable || !props.canPrepare || props.submitting}
                   id="packing-package-count"
@@ -166,7 +166,7 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
             <InlineAlert description="Completa y guarda el checklist para finalizar la preparación." title="Retiro en tienda/bodega" tone="info" />
           )}
 
-          <div className="flex justify-end border-t border-[var(--color-border)] pt-5">
+          <div className="flex justify-end border-t border-[var(--color-border)] pt-4">
             <Button disabled={!mutable || !props.canPrepare || props.submitting} onClick={() => void save()} type="button">
               {props.submitting ? "Guardando..." : "Guardar preparación"}
             </Button>
@@ -238,7 +238,7 @@ function HomeDeliveryResult(props: HomeDeliveryResultProps) {
   return (
     <>
       <section className="rounded-xl border border-[var(--color-border)] bg-white shadow-sm">
-        <header className="border-b border-[var(--color-border)] p-4 sm:p-5">
+        <header className="border-b border-[var(--color-border)] p-3.5 sm:p-4">
           <h2 className="text-lg font-bold text-[var(--color-title)]">Resultado y etiqueta</h2>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">{detail.deliveryMethod === "transfer" ? "Vista de preparación del traslado entre sucursales." : "Vista de preparación para envío a domicilio."}</p>
         </header>
@@ -309,7 +309,7 @@ function HomeDeliveryResult(props: HomeDeliveryResultProps) {
         confirmLabel={props.submitting ? "Finalizando..." : "Finalizar"}
         message={detail.deliveryMethod === "transfer"
           ? "El traslado quedará listo para confirmar su salida física desde la sucursal origen."
-          : "El pedido quedará listo para despacho. La guía y el Dispatch se gestionarán posteriormente."}
+          : "El pedido quedará listo para despacho. La guía y el despacho se gestionarán posteriormente."}
         onCancel={() => { if (!props.submitting) setFinalizeConfirmationOpen(false); }}
         onConfirm={async () => {
           if (props.submitting) return;
@@ -354,12 +354,12 @@ function StorePickupResult(props: StorePickupResultProps) {
             {readyForPickup ? <StatusBadge status={OrderStatus.ready_for_pickup} tone="success" /> : null}
           </div>
         </header>
-        <div className="space-y-4 p-4 sm:p-5">
-          <dl className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-            <div className="rounded-lg bg-[var(--color-app-background)] p-3"><dt className="text-xs text-[var(--color-text-muted)]">Pedido</dt><dd className="mt-1 font-semibold text-[var(--color-title)]">{detail.orderReference}</dd></div>
-            <div className="rounded-lg bg-[var(--color-app-background)] p-3"><dt className="text-xs text-[var(--color-text-muted)]">Nombre de quien retira</dt><dd className="mt-1 font-semibold text-[var(--color-title)]">{detail.storePickupContact?.recipientName ?? detail.customerName}</dd></div>
-            <div className="rounded-lg bg-[var(--color-app-background)] p-3"><dt className="text-xs text-[var(--color-text-muted)]">Teléfono</dt><dd className="mt-1 font-semibold text-[var(--color-title)]">{detail.storePickupContact?.recipientPhone ?? "No disponible"}</dd></div>
-            <div className="rounded-lg bg-[var(--color-app-background)] p-3 sm:col-span-2 xl:col-span-1 2xl:col-span-2"><dt className="text-xs text-[var(--color-text-muted)]">Modalidad</dt><dd className="mt-1 font-semibold text-[var(--color-title)]">Retiro en tienda/bodega</dd></div>
+        <div className="space-y-3 p-3.5 sm:p-4">
+          <dl className="grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2.5"><dt className="text-xs font-medium text-[var(--color-text-muted)]">Pedido</dt><dd className="mt-1 font-semibold text-[var(--color-title)]">{detail.orderReference}</dd></div>
+            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2.5"><dt className="text-xs font-medium text-[var(--color-text-muted)]">Nombre de quien retira</dt><dd className="mt-1 font-semibold text-[var(--color-title)]">{detail.storePickupContact?.recipientName ?? detail.customerName}</dd></div>
+            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2.5"><dt className="text-xs font-medium text-[var(--color-text-muted)]">Teléfono</dt><dd className="mt-1 font-semibold text-[var(--color-title)]">{detail.storePickupContact?.recipientPhone ?? "No disponible"}</dd></div>
+            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2.5 sm:col-span-2 xl:col-span-1 2xl:col-span-2"><dt className="text-xs font-medium text-[var(--color-text-muted)]">Modalidad</dt><dd className="mt-1 font-semibold text-[var(--color-title)]">Retiro en tienda/bodega</dd></div>
           </dl>
 
           {props.isDirty ? <InlineAlert description="Guarda el checklist antes de finalizar la preparación." title="Cambios sin guardar" tone="warning" /> : null}
@@ -416,11 +416,11 @@ function StorePickupResult(props: StorePickupResultProps) {
 
 function PackingEmptyState() {
   return (
-    <section className="flex min-h-[30rem] items-center justify-center rounded-xl border border-[var(--color-border)] bg-white p-6 text-center shadow-sm">
-      <div className="max-w-lg">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-app-background)] text-xl font-bold text-[var(--color-title)]">1</div>
-        <h2 className="mt-4 text-xl font-bold text-[var(--color-title)]">Selecciona un pedido preparado</h2>
-        <p className="mt-2 text-sm text-[var(--color-text-muted)]">Elige un pedido que haya completado Picking para continuar con su preparación.</p>
+    <section className="flex min-h-[26rem] items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-app-background)]/45 p-6 text-center shadow-sm sm:p-8">
+      <div className="max-w-xl rounded-xl border border-dashed border-[var(--color-border)] bg-white px-6 py-7 shadow-sm sm:px-10">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-app-background)] text-lg font-bold text-[var(--color-title)]">1</div>
+        <h2 className="mt-3 text-xl font-bold text-[var(--color-title)]">Selecciona un pedido preparado</h2>
+        <p className="mx-auto mt-2 max-w-md text-sm text-[var(--color-text-muted)]">Elige un pedido que haya completado Picking para continuar con su preparación.</p>
       </div>
     </section>
   );
@@ -439,12 +439,12 @@ function PackingCompletion({ completion }: { completion: {
         <h2 className="mt-4 text-xl font-bold text-[var(--color-title)]">{delivered ? "Entrega confirmada" : transfer ? "Traslado preparado" : "Empaque finalizado"}</h2>
         <p className="mt-2 text-sm text-[var(--color-text-muted)]">
           {transfer
-            ? `${completion.orderReference} salió de la cola de Packing y está listo para confirmar su salida física.`
+            ? `${completion.orderReference} salió de la cola de empaque y está listo para confirmar su salida física.`
             : delivered
             ? `${completion.orderReference} fue entregado al cliente y ya no tiene acciones pendientes.`
-            : `${completion.orderReference} salió de la cola activa de Packing y quedó listo para despacho.`}
+            : `${completion.orderReference} salió de la cola activa de empaque y quedó listo para despacho.`}
         </p>
-        {!delivered && !transfer ? <p className="mt-4 text-xs text-[var(--color-text-muted)]">La guía y la confirmación de Despacho se realizarán en una etapa posterior.</p> : null}
+        {!delivered && !transfer ? <p className="mt-4 text-xs text-[var(--color-text-muted)]">La guía y la confirmación de despacho se realizarán en una etapa posterior.</p> : null}
       </div>
     </section>
   );

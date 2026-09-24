@@ -24,8 +24,11 @@ export function ReturnSaleSearch({
   }
 
   return (
-    <section className="rounded-xl border border-[var(--color-border)] bg-white p-5 shadow-sm">
-      <form className="flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={handleSubmit}>
+    <section className="rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm sm:p-5">
+      <form
+        className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4"
+        onSubmit={handleSubmit}
+      >
         <div className="min-w-0 flex-1">
           <FormField
             id="return-document-number"
@@ -42,7 +45,7 @@ export function ReturnSaleSearch({
             />
           </FormField>
         </div>
-        <Button disabled={disabled || loading} type="submit">
+        <Button className="w-full sm:w-auto sm:min-w-44" disabled={disabled || loading} type="submit">
           {loading ? "Buscando..." : "Buscar documento"}
         </Button>
       </form>

@@ -11,7 +11,7 @@ const paymentLabels: Record<string, string> = {
 export function SaleReversalResult({ result }: { result: SaleReversalResultDto }) {
   return (
     <section
-      className="rounded-xl border border-[var(--color-success)]/40 bg-white p-5 shadow-sm"
+      className="rounded-xl border border-[var(--color-success)]/40 bg-white p-4 shadow-sm sm:p-5"
       role="status"
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -25,12 +25,11 @@ export function SaleReversalResult({ result }: { result: SaleReversalResultDto }
         {result.documentNumber} · {formatCurrency(result.refundTotal)}
       </h2>
       <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-        La operación fue procesada y la información de la venta se actualizó desde la fuente
-        canónica.
+        La operación fue procesada correctamente y el estado de la venta ya está actualizado.
       </p>
 
       <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <div className="rounded-lg bg-[var(--color-app-background)] p-4">
+        <div className="rounded-lg bg-[var(--color-app-background)] p-3.5">
           <p className="text-xs font-semibold uppercase text-[var(--color-text-muted)]">
             Nota de crédito
           </p>
@@ -41,7 +40,7 @@ export function SaleReversalResult({ result }: { result: SaleReversalResultDto }
             {formatCurrency(result.creditNote.amount)}
           </p>
         </div>
-        <div className="rounded-lg bg-[var(--color-app-background)] p-4">
+        <div className="rounded-lg bg-[var(--color-app-background)] p-3.5">
           <p className="text-xs font-semibold uppercase text-[var(--color-text-muted)]">
             Reembolso procesado
           </p>

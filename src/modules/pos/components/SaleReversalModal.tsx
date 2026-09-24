@@ -49,7 +49,7 @@ export function SaleReversalModal({
       subtitle={`Documento ${lookup.sale.documentNumber}`}
       onClose={onClose}
       footer={
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <div className="flex flex-col-reverse gap-2 border-t border-[var(--color-border)] pt-3 sm:flex-row sm:justify-end">
           <Button disabled={processing} type="button" variant="secondary" onClick={onClose}>
             Cancelar
           </Button>
@@ -64,7 +64,7 @@ export function SaleReversalModal({
         </div>
       }
     >
-      <div className="space-y-5">
+      <div className="space-y-4">
         {error ? (
           <InlineAlert
             description={`${error} La información de la venta fue consultada nuevamente.`}
@@ -74,7 +74,7 @@ export function SaleReversalModal({
 
         {isVoid ? (
           <InlineAlert
-            description="Esta acción revertirá la venta completa. El reembolso, inventario, caja y estado final serán procesados de forma atómica por el sistema."
+            description="Esta acción anulará la venta completa. Confirma el motivo antes de continuar."
             title="Revisa antes de continuar"
             tone="warning"
           />
@@ -88,7 +88,7 @@ export function SaleReversalModal({
             </div>
             {lookup.returnableItems.map((item) => (
               <div
-                className="grid gap-3 rounded-lg border border-[var(--color-border)] p-3 sm:grid-cols-[minmax(0,1fr)_150px] sm:items-start"
+                className="grid gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 sm:grid-cols-[minmax(0,1fr)_150px] sm:items-start"
                 key={item.saleItemId}
               >
                 <div>
@@ -137,18 +137,18 @@ export function SaleReversalModal({
           />
         </FormField>
 
-        <div className="rounded-lg bg-[var(--color-app-background)] p-4">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-3.5">
           <div className="flex items-center justify-between gap-4">
             <span className="text-sm text-[var(--color-text-muted)]">
-              {isVoid ? "Total original de la venta" : "Reembolso"}
+              {isVoid ? "Total original de la venta" : "Reembolso estimado"}
             </span>
             <strong className="text-[var(--color-title)]">
-              {isVoid ? formatCurrency(lookup.sale.total) : "Cálculo autoritativo al confirmar"}
+              {isVoid ? formatCurrency(lookup.sale.total) : "Se calculará al confirmar"}
             </strong>
           </div>
           <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-            Se utilizarán los métodos de pago originales. La pantalla no distribuye pagos ni
-            modifica caja o inventario.
+            El reembolso se calculará al confirmar y se aplicará sobre los métodos de pago
+            originales.
           </p>
         </div>
       </div>

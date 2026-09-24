@@ -86,12 +86,12 @@ export function PickingWorkspace(props: PickingWorkspaceProps) {
     <>
       <section className="min-w-0 rounded-xl border border-[var(--color-border)] bg-white shadow-sm">
         {!props.selected ? (
-          <div className="flex min-h-[30rem] items-center justify-center p-6 text-center">
-            <div className="max-w-lg">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-app-background)] text-xl font-bold text-[var(--color-title)]">1</div>
-              <h2 className="mt-4 text-xl font-bold text-[var(--color-title)]">Selecciona un pedido</h2>
-              <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-                Elige un pedido de la cola para consultar todos sus productos, ubicaciones y cantidades de recolección.
+          <div className="flex min-h-[26rem] items-center justify-center bg-[var(--color-app-background)]/45 p-6 text-center sm:p-8">
+            <div className="max-w-xl rounded-xl border border-dashed border-[var(--color-border)] bg-white px-6 py-7 shadow-sm sm:px-10">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-app-background)] text-lg font-bold text-[var(--color-title)]">1</div>
+              <h2 className="mt-3 text-xl font-bold text-[var(--color-title)]">Selecciona un pedido</h2>
+              <p className="mx-auto mt-2 max-w-md text-sm text-[var(--color-text-muted)]">
+                Elige un pedido de la cola para revisar los productos, ubicaciones y cantidades a recolectar.
               </p>
               <p className="mt-4 text-xs font-medium text-[var(--color-text-muted)]">
                 Selecciona · Toma el picking · Registra el progreso · Completa
@@ -112,8 +112,8 @@ export function PickingWorkspace(props: PickingWorkspaceProps) {
 
         {detail ? (
           <div>
-            <header className="border-b border-[var(--color-border)] bg-[var(--color-app-background)] p-4 sm:p-5">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <header className="border-b border-[var(--color-border)] bg-[var(--color-app-background)] p-3.5 sm:p-4">
+              <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_18rem] xl:items-start">
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Hoja de recolección</p>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -122,11 +122,11 @@ export function PickingWorkspace(props: PickingWorkspaceProps) {
                     <StatusBadge status={priorityLabels[detail.priority]} tone={detail.priority === PickingPriority.urgent ? "danger" : detail.priority === PickingPriority.high ? "warning" : "neutral"} />
                   </div>
                 </div>
-                <div className="w-full xl:max-w-xs">
+                <div className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2.5">
                   <div className="flex justify-between text-xs font-semibold text-[var(--color-title)]">
                     <span>Progreso general</span><span>{detail.progress.percentage}%</span>
                   </div>
-                  <div aria-label={`Progreso ${detail.progress.percentage}%`} aria-valuemax={100} aria-valuemin={0} aria-valuenow={detail.progress.percentage} className="mt-2 h-2.5 overflow-hidden rounded-full bg-white" role="progressbar">
+                  <div aria-label={`Progreso ${detail.progress.percentage}%`} aria-valuemax={100} aria-valuemin={0} aria-valuenow={detail.progress.percentage} className="mt-1.5 h-2 overflow-hidden rounded-full bg-[var(--color-app-background)]" role="progressbar">
                     <div className="h-full rounded-full bg-[var(--color-primary)]" style={{ width: `${detail.progress.percentage}%` }} />
                   </div>
                   <p className="mt-1 text-right text-xs text-[var(--color-text-muted)]">
@@ -135,15 +135,15 @@ export function PickingWorkspace(props: PickingWorkspaceProps) {
                 </div>
               </div>
 
-              <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-lg bg-white p-3"><dt className="text-xs text-[var(--color-text-muted)]">Documento</dt><dd className="mt-1 font-semibold text-[var(--color-title)]">{detail.orderReference}</dd></div>
-                <div className="rounded-lg bg-white p-3"><dt className="text-xs text-[var(--color-text-muted)]">Cliente</dt><dd className="mt-1 font-semibold text-[var(--color-title)]">{detail.customerName}</dd></div>
-                <div className="rounded-lg bg-white p-3"><dt className="text-xs text-[var(--color-text-muted)]">Entrega</dt><dd className="mt-1 font-semibold text-[var(--color-title)]">{deliveryLabels[detail.deliveryMethod]}</dd></div>
-                <div className="rounded-lg bg-white p-3"><dt className="text-xs text-[var(--color-text-muted)]">Asignación</dt><dd className="mt-1 font-semibold text-[var(--color-title)]">{!detail.assignedUserId ? "Sin asignar" : assignedToCurrentUser ? "Asignado a ti" : "Otro operador"}</dd></div>
+              <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-lg border border-[var(--color-border)] bg-white px-3 py-2.5"><dt className="text-xs font-medium text-[var(--color-text-muted)]">Documento</dt><dd className="mt-1 font-semibold text-[var(--color-title)]">{detail.orderReference}</dd></div>
+                <div className="rounded-lg border border-[var(--color-border)] bg-white px-3 py-2.5"><dt className="text-xs font-medium text-[var(--color-text-muted)]">Cliente</dt><dd className="mt-1 font-semibold text-[var(--color-title)]">{detail.customerName}</dd></div>
+                <div className="rounded-lg border border-[var(--color-border)] bg-white px-3 py-2.5"><dt className="text-xs font-medium text-[var(--color-text-muted)]">Entrega</dt><dd className="mt-1 font-semibold text-[var(--color-title)]">{deliveryLabels[detail.deliveryMethod]}</dd></div>
+                <div className="rounded-lg border border-[var(--color-border)] bg-white px-3 py-2.5"><dt className="text-xs font-medium text-[var(--color-text-muted)]">Asignación</dt><dd className="mt-1 font-semibold text-[var(--color-title)]">{!detail.assignedUserId ? "Sin asignar" : assignedToCurrentUser ? "Asignado a ti" : "Otro operador"}</dd></div>
               </dl>
             </header>
 
-            <div className="space-y-5 p-4 sm:p-5">
+            <div className="space-y-4 p-3.5 sm:p-4">
               {props.error ? <InlineAlert description={props.error} title="No se pudo completar la operación" /> : null}
               {!detail.assignedUserId && props.canStart ? (
                 <InlineAlert description="Debes asignarte este picking antes de registrar progreso o incidencias." title="Picking sin asignar" tone="info">
@@ -163,11 +163,11 @@ export function PickingWorkspace(props: PickingWorkspaceProps) {
               <PickingIncidentPanel canManage={assignedToCurrentUser && props.canStart} disabled={props.submitting} incidents={detail.incidents} lines={detail.lines} onRegister={props.onRegisterIncident} onResolve={props.onResolveIncident} />
 
               {detail.releases.length > 0 ? (
-                <section className="rounded-xl border border-[var(--color-border)] bg-white p-4">
+                <section className="rounded-xl border border-[var(--color-border)] bg-white p-3.5">
                   <h3 className="font-bold text-[var(--color-title)]">Historial de liberaciones</h3>
-                  <div className="mt-3 space-y-2">
+                  <div className="mt-2.5 space-y-2">
                     {detail.releases.map((item) => (
-                      <div className="rounded-lg bg-[var(--color-app-background)] p-3 text-sm" key={item.id}>
+                      <div className="rounded-lg bg-[var(--color-app-background)] px-3 py-2.5 text-sm" key={item.id}>
                         <p>{item.reason}</p>
                         <p className="mt-1 text-xs text-[var(--color-text-muted)]">{formatDateTime(item.releasedAt)}</p>
                       </div>
@@ -180,7 +180,7 @@ export function PickingWorkspace(props: PickingWorkspaceProps) {
               {hasOpenIncidents ? <InlineAlert description="Resuelve todas las incidencias abiertas antes de finalizar." title="Incidencias pendientes" tone="warning" /> : null}
               {allLinesComplete && !hasOpenIncidents && !props.canComplete ? <InlineAlert description="Tu rol no posee logistics.picking.complete." title="No puedes completar este picking" tone="warning" /> : null}
 
-              <div className="flex flex-col-reverse gap-2 border-t border-[var(--color-border)] pt-5 sm:flex-row sm:justify-end">
+              <div className="flex flex-col-reverse gap-2 border-t border-[var(--color-border)] pt-4 sm:flex-row sm:justify-end">
                 {assignedToCurrentUser && props.canStart ? (
                   <Button disabled={props.submitting} onClick={() => setReleaseOpen(true)} type="button" variant="secondary">Liberar picking</Button>
                 ) : null}

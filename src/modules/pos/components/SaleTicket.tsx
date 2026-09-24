@@ -28,17 +28,17 @@ export function SaleTicket({
   onCheckout,
 }: SaleTicketProps) {
   return (
-    <aside className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-sm">
-      <div className="border-b border-[var(--color-border)] p-5">
-        <div>
+    <aside className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-sm xl:sticky xl:top-4">
+      <div className="border-b border-[var(--color-border)] bg-[var(--color-app-background)] px-4 py-3 sm:px-5">
+        <div className="flex items-baseline justify-between gap-3">
           <h2 className="text-lg font-bold text-[var(--color-title)]">Ticket de venta</h2>
-          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+          <p className="shrink-0 text-sm font-medium text-[var(--color-text-muted)]">
             {items.length === 1 ? "1 producto" : `${items.length} productos`}
           </p>
         </div>
       </div>
 
-      <div className="p-5">
+      <div className="p-4 sm:p-5">
         {error ? (
           <p className="mb-4 rounded-md border border-[var(--color-danger)] px-3 py-2 text-sm font-medium text-[var(--color-danger)]">
             {error}
@@ -46,16 +46,16 @@ export function SaleTicket({
         ) : null}
 
         {items.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-[var(--color-border)] px-4 py-8 text-center">
-            <p className="font-semibold text-[var(--color-text)]">El ticket está vacío</p>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              Agrega un producto desde la lista para comenzar.
+          <div className="rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-5 py-10 text-center">
+            <p className="font-semibold text-[var(--color-title)]">Tu ticket está vacío</p>
+            <p className="mx-auto mt-1 max-w-xs text-sm text-[var(--color-text-muted)]">
+              Busca o selecciona un producto para agregarlo a la venta.
             </p>
           </div>
         ) : (
           <ul className="divide-y divide-[var(--color-border)]">
             {items.map((item) => (
-              <li className="py-4 first:pt-0" key={item.productId}>
+              <li className="py-3 first:pt-0" key={item.productId}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-semibold text-[var(--color-text)]">{item.name}</p>
@@ -66,7 +66,7 @@ export function SaleTicket({
                   </p>
                 </div>
 
-                <div className="mt-3 flex flex-wrap items-center gap-3">
+                <div className="mt-2 flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-2" aria-label={`Cantidad de ${item.name}`}>
                     <button
                       aria-label={`Disminuir cantidad de ${item.name}`}
@@ -98,14 +98,14 @@ export function SaleTicket({
                   </button>
                 </div>
 
-                <div className="mt-3 text-xs text-[var(--color-text-muted)]">
+                <div className="mt-2 text-xs text-[var(--color-text-muted)]">
                   <p>{formatCurrency(item.unitPrice)} por unidad</p>
                   {item.discount > 0 ? (
                     <p>Descuento por unidad: {formatCurrency(item.discount)}</p>
                   ) : null}
                   {item.requiresUnsupportedTraceability ? (
                     <p className="mt-1 font-semibold text-[var(--color-warning)]">
-                      Esta línea no podrá confirmarse en esta fase.
+                      Esta línea requiere un proceso de venta distinto.
                     </p>
                   ) : null}
                 </div>
@@ -115,7 +115,7 @@ export function SaleTicket({
         )}
       </div>
 
-      <dl className="space-y-3 border-t border-[var(--color-border)] bg-[var(--color-app-background)] p-5 text-sm">
+      <dl className="space-y-2 border-t border-[var(--color-border)] bg-[var(--color-app-background)] px-4 py-3 text-sm sm:px-5">
         <div className="flex items-center justify-between gap-4">
           <dt className="text-[var(--color-text-muted)]">Subtotal</dt>
           <dd className="font-semibold text-[var(--color-text)]">{formatCurrency(subtotal)}</dd>
@@ -126,12 +126,12 @@ export function SaleTicket({
             − {formatCurrency(discountTotal)}
           </dd>
         </div>
-        <div className="flex items-center justify-between gap-4 border-t border-[var(--color-border)] pt-3">
+        <div className="flex items-center justify-between gap-4 border-t border-[var(--color-border)] pt-2">
           <dt className="text-base font-bold text-[var(--color-title)]">Total</dt>
           <dd className="text-xl font-bold text-[var(--color-title)]">{formatCurrency(total)}</dd>
         </div>
       </dl>
-      <div className="border-t border-[var(--color-border)] p-5">
+      <div className="border-t border-[var(--color-border)] p-4 sm:px-5">
         <Button className="w-full" disabled={!canCheckout} onClick={onCheckout} type="button">
           Cobrar
         </Button>

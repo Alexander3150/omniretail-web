@@ -60,11 +60,12 @@ export function CashMovementModal({
       }
       onClose={closeModal}
       open={open}
+      density="compact"
       subtitle="El movimiento afectará el efectivo esperado del turno actual."
       title="Nuevo movimiento de caja"
     >
       <form
-        className="space-y-4"
+        className="space-y-3"
         id="cash-movement-form"
         onSubmit={async (event) => {
           event.preventDefault();
@@ -80,34 +81,36 @@ export function CashMovementModal({
             {error}
           </p>
         ) : null}
-        <FormField id="cash-movement-type" label="Tipo de movimiento">
-          <Select
-            id="cash-movement-type"
-            value={type}
-            onChange={(event) =>
-              setType(
-                event.target.value === CashMovementType.out
-                  ? CashMovementType.out
-                  : CashMovementType.in,
-              )
-            }
-          >
-            <option value={CashMovementType.in}>Ingreso de efectivo</option>
-            <option value={CashMovementType.out}>Egreso de efectivo</option>
-          </Select>
-        </FormField>
-        <FormField id="cash-movement-amount" label="Monto" error={errors.amount}>
-          <Input
-            id="cash-movement-amount"
-            inputMode="decimal"
-            min="0.01"
-            placeholder="0.00"
-            step="0.01"
-            type="number"
-            value={amount}
-            onChange={(event) => setAmount(event.target.value)}
-          />
-        </FormField>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FormField id="cash-movement-type" label="Tipo de movimiento">
+            <Select
+              id="cash-movement-type"
+              value={type}
+              onChange={(event) =>
+                setType(
+                  event.target.value === CashMovementType.out
+                    ? CashMovementType.out
+                    : CashMovementType.in,
+                )
+              }
+            >
+              <option value={CashMovementType.in}>Ingreso de efectivo</option>
+              <option value={CashMovementType.out}>Egreso de efectivo</option>
+            </Select>
+          </FormField>
+          <FormField id="cash-movement-amount" label="Monto" error={errors.amount}>
+            <Input
+              id="cash-movement-amount"
+              inputMode="decimal"
+              min="0.01"
+              placeholder="0.00"
+              step="0.01"
+              type="number"
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+            />
+          </FormField>
+        </div>
         <FormField id="cash-movement-reason" label="Motivo" error={errors.reason}>
           <Input
             autoComplete="off"

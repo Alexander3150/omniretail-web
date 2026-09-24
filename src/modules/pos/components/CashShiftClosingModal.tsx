@@ -53,11 +53,12 @@ export function CashShiftClosingModal({
       }
       onClose={closeModal}
       open={open}
+      density="compact"
       subtitle="Cuenta físicamente el efectivo. El sistema calculará la diferencia al cerrar."
       title="Arqueo y cierre de caja"
     >
       <form
-        className="space-y-4"
+        className="space-y-3"
         id="cash-shift-closing-form"
         onSubmit={async (event) => {
           event.preventDefault();
@@ -92,8 +93,7 @@ export function CashShiftClosingModal({
           />
         </FormField>
         <p className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 text-sm text-[var(--color-text-muted)]">
-          El efectivo esperado no se envía desde esta pantalla. El repositorio lo calcula con los
-          movimientos canónicos del turno.
+          El sistema calculará automáticamente la diferencia entre el efectivo contado y el efectivo esperado.
         </p>
       </form>
     </Modal>

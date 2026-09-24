@@ -39,7 +39,7 @@ export function PackingOrderSelector({
 
   return (
     <div className="space-y-2">
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-2.5 sm:grid-cols-2">
         <FormField id="packing-search" label="Buscar pedido preparado">
           <SearchInput
             disabled={disabled}
@@ -74,7 +74,7 @@ export function PackingOrderSelector({
                   ? `${singleMatchSuggestion.orderReference} · ${singleMatchSuggestion.customerName} · ${deliveryLabels[singleMatchSuggestion.deliveryMethod]}`
                   : items.length
                     ? "Selecciona un pedido"
-                    : "No hay pedidos para Packing"}
+                    : "No hay pedidos para preparar"}
             </option>
             {items.map((item) => (
               <option key={item.packingId} value={item.packingId}>
@@ -84,7 +84,7 @@ export function PackingOrderSelector({
           </Select>
         </FormField>
       </div>
-      <p aria-live="polite" className="text-xs text-[var(--color-text-muted)]">
+      <p aria-live="polite" className="inline-flex rounded-full bg-[var(--color-app-background)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-muted)]">
         {noMatches
           ? "No hay coincidencias. Limpia la búsqueda para restaurar la cola completa."
           : hasSearch

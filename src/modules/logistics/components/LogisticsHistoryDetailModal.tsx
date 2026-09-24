@@ -48,20 +48,20 @@ export function LogisticsHistoryDetailModal({
       {error ? <InlineAlert description={error} title="No se pudo cargar el detalle" /> : null}
 
       {summary && detail ? (
-        <div className="space-y-6">
-          <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-4">
+          <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-3.5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
                   Referencia
                 </p>
-                <h3 className="mt-1 text-xl font-bold text-[var(--color-title)]">
+                <h3 className="mt-0.5 text-lg font-bold text-[var(--color-title)] sm:text-xl">
                   {summary.orderReference}
                 </h3>
               </div>
               <StatusBadge status={summary.operationalStatus} />
             </div>
-            <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+            <dl className="mt-3 grid gap-2.5 text-sm sm:grid-cols-2 lg:grid-cols-3">
               <DetailField label={homeDelivery ? "Destinatario" : "Persona que retira"}>
                 {summary.contactName}
               </DetailField>
@@ -76,10 +76,10 @@ export function LogisticsHistoryDetailModal({
           </section>
 
           <section>
-            <h3 className="font-bold text-[var(--color-title)]">Fechas operativas</h3>
-            <dl className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <DateField label="Picking finalizado" value={summary.pickingCompletedAt} />
-              <DateField label="Packing finalizado" value={summary.packingFinalizedAt} />
+            <h3 className="text-sm font-bold text-[var(--color-title)]">Fechas operativas</h3>
+            <dl className="mt-2 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+              <DateField label="Recolección finalizada" value={summary.pickingCompletedAt} />
+              <DateField label="Empaque finalizado" value={summary.packingFinalizedAt} />
               {homeDelivery ? (
                 <DateField label="Despacho" value={summary.dispatchedAt} />
               ) : (
@@ -88,10 +88,10 @@ export function LogisticsHistoryDetailModal({
             </dl>
           </section>
 
-          <section className="grid gap-4 lg:grid-cols-2">
-            <article className="rounded-lg border border-[var(--color-border)] p-4">
-              <h3 className="font-bold text-[var(--color-title)]">Packing</h3>
-              <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+          <section className="grid gap-3 lg:grid-cols-2">
+            <article className="rounded-lg border border-[var(--color-border)] p-3.5">
+              <h3 className="text-sm font-bold text-[var(--color-title)]">Empaque</h3>
+              <dl className="mt-2 grid gap-2.5 text-sm sm:grid-cols-2">
                 <DetailField label="Preparación">
                   {summary.packingId
                     ? summary.packingFinalizedAt
@@ -112,11 +112,11 @@ export function LogisticsHistoryDetailModal({
               </dl>
             </article>
 
-            <article className="rounded-lg border border-[var(--color-border)] p-4">
-              <h3 className="font-bold text-[var(--color-title)]">
+            <article className="rounded-lg border border-[var(--color-border)] p-3.5">
+              <h3 className="text-sm font-bold text-[var(--color-title)]">
                 {homeDelivery ? "Despachado" : "Entrega en tienda"}
               </h3>
-              <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+              <dl className="mt-2 grid gap-2.5 text-sm sm:grid-cols-2">
                 {homeDelivery ? (
                   <>
                     <DetailField label="Transporte">
@@ -157,7 +157,7 @@ function DetailField({ children, label }: { children: ReactNode; label: string }
 
 function DateField({ label, value }: { label: string; value: string | null }) {
   return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-white p-3">
+    <div className="rounded-lg border border-[var(--color-border)] bg-white p-2.5">
       <dt className="text-xs text-[var(--color-text-muted)]">{label}</dt>
       <dd className="mt-1 text-sm font-semibold text-[var(--color-title)]">
         {formatDateTime(value)}

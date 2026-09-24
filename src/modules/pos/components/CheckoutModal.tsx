@@ -120,11 +120,11 @@ export function CheckoutModal({
   return (
     <Modal
       footer={
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Button disabled={confirmationLoading} onClick={onReset} type="button" variant="ghost">
             Restablecer
           </Button>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
             <Button
               disabled={confirmationLoading}
               onClick={onClose}
@@ -142,6 +142,7 @@ export function CheckoutModal({
               Preparar cobro
             </Button>
             <Button
+              className="sm:min-w-36"
               disabled={!readyToConfirm || confirmationLoading}
               onClick={onConfirm}
               type="button"
@@ -154,11 +155,13 @@ export function CheckoutModal({
       onClose={onClose}
       open={open}
       size="xl"
+      maxWidth="76rem"
+      density="compact"
       subtitle="Valida el documento y el pago antes de confirmar la venta."
       title="Cobrar venta"
     >
       <form
-        className="space-y-5"
+        className="space-y-4"
         id="pos-checkout-form"
         onSubmit={(event) => {
           event.preventDefault();
@@ -182,17 +185,18 @@ export function CheckoutModal({
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge status="Bloqueo operativo" tone="warning" />
               <p className="text-sm font-semibold text-[var(--color-text)]">
-                El ticket contiene lote, serial o kit no soportado para confirmación.
+                El ticket contiene productos que no pueden confirmarse desde esta terminal.
               </p>
             </div>
             <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-              Puedes validar el cobro, pero la venta no podrá confirmarse en esta fase.
+              Puedes revisar los datos, pero la venta no puede confirmarse desde esta terminal.
             </p>
           </div>
         ) : null}
 
-        <section className="space-y-4 rounded-lg border border-[var(--color-border)] p-4">
-          <h3 className="font-bold text-[var(--color-title)]">Documento</h3>
+        <div className="grid items-start gap-4 xl:grid-cols-2">
+          <section className="space-y-3 rounded-lg border border-[var(--color-border)] p-3 sm:p-4">
+            <h3 className="font-bold text-[var(--color-title)]">Documento</h3>
           <FormField id="checkout-document-type" label="Tipo de documento">
             <Select
               id="checkout-document-type"
@@ -206,8 +210,8 @@ export function CheckoutModal({
             </Select>
           </FormField>
 
-          {checkout.documentType === "invoice" ? (
-            <div className="grid gap-4 md:grid-cols-2">
+            {checkout.documentType === "invoice" ? (
+              <div className="grid gap-3 md:grid-cols-2">
               <FormField id="checkout-tax-id" label="NIT *" error={errors.taxId}>
                 <Input
                   id="checkout-tax-id"
@@ -242,12 +246,12 @@ export function CheckoutModal({
                   />
                 </FormField>
               </div>
-            </div>
-          ) : null}
-        </section>
+              </div>
+            ) : null}
+          </section>
 
-        <section className="space-y-4 rounded-lg border border-[var(--color-border)] p-4">
-          <h3 className="font-bold text-[var(--color-title)]">Entrega</h3>
+          <section className="space-y-3 rounded-lg border border-[var(--color-border)] p-3 sm:p-4">
+            <h3 className="font-bold text-[var(--color-title)]">Entrega</h3>
           <FormField id="checkout-delivery-method" label="Modalidad">
             <Select
               id="checkout-delivery-method"
@@ -271,8 +275,8 @@ export function CheckoutModal({
             </Select>
           </FormField>
           <InlineAlert tone="info" title={getDeliveryMethodMessage(checkout.deliveryMethod)} />
-          {checkout.deliveryMethod === DeliveryMethod.home_delivery ? (
-            <div className="grid gap-4 md:grid-cols-2">
+            {checkout.deliveryMethod === DeliveryMethod.home_delivery ? (
+              <div className="grid gap-3 md:grid-cols-2">
               <FormField
                 id="delivery-recipient"
                 label="Nombre de contacto *"
@@ -377,10 +381,10 @@ export function CheckoutModal({
                   />
                 </FormField>
               </div>
-            </div>
-          ) : null}
-          {checkout.deliveryMethod === DeliveryMethod.store_pickup ? (
-            <div className="grid gap-4 md:grid-cols-2">
+              </div>
+            ) : null}
+            {checkout.deliveryMethod === DeliveryMethod.store_pickup ? (
+              <div className="grid gap-3 md:grid-cols-2">
               <FormField
                 id="pickup-recipient"
                 label="Nombre de quien retira *"
@@ -406,37 +410,40 @@ export function CheckoutModal({
                   value={checkout.storePickupContact?.recipientPhone ?? ""}
                 />
               </FormField>
-            </div>
-          ) : null}
-        </section>
+              </div>
+            ) : null}
+          </section>
+        </div>
 
-        <section className="space-y-4 rounded-lg border border-[var(--color-border)] p-4">
+        <section className="space-y-3 rounded-lg border border-[var(--color-border)] p-3 sm:p-4">
           <h3 className="font-bold text-[var(--color-title)]">Método de pago</h3>
-          <FormField
-            id="checkout-payment-mode"
-            label="Modalidad"
-            error={paymentMethodsError ?? undefined}
-          >
-            <Select
-              disabled={paymentMethodsLoading || availablePaymentModes.length === 0}
+          <div className="w-full sm:max-w-sm">
+            <FormField
               id="checkout-payment-mode"
-              onChange={(event) => onPaymentModeChange(event.target.value as CheckoutPaymentMode)}
-              value={checkout.paymentMode}
+              label="Modalidad"
+              error={paymentMethodsError ?? undefined}
             >
-              {!availablePaymentModes.includes(checkout.paymentMode) ? (
-                <option disabled value={checkout.paymentMode}>
-                  {paymentMethodsLoading ? "Cargando métodos..." : "Método no disponible"}
-                </option>
-              ) : null}
-              {availablePaymentModes.map((paymentMode) => (
-                <option key={paymentMode} value={paymentMode}>
-                  {getPaymentModeLabel(paymentMode)}
-                </option>
-              ))}
-            </Select>
-          </FormField>
+              <Select
+                disabled={paymentMethodsLoading || availablePaymentModes.length === 0}
+                id="checkout-payment-mode"
+                onChange={(event) => onPaymentModeChange(event.target.value as CheckoutPaymentMode)}
+                value={checkout.paymentMode}
+              >
+                {!availablePaymentModes.includes(checkout.paymentMode) ? (
+                  <option disabled value={checkout.paymentMode}>
+                    {paymentMethodsLoading ? "Cargando métodos..." : "Método no disponible"}
+                  </option>
+                ) : null}
+                {availablePaymentModes.map((paymentMode) => (
+                  <option key={paymentMode} value={paymentMode}>
+                    {getPaymentModeLabel(paymentMode)}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          </div>
 
-          <div className="grid items-start gap-4 lg:grid-cols-3">
+          <div className="grid items-start gap-3 md:grid-cols-2 xl:grid-cols-3">
             {showCash ? (
               <PaymentSection title="Efectivo">
                 {checkout.paymentMode === "mixed" ? (
@@ -568,9 +575,10 @@ export function CheckoutModal({
           </div>
 
           {checkout.paymentMode === "mixed" ? (
-            <div className="grid gap-3 rounded-lg bg-[var(--color-app-background)] p-4 sm:grid-cols-2">
-              <ReadonlyAmount label="Total aplicado" value={appliedAmount} />
-              <ReadonlyAmount
+            <div className="grid max-w-2xl gap-3 sm:grid-cols-2">
+              <MixedPaymentSummaryAmount label="Total aplicado" value={appliedAmount} />
+              <MixedPaymentSummaryAmount
+                emphasis
                 label={differenceAmount >= 0 ? "Restante" : "Exceso"}
                 value={Math.abs(differenceAmount)}
               />
@@ -611,12 +619,12 @@ export function CheckoutModal({
 
 function getDeliveryMethodMessage(deliveryMethod: DeliveryMethod) {
   if (deliveryMethod === DeliveryMethod.immediate) {
-    return "No requiere preparación en Bodega.";
+    return "No requiere preparación en bodega.";
   }
   if (deliveryMethod === DeliveryMethod.store_pickup) {
-    return "Se enviará una orden a Bodega para preparar el pedido.";
+    return "Se enviará una orden a bodega para preparar el pedido.";
   }
-  return "Se enviará a Bodega para preparación y posterior despacho.";
+  return "Se enviará a bodega para preparación y posterior despacho.";
 }
 
 function CashShiftStatusPanel({
@@ -694,7 +702,7 @@ function CheckoutSummary({
   total: number;
 }) {
   return (
-    <dl className="grid gap-3 rounded-lg bg-[var(--color-app-background)] p-4 sm:grid-cols-3">
+    <dl className="grid gap-3 rounded-lg bg-[var(--color-app-background)] p-3 sm:grid-cols-[1fr_1fr_1.25fr] sm:p-4">
       <SummaryAmount label="Subtotal" value={subtotal} />
       <SummaryAmount label="Descuentos" value={discountTotal} />
       <SummaryAmount label="Total" value={total} prominent />
@@ -729,7 +737,7 @@ function SummaryAmount({
 
 function PaymentSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="space-y-3 rounded-lg border border-[var(--color-border)] p-4">
+    <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-white p-3">
       <h4 className="font-semibold text-[var(--color-title)]">{title}</h4>
       {children}
     </div>
@@ -830,7 +838,7 @@ function CardTerminalPanel({
           type="button"
           variant="ghost"
         >
-          Simular rechazo
+          Registrar rechazo
         </Button>
       </div>
 
@@ -879,6 +887,33 @@ function ReadonlyAmount({ label, value, error }: { label: string; value: number;
       {error ? (
         <p className="mt-1 text-xs font-medium text-[var(--color-danger)]">{error}</p>
       ) : null}
+    </div>
+  );
+}
+
+function MixedPaymentSummaryAmount({
+  label,
+  value,
+  emphasis = false,
+}: {
+  label: string;
+  value: number;
+  emphasis?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-lg border p-3 ${
+        emphasis
+          ? "border-[var(--color-structure)] bg-[var(--color-app-background)]"
+          : "border-[var(--color-border)] bg-white"
+      }`}
+    >
+      <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+        {label}
+      </p>
+      <p className="mt-1 text-xl font-bold text-[var(--color-title)]">
+        {formatCurrency(value)}
+      </p>
     </div>
   );
 }

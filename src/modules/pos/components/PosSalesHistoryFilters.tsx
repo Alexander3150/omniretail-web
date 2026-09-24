@@ -23,10 +23,10 @@ export function PosSalesHistoryFilters({
   onReset,
 }: PosSalesHistoryFiltersProps) {
   return (
-    <section className="rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <label className="space-y-1.5 xl:col-span-1">
-          <span className="text-sm font-semibold text-[var(--color-title)]">Buscar venta</span>
+    <section className="rounded-xl border border-[var(--color-border)] bg-white p-3 shadow-sm">
+      <div className="grid items-end gap-3 md:grid-cols-2 xl:grid-cols-[minmax(15rem,1.35fr)_repeat(3,minmax(0,1fr))]">
+        <label className="space-y-1 xl:col-span-1">
+          <span className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Buscar venta</span>
           <SearchInput
             disabled={disabled}
             placeholder="Factura, ticket, cliente o SKU"
@@ -85,7 +85,7 @@ export function PosSalesHistoryFilters({
           </Select>
         </FilterField>
       </div>
-      <div className="mt-3 flex justify-end">
+      <div className="mt-2 flex justify-end border-t border-[var(--color-border)] pt-2">
         <Button disabled={disabled} type="button" variant="ghost" onClick={onReset}>
           Limpiar filtros
         </Button>
@@ -96,8 +96,8 @@ export function PosSalesHistoryFilters({
 
 function FilterField({ children, label }: { children: ReactNode; label: string }) {
   return (
-    <label className="space-y-1.5">
-      <span className="text-sm font-semibold text-[var(--color-title)]">{label}</span>
+    <label className="space-y-1">
+      <span className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">{label}</span>
       {children}
     </label>
   );
