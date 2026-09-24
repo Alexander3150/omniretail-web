@@ -11,6 +11,7 @@ import type {
   SalesReportRow,
 } from "@/modules/administration/application/dto/ReportDto";
 import { ReportFilters } from "@/modules/administration/components/ReportFilters";
+import { ReportsExportModal } from "@/modules/administration/components/ReportsExportModal";
 import {
   movementReportColumns,
   paymentReportColumns,
@@ -35,7 +36,7 @@ export function ReportsPage() {
     canRead,
     data,
     error,
-    exportXlsx,
+    exportConfigs,
     filter,
     kind,
     loading,
@@ -48,6 +49,8 @@ export function ReportsPage() {
   } = useReports();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<TablePageSize>(DEFAULT_PAGE_SIZE);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paginatedRows = useMemo(
@@ -81,8 +84,8 @@ export function ReportsPage() {
           <div className="flex flex-col items-end gap-1">
             <Button
               className="gap-2"
-              disabled={!canExport || rows.length === 0 || loading}
-              onClick={exportXlsx}
+              disabled={!canExport || loading}
+              onClick={() => setIsExportModalOpen(true)}
               title={canExport ? undefined : "Exportar Excel requiere Reportes avanzados y el permiso admin.reports.export"}
               type="button"
             >
@@ -147,6 +150,17 @@ export function ReportsPage() {
             />
           </section>
         </>
+      )}
+
+      {isExportModalOpen && (
+        <ReportsExportModal
+          open={isExportModalOpen}
+          onClose={() => setIsExportModalOpen(false)}
+          data={data}
+          initialKind={kind}
+          initialFilter={filter}
+          onExport={exportConfigs}
+        />
       )}
     </div>
   );

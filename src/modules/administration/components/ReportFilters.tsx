@@ -4,11 +4,7 @@ import type {
   ReportKind,
   ReportsDataDto,
 } from "@/modules/administration/application/dto/ReportDto";
-import {
-  getMovementTypeLabel,
-  getPaymentMethodLabel,
-  getReportStatusLabel,
-} from "@/modules/administration/application/reportLabels";
+import { getDateRangeLabel, getOptions } from "@/modules/administration/application/reportHelpers";
 import { ReportKindSelector } from "@/modules/administration/components/ReportKindSelector";
 import { Button } from "@/shared/components/Button";
 import { BroomIcon } from "@/shared/components/icons";
@@ -254,18 +250,6 @@ function DateRangeFilter({
   );
 }
 
-function getDateRangeLabel(from: string, to: string) {
-  if (from && to) return `${formatDate(from)} → ${formatDate(to)}`;
-  if (from) return `${formatDate(from)} → Seleccionar fin`;
-  if (to) return `Seleccionar inicio → ${formatDate(to)}`;
-  return "Seleccionar rango";
-}
-
-function formatDate(value: string) {
-  const [year, month, day] = value.split("-");
-  return year && month && day ? `${day}/${month}/${year}` : value;
-}
-
 function OptionFilter({
   id,
   label,
@@ -308,61 +292,4 @@ function FilterField({
       {children}
     </label>
   );
-}
-
-function getOptions(data: ReportsDataDto, kind: ReportKind) {
-  if (kind === "sales") {
-    return {
-      statuses: uniqueOptions(
-        data.sales.map((row) => [row.status, getReportStatusLabel(row.status)]),
-      ),
-      branches: uniqueOptions(data.sales.map((row) => [row.branchId, row.branchName])),
-      suppliers: [],
-      products: [],
-      movementTypes: [],
-      methods: [],
-    };
-  }
-  if (kind === "purchases") {
-    return {
-      statuses: uniqueOptions(
-        data.purchases.map((row) => [row.status, getReportStatusLabel(row.status)]),
-      ),
-      branches: uniqueOptions(data.purchases.map((row) => [row.branchId, row.branchName])),
-      suppliers: uniqueOptions(data.purchases.map((row) => [row.supplierId, row.supplierName])),
-      products: [],
-      movementTypes: [],
-      methods: [],
-    };
-  }
-  if (kind === "movements") {
-    return {
-      statuses: [],
-      branches: uniqueOptions(data.movements.map((row) => [row.branchId, row.branchName])),
-      suppliers: [],
-      products: uniqueOptions(data.movements.map((row) => [row.productId, row.productName])),
-      movementTypes: uniqueOptions(
-        data.movements.map((row) => [row.type, getMovementTypeLabel(row.type)]),
-      ),
-      methods: [],
-    };
-  }
-  return {
-    statuses: uniqueOptions(
-      data.payments.map((row) => [row.status, getReportStatusLabel(row.status)]),
-    ),
-    branches: [],
-    suppliers: [],
-    products: [],
-    movementTypes: [],
-    methods: uniqueOptions(
-      data.payments.map((row) => [row.method, getPaymentMethodLabel(row.method)]),
-    ),
-  };
-}
-
-function uniqueOptions(entries: string[][]) {
-  return [...new Map(entries.map(([value, label]) => [value, label])).entries()]
-    .map(([value, label]) => ({ value, label }))
-    .sort((left, right) => left.label.localeCompare(right.label, "es"));
 }

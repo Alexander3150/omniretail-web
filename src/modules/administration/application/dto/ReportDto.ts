@@ -29,6 +29,8 @@ export interface SalesReportRow {
   discountTotal: number;
   taxTotal: number;
   total: number;
+  channel: "POS" | "En línea";
+  origin: string;
 }
 
 export interface PurchasesReportRow {
@@ -81,6 +83,7 @@ export type ReportTotals =
       total: number;
       discountTotal: number;
       taxTotal: number;
+      byChannel: Array<{ channel: string; count: number; total: number }>;
     }
   | { kind: "purchases"; count: number; excludedCount: number; total: number }
   | {

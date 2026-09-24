@@ -1,4 +1,5 @@
-import type { InventoryMovement, Payment, PurchaseOrder, Sale } from "@/core/entities";
+import type { InventoryMovement, Order, Payment, PurchaseOrder, Sale } from "@/core/entities";
+import { OrderStatus, SaleStatus } from "@/core/enums";
 import type {
   MovementReportRow,
   PaymentReportRow,
@@ -20,6 +21,28 @@ export function toSalesReportRow(
     discountTotal: sale.discountTotal,
     taxTotal: sale.taxTotal,
     total: sale.total,
+    channel: "POS",
+    origin: "Venta física",
+  };
+}
+
+export function toSalesReportRowFromOrder(order: Order, branchNames: ReadonlyMap<string, string>): SalesReportRow {
+  let mappedStatus = SaleStatus.completed;
+  if (order.status === OrderStatus.cancelled) mappedStatus = SaleStatus.cancelled;
+  else if (order.status === OrderStatus.pending) mappedStatus = SaleStatus.cancelled;
+
+  return {
+    number: order.orderNumber,
+    date: order.createdAt,
+    branchId: order.branchId,
+    branchName: branchNames.get(order.branchId) ?? order.branchId,
+    status: mappedStatus,
+    subtotal: order.subtotal,
+    discountTotal: order.discountTotal,
+    taxTotal: 0,
+    total: order.total,
+    channel: "En línea",
+    origin: order.source === "ecommerce" ? "Tienda en línea" : "App Móvil",
   };
 }
 
