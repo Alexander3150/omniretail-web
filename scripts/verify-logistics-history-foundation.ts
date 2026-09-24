@@ -5,6 +5,7 @@ import type { Order } from "@/core/entities";
 import {
   DeliveryMethod,
   DispatchStatus,
+  InventoryTransferStatus,
   OrderSource,
   OrderStatus,
   PackingStatus,
@@ -24,6 +25,7 @@ import {
   MockCustomerRepository,
   MockDispatchRepository,
   MockInventoryRepository,
+  MockInventoryTransferRepository,
   MockNotificationRepository,
   MockOrderRepository,
   MockPackingRepository,
@@ -57,6 +59,8 @@ const time = {
   packed: "2026-09-15T10:00:00.000Z",
   dispatched: "2026-09-15T11:00:00.000Z",
   delivered: "2026-09-15T12:00:00.000Z",
+  transferDispatched: "2026-09-16T10:00:00.000Z",
+  transferReceived: "2026-09-16T12:00:00.000Z",
 };
 
 async function main() {
@@ -76,9 +80,23 @@ async function main() {
       "POS-P-PACKING",
       "POS-P-READY",
       "POS-P-DELIVERED",
+      "Traslado TR-HISTORY-001",
     ]),
   );
   assert.ok(!history.some((item) => item.orderReference.startsWith("OUT-")));
+  assert.equal(history[0]?.sourceType, "transfer");
+  assert.equal(history[0]?.sourceId, "history-transfer-received");
+
+  const transfer = required(history, "Traslado TR-HISTORY-001");
+  assert.equal(transfer.sourceType, "transfer");
+  assert.equal(transfer.orderId, "transfer:history-transfer-received");
+  assert.equal(transfer.deliveryMethod, "transfer");
+  assert.equal(transfer.operationalStatus, OrderStatus.delivered);
+  assert.equal(transfer.dispatchedAt, time.transferDispatched);
+  assert.equal(transfer.deliveredAt, time.transferReceived);
+  assert.equal(transfer.responsibleUserId, actorUserId);
+  assert.equal(transfer.responsibleUserName, "Bodeguero Demo");
+  assert.match(transfer.contactName, /^Destino: /);
 
   const homePacking = required(history, "POS-H-PACKING");
   assert.equal(homePacking.operationalStatus, OrderStatus.packing);
@@ -156,6 +174,12 @@ async function main() {
   assert.match(pickupMarkup, /Entrega en tienda/);
   assert.doesNotMatch(pickupMarkup, /Transportista/);
 
+  const transferDetail = await service.getDetail(branchId, transfer.orderId);
+  assert.equal(transferDetail.summary.sourceType, "transfer");
+  assert.equal(transferDetail.summary.sourceId, "history-transfer-received");
+  assert.equal(transferDetail.summary.orderReference, "Traslado TR-HISTORY-001");
+  assert.deepEqual(transferDetail.items, []);
+
   let openedOrderId: string | null = null;
   let guideOrderId: string | null = null;
   const table = LogisticsHistoryTable({
@@ -172,7 +196,12 @@ async function main() {
       openedOrderId = item.orderId;
     },
   });
-  const tableProps = table.props as {
+  const tableChildren = Array.isArray(table.props.children)
+    ? table.props.children
+    : [table.props.children];
+  const dataTable = tableChildren[0];
+  assert.ok(isValidElement(dataTable));
+  const tableProps = dataTable.props as {
     columns: Array<{ key: string; cell: (item: (typeof history)[number]) => unknown }>;
     onRowClick?: (item: (typeof history)[number]) => void;
     onRowDoubleClick?: (item: (typeof history)[number]) => void;
@@ -228,7 +257,14 @@ async function main() {
       ...defaultLogisticsHistoryFilters,
       from: "2026-09-16",
     }).length,
-    0,
+    1,
+  );
+  assert.deepEqual(
+    filterLogisticsHistory(history, {
+      ...defaultLogisticsHistoryFilters,
+      search: "TR-HISTORY-001",
+    }).map((item) => item.sourceId),
+    ["history-transfer-received"],
   );
 
   const dispatchService = new DispatchApplicationService(createRepositories(store));
@@ -309,6 +345,8 @@ function prepareFixtures(store: MockDatabaseStore) {
     db.dispatches = [];
     db.packages = [];
     db.storePickupDeliveries = [];
+    db.inventoryTransfers = [];
+    db.inventoryTransferItems = [];
     const warehouse = db.users.find((item) => item.id === actorUserId);
     const role = db.roles.find((item) => item.id === "role-warehouse");
     assert.ok(warehouse && role);
@@ -460,6 +498,30 @@ function prepareFixtures(store: MockDatabaseStore) {
       { ...createOrder("out-tenant", DeliveryMethod.home_delivery, OrderStatus.packing), id: "out-tenant", orderNumber: "OUT-TENANT", tenantId: "tenant-foreign" },
       createOrder("immediate", DeliveryMethod.immediate, OrderStatus.confirmed),
     );
+    db.inventoryTransfers.push({
+      id: "history-transfer-received",
+      tenantId,
+      number: "TR-HISTORY-001",
+      sourceBranchId: branchId,
+      destinationBranchId: "branch-norte",
+      status: InventoryTransferStatus.received,
+      operationId: "history-transfer-operation",
+      preparedByUserId: actorUserId,
+      dispatchedByUserId: actorUserId,
+      receivedByUserId: actorUserId,
+      createdAt: time.created,
+      updatedAt: time.transferReceived,
+      dispatchedAt: time.transferDispatched,
+      receivedAt: time.transferReceived,
+    });
+    db.inventoryTransferItems.push({
+      id: "history-transfer-item",
+      transferId: "history-transfer-received",
+      productId: "prod-screws",
+      requestedQuantity: 2,
+      dispatchedQuantity: 2,
+      receivedQuantity: 2,
+    });
   });
 }
 
@@ -509,6 +571,7 @@ function createRepositories(store: MockDatabaseStore) {
     customers: new MockCustomerRepository(store, eventBus),
     dispatches: new MockDispatchRepository(store, eventBus),
     inventory: new MockInventoryRepository(store, eventBus),
+    inventoryTransfers: new MockInventoryTransferRepository(store, eventBus),
     notifications: new MockNotificationRepository(store, eventBus),
     orders: new MockOrderRepository(store, eventBus),
     packings: new MockPackingRepository(store, eventBus),
