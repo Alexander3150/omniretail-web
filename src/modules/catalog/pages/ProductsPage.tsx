@@ -94,7 +94,7 @@ export function ProductsPage() {
 
   if (!loading && !canRead) {
     return (
-      <div className="min-w-0 space-y-5">
+      <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
         <header className="border-b border-[var(--color-border)] pb-4">
           <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
             CATÁLOGO
@@ -107,7 +107,7 @@ export function ProductsPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <ProductToolbar
         activeFiltersCount={activeFiltersCount}
         canCreate={canCreate}

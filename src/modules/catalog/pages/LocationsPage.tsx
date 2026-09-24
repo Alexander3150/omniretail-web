@@ -112,7 +112,7 @@ export function LocationsPage() {
 
   if (!loading && !canRead) {
     return (
-      <div className="min-w-0 space-y-5">
+      <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
         <header className="border-b border-[var(--color-border)] pb-4">
           <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
             INVENTARIO
@@ -125,7 +125,7 @@ export function LocationsPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <header className="flex min-w-0 flex-col gap-4 border-b border-[var(--color-border)] pb-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
