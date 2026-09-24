@@ -108,7 +108,7 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
   return (
     <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,0.9fr)] xl:items-start">
       <section className="rounded-xl border border-[var(--color-border)] bg-white shadow-sm">
-        <header className="border-b border-[var(--color-border)] bg-[var(--color-app-background)] p-3.5 sm:p-4">
+        <header className="border-b border-t-4 border-[var(--color-border)] border-t-[var(--color-structure)] bg-white p-3.5 sm:p-4">
           <div className="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Preparación de pedido</p>
@@ -123,6 +123,7 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
         </header>
 
         <div className="space-y-4 p-3.5 sm:p-4">
+          <PreparedContents detail={detail} />
           {props.error ? <InlineAlert description={props.error} title="No se pudo guardar la preparación" /> : null}
           {!props.canPrepare ? <InlineAlert description="Tu rol no posee logistics.packing.prepare. Puedes consultar la preparación, pero no modificarla." title="Acciones restringidas" tone="warning" /> : null}
 
@@ -131,7 +132,7 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">El avance se conserva para continuar después de una recarga.</p>
             <div className="mt-2.5 space-y-1.5">
               {(Object.keys(visibleChecklistLabels) as Array<keyof typeof visibleChecklistLabels>).map((key) => (
-                <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2.5 text-sm" key={key}>
+                <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-[var(--color-border)] bg-slate-50 px-3 py-2.5 text-sm" key={key}>
                   <input
                     checked={values.checklist[key]}
                     className="mt-0.5 h-5 w-5 accent-[var(--color-primary)]"
@@ -206,6 +207,45 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
         />
       )}
     </div>
+  );
+}
+
+function PreparedContents({ detail }: { detail: PackingDetailDto }) {
+  return (
+    <section className="rounded-lg border border-[var(--color-border)] bg-slate-50 p-3">
+      <h3 className="font-bold text-[var(--color-title)]">Contenido preparado</h3>
+      <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
+        Verifica los productos y las series registradas durante el picking.
+      </p>
+      {detail.preparedContents.length === 0 ? (
+        <p className="mt-3 text-sm text-[var(--color-text-muted)]">
+          No hay productos recogidos para verificar.
+        </p>
+      ) : (
+        <div className="mt-3 divide-y divide-[var(--color-border)] rounded-lg border border-[var(--color-border)] bg-white">
+          {detail.preparedContents.map((item) => (
+            <article
+              className="grid gap-1 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:gap-3"
+              key={item.productId}
+            >
+              <div className="min-w-0">
+                <p className="font-semibold text-[var(--color-title)]">{item.name}</p>
+                <p className="text-xs text-[var(--color-text-muted)]">{item.sku}</p>
+                {item.serialNumbers.length > 0 ? (
+                  <p className="mt-1 break-words text-sm text-[var(--color-text-muted)]">
+                    <span className="font-semibold text-[var(--color-text)]">Series recogidas:</span>{" "}
+                    {item.serialNumbers.join(", ")}
+                  </p>
+                ) : null}
+              </div>
+              <p className="text-sm font-semibold tabular-nums text-[var(--color-title)]">
+                Cantidad: {item.quantity}
+              </p>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -426,9 +466,9 @@ function StorePickupResult(props: StorePickupResultProps) {
 
 function PackingEmptyState() {
   return (
-    <section className="flex min-h-[26rem] items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-app-background)]/45 p-6 text-center shadow-sm sm:p-8">
-      <div className="max-w-xl rounded-xl border border-dashed border-[var(--color-border)] bg-white px-6 py-7 shadow-sm sm:px-10">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-app-background)] text-lg font-bold text-[var(--color-title)]">1</div>
+    <section className="flex min-h-64 items-center justify-center rounded-xl border border-[var(--color-border)] bg-white p-5 text-center shadow-sm sm:p-6">
+      <div className="max-w-lg rounded-xl border border-dashed border-[var(--color-border)] bg-slate-50 px-6 py-6 sm:px-8">
+        <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[var(--color-structure)] text-base font-bold text-white">1</div>
         <h2 className="mt-3 text-xl font-bold text-[var(--color-title)]">Selecciona un pedido preparado</h2>
         <p className="mx-auto mt-2 max-w-md text-sm text-[var(--color-text-muted)]">Elige un pedido que haya completado Picking para continuar con su preparación.</p>
       </div>
@@ -442,7 +482,7 @@ function PackingCompletion({ completion }: { completion: {
   const delivered = completion.orderStatus === OrderStatus.delivered;
   const transfer = completion.sourceType === "transfer";
   return (
-    <section className="flex min-h-[30rem] items-center justify-center rounded-xl border border-[var(--color-border)] bg-white p-6 text-center shadow-sm">
+    <section className="flex min-h-72 items-center justify-center rounded-xl border border-[var(--color-border)] bg-white p-6 text-center shadow-sm">
       <div className="max-w-lg">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-success)]/15 text-2xl font-bold text-[var(--color-success)]">✓</div>
         <StatusBadge status={completion.orderStatus ?? "Listo para traslado"} tone="success" />

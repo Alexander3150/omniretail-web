@@ -1,5 +1,12 @@
-import type { Dispatch, Order, Packing, PickingOrder, StorePickupDelivery } from "@/core/entities";
-import { DeliveryMethod, OrderStatus } from "@/core/enums";
+import type {
+  Dispatch,
+  InventoryTransfer,
+  Order,
+  Packing,
+  PickingOrder,
+  StorePickupDelivery,
+} from "@/core/entities";
+import { DeliveryMethod, InventoryTransferStatus, OrderStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   LogisticsHistoryDetailDto,
@@ -21,6 +28,7 @@ type HistoryRepositories = Pick<
   | "dispatches"
   | "storePickupDeliveries"
   | "inventory"
+  | "inventoryTransfers"
   | "products"
 >;
 
@@ -41,19 +49,49 @@ export class GetLogisticsHistoryService {
 
   async execute(selectedBranchId: string): Promise<LogisticsHistoryItemDto[]> {
     const context = await resolveTrustedLogisticsHistoryContext(this.repositories, selectedBranchId);
-    const orders = (await this.repositories.orders.listByBranch(context.tenantId, context.branchId))
-      .filter((order) => isHistoryOrder(order));
-    const items = await Promise.all(orders.map((order) => this.toHistoryItem(context, order)));
+    const [branchOrders, transferResults] = await Promise.all([
+      this.repositories.orders.listByBranch(context.tenantId, context.branchId),
+      this.repositories.inventoryTransfers.query({
+        tenantId: context.tenantId,
+        sourceBranchId: context.branchId,
+      }),
+    ]);
+    const orders = branchOrders.filter((order) => isHistoryOrder(order));
+    const transfers = transferResults
+      .map((item) => item.transfer)
+      .filter((transfer) => isHistoryTransfer(transfer));
+    const [orderItems, transferItems] = await Promise.all([
+      Promise.all(orders.map((order) => this.toHistoryItem(context, order))),
+      Promise.all(transfers.map((transfer) => this.toTransferHistoryItem(context, transfer))),
+    ]);
+    const items = [...orderItems, ...transferItems];
     return items.sort((left, right) => getActivityAt(right).localeCompare(getActivityAt(left)));
   }
 
   async getDetail(
     selectedBranchId: string,
-    orderId: string,
+    historyId: string,
   ): Promise<LogisticsHistoryDetailDto> {
     const context = await resolveTrustedLogisticsHistoryContext(this.repositories, selectedBranchId);
+    if (isTransferHistoryId(historyId)) {
+      const transferId = historyId.slice(TRANSFER_HISTORY_PREFIX.length);
+      const result = await this.repositories.inventoryTransfers.getById(transferId);
+      const transfer = result?.transfer;
+      if (
+        !transfer ||
+        transfer.tenantId !== context.tenantId ||
+        transfer.sourceBranchId !== context.branchId ||
+        !isHistoryTransfer(transfer)
+      ) {
+        throw new Error("Logistics history transfer not found.");
+      }
+      return {
+        summary: await this.toTransferHistoryItem(context, transfer),
+        items: [],
+      };
+    }
     const order = (await this.repositories.orders.listByBranch(context.tenantId, context.branchId))
-      .find((candidate) => candidate.id === orderId && isHistoryOrder(candidate));
+      .find((candidate) => candidate.id === historyId && isHistoryOrder(candidate));
     if (!order) throw new Error("Logistics history order not found.");
     const summary = await this.toHistoryItem(context, order);
     const items = summary.pickingOrderId
@@ -95,6 +133,8 @@ export class GetLogisticsHistoryService {
     const homeDelivery = order.deliveryMethod === DeliveryMethod.home_delivery;
 
     return {
+      sourceType: "order",
+      sourceId: order.id,
       orderId: order.id,
       orderReference: order.orderNumber,
       deliveryMethod: order.deliveryMethod,
@@ -118,6 +158,58 @@ export class GetLogisticsHistoryService {
       dispatchStatus: dispatch?.status ?? null,
       carrierName: dispatch?.carrierName ?? null,
       trackingNumber: dispatch?.trackingNumber ?? null,
+    };
+  }
+
+  private async toTransferHistoryItem(
+    context: { tenantId: string; branchId: string },
+    transfer: InventoryTransfer,
+  ): Promise<LogisticsHistoryItemDto> {
+    const scope = { tenantId: context.tenantId, branchId: context.branchId };
+    const [picking, packing, destination, responsibleUser] = await Promise.all([
+      this.repositories.picking.getBySource(scope, "transfer", transfer.id),
+      this.repositories.packings.getBySource(scope, "transfer", transfer.id),
+      this.repositories.branches.getById(transfer.destinationBranchId),
+      transfer.receivedByUserId || transfer.dispatchedByUserId || transfer.preparedByUserId
+        ? this.repositories.users.getById(
+            transfer.receivedByUserId ??
+              transfer.dispatchedByUserId ??
+              transfer.preparedByUserId!,
+          )
+        : Promise.resolve(null),
+    ]);
+    const destinationName =
+      destination?.tenantId === context.tenantId ? destination.name : "Sucursal destino";
+    const scopedResponsibleUser =
+      responsibleUser?.tenantId === context.tenantId ? responsibleUser : null;
+
+    return {
+      sourceType: "transfer",
+      sourceId: transfer.id,
+      orderId: toTransferHistoryId(transfer.id),
+      orderReference: `Traslado ${transfer.number}`,
+      deliveryMethod: "transfer",
+      operationalStatus:
+        transfer.status === InventoryTransferStatus.received
+          ? OrderStatus.delivered
+          : OrderStatus.dispatched,
+      contactName: `Destino: ${destinationName}`,
+      contactPhone: null,
+      pickingOrderId: picking?.id ?? null,
+      packingId: packing?.id ?? null,
+      dispatchId: null,
+      storePickupDeliveryId: null,
+      pickingCompletedAt: picking?.completedAt ?? null,
+      packingFinalizedAt: packing?.finalizedAt ?? null,
+      dispatchedAt: transfer.dispatchedAt ?? null,
+      deliveredAt: transfer.receivedAt ?? null,
+      responsibleUserId: scopedResponsibleUser?.id ?? null,
+      responsibleUserName: scopedResponsibleUser?.name ?? null,
+      totalWeight: packing?.totalWeight ?? null,
+      packageCount: packing?.packageCount ?? null,
+      dispatchStatus: null,
+      carrierName: null,
+      trackingNumber: null,
     };
   }
 
@@ -157,6 +249,23 @@ function isHistoryOrder(order: Order): order is Order & {
     return PICKUP_HISTORY_STATUSES.has(order.status);
   }
   return false;
+}
+
+const TRANSFER_HISTORY_PREFIX = "transfer:";
+
+function isHistoryTransfer(transfer: InventoryTransfer) {
+  return (
+    transfer.status === InventoryTransferStatus.inTransit ||
+    transfer.status === InventoryTransferStatus.received
+  );
+}
+
+function toTransferHistoryId(transferId: string) {
+  return `${TRANSFER_HISTORY_PREFIX}${transferId}`;
+}
+
+function isTransferHistoryId(historyId: string) {
+  return historyId.startsWith(TRANSFER_HISTORY_PREFIX);
 }
 
 function getResponsibleUserId(

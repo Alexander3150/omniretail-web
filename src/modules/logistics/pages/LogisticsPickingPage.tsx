@@ -12,7 +12,7 @@ export function LogisticsPickingPage() {
   const { showToast } = useToast();
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <PageHeader
         description={`Prepara pedidos de la sucursal ${picking.currentBranchName}.`}
         title="Mesa de Picking"
@@ -24,7 +24,7 @@ export function LogisticsPickingPage() {
       {picking.loading ? <section className="rounded-xl border border-[var(--color-border)] bg-white p-5 text-sm text-[var(--color-text-muted)] shadow-sm">Consultando pedidos pendientes...</section> : null}
 
       {!picking.loading && picking.hasBranchAccess && picking.canRead ? (
-        <div className="grid min-w-0 gap-5 lg:grid-cols-[23rem_minmax(0,1fr)] lg:items-start xl:grid-cols-[24rem_minmax(0,1fr)]">
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[21rem_minmax(0,1fr)] lg:items-start xl:grid-cols-[22rem_minmax(0,1fr)]">
           <PickingQueue
             currentUserId={picking.currentUserId}
             disabled={picking.submitting}

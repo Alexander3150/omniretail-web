@@ -68,11 +68,17 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
   const serialDelta = Number.isFinite(targetQuantity)
     ? Math.max(targetQuantity - line.pickedQuantity, 0)
     : 0;
+  const recommendedSerialCount = serialDelta > 0 ? serialDelta : line.remainingQuantity;
+  const recommendedSerialNumbers = getRecommendedSerialNumbers(line, recommendedSerialCount);
+  const recommendedSerialSet = new Set(recommendedSerialNumbers);
+  const alternativeSerialNumbers = line.availableSerialNumbers.filter(
+    (serial) => !recommendedSerialSet.has(serial),
+  );
   const selectedLot = line.lot
     ? line.availableLots.find((candidate) => candidate.id === line.lot?.id)
     : null;
   const visibleSerialNumbers = filterAvailableSerialNumbers(
-    line.availableSerialNumbers,
+    alternativeSerialNumbers,
     serialSearch,
   );
   const replacementSerialOptions = [...new Set([
@@ -123,7 +129,7 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
   };
 
   return (
-    <article className="rounded-xl border border-[var(--color-border)] bg-white p-3.5 shadow-sm">
+    <article className="rounded-xl border border-[var(--color-border)] bg-white p-3 shadow-sm sm:p-3.5">
       <div className="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -133,13 +139,13 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
           <p className="text-xs text-[var(--color-text-muted)]">{line.sku}</p>
         </div>
         <dl className="grid grid-cols-3 gap-2 text-center text-sm">
-          <div className="rounded-md bg-[var(--color-app-background)] px-2 py-1.5"><dt className="text-xs text-[var(--color-text-muted)]">Requerida</dt><dd className="font-bold">{line.requiredQuantity}</dd></div>
-          <div className="rounded-md bg-[var(--color-app-background)] px-2 py-1.5"><dt className="text-xs text-[var(--color-text-muted)]">Recogida</dt><dd className="font-bold">{line.pickedQuantity}</dd></div>
-          <div className="rounded-md bg-[var(--color-app-background)] px-2 py-1.5"><dt className="text-xs text-[var(--color-text-muted)]">Restante</dt><dd className="font-bold">{line.remainingQuantity}</dd></div>
+          <div className="rounded-md bg-slate-50 px-2 py-1.5"><dt className="text-xs text-[var(--color-text-muted)]">Requerida</dt><dd className="font-bold">{line.requiredQuantity}</dd></div>
+          <div className="rounded-md bg-slate-50 px-2 py-1.5"><dt className="text-xs text-[var(--color-text-muted)]">Recogida</dt><dd className="font-bold">{line.pickedQuantity}</dd></div>
+          <div className="rounded-md bg-slate-50 px-2 py-1.5"><dt className="text-xs text-[var(--color-text-muted)]">Restante</dt><dd className="font-bold">{line.remainingQuantity}</dd></div>
         </dl>
       </div>
 
-      <div className="mt-3 grid gap-2.5 rounded-lg bg-[var(--color-app-background)] px-3 py-2.5 text-sm sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-3 grid gap-2.5 rounded-lg bg-slate-50 px-3 py-2.5 text-sm sm:grid-cols-2 lg:grid-cols-3">
         <div><p className="text-xs text-[var(--color-text-muted)]">Ubicación asignada</p><p>{line.location ? `${line.location.code} · ${line.location.name}` : "Según reserva"}</p></div>
         <div>
           <p className="text-xs text-[var(--color-text-muted)]">Lote / vencimiento</p>
@@ -203,7 +209,7 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
           </div>
 
           {line.tracking.serial ? (
-            <fieldset className="space-y-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-3" disabled={disabled}>
+            <fieldset className="space-y-2.5 rounded-lg border border-[var(--color-border)] bg-slate-50 p-3" disabled={disabled}>
               <legend className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
                 <span>Series disponibles</span>
                 <span className="rounded-full border border-[var(--color-primary)]/30 bg-white px-2 py-0.5 text-xs font-bold text-[var(--color-title)]">
@@ -216,6 +222,43 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
                   placeholder="Escanear o escribir serie" value={serialEntry} />
                 <Button disabled={disabled || !serialEntry.trim()} onClick={addScannedSerial} type="button" variant="secondary">Agregar</Button>
               </div>
+              {recommendedSerialNumbers.length > 0 ? (
+                <div className="rounded-lg border border-[var(--color-primary)]/25 bg-white p-2.5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-title)]">
+                    Series sugeridas
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {recommendedSerialNumbers.map((serial) => {
+                      const selected = selectedSerials.includes(serial);
+                      return (
+                        <button
+                          aria-pressed={selected}
+                          className="rounded-full border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 px-2.5 py-1 text-sm font-medium text-[var(--color-title)] transition hover:border-[var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={
+                            disabled ||
+                            selected ||
+                            serialDelta <= 0 ||
+                            selectedSerials.length >= serialDelta
+                          }
+                          key={serial}
+                          onClick={() => {
+                            setSelectedSerials((current) => [...current, serial]);
+                            setError(null);
+                          }}
+                          type="button"
+                        >
+                          {selected ? "✓ " : ""}{serial}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {serialDelta <= 0 ? (
+                    <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+                      Indica la cantidad total que recogerás para seleccionar las sugerencias.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
               {selectedSerials.length > 0 ? (
                 <div aria-label="Series seleccionadas" className="flex flex-wrap gap-1.5">
                   {selectedSerials.map((serial) => (
@@ -235,7 +278,7 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
                   ))}
                 </div>
               ) : null}
-              {line.availableSerialNumbers.length ? (
+              {alternativeSerialNumbers.length ? (
                 <>
                   <Button
                     aria-controls={`available-serials-${line.pickingLineId}`}
@@ -247,8 +290,8 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
                     variant="secondary"
                   >
                     {showAvailableSerials
-                      ? "Ocultar series disponibles"
-                      : `Mostrar series disponibles (${line.availableSerialNumbers.length})`}
+                      ? "Ocultar otras series disponibles"
+                      : `Ver otras series disponibles (${alternativeSerialNumbers.length})`}
                   </Button>
                   {showAvailableSerials ? (
                     <div
@@ -277,7 +320,7 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
                               <label
                                 className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm transition-colors ${
                                   checked
-                                    ? "border-[var(--color-primary)] bg-[var(--color-app-background)] font-medium text-[var(--color-title)]"
+                                    ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10 font-medium text-[var(--color-title)]"
                                     : "border-[var(--color-border)] bg-white"
                                 }`}
                                 key={serial}
@@ -300,7 +343,13 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
                     </div>
                   ) : null}
                 </>
-              ) : <InlineAlert description="No hay series disponibles en la reserva actual." title="Series no disponibles" tone="warning" />}
+              ) : line.availableSerialNumbers.length === 0 ? (
+                <InlineAlert
+                  description="No hay series disponibles en la reserva actual."
+                  title="Series no disponibles"
+                  tone="warning"
+                />
+              ) : null}
             </fieldset>
           ) : null}
         </div>
@@ -330,7 +379,7 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
           <div aria-label="Series recogidas" className="flex flex-wrap gap-1.5">
             {replacementSerials.map((serial) => (
               <span
-                className="rounded-full border border-[var(--color-primary)]/40 bg-[var(--color-app-background)] px-2.5 py-0.5 text-sm font-medium text-[var(--color-title)]"
+                className="rounded-full border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 px-2.5 py-0.5 text-sm font-medium text-[var(--color-title)]"
                 key={serial}
               >
                 ✓ {serial}
@@ -339,7 +388,7 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
           </div>
           {showReplacementSerials ? (
             <div
-              className="space-y-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-3"
+              className="space-y-2.5 rounded-lg border border-[var(--color-border)] bg-slate-50 p-3"
               id={`replacement-serials-${line.pickingLineId}`}
             >
               <Input
@@ -424,4 +473,66 @@ export function filterAvailableSerialNumbers(serialNumbers: string[], search: st
   const normalizedSearch = search.trim().toLocaleLowerCase();
   if (!normalizedSearch) return serialNumbers;
   return serialNumbers.filter((serial) => serial.toLocaleLowerCase().includes(normalizedSearch));
+}
+
+interface SerialRecommendationCandidate {
+  serialNumber: string;
+  expirationAt: number | null;
+  locationKey: string;
+  ownReservedQuantity: number;
+}
+
+export function getRecommendedSerialNumbers(line: PickingDetailLineDto, count: number) {
+  if (!line.tracking.serial || count <= 0) return [];
+  const availableSerials = new Set(line.availableSerialNumbers);
+  const validLocationIds = new Set(
+    line.availableLocations
+      .filter((location) => location.usableQuantity > 0)
+      .map((location) => location.id),
+  );
+  const validLotIds = new Set(line.availableLots.map((lot) => lot.id));
+  const candidates: SerialRecommendationCandidate[] = [];
+
+  for (const location of line.inventory.locations) {
+    const locationId = location.locationId ?? null;
+    if (!validLocationIds.has(locationId) || location.usableQuantity <= 0) continue;
+    if (line.location && location.locationId !== line.location.id) continue;
+
+    for (const serial of location.serialNumbers) {
+      if (!availableSerials.has(serial.serialNumber)) continue;
+      if (line.lot && serial.lotId !== line.lot.id) continue;
+      if (serial.lotId && !validLotIds.has(serial.lotId)) continue;
+      const lot = serial.lotId
+        ? location.lots.find((candidate) => candidate.lotId === serial.lotId)
+        : undefined;
+      if (serial.lotId && !lot) continue;
+      const expirationAt = lot?.expirationDate
+        ? Date.parse(lot.expirationDate)
+        : Number.NaN;
+      candidates.push({
+        serialNumber: serial.serialNumber,
+        expirationAt: Number.isNaN(expirationAt) ? null : expirationAt,
+        locationKey: [location.locationCode, location.locationName, location.locationId]
+          .filter(Boolean)
+          .join("|") || "~",
+        ownReservedQuantity: location.ownReservedQuantity,
+      });
+    }
+  }
+
+  candidates.sort((left, right) => {
+    if (left.expirationAt !== null && right.expirationAt === null) return -1;
+    if (left.expirationAt === null && right.expirationAt !== null) return 1;
+    if (left.expirationAt !== null && right.expirationAt !== null) {
+      const expirationDifference = left.expirationAt - right.expirationAt;
+      if (expirationDifference !== 0) return expirationDifference;
+    }
+    const reservationDifference = right.ownReservedQuantity - left.ownReservedQuantity;
+    if (reservationDifference !== 0) return reservationDifference;
+    const locationDifference = left.locationKey.localeCompare(right.locationKey);
+    if (locationDifference !== 0) return locationDifference;
+    return left.serialNumber.localeCompare(right.serialNumber);
+  });
+
+  return [...new Set(candidates.map((candidate) => candidate.serialNumber))].slice(0, count);
 }
