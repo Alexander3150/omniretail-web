@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MARJYM | Frontend Base",
+  title: "MARJYM",
   description: "Proyecto base del frontend web de MARJYM.",
 };
 

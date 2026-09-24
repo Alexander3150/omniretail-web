@@ -160,10 +160,14 @@ async function main() {
   let guideOrderId: string | null = null;
   const table = LogisticsHistoryTable({
     canConfirmDispatch: true,
+    currentPage: 1,
     items: history,
+    pageSize: 10,
     onAddGuide: (item) => {
       guideOrderId = item.orderId;
     },
+    onPageChange: () => undefined,
+    onPageSizeChange: () => undefined,
     onRowDoubleClick: (item) => {
       openedOrderId = item.orderId;
     },
