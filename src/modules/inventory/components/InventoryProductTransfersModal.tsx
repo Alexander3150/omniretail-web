@@ -83,16 +83,20 @@ export function InventoryProductTransfersModal({ branchId, productId, productNam
   return (
     <>
       <Modal open title="Solicitudes y traslados" subtitle={productName}
-        maxWidth="850px" onClose={() => {
+        maxWidth="960px" onClose={() => {
           if (!cancelRequestId && !transferConfirmOpen && !busy && !submitting.current) onClose();
         }}>
         <div className="space-y-5">
-          <div className="flex flex-wrap gap-2" aria-label="Filtrar solicitudes y traslados">
+          <div
+            className="grid grid-cols-2 gap-2 rounded-lg bg-[var(--color-app-background)] p-1.5 sm:grid-cols-4"
+            aria-label="Filtrar solicitudes y traslados"
+          >
             {([ ["all", "Todos"], ["pending", "Pendientes"],
               ["progress", "En proceso"], ["finished", "Finalizados"] ] as const)
               .map(([value, label]) => (
-                <Button key={value} onClick={() => setFilter(value)} type="button"
-                  variant={filter === value ? "primary" : "secondary"}>{label}</Button>
+                <Button className="min-h-9 px-3 py-1.5" key={value}
+                  onClick={() => setFilter(value)} type="button"
+                  variant={filter === value ? "primary" : "ghost"}>{label}</Button>
               ))}
           </div>
           {error ? <p role="alert" className="text-sm text-[var(--color-danger)]">{error}</p> : null}
@@ -134,29 +138,83 @@ function RequestCard({ request, busy, canManageTransfers, onCancel, onReview }: 
   onReview: () => void;
 }) {
   return (
-    <article className="space-y-2 rounded-lg border border-[var(--color-border)] bg-white p-3 text-sm">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="font-bold text-[var(--color-title)]">Solicitud de traslado · {REQUEST_STATUS[request.status]}</p>
-          <p>{request.sourceBranchName} → {request.destinationBranchName}</p>
+    <article className="space-y-3 rounded-xl border border-[var(--color-border)] bg-white p-3.5 text-sm shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${getRequestStatusClass(request.status)}`}>
+            {REQUEST_STATUS[request.status]}
+          </span>
+          <p className="mt-2 break-words font-bold text-[var(--color-title)]">
+            {request.sourceBranchName} <span aria-hidden="true">→</span> {request.destinationBranchName}
+          </p>
         </div>
-        {request.linkedTransferNumber ? (
-          <span className="rounded-md bg-[var(--color-app-background)] px-2 py-1 font-semibold">{request.linkedTransferNumber}</span>
+        {request.linkedTransferId ? (
+          <span className="rounded-md bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-800">
+            Traslado: {request.linkedTransferNumber ?? request.linkedTransferId}
+          </span>
         ) : null}
       </div>
-      <p>Cantidad: {request.requestedQuantity} · Motivo: {REASONS[request.reason]}</p>
-      <p className="text-[var(--color-text-muted)]">Solicitada: {formatDate(request.requestedAt)}</p>
-      {request.notes ? <p>Observaciones: {request.notes}</p> : null}
-      {request.rejectionReason ? <p>Motivo del rechazo: {request.rejectionReason}</p> : null}
-      {request.cancellationReason ? <p>Motivo de cancelación: {request.cancellationReason}</p> : null}
+      <dl className="grid gap-2 rounded-lg bg-[var(--color-app-background)] p-3 sm:grid-cols-3">
+        <RequestValue label="Cantidad" value={String(request.requestedQuantity)} />
+        <RequestValue label="Motivo" value={REASONS[request.reason]} />
+        <RequestValue label="Solicitada" value={formatDate(request.requestedAt)} />
+      </dl>
+      {request.notes ? (
+        <RequestMessage label="Observaciones" value={request.notes} />
+      ) : null}
+      {request.rejectionReason ? (
+        <RequestMessage danger label="Motivo del rechazo" value={request.rejectionReason} />
+      ) : null}
+      {request.cancellationReason ? (
+        <RequestMessage label="Motivo de cancelación" value={request.cancellationReason} />
+      ) : null}
       {canManageTransfers && (request.canCancel || request.canReview) ? (
-        <div className="flex flex-wrap gap-2 pt-1">
+        <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--color-border)] pt-3">
           {request.canCancel ? <Button disabled={busy} onClick={onCancel} type="button" variant="danger">Cancelar solicitud</Button> : null}
           {request.canReview ? <Button disabled={busy} onClick={onReview} type="button" variant="secondary">Revisar solicitud</Button> : null}
         </div>
       ) : null}
     </article>
   );
+}
+
+function RequestValue({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+        {label}
+      </dt>
+      <dd className="mt-1 break-words font-semibold text-[var(--color-title)]">{value}</dd>
+    </div>
+  );
+}
+
+function RequestMessage({
+  danger = false,
+  label,
+  value,
+}: {
+  danger?: boolean;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className={`rounded-lg px-3 py-2.5 ${danger ? "bg-red-50" : "bg-[var(--color-app-background)]"}`}>
+      <p className={`text-xs font-bold uppercase tracking-wide ${danger ? "text-red-700" : "text-[var(--color-text-muted)]"}`}>
+        {label}
+      </p>
+      <p className="mt-1 break-words text-sm text-[var(--color-text)]">{value}</p>
+    </div>
+  );
+}
+
+function getRequestStatusClass(status: InventoryTransferRequestStatus) {
+  if (status === InventoryTransferRequestStatus.approved) return "bg-emerald-100 text-emerald-800";
+  if (status === InventoryTransferRequestStatus.rejected) return "bg-red-100 text-red-800";
+  if (status === InventoryTransferRequestStatus.cancelled) return "bg-slate-100 text-slate-700";
+  if (status === InventoryTransferRequestStatus.received) return "bg-emerald-100 text-emerald-800";
+  if (status === InventoryTransferRequestStatus.inTransit) return "bg-blue-100 text-blue-800";
+  return "bg-amber-100 text-amber-800";
 }
 
 function matchesTransferFilter(status: InventoryTransferStatus, filter: ViewFilter) {
