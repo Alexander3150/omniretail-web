@@ -55,18 +55,14 @@ export class ApiAuthRepository implements AuthRepository {
         rememberMe: input.rememberMe,
         deviceLabel: input.deviceLabel,
         tenantSlug: await this.resolveTenantSlug(input.tenantId),
+        // Solo indica el acceso usado; el Route Handler lo compara con el tipo real de /auth/me
+        // antes de crear la cookie y responde el error generico si no coincide.
+        expectedUserType: input.expectedUserType,
       }),
     });
     if (!response.ok) throw new Error(await errorMessage(response, GENERIC_LOGIN_ERROR));
 
     const current = (await response.json()) as ApiCurrentSession;
-    // Mismo criterio que MockAuthRepository: un tipo de cuenta inesperado falla igual que una
-    // contraseña incorrecta, sin dejar la sesion creada.
-    if (input.expectedUserType && current.user.type !== input.expectedUserType) {
-      await this.logout(current.session.id);
-      throw new Error(GENERIC_LOGIN_ERROR);
-    }
-
     this.currentSession.prime(current);
     this.selectedBranchId = null;
     this.eventBus.emit("auth.changed", { entityId: current.session.id, action: "created" });

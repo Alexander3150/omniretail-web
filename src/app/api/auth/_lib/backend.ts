@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { GENERIC_AUTH_ERROR_MESSAGE } from "@/config/auth-policy";
 
 /**
  * Utilidades SOLO de servidor para los Route Handlers de `app/api/auth` (modo api). La carpeta
@@ -44,6 +45,25 @@ export async function callBackend(
 
 export function serviceUnavailable(): NextResponse {
   return NextResponse.json(SERVICE_UNAVAILABLE_BODY, { status: 503 });
+}
+
+/**
+ * Replica el ApiError INVALID_CREDENTIALS del backend (mismo status, codigo y mensaje), para que
+ * un tipo de cuenta inesperado sea indistinguible de una contraseña incorrecta (R-A13/R-A14).
+ */
+export function invalidCredentials(): NextResponse {
+  const basePath = new URL(process.env.OMNIRETAIL_API_URL ?? "http://localhost").pathname.replace(/\/+$/, "");
+  return NextResponse.json(
+    {
+      status: 401,
+      error: "Unauthorized",
+      code: "INVALID_CREDENTIALS",
+      message: GENERIC_AUTH_ERROR_MESSAGE,
+      path: `${basePath}/auth/login`,
+      timestamp: new Date().toISOString(),
+    },
+    { status: 401 },
+  );
 }
 
 /**
