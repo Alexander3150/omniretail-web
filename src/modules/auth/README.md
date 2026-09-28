@@ -29,7 +29,7 @@ contra el backend real, en `.env.local` (ver `.env.example`):
 
 ```env
 NEXT_PUBLIC_API_MODE=api
-OMNIRETAIL_API_URL=http://localhost:8082/api/v1
+OMNIRETAIL_API_URL=http://localhost:8080/api/v1
 ```
 
 `NEXT_PUBLIC_API_MODE` solo elige el modo y se lee al compilar: reinicia `npm run dev` al cambiarlo.
@@ -56,9 +56,6 @@ Limitaciones conocidas (temporales):
   de modulos no migrados aparecen vacias hasta migrar cada modulo.
 - La sucursal activa elegida en el selector se guarda solo en memoria de la pestaña, hasta que el
   backend tenga un endpoint para persistirla. El backend nunca usa ese valor como autoridad.
-- `/auth/me` todavia no devuelve algunos campos de las entidades (estado/moneda/zona horaria de
-  la tienda, `isSystem` del rol, fechas): el mapper usa valores neutros centralizados en
-  `infrastructure/api/apiSessionMapper.ts` hasta que el backend los incluya.
 
 ## Estructura futura
 

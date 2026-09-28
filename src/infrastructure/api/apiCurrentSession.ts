@@ -16,6 +16,8 @@ export interface ApiCurrentSession {
     roleId: string | null;
     branchId: string | null;
     allowedBranchIds: string[];
+    createdAt: string;
+    updatedAt: string;
   };
   role: {
     id: string;
@@ -23,7 +25,29 @@ export interface ApiCurrentSession {
     permissions: string[];
     branchScope: string;
     status: string;
+    tenantId: string;
+    description: string | null;
+    isSystem: boolean;
+    createdAt: string;
+    updatedAt: string;
   } | null;
-  tenant: { id: string; name: string; slug: string };
-  session: { id: string; expiresAt: string; rememberMe: boolean; activeBranchId: string | null };
+  tenant: {
+    id: string;
+    name: string;
+    slug: string;
+    legalName: string | null;
+    status: string;
+    defaultCurrency: string;
+    timezone: string;
+    createdAt: string;
+    updatedAt: string;
+  };
+  session: {
+    id: string;
+    expiresAt: string;
+    rememberMe: boolean | null;
+    activeBranchId: string | null;
+    createdAt: string;
+    deviceLabel: string | null;
+  };
 }
