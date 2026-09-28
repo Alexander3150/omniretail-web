@@ -50,6 +50,8 @@ import type {
   UnitRepository,
   UserRepository,
 } from "@/core/repositories";
+import { isApiMode } from "@/config/api-mode";
+import { withApiSession } from "@/infrastructure/api/withApiSession";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import {
@@ -166,7 +168,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     const store = new MockDatabaseStore(storage);
     const eventBus = new DataEventBus();
     const customerPaymentMethods = new MockCustomerPaymentMethodRepository(store, eventBus);
-    const repositories: RepositoryRegistry = {
+    const mockRepositories: RepositoryRegistry = {
       tenants: new MockTenantRepository(store, eventBus),
       tenantOnboarding: new MockTenantOnboardingRepository(store, eventBus),
       businessConfig: new MockBusinessConfigRepository(store, eventBus),
@@ -215,6 +217,9 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       notifications: new MockNotificationRepository(store, eventBus),
       auditLogs: new MockAuditLogRepository(store, eventBus),
     };
+    // Modo api: auth/users/roles/tenants resuelven la sesion actual contra el backend real; el
+    // resto sigue en mock. Modo mock (default): exactamente los mismos repositorios de siempre.
+    const repositories = isApiMode() ? withApiSession(mockRepositories, eventBus) : mockRepositories;
     return {
       repositories,
       eventBus,
