@@ -1,22 +1,742 @@
 "use client";
+
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
-import { formatCurrency } from "@/modules/storefront/application/catalog";
-import { createStorefrontCheckout } from "@/modules/storefront/application/checkout";
-import { useCart } from "@/modules/storefront/components/CartProvider";
+import { useEffect, useState, type FormEvent } from "react";
+import type { Address, CustomerPaymentMethod } from "@/core/entities";
+import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
+import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
+import type { StorefrontCheckoutFormDto } from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
+import {
+  shouldClearStaleCheckoutConfirmation,
+  shouldShowCurrentCheckoutConfirmation,
+} from "@/modules/storefront/application/services/storefrontCheckoutLifecycle";
+import { useStorefrontCheckout } from "@/modules/storefront/hooks/useStorefrontCheckout";
+import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
+import { useStorefrontCheckoutConfirmation } from "@/modules/storefront/providers/StorefrontCheckoutConfirmationProvider";
+import { municipalitiesByDepartment } from "@/modules/storefront/data/guatemalaLocations";
+import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
+import { useStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
+import {
+  DELIVERY_ADDRESS_LIMITS,
+  sanitizeDeliveryAddress,
+  sanitizeDeliveryNotificationEmail,
+  sanitizeRecipientName,
+} from "@/config/delivery-address-policy";
+import { EMAIL_MAX_LENGTH } from "@/config/email-policy";
+import { InlineAlert } from "@/shared/components/InlineAlert";
+
+const departments = Object.keys(municipalitiesByDepartment);
+
+function formatGuatemalaPhone(value: string) {
+  const digits = value.replace(/\D/g, "").replace(/^502/, "").slice(0, 8);
+  return digits ? `+502 ${digits}` : "+502 ";
+}
+
+function formatCardNumber(value: string) {
+  return value.replace(/\D/g, "").slice(0, 19).replace(/(.{4})/g, "$1 ").trim();
+}
+
+function formatCardExpiration(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 4);
+  return digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
+}
+
+function hasValidCardExpiration(value: string) {
+  const match = /^(0[1-9]|1[0-2])\/\d{2}$/.exec(value);
+  return Boolean(match);
+}
+
+const initialForm: StorefrontCheckoutFormDto = {
+  fullName: "",
+  email: "",
+  phone: "",
+  addressLine1: "",
+  addressLine2: "",
+  city: "",
+  department: "",
+  references: "",
+  cardholderName: "",
+  cardLastFour: "",
+};
 export function CheckoutPage() {
-  const { lines, total } = useCart(); const router = useRouter();
-  const [delivery, setDelivery] = useState("domicilio"); const [error, setError] = useState(""); const [loading, setLoading] = useState(false);
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setError(""); if (!lines.length) { setError("Agrega al menos un producto antes de confirmar."); return; }
-    const data = new FormData(event.currentTarget); const slug = process.env.NEXT_PUBLIC_STOREFRONT_SLUG;
-    if (!slug) { setError("La tienda no está configurada."); return; }
-    const items = lines.map((line) => ({ productId: line.id, quantity: line.quantity }));
-    if (items.some((item) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(item.productId))) { setError("Actualiza el catálogo para usar los identificadores reales de los productos."); return; }
-    setLoading(true); try {
-      const result = await createStorefrontCheckout(slug, { items, fullName: String(data.get("fullName")), email: String(data.get("email")), phone: String(data.get("phone")), addressLine1: String(data.get("addressLine1") ?? ""), addressLine2: String(data.get("addressLine2") ?? ""), city: String(data.get("city")), department: String(data.get("department") ?? ""), references: String(data.get("references") ?? ""), cardholderName: String(data.get("cardholderName")), cardLastFour: String(data.get("cardLastFour")) }, crypto.randomUUID());
-      sessionStorage.setItem("storefront:lastOrder", JSON.stringify(result)); router.push(`/pedido/confirmacion?token=${encodeURIComponent(result.trackingToken)}`);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "No se pudo crear el pedido."); } finally { setLoading(false); }
-  }
-  return <main className="mx-auto max-w-5xl px-5 py-10"><h1 className="text-3xl font-bold">Finalizar compra</h1><p className="mt-2 text-[var(--color-text-muted)]">Compra como invitado. Te enviaremos el seguimiento a tu correo.</p><form onSubmit={submit} className="mt-7 grid gap-6 md:grid-cols-[1fr_19rem]"><section className="space-y-5"><fieldset className="rounded-lg border border-[var(--color-border)] bg-white p-5"><legend className="px-1 font-semibold">Datos de contacto</legend><div className="mt-3 grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium">Nombre completo<input name="fullName" required className="mt-1 w-full rounded-md border border-[var(--color-border)] px-3 py-2" /></label><label className="text-sm font-medium">Correo electrónico<input name="email" required type="email" className="mt-1 w-full rounded-md border border-[var(--color-border)] px-3 py-2" /></label><label className="text-sm font-medium">Teléfono<input name="phone" required pattern="[0-9]{8}" className="mt-1 w-full rounded-md border border-[var(--color-border)] px-3 py-2" /></label></div></fieldset><fieldset className="rounded-lg border border-[var(--color-border)] bg-white p-5"><legend className="px-1 font-semibold">Entrega</legend><div className="mt-3 flex gap-5 text-sm"><label><input checked={delivery === "domicilio"} onChange={() => setDelivery("domicilio")} type="radio" name="delivery" /> Entrega a domicilio</label><label><input checked={delivery === "retiro"} onChange={() => setDelivery("retiro")} type="radio" name="delivery" /> Retiro en tienda</label></div>{delivery === "domicilio" && <><label className="mt-4 block text-sm font-medium">Dirección<input name="addressLine1" required className="mt-1 w-full rounded-md border border-[var(--color-border)] px-3 py-2" /></label><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium">Ciudad<input name="city" required className="mt-1 w-full rounded-md border border-[var(--color-border)] px-3 py-2" /></label><label className="text-sm font-medium">Departamento<input name="department" className="mt-1 w-full rounded-md border border-[var(--color-border)] px-3 py-2" /></label></div></>}</fieldset><fieldset className="rounded-lg border border-[var(--color-border)] bg-white p-5"><legend className="px-1 font-semibold">Pago</legend><label className="mt-3 block text-sm font-medium">Nombre en la tarjeta<input name="cardholderName" required className="mt-1 w-full rounded-md border border-[var(--color-border)] px-3 py-2" /></label><label className="mt-3 block text-sm font-medium">Últimos 4 dígitos<input name="cardLastFour" required pattern="[0-9]{4}" maxLength={4} className="mt-1 w-full rounded-md border border-[var(--color-border)] px-3 py-2" /></label></fieldset></section><aside className="h-fit rounded-lg border border-[var(--color-border)] bg-white p-5"><h2 className="font-semibold">Resumen</h2><p className="mt-3 text-sm text-[var(--color-text-muted)]">{lines.length} productos</p><div className="mt-4 flex justify-between border-t pt-3 font-bold"><span>Total</span><span>{formatCurrency(total)}</span></div>{error && <p className="mt-3 text-sm text-[var(--color-danger)]">{error}</p>}<button disabled={loading} className="mt-5 w-full rounded-md bg-[var(--color-primary)] px-4 py-3 font-semibold text-[var(--color-topbar)]">{loading ? "Procesando…" : "Confirmar pedido"}</button></aside></form></main>;
+  const routes = useStorefrontRoutes();
+  const { items, subtotal } = useStorefrontCart();
+  const repositories = useRepositories();
+  const { user } = useCurrentSession();
+  const { tenantId, config, loading: configLoading } = usePublicTenant();
+  const { submitting, error, result, submit } = useStorefrontCheckout();
+  const { setResult } = useStorefrontCheckoutConfirmation();
+  const [form, setForm] = useState(initialForm);
+  const [step, setStep] = useState<1 | 2>(1);
+  const [completedByCurrentCheckout, setCompletedByCurrentCheckout] = useState(false);
+  const [savedCards, setSavedCards] = useState<CustomerPaymentMethod[]>([]);
+  const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState<string | "new">("new");
+  const [selectedAddressId, setSelectedAddressId] = useState<string | "new">("new");
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardExpiration, setCardExpiration] = useState("");
+  const [cardSecurityCode, setCardSecurityCode] = useState("");
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const router = useRouter();
+  useEffect(() => {
+    let active = true;
+    const loadCustomerCheckoutData = async () => {
+      if (!user || !tenantId) {
+        if (active) {
+          setSavedCards([]);
+          setSavedAddresses([]);
+          setCustomerEmail("");
+          setSelectedPaymentMethodId("new");
+          setSelectedAddressId("new");
+        }
+        return;
+      }
+      const customer = await repositories.customers.getByUserId(user.id);
+      if (!customer || customer.tenantId !== tenantId) return;
+      const [cards, addresses] = await Promise.all([
+        repositories.customerPaymentMethods.getByCustomer(tenantId, customer.id),
+        repositories.addresses.getByCustomer(tenantId, customer.id),
+      ]);
+      if (!active) return;
+      setSavedCards(cards);
+      setSavedAddresses(addresses);
+      setCustomerEmail(customer.email);
+      const defaultCard = cards.find((card) => card.isDefault) ?? cards[0];
+      if (defaultCard) {
+        setSelectedPaymentMethodId(defaultCard.id);
+        setForm((current) => ({
+          ...current,
+          cardholderName: defaultCard.cardholderName ?? "Titular registrado",
+          cardLastFour: defaultCard.last4,
+        }));
+      }
+      const defaultAddress = addresses.find((address) => address.isDefault) ?? addresses[0];
+      if (defaultAddress) {
+        setSelectedAddressId(defaultAddress.id);
+        setForm((current) => ({
+          ...current,
+          fullName: defaultAddress.recipientName,
+          email: customer.email,
+          phone: customer.phone ? formatGuatemalaPhone(customer.phone) : "",
+          addressLine1: defaultAddress.line1,
+          addressLine2: defaultAddress.line2 ?? "",
+          city: defaultAddress.city,
+          department: defaultAddress.stateOrDepartment ?? "",
+          references: defaultAddress.references ?? "",
+        }));
+      } else {
+        setForm((current) => ({ ...current, email: customer.email }));
+      }
+    };
+    void loadCustomerCheckoutData();
+    return () => {
+      active = false;
+    };
+  }, [repositories, tenantId, user]);
+
+  const selectSavedCard = (card: CustomerPaymentMethod) => {
+    setSelectedPaymentMethodId(card.id);
+    setCardNumber("");
+    setCardExpiration("");
+    setCardSecurityCode("");
+    setPaymentError(null);
+    setForm({
+      ...form,
+      cardholderName: card.cardholderName ?? "Titular registrado",
+      cardLastFour: card.last4,
+    });
+  };
+  const selectSavedAddress = (address: Address) => {
+    setSelectedAddressId(address.id);
+    setForm((current) => ({
+      ...current,
+      fullName: address.recipientName,
+      email: customerEmail || current.email,
+      addressLine1: address.line1,
+      addressLine2: address.line2 ?? "",
+      city: address.city,
+      department: address.stateOrDepartment ?? "",
+      references: address.references ?? "",
+    }));
+  };
+  const useAnotherAddress = () => {
+    setSelectedAddressId("new");
+    setForm((current) => ({
+      ...current,
+      fullName: "",
+      phone: "",
+      addressLine1: "",
+      addressLine2: "",
+      city: "",
+      department: "",
+      references: "",
+      email: customerEmail || current.email,
+    }));
+  };
+  useEffect(() => {
+    if (shouldClearStaleCheckoutConfirmation(result, completedByCurrentCheckout)) setResult(null);
+  }, [completedByCurrentCheckout, result, setResult]);
+  useEffect(() => {
+    if (shouldShowCurrentCheckoutConfirmation(result, completedByCurrentCheckout)) {
+      router.replace(routes.confirmation(result?.trackingToken));
+    }
+  }, [completedByCurrentCheckout, result, router, routes]);
+  if (shouldShowCurrentCheckoutConfirmation(result, completedByCurrentCheckout))
+    return <main className="mx-auto max-w-3xl px-5 py-12">Preparando confirmación...</main>;
+  if (!items.length)
+    return (
+      <main className="mx-auto max-w-3xl px-5 py-12">
+        <h1 className="text-3xl font-black">Checkout</h1>
+        <p className="mt-3 text-[var(--color-text-muted)]">Agrega productos antes de continuar.</p>
+        <Link
+          className="mt-5 inline-block rounded-xl bg-[var(--color-primary)] px-4 py-3 font-bold text-[var(--color-topbar)]"
+          href={routes.catalog()}
+        >
+          Ver catálogo
+        </Link>
+      </main>
+    );
+  if (!configLoading && config?.accountRequired && !user)
+    return (
+      <main className="mx-auto max-w-3xl px-5 py-14">
+        <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center shadow-sm">
+          <h1 className="text-3xl font-black text-[var(--color-text)]">
+            Inicia sesión para continuar
+          </h1>
+          <p className="mx-auto mt-3 max-w-lg text-[var(--color-text-muted)]">
+            Esta tienda requiere una cuenta para completar una compra. Inicia sesión o crea una
+            cuenta para continuar al pago.
+          </p>
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <Link
+              className="rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)]"
+              href={routes.login()}
+            >
+              Iniciar sesión
+            </Link>
+            <Link
+              className="rounded-xl border border-[var(--color-border)] px-5 py-3 font-bold text-[var(--color-text)]"
+              href={routes.register()}
+            >
+              Crear cuenta
+            </Link>
+          </div>
+        </section>
+      </main>
+    );
+  const ready = Boolean(
+    form.fullName &&
+    form.email &&
+    form.phone.replace(/\D/g, "").replace(/^502/, "").length === 8 &&
+    form.addressLine1 &&
+    form.city &&
+    form.department,
+  );
+  const cardDigits = cardNumber.replace(/\D/g, "");
+  const paymentReady =
+    selectedPaymentMethodId !== "new" ||
+    (cardDigits.length >= 13 &&
+      cardDigits.length <= 19 &&
+      Boolean(form.cardholderName.trim()) &&
+      hasValidCardExpiration(cardExpiration) &&
+      /^\d{3,4}$/.test(cardSecurityCode));
+  const canSubmitOrder = ready && paymentReady;
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (config?.accountRequired && !user) return;
+    if (selectedPaymentMethodId === "new") {
+      if (!cardDigits) {
+        setPaymentError("Ingrese el número de tarjeta.");
+        return;
+      }
+      if (cardDigits.length < 13 || cardDigits.length > 19) {
+        setPaymentError("El número de tarjeta debe contener entre 13 y 19 dígitos.");
+        return;
+      }
+      if (!hasValidCardExpiration(cardExpiration)) {
+        setPaymentError("Ingrese una fecha de vencimiento válida en formato MM/AA.");
+        return;
+      }
+      if (!/^\d{3,4}$/.test(cardSecurityCode)) {
+        setPaymentError("Ingrese un código de seguridad de 3 o 4 dígitos.");
+        return;
+      }
+    }
+    setPaymentError(null);
+    setCompletedByCurrentCheckout(true);
+    void submit({
+      ...form,
+      cardLastFour:
+        selectedPaymentMethodId === "new" ? cardDigits.slice(-4) : form.cardLastFour,
+      phone: form.phone.replace(/\D/g, "").replace(/^502/, ""),
+    });
+  };
+  return (
+    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-5 sm:py-10">
+      <Link className="text-sm font-bold text-[var(--color-title)]" href={routes.cart()}>
+        ← Volver al carrito
+      </Link>
+      <div className="mx-auto mt-4 flex max-w-xl items-center gap-2 sm:gap-4">
+        <Step active={step === 1} completed={step > 1} number="1" label="Envío y datos" />
+        <span className={`h-0.5 flex-1 ${step > 1 ? "bg-[var(--color-success)]/60" : "bg-[var(--color-border)]"}`} />
+        <Step active={step === 2} completed={false} number="2" label="Pago" />
+        <span className="h-0.5 flex-1 bg-[var(--color-border)]" />
+        <Step active={false} completed={false} number="3" label="Confirma" />
+      </div>
+      <div className="mt-8 grid gap-7 xl:grid-cols-[minmax(0,1fr)_27rem]">
+        <form className="space-y-5" noValidate onSubmit={handleSubmit}>
+          {step === 1 ? (
+            <section className="min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm sm:p-7">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-xl font-black text-[var(--color-text)]">
+                  Información de entrega
+                </h2>
+                <span className="text-sm text-[var(--color-text-muted)]">Paso 1 de 3</span>
+              </div>
+              <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+                Elige una dirección guardada o indica una nueva dirección de entrega.
+              </p>
+              {savedAddresses.length > 0 ? (
+                <div className="mt-5 space-y-3">
+                  <p className="text-sm font-bold text-[var(--color-text)]">
+                    Tus direcciones guardadas
+                  </p>
+                  {savedAddresses.map((address) => (
+                    <button
+                      className={`flex w-full min-w-0 flex-wrap items-start justify-between gap-3 rounded-xl border p-4 text-left transition ${selectedAddressId === address.id ? "border-[var(--color-primary-hover)] bg-[var(--color-primary)]/10" : "border-[var(--color-border)] hover:border-[var(--color-primary)]"}`}
+                      key={address.id}
+                      onClick={() => selectSavedAddress(address)}
+                      type="button"
+                    >
+                      <span className="min-w-0 break-words">
+                        <span className="block font-bold text-[var(--color-text)]">
+                          {address.label}
+                          {address.isDefault ? " · Predeterminada" : ""}
+                        </span>
+                        <span className="mt-1 block text-sm text-[var(--color-text-muted)]">
+                          {address.recipientName} · {address.line1}, {address.city}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-sm font-bold text-[var(--color-title)]">
+                        {selectedAddressId === address.id ? "Seleccionada" : "Seleccionar"}
+                      </span>
+                    </button>
+                  ))}
+                  <button
+                    className="text-sm font-bold text-[var(--color-title)] underline"
+                    onClick={useAnotherAddress}
+                    type="button"
+                  >
+                    Usar otra dirección
+                  </button>
+                </div>
+              ) : null}
+              {selectedAddressId !== "new" ? (
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  <Field
+                    label="Teléfono de contacto"
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={13}
+                    placeholder="+502 00000000"
+                    value={form.phone}
+                    onChange={(value) => setForm({ ...form, phone: formatGuatemalaPhone(value) })}
+                  />
+                  <div className="rounded-xl border border-[var(--color-border)] bg-slate-50 px-4 py-3 text-sm text-[var(--color-text-muted)]">
+                    Las notificaciones se enviarán a{" "}
+                    <span className="font-bold text-[var(--color-text)]">{customerEmail}</span>.
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  <Field
+                    label="Nombre completo"
+                    maxLength={DELIVERY_ADDRESS_LIMITS.recipientName}
+                    value={form.fullName}
+                    onChange={(value) =>
+                      setForm({ ...form, fullName: sanitizeRecipientName(value) })
+                    }
+                  />
+                  <Field
+                    label="Correo electrónico (para notificaciones)"
+                    maxLength={EMAIL_MAX_LENGTH}
+                    type="email"
+                    value={form.email}
+                    onChange={(value) => setForm({ ...form, email: sanitizeDeliveryNotificationEmail(value) })}
+                  />
+                  <Field
+                    label="Teléfono"
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={13}
+                    placeholder="+502 00000000"
+                    value={form.phone}
+                    onChange={(value) => setForm({ ...form, phone: formatGuatemalaPhone(value) })}
+                  />
+                  <Field
+                    label="Dirección"
+                    maxLength={DELIVERY_ADDRESS_LIMITS.line1}
+                    value={form.addressLine1}
+                    onChange={(value) =>
+                      setForm({ ...form, addressLine1: sanitizeDeliveryAddress(value, "line1") })
+                    }
+                  />
+                  <Field
+                    label="Complemento"
+                    maxLength={DELIVERY_ADDRESS_LIMITS.line2}
+                    required={false}
+                    value={form.addressLine2 ?? ""}
+                    onChange={(value) =>
+                      setForm({ ...form, addressLine2: sanitizeDeliveryAddress(value, "line2") })
+                    }
+                  />
+                  <SelectField
+                    label="Departamento"
+                    options={departments}
+                    placeholder="Selecciona un departamento"
+                    value={form.department ?? ""}
+                    onChange={(value) => setForm({ ...form, department: value, city: "" })}
+                  />
+                  <SelectField
+                    disabled={!form.department}
+                    label="Municipio"
+                    options={form.department ? municipalitiesByDepartment[form.department] : []}
+                    placeholder="Selecciona un municipio"
+                    value={form.city}
+                    onChange={(value) => setForm({ ...form, city: value })}
+                  />
+                  <Field
+                    label="Referencias"
+                    maxLength={DELIVERY_ADDRESS_LIMITS.references}
+                    required={false}
+                    value={form.references ?? ""}
+                    onChange={(value) => setForm({ ...form, references: sanitizeDeliveryAddress(value, "references") })}
+                  />
+                </div>
+              )}
+              <button
+                className="mt-6 w-full rounded-xl bg-[var(--color-primary)] px-5 py-3 font-bold text-[var(--color-topbar)] disabled:opacity-50 sm:w-auto"
+                disabled={!ready}
+                onClick={() => setStep(2)}
+                type="button"
+              >
+                Continuar al pago
+              </button>
+            </section>
+          ) : null}
+          <section
+            className={`min-w-0 rounded-xl border bg-[var(--color-surface)] p-4 shadow-sm sm:p-7 ${step === 2 ? "border-[var(--color-primary-hover)]" : "border-[var(--color-border)] opacity-70"}`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-xl font-black text-[var(--color-text)]">Método de pago</h2>
+              <span className="rounded-full bg-[var(--color-success)]/10 px-3 py-1 text-sm font-bold text-[var(--color-success)]">
+                ♢ Pago 100% seguro
+              </span>
+            </div>
+            {step === 2 ? (
+              <div className="mt-5 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[var(--color-border)] bg-slate-50 p-4 text-sm">
+                  <div className="min-w-0 break-words">
+                    <p className="font-bold text-[var(--color-text)]">
+                      ▱ &nbsp; Entrega en tu dirección
+                    </p>
+                    <p className="mt-1 text-[var(--color-text-muted)]">
+                      {form.addressLine1}, {form.city}, {form.department}
+                    </p>
+                  </div>
+                  <button
+                    className="shrink-0 font-bold text-[var(--color-title)]"
+                    onClick={() => setStep(1)}
+                    type="button"
+                  >
+                    Modificar
+                  </button>
+                </div>
+                <div className="min-w-0 rounded-xl border-2 border-[var(--color-primary-hover)] bg-[var(--color-primary)]/10 p-4 sm:p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] pb-4">
+                    <p className="font-bold text-[var(--color-text)]">
+                      ◉ &nbsp; ▣ &nbsp; Tarjeta de crédito o débito
+                    </p>
+                    <span className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text-muted)]">
+                      Visa / Mastercard / AmEx
+                    </span>
+                  </div>
+                  {savedCards.length > 0 ? (
+                    <div className="mt-4 space-y-3">
+                      <p className="text-sm font-bold text-[var(--color-text)]">
+                        Tus tarjetas guardadas
+                      </p>
+                      {savedCards.map((card) => (
+                        <button
+                          className={`flex w-full min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-left transition ${selectedPaymentMethodId === card.id ? "border-[var(--color-primary-hover)] bg-white" : "border-[var(--color-border)] bg-white/70 hover:border-[var(--color-primary)]"}`}
+                          key={card.id}
+                          onClick={() => selectSavedCard(card)}
+                          type="button"
+                        >
+                          <span className="min-w-0 break-words">
+                            <span className="block font-bold text-[var(--color-text)]">
+                              {card.brand} •••• {card.last4}
+                            </span>
+                            <span className="text-xs text-[var(--color-text-muted)]">
+                              Vence {String(card.expirationMonth).padStart(2, "0")}/
+                              {card.expirationYear}
+                              {card.isDefault ? " · Predeterminada" : ""}
+                            </span>
+                          </span>
+                          <span className="text-sm font-bold text-[var(--color-title)]">
+                            {selectedPaymentMethodId === card.id ? "Seleccionada" : "Seleccionar"}
+                          </span>
+                        </button>
+                      ))}
+                      <button
+                        className="text-sm font-bold text-[var(--color-title)] underline"
+                        onClick={() => {
+                          setSelectedPaymentMethodId("new");
+                          setCardNumber("");
+                          setCardExpiration("");
+                          setCardSecurityCode("");
+                          setPaymentError(null);
+                          setForm({ ...form, cardholderName: "", cardLastFour: "" });
+                        }}
+                        type="button"
+                      >
+                        Usar otra tarjeta
+                      </button>
+                    </div>
+                  ) : null}
+                  {selectedPaymentMethodId === "new" ? (
+                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                      <label className="grid gap-2 text-sm font-bold text-[var(--color-text)] sm:col-span-2">
+                        Número de tarjeta
+                        <input
+                          autoComplete="cc-number"
+                          className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-3 font-normal text-[var(--color-text)]"
+                          inputMode="numeric"
+                          maxLength={23}
+                          onChange={(event) => {
+                            setCardNumber(formatCardNumber(event.target.value));
+                            setPaymentError(null);
+                          }}
+                          placeholder="4242 4242 4242 4242"
+                          value={cardNumber}
+                        />
+                      </label>
+                      <div className="sm:col-span-2">
+                        <Field
+                          label="Nombre del titular"
+                          autoComplete="cc-name"
+                          value={form.cardholderName}
+                          onChange={(value) => {
+                            setForm({ ...form, cardholderName: value });
+                            setPaymentError(null);
+                          }}
+                        />
+                      </div>
+                      <label className="grid gap-2 text-sm font-bold text-[var(--color-text)]">
+                        Fecha de vencimiento
+                        <input
+                          autoComplete="cc-exp"
+                          className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-3 font-normal text-[var(--color-text)]"
+                          inputMode="numeric"
+                          maxLength={5}
+                          onChange={(event) => {
+                            setCardExpiration(formatCardExpiration(event.target.value));
+                            setPaymentError(null);
+                          }}
+                          placeholder="MM/AA"
+                          value={cardExpiration}
+                        />
+                      </label>
+                      <label className="grid gap-2 text-sm font-bold text-[var(--color-text)]">
+                        Código de seguridad (CVV)
+                        <input
+                          autoComplete="cc-csc"
+                          className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-3 font-normal text-[var(--color-text)]"
+                          inputMode="numeric"
+                          maxLength={4}
+                          onChange={(event) => {
+                            setCardSecurityCode(event.target.value.replace(/\D/g, "").slice(0, 4));
+                            setPaymentError(null);
+                          }}
+                          placeholder="•••"
+                          type="password"
+                          value={cardSecurityCode}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </section>
+          <section className="flex flex-wrap items-center justify-between gap-4 border-t border-[var(--color-border)] pt-5">
+            <button
+              className="text-sm font-bold text-[var(--color-title)]"
+              onClick={() => setStep(1)}
+              type="button"
+            >
+              ← Volver a datos de envío
+            </button>
+            {paymentError ?? error ? (
+              <InlineAlert className="w-full" title={paymentError ?? error ?? ""} tone="danger" />
+            ) : null}
+            <button
+              className="w-full rounded-xl bg-[var(--color-primary)] px-6 py-3 font-black text-[var(--color-topbar)] transition hover:bg-[var(--color-primary-hover)] disabled:opacity-50 sm:w-auto"
+              disabled={step !== 2 || submitting || !canSubmitOrder}
+              type="submit"
+            >
+              {submitting ? "Procesando..." : `Realizar pedido (Q${subtotal.toFixed(2)})`}
+            </button>
+          </section>
+        </form>
+        <aside className="h-fit min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm sm:p-6 xl:sticky xl:top-24">
+          <p className="text-xl font-black text-[var(--color-text)]">Resumen del pedido</p>
+          <div className="mt-4 space-y-3 border-t border-[var(--color-border)] pt-4">
+            {items.map((item) => (
+              <div key={item.productId} className="flex items-center justify-between gap-3 text-sm">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-md border border-[var(--color-border)] bg-slate-50">
+                    {item.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        alt={item.imageAlt ?? item.name}
+                        className="h-full w-full object-contain p-1"
+                        src={item.imageUrl}
+                      />
+                    ) : (
+                      <span className="text-xs text-[var(--color-text-muted)]">Producto</span>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate font-bold text-[var(--color-text)]">{item.name}</p>
+                    <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+                      {item.quantity}× Q{item.unitPrice.toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+                <span className="shrink-0 font-bold text-[var(--color-title)]">
+                  Q{(item.unitPrice * item.quantity).toFixed(2)}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-6 border-t border-[var(--color-border)] pt-5">
+            <div className="flex items-center justify-between text-sm text-[var(--color-text-muted)]">
+              <span>Subtotal</span>
+              <span>Q{subtotal.toFixed(2)}</span>
+            </div>
+            <div className="mt-4 flex items-end justify-between border-t border-[var(--color-border)] pt-4">
+              <span className="text-lg font-black text-[var(--color-text)]">Total</span>
+              <span className="text-3xl font-black text-[var(--color-title)]">
+                Q{subtotal.toFixed(2)}
+              </span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </main>
+  );
+}
+function Step({
+  active,
+  completed,
+  number,
+  label,
+}: {
+  active: boolean;
+  completed: boolean;
+  number: string;
+  label: string;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span
+        className={`grid h-7 w-7 place-items-center rounded-full text-xs font-black ${completed ? "bg-[var(--color-success)] text-white" : active ? "bg-[var(--color-primary)] text-[var(--color-topbar)] ring-4 ring-[var(--color-primary)]/20" : "bg-slate-200 text-[var(--color-text-muted)]"}`}
+      >
+        {number}
+      </span>
+      <span className={`hidden text-sm font-bold sm:block ${completed ? "text-[var(--color-success)]" : active ? "text-[var(--color-title)]" : "text-[var(--color-text-muted)]"}`}>{label}</span>
+    </div>
+  );
+}
+function Field({
+  label,
+  value,
+  onChange,
+  type = "text",
+  required = true,
+  autoComplete,
+  inputMode,
+  maxLength,
+  pattern,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  required?: boolean;
+  autoComplete?: string;
+  inputMode?: "numeric";
+  maxLength?: number;
+  pattern?: string;
+  placeholder?: string;
+}) {
+  return (
+    <label className="grid gap-2 text-sm font-bold text-[var(--color-text)]">
+      {label}
+      <input
+        className="rounded-xl border border-[var(--color-border)] bg-slate-50 px-3 py-3 font-normal outline-none focus:border-[var(--color-primary-hover)] focus:ring-4 focus:ring-[var(--color-primary)]/15"
+        autoComplete={autoComplete}
+        inputMode={inputMode}
+        maxLength={maxLength}
+        pattern={pattern}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        required={required}
+        type={type}
+        value={value}
+      />
+    </label>
+  );
+}
+
+function SelectField({
+  label,
+  options,
+  value,
+  onChange,
+  placeholder,
+  disabled = false,
+}: {
+  label: string;
+  options: string[];
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  disabled?: boolean;
+}) {
+  return (
+    <label className="grid gap-2 text-sm font-bold text-[var(--color-text)]">
+      {label}
+      <select
+        className="rounded-xl border border-[var(--color-border)] bg-slate-50 px-3 py-3 font-normal outline-none focus:border-[var(--color-primary-hover)] focus:ring-4 focus:ring-[var(--color-primary)]/15 disabled:cursor-not-allowed disabled:opacity-60"
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        required
+        value={value}
+      >
+        <option disabled value="">
+          {placeholder}
+        </option>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }
