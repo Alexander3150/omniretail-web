@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getLockoutMinutesForOccurrence, LOGIN_ATTEMPT_RULES } from "@/config/auth-policy";
+import type { UserType } from "@/core/enums";
 import { MfaChallengeUnavailableError } from "@/core/repositories/AuthRepository";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
@@ -23,7 +24,9 @@ const LOCKOUT_ATTEMPT_NUMBER =
   LOGIN_ATTEMPT_RULES.find((rule) => rule.triggersLockout)?.attemptNumber ??
   LOGIN_ATTEMPT_RULES[LOGIN_ATTEMPT_RULES.length - 1].attemptNumber;
 
-export function useLogin() {
+// expectedUserType lo fija la ruta que renderiza el login (ver LoginFormDto);
+// nunca sale del estado del formulario.
+export function useLogin(expectedUserType: UserType) {
   const repositories = useRepositories();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -181,6 +184,7 @@ export function useLogin() {
         email: dto.email.trim(),
         passwordMock: dto.password,
         rememberMe: dto.rememberMe,
+        expectedUserType,
       });
 
       if (result.status === "mfa_required") {
@@ -211,6 +215,7 @@ export function useLogin() {
     }
   }, [
     email,
+    expectedUserType,
     finishLogin,
     lockoutSecondsRemaining,
     password,
