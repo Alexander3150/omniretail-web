@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
+import type { UserType } from "@/core/enums";
 import { useLogin } from "@/modules/auth/hooks/useLogin";
 import { useOptionalStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 import { BrandMark } from "@/shared/components/BrandMark";
@@ -84,7 +85,12 @@ function LoginLayout({ children }: { children: ReactNode }) {
   );
 }
 
-export function LoginPage() {
+interface LoginPageProps {
+  /** Fijado por la ruta que renderiza el login (tienda -> customer, personal -> employee). */
+  expectedUserType: UserType;
+}
+
+export function LoginPage({ expectedUserType }: LoginPageProps) {
   const {
     email,
     setEmail,
@@ -103,7 +109,7 @@ export function LoginPage() {
     setMfaCode,
     submitMfaChallenge,
     cancelMfaChallenge,
-  } = useLogin();
+  } = useLogin(expectedUserType);
   const { showToast } = useToast();
   const routes = useOptionalStorefrontRoutes();
   const isLockedOut = lockoutSecondsRemaining > 0;
