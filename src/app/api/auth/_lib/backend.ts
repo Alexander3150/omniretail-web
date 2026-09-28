@@ -24,11 +24,16 @@ const SERVICE_UNAVAILABLE_BODY = {
  */
 export async function callBackend(
   path: string,
-  init: { method: "GET" | "POST"; token?: string; body?: string },
+  init: {
+    method: "GET" | "POST";
+    token?: string;
+    body?: string;
+    headers?: Record<string, string>;
+  },
 ): Promise<Response | null> {
   const baseUrl = process.env.OMNIRETAIL_API_URL;
   if (!baseUrl) return null;
-  const headers: Record<string, string> = { Accept: "application/json" };
+  const headers: Record<string, string> = { Accept: "application/json", ...init.headers };
   if (init.body !== undefined) headers["Content-Type"] = "application/json";
   if (init.token) headers.Authorization = `Bearer ${init.token}`;
   try {

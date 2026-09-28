@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import { isApiMode } from "@/config/api-mode";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import type { StorefrontCheckoutFormDto } from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
 import { CreateStorefrontCheckoutService } from "@/modules/storefront/application/services/CreateStorefrontCheckoutService";
+import { ApiStorefrontCheckoutService } from "@/modules/storefront/application/services/ApiStorefrontCheckoutService";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
 import { useStorefrontCheckoutConfirmation } from "@/modules/storefront/providers/StorefrontCheckoutConfirmationProvider";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
@@ -14,6 +16,7 @@ export function useStorefrontCheckout() {
   const { items, clearCart } = useStorefrontCart();
   const { result, setResult } = useStorefrontCheckoutConfirmation();
   const service = useMemo(() => new CreateStorefrontCheckoutService(repositories), [repositories]);
+  const apiService = useMemo(() => new ApiStorefrontCheckoutService(), []);
   const keyRef = useRef<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,12 +32,15 @@ export function useStorefrontCheckout() {
       keyRef.current ??= globalThis.crypto.randomUUID();
 
       try {
-        const nextResult = await service.execute({
+        const checkoutInput = {
           tenantSlug,
           items,
           form,
           idempotencyKey: keyRef.current,
-        });
+        };
+        const nextResult = await (isApiMode()
+          ? apiService.execute(checkoutInput)
+          : service.execute(checkoutInput));
         setResult(nextResult);
         clearCart();
       } catch (cause) {
@@ -50,7 +56,7 @@ export function useStorefrontCheckout() {
         setSubmitting(false);
       }
     },
-    [clearCart, items, service, setResult, tenantId, tenantSlug],
+    [apiService, clearCart, items, service, setResult, tenantId, tenantSlug],
   );
 
   return { submitting, error, result, submit };
