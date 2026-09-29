@@ -57,6 +57,31 @@ Limitaciones conocidas (temporales):
 - La sucursal activa elegida en el selector se guarda solo en memoria de la pestaña, hasta que el
   backend tenga un endpoint para persistirla. El backend nunca usa ese valor como autoridad.
 
+## Llamar al backend en modo api
+
+`/api/backend/<ruta>` (`app/api/backend/[...path]/route.ts`) es el puente generico hacia
+`${OMNIRETAIL_API_URL}/<ruta>`. En el servidor agrega el JWT de la cookie HttpOnly; el navegador
+nunca ve el token ni la URL del backend. Sin sesion se llama sin token (sirve para `/public/**`).
+
+- `/auth/**` esta bloqueado (404): login, logout y sesion actual van solo por `app/api/auth/*`.
+- Rutas con segmentos vacios, `.`, `..`, `/` o `\` responden 404.
+- Solo se reenvia `Idempotency-Key` (y Content-Type json cuando hay cuerpo). Nunca Authorization
+  ni Cookie del navegador, y la respuesta nunca trae Set-Cookie del backend.
+- POST, PUT, PATCH y DELETE exigen `Origin` igual al del frontend; si no, 403.
+- Un 401 del backend con sesion activa borra la cookie.
+
+Desde un `Api*Repository` se usa `infrastructure/api/backendClient.ts`:
+
+```ts
+const result = await backendFetch<PaginatedResult<ApiProduct>>("/catalog/products", {
+  query: { page: 1, size: 20 },
+});
+// Errores: BackendRequestError con status, code y fields del ApiError del backend.
+```
+
+Los puentes especificos del storefront (`/api/public/[slug]/checkout` y
+`/api/public/[slug]/tracking/[token]`) siguen funcionando igual.
+
 ## Estructura futura
 
 ```text

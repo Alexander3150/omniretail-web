@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { callBackend, serviceUnavailable, SESSION_COOKIE } from "@/app/api/auth/_lib/backend";
+import { callBackend, serviceUnavailable, SESSION_COOKIE } from "@/app/api/_lib/backend";
 
 /**
  * Modo api: revoca la sesion en el backend y SIEMPRE borra la cookie, aunque el backend responda

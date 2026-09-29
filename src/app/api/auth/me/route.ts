@@ -5,7 +5,7 @@ import {
   forwardBackendError,
   serviceUnavailable,
   SESSION_COOKIE,
-} from "@/app/api/auth/_lib/backend";
+} from "@/app/api/_lib/backend";
 
 /** Modo api: reenvia /auth/me con el Bearer de la cookie. Un 401 borra la cookie. */
 export async function GET() {

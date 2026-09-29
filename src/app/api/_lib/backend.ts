@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { GENERIC_AUTH_ERROR_MESSAGE } from "@/config/auth-policy";
 
 /**
- * Utilidades SOLO de servidor para los Route Handlers de `app/api/auth` (modo api). La carpeta
+ * Utilidades SOLO de servidor para los Route Handlers de `app/api` (modo api). La carpeta
  * `_lib` es privada: Next no la expone como ruta.
  *
  * El JWT del backend vive unicamente en la cookie HttpOnly `omniretail_session`: ningun Route
@@ -20,12 +20,13 @@ const SERVICE_UNAVAILABLE_BODY = {
 
 /**
  * Llama al backend. Devuelve null si `OMNIRETAIL_API_URL` no esta configurada o el backend no
- * responde (el caller responde 503 con `serviceUnavailable()`).
+ * responde (el caller responde 503 con `serviceUnavailable()`). Los headers extra van primero:
+ * Content-Type y Authorization se asignan despues y nunca se pueden sobreescribir.
  */
 export async function callBackend(
   path: string,
   init: {
-    method: "GET" | "POST";
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
     token?: string;
     body?: string;
     headers?: Record<string, string>;
