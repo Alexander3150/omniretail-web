@@ -30,7 +30,7 @@ export class ApiStorefrontCheckoutService {
     const checkout = payload as BackendCheckoutResponse;
     return {
       ...checkout,
-      items: checkout.items.map((item) => {
+      items: (checkout.items ?? []).map((item) => {
         const cartItem = input.items.find((candidate) => candidate.sku === item.sku);
         return { ...item, imageUrl: cartItem?.imageUrl, imageAlt: cartItem?.imageAlt };
       }),

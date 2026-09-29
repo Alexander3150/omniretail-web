@@ -42,22 +42,28 @@ export function useStorefrontOrderTracking(trackingToken: string) {
       setLoading(true);
       setError(null);
       try {
-        const nextData = isApiMode()
-          ? await apiService.execute({ tenantSlug, trackingToken })
-          : await service.execute({ tenantSlug, trackingToken });
-        if (!active) return;
-        if (!nextData) {
-          setData(null);
-          orderIdRef.current = null;
-          setError("No se encontró el pedido solicitado.");
-          return;
-        }
         if (isApiMode()) {
+          const apiData = await apiService.execute({ tenantSlug, trackingToken });
+          if (!active) return;
+          if (!apiData) {
+            setData(null);
+            orderIdRef.current = null;
+            setError("No se encontró el pedido solicitado.");
+            return;
+          }
           orderIdRef.current = null;
-          setData(nextData);
+          setData(apiData);
         } else {
-          orderIdRef.current = nextData.orderId;
-          setData(nextData.tracking);
+          const mockData = await service.execute({ tenantSlug, trackingToken });
+          if (!active) return;
+          if (!mockData) {
+            setData(null);
+            orderIdRef.current = null;
+            setError("No se encontró el pedido solicitado.");
+            return;
+          }
+          orderIdRef.current = mockData.orderId;
+          setData(mockData.tracking);
         }
       } catch {
         if (active) setError("No se pudo cargar el pedido. Intenta nuevamente.");
