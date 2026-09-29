@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isApiMode } from "@/config/api-mode";
 import { useDataEventBus, useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import type { StorefrontOrderTrackingDto } from "@/modules/storefront/application/dto/StorefrontOrderTrackingDto";
 import { GetStorefrontOrderTrackingService } from "@/modules/storefront/application/services/GetStorefrontOrderTrackingService";
+import { ApiStorefrontOrderTrackingService } from "@/modules/storefront/application/services/ApiStorefrontOrderTrackingService";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
 export function useStorefrontOrderTracking(trackingToken: string) {
@@ -14,6 +16,7 @@ export function useStorefrontOrderTracking(trackingToken: string) {
     () => new GetStorefrontOrderTrackingService(repositories),
     [repositories],
   );
+  const apiService = useMemo(() => new ApiStorefrontOrderTrackingService(), []);
   const [data, setData] = useState<StorefrontOrderTrackingDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,16 +42,29 @@ export function useStorefrontOrderTracking(trackingToken: string) {
       setLoading(true);
       setError(null);
       try {
-        const nextData = await service.execute({ tenantSlug, trackingToken });
-        if (!active) return;
-        if (!nextData) {
-          setData(null);
+        if (isApiMode()) {
+          const apiData = await apiService.execute({ tenantSlug, trackingToken });
+          if (!active) return;
+          if (!apiData) {
+            setData(null);
+            orderIdRef.current = null;
+            setError("No se encontró el pedido solicitado.");
+            return;
+          }
           orderIdRef.current = null;
-          setError("No se encontró el pedido solicitado.");
-          return;
+          setData(apiData);
+        } else {
+          const mockData = await service.execute({ tenantSlug, trackingToken });
+          if (!active) return;
+          if (!mockData) {
+            setData(null);
+            orderIdRef.current = null;
+            setError("No se encontró el pedido solicitado.");
+            return;
+          }
+          orderIdRef.current = mockData.orderId;
+          setData(mockData.tracking);
         }
-        orderIdRef.current = nextData.orderId;
-        setData(nextData.tracking);
       } catch {
         if (active) setError("No se pudo cargar el pedido. Intenta nuevamente.");
       } finally {
@@ -75,7 +91,7 @@ export function useStorefrontOrderTracking(trackingToken: string) {
       active = false;
       unsubscribe();
     };
-  }, [eventBus, reloadKey, service, tenantError, tenantId, tenantLoading, tenantSlug, trackingToken]);
+  }, [apiService, eventBus, reloadKey, service, tenantError, tenantId, tenantLoading, tenantSlug, trackingToken]);
 
   return { data, loading: tenantLoading || loading, error, reload };
 }
