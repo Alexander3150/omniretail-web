@@ -6,7 +6,7 @@ import {
   invalidCredentials,
   serviceUnavailable,
   SESSION_COOKIE,
-} from "@/app/api/auth/_lib/backend";
+} from "@/app/api/_lib/backend";
 import type { ApiCurrentSession } from "@/infrastructure/api/apiCurrentSession";
 
 /**

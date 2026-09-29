@@ -5,7 +5,7 @@ import {
   forwardBackendError,
   serviceUnavailable,
   SESSION_COOKIE,
-} from "@/app/api/auth/_lib/backend";
+} from "@/app/api/_lib/backend";
 
 /**
  * Puente de servidor para el checkout real. El navegador nunca conoce la URL

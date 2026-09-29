@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { callBackend, forwardBackendError, serviceUnavailable } from "@/app/api/auth/_lib/backend";
+import { callBackend, forwardBackendError, serviceUnavailable } from "@/app/api/_lib/backend";
 
 /** Puente público del seguimiento; no requiere ni expone una sesión. */
 export async function GET(
