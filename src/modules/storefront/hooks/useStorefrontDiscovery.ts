@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { StorefrontDiscoveryDto } from "@/modules/storefront/application/dto/StorefrontDiscoveryDto";
 import { GetStorefrontDiscoveryService } from "@/modules/storefront/application/services/GetStorefrontDiscoveryService";
+import { ApiStorefrontCatalogService } from "@/modules/storefront/application/services/ApiStorefrontCatalogService";
+import { isApiMode } from "@/config/api-mode";
 import { useDataEventBus, useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
@@ -13,6 +15,7 @@ export function useStorefrontDiscovery() {
   const eventBus = useDataEventBus();
   const { tenantId, tenantSlug, loading: tenantLoading, error: tenantError } = usePublicTenant();
   const service = useMemo(() => new GetStorefrontDiscoveryService(repositories), [repositories]);
+  const apiService = useMemo(() => new ApiStorefrontCatalogService(), []);
   const [data, setData] = useState<StorefrontDiscoveryDto>(emptyDiscovery);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +37,9 @@ export function useStorefrontDiscovery() {
       setLoading(true);
       setError(null);
       try {
-        const nextData = await service.execute(tenantSlug, tenantId);
+        const nextData = isApiMode()
+          ? await apiService.list(tenantSlug)
+          : await service.execute(tenantSlug, tenantId);
         if (active) setData(nextData);
       } catch {
         if (active) setError("No se pudo cargar la tienda. Intenta nuevamente.");
@@ -61,7 +66,7 @@ export function useStorefrontDiscovery() {
       unsubscribeCategories();
       unsubscribeStock();
     };
-  }, [eventBus, reloadKey, service, tenantError, tenantId, tenantLoading, tenantSlug]);
+  }, [apiService, eventBus, reloadKey, service, tenantError, tenantId, tenantLoading, tenantSlug]);
 
   return { ...data, loading: tenantLoading || loading, error, reload };
 }
