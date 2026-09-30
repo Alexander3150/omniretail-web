@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useDataEventBus, useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import type { StorefrontProductDetailDto } from "@/modules/storefront/application/dto/StorefrontProductDetailDto";
 import { GetStorefrontProductDetailService } from "@/modules/storefront/application/services/GetStorefrontProductDetailService";
+import { ApiStorefrontCatalogService } from "@/modules/storefront/application/services/ApiStorefrontCatalogService";
+import { isApiMode } from "@/config/api-mode";
+import { ProductStatus, ProductType } from "@/core/enums";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
 export function useStorefrontProductDetail(productId: string) {
@@ -14,6 +17,7 @@ export function useStorefrontProductDetail(productId: string) {
     () => new GetStorefrontProductDetailService(repositories),
     [repositories],
   );
+  const apiService = useMemo(() => new ApiStorefrontCatalogService(), []);
   const [data, setData] = useState<StorefrontProductDetailDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +42,34 @@ export function useStorefrontProductDetail(productId: string) {
       setError(null);
 
       try {
-        const nextData = await service.execute(tenantSlug, tenantId, productId);
+        const apiProduct = isApiMode()
+          ? await apiService.getProduct(tenantSlug, productId)
+          : null;
+        const nextData = isApiMode()
+          ? apiProduct && {
+              product: {
+                id: apiProduct.id,
+                tenantId,
+                sku: apiProduct.sku,
+                name: apiProduct.name,
+                description: apiProduct.description,
+                brand: apiProduct.brand,
+                productType: ProductType.physical,
+                categoryId: apiProduct.categoryId,
+                baseUnitId: apiProduct.saleUnitId,
+                saleUnitId: apiProduct.saleUnitId,
+                salePrice: apiProduct.salePrice,
+                status: ProductStatus.published,
+                tracking: { stock: true, lot: false, expiration: false, serial: false },
+                channels: { ecommerce: true, pos: false, mobileApp: false },
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              },
+              categoryName: apiProduct.categoryName,
+              media: [],
+              attributes: [],
+            }
+          : await service.execute(tenantSlug, tenantId, productId);
         if (!active) return;
         if (!nextData) {
           setData(null);
@@ -79,7 +110,7 @@ export function useStorefrontProductDetail(productId: string) {
       unsubscribeStock();
       unsubscribeBranch();
     };
-  }, [eventBus, productId, reloadKey, service, tenantError, tenantId, tenantLoading, tenantSlug]);
+  }, [apiService, eventBus, productId, reloadKey, service, tenantError, tenantId, tenantLoading, tenantSlug]);
 
   return { data, loading: tenantLoading || loading, error, reload };
 }
