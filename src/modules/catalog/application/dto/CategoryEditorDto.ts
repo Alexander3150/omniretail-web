@@ -6,6 +6,7 @@ export interface CategoryListItem {
   tenantId: string;
   parentId?: string;
   parentName?: string;
+  depth: number;
   name: string;
   code: string;
   slug: string;

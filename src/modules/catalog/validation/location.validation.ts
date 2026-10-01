@@ -9,6 +9,8 @@ export interface LocationValidationErrors {
   name?: string;
   code?: string;
   description?: string;
+  parentId?: string;
+  type?: string;
 }
 
 export function normalizeLocationCode(value: string) {
@@ -22,6 +24,7 @@ export function buildDefaultLocationDto(branchId = ""): LocationEditorDto {
     description: "",
     branchId,
     parentId: "",
+    type: "warehouse",
     status: LocationStatus.active,
   };
 }
@@ -33,6 +36,7 @@ export function locationToDto(location: LocationListItem): LocationEditorDto {
     description: location.description ?? "",
     branchId: location.branchId,
     parentId: location.parentId ?? "",
+    type: location.type,
     status: location.status,
   };
 }
@@ -57,6 +61,19 @@ export function validateLocationDto(
   if (dto.description.length > 500)
     errors.description = "La descripcion admite hasta 500 caracteres.";
 
+  const parent = dto.parentId
+    ? locations.find((location) => location.id === dto.parentId)
+    : undefined;
+  if (isHierarchicalLocationType(dto.type)) {
+    if (dto.type === "warehouse" && dto.parentId) {
+      errors.parentId = "Una bodega no puede tener una ubicacion padre.";
+    } else if (dto.type !== "warehouse" && !parent) {
+      errors.parentId = "Selecciona una ubicacion padre valida.";
+    } else if (parent && !isValidParentType(dto.type, parent.type)) {
+      errors.parentId = "El tipo de ubicacion padre no es compatible.";
+    }
+  }
+
   const duplicate = locations.find(
     (location) =>
       location.id !== currentLocationId &&
@@ -73,6 +90,17 @@ export function validateLocationDto(
   }
 
   return errors;
+}
+
+function isHierarchicalLocationType(type: LocationEditorDto["type"]) {
+  return type === "warehouse" || type === "aisle" || type === "shelf" || type === "level";
+}
+
+function isValidParentType(child: LocationEditorDto["type"], parent: LocationListItem["type"]) {
+  if (child === "aisle") return parent === "warehouse";
+  if (child === "shelf") return parent === "warehouse" || parent === "aisle";
+  if (child === "level") return parent === "shelf";
+  return false;
 }
 
 export function hasLocationValidationErrors(errors: LocationValidationErrors) {

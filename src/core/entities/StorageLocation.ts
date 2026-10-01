@@ -1,7 +1,7 @@
 import type { LocationStatus } from "@/core/enums";
 import type { ISODateString } from "@/core/types/common.types";
 
-export type StorageLocationType = "warehouse" | "shelf" | "counter" | "display";
+export type StorageLocationType = "warehouse" | "aisle" | "shelf" | "level" | "counter" | "display";
 
 export interface StorageLocation {
   id: string;

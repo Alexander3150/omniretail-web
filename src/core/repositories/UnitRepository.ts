@@ -6,6 +6,7 @@ export interface UnitRepository {
   getByIdScoped(tenantId: string, id: string): Promise<Unit | null>;
   getActive(): Promise<Unit[]>;
   getActiveByTenant(tenantId: string): Promise<Unit[]>;
+  getAllConversionsByTenant(tenantId: string): Promise<UnitConversion[]>;
   getConversionsByProduct(productId: string): Promise<UnitConversion[]>;
   getConversionsByProductScoped(tenantId: string, productId: string): Promise<UnitConversion[]>;
   getConversion(input: {

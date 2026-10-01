@@ -20,10 +20,10 @@ export class SaveLocationService {
     return this.repositories.inventory.createLocation({
       tenantId,
       branchId: dto.branchId,
-      parentId: undefined,
+      parentId: dto.parentId || undefined,
       code: resolveCode(dto),
       name: dto.name.trim(),
-      type: "warehouse",
+      type: dto.type,
       description: cleanDescription(dto.description),
       status: dto.status,
     });
