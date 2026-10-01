@@ -1,12 +1,16 @@
 import { PasswordPolicyError } from "@/config/auth-policy";
-import type { Session } from "@/core/entities";
-import { AccountStatus } from "@/core/enums";
+import type { Session, User } from "@/core/entities";
+import { AccountStatus, UserStatus, UserType } from "@/core/enums";
 import type {
   AuthRepository,
   EmployeeAuthSummary,
   InviteEmployeeResult,
   LoginInput,
   LoginResult,
+  RegisterCustomerInput,
+  RegisterCustomerResult,
+  RequestPasswordResetInput,
+  ResetPasswordResult,
 } from "@/core/repositories/AuthRepository";
 import type { TenantRepository } from "@/core/repositories";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
@@ -18,6 +22,8 @@ import type { CurrentSessionClient } from "@/infrastructure/api/CurrentSessionCl
 
 const NOT_AVAILABLE = "Esta función aún no está disponible en modo API.";
 const GENERIC_LOGIN_ERROR = "No fue posible iniciar sesión. Verifica tus credenciales o intenta más tarde.";
+const GENERIC_REGISTER_ERROR = "No se pudo completar el registro.";
+const INVALID_LINK_ERROR = "Este enlace no es válido o ya expiró.";
 const INVALID_ACTIVATION_LINK = "Este enlace de activación no es válido o ya expiró.";
 
 interface ApiInviteEmployeeResult {
@@ -36,7 +42,7 @@ interface ApiEmployeeAuthSummary {
 
 interface ApiErrorBody {
   message?: string;
-  fields?: { newPassword?: string };
+  fields?: { newPassword?: string; password?: string };
 }
 
 const ACCOUNT_STATUSES: ReadonlySet<string> = new Set(Object.values(AccountStatus));
@@ -68,11 +74,46 @@ async function errorMessage(response: Response, fallback: string): Promise<strin
 }
 
 /**
+ * Error equivalente al del mock a partir de un ApiError del backend: un 400 con `fields` de
+ * contraseña es PasswordPolicyError (la UI lo muestra tal cual); otro campo invalido usa su propio
+ * mensaje; el resto usa `message`.
+ */
+async function toError(response: Response, fallback: string): Promise<Error> {
+  let body: { message?: unknown; fields?: unknown } = {};
+  try {
+    body = (await response.json()) as typeof body;
+  } catch {
+    // Sin cuerpo JSON (p. ej. un 5xx del proxy): se usa el mensaje por defecto.
+  }
+  if (response.status === 400 && body.fields && typeof body.fields === "object") {
+    const fields = body.fields as Record<string, unknown>;
+    const passwordMessage = fields.password ?? fields.newPassword;
+    if (typeof passwordMessage === "string" && passwordMessage) return new PasswordPolicyError(passwordMessage);
+    const firstMessage = Object.values(fields).find((value) => typeof value === "string" && value);
+    if (typeof firstMessage === "string") return new Error(firstMessage);
+  }
+  return new Error(typeof body.message === "string" && body.message ? body.message : fallback);
+}
+
+function postJson(url: string, body: unknown): Promise<Response> {
+  return fetch(url, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/**
  * AuthRepository de modo api. Solo habla con los Route Handlers same-origin `/api/auth/*`; el JWT
  * queda en la cookie HttpOnly y este repositorio nunca lo ve.
  *
- * Los metodos que el backend todavia no soporta (MFA, registro, recuperacion,
- * administracion de cuentas...) lanzan un error explicito: no se simulan.
+ * Soportados en modo api: login, logout, sesion actual, registro de clientes, verificacion de
+ * correo, recuperacion de contraseña, activacion e invitacion de empleados. Ninguno de los flujos de
+ * cuenta crea sesion: el token de un solo uso viaja solo por correo.
+ *
+ * Los metodos que el backend todavia no soporta (MFA, cambio de contraseña del cliente...)
+ * lanzan un error explicito: no se simulan.
  */
 export class ApiAuthRepository implements AuthRepository {
   /**
@@ -83,7 +124,7 @@ export class ApiAuthRepository implements AuthRepository {
 
   constructor(
     private readonly currentSession: CurrentSessionClient,
-    /** Repositorio de tenants (mock) solo para traducir LoginInput.tenantId a su slug. */
+    /** Repositorio de tenants (mock) solo para traducir tenantId <-> slug (login, recuperacion, registro). */
     private readonly tenants: TenantRepository,
     private readonly eventBus: DataEventBus,
   ) {}
@@ -152,6 +193,66 @@ export class ApiAuthRepository implements AuthRepository {
     this.eventBus.emit("auth.changed", { action: "updated" });
   }
 
+  async registerCustomer(input: RegisterCustomerInput): Promise<RegisterCustomerResult> {
+    const response = await postJson("/api/auth/register", {
+      tenantSlug: input.tenantSlug,
+      name: input.name,
+      email: input.email,
+      phone: input.phone,
+      password: input.passwordMock,
+    });
+    if (!response.ok) throw await toError(response, GENERIC_REGISTER_ERROR);
+
+    const { user } = (await response.json()) as { user: { id: string; name: string; email: string; type: string } };
+    const now = new Date().toISOString();
+    return {
+      // El backend solo devuelve id, nombre, correo y tipo. El resto son valores neutros para
+      // cumplir el tipo User: la UI del registro solo lee `email` y no decide nada con ellos.
+      user: {
+        id: user.id,
+        tenantId: (await this.resolveTenantId(input.tenantSlug)) ?? "",
+        name: user.name,
+        email: user.email,
+        phone: input.phone,
+        type: user.type as UserType,
+        status: UserStatus.active,
+        createdAt: now,
+        updatedAt: now,
+      } satisfies User,
+      // En modo api el enlace de verificacion llega solo por correo.
+      emailVerificationToken: null,
+    };
+  }
+
+  async verifyEmail(token: string): Promise<{ tenantSlug?: string }> {
+    const response = await postJson("/api/auth/verify-email", { token });
+    if (!response.ok) throw await toError(response, INVALID_LINK_ERROR);
+    const { tenantSlug } = (await response.json()) as { tenantSlug?: string | null };
+    return { tenantSlug: tenantSlug ?? undefined };
+  }
+
+  /**
+   * Igual que el contrato del mock: nunca lanza (R-A19). La UI muestra la misma respuesta generica
+   * pase lo que pase, incluidos un correo con formato invalido o un backend caido.
+   */
+  async requestPasswordReset(input: RequestPasswordResetInput): Promise<void> {
+    try {
+      await postJson("/api/auth/password/forgot", {
+        email: input.email,
+        tenantSlug: await this.resolveTenantSlug(input.tenantId),
+      });
+    } catch {
+      // Sin red: misma respuesta generica.
+    }
+  }
+
+  async resetPassword(token: string, newPasswordMock: string): Promise<ResetPasswordResult> {
+    const response = await postJson("/api/auth/password/reset", { token, newPassword: newPasswordMock });
+    if (!response.ok) throw await toError(response, INVALID_LINK_ERROR);
+    const result = (await response.json()) as { userType: string; tenantSlug?: string | null };
+    return { userType: result.userType as UserType, tenantSlug: result.tenantSlug ?? undefined };
+  }
+
   verifyMfaChallenge(): Promise<Session> {
     return notAvailable();
   }
@@ -167,21 +268,10 @@ export class ApiAuthRepository implements AuthRepository {
   getMfaStatus(): ReturnType<AuthRepository["getMfaStatus"]> {
     return notAvailable();
   }
-  registerCustomer(): ReturnType<AuthRepository["registerCustomer"]> {
-    return notAvailable();
-  }
-  requestPasswordReset(): Promise<void> {
-    return notAvailable();
-  }
-  resetPassword(): ReturnType<AuthRepository["resetPassword"]> {
-    return notAvailable();
-  }
-  verifyEmail(): ReturnType<AuthRepository["verifyEmail"]> {
-    return notAvailable();
-  }
   bootstrapEmployeeAccount(): ReturnType<AuthRepository["bootstrapEmployeeAccount"]> {
     return notAvailable();
   }
+
   /** Invita o reinvita al empleado y devuelve el User actualizado junto al token de invitacion. */
   async inviteEmployee(userId: string): Promise<InviteEmployeeResult> {
     const inviteResult = await backendFetch<ApiInviteEmployeeResult>(`/administration/users/${userId}/invite`, {
@@ -191,6 +281,7 @@ export class ApiAuthRepository implements AuthRepository {
     this.eventBus.emit("auth.changed", { entityId: userId, action: "updated" });
     return { user, invitationToken: inviteResult.invitationToken };
   }
+
   /**
    * Endpoint publico: va por el Route Handler `/api/auth/activate-employee` (el puente bloquea
    * `/auth/**`). Un error de politica de contraseña llega en `fields.newPassword`; cualquier otro
@@ -209,9 +300,11 @@ export class ApiAuthRepository implements AuthRepository {
     if (errorData?.fields?.newPassword) throw new PasswordPolicyError(errorData.fields.newPassword);
     throw new Error(errorData?.message || INVALID_ACTIVATION_LINK);
   }
+
   changePassword(): Promise<void> {
     return notAvailable();
   }
+
   /**
    * Los empleados sin AuthAccount (`status: null`) o con un estado desconocido se omiten, igual que
    * en el contrato: no aparecen en el resultado.
@@ -238,6 +331,7 @@ export class ApiAuthRepository implements AuthRepository {
         : [],
     );
   }
+
   revokeAllSessionsByUserId(): Promise<void> {
     return notAvailable();
   }
@@ -251,6 +345,15 @@ export class ApiAuthRepository implements AuthRepository {
     if (!tenantId) return undefined;
     try {
       return (await this.tenants.getById(tenantId))?.slug ?? undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Solo para completar `User.tenantId` en el resultado del registro; nunca decide nada. */
+  private async resolveTenantId(tenantSlug: string): Promise<string | undefined> {
+    try {
+      return (await this.tenants.getBySlug(tenantSlug))?.id ?? undefined;
     } catch {
       return undefined;
     }
