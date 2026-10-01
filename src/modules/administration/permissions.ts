@@ -9,6 +9,8 @@ export const CASH_READ_PERMISSION = "admin.cash.read";
 export const DASHBOARD_READ_PERMISSION = "admin.dashboard.read";
 export const REPORTS_READ_PERMISSION = "admin.reports.read";
 export const REPORTS_EXPORT_PERMISSION = "admin.reports.export";
+export const ORDERS_READ_PERMISSION = "admin.orders.read";
+export const ORDERS_MANAGE_PERMISSION = "admin.orders.manage";
 /**
  * `PLANS_READ_PERMISSION` habilita consultar el plan; `PLANS_MANAGE_PERMISSION` habilita
  * cambiarlo. Add-ons, cancelación y facturación siguen sin permiso propio porque todavía no
@@ -77,6 +79,18 @@ export const administrationPermissions = [
     module: "administration",
     name: "Leer clientes",
     description: "Permite consultar el listado de clientes más frecuentes.",
+  },
+  {
+    key: ORDERS_READ_PERMISSION,
+    module: "administration",
+    name: "Leer pedidos e-commerce",
+    description: "Permite consultar los pedidos realizados en la tienda en línea.",
+  },
+  {
+    key: ORDERS_MANAGE_PERMISSION,
+    module: "administration",
+    name: "Gestionar pedidos e-commerce",
+    description: "Permite confirmar o cancelar pedidos de la tienda en línea.",
   },
   {
     key: CASH_READ_PERMISSION,

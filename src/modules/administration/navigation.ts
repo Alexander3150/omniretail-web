@@ -2,6 +2,7 @@ import {
   BUSINESS_CONFIG_MANAGE_PERMISSION,
   CASH_READ_PERMISSION,
   DASHBOARD_READ_PERMISSION,
+  ORDERS_READ_PERMISSION,
   PLANS_READ_PERMISSION,
   REPORTS_READ_PERMISSION,
 } from "@/modules/administration/permissions";
@@ -65,6 +66,12 @@ export const administrationNavigation = [
         label: "Clientes",
         href: "/administracion/clientes",
         permission: "admin.customers.read",
+      },
+      {
+        id: "administration-ecommerce-orders",
+        label: "Pedidos e-commerce",
+        href: "/administracion/pedidos",
+        anyPermission: [ORDERS_READ_PERMISSION, "admin.orders.manage"],
       },
       {
         id: "administration-cash",
