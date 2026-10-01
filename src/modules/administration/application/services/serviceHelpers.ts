@@ -1,5 +1,6 @@
 import type { BankAccount, Branch, Role, Supplier, User } from "@/core/entities";
 import { BranchStatus, BranchType, SaasLimitKey, UserStatus, UserType } from "@/core/enums";
+import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { BranchInputDto } from "@/modules/administration/application/dto/BranchDto";
 import {
@@ -16,7 +17,7 @@ import {
   REPORTS_EXPORT_PERMISSION,
   REPORTS_READ_PERMISSION,
 } from "@/modules/administration/permissions";
-import { ensureTenantLimit } from "@/shared/application/services/entitlementGuards";
+import { ensureTenantLimit, SaasEntitlementError } from "@/shared/application/services/entitlementGuards";
 import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
 
 export class AdministrationServiceError extends Error {
@@ -497,8 +498,15 @@ export function ensurePlanActor(actorUserId: string) {
   throw new AdministrationServiceError("No se pudo resolver el usuario actual.");
 }
 
+/**
+ * Mensajes de negocio (servicio, entitlement SaaS, ApiError del backend) se muestran tal cual;
+ * cualquier otro error es inesperado: se registra y se muestra un mensaje generico.
+ */
 export function cleanError(error: unknown): string {
   if (error instanceof AdministrationServiceError) return error.message;
+  if (error instanceof SaasEntitlementError) return error.message;
+  if (error instanceof BackendRequestError) return error.message;
+  console.error("[Administration Error]:", error);
   return "No se pudo completar la operación. Inténtalo de nuevo.";
 }
 
