@@ -54,7 +54,13 @@ export function useEcommerceOrders() {
   }, [canRead, page, pageSize, service, sessionLoading, status]);
 
   useEffect(() => {
-    void reload();
+    let active = true;
+    window.queueMicrotask(() => {
+      if (active) void reload();
+    });
+    return () => {
+      active = false;
+    };
   }, [reload]);
 
   const changeStatus = useCallback(
