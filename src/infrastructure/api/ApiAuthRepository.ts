@@ -1,3 +1,4 @@
+import { PasswordPolicyError } from "@/config/auth-policy";
 import type { Session } from "@/core/entities";
 import { AccountStatus } from "@/core/enums";
 import type {
@@ -17,9 +18,43 @@ import type { CurrentSessionClient } from "@/infrastructure/api/CurrentSessionCl
 
 const NOT_AVAILABLE = "Esta función aún no está disponible en modo API.";
 const GENERIC_LOGIN_ERROR = "No fue posible iniciar sesión. Verifica tus credenciales o intenta más tarde.";
+const INVALID_ACTIVATION_LINK = "Este enlace de activación no es válido o ya expiró.";
+
+interface ApiInviteEmployeeResult {
+  userId: string;
+  invitationToken: string;
+  expiresAt: string;
+}
+
+interface ApiEmployeeAuthSummary {
+  userId: string;
+  /** null cuando el empleado todavia no tiene AuthAccount. */
+  status: string | null;
+  mfaEnabled: boolean;
+  lastLoginAt: string | null;
+}
+
+interface ApiErrorBody {
+  message?: string;
+  fields?: { newPassword?: string };
+}
+
+const ACCOUNT_STATUSES: ReadonlySet<string> = new Set(Object.values(AccountStatus));
+
+function isAccountStatus(value: string | null): value is AccountStatus {
+  return value !== null && ACCOUNT_STATUSES.has(value);
+}
 
 function notAvailable(): never {
   throw new Error(NOT_AVAILABLE);
+}
+
+async function readApiError(response: Response): Promise<ApiErrorBody | null> {
+  try {
+    return (await response.json()) as ApiErrorBody;
+  } catch {
+    return null;
+  }
 }
 
 /** Mensaje del ApiError reenviado por el Route Handler (ya generico en el backend). */
@@ -36,7 +71,7 @@ async function errorMessage(response: Response, fallback: string): Promise<strin
  * AuthRepository de modo api. Solo habla con los Route Handlers same-origin `/api/auth/*`; el JWT
  * queda en la cookie HttpOnly y este repositorio nunca lo ve.
  *
- * Los metodos que el backend todavia no soporta (MFA, registro, recuperacion, activacion,
+ * Los metodos que el backend todavia no soporta (MFA, registro, recuperacion,
  * administracion de cuentas...) lanzan un error explicito: no se simulan.
  */
 export class ApiAuthRepository implements AuthRepository {
@@ -147,31 +182,61 @@ export class ApiAuthRepository implements AuthRepository {
   bootstrapEmployeeAccount(): ReturnType<AuthRepository["bootstrapEmployeeAccount"]> {
     return notAvailable();
   }
-  /**
-   * PROVISIONAL: `POST /administration/users` solo persiste el User; el backend todavia no crea
-   * AuthAccount ni token de invitacion. Se devuelve el empleado real sin token para que el alta no
-   * se reporte como fallida, pero ese empleado aun NO puede iniciar sesion.
-   */
+  /** Invita o reinvita al empleado y devuelve el User actualizado junto al token de invitacion. */
   async inviteEmployee(userId: string): Promise<InviteEmployeeResult> {
+    const inviteResult = await backendFetch<ApiInviteEmployeeResult>(`/administration/users/${userId}/invite`, {
+      method: "POST",
+    });
     const user = toUser(await backendFetch<ApiUser>(`/administration/users/${userId}`));
-    return { user, invitationToken: null };
+    this.eventBus.emit("auth.changed", { entityId: userId, action: "updated" });
+    return { user, invitationToken: inviteResult.invitationToken };
   }
-  activateEmployeeAccount(): Promise<void> {
-    return notAvailable();
+  /**
+   * Endpoint publico: va por el Route Handler `/api/auth/activate-employee` (el puente bloquea
+   * `/auth/**`). Un error de politica de contraseña llega en `fields.newPassword`; cualquier otro
+   * 4xx/5xx se reporta con el mensaje generico de enlace invalido.
+   */
+  async activateEmployeeAccount(token: string, newPasswordMock: string): Promise<void> {
+    const response = await fetch("/api/auth/activate-employee", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, newPassword: newPasswordMock }),
+    });
+    if (response.ok) return;
+
+    const errorData = await readApiError(response);
+    if (errorData?.fields?.newPassword) throw new PasswordPolicyError(errorData.fields.newPassword);
+    throw new Error(errorData?.message || INVALID_ACTIVATION_LINK);
   }
   changePassword(): Promise<void> {
     return notAvailable();
   }
   /**
-   * PROVISIONAL: el backend no expone el estado de AuthAccount de los empleados. Se informa
-   * `active` sin MFA para que la tabla de empleados cargue; no refleja el estado real de la cuenta
-   * (un empleado recien creado por api ni siquiera tiene AuthAccount).
+   * Los empleados sin AuthAccount (`status: null`) o con un estado desconocido se omiten, igual que
+   * en el contrato: no aparecen en el resultado.
    */
   async getEmployeeAuthSummariesByUserIds(
     _tenantId: string,
-    userIds: string[],
+    userIds: readonly string[],
   ): Promise<EmployeeAuthSummary[]> {
-    return userIds.map((userId) => ({ userId, status: AccountStatus.active, mfaEnabled: false }));
+    if (userIds.length === 0) return [];
+    const summaries = await backendFetch<ApiEmployeeAuthSummary[]>("/administration/users/auth-summaries", {
+      method: "POST",
+      body: { userIds: Array.from(new Set(userIds)) },
+    });
+    return summaries.flatMap((summary) =>
+      isAccountStatus(summary.status)
+        ? [
+            {
+              userId: summary.userId,
+              status: summary.status,
+              mfaEnabled: summary.mfaEnabled,
+              lastLoginAt: summary.lastLoginAt ?? undefined,
+            },
+          ]
+        : [],
+    );
   }
   revokeAllSessionsByUserId(): Promise<void> {
     return notAvailable();
