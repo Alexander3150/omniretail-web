@@ -1,9 +1,18 @@
 import type { Session } from "@/core/entities";
-import type { AuthRepository, LoginInput, LoginResult } from "@/core/repositories/AuthRepository";
+import { AccountStatus } from "@/core/enums";
+import type {
+  AuthRepository,
+  EmployeeAuthSummary,
+  InviteEmployeeResult,
+  LoginInput,
+  LoginResult,
+} from "@/core/repositories/AuthRepository";
 import type { TenantRepository } from "@/core/repositories";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import type { ApiCurrentSession } from "@/infrastructure/api/apiCurrentSession";
 import { toSession } from "@/infrastructure/api/apiSessionMapper";
+import { type ApiUser, toUser } from "@/infrastructure/api/apiUserMapper";
+import { backendFetch } from "@/infrastructure/api/backendClient";
 import type { CurrentSessionClient } from "@/infrastructure/api/CurrentSessionClient";
 
 const NOT_AVAILABLE = "Esta función aún no está disponible en modo API.";
@@ -138,8 +147,14 @@ export class ApiAuthRepository implements AuthRepository {
   bootstrapEmployeeAccount(): ReturnType<AuthRepository["bootstrapEmployeeAccount"]> {
     return notAvailable();
   }
-  inviteEmployee(): ReturnType<AuthRepository["inviteEmployee"]> {
-    return notAvailable();
+  /**
+   * PROVISIONAL: `POST /administration/users` solo persiste el User; el backend todavia no crea
+   * AuthAccount ni token de invitacion. Se devuelve el empleado real sin token para que el alta no
+   * se reporte como fallida, pero ese empleado aun NO puede iniciar sesion.
+   */
+  async inviteEmployee(userId: string): Promise<InviteEmployeeResult> {
+    const user = toUser(await backendFetch<ApiUser>(`/administration/users/${userId}`));
+    return { user, invitationToken: null };
   }
   activateEmployeeAccount(): Promise<void> {
     return notAvailable();
@@ -147,8 +162,16 @@ export class ApiAuthRepository implements AuthRepository {
   changePassword(): Promise<void> {
     return notAvailable();
   }
-  getEmployeeAuthSummariesByUserIds(): ReturnType<AuthRepository["getEmployeeAuthSummariesByUserIds"]> {
-    return notAvailable();
+  /**
+   * PROVISIONAL: el backend no expone el estado de AuthAccount de los empleados. Se informa
+   * `active` sin MFA para que la tabla de empleados cargue; no refleja el estado real de la cuenta
+   * (un empleado recien creado por api ni siquiera tiene AuthAccount).
+   */
+  async getEmployeeAuthSummariesByUserIds(
+    _tenantId: string,
+    userIds: string[],
+  ): Promise<EmployeeAuthSummary[]> {
+    return userIds.map((userId) => ({ userId, status: AccountStatus.active, mfaEnabled: false }));
   }
   revokeAllSessionsByUserId(): Promise<void> {
     return notAvailable();
