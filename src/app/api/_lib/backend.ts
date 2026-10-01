@@ -83,3 +83,15 @@ export async function forwardBackendError(response: Response): Promise<NextRespo
     headers: body ? { "Content-Type": response.headers.get("Content-Type") ?? "application/json" } : undefined,
   });
 }
+
+/**
+ * POST sin sesion a un endpoint publico de cuentas (registro, verificacion, recuperacion): nunca
+ * envia token ni crea o toca la cookie. El backend no devuelve tokens en estas respuestas, asi que
+ * el status y el cuerpo se reenvian tal cual, exito o error. Nunca se registra el cuerpo: lleva
+ * contraseñas y tokens de un solo uso.
+ */
+export async function relayPublicAuthPost(path: string, body: string): Promise<NextResponse> {
+  const response = await callBackend(path, { method: "POST", body });
+  if (!response) return serviceUnavailable();
+  return forwardBackendError(response);
+}
