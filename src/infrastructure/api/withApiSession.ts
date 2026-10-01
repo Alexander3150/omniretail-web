@@ -1,7 +1,10 @@
-import type { Role, Tenant, User } from "@/core/entities";
+import type { Branch, Role, Tenant, User } from "@/core/entities";
+import { type BranchType, UserType } from "@/core/enums";
+import type { BranchRepository } from "@/core/repositories";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { ApiAuthRepository } from "@/infrastructure/api/ApiAuthRepository";
+import { ApiBranchRepository } from "@/infrastructure/api/ApiBranchRepository";
 import { toRole, toTenant, toUser } from "@/infrastructure/api/apiSessionMapper";
 import { CurrentSessionClient } from "@/infrastructure/api/CurrentSessionClient";
 
@@ -22,7 +25,41 @@ function withOverrides<T extends object>(target: T, overrides: Partial<T>): T {
 }
 
 /**
- * Modo api: reemplaza `auth` por ApiAuthRepository y adapta `users`, `roles` y `tenants` para que
+ * Sucursales desde el backend solo con sesion de empleado y, en los metodos por tienda, solo para
+ * la tienda de esa sesion: `/administration/branches` exige `admin.branches.read`, asi que el
+ * storefront publico y las cuentas de cliente siguen leyendo el mock (como antes de migrar).
+ */
+function apiBranchesForEmployees(
+  mock: BranchRepository,
+  api: BranchRepository,
+  currentSession: CurrentSessionClient,
+): BranchRepository {
+  const resolve = async (tenantId?: string): Promise<BranchRepository> => {
+    const current = await currentSession.get();
+    const isEmployee = current?.user.type === UserType.employee;
+    const sameTenant = tenantId === undefined || current?.user.tenantId === tenantId;
+    return isEmployee && sameTenant ? api : mock;
+  };
+
+  return {
+    getAll: async (): Promise<Branch[]> => (await resolve()).getAll(),
+    getById: async (id: string) => (await resolve()).getById(id),
+    getByIdScoped: async (tenantId: string, id: string) =>
+      (await resolve(tenantId)).getByIdScoped(tenantId, id),
+    getActive: async () => (await resolve()).getActive(),
+    getActiveByTenant: async (tenantId: string) =>
+      (await resolve(tenantId)).getActiveByTenant(tenantId),
+    listByTenant: async (tenantId: string) => (await resolve(tenantId)).listByTenant(tenantId),
+    getActiveByTenantAndType: async (tenantId: string, type: BranchType) =>
+      (await resolve(tenantId)).getActiveByTenantAndType(tenantId, type),
+    create: async (input) => (await resolve(input.tenantId)).create(input),
+    update: async (id, input) => (await resolve()).update(id, input),
+  };
+}
+
+/**
+ * Modo api: reemplaza `auth` por ApiAuthRepository, `branches` por ApiBranchRepository (ver
+ * `apiBranchesForEmployees`) y adapta `users`, `roles` y `tenants` para que
  * la identidad de la sesion actual (usuario, rol con permisos, tienda) salga de /auth/me. Cualquier
  * otra lectura se delega al mock, asi los modulos no migrados siguen igual.
  *
@@ -68,5 +105,10 @@ export function withApiSession(repositories: RepositoryRegistry, eventBus: DataE
     users,
     roles,
     tenants,
+    branches: apiBranchesForEmployees(
+      repositories.branches,
+      new ApiBranchRepository(eventBus),
+      currentSession,
+    ),
   };
 }
