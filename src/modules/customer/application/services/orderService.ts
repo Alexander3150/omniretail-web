@@ -51,6 +51,13 @@ export async function getCurrentCustomerOrderDetail(
   repositories: OrderRepositories,
   orderId: string,
 ): Promise<CustomerOrderDetailDto | null> {
+  if (isApiMode()) {
+    try {
+      return await backendFetch<CustomerOrderDetailDto>(`/customer/orders/${orderId}`);
+    } catch {
+      return null;
+    }
+  }
   const context = await resolveCustomerAuthorizationContext(repositories);
   const orders = await repositories.orders.getByCustomer(context.tenantId, context.customerId);
   const order = orders.find((item) => item.id === orderId);
