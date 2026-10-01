@@ -192,6 +192,7 @@ assert.match(
       description: "",
       branchId: "branch-1",
       parentId: "",
+      type: "warehouse",
       status: LocationStatus.active,
     },
     [],

@@ -13,6 +13,7 @@ import { GetLocationsService } from "@/modules/catalog/application/services/GetL
 import { SaveLocationService } from "@/modules/catalog/application/services/SaveLocationService";
 import { cleanError } from "@/modules/catalog/application/services/serviceHelpers";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
+import { isApiMode } from "@/config/api-mode";
 
 export type LocationStatusFilter = LocationStatus.active | LocationStatus.archived;
 
@@ -21,7 +22,8 @@ const DEFAULT_PAGE_SIZE = 10;
 export function useLocations() {
   const repositories = useRepositories();
   const { hasPermission } = useCurrentSession();
-  const canRead = hasPermission("catalog.locations.read") || hasPermission("catalog.locations.manage");
+  const canRead =
+    hasPermission("catalog.locations.read") || hasPermission("catalog.locations.manage");
   const canManage = hasPermission("catalog.locations.manage");
   const { currentBranch, loading: branchLoading } = useActiveBranch();
   const getService = useMemo(() => new GetLocationsService(repositories), [repositories]);
@@ -34,40 +36,42 @@ export function useLocations() {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const apiMode = isApiMode();
+  const scopedBranchId = currentBranch?.id;
 
   const reload = useCallback(async () => {
-    if (!currentBranch) {
+    if (!apiMode && !currentBranch) {
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      setLocations(await getService.execute(currentBranch.id));
-    } catch {
-      setError("No se pudieron cargar las ubicaciones.");
+      setLocations(await getService.execute(scopedBranchId));
+    } catch (caughtError) {
+      setError(cleanError(caughtError));
     } finally {
       setLoading(false);
     }
-  }, [currentBranch, getService]);
+  }, [apiMode, currentBranch, getService, scopedBranchId]);
 
   useDataEvent("inventory.changed", reload);
   useDataEvent("stock.changed", reload);
   useDataEvent("branch.changed", reload);
 
   useEffect(() => {
-    if (!currentBranch) {
+    if (!apiMode && !currentBranch) {
       return;
     }
     let active = true;
     getService
-      .execute(currentBranch.id)
+      .execute(scopedBranchId)
       .then((nextLocations) => {
         if (!active) return;
         setLocations(nextLocations);
         setError(null);
       })
-      .catch(() => {
-        if (active) setError("No se pudieron cargar las ubicaciones.");
+      .catch((caughtError) => {
+        if (active) setError(cleanError(caughtError));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -76,12 +80,14 @@ export function useLocations() {
     return () => {
       active = false;
     };
-  }, [currentBranch, getService]);
+  }, [apiMode, currentBranch, getService, scopedBranchId]);
 
   const branchLocations = useMemo(
     () =>
-      currentBranch ? locations.filter((location) => location.branchId === currentBranch.id) : [],
-    [currentBranch, locations],
+      scopedBranchId
+        ? locations.filter((location) => location.branchId === scopedBranchId)
+        : locations,
+    [locations, scopedBranchId],
   );
   const filteredLocations = useMemo(
     () => filterLocations(branchLocations, search, status),
@@ -126,13 +132,13 @@ export function useLocations() {
   }
 
   return {
-    loading: branchLoading || loading,
+    loading: (!apiMode && branchLoading) || loading,
     busy,
     error,
     canRead,
     canManage,
     locations: branchLocations,
-    currentBranch,
+    currentBranchId: scopedBranchId,
     filteredLocations,
     paginatedLocations,
     search,
@@ -147,14 +153,14 @@ export function useLocations() {
     reload,
     create: (dto: LocationEditorDto) =>
       runMutation(async () => {
-        if (!currentBranch) throw new Error("No hay una sucursal activa.");
+        if (!scopedBranchId)
+          throw new Error("Selecciona una sucursal antes de crear la ubicación.");
         const created = await saveService.create({
           ...dto,
-          branchId: currentBranch.id,
-          parentId: "",
+          branchId: scopedBranchId,
         });
         return getService
-          .execute(currentBranch.id)
+          .execute(scopedBranchId)
           .then((items) => items.find((item) => item.id === created.id) ?? null);
       }),
     update: (locationId: string, dto: LocationEditorDto) =>

@@ -15,6 +15,7 @@ import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { processImageUpload } from "@/shared/application/services/processImageUpload";
 import { CatalogImage } from "@/modules/catalog/components/CatalogImage";
 import { CategoryStatus } from "@/core/enums";
+import { isApiMode } from "@/config/api-mode";
 import { Button } from "@/shared/components/Button";
 import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
@@ -350,7 +351,12 @@ function CategoryTable({
                 tabIndex={0}
               >
                 <td className="min-w-[220px] px-4 py-3">
-                  <p className="font-semibold text-[var(--color-title)]">{category.name}</p>
+                  <p
+                    className="font-semibold text-[var(--color-title)]"
+                    style={{ paddingLeft: `${category.depth * 16}px` }}
+                  >
+                    {category.name}
+                  </p>
                   <p className="mt-1 text-xs font-semibold uppercase text-[var(--color-text-muted)]">
                     {category.code}
                   </p>
@@ -842,38 +848,40 @@ function CategoryForm({
           {value.description.length} / 500
         </p>
       </Field>
-      <Field id="category-image" label="Imagen">
-        <CategoryImagePreview dto={value} />
-        <div className="mt-2 flex flex-wrap gap-2">
-          <label className="inline-flex min-h-10 cursor-pointer items-center justify-center rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-white">
-            {value.image || value.pendingImage ? "Reemplazar imagen" : "Seleccionar imagen"}
-            <input
-              accept="image/jpeg,image/png,image/webp"
-              className="sr-only"
-              id="category-image"
-              onChange={(event) => {
-                void selectImage(event.target.files?.[0]);
-                event.target.value = "";
-              }}
-              type="file"
-            />
-          </label>
-          {value.image || value.pendingImage ? (
-            <Button
-              onClick={() =>
-                update({ image: undefined, pendingImage: undefined, removeImage: true })
-              }
-              type="button"
-              variant="danger"
-            >
-              Eliminar imagen
-            </Button>
+      {!isApiMode() ? (
+        <Field id="category-image" label="Imagen">
+          <CategoryImagePreview dto={value} />
+          <div className="mt-2 flex flex-wrap gap-2">
+            <label className="inline-flex min-h-10 cursor-pointer items-center justify-center rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-white">
+              {value.image || value.pendingImage ? "Reemplazar imagen" : "Seleccionar imagen"}
+              <input
+                accept="image/jpeg,image/png,image/webp"
+                className="sr-only"
+                id="category-image"
+                onChange={(event) => {
+                  void selectImage(event.target.files?.[0]);
+                  event.target.value = "";
+                }}
+                type="file"
+              />
+            </label>
+            {value.image || value.pendingImage ? (
+              <Button
+                onClick={() =>
+                  update({ image: undefined, pendingImage: undefined, removeImage: true })
+                }
+                type="button"
+                variant="danger"
+              >
+                Eliminar imagen
+              </Button>
+            ) : null}
+          </div>
+          {imageError ? (
+            <p className="mt-2 text-sm text-[var(--color-danger)]">{imageError}</p>
           ) : null}
-        </div>
-        {imageError ? (
-          <p className="mt-2 text-sm text-[var(--color-danger)]">{imageError}</p>
-        ) : null}
-      </Field>
+        </Field>
+      ) : null}
       <Field id="category-status" label="Estado">
         <Select
           id="category-status"

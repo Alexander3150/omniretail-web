@@ -52,6 +52,7 @@ import type {
 } from "@/core/repositories";
 import { isApiMode } from "@/config/api-mode";
 import { withApiSession } from "@/infrastructure/api/withApiSession";
+import { withApiCatalogMasterData } from "@/infrastructure/api/withApiCatalogMasterData";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import {
@@ -217,9 +218,12 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       notifications: new MockNotificationRepository(store, eventBus),
       auditLogs: new MockAuditLogRepository(store, eventBus),
     };
-    // Modo api: auth/users/roles/tenants resuelven la sesion actual contra el backend real; el
-    // resto sigue en mock. Modo mock (default): exactamente los mismos repositorios de siempre.
-    const repositories = isApiMode() ? withApiSession(mockRepositories, eventBus) : mockRepositories;
+    // Modo api: la sesion y los maestros migrados de Catalog usan el backend real. El adapter de
+    // ubicaciones delega al mock todas las operaciones de Inventory que no pertenecen al maestro.
+    // Modo mock (default): exactamente los mismos repositorios de siempre.
+    const repositories = isApiMode()
+      ? withApiCatalogMasterData(withApiSession(mockRepositories, eventBus), eventBus)
+      : mockRepositories;
     return {
       repositories,
       eventBus,

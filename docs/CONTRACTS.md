@@ -50,13 +50,17 @@ application services de Roles y permisos; el contrato compartido ya impide corro
 
 No se migra automaticamente un producto legacy cuya `baseUnitId` pueda haber representado un empaque grande: la direccion historica puede ser ambigua y reescalar balances, movimientos, reservas o lotes cambiaria su significado. Si ademas existen seriales, nunca se generan seriales sinteticos. Esa data debe corregirse mediante una migracion de dominio verificada o un reset explicito del entorno demo; hasta entonces, las operaciones que requieran la conversion fallan cerradas.
 
-`UnitRepository` administra `Unit` y expone operaciones de consulta/reemplazo de `UnitConversion` por producto. `Unit.category` es la clasificacion canonica de la unidad (`unit`, `weight`, `length`, `volume`, `other`) y no depende de `code`, `name` ni `symbol`. `UnitConversion` no debe duplicarse en entidades de producto o proveedor.
+`UnitRepository` administra `Unit` y expone operaciones de consulta tenant-scoped, consulta/reemplazo de `UnitConversion` por producto y listado tenant-scoped de conversiones para read models administrativos. En modo API, el maestro de unidades y las operaciones administrativas/globales de conversiones usan backend real. Mientras Products siga en mock, `getConversionsByProduct`, `getConversionsByProductScoped`, `replaceConversionsForProduct` y `replaceConversionsForProductScoped` se delegan explicitamente al repository original; esta composicion temporal se retira al migrar Products y nunca depende del formato del ID. `Unit.category` es la clasificacion canonica de la unidad (`unit`, `weight`, `length`, `volume`, `other`) y no depende de `code`, `name` ni `symbol`. `UnitConversion` no debe duplicarse en entidades de producto o proveedor.
 
 `AttributeRepository.replaceValuesForProduct` permite persistir el conjunto completo de atributos key/value de un producto sin crear entidades paralelas de atributos.
 
 `ProductSalesPriceTierRepository` administra precios mayoristas de venta por producto. Sus tiers usan `minQuantity` y `unitPrice`, son distintos de promociones y no representan costos de proveedor.
 
 `ProductInventorySettings` administra configuracion operativa por `tenantId + productId + branchId`: `minStock`, `reorderPoint` opcional y `defaultLocationId` opcional. `InventoryRepository` es el owner del contrato mediante `getProductInventorySettings` y `upsertProductInventorySettings`. `InventoryBalance` sigue representando stock real; sus campos `minStock/reorderPoint` son compatibilidad legacy temporal.
+
+`StorageLocation` conserva `branchId` y `parentId` como la jerarquia operativa. El backend real
+representa `warehouse -> aisle -> shelf -> level`; `counter` y `display` permanecen en el tipo
+compartido solo por compatibilidad con datos mock legacy y no se envian a la API de Catalog.
 
 `InventoryMovement` es historico append-only. `quantity` conserva la cantidad del movimiento y `type` define su direccion operacional. `quantityBefore` y `quantityAfter` son opcionales y solo deben escribirse cuando la operacion conoce esos valores en el momento de registrar el movimiento.
 

@@ -4,8 +4,8 @@
  * Route Handlers de `app/api/auth`).
  *
  * - `mock` (default): todo sigue usando los repositorios simulados.
- * - `api`: login, logout y la sesion actual pasan por el backend real; los modulos no migrados
- *   siguen en mock.
+ * - `api`: login, logout, sesion y los maestros migrados de Catalog pasan por el backend real;
+ *   los dominios no migrados siguen en mock.
  */
 export type ApiMode = "mock" | "api";
 

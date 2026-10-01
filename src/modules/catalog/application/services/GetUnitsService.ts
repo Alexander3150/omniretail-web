@@ -2,6 +2,7 @@ import type { Product, Unit, UnitConversion } from "@/core/entities";
 import { UnitCategory } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { UnitListItem } from "@/modules/catalog/application/dto/UnitEditorDto";
+import { isApiMode } from "@/config/api-mode";
 import {
   ensureCanReadUnits,
   resolveTenantContext,
@@ -21,16 +22,11 @@ export class GetUnitsService {
   async execute(): Promise<UnitListItem[]> {
     const { tenantId, permissions } = await resolveTenantContext(this.repositories);
     ensureCanReadUnits(permissions);
-    const [units, products] = await Promise.all([
+    const [units, products, flatConversions] = await Promise.all([
       this.repositories.units.getByTenant(tenantId),
-      this.repositories.products.getByTenant(tenantId),
+      isApiMode() ? Promise.resolve([]) : this.repositories.products.getByTenant(tenantId),
+      this.repositories.units.getAllConversionsByTenant(tenantId),
     ]);
-    const conversions = await Promise.all(
-      products.map((product) =>
-        this.repositories.units.getConversionsByProductScoped(tenantId, product.id),
-      ),
-    );
-    const flatConversions = conversions.flat();
 
     return units
       .map((unit) => toListItem(unit, products, flatConversions))

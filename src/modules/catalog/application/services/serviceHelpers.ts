@@ -8,6 +8,7 @@ import {
 } from "@/modules/catalog/validation/product.validation";
 import { ensureTenantCapability } from "@/shared/application/services/entitlementGuards";
 import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
+import { BackendRequestError } from "@/infrastructure/api/backendClient";
 
 export class CatalogServiceError extends Error {
   constructor(message: string) {
@@ -205,5 +206,6 @@ export async function ensureTenantCanUseKits(
 
 export function cleanError(error: unknown) {
   if (error instanceof CatalogServiceError) return error.message;
+  if (error instanceof BackendRequestError) return error.message;
   return "No se pudo completar la operacion. Intentalo de nuevo.";
 }

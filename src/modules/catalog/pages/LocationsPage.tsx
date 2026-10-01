@@ -3,6 +3,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -10,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { LocationStatus } from "@/core/enums";
+import { isApiMode } from "@/config/api-mode";
 import { Button } from "@/shared/components/Button";
 import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
@@ -52,7 +54,7 @@ export function LocationsPage() {
     error,
     canRead,
     canManage,
-    currentBranch,
+    currentBranchId,
     locations,
     filteredLocations,
     paginatedLocations,
@@ -141,7 +143,7 @@ export function LocationsPage() {
         {canManage ? (
           <Button
             className="w-full sm:w-auto"
-            disabled={!currentBranch}
+            disabled={!currentBranchId}
             onClick={() => setPanel({ mode: "create" })}
             type="button"
           >
@@ -203,7 +205,7 @@ export function LocationsPage() {
           <LocationPanel
             busy={busy}
             canManage={canManage}
-            currentBranchId={currentBranch?.id ?? ""}
+            currentBranchId={currentBranchId ?? ""}
             location={panelLocation}
             locations={locations}
             mode={panel.mode}
@@ -347,7 +349,12 @@ function LocationTable({
                 tabIndex={0}
               >
                 <td className="min-w-[220px] px-4 py-3">
-                  <p className="font-semibold text-[var(--color-title)]">{location.name}</p>
+                  <p
+                    className="font-semibold text-[var(--color-title)]"
+                    style={{ paddingLeft: `${location.depth * 16}px` }}
+                  >
+                    {location.name}
+                  </p>
                   {location.description ? (
                     <p className="mt-1 line-clamp-2 text-xs font-semibold text-[var(--color-text-muted)]">
                       {location.description}
@@ -358,7 +365,7 @@ function LocationTable({
                   {location.code}
                 </td>
                 <td className="px-4 py-3 text-right font-bold text-[var(--color-title)]">
-                  {location.productCount}
+                  {location.productCount ?? "-"}
                 </td>
                 <td className="px-4 py-3">
                   {canManage ? (
@@ -683,7 +690,14 @@ function LocationDetail({
       <dl className="divide-y divide-[var(--color-border)] rounded-md border border-[var(--color-border)] bg-white px-4">
         <DetailItem label="Nombre" value={location.name} />
         <DetailItem label="Codigo" value={location.code} />
-        <DetailItem label="Productos asociados" value={String(location.productCount)} />
+        <DetailItem label="Tipo" value={LOCATION_TYPE_LABELS[location.type] ?? location.type} />
+        {location.parentName ? (
+          <DetailItem label="Ubicacion padre" value={location.parentName} />
+        ) : null}
+        <DetailItem
+          label="Productos asociados"
+          value={location.productCount == null ? "-" : String(location.productCount)}
+        />
         <DetailItem label="Estado" value={<StatusBadge status={location.status} />} />
         <DetailItem label="Descripcion" value={location.description ?? "Sin descripcion"} />
       </dl>
@@ -732,13 +746,24 @@ function LocationForm({
     location ? locationToDto(location) : buildDefaultLocationDto(currentBranchId),
   );
   const [errors, setErrors] = useState<LocationValidationErrors>({});
+  const parentOptions = useMemo(
+    () =>
+      locations.filter(
+        (candidate) =>
+          candidate.id !== location?.id &&
+          candidate.branchId === (location?.branchId ?? currentBranchId) &&
+          candidate.status === LocationStatus.active &&
+          isSelectableParent(value.type, candidate.type),
+      ),
+    [currentBranchId, location?.branchId, location?.id, locations, value.type],
+  );
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextValue = {
       ...value,
       branchId: location?.branchId ?? currentBranchId,
-      parentId: location?.parentId ?? "",
+      parentId: value.parentId,
     };
     const nextErrors = validateLocationDto(nextValue, locations, location?.id);
     setErrors(nextErrors);
@@ -754,7 +779,7 @@ function LocationForm({
         {
           ...nextValue,
           branchId: location?.branchId ?? currentBranchId,
-          parentId: location?.parentId ?? "",
+          parentId: nextValue.parentId,
         },
         locations,
         location?.id,
@@ -779,8 +804,9 @@ function LocationForm({
           value={value.name}
         />
       </Field>
-      <Field id="location-code" label="Codigo">
+      <Field id="location-code" label="Codigo" error={errors.code}>
         <Input
+          disabled={mode === "edit"}
           id="location-code"
           maxLength={TEXT_LIMITS.locationCode}
           onChange={(event) => update({ code: event.target.value })}
@@ -788,18 +814,56 @@ function LocationForm({
           value={value.code}
         />
       </Field>
-      <Field id="location-description" label="Descripcion" error={errors.description}>
-        <textarea
-          className="min-h-24 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
-          id="location-description"
-          maxLength={500}
-          onChange={(event) => update({ description: event.target.value })}
-          value={value.description}
-        />
-        <p className="text-right text-xs text-[var(--color-text-muted)]">
-          {value.description.length} / 500
-        </p>
-      </Field>
+      {isApiMode() ? (
+        <>
+          <Field id="location-type" label="Tipo" error={errors.type}>
+            <Select
+              disabled={mode === "edit"}
+              id="location-type"
+              onChange={(event) =>
+                update({ type: event.target.value as LocationEditorDto["type"], parentId: "" })
+              }
+              value={value.type}
+            >
+              <option value="warehouse">Bodega</option>
+              <option value="aisle">Pasillo</option>
+              <option value="shelf">Estante</option>
+              <option value="level">Nivel</option>
+            </Select>
+          </Field>
+          {value.type !== "warehouse" ? (
+            <Field id="location-parent" label="Ubicacion padre *" error={errors.parentId}>
+              <Select
+                disabled={mode === "edit"}
+                id="location-parent"
+                onChange={(event) => update({ parentId: event.target.value })}
+                value={value.parentId}
+              >
+                <option value="">Selecciona una ubicacion</option>
+                {parentOptions.map((parent) => (
+                  <option key={parent.id} value={parent.id}>
+                    {parent.name} ({LOCATION_TYPE_LABELS[parent.type] ?? parent.type})
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
+        </>
+      ) : null}
+      {!isApiMode() ? (
+        <Field id="location-description" label="Descripcion" error={errors.description}>
+          <textarea
+            className="min-h-24 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
+            id="location-description"
+            maxLength={500}
+            onChange={(event) => update({ description: event.target.value })}
+            value={value.description}
+          />
+          <p className="text-right text-xs text-[var(--color-text-muted)]">
+            {value.description.length} / 500
+          </p>
+        </Field>
+      ) : null}
       <Field id="location-status" label="Estado">
         <Select
           id="location-status"
@@ -821,6 +885,23 @@ function LocationForm({
       </footer>
     </form>
   );
+}
+
+const LOCATION_TYPE_LABELS: Partial<Record<LocationListItem["type"], string>> = {
+  warehouse: "Bodega",
+  aisle: "Pasillo",
+  shelf: "Estante",
+  level: "Nivel",
+};
+
+function isSelectableParent(
+  childType: LocationEditorDto["type"],
+  parentType: LocationListItem["type"],
+) {
+  if (childType === "aisle") return parentType === "warehouse";
+  if (childType === "shelf") return parentType === "warehouse" || parentType === "aisle";
+  if (childType === "level") return parentType === "shelf";
+  return false;
 }
 
 function Field({

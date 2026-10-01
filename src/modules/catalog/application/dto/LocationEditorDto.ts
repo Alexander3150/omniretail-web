@@ -5,12 +5,14 @@ export interface LocationListItem {
   tenantId: string;
   branchId: string;
   parentId?: string;
+  parentName?: string;
   code: string;
   name: string;
   type: StorageLocation["type"];
+  depth: number;
   description?: string;
   status: StorageLocation["status"];
-  productCount: number;
+  productCount: number | null;
 }
 
 export interface LocationEditorDto {
@@ -19,5 +21,6 @@ export interface LocationEditorDto {
   description: string;
   branchId: string;
   parentId: string;
+  type: StorageLocation["type"];
   status: StorageLocation["status"];
 }

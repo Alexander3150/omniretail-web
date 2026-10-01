@@ -25,6 +25,13 @@ export class MockUnitRepository extends BaseMockRepository implements UnitReposi
       db.units.filter((item) => item.tenantId === tenantId && item.status === UnitStatus.active),
     );
   }
+  async getAllConversionsByTenant(tenantId: string) {
+    return this.read((db) =>
+      db.unitConversions
+        .filter((item) => item.tenantId === tenantId)
+        .sort((a, b) => a.fromUnitId.localeCompare(b.fromUnitId)),
+    );
+  }
   async getConversionsByProduct(productId: string) {
     return this.read((db) =>
       db.unitConversions

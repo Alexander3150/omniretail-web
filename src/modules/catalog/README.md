@@ -75,6 +75,18 @@ Implementado en esta rama:
 - `Unit.category` es la clasificacion canonica de la unidad; `code`, `symbol` y `name` no determinan la categoria.
 - Esta feature no administra conversiones ni empaques.
 
+## Integracion API de maestros
+
+En modo `api`, categorias, ubicaciones, unidades y conversiones consumen los endpoints reales de
+`/catalog` mediante `backendFetch`. Las listas paginadas se agregan dentro de los adapters para
+mantener los contratos existentes. Categorias y ubicaciones conservan `parentId`; sus listados se
+ordenan en preorden para reflejar la jerarquia. Inventory sigue en mock salvo las tres operaciones
+del maestro de ubicaciones. La pantalla de unidades no agrega CRUD de conversiones: usa su listado
+real para el read model existente y conserva las operaciones administrativas/globales en API.
+Mientras Products no este migrado, las lecturas y reemplazos de conversiones por producto se
+delegan explicitamente al repository original; esta compatibilidad debe retirarse al migrar
+Products.
+
 ## Estructura futura
 
 ```text
