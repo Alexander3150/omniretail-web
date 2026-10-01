@@ -804,7 +804,7 @@ function LocationForm({
           value={value.name}
         />
       </Field>
-      <Field id="location-code" label="Codigo">
+      <Field id="location-code" label="Codigo" error={errors.code}>
         <Input
           disabled={mode === "edit"}
           id="location-code"
