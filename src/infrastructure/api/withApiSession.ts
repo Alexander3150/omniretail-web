@@ -1,18 +1,24 @@
 import type { Branch, Role, Tenant, User } from "@/core/entities";
 import { type BranchType, type PlanCode, UserType } from "@/core/enums";
 import type {
+  BankAccountRepository,
   BranchRepository,
+  BusinessConfigRepository,
   PlanRepository,
   RoleRepository,
+  SupplierRepository,
   TenantSubscriptionRepository,
   UserRepository,
 } from "@/core/repositories";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { ApiAuthRepository } from "@/infrastructure/api/ApiAuthRepository";
+import { ApiBankAccountRepository } from "@/infrastructure/api/ApiBankAccountRepository";
 import { ApiBranchRepository } from "@/infrastructure/api/ApiBranchRepository";
+import { ApiBusinessConfigRepository } from "@/infrastructure/api/ApiBusinessConfigRepository";
 import { ApiPlanRepository } from "@/infrastructure/api/ApiPlanRepository";
 import { ApiRoleRepository } from "@/infrastructure/api/ApiRoleRepository";
+import { ApiSupplierRepository } from "@/infrastructure/api/ApiSupplierRepository";
 import { ApiTenantSubscriptionRepository } from "@/infrastructure/api/ApiTenantSubscriptionRepository";
 import { ApiUserRepository } from "@/infrastructure/api/ApiUserRepository";
 import { toRole, toTenant, toUser } from "@/infrastructure/api/apiSessionMapper";
@@ -179,8 +185,95 @@ function apiPlansForEmployees(
 }
 
 /**
- * Modo api: reemplaza `auth` por ApiAuthRepository y enruta al backend el nucleo de administracion
- * (`branches`, `roles`, `users`, `tenantSubscriptions`, `plans`) para empleados con el permiso de
+ * `/administration/bank-accounts` exige `admin.bank_accounts.manage`. Sin ese permiso (p. ej. un
+ * cajero cargando las cuentas del POS) se usa el mock, igual que antes.
+ */
+function apiBankAccountsForEmployees(
+  mock: BankAccountRepository,
+  api: BankAccountRepository,
+  currentSession: CurrentSessionClient,
+): BankAccountRepository {
+  const resolve = employeeRouter(mock, api, currentSession, ["admin.bank_accounts.manage"]);
+
+  return {
+    getAll: async () => (await resolve()).getAll(),
+    getActive: async () => (await resolve()).getActive(),
+    getActiveByTenant: async (tenantId: string) =>
+      (await resolve(tenantId)).getActiveByTenant(tenantId),
+    getById: async (id: string) => (await resolve()).getById(id),
+    create: async (input) => (await resolve(input.tenantId)).create(input),
+    update: async (id, input) => (await resolve()).update(id, input),
+  };
+}
+
+/** `/administration/suppliers` exige `admin.suppliers.manage`. */
+function apiSuppliersForEmployees(
+  mock: SupplierRepository,
+  api: SupplierRepository,
+  currentSession: CurrentSessionClient,
+): SupplierRepository {
+  const resolve = employeeRouter(mock, api, currentSession, ["admin.suppliers.manage"]);
+
+  return {
+    getAll: async () => (await resolve()).getAll(),
+    getById: async (id: string) => (await resolve()).getById(id),
+    getActive: async () => (await resolve()).getActive(),
+    getActiveByTenant: async (tenantId: string) =>
+      (await resolve(tenantId)).getActiveByTenant(tenantId),
+    listByTenant: async (tenantId: string) => (await resolve(tenantId)).listByTenant(tenantId),
+    getProductsBySupplier: async (supplierId: string) =>
+      (await resolve()).getProductsBySupplier(supplierId),
+    create: async (input) => (await resolve(input.tenantId)).create(input),
+    update: async (id, input) => (await resolve()).update(id, input),
+    archive: async (id: string) => (await resolve()).archive(id),
+  };
+}
+
+/**
+ * `GET /administration/business-config` no exige permiso (POS, inventario, recepcion y catalogo la
+ * leen); guardarla exige `admin.business_config.manage`. La config e-commerce y el carrusel exigen
+ * `admin.ecommerce_config.manage`, asi que el storefront publico y los empleados sin ese permiso
+ * siguen leyendo el mock.
+ */
+function apiBusinessConfigForEmployees(
+  mock: BusinessConfigRepository,
+  api: BusinessConfigRepository,
+  currentSession: CurrentSessionClient,
+): BusinessConfigRepository {
+  const readCapabilities = employeeRouter(mock, api, currentSession);
+  const manageCapabilities = employeeRouter(mock, api, currentSession, [
+    "admin.business_config.manage",
+  ]);
+  const manageEcommerce = employeeRouter(mock, api, currentSession, [
+    "admin.ecommerce_config.manage",
+  ]);
+
+  return {
+    getCapabilities: async (tenantId: string) =>
+      (await readCapabilities(tenantId)).getCapabilities(tenantId),
+    createCapabilities: async (input) =>
+      (await manageCapabilities(input.tenantId)).createCapabilities(input),
+    updateCapabilities: async (tenantId, input) =>
+      (await manageCapabilities(tenantId)).updateCapabilities(tenantId, input),
+    getEcommerceConfig: async (tenantId: string) =>
+      (await manageEcommerce(tenantId)).getEcommerceConfig(tenantId),
+    createEcommerceConfig: async (input) =>
+      (await manageEcommerce(input.tenantId)).createEcommerceConfig(input),
+    updateEcommerceConfig: async (tenantId, input) =>
+      (await manageEcommerce(tenantId)).updateEcommerceConfig(tenantId, input),
+    getHeroBanner: async (tenantId: string) =>
+      (await manageEcommerce(tenantId)).getHeroBanner(tenantId),
+    createHeroBanner: async (input) =>
+      (await manageEcommerce(input.tenantId)).createHeroBanner(input),
+    updateHeroBanner: async (tenantId, input) =>
+      (await manageEcommerce(tenantId)).updateHeroBanner(tenantId, input),
+  };
+}
+
+/**
+ * Modo api: reemplaza `auth` por ApiAuthRepository y enruta al backend la administracion
+ * (`branches`, `roles`, `users`, `tenantSubscriptions`, `plans`, `bankAccounts`, `suppliers`,
+ * `businessConfig`) para empleados con el permiso de
  * cada endpoint (ver `employeeRouter`). La identidad de la sesion actual (usuario, rol con
  * permisos, tienda) sale de /auth/me. Cualquier otra lectura se delega al mock, asi los modulos no
  * migrados siguen igual.
@@ -215,5 +308,20 @@ export function withApiSession(repositories: RepositoryRegistry, eventBus: DataE
       currentSession,
     ),
     plans: apiPlansForEmployees(repositories.plans, new ApiPlanRepository(), currentSession),
+    bankAccounts: apiBankAccountsForEmployees(
+      repositories.bankAccounts,
+      new ApiBankAccountRepository(eventBus),
+      currentSession,
+    ),
+    suppliers: apiSuppliersForEmployees(
+      repositories.suppliers,
+      new ApiSupplierRepository(eventBus),
+      currentSession,
+    ),
+    businessConfig: apiBusinessConfigForEmployees(
+      repositories.businessConfig,
+      new ApiBusinessConfigRepository(eventBus),
+      currentSession,
+    ),
   };
 }
