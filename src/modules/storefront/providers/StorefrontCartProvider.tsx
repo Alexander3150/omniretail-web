@@ -10,6 +10,8 @@ import {
   type StorefrontCartItemDto,
 } from "@/modules/storefront/application/dto/StorefrontCartDto";
 import { GetStorefrontPublishedProductService } from "@/modules/storefront/application/services/GetStorefrontPublishedProductService";
+import { ApiStorefrontCatalogService } from "@/modules/storefront/application/services/ApiStorefrontCatalogService";
+import { isApiMode } from "@/config/api-mode";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
 interface StorefrontCartContextValue {
@@ -40,11 +42,12 @@ function withQuantityPrice(item: PricedStorefrontCartItem, quantity: number): Pr
 
 export function StorefrontCartProvider({ children }: { children: ReactNode }) {
   const repositories = useRepositories();
-  const { tenantId } = usePublicTenant();
+  const { tenantId, tenantSlug } = usePublicTenant();
   const publishedProductService = useMemo(
     () => new GetStorefrontPublishedProductService(repositories),
     [repositories],
   );
+  const apiCatalogService = useMemo(() => new ApiStorefrontCatalogService(), []);
   const [allItems, setAllItems] = useState<PricedStorefrontCartItem[]>([]);
   const items = useMemo(
     () => allItems.filter((item) => item.tenantId === tenantId),
@@ -59,8 +62,35 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
   const addProduct = useCallback(
     async (productId: string) => {
       if (!tenantId) return;
-      const product = await publishedProductService.execute(tenantId, productId);
+      const apiProduct = isApiMode() ? await apiCatalogService.getProduct(tenantSlug, productId) : null;
+      const product = isApiMode()
+        ? apiProduct && {
+            id: apiProduct.id,
+            tenantId,
+            sku: apiProduct.sku,
+            name: apiProduct.name,
+            salePrice: apiProduct.salePrice,
+          }
+        : await publishedProductService.execute(tenantId, productId);
       if (!product) return;
+      if (isApiMode()) {
+        setAllItems((current) => {
+          const existing = current.find(
+            (item) => item.tenantId === tenantId && item.productId === product.id,
+          );
+          if (existing) {
+            return current.map((item) =>
+              item === existing ? withQuantityPrice(item, item.quantity + 1) : item,
+            );
+          }
+          return [...current, withQuantityPrice({
+            ...createStorefrontCartItem(product),
+            basePrice: product.salePrice,
+            salesPriceTiers: [],
+          }, 1)];
+        });
+        return;
+      }
       const ecommerceConfig = await repositories.businessConfig.getEcommerceConfig(tenantId);
       if (!ecommerceConfig?.defaultBranchId) return;
       const [primaryMedia, salesPriceTiers, promotion] = await Promise.all([
@@ -112,7 +142,7 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
         );
       });
     },
-    [publishedProductService, repositories, tenantId],
+    [apiCatalogService, publishedProductService, repositories, tenantId, tenantSlug],
   );
 
   const updateQuantity = useCallback(
