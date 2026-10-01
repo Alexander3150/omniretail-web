@@ -12,7 +12,7 @@ export interface StorefrontCartItemDto {
 }
 
 export function createStorefrontCartItem(
-  product: Product,
+  product: Pick<Product, "id" | "tenantId" | "sku" | "name" | "salePrice">,
   media?: Pick<StorefrontCartItemDto, "imageUrl" | "imageAlt">,
 ): StorefrontCartItemDto {
   return {

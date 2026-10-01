@@ -65,8 +65,11 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
       const apiProduct = isApiMode() ? await apiCatalogService.getProduct(tenantSlug, productId) : null;
       const product = isApiMode()
         ? apiProduct && {
-            ...apiProduct,
+            id: apiProduct.id,
             tenantId,
+            sku: apiProduct.sku,
+            name: apiProduct.name,
+            salePrice: apiProduct.salePrice,
           }
         : await publishedProductService.execute(tenantId, productId);
       if (!product) return;
