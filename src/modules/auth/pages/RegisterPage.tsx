@@ -62,10 +62,12 @@ export function RegisterPage() {
               </Link>
             </InlineAlert>
           ) : (
+            // Sin enlace en pantalla (modo api): el enlace de verificacion llega solo por correo.
             <InlineAlert
               className="mt-6"
-              title="No pudimos generar un enlace de verificación"
-              tone="warning"
+              title="Te enviamos un enlace de verificación"
+              description="Abre el correo que te enviamos y sigue el enlace para activar tu cuenta."
+              tone="info"
             />
           )}
 
