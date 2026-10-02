@@ -571,15 +571,17 @@ async function syncSupplierProducts(
       ? await repositories.supplierProducts.update(product.tenantId, existing.id, input)
       : await repositories.supplierProducts.create(input);
     nextIds.add(saved.id);
-    await repositories.supplierProducts.replaceCostTiers(
-      product.tenantId,
-      saved.id,
-      supplierProduct.costTiers.map((tier) => ({
-        tenantId: product.tenantId,
-        minQuantity: toFiniteNumber(tier.minQuantity),
-        unitCost: toFiniteNumber(tier.unitCost),
-      })),
-    );
+    if (supplierProduct.costTiers !== undefined) {
+      await repositories.supplierProducts.replaceCostTiers(
+        product.tenantId,
+        saved.id,
+        supplierProduct.costTiers.map((tier) => ({
+          tenantId: product.tenantId,
+          minQuantity: toFiniteNumber(tier.minQuantity),
+          unitCost: toFiniteNumber(tier.unitCost),
+        })),
+      );
+    }
   }
 
   await Promise.all(
@@ -934,7 +936,7 @@ function assertSupplierProducts(
       throw new CatalogServiceError("El plazo de entrega no puede superar 999,999 dias.");
     }
     const quantities = new Set<number>();
-    for (const tier of supplierProduct.costTiers) {
+    for (const tier of supplierProduct.costTiers ?? []) {
       const minQuantity = toFiniteNumber(tier.minQuantity);
       if (!isPositiveInteger(tier.minQuantity)) {
         throw new CatalogServiceError("La cantidad minima de costo debe ser mayor a 0.");
