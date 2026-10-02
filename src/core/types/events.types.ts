@@ -62,7 +62,14 @@ export interface DataEventPayload {
   incidentId?: string;
   previousPrice?: number;
   newPrice?: number;
-  action?: "created" | "updated" | "archived" | "deleted" | "status_changed" | "reset";
+  action?:
+    | "created"
+    | "updated"
+    | "archived"
+    | "restored"
+    | "deleted"
+    | "status_changed"
+    | "reset";
   metadata?: Record<string, unknown>;
 }
 

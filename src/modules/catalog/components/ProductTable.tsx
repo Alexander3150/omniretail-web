@@ -13,6 +13,7 @@ import { formatCurrency } from "@/shared/utils/formatCurrency";
 
 interface ProductTableProps {
   canUpdate: boolean;
+  relatedActionsEnabled: boolean;
   products: ProductListItem[];
   emptyMessage: string;
   onOpenQuickView: (product: ProductListItem) => void;
@@ -25,6 +26,7 @@ interface ProductTableProps {
 
 export function ProductTable({
   canUpdate,
+  relatedActionsEnabled,
   products,
   emptyMessage,
   onOpenQuickView,
@@ -155,6 +157,7 @@ export function ProductTable({
                   <td className="px-4 py-3">
                     <ProductActionsMenu
                       canUpdate={canUpdate}
+                      relatedActionsEnabled={relatedActionsEnabled}
                       onArchive={onArchive}
                       onPriceHistory={onPriceHistory}
                       onPromotion={onPromotion}

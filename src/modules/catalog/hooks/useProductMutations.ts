@@ -39,6 +39,7 @@ export function useProductMutations() {
     } catch (caughtError) {
       const message = cleanError(caughtError);
       setError(message);
+      if (caughtError instanceof Error) throw caughtError;
       throw new Error(message);
     } finally {
       setBusy(false);

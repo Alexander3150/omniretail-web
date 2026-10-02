@@ -2,6 +2,7 @@ import type { Product } from "@/core/entities";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { ProductEditorDto } from "@/modules/catalog/application/dto/ProductEditorDto";
 import {
+  ensureApiEditorHasOnlyProductCore,
   syncEditorRelatedData,
   validateEditorProduct,
 } from "@/modules/catalog/application/services/productEditorHelpers";
@@ -26,11 +27,14 @@ export class CreateProductWithCommercialDataService {
       dto,
       tenantId,
     );
+    ensureApiEditorHasOnlyProductCore(this.repositories, normalizedDto);
     const product = await this.repositories.products.create(productInput);
-    await syncEditorRelatedData(this.repositories, product, normalizedDto, {
-      capabilities,
-      isNewProduct,
-    });
+    if (this.repositories.productDataSource === "mock") {
+      await syncEditorRelatedData(this.repositories, product, normalizedDto, {
+        capabilities,
+        isNewProduct,
+      });
+    }
     return product;
   }
 }

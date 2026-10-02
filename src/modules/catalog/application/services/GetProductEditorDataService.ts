@@ -8,6 +8,7 @@ import type {
   SupplierProductEditorValue,
 } from "@/modules/catalog/application/dto/ProductEditorDto";
 import {
+  CatalogServiceError,
   ensureCanReadProducts,
   resolveTenantContext,
 } from "@/modules/catalog/application/services/serviceHelpers";
@@ -18,6 +19,11 @@ export class GetProductEditorDataService {
   async execute(productId?: string, branchId?: string): Promise<ProductEditorData> {
     const { tenantId, permissions } = await resolveTenantContext(this.repositories);
     ensureCanReadProducts(permissions);
+    if (this.repositories.productDataSource === "api") {
+      throw new CatalogServiceError(
+        "El editor integral de productos queda pendiente de los Bloques 2 y 3 para no mezclar datos del backend con repositories relacionados mock.",
+      );
+    }
     const [allAttributeDefinitions, suppliers, allProducts, branch] = await Promise.all([
       this.repositories.attributes.getDefinitions(),
       this.repositories.suppliers.getActiveByTenant(tenantId),

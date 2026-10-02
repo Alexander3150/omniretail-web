@@ -83,9 +83,21 @@ mantener los contratos existentes. Categorias y ubicaciones conservan `parentId`
 ordenan en preorden para reflejar la jerarquia. Inventory sigue en mock salvo las tres operaciones
 del maestro de ubicaciones. La pantalla de unidades no agrega CRUD de conversiones: usa su listado
 real para el read model existente y conserva las operaciones administrativas/globales en API.
-Mientras Products no este migrado, las lecturas y reemplazos de conversiones por producto se
-delegan explicitamente al repository original; esta compatibilidad debe retirarse al migrar
-Products.
+Las lecturas y reemplazos de conversiones por producto siguen delegadas al repository original;
+los flujos Product API del Bloque 1 no las invocan. Esta compatibilidad debe retirarse al integrar
+conversiones en el Bloque 2.
+
+## Integracion API de Products - Bloque 1
+
+En modo `api`, Product core usa `ApiProductRepository` sin fallback a mocks. El listado
+administrativo consume paginacion backend 1-based y enriquece unicamente la pagina actual con
+categorias y unidades reales. Los consumidores legacy pueden agregar paginas del API de forma
+temporal; el listado administrativo no usa ese camino.
+
+Promociones, inventario, medios, atributos, conversiones, proveedores, tiers y componentes de kit
+no se cruzan con UUID de Product del backend. El editor integral bloquea esa orquestacion hasta los
+Bloques 2/3. Mientras el backend no exponga filtros de Product, la UI API conserva su estado pero
+deshabilita busqueda y filtros para no presentar resultados parciales como globales.
 
 ## Estructura futura
 

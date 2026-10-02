@@ -5,6 +5,7 @@ import { BackendRequestError, backendFetch } from "@/infrastructure/api/backendC
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import type { ApiCategory } from "@/infrastructure/api/repositories/catalogMasterDataApi";
 import { assertApiUuid, assertOptionalApiUuid } from "@/infrastructure/api/uuid";
+import { toBackendMediaUrl, toSameOriginMediaUrl } from "@/infrastructure/api/mediaUrl";
 
 type CategoryWrite = Omit<Category, "id" | "createdAt" | "updatedAt">;
 
@@ -116,7 +117,7 @@ function toCategory(category: ApiCategory): Category {
     ...rest,
     parentId: parentId ?? undefined,
     description: description ?? undefined,
-    image: imageUrl ? { kind: "url", src: imageUrl } : undefined,
+    image: imageUrl ? { kind: "url", src: toSameOriginMediaUrl(imageUrl) } : undefined,
   };
 }
 
@@ -126,7 +127,8 @@ function toRequest(category: CategoryWrite) {
     name: category.name,
     slug: category.slug,
     description: category.description ?? null,
-    imageUrl: category.image?.kind === "url" ? category.image.src : null,
+    imageUrl:
+      category.image?.kind === "url" ? toBackendMediaUrl(category.image.src) : null,
     status: category.status,
   };
 }

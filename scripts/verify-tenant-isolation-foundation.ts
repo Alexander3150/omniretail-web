@@ -22,12 +22,28 @@ import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/servic
 import { ArchiveProductService } from "@/modules/catalog/application/services/ArchiveProductService";
 import { GetCategoriesService } from "@/modules/catalog/application/services/GetCategoriesService";
 import { GetProductDetailService } from "@/modules/catalog/application/services/GetProductDetailService";
-import { GetProductsService } from "@/modules/catalog/application/services/GetProductsService";
+import {
+  GetProductsService,
+  type GetProductsParams,
+} from "@/modules/catalog/application/services/GetProductsService";
 import { GetUnitsService } from "@/modules/catalog/application/services/GetUnitsService";
 
 const TENANT_A = "tenant-demo";
 const TENANT_B = "tenant-isolation-b";
 const TENANT_INACTIVE = "tenant-isolation-inactive";
+const PRODUCT_LIST_PARAMS: GetProductsParams = {
+  page: 1,
+  pageSize: 100,
+  sort: "name,asc",
+  filters: {
+    search: "",
+    status: "all",
+    productType: "all",
+    categoryId: "all",
+    channels: [],
+    promotion: "all",
+  },
+};
 
 class MemoryStorageAdapter extends LocalStorageAdapter {
   readonly values = new Map<string, string>();
@@ -176,6 +192,7 @@ function createHarness() {
     rememberMe: false,
   };
   const repositories = {
+    productDataSource: "mock",
     auth: {
       getCurrentSessionId: async () => session.id,
       getSession: async (sessionId: string) =>
@@ -222,11 +239,12 @@ function createHarness() {
 async function verifyCatalogIsolation(harness: ReturnType<typeof createHarness>) {
   const { entities, repositories } = harness;
   const assertVisibleTenant = async (tenantId: string) => {
-    const [products, categories, units] = await Promise.all([
-      new GetProductsService(repositories).execute(),
+    const [productPage, categories, units] = await Promise.all([
+      new GetProductsService(repositories).execute(PRODUCT_LIST_PARAMS),
       new GetCategoriesService(repositories).execute(),
       new GetUnitsService(repositories).execute(),
     ]);
+    const products = productPage.items;
     assert.ok(products.length > 0 && products.every((item) => item.tenantId === tenantId));
     assert.ok(categories.length > 0 && categories.every((item) => item.tenantId === tenantId));
     assert.ok(units.length > 0 && units.every((item) => item.tenantId === tenantId));
