@@ -8,7 +8,8 @@ Este modulo desarrolla su funcionalidad propia sin duplicar contratos compartido
 
 ## Contracts que consume
 
-ProductRepository, CategoryRepository, UnitRepository, AttributeRepository, PromotionRepository
+ProductRepository, ProductMediaRepository, CategoryRepository, UnitRepository, AttributeRepository,
+PromotionRepository
 
 ## Reglas
 
@@ -27,7 +28,9 @@ Implementado en esta rama:
 - Listado, busqueda, filtros, paginacion y detalle de productos.
 - Creacion, edicion y archivo mediante `ProductRepository`.
 - Listado, detalle, validacion de referencias y mutaciones fallan cerrados ante IDs de otro tenant.
-- Hasta seis imagenes mediante `ProductMediaRepository`; acepta URLs legacy y uploads procesados en `CatalogImageAssetRepository`/IndexedDB, con principal, orden, alt, reemplazo, borrado y fallback visual.
+- Hasta seis imagenes mediante `ProductMediaRepository`; mock conserva uploads procesados en
+  `CatalogImageAssetRepository`/IndexedDB y API usa Product Media real con multipart, URLs
+  externas, metadata, principal, reemplazo seguro, borrado y proxy `/api/media`.
 - Opciones de categoria, unidad y capacidades de negocio desde repositories.
 - Tracking adaptable por `BusinessCapabilitiesConfig`; productos `service` fuerzan tracking inactivo.
 - Capacidades del negocio aplicadas de verdad, no solo mostradas: sin `supportsServices` o
@@ -109,9 +112,20 @@ despues restaura. Las escrituras posteriores al core se reportan por seccion med
 guardado parcial; no se simula rollback y la UI recarga el estado canonico. Un kit archivado puede
 reintentar sus componentes antes de usar la restauracion explicita.
 
-Media permanece diferida al Bloque 3: el editor API devuelve una coleccion vacia, muestra el tab
-informativo y no consulta ni escribe `ProductMediaRepository`. En modo `mock` se conserva el flujo
-multimedia y la orquestacion integral existentes.
+## Integracion API de Products - Bloque 3
+
+Product Media usa los endpoints reales on-demand en editor, detalle y Quick View. Los uploads son
+multipart y las rutas administradas `/media/...` se renderizan mediante el proxy same-origin
+`/api/media/...`; la tabla paginada mantiene placeholder para evitar una consulta multimedia por
+fila mientras el backend no exponga primary media ni un endpoint batch. Los reemplazos locales no
+mutan la URL administrada: crean un upload nuevo y retiran el anterior, liberando primero el slot
+cuando el producto ya alcanzo el limite de seis. Los fallos posteriores al core se reportan como
+guardado parcial y recargan el estado canonico, sin simular rollback.
+
+Las imagenes de categoria usan sus endpoints multipart/delete dedicados en API. Mock conserva
+`mockAsset`, IndexedDB, previews y limpieza de assets huerfanos sin mezclar UUID del backend. Si
+el core de una categoria se guarda pero falla su imagen, la UI recarga la categoria y mantiene un
+estado parcial recuperable para reintentar desde edicion, sin anunciar exito ni simular rollback.
 
 ## Estructura futura
 

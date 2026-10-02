@@ -105,7 +105,6 @@ export interface ProductEditorData {
     canReadInventorySettings: boolean;
     canReadPromotions: boolean;
     canManagePromotions: boolean;
-    mediaEnabled: boolean;
   };
   detail: ProductDetailViewModel | null;
   unitConversion: UnitConversion | null;

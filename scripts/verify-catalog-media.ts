@@ -121,6 +121,9 @@ function createHarness(
     rememberMe: false,
   };
   const repositories = {
+    productDataSource: "mock",
+    productRelationsDataSource: "mock",
+    productMediaDataSource: "mock",
     auth: {
       getCurrentSessionId: async () => session.id,
       getSession: async (sessionId: string) => (sessionId === session.id ? session : null),

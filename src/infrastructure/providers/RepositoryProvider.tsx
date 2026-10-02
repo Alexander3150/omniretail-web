@@ -110,7 +110,7 @@ import { IndexedDbCatalogImageAssetRepository } from "@/infrastructure/media/Ind
 export interface RepositoryRegistry {
   productDataSource: "mock" | "api";
   productRelationsDataSource: "mock" | "api";
-  productMediaDataSource: "mock" | "deferred" | "api";
+  productMediaDataSource: "mock" | "api";
   tenants: TenantRepository;
   tenantOnboarding: TenantOnboardingRepository;
   businessConfig: BusinessConfigRepository;

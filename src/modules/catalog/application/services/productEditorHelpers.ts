@@ -296,6 +296,11 @@ export interface ApiEditorSyncOptions {
   skipKitComponents?: boolean;
 }
 
+export interface ApiEditorSyncResult {
+  failedSections: ProductEditorFailedSection[];
+  failureMessages: string[];
+}
+
 /**
  * Sincroniza cada replace API como una seccion observable. No usa Promise.all: supplier/cost tiers
  * y las operaciones destructivas conservan su orden, y el caller puede informar exactamente que
@@ -306,15 +311,17 @@ export async function syncApiEditorRelatedData(
   product: Product,
   dto: ProductEditorDto,
   options: ApiEditorSyncOptions,
-): Promise<ProductEditorFailedSection[]> {
+): Promise<ApiEditorSyncResult> {
   const failed: ProductEditorFailedSection[] = [];
+  const failureMessages: string[] = [];
   const hasPermission = (permission: string) => options.permissions.includes(permission);
   const canUpdateProductRelations = hasPermission("catalog.products.update");
   const run = async (section: ProductEditorFailedSection, operation: () => Promise<unknown>) => {
     try {
       await operation();
-    } catch {
+    } catch (error) {
       failed.push(section);
+      if (error instanceof Error && error.message) failureMessages.push(error.message);
     }
   };
 
@@ -361,9 +368,12 @@ export async function syncApiEditorRelatedData(
   }
   if (canUpdateProductRelations) {
     await run("priceTiers", () => syncSalesPriceTiers(repositories, product, dto));
+    if (repositories.productMediaDataSource === "api") {
+      await run("media", () => syncApiProductMedia(repositories, product, dto.media));
+    }
   }
 
-  return failed;
+  return { failedSections: failed, failureMessages };
 }
 
 export async function syncKitComponents(
@@ -683,6 +693,148 @@ export async function syncProductMedia(
       .filter((assetId) => !nextAssetIds.has(assetId))
       .map((assetId) => removeAssetIfOrphaned(repositories, product.tenantId, assetId)),
   );
+}
+
+export async function syncApiProductMedia(
+  repositories: RepositoryRegistry,
+  product: Product,
+  mediaValues: ProductMediaEditorValue[],
+) {
+  if (mediaValues.length > 6) {
+    throw new CatalogServiceError("Se pueden guardar hasta 6 imágenes.");
+  }
+  if (mediaValues.some((media) => media.source?.kind === "mockAsset")) {
+    throw new CatalogServiceError("Una imagen mock no puede enviarse a Product Media API.");
+  }
+
+  const current = await repositories.productMedia.getByProduct(product.id, product.tenantId);
+  const candidates = mediaValues.filter(
+    (item) => item.pendingUpload || item.source || item.url.trim(),
+  );
+  const firstImageIndex = candidates.findIndex((item) => item.type === "image");
+  const hasPrimaryImage = candidates.some(
+    (item) => item.type === "image" && item.isPrimary,
+  );
+  const normalized = candidates.map((item, index) => ({
+    ...item,
+    url: editorMediaUrl(item),
+    isPrimary:
+      item.type === "image" && (hasPrimaryImage ? item.isPrimary : index === firstImageIndex),
+    sortOrder: index,
+  }));
+  const currentById = new Map(current.map((item) => [item.id, item]));
+  const currentPrimaryId = current.find(
+    (item) => item.type === "image" && item.isPrimary,
+  )?.id;
+  for (const media of normalized) {
+    if (media.id && !currentById.has(media.id)) {
+      throw new CatalogServiceError("Una referencia multimedia ya no pertenece al producto.");
+    }
+  }
+
+  const retainedIds = new Set(normalized.flatMap((item) => (item.id ? [item.id] : [])));
+  const removals = current.filter((item) => !retainedIds.has(item.id));
+  const resolvedIds = new Map<number, string>();
+
+  try {
+    for (const [index, media] of normalized.entries()) {
+      if (!media.id || media.pendingUpload) continue;
+      const existing = currentById.get(media.id);
+      if (!existing) continue;
+      if (existing.type !== media.type) {
+        throw new CatalogServiceError("El tipo de una multimedia existente no puede cambiarse.");
+      }
+      const nextAlt = media.alt?.trim() || undefined;
+      const existingAlt = existing.alt?.trim() || undefined;
+      const urlChanged = media.url !== existing.url;
+      if (
+        nextAlt !== existingAlt ||
+        media.sortOrder !== existing.sortOrder ||
+        urlChanged
+      ) {
+        await repositories.productMedia.update({
+          ...existing,
+          url: media.url,
+          source: media.url ? { kind: "url", src: media.url } : existing.source,
+          alt: nextAlt,
+          sortOrder: media.sortOrder,
+        });
+      }
+      resolvedIds.set(index, existing.id);
+    }
+
+    for (const media of removals) {
+      await repositories.productMedia.removeFromProduct(product.id, media.id);
+    }
+    let persistedCount = current.length - removals.length;
+
+    for (const [index, media] of normalized.entries()) {
+      if (!media.pendingUpload) continue;
+      const replacing = media.id ? currentById.get(media.id) : undefined;
+      let removedReplacementFirst = false;
+      if (!replacing && persistedCount >= 6) {
+        throw new CatalogServiceError(
+          "El producto ya alcanzó el límite de 6 elementos multimedia.",
+        );
+      }
+      if (replacing && persistedCount >= 6) {
+        await repositories.productMedia.removeFromProduct(product.id, replacing.id);
+        persistedCount -= 1;
+        removedReplacementFirst = true;
+      }
+      const uploaded = await repositories.productMedia.uploadForProduct(product.id, {
+        tenantId: product.tenantId,
+        file: media.pendingUpload.blob,
+        alt: media.alt?.trim() || product.name,
+        sortOrder: media.sortOrder,
+        isPrimary: media.isPrimary,
+      });
+      persistedCount += 1;
+      resolvedIds.set(index, uploaded.id);
+      if (replacing && !removedReplacementFirst) {
+        await repositories.productMedia.removeFromProduct(product.id, replacing.id);
+        persistedCount -= 1;
+      }
+    }
+
+    for (const [index, media] of normalized.entries()) {
+      if (media.id || media.pendingUpload) continue;
+      if (persistedCount >= 6) {
+        throw new CatalogServiceError(
+          "El producto ya alcanzó el límite de 6 elementos multimedia.",
+        );
+      }
+      const created = await repositories.productMedia.add({
+        tenantId: product.tenantId,
+        productId: product.id,
+        type: media.type,
+        url: media.url,
+        source: media.url ? { kind: "url", src: media.url } : undefined,
+        alt: media.alt?.trim() || product.name,
+        isPrimary: media.isPrimary,
+        sortOrder: media.sortOrder,
+        createdAt: new Date().toISOString(),
+      });
+      persistedCount += 1;
+      resolvedIds.set(index, created.id);
+    }
+
+    const primaryIndex = normalized.findIndex((item) => item.isPrimary);
+    const primaryId = primaryIndex >= 0 ? resolvedIds.get(primaryIndex) : undefined;
+    if (primaryId && primaryId !== currentPrimaryId) {
+      await repositories.productMedia.setPrimary(product.id, primaryId);
+    }
+
+    return repositories.productMedia.getByProduct(product.id, product.tenantId);
+  } catch (error) {
+    await repositories.productMedia.getByProduct(product.id, product.tenantId).catch(() => []);
+    throw error;
+  }
+}
+
+function editorMediaUrl(media: ProductMediaEditorValue) {
+  if (media.url.trim()) return media.url.trim();
+  return media.source?.kind === "url" ? media.source.src.trim() : "";
 }
 
 export async function removeAssetIfOrphaned(

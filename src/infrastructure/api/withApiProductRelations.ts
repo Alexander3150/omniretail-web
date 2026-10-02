@@ -6,8 +6,8 @@ import { ApiProductKitComponentRepository } from "@/infrastructure/api/repositor
 import { ApiProductPriceHistoryRepository } from "@/infrastructure/api/repositories/ApiProductPriceHistoryRepository";
 import { ApiProductSalesPriceTierRepository } from "@/infrastructure/api/repositories/ApiProductSalesPriceTierRepository";
 import { ApiPromotionRepository } from "@/infrastructure/api/repositories/ApiPromotionRepository";
+import { ApiProductMediaRepository } from "@/infrastructure/api/repositories/ApiProductMediaRepository";
 import { ApiSupplierProductRepository } from "@/infrastructure/api/repositories/ApiSupplierProductRepository";
-import { DeferredProductMediaRepository } from "@/infrastructure/api/repositories/DeferredProductMediaRepository";
 
 export function withApiProductRelations(
   repositories: RepositoryRegistry,
@@ -16,8 +16,8 @@ export function withApiProductRelations(
   return {
     ...repositories,
     productRelationsDataSource: "api",
-    productMediaDataSource: "deferred",
-    productMedia: new DeferredProductMediaRepository(),
+    productMediaDataSource: "api",
+    productMedia: new ApiProductMediaRepository(repositories.products, eventBus),
     attributes: new ApiAttributeRepository(eventBus),
     inventory: new ApiLocationRepository(eventBus, repositories.products).withInventoryDelegate(
       repositories.inventory,

@@ -5,7 +5,11 @@ import { BackendRequestError, backendFetch } from "@/infrastructure/api/backendC
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import type { ApiCategory } from "@/infrastructure/api/repositories/catalogMasterDataApi";
 import { assertApiUuid, assertOptionalApiUuid } from "@/infrastructure/api/uuid";
-import { toBackendMediaUrl, toSameOriginMediaUrl } from "@/infrastructure/api/mediaUrl";
+import {
+  isBackendManagedMediaUrl,
+  toBackendMediaUrl,
+  toSameOriginMediaUrl,
+} from "@/infrastructure/api/mediaUrl";
 
 type CategoryWrite = Omit<Category, "id" | "createdAt" | "updatedAt">;
 
@@ -80,6 +84,31 @@ export class ApiCategoryRepository implements CategoryRepository {
     return this.update(id, input);
   }
 
+  async uploadImage(id: string, file: Blob) {
+    assertApiUuid(id, "categoryId");
+    const form = new FormData();
+    form.append("file", file, categoryImageFilename(file.type));
+    const category = toCategory(
+      await backendFetch<ApiCategory>(`/catalog/categories/${id}/image`, {
+        method: "POST",
+        body: form,
+      }),
+    );
+    this.emit(category, "updated");
+    return category;
+  }
+
+  async removeImage(id: string) {
+    assertApiUuid(id, "categoryId");
+    const category = toCategory(
+      await backendFetch<ApiCategory>(`/catalog/categories/${id}/image`, {
+        method: "DELETE",
+      }),
+    );
+    this.emit(category, "updated");
+    return category;
+  }
+
   async archive(id: string) {
     assertApiUuid(id, "categoryId");
     const current = await this.getById(id);
@@ -113,11 +142,15 @@ export class ApiCategoryRepository implements CategoryRepository {
 
 function toCategory(category: ApiCategory): Category {
   const { imageUrl, parentId, description, ...rest } = category;
+  const safeImageUrl =
+    imageUrl && (isBackendManagedMediaUrl(imageUrl) || /^https?:\/\//i.test(imageUrl))
+      ? toSameOriginMediaUrl(imageUrl)
+      : undefined;
   return {
     ...rest,
     parentId: parentId ?? undefined,
     description: description ?? undefined,
-    image: imageUrl ? { kind: "url", src: toSameOriginMediaUrl(imageUrl) } : undefined,
+    image: safeImageUrl ? { kind: "url", src: safeImageUrl } : undefined,
   };
 }
 
@@ -131,4 +164,10 @@ function toRequest(category: CategoryWrite) {
       category.image?.kind === "url" ? toBackendMediaUrl(category.image.src) : null,
     status: category.status,
   };
+}
+
+function categoryImageFilename(mimeType: string) {
+  const extension =
+    mimeType === "image/png" ? "png" : mimeType === "image/webp" ? "webp" : "jpg";
+  return `category-image.${extension}`;
 }

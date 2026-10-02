@@ -438,15 +438,12 @@ export function ProductForm({
             />
           ) : null}
           {activeTab === "media" ? (
-            editorData.access.mediaEnabled ? (
-              <MediaTab
-                errors={errors}
-                onChange={(media) => updateValue({ media })}
-                value={value.media}
-              />
-            ) : (
-              <DeferredMediaTab />
-            )
+            <MediaTab
+              errors={errors}
+              onChange={(media) => updateValue({ media })}
+              readOnly={!editorData.access.canUpdateProductRelations}
+              value={value.media}
+            />
           ) : null}
         </div>
 
@@ -2120,28 +2117,16 @@ function SuppliersTab({
   );
 }
 
-function DeferredMediaTab() {
-  return (
-    <section className="space-y-3 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
-      <SectionTitle
-        description="La gestion multimedia se habilitara en el siguiente bloque."
-        title="Multimedia"
-      />
-      <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text)]">
-        En modo API no se realizan cargas, enlaces ni escrituras de multimedia desde este editor.
-      </p>
-    </section>
-  );
-}
-
 function MediaTab({
   value,
   errors,
   onChange,
+  readOnly,
 }: {
   value: ProductMediaEditorValue[];
   errors: ProductValidationErrors;
   onChange: (value: ProductMediaEditorValue[]) => void;
+  readOnly: boolean;
 }) {
   const primary = value.find((item) => item.isPrimary) ?? value[0];
   const { user } = useCurrentSession();
@@ -2217,13 +2202,18 @@ function MediaTab({
           )}
         </div>
         <div className="space-y-4">
-          <div className="flex justify-end">
+          <div className="flex items-center justify-end gap-3">
+            {readOnly ? (
+              <span className="text-sm text-[var(--color-text-muted)]">
+                Sin permiso para modificar multimedia.
+              </span>
+            ) : null}
             <label className="inline-flex min-h-10 cursor-pointer items-center justify-center rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-white">
               Seleccionar archivos
               <input
                 accept="image/jpeg,image/png,image/webp"
                 className="sr-only"
-                disabled={value.length >= 6}
+                disabled={readOnly || value.length >= 6}
                 multiple
                 onChange={(event) => {
                   void appendFiles(event.target.files);
@@ -2249,7 +2239,9 @@ function MediaTab({
                         ? "Archivo local listo para guardar"
                         : media.source?.kind === "mockAsset"
                           ? "Archivo local guardado"
-                          : "Imagen legacy"}
+                          : media.url.startsWith("/api/media/")
+                            ? "Archivo administrado"
+                            : "Imagen externa"}
                     </p>
                     <label className="block cursor-pointer text-xs font-semibold text-[var(--color-title)] underline">
                       {media.pendingUpload || media.source?.kind === "mockAsset"
@@ -2258,6 +2250,7 @@ function MediaTab({
                       <input
                         accept="image/jpeg,image/png,image/webp"
                         className="sr-only"
+                        disabled={readOnly}
                         onChange={(event) => {
                           void replaceFile(index, event.target.files?.[0]);
                           event.target.value = "";
@@ -2268,11 +2261,13 @@ function MediaTab({
                   </div>
                   <Input
                     aria-label="Texto alternativo"
+                    disabled={readOnly}
                     onChange={(event) => update(index, { alt: event.target.value })}
                     placeholder="Texto alternativo"
                     value={media.alt ?? ""}
                   />
                   <Button
+                    disabled={readOnly}
                     onClick={() => update(index, { isPrimary: true })}
                     type="button"
                     className="w-full sm:w-auto"
@@ -2281,6 +2276,7 @@ function MediaTab({
                     Principal
                   </Button>
                   <Button
+                    disabled={readOnly}
                     onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}
                     type="button"
                     className="w-full sm:w-auto"

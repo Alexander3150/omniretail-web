@@ -5,6 +5,7 @@ import type { ProductEditorDto } from "@/modules/catalog/application/dto/Product
 import { ProductMapper } from "@/modules/catalog/application/mappers/ProductMapper";
 import {
   syncApiEditorRelatedData,
+  syncApiProductMedia,
   syncEditorRelatedData,
   syncKitComponents,
   toProductDto,
@@ -60,10 +61,27 @@ export class UpdateProductWithCommercialDataService {
           "Restaure el producto antes de editarlo.",
         );
       }
+      const failedSections: ProductEditorFailedSection[] = [];
+      const failureMessages: string[] = [];
       try {
         await syncKitComponents(this.repositories, current, normalizedDto);
-      } catch {
-        throw new ProductEditorPartialSaveError(current.id, false, ["kitComponents"]);
+      } catch (error) {
+        failedSections.push("kitComponents");
+        if (error instanceof Error && error.message) failureMessages.push(error.message);
+      }
+      try {
+        await syncApiProductMedia(this.repositories, current, normalizedDto.media);
+      } catch (error) {
+        failedSections.push("media");
+        if (error instanceof Error && error.message) failureMessages.push(error.message);
+      }
+      if (failedSections.length > 0) {
+        throw new ProductEditorPartialSaveError(
+          current.id,
+          false,
+          failedSections,
+          failureMessages,
+        );
       }
       try {
         return (
@@ -85,6 +103,7 @@ export class UpdateProductWithCommercialDataService {
       ProductMapper.toUpdateInput(toProductDto(normalizedDto), current),
     );
     const failedSections: ProductEditorFailedSection[] = [];
+    const failureMessages: string[] = [];
     if (Number(normalizedDto.salePrice) !== current.salePrice) {
       try {
         await this.repositories.products.updatePrice(
@@ -92,19 +111,26 @@ export class UpdateProductWithCommercialDataService {
           Number(normalizedDto.salePrice),
           "Actualizacion desde el editor de producto",
         );
-      } catch {
+      } catch (error) {
         failedSections.push("price");
+        if (error instanceof Error && error.message) failureMessages.push(error.message);
       }
     }
-    failedSections.push(
-      ...(await syncApiEditorRelatedData(this.repositories, updated, normalizedDto, {
-        permissions,
-        capabilities,
-        isNewProduct,
-      })),
+    const relatedResult = await syncApiEditorRelatedData(
+      this.repositories,
+      updated,
+      normalizedDto,
+      { permissions, capabilities, isNewProduct },
     );
+    failedSections.push(...relatedResult.failedSections);
+    failureMessages.push(...relatedResult.failureMessages);
     if (failedSections.length > 0) {
-      throw new ProductEditorPartialSaveError(current.id, true, failedSections);
+      throw new ProductEditorPartialSaveError(
+        current.id,
+        true,
+        failedSections,
+        failureMessages,
+      );
     }
     try {
       return (await this.repositories.products.getByIdScoped(tenantId, current.id)) ?? updated;
