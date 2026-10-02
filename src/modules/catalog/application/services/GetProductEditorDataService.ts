@@ -1,13 +1,17 @@
+import type { Product } from "@/core/entities";
 import { LocationStatus, ProductType, PromotionStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
-import { GetProductDetailService } from "@/modules/catalog/application/services/GetProductDetailService";
 import type {
   ProductAttributeEditorValue,
   ProductEditorData,
   ProductMediaEditorValue,
   SupplierProductEditorValue,
 } from "@/modules/catalog/application/dto/ProductEditorDto";
-import { ensureCanReadProducts, resolveTenantContext } from "@/modules/catalog/application/services/serviceHelpers";
+import { GetProductDetailService } from "@/modules/catalog/application/services/GetProductDetailService";
+import {
+  ensureCanReadProducts,
+  resolveTenantContext,
+} from "@/modules/catalog/application/services/serviceHelpers";
 
 export class GetProductEditorDataService {
   constructor(private readonly repositories: RepositoryRegistry) {}
@@ -29,196 +33,212 @@ export class GetProductEditorDataService {
       canReadPromotions: !apiMode || hasPermission("catalog.promotions.read"),
       canManagePromotions: !apiMode || hasPermission("catalog.promotions.manage"),
     };
-    const [allAttributeDefinitions, suppliers, allProducts, branch] = await Promise.all([
-      access.canReadAttributes ? this.repositories.attributes.getDefinitions() : Promise.resolve([]),
-      access.canManageSuppliers
-        ? this.repositories.suppliers.getActiveByTenant(tenantId)
-        : Promise.resolve([]),
-      // Costo temporal documentado: Products API aún no filtra candidatos físicos de kit.
-      // El adapter agrega todas las páginas únicamente para este selector del editor.
-      this.repositories.products.getByTenant(tenantId),
-      branchId
-        ? this.repositories.branches.getByIdScoped(tenantId, branchId)
-        : Promise.resolve(null),
-    ]);
-    // `getDefinitions()` aun es una lectura global legacy; se filtra antes de crear la DTO.
-    const attributeDefinitions = allAttributeDefinitions.filter(
-      (definition) => definition.tenantId === undefined || definition.tenantId === tenantId,
-    );
-    const tenantProducts = allProducts;
-    // branchId llega del cliente (selector de sucursal): no se usa para leer ubicaciones ni
-    // configuracion de inventario a menos que la sucursal exista y pertenezca al tenant activo.
-    const tenantBranchId = branch && branch.tenantId === tenantId ? branch.id : undefined;
     const canReadLocations =
       !apiMode ||
       hasPermission("catalog.locations.read") ||
       hasPermission("catalog.locations.manage");
-    const branchLocations = tenantBranchId && canReadLocations
-      ? await this.repositories.inventory.getLocations(tenantBranchId)
-      : [];
-    const activeStorageLocations = branchLocations.filter(
-      (location) => location.tenantId === tenantId && location.status === LocationStatus.active,
+
+    // Product Detail inicia primero y reutiliza el contexto ya resuelto. Sus lecturas de Product,
+    // media, category y unit avanzan en paralelo con los masters independientes del editor.
+    const detailLoadPromise = productId
+      ? new GetProductDetailService(this.repositories).executeWithMedia(productId, {
+          tenantId,
+          permissions,
+        })
+      : Promise.resolve(null);
+    const attributeDefinitionsPromise = (
+      access.canReadAttributes
+        ? this.repositories.attributes.getDefinitions()
+        : Promise.resolve([])
+    ).then((definitions) =>
+      // getDefinitions() sigue siendo global legacy; el DTO solo recibe definiciones del tenant.
+      definitions.filter(
+        (definition) => definition.tenantId === undefined || definition.tenantId === tenantId,
+      ),
     );
-    const kitEligibleProducts = (excludeProductId?: string) =>
-      tenantProducts.filter(
+    const suppliersPromise = access.canManageSuppliers
+      ? this.repositories.suppliers.getActiveByTenant(tenantId)
+      : Promise.resolve([]);
+    const branchDataPromise = (
+      branchId
+        ? this.repositories.branches.getByIdScoped(tenantId, branchId)
+        : Promise.resolve(null)
+    ).then(async (branch) => {
+      // branchId solo habilita lecturas cuando la sucursal pertenece al tenant activo.
+      const tenantBranchId = branch && branch.tenantId === tenantId ? branch.id : undefined;
+      const branchLocations =
+        tenantBranchId && canReadLocations
+          ? await this.repositories.inventory.getLocations(tenantBranchId)
+          : [];
+      return {
+        tenantBranchId,
+        branchLocations,
+        activeStorageLocations: branchLocations.filter(
+          (location) =>
+            location.tenantId === tenantId && location.status === LocationStatus.active,
+        ),
+      };
+    });
+    const selectKitEligibleProducts = (products: Product[], excludeProductId?: string) =>
+      products.filter(
         (product) =>
           product.id !== excludeProductId &&
-          product.productType === "physical" &&
+          product.productType === ProductType.physical &&
           product.tracking.stock,
       );
+    const kitEligibleProductsPromise = productId
+      ? detailLoadPromise.then((detailLoad) =>
+          detailLoad?.detail.product.productType === ProductType.kit
+            ? this.repositories.products
+                .getByTenant(tenantId)
+                .then((products) => selectKitEligibleProducts(products, productId))
+            : [],
+        )
+      : this.repositories.products
+          .getByTenant(tenantId)
+          .then((products) => selectKitEligibleProducts(products));
 
-    if (!productId) {
-      return {
-        access,
-        detail: null,
-        unitConversion: null,
-        unitConversions: [],
-        inventorySettings: null,
-        storageLocations: activeStorageLocations,
-        currentDefaultLocation: null,
-        attributeDefinitions,
-        attributes: [],
-        salesPriceTiers: [],
-        suppliers,
-        supplierProducts: [],
-        media: [],
-        promotionCount: 0,
-        kitComponents: [],
-        kitEligibleProducts: kitEligibleProducts(),
-      };
-    }
+    // Las relaciones dependen de un Product scoped valido, pero no de definitions, suppliers ni
+    // locations. Comienzan apenas termina Product Detail mientras esos masters siguen cargando.
+    const relationsPromise = detailLoadPromise.then(async (detailLoad) => {
+      if (!productId || !detailLoad) return null;
+      const { detail } = detailLoad;
+      const supplierProductsWithCostsPromise = (
+        detail.product.productType !== ProductType.kit && access.canManageSuppliers
+          ? this.repositories.supplierProducts.getByProductForTenant(tenantId, productId)
+          : Promise.resolve([])
+      ).then((supplierProducts) =>
+        Promise.all(
+          supplierProducts.map(async (supplierProduct): Promise<SupplierProductEditorValue> => ({
+            id: supplierProduct.id,
+            supplierId: supplierProduct.supplierId,
+            supplierSku: supplierProduct.supplierSku,
+            purchaseUnitId: supplierProduct.purchaseUnitId,
+            purchaseToBaseFactor: supplierProduct.purchaseToBaseFactor,
+            lastCost: supplierProduct.lastCost,
+            leadTimeDays: supplierProduct.leadTimeDays,
+            minimumOrderQuantity: supplierProduct.minimumOrderQuantity,
+            preferred: supplierProduct.preferred,
+            active: supplierProduct.active,
+            costTiers: (
+              await this.repositories.supplierProducts.getCostTiers(supplierProduct.id)
+            ).map((tier) => ({
+              id: tier.id,
+              minQuantity: tier.minQuantity,
+              unitCost: tier.unitCost,
+            })),
+          })),
+        ),
+      );
+      const inventorySettingsPromise = branchDataPromise.then(({ tenantBranchId }) =>
+        detail.product.productType === ProductType.physical &&
+        detail.product.tracking.stock &&
+        tenantBranchId &&
+        access.canReadInventorySettings
+          ? this.repositories.inventory.getProductInventorySettings(productId, tenantBranchId)
+          : null,
+      );
 
-    // El productId puede venir de la URL: se valida la pertenencia al tenant ANTES de cargar el
-    // detalle o cualquier colección relacionada -- un producto de otro tenant se trata igual que
-    // uno inexistente y nunca dispara la carga pesada de GetProductDetailService.
-    const product = tenantProducts.find((item) => item.id === productId);
-    if (!product) {
+      const [
+        conversions,
+        attributeValues,
+        salesPriceTiers,
+        supplierProductsWithCosts,
+        promotions,
+        inventorySettings,
+        kitComponents,
+      ] = await Promise.all([
+        detail.product.productType !== ProductType.kit && access.canReadConversions
+          ? this.repositories.units.getConversionsByProductScoped(tenantId, productId)
+          : Promise.resolve([]),
+        this.repositories.attributes.getValuesByProduct(productId),
+        this.repositories.productSalesPriceTiers.getByProduct(productId),
+        supplierProductsWithCostsPromise,
+        access.canReadPromotions
+          ? this.repositories.promotions.getByProductScoped(tenantId, productId)
+          : Promise.resolve([]),
+        inventorySettingsPromise,
+        detail.product.productType === ProductType.kit
+          ? this.repositories.productKitComponents.getByKitProduct(productId)
+          : Promise.resolve([]),
+      ]);
       return {
-        access,
-        detail: null,
-        unitConversion: null,
-        unitConversions: [],
-        inventorySettings: null,
-        storageLocations: activeStorageLocations,
-        currentDefaultLocation: null,
-        attributeDefinitions,
-        attributes: [],
-        salesPriceTiers: [],
-        suppliers,
-        supplierProducts: [],
-        media: [],
-        promotionCount: 0,
-        kitComponents: [],
-        kitEligibleProducts: kitEligibleProducts(),
+        conversions,
+        attributeValues,
+        salesPriceTiers,
+        supplierProductsWithCosts,
+        promotions,
+        inventorySettings,
+        kitComponents,
       };
-    }
-
-    const detail = await new GetProductDetailService(this.repositories).execute(productId);
-    if (!detail) {
-      return {
-        access,
-        detail: null,
-        unitConversion: null,
-        unitConversions: [],
-        inventorySettings: null,
-        storageLocations: activeStorageLocations,
-        currentDefaultLocation: null,
-        attributeDefinitions,
-        attributes: [],
-        salesPriceTiers: [],
-        suppliers,
-        supplierProducts: [],
-        media: [],
-        promotionCount: 0,
-        kitComponents: [],
-        kitEligibleProducts: kitEligibleProducts(),
-      };
-    }
+    });
 
     const [
-      conversions,
-      attributeValues,
-      salesPriceTiers,
-      supplierProducts,
-      media,
-      promotions,
-      inventorySettings,
-      kitComponents,
+      detailLoad,
+      attributeDefinitions,
+      suppliers,
+      branchData,
+      kitEligibleProducts,
+      relations,
     ] = await Promise.all([
-      detail.product.productType !== ProductType.kit && access.canReadConversions
-        ? this.repositories.units.getConversionsByProductScoped(tenantId, productId)
-        : Promise.resolve([]),
-      this.repositories.attributes.getValuesByProduct(productId),
-      this.repositories.productSalesPriceTiers.getByProduct(productId),
-      detail.product.productType !== ProductType.kit && access.canManageSuppliers
-        ? this.repositories.supplierProducts.getByProductForTenant(tenantId, productId)
-        : Promise.resolve([]),
-      this.repositories.productMedia.getByProduct(productId, tenantId),
-      access.canReadPromotions
-        ? this.repositories.promotions.getByProductScoped(tenantId, productId)
-        : Promise.resolve([]),
-      detail.product.productType === ProductType.physical &&
-      detail.product.tracking.stock &&
-      tenantBranchId &&
-      access.canReadInventorySettings
-        ? this.repositories.inventory.getProductInventorySettings(productId, tenantBranchId)
-        : Promise.resolve(null),
-      detail.product.productType === ProductType.kit
-        ? this.repositories.productKitComponents.getByKitProduct(productId)
-        : Promise.resolve([]),
+      detailLoadPromise,
+      attributeDefinitionsPromise,
+      suppliersPromise,
+      branchDataPromise,
+      kitEligibleProductsPromise,
+      relationsPromise,
     ]);
-    const currentDefaultLocation = inventorySettings?.defaultLocationId
-      ? (branchLocations.find((location) => location.id === inventorySettings.defaultLocationId) ??
-        null)
-      : null;
 
+    if (!detailLoad || !relations) {
+      return {
+        access,
+        detail: null,
+        unitConversion: null,
+        unitConversions: [],
+        inventorySettings: null,
+        storageLocations: branchData.activeStorageLocations,
+        currentDefaultLocation: null,
+        attributeDefinitions,
+        attributes: [],
+        salesPriceTiers: [],
+        suppliers,
+        supplierProducts: [],
+        media: [],
+        promotionCount: 0,
+        kitComponents: [],
+        kitEligibleProducts,
+      };
+    }
+
+    const { detail, media } = detailLoad;
+    const currentDefaultLocation = relations.inventorySettings?.defaultLocationId
+      ? (branchData.branchLocations.find(
+          (location) => location.id === relations.inventorySettings?.defaultLocationId,
+        ) ?? null)
+      : null;
     const saleUnitId = detail.product.saleUnitId ?? detail.product.baseUnitId;
     const unitConversion =
-      conversions.find(
+      relations.conversions.find(
         (conversion) =>
           conversion.fromUnitId === detail.product.baseUnitId && conversion.toUnitId === saleUnitId,
       ) ??
-      conversions.find(
+      relations.conversions.find(
         (conversion) =>
           conversion.fromUnitId === saleUnitId && conversion.toUnitId === detail.product.baseUnitId,
       ) ??
       null;
-
-    const supplierProductsWithCosts: SupplierProductEditorValue[] = await Promise.all(
-      supplierProducts.map(async (supplierProduct) => {
+    const editableAttributes: ProductAttributeEditorValue[] = relations.attributeValues.map(
+      (value) => {
+        const definition = attributeDefinitions.find(
+          (item) => item.id === value.attributeDefinitionId,
+        );
         return {
-          id: supplierProduct.id,
-          supplierId: supplierProduct.supplierId,
-          supplierSku: supplierProduct.supplierSku,
-          purchaseUnitId: supplierProduct.purchaseUnitId,
-          purchaseToBaseFactor: supplierProduct.purchaseToBaseFactor,
-          lastCost: supplierProduct.lastCost,
-          leadTimeDays: supplierProduct.leadTimeDays,
-          minimumOrderQuantity: supplierProduct.minimumOrderQuantity,
-          preferred: supplierProduct.preferred,
-          active: supplierProduct.active,
-          costTiers: (
-            await this.repositories.supplierProducts.getCostTiers(supplierProduct.id)
-          ).map((tier) => ({
-            id: tier.id,
-            minQuantity: tier.minQuantity,
-            unitCost: tier.unitCost,
-          })),
+          attributeDefinitionId: value.attributeDefinitionId,
+          name: definition?.name ?? value.name ?? "Atributo",
+          value: String(value.value),
         };
-      }),
+      },
     );
-
-    const editableAttributes: ProductAttributeEditorValue[] = attributeValues.map((value) => {
-      const definition = attributeDefinitions.find(
-        (item) => item.id === value.attributeDefinitionId,
-      );
-      return {
-        attributeDefinitionId: value.attributeDefinitionId,
-        name: definition?.name ?? value.name ?? "Atributo",
-        value: String(value.value),
-      };
-    });
-
     const editableMedia: ProductMediaEditorValue[] = media.map((item) => ({
       id: item.id,
       type: item.type,
@@ -233,31 +253,31 @@ export class GetProductEditorDataService {
       access,
       detail,
       unitConversion,
-      unitConversions: conversions,
-      inventorySettings,
-      storageLocations: activeStorageLocations,
+      unitConversions: relations.conversions,
+      inventorySettings: relations.inventorySettings,
+      storageLocations: branchData.activeStorageLocations,
       currentDefaultLocation,
       attributeDefinitions,
       attributes: editableAttributes,
-      salesPriceTiers: salesPriceTiers.map((tier) => ({
+      salesPriceTiers: relations.salesPriceTiers.map((tier) => ({
         id: tier.id,
         minQuantity: tier.minQuantity,
         unitPrice: tier.unitPrice,
         active: tier.active,
       })),
       suppliers,
-      supplierProducts: supplierProductsWithCosts,
+      supplierProducts: relations.supplierProductsWithCosts,
       media: editableMedia,
-      promotionCount: promotions.filter(
+      promotionCount: relations.promotions.filter(
         (promotion) =>
           promotion.status === PromotionStatus.active ||
           promotion.status === PromotionStatus.scheduled,
       ).length,
-      kitComponents: kitComponents.map((component) => ({
+      kitComponents: relations.kitComponents.map((component) => ({
         componentProductId: component.componentProductId,
         quantityPerKit: component.quantityPerKit,
       })),
-      kitEligibleProducts: kitEligibleProducts(productId),
+      kitEligibleProducts,
     };
   }
 }
