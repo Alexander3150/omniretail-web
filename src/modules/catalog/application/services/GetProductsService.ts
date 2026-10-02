@@ -1,5 +1,11 @@
 import type { Promotion } from "@/core/entities";
-import { ProductStatus, ProductType, PromotionStatus, PromotionType } from "@/core/enums";
+import {
+  ProductStatus,
+  ProductType,
+  PromotionStatus,
+  PromotionType,
+  SalesChannel,
+} from "@/core/enums";
 import { getBranchAvailableQuantity } from "@/core/inventory/stockAvailability";
 import { getProductMediaSource, selectPrimaryProductMedia } from "@/core/media/catalogImage";
 import { calculateEffectivePrice } from "@/core/pricing";
@@ -24,6 +30,19 @@ export interface GetProductsParams extends ProductPageParams {
 }
 
 export class GetProductsService {
+  private readonly categoriesPromisesByTenant = new Map<
+    string,
+    ReturnType<RepositoryRegistry["categories"]["getByTenant"]>
+  >();
+  private readonly unitsPromisesByTenant = new Map<
+    string,
+    ReturnType<RepositoryRegistry["units"]["getByTenant"]>
+  >();
+  private readonly promotionsPromisesByTenant = new Map<
+    string,
+    ReturnType<RepositoryRegistry["promotions"]["getActiveByTenant"]>
+  >();
+
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(params: GetProductsParams): Promise<PaginatedResult<ProductListItem>> {
@@ -31,44 +50,96 @@ export class GetProductsService {
     ensureCanReadProducts(permissions);
 
     if (this.repositories.productDataSource === "api") {
-      return this.getApiPage(tenantId, params);
+      return this.getApiPage(
+        tenantId,
+        params,
+        permissions.includes("catalog.promotions.read"),
+      );
     }
     return this.getMockPage(tenantId, params);
   }
 
-  private async getApiPage(tenantId: string, params: GetProductsParams) {
-    const [page, categories, units] = await Promise.all([
-      this.repositories.products.getPageScoped(tenantId, params),
-      this.repositories.categories.getByTenant(tenantId),
-      this.repositories.units.getByTenant(tenantId),
+  private async getApiPage(
+    tenantId: string,
+    params: GetProductsParams,
+    canReadPromotions: boolean,
+  ) {
+    const [page, categories, units, promotions] = await Promise.all([
+      this.repositories.products.getPageScoped(tenantId, toApiPageParams(params)),
+      this.getOrCreateTenantPromise(this.categoriesPromisesByTenant, tenantId, () =>
+        this.repositories.categories.getByTenant(tenantId),
+      ),
+      this.getOrCreateTenantPromise(this.unitsPromisesByTenant, tenantId, () =>
+        this.repositories.units.getByTenant(tenantId),
+      ),
+      canReadPromotions
+        ? this.getOrCreateTenantPromise(this.promotionsPromisesByTenant, tenantId, () =>
+            this.repositories.promotions.getActiveByTenant(tenantId),
+          )
+        : Promise.resolve([]),
     ]);
     const categoryNames = new Map(categories.map((category) => [category.id, category.name]));
     const unitNames = new Map(units.map((unit) => [unit.id, unit.name]));
+    const now = new Date();
 
     return {
       ...page,
-      items: page.items.map((product): ProductListItem => ({
-        id: product.id,
-        tenantId: product.tenantId,
-        sku: product.sku,
-        barcode: product.barcode,
-        name: product.name,
-        brand: product.brand,
-        categoryName: categoryNames.get(product.categoryId) ?? "Sin categoria",
-        categoryId: product.categoryId,
-        baseUnitName: unitNames.get(product.baseUnitId) ?? "Sin unidad",
-        baseUnitId: product.baseUnitId,
-        productType: product.productType,
-        salePrice: product.salePrice,
-        channels: product.channels,
-        hasActivePromotion: false,
-        activePromotion: undefined,
-        status: product.status,
-        tracking: product.tracking,
-        imageSource: undefined,
-        availableQuantity: undefined,
-      })),
+      items: page.items.map((product): ProductListItem => {
+        const activePromotion =
+          product.status === ProductStatus.published
+            ? getCurrentPromotion(product.id, product.tenantId, promotions, now)
+            : undefined;
+        const effectivePrice = activePromotion
+          ? calculateEffectivePrice(product.salePrice, activePromotion).effectivePrice
+          : product.salePrice;
+
+        return {
+          id: product.id,
+          tenantId: product.tenantId,
+          sku: product.sku,
+          barcode: product.barcode,
+          name: product.name,
+          brand: product.brand,
+          categoryName: categoryNames.get(product.categoryId) ?? "Sin categoria",
+          categoryId: product.categoryId,
+          baseUnitName: unitNames.get(product.baseUnitId) ?? "Sin unidad",
+          baseUnitId: product.baseUnitId,
+          productType: product.productType,
+          salePrice: product.salePrice,
+          channels: product.channels,
+          hasActivePromotion: Boolean(activePromotion),
+          activePromotion: activePromotion
+            ? {
+                id: activePromotion.id,
+                label: formatPromotionLabel(activePromotion),
+                effectivePrice,
+              }
+            : undefined,
+          status: product.status,
+          tracking: product.tracking,
+          imageSource: product.primaryImageUrl
+            ? { kind: "url", src: product.primaryImageUrl }
+            : undefined,
+          availableQuantity: undefined,
+        };
+      }),
     };
+  }
+
+  private getOrCreateTenantPromise<T>(
+    cache: Map<string, Promise<T>>,
+    tenantId: string,
+    load: () => Promise<T>,
+  ): Promise<T> {
+    const cached = cache.get(tenantId);
+    if (cached) return cached;
+
+    const pending = load();
+    cache.set(tenantId, pending);
+    void pending.catch(() => {
+      if (cache.get(tenantId) === pending) cache.delete(tenantId);
+    });
+    return pending;
   }
 
   private async getMockPage(tenantId: string, params: GetProductsParams) {
@@ -185,6 +256,23 @@ export class GetProductsService {
     }
     return products;
   }
+}
+
+function toApiPageParams(params: GetProductsParams): ProductPageParams {
+  const { filters } = params;
+  return {
+    page: params.page,
+    pageSize: params.pageSize,
+    sort: params.sort,
+    search: filters.search.trim() || undefined,
+    status: filters.status === "all" ? undefined : filters.status,
+    productType: filters.productType === "all" ? undefined : filters.productType,
+    categoryId: filters.categoryId === "all" ? undefined : filters.categoryId,
+    channels: filters.channels.length
+      ? filters.channels.map((channel) => SalesChannel[channel])
+      : undefined,
+    promotion: filters.promotion === "all" ? undefined : filters.promotion,
+  };
 }
 
 function filterProducts(products: ProductListItem[], filters: ProductFiltersState) {

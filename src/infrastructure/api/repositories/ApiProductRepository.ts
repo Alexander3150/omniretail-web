@@ -1,6 +1,7 @@
 import { ProductStatus, SalesChannel } from "@/core/enums";
 import type { Product } from "@/core/entities";
 import type {
+  ProductPageItem,
   ProductPageParams,
   ProductRepository,
 } from "@/core/repositories/ProductRepository";
@@ -8,12 +9,14 @@ import type { PaginatedResult } from "@/core/types/pagination.types";
 import { BackendRequestError, backendFetch } from "@/infrastructure/api/backendClient";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { assertApiUuid, assertOptionalApiUuid } from "@/infrastructure/api/uuid";
+import { toSameOriginMediaUrl } from "@/infrastructure/api/mediaUrl";
 import {
   parseApiProduct,
   parseApiProductPage,
   parseProductCreateRequest,
   parseProductUpdateRequest,
   type ApiProduct,
+  type ApiProductList,
 } from "@/infrastructure/api/repositories/productApi.schema";
 import { normalizeSku } from "@/shared/utils/normalizeSku";
 
@@ -75,6 +78,12 @@ export class ApiProductRepository implements ProductRepository {
     const response = parseApiProductPage(
       await backendFetch<unknown>("/catalog/products", {
         query: {
+          search: params.search?.trim() || undefined,
+          status: params.status,
+          productType: params.productType,
+          categoryId: params.categoryId,
+          channels: params.channels?.length ? params.channels.join(",") : undefined,
+          promotion: params.promotion,
           page: params.page,
           size: params.pageSize,
           sort: params.sort ?? DEFAULT_SORT,
@@ -241,8 +250,16 @@ export function toProduct(api: ApiProduct): Product {
   };
 }
 
-export function mapPage(page: PaginatedResult<ApiProduct>): PaginatedResult<Product> {
-  return { ...page, items: page.items.map(toProduct) };
+export function mapPage(page: PaginatedResult<ApiProductList>): PaginatedResult<ProductPageItem> {
+  return {
+    ...page,
+    items: page.items.map((item) => ({
+      ...toProduct(item),
+      primaryImageUrl: item.primaryImageUrl
+        ? toSameOriginMediaUrl(item.primaryImageUrl)
+        : undefined,
+    })),
+  };
 }
 
 function toCreateRequest(product: ProductCreate) {
@@ -292,6 +309,7 @@ function assertPageParams(params: ProductPageParams) {
     throw new BackendRequestError("pageSize debe ser positivo.", 400, "INVALID_PAGE_SIZE");
   if (params.sort && !ALLOWED_SORTS.has(params.sort))
     throw new BackendRequestError("Ordenamiento no permitido.", 400, "INVALID_SORT");
+  assertOptionalApiUuid(params.categoryId, "categoryId");
 }
 
 function productNotFound() {

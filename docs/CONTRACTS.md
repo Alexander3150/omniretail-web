@@ -16,6 +16,13 @@ para listar, leer por identidad y mutar. Un ID de otro tenant se resuelve como i
 mutaciones scoped no permiten cambiar `tenantId`. Las conversiones de unidad por producto se leen y
 reemplazan con el mismo scope del producto.
 
+`ProductRepository.getPageScoped` acepta paginacion, ordenamiento y los filtros server-side de
+Products (`search`, `status`, `productType`, `categoryId`, `channels`, `promotion`). Su resultado usa
+`ProductPageItem`, una proyeccion de lista que puede incluir `primaryImageUrl`; ese campo no forma
+parte de la entidad `Product` ni altera los contratos de detalle o escritura. En API, canales se
+serializan como un unico parametro separado por comas y no se envian valores `all`, busquedas en
+blanco ni arreglos vacios.
+
 `BranchRepository.getActiveByTenant` y `getByIdScoped` son los boundaries operativos de sucursal.
 `branchScope = all` significa todas las sucursales del tenant autenticado, nunca todas las globales;
 `selected` aplica `allowedBranchIds` solo despues de verificar que User, Role y Branch pertenecen al

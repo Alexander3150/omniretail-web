@@ -96,8 +96,8 @@ administrativo consume paginacion backend 1-based y enriquece unicamente la pagi
 categorias y unidades reales. Los consumidores legacy pueden agregar paginas del API de forma
 temporal; el listado administrativo no usa ese camino.
 
-Mientras el backend no exponga filtros de Product, la UI API conserva su estado pero deshabilita
-busqueda y filtros para no presentar resultados parciales como globales.
+La UI envia busqueda, estado, tipo, categoria, canales y promocion al backend; no filtra ni pagina
+de nuevo la pagina recibida. Mock conserva su estrategia fetch-all, filtros y paginacion local.
 
 ## Integracion API de Products - Bloque 2
 
@@ -116,8 +116,7 @@ reintentar sus componentes antes de usar la restauracion explicita.
 
 Product Media usa los endpoints reales on-demand en editor, detalle y Quick View. Los uploads son
 multipart y las rutas administradas `/media/...` se renderizan mediante el proxy same-origin
-`/api/media/...`; la tabla paginada mantiene placeholder para evitar una consulta multimedia por
-fila mientras el backend no exponga primary media ni un endpoint batch. Los reemplazos locales no
+`/api/media/...`. Los reemplazos locales no
 mutan la URL administrada: crean un upload nuevo y retiran el anterior, liberando primero el slot
 cuando el producto ya alcanzo el limite de seis. Los fallos posteriores al core se reportan como
 guardado parcial y recargan el estado canonico, sin simular rollback.
@@ -126,6 +125,14 @@ Las imagenes de categoria usan sus endpoints multipart/delete dedicados en API. 
 `mockAsset`, IndexedDB, previews y limpieza de assets huerfanos sin mezclar UUID del backend. Si
 el core de una categoria se guarda pero falla su imagen, la UI recarga la categoria y mantiene un
 estado parcial recuperable para reintentar desde edicion, sin anunciar exito ni simular rollback.
+
+## Integracion API de Products - Bloque 4A
+
+El listado administrativo API usa filtros y paginacion server-side de `GET /catalog/products`.
+`primaryImageUrl` pertenece exclusivamente a la proyeccion de lista: las rutas administradas se
+convierten al proxy `/api/media/...` y llegan a `ProductTable` sin solicitar Product Media por fila.
+La busqueda se envia tras 350 ms sin cambios, mientras los demas filtros y el tamano de pagina
+reinician la consulta en pagina 1. Detail, Quick View y Editor conservan su carga on-demand.
 
 ## Estructura futura
 
