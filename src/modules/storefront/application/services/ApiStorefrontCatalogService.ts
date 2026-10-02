@@ -15,6 +15,18 @@ interface BackendProduct {
   categoryName?: string | null;
   saleUnitId?: string | null;
   saleUnitName?: string | null;
+  /** Hay disponible en la sucursal que atiende el e-commerce (siempre true si no controla stock). */
+  inStock?: boolean;
+  /** Disponible (cantidad - reservado); `null` si el producto no controla inventario (servicios). */
+  availableQuantity?: number | null;
+}
+
+/** `null` = stock ilimitado para la UI; `inStock: false` siempre se trata como agotado. */
+function toAvailableQuantity(product: BackendProduct): number | null {
+  if (product.inStock === false) return 0;
+  return product.availableQuantity !== undefined && product.availableQuantity !== null
+    ? Number(product.availableQuantity)
+    : null;
 }
 
 function toProduct(product: BackendProduct): StorefrontDiscoveryProductDto {
@@ -32,7 +44,7 @@ function toProduct(product: BackendProduct): StorefrontDiscoveryProductDto {
     salesPriceTiers: [],
     categoryId: product.categoryId,
     categoryName: product.categoryName ?? undefined,
-    availableQuantity: null,
+    availableQuantity: toAvailableQuantity(product),
     saleUnitId: product.saleUnitId ?? "",
     saleUnitName: product.saleUnitName ?? "",
   };
