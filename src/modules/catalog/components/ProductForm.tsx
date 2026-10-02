@@ -64,6 +64,10 @@ import {
 } from "@/modules/catalog/components/CatalogIcons";
 import { productTypeLabels } from "@/modules/catalog/components/productLabels";
 import { useProductPromotions } from "@/modules/catalog/hooks/useProductPromotions";
+import {
+  useSupplierCostTiers,
+  type SupplierCostTierLoadState,
+} from "@/modules/catalog/hooks/useSupplierCostTiers";
 import type { ProductFormOptions } from "@/modules/catalog/types/catalog.types";
 import {
   applyCapabilityRulesToEditor,
@@ -134,6 +138,7 @@ export function ProductForm({
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [editorError, setEditorError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ProductFormTab>("general");
+  const supplierCostTiers = useSupplierCostTiers();
   const { hasCapability } = useEntitlement();
   const isEdit = mode === "edit";
   const detail = editorData.detail;
@@ -200,6 +205,38 @@ export function ProductForm({
   ];
   const completedItems = preparationItems.filter((item) => item.complete).length;
   const completionPercentage = Math.round((completedItems / preparationItems.length) * 100);
+
+  function loadSupplierCostTiers(supplierProductId: string) {
+    const supplierProduct = value.supplierProducts.find(
+      (item) => item.id === supplierProductId,
+    );
+    if (!supplierProduct || supplierProduct.costTiers !== undefined) return;
+
+    void supplierCostTiers
+      .load(supplierProductId)
+      .then((costTiers) => {
+        setValue((current) => {
+          let changed = false;
+          const supplierProducts = current.supplierProducts.map((item) => {
+            if (item.id !== supplierProductId || item.costTiers !== undefined) return item;
+            changed = true;
+            return { ...item, costTiers };
+          });
+          return changed ? { ...current, supplierProducts } : current;
+        });
+      })
+      .catch(() => {
+        // El hook conserva el Error real y deja la entrada reintentable.
+      });
+  }
+
+  function selectTab(tab: ProductFormTab) {
+    setActiveTab(tab);
+    if (tab !== "suppliers") return;
+    value.supplierProducts.forEach((item) => {
+      if (item.id && item.costTiers === undefined) loadSupplierCostTiers(item.id);
+    });
+  }
 
   function updateValue(patch: Partial<ProductEditorDto>) {
     const next = { ...value, ...patch };
@@ -280,7 +317,7 @@ export function ProductForm({
     setErrors(nextErrors);
     setEditorError(nextEditorError);
     if (hasValidationErrors(nextErrors) || nextEditorError) {
-      routeToFirstError(nextErrors, nextEditorError, setActiveTab);
+      routeToFirstError(nextErrors, nextEditorError, selectTab);
       return;
     }
     await onSubmit(nextValue);
@@ -348,7 +385,7 @@ export function ProductForm({
                   : "border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-app-background)] hover:text-[var(--color-title)]",
               )}
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => selectTab(tab.id)}
               type="button"
             >
               <span className="grid h-6 w-6 place-items-center rounded-md bg-white text-xs text-[var(--color-title)]">
@@ -431,6 +468,8 @@ export function ProductForm({
             <SuppliersTab
               baseUnitId={value.baseUnitId}
               baseUnitName={baseUnit?.name ?? "unidad de inventario"}
+              getCostTierState={supplierCostTiers.getState}
+              onLoadCostTiers={loadSupplierCostTiers}
               onChange={(supplierProducts) => updateValue({ supplierProducts })}
               suppliers={editorData.suppliers}
               units={options.units}
@@ -1807,6 +1846,8 @@ function PromotionEditor({
 function SuppliersTab({
   baseUnitId,
   baseUnitName,
+  getCostTierState,
+  onLoadCostTiers,
   value,
   suppliers,
   units,
@@ -1814,6 +1855,8 @@ function SuppliersTab({
 }: {
   baseUnitId: string;
   baseUnitName: string;
+  getCostTierState: (supplierProductId: string) => SupplierCostTierLoadState;
+  onLoadCostTiers: (supplierProductId: string) => void;
   value: SupplierProductEditorValue[];
   suppliers: ProductEditorData["suppliers"];
   units: ProductFormOptions["units"];
@@ -1838,8 +1881,10 @@ function SuppliersTab({
     tierIndex: number,
     patch: Partial<SupplierCostTierEditorValue>,
   ) {
+    const costTiers = value[supplierIndex].costTiers;
+    if (!costTiers) return;
     updateSupplier(supplierIndex, {
-      costTiers: value[supplierIndex].costTiers.map((tier, itemIndex) =>
+      costTiers: costTiers.map((tier, itemIndex) =>
         itemIndex === tierIndex ? { ...tier, ...patch } : tier,
       ),
     });
@@ -1897,6 +1942,11 @@ function SuppliersTab({
             const supplier = suppliers.find((supplierItem) => supplierItem.id === item.supplierId);
             const purchaseUnit = units.find((unit) => unit.id === item.purchaseUnitId);
             const needsPurchaseConversion = item.purchaseUnitId !== baseUnitId;
+            const supplierProductId = item.id;
+            const costTiers = item.costTiers;
+            const costTierState: SupplierCostTierLoadState = supplierProductId
+              ? getCostTierState(supplierProductId)
+              : { status: "loaded", tiers: costTiers ?? [] };
             return (
               <article
                 className="space-y-4 rounded-md border border-[var(--color-border)] p-4"
@@ -2035,10 +2085,11 @@ function SuppliersTab({
                     </h4>
                     <Button
                       className="min-h-10 px-3 py-2"
+                      disabled={costTiers === undefined}
                       onClick={() =>
                         updateSupplier(index, {
                           costTiers: [
-                            ...item.costTiers,
+                            ...(costTiers ?? []),
                             { minQuantity: 1, unitCost: item.lastCost },
                           ],
                         })
@@ -2050,9 +2101,29 @@ function SuppliersTab({
                       Agregar costo
                     </Button>
                   </div>
-                  {item.costTiers.length ? (
+                  {costTiers === undefined ? (
+                    <div className="flex flex-col gap-2 rounded-md border border-[var(--color-border)] bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-sm text-[var(--color-text-muted)]">
+                        {costTierState.status === "error"
+                          ? costTierState.error.message
+                          : costTierState.status === "loading"
+                            ? "Cargando costos por volumen..."
+                            : "Los costos por volumen todavia no se han cargado."}
+                      </p>
+                      {supplierProductId && costTierState.status !== "loading" ? (
+                        <Button
+                          className="min-h-9 px-3 py-1.5"
+                          onClick={() => onLoadCostTiers(supplierProductId)}
+                          type="button"
+                          variant="secondary"
+                        >
+                          {costTierState.status === "error" ? "Reintentar" : "Cargar costos"}
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : costTiers.length ? (
                     <div className="space-y-2">
-                      {item.costTiers.map((tier, tierIndex) => (
+                      {costTiers.map((tier, tierIndex) => (
                         <div
                           className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
                           key={`${tier.id ?? "new"}-${tierIndex}`}
@@ -2089,7 +2160,7 @@ function SuppliersTab({
                           <Button
                             onClick={() =>
                               updateSupplier(index, {
-                                costTiers: item.costTiers.filter(
+                                costTiers: costTiers.filter(
                                   (_, itemIndex) => itemIndex !== tierIndex,
                                 ),
                               })
@@ -2648,7 +2719,7 @@ function validateEditor(
       return "El pedido minimo debe ser un entero mayor a 0.";
     }
     const costQuantities = new Set<number>();
-    for (const tier of supplierProduct.costTiers) {
+    for (const tier of supplierProduct.costTiers ?? []) {
       const minQuantity = toFiniteNumber(tier.minQuantity);
       if (!isPositiveInteger(tier.minQuantity))
         return "La cantidad minima de costo debe ser un entero mayor a 0.";

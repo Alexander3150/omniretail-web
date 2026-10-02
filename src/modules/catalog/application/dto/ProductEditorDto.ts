@@ -58,7 +58,8 @@ export type SupplierProductEditorValue = Omit<
   lastCost: NumericInputValue;
   leadTimeDays: NumericInputValue;
   minimumOrderQuantity: NumericInputValue;
-  costTiers: SupplierCostTierEditorValue[];
+  /** undefined = todavia no cargados; [] = cargados y vacios. */
+  costTiers?: SupplierCostTierEditorValue[];
 };
 
 export type ProductMediaEditorValue = Pick<

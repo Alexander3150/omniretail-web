@@ -103,13 +103,13 @@ export class GetProductEditorDataService {
     const relationsPromise = detailLoadPromise.then(async (detailLoad) => {
       if (!productId || !detailLoad) return null;
       const { detail } = detailLoad;
-      const supplierProductsWithCostsPromise = (
+      const supplierProductsPromise = (
         detail.product.productType !== ProductType.kit && access.canManageSuppliers
           ? this.repositories.supplierProducts.getByProductForTenant(tenantId, productId)
           : Promise.resolve([])
       ).then((supplierProducts) =>
-        Promise.all(
-          supplierProducts.map(async (supplierProduct): Promise<SupplierProductEditorValue> => ({
+        supplierProducts.map(
+          (supplierProduct): SupplierProductEditorValue => ({
             id: supplierProduct.id,
             supplierId: supplierProduct.supplierId,
             supplierSku: supplierProduct.supplierSku,
@@ -120,14 +120,8 @@ export class GetProductEditorDataService {
             minimumOrderQuantity: supplierProduct.minimumOrderQuantity,
             preferred: supplierProduct.preferred,
             active: supplierProduct.active,
-            costTiers: (
-              await this.repositories.supplierProducts.getCostTiers(supplierProduct.id)
-            ).map((tier) => ({
-              id: tier.id,
-              minQuantity: tier.minQuantity,
-              unitCost: tier.unitCost,
-            })),
-          })),
+            costTiers: undefined,
+          }),
         ),
       );
       const inventorySettingsPromise = branchDataPromise.then(({ tenantBranchId }) =>
@@ -143,7 +137,7 @@ export class GetProductEditorDataService {
         conversions,
         attributeValues,
         salesPriceTiers,
-        supplierProductsWithCosts,
+        supplierProducts,
         promotions,
         inventorySettings,
         kitComponents,
@@ -153,7 +147,7 @@ export class GetProductEditorDataService {
           : Promise.resolve([]),
         this.repositories.attributes.getValuesByProduct(productId),
         this.repositories.productSalesPriceTiers.getByProduct(productId),
-        supplierProductsWithCostsPromise,
+        supplierProductsPromise,
         access.canReadPromotions
           ? this.repositories.promotions.getByProductScoped(tenantId, productId)
           : Promise.resolve([]),
@@ -166,7 +160,7 @@ export class GetProductEditorDataService {
         conversions,
         attributeValues,
         salesPriceTiers,
-        supplierProductsWithCosts,
+        supplierProducts,
         promotions,
         inventorySettings,
         kitComponents,
@@ -266,7 +260,7 @@ export class GetProductEditorDataService {
         active: tier.active,
       })),
       suppliers,
-      supplierProducts: relations.supplierProductsWithCosts,
+      supplierProducts: relations.supplierProducts,
       media: editableMedia,
       promotionCount: relations.promotions.filter(
         (promotion) =>
