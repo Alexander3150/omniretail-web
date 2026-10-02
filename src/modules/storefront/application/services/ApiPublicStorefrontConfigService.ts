@@ -6,6 +6,15 @@ interface BackendBannerSlide {
   imageUrl?: string | null;
 }
 
+interface BackendPublicStorefrontBranch {
+  id: string;
+  code?: string | null;
+  name: string;
+  address?: string | null;
+  phone?: string | null;
+  email?: string | null;
+}
+
 interface BackendPublicStorefrontConfig {
   tenantId: string;
   enabled: boolean;
@@ -16,6 +25,7 @@ interface BackendPublicStorefrontConfig {
   requireAccountForCheckout: boolean;
   guestTrackingEnabled: boolean;
   slides?: BackendBannerSlide[];
+  branches?: BackendPublicStorefrontBranch[];
 }
 
 export class ApiPublicStorefrontConfigService {
@@ -35,7 +45,14 @@ export class ApiPublicStorefrontConfigService {
         contactPhone: data.contactPhone ?? undefined,
         contactEmail: data.contactEmail ?? undefined,
         logoImageSource: data.logoUrl ? { kind: "url", src: data.logoUrl } : undefined,
-        branches: [],
+        branches: (data.branches ?? []).map((branch) => ({
+          id: branch.id,
+          code: branch.code ?? undefined,
+          name: branch.name,
+          address: branch.address ?? undefined,
+          phone: branch.phone ?? undefined,
+          email: branch.email ?? undefined,
+        })),
         heroBanner: {
           slides: (data.slides ?? []).map((slide) => ({
             title: slide.title ?? "",
