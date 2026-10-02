@@ -114,7 +114,7 @@ export async function validateEditorProduct(
     throw new CatalogServiceError("El factor de conversion no puede superar 999,999.99.");
   }
   if (
-    normalizedDto.attributes.some(
+    (normalizedDto.attributes ?? []).some(
       (attribute) =>
         attribute.name.length > TEXT_LIMITS.attributeName ||
         attribute.value.length > TEXT_LIMITS.attributeValue,
@@ -353,6 +353,7 @@ export async function syncApiEditorRelatedData(
   }
 
   if (
+    dto.attributes !== undefined &&
     canUpdateProductRelations &&
     hasPermission("catalog.attributes.read")
   ) {
@@ -479,6 +480,10 @@ async function syncAttributes(
   context: { capabilities: BusinessCapabilitiesConfig; isNewProduct: boolean },
   canCreateDefinitions = true,
 ) {
+  // undefined representa una seccion que nunca fue cargada: no consultar definitions ni reemplazar
+  // values evita interpretar "no cargado" como "eliminar todos".
+  if (dto.attributes === undefined) return;
+
   // Producto existente + capacidad apagada: la pestana de atributos queda oculta o de solo lectura
   // en la UI, asi que no hay una edicion legitima que sincronizar. No tocar la tabla de valores en
   // absoluto es mas seguro que confiar en `dto.attributes` para reconstruirla.
