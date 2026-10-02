@@ -1,5 +1,9 @@
 import { CategoryStatus } from "@/core/enums";
 import type { Category } from "@/core/entities";
+import {
+  isBackendManagedMediaUrl,
+  toBackendMediaUrl,
+} from "@/infrastructure/api/mediaUrl";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { CategoryEditorDto } from "@/modules/catalog/application/dto/CategoryEditorDto";
 import {
@@ -9,6 +13,7 @@ import {
 } from "@/modules/catalog/application/services/serviceHelpers";
 import { normalizeCategoryCode } from "@/modules/catalog/validation/category.validation";
 import { removeAssetIfOrphaned } from "@/modules/catalog/application/services/productEditorHelpers";
+import { CategoryImagePartialSaveError } from "@/modules/catalog/application/services/CategoryImagePartialSaveError";
 
 export class SaveCategoryService {
   constructor(private readonly repositories: RepositoryRegistry) {}
@@ -19,6 +24,9 @@ export class SaveCategoryService {
     if (!tenantId) throw new CatalogServiceError("No se pudo resolver el negocio activo.");
 
     await this.assertParentOwnership(tenantId, dto.parentId);
+    if (this.repositories.productMediaDataSource === "api") {
+      return this.createApiCategory(tenantId, dto);
+    }
     await this.assertExistingImageOwnership(tenantId, dto);
     const newAssetId = await this.storePendingImage(tenantId, dto);
     try {
@@ -45,6 +53,9 @@ export class SaveCategoryService {
       throw new CatalogServiceError("No se pudo resolver la categoria actual.");
     }
     await this.assertParentOwnership(tenantId, dto.parentId, categoryId);
+    if (this.repositories.productMediaDataSource === "api") {
+      return this.updateApiCategory(tenantId, current, dto);
+    }
     await this.assertExistingImageOwnership(tenantId, dto);
     const newAssetId = await this.storePendingImage(tenantId, dto);
     const previousAssetId = current.image?.kind === "mockAsset" ? current.image.assetId : undefined;
@@ -71,6 +82,72 @@ export class SaveCategoryService {
       await removeAssetIfOrphaned(this.repositories, tenantId, previousAssetId);
     }
     return updated;
+  }
+
+  private async createApiCategory(tenantId: string, dto: CategoryEditorDto) {
+    this.assertApiImageSource(dto);
+    const created = await this.repositories.categories.create({
+      tenantId,
+      parentId: dto.parentId || undefined,
+      name: dto.name.trim(),
+      slug: normalizeCategoryCode(dto.code),
+      description: cleanDescription(dto.description),
+      image: dto.pendingImage ? undefined : dto.image,
+      status: dto.status,
+    });
+    if (!dto.pendingImage) return created;
+    try {
+      return await this.repositories.categories.uploadImage(created.id, dto.pendingImage.blob);
+    } catch (error) {
+      const canonical =
+        (await this.repositories.categories.getByIdScoped(tenantId, created.id).catch(() => null)) ??
+        created;
+      throw new CategoryImagePartialSaveError(canonical, error);
+    }
+  }
+
+  private async updateApiCategory(
+    tenantId: string,
+    current: Category,
+    dto: CategoryEditorDto,
+  ) {
+    this.assertApiImageSource(dto);
+    const updated = await this.repositories.categories.updateScoped(tenantId, current.id, {
+      parentId: dto.parentId || undefined,
+      name: dto.name.trim(),
+      slug: normalizeCategoryCode(dto.code),
+      description: cleanDescription(dto.description),
+      image: dto.pendingImage || dto.removeImage ? current.image : dto.image,
+      status: dto.status,
+    });
+    try {
+      if (dto.pendingImage) {
+        return await this.repositories.categories.uploadImage(current.id, dto.pendingImage.blob);
+      }
+      if (dto.removeImage) {
+        return await this.repositories.categories.removeImage(current.id);
+      }
+      return updated;
+    } catch (error) {
+      const canonical =
+        (await this.repositories.categories.getByIdScoped(tenantId, current.id).catch(() => null)) ??
+        updated;
+      throw new CategoryImagePartialSaveError(canonical, error);
+    }
+  }
+
+  private assertApiImageSource(dto: CategoryEditorDto) {
+    if (dto.image?.kind === "mockAsset") {
+      throw new CatalogServiceError("Una imagen mock no puede enviarse a Category API.");
+    }
+    if (dto.image?.kind === "url") {
+      const backendUrl = toBackendMediaUrl(dto.image.src);
+      if (!isBackendManagedMediaUrl(backendUrl) && !/^https?:\/\//i.test(backendUrl)) {
+        throw new CatalogServiceError(
+          "La imagen de categoría debe usar una URL externa http(s) válida.",
+        );
+      }
+    }
   }
 
   private async storePendingImage(tenantId: string, dto: CategoryEditorDto) {

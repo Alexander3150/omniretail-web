@@ -16,9 +16,7 @@ export class GetProductDetailService {
     if (!product) return null;
 
     const [media, category, unit] = await Promise.all([
-      this.repositories.productDataSource === "mock"
-        ? this.repositories.productMedia.getByProduct(product.id)
-        : Promise.resolve([]),
+      this.repositories.productMedia.getByProduct(product.id, product.tenantId),
       this.repositories.categories.getByIdScoped(tenantId, product.categoryId),
       this.repositories.units.getByIdScoped(tenantId, product.baseUnitId),
     ]);

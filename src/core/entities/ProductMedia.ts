@@ -8,11 +8,12 @@ export interface ProductMedia {
   tenantId: string;
   productId: string;
   type: ProductMediaType;
-  /** Legacy URL/path. New local assets use `source` and persist an empty URL. */
+  /** URL/path persistida. Los assets locales del modo mock usan `source` y una URL vacía. */
   url: string;
   source?: CatalogImageSource;
   alt?: string;
   isPrimary: boolean;
   sortOrder: number;
   createdAt: ISODateString;
+  updatedAt?: ISODateString;
 }

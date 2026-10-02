@@ -105,6 +105,8 @@ export function useCategories() {
     } catch (caughtError) {
       const message = cleanError(caughtError);
       setError(message);
+      await reload();
+      if (caughtError instanceof Error) throw caughtError;
       throw new Error(message);
     } finally {
       setBusy(false);

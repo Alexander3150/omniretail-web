@@ -42,6 +42,15 @@ export class CreateProductWithCommercialDataService {
         "Crear un kit requiere permiso para guardar sus componentes y restaurarlo.",
       );
     }
+    if (
+      this.repositories.productMediaDataSource === "api" &&
+      normalizedDto.media.length > 0 &&
+      !permissions.includes("catalog.products.update")
+    ) {
+      throw new CatalogServiceError(
+        "Guardar multimedia requiere permiso para actualizar productos.",
+      );
+    }
     const product = await this.repositories.products.create({
       ...productInput,
       status: isApiKit ? ProductStatus.archived : productInput.status,
@@ -55,36 +64,49 @@ export class CreateProductWithCommercialDataService {
     }
 
     const failedSections: ProductEditorFailedSection[] = [];
+    const failureMessages: string[] = [];
     if (isApiKit) {
       try {
         await syncKitComponents(this.repositories, product, normalizedDto);
-      } catch {
+      } catch (error) {
         failedSections.push("kitComponents");
+        if (error instanceof Error && error.message) failureMessages.push(error.message);
       }
     }
-    failedSections.push(
-      ...(await syncApiEditorRelatedData(this.repositories, product, normalizedDto, {
+    const relatedResult = await syncApiEditorRelatedData(
+      this.repositories,
+      product,
+      normalizedDto,
+      {
         permissions,
         capabilities,
         isNewProduct,
         skipKitComponents: isApiKit,
-      })),
+      },
     );
+    failedSections.push(...relatedResult.failedSections);
+    failureMessages.push(...relatedResult.failureMessages);
 
     if (
       isApiKit &&
       desiredStatus === ProductStatus.published &&
-      !failedSections.includes("kitComponents")
+      failedSections.length === 0
     ) {
       try {
         await this.repositories.products.restoreScoped(tenantId, product.id);
-      } catch {
+      } catch (error) {
         failedSections.push("restore");
+        if (error instanceof Error && error.message) failureMessages.push(error.message);
       }
     }
 
     if (failedSections.length > 0) {
-      throw new ProductEditorPartialSaveError(product.id, true, failedSections);
+      throw new ProductEditorPartialSaveError(
+        product.id,
+        true,
+        failedSections,
+        failureMessages,
+      );
     }
     try {
       return (await this.repositories.products.getByIdScoped(tenantId, product.id)) ?? product;

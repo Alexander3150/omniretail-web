@@ -34,7 +34,20 @@ Las fronteras de lectura y mutacion de Roles son tenant-scoped; no se expone un 
 La prohibicion de editar o archivar por completo un Role `isSystem` queda para los futuros
 application services de Roles y permisos; el contrato compartido ya impide corromper el flag.
 
-`ProductMediaRepository` es el contrato compartido para consultar y administrar referencias de imagenes de producto sin acoplar modulos a seeds, LocalStorage o assets fisicos. Acepta el `url` legacy y la fuente discriminada `url | mockAsset`; `isPrimary`, luego `sortOrder`, determina la seleccion publica entre fuentes validas.
+`ProductMediaRepository` es el contrato compartido para consultar y administrar referencias de
+imagenes de producto sin acoplar modulos a seeds, LocalStorage o assets fisicos. Acepta el `url`
+legacy y la fuente discriminada `url | mockAsset`; `isPrimary`, luego `sortOrder`, determina la
+seleccion publica entre fuentes validas. El contrato expone upload y borrado product-scoped porque
+Product Media API exige `productId + mediaId`; el adapter API nunca usa `mockAsset` ni IndexedDB,
+incorpora `tenantId` desde el Product autenticado y proyecta rutas administradas `/media/...` al
+proxy `/api/media/...`. El adapter mock conserva su almacenamiento de blobs y limpieza de
+referencias. La tabla administrativa no consulta media por fila: editor, detalle y Quick View la
+cargan on-demand hasta que exista primary media en el listado o un endpoint batch.
+
+`CategoryRepository.uploadImage` y `removeImage` son las operaciones dedicadas de imagen en modo
+API. `SaveCategoryService` guarda primero el core y reporta un fallo parcial tipado si la operacion
+multimedia posterior falla; modo mock conserva `CatalogImageAssetRepository` y su limpieza de
+referencias sin invocar esas operaciones API.
 
 `CatalogImageAssetRepository` persiste Blob y metadata (`id`, `tenantId`, MIME, bytes, dimensiones y fecha) fuera de `MockDatabaseStore`. `get` y `remove` exigen el tenant propietario. La implementacion frontend usa IndexedDB y los consumidores renderizan un `mockAsset` mediante Object URL temporal con revocacion al cambiar o desmontar.
 

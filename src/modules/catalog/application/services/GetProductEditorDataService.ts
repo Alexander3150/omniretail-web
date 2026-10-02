@@ -28,7 +28,6 @@ export class GetProductEditorDataService {
       canReadInventorySettings: !apiMode || hasPermission("inventory.stock.read"),
       canReadPromotions: !apiMode || hasPermission("catalog.promotions.read"),
       canManagePromotions: !apiMode || hasPermission("catalog.promotions.manage"),
-      mediaEnabled: this.repositories.productMediaDataSource === "mock",
     };
     const [allAttributeDefinitions, suppliers, allProducts, branch] = await Promise.all([
       access.canReadAttributes ? this.repositories.attributes.getDefinitions() : Promise.resolve([]),
@@ -154,9 +153,7 @@ export class GetProductEditorDataService {
       detail.product.productType !== ProductType.kit && access.canManageSuppliers
         ? this.repositories.supplierProducts.getByProductForTenant(tenantId, productId)
         : Promise.resolve([]),
-      access.mediaEnabled
-        ? this.repositories.productMedia.getByProduct(productId)
-        : Promise.resolve([]),
+      this.repositories.productMedia.getByProduct(productId, tenantId),
       access.canReadPromotions
         ? this.repositories.promotions.getByProductScoped(tenantId, productId)
         : Promise.resolve([]),
