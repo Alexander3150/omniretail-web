@@ -48,14 +48,7 @@ export class GetPublicStorefrontConfigService {
       contactPhone: ecommerceConfig.contactPhone,
       contactEmail: ecommerceConfig.contactEmail,
       logoImageSource: ecommerceConfig.logo,
-      branches: branches.map(({ id, code, name, address, phone, email }) => ({
-        id,
-        code,
-        name,
-        address,
-        phone,
-        email,
-      })),
+      branches: branches.map(({ id, name, address }) => ({ id, name, address })),
       heroBanner: {
         slides: (heroBanner?.slides ?? [])
           .filter((slide) => slide.title.trim().length > 0)
