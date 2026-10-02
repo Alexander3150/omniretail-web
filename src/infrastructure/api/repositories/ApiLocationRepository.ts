@@ -1,6 +1,6 @@
 import { LocationStatus } from "@/core/enums";
 import type { StorageLocation } from "@/core/entities";
-import type { InventoryRepository } from "@/core/repositories";
+import type { InventoryRepository, ProductRepository } from "@/core/repositories";
 import { BackendRequestError, backendFetch } from "@/infrastructure/api/backendClient";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import {
@@ -8,22 +8,37 @@ import {
   type ApiLocation,
 } from "@/infrastructure/api/repositories/catalogMasterDataApi";
 import { assertApiUuid, assertOptionalApiUuid } from "@/infrastructure/api/uuid";
+import {
+  apiInventorySettingsSchema,
+  parseApi,
+} from "@/infrastructure/api/repositories/productRelationsApi.schema";
 
 type LocationCreate = Omit<StorageLocation, "id" | "createdAt" | "updatedAt">;
 type LocationUpdate = Partial<LocationCreate>;
 
 export class ApiLocationRepository {
-  constructor(private readonly eventBus: DataEventBus) {}
+  constructor(
+    private readonly eventBus: DataEventBus,
+    private readonly products?: ProductRepository,
+  ) {}
 
   withInventoryDelegate(delegate: InventoryRepository): InventoryRepository {
     const getLocations = this.getLocations.bind(this);
     const createLocation = this.createLocation.bind(this);
     const updateLocation = this.updateLocation.bind(this);
+    const getProductInventorySettings = this.getProductInventorySettings.bind(this);
+    const upsertProductInventorySettings = this.upsertProductInventorySettings.bind(this);
     return new Proxy(delegate, {
-      get(target, property) {
+      get: (target, property) => {
         if (property === "getLocations") return getLocations;
         if (property === "createLocation") return createLocation;
         if (property === "updateLocation") return updateLocation;
+        if (this.products && property === "getProductInventorySettings") {
+          return getProductInventorySettings;
+        }
+        if (this.products && property === "upsertProductInventorySettings") {
+          return upsertProductInventorySettings;
+        }
         const value = Reflect.get(target, property, target);
         return typeof value === "function" ? value.bind(target) : value;
       },
@@ -83,6 +98,67 @@ export class ApiLocationRepository {
     );
     this.emit(location, "updated");
     return location;
+  }
+
+  async getProductInventorySettings(productId: string, branchId: string) {
+    assertApiUuid(productId, "productId");
+    assertApiUuid(branchId, "branchId");
+    const product = await this.products?.getById(productId);
+    if (!product) return null;
+    const response = await backendFetch<unknown>(`/inventory/settings/${productId}`, {
+      query: { branchId },
+    });
+    if (response === undefined) return null;
+    const item = parseApi(
+      apiInventorySettingsSchema,
+      response,
+      "El backend devolvió configuración de inventario inválida.",
+    );
+    return {
+      ...item,
+      tenantId: product.tenantId,
+      minStock: Number(item.minStock),
+      reorderPoint: item.reorderPoint == null ? undefined : Number(item.reorderPoint),
+      defaultLocationId: item.defaultLocationId ?? undefined,
+    };
+  }
+
+  async upsertProductInventorySettings(
+    input: Parameters<InventoryRepository["upsertProductInventorySettings"]>[0],
+  ) {
+    assertApiUuid(input.productId, "productId");
+    assertApiUuid(input.branchId, "branchId");
+    assertOptionalApiUuid(input.defaultLocationId, "defaultLocationId");
+    const current = await this.getProductInventorySettings(input.productId, input.branchId);
+    const item = parseApi(
+      apiInventorySettingsSchema,
+      await backendFetch<unknown>(`/inventory/settings/${input.productId}`, {
+        method: "PUT",
+        query: { branchId: input.branchId },
+        body: {
+          minStock: input.minStock,
+          reorderPoint: input.reorderPoint ?? current?.reorderPoint ?? null,
+          defaultLocationId: input.defaultLocationId ?? null,
+        },
+      }),
+      "El backend devolvió configuración de inventario inválida.",
+    );
+    const settings = {
+      ...item,
+      tenantId: input.tenantId,
+      minStock: Number(item.minStock),
+      reorderPoint: item.reorderPoint == null ? undefined : Number(item.reorderPoint),
+      defaultLocationId: item.defaultLocationId ?? undefined,
+    };
+    this.eventBus.emit("inventory.changed", {
+      entityId: settings.id,
+      tenantId: settings.tenantId,
+      branchId: settings.branchId,
+      productId: settings.productId,
+      action: "updated",
+      metadata: { entity: "ProductInventorySettings" },
+    });
+    return settings;
   }
 
   private async getById(id: string) {

@@ -28,4 +28,6 @@ export interface PromotionRepository {
     id: string,
     input: Partial<Omit<Promotion, "id" | "tenantId" | "createdAt" | "updatedAt">>,
   ): Promise<Promotion>;
+  endScoped(tenantId: string, id: string): Promise<Promotion>;
+  cancelScoped(tenantId: string, id: string): Promise<Promotion>;
 }

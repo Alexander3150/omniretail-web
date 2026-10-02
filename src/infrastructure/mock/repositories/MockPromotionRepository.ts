@@ -130,6 +130,17 @@ export class MockPromotionRepository extends BaseMockRepository implements Promo
     return this.update(id, input);
   }
 
+  async endScoped(tenantId: string, id: string) {
+    return this.updateScoped(tenantId, id, {
+      status: PromotionStatus.ended,
+      endAt: new Date().toISOString(),
+    });
+  }
+
+  async cancelScoped(tenantId: string, id: string) {
+    return this.updateScoped(tenantId, id, { status: PromotionStatus.cancelled });
+  }
+
   private assertValidPromotion(
     promotion: Omit<Promotion, "id" | "createdAt" | "updatedAt"> | Promotion,
     products: { id: string; tenantId: string; salePrice: number }[],

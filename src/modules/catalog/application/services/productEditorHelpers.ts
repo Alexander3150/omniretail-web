@@ -40,6 +40,7 @@ import {
   ensureUnitConfigUnchanged,
   requireCapabilities,
 } from "@/modules/catalog/application/services/serviceHelpers";
+import type { ProductEditorFailedSection } from "@/modules/catalog/application/services/ProductEditorPartialSaveError";
 
 export async function validateEditorProduct(
   repositories: RepositoryRegistry,
@@ -185,7 +186,7 @@ export async function validateEditorProduct(
   ) {
     throw new CatalogServiceError(
       baseUnit.allowsDecimals
-        ? "El factor de conversion admite hasta 4 decimales."
+        ? "El factor de conversion admite hasta 6 decimales."
         : "La conversion debe producir una cantidad entera de la unidad base.",
     );
   }
@@ -288,29 +289,114 @@ export async function syncEditorRelatedData(
   ]);
 }
 
+export interface ApiEditorSyncOptions {
+  permissions: readonly string[];
+  capabilities: BusinessCapabilitiesConfig;
+  isNewProduct: boolean;
+  skipKitComponents?: boolean;
+}
+
 /**
- * Bloque 1: el editor completo aun no puede escribir relaciones. Se valida antes de mutar el
- * Product para impedir exitos parciales o UUID del backend persistidos en repositories mock.
+ * Sincroniza cada replace API como una seccion observable. No usa Promise.all: supplier/cost tiers
+ * y las operaciones destructivas conservan su orden, y el caller puede informar exactamente que
+ * quedo pendiente sin fingir rollback.
  */
-export function ensureApiEditorHasOnlyProductCore(
+export async function syncApiEditorRelatedData(
   repositories: RepositoryRegistry,
+  product: Product,
   dto: ProductEditorDto,
-) {
-  if (repositories.productDataSource !== "api") return;
-  const hasRelatedData =
-    dto.inventoryUnitId !== dto.baseUnitId ||
-    dto.saleUnitId !== dto.baseUnitId ||
-    (dto.tracking.stock && Boolean(dto.inventorySettings.branchId)) ||
-    dto.attributes.length > 0 ||
-    dto.salesPriceTiers.length > 0 ||
-    dto.supplierProducts.length > 0 ||
-    dto.media.length > 0 ||
-    dto.kitComponents.length > 0;
-  if (hasRelatedData) {
-    throw new CatalogServiceError(
-      "El editor contiene datos relacionados cuya integracion corresponde a los Bloques 2 y 3. El producto no fue modificado.",
+  options: ApiEditorSyncOptions,
+): Promise<ProductEditorFailedSection[]> {
+  const failed: ProductEditorFailedSection[] = [];
+  const hasPermission = (permission: string) => options.permissions.includes(permission);
+  const canUpdateProductRelations = hasPermission("catalog.products.update");
+  const run = async (section: ProductEditorFailedSection, operation: () => Promise<unknown>) => {
+    try {
+      await operation();
+    } catch {
+      failed.push(section);
+    }
+  };
+
+  if (product.productType === "kit") {
+    if (!options.skipKitComponents) {
+      await run("kitComponents", () => syncKitComponents(repositories, product, dto));
+    }
+  } else {
+    if (
+      hasPermission("catalog.units.read") &&
+      hasPermission("catalog.units.manage")
+    ) {
+      await run("conversions", () =>
+        syncUnitConversion(repositories, product, dto, options),
+      );
+    }
+    if (hasPermission("admin.suppliers.manage")) {
+      await run("suppliers", () => syncSupplierProducts(repositories, product, dto));
+    }
+    if (
+      canUpdateProductRelations &&
+      product.productType === ProductType.physical &&
+      dto.tracking.stock &&
+      hasPermission("inventory.stock.read") &&
+      dto.inventorySettings.branchId
+    ) {
+      await run("inventorySettings", () => syncInventorySettings(repositories, product, dto));
+    }
+  }
+
+  if (
+    canUpdateProductRelations &&
+    hasPermission("catalog.attributes.read")
+  ) {
+    await run("attributes", () =>
+      syncAttributes(
+        repositories,
+        product,
+        dto,
+        options,
+        hasPermission("catalog.attributes.manage"),
+      ),
     );
   }
+  if (canUpdateProductRelations) {
+    await run("priceTiers", () => syncSalesPriceTiers(repositories, product, dto));
+  }
+
+  return failed;
+}
+
+export async function syncKitComponents(
+  repositories: RepositoryRegistry,
+  product: Product,
+  dto: ProductEditorDto,
+) {
+  return repositories.productKitComponents.replaceForKit(
+    product.tenantId,
+    product.id,
+    dto.kitComponents.map((component) => ({
+      componentProductId: component.componentProductId,
+      quantityPerKit: toFiniteNumber(component.quantityPerKit),
+    })),
+  );
+}
+
+async function syncSalesPriceTiers(
+  repositories: RepositoryRegistry,
+  product: Product,
+  dto: ProductEditorDto,
+) {
+  return repositories.productSalesPriceTiers.replaceForProduct(
+    product.id,
+    dto.salesPriceTiers
+      .filter((tier) => tier.active)
+      .map((tier) => ({
+        tenantId: product.tenantId,
+        minQuantity: toFiniteNumber(tier.minQuantity),
+        unitPrice: toFiniteNumber(tier.unitPrice),
+        active: tier.active,
+      })),
+  );
 }
 
 function assertInventorySettings(dto: ProductEditorDto) {
@@ -381,6 +467,7 @@ async function syncAttributes(
   product: Product,
   dto: ProductEditorDto,
   context: { capabilities: BusinessCapabilitiesConfig; isNewProduct: boolean },
+  canCreateDefinitions = true,
 ) {
   // Producto existente + capacidad apagada: la pestana de atributos queda oculta o de solo lectura
   // en la UI, asi que no hay una edicion legitima que sincronizar. No tocar la tabla de valores en
@@ -409,19 +496,24 @@ async function syncAttributes(
       definition =
         definitions.find(
           (item) =>
-            item.tenantId === product.tenantId &&
+            (item.tenantId === undefined || item.tenantId === product.tenantId) &&
             item.code === code &&
             item.dataType === "text" &&
             item.active,
-        ) ??
-        (await repositories.attributes.createDefinition({
-          tenantId: product.tenantId,
-          name,
-          code,
-          dataType: "text",
-          required: false,
-          active: true,
-        }));
+        ) ?? null;
+      if (!definition && !canCreateDefinitions) {
+        throw new CatalogServiceError(
+          "No dispone de permisos para crear la definicion de un atributo nuevo.",
+        );
+      }
+      definition ??= await repositories.attributes.createDefinition({
+        tenantId: product.tenantId,
+        name,
+        code,
+        dataType: "text",
+        required: false,
+        active: true,
+      });
       definitions.push(definition);
     }
 
@@ -439,7 +531,10 @@ async function syncSupplierProducts(
   product: Product,
   dto: ProductEditorDto,
 ) {
-  const current = await repositories.supplierProducts.getByProduct(product.id);
+  const current = await repositories.supplierProducts.getAllByProductForTenant(
+    product.tenantId,
+    product.id,
+  );
   const nextIds = new Set<string>();
 
   const normalizedSupplierProducts = normalizePreferredSupplier(dto.supplierProducts);
@@ -459,8 +554,11 @@ async function syncSupplierProducts(
       preferred: supplierProduct.preferred,
       active: true,
     };
-    const saved = supplierProduct.id
-      ? await repositories.supplierProducts.update(product.tenantId, supplierProduct.id, input)
+    const existing = supplierProduct.id
+      ? current.find((item) => item.id === supplierProduct.id)
+      : current.find((item) => item.supplierId === supplierProduct.supplierId);
+    const saved = existing
+      ? await repositories.supplierProducts.update(product.tenantId, existing.id, input)
       : await repositories.supplierProducts.create(input);
     nextIds.add(saved.id);
     await repositories.supplierProducts.replaceCostTiers(
@@ -476,7 +574,7 @@ async function syncSupplierProducts(
 
   await Promise.all(
     current
-      .filter((supplierProduct) => !nextIds.has(supplierProduct.id))
+      .filter((supplierProduct) => supplierProduct.active && !nextIds.has(supplierProduct.id))
       .map((supplierProduct) =>
         repositories.supplierProducts.archive(product.tenantId, supplierProduct.id),
       ),
@@ -658,7 +756,7 @@ function assertSupplierProducts(
     ) {
       throw new CatalogServiceError(
         baseUnitAllowsDecimals
-          ? "El contenido de compra admite hasta 4 decimales."
+          ? "El contenido de compra admite hasta 6 decimales."
           : "El contenido de compra debe producir unidades base enteras.",
       );
     }

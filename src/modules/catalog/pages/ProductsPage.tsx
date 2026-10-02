@@ -25,10 +25,18 @@ import { useProductMutations } from "@/modules/catalog/hooks/useProductMutations
 import { useProductPermissions } from "@/modules/catalog/hooks/useProductPermissions";
 import { useProducts } from "@/modules/catalog/hooks/useProducts";
 import type { ProductListItem } from "@/modules/catalog/types/catalog.types";
+import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 
 export function ProductsPage() {
+  const repositories = useRepositories();
   const { showToast } = useToast();
-  const { canRead, canCreate, canUpdate } = useProductPermissions();
+  const {
+    canRead,
+    canCreate,
+    canUpdate,
+    canReadPromotions,
+    canManagePromotions,
+  } = useProductPermissions();
   const {
     loading,
     error,
@@ -140,7 +148,9 @@ export function ProductsPage() {
         <>
           <ProductTable
             canUpdate={canUpdate}
-            relatedActionsEnabled={filtersEnabled}
+            inventoryAdjustmentEnabled={repositories.productDataSource === "mock"}
+            priceHistoryEnabled={canRead}
+            promotionsEnabled={canReadPromotions && canManagePromotions}
             emptyMessage={emptyMessage}
             footer={
               totalItems > 0 ? (
@@ -173,7 +183,12 @@ export function ProductsPage() {
           ) : null}
         </>
       )}
-      <ProductQuickView product={quickViewProduct} onClose={() => setQuickViewProduct(null)} />
+      <ProductQuickView
+        canUpdate={canUpdate}
+        product={quickViewProduct}
+        onClose={() => setQuickViewProduct(null)}
+        onRestore={restoreProduct}
+      />
       <ProductPromotionDialog
         key={promotionTarget?.id ?? "promotion-dialog"}
         product={promotionTarget}

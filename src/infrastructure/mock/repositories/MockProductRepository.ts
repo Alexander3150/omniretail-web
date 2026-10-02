@@ -203,6 +203,9 @@ export class MockProductRepository extends BaseMockRepository implements Product
     if (!(await this.getByIdScoped(tenantId, id))) throw this.missing("Product", id);
     return this.update(id, input);
   }
+  async updatePrice(id: string, salePrice: number) {
+    return this.update(id, { salePrice });
+  }
   async archiveScoped(tenantId: string, id: string) {
     if (!(await this.getByIdScoped(tenantId, id))) throw this.missing("Product", id);
     return this.archive(id);

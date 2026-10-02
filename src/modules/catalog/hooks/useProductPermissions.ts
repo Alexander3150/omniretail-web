@@ -1,6 +1,7 @@
 "use client";
 
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
+import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 
 /**
  * Fuente única de `canRead`/`canCreate`/`canUpdate` para las 3 keys canónicas de Products
@@ -11,9 +12,15 @@ import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
  */
 export function useProductPermissions() {
   const { hasPermission } = useCurrentSession();
+  const repositories = useRepositories();
   const canCreate = hasPermission("catalog.products.create");
   const canUpdate = hasPermission("catalog.products.update");
   const canRead = hasPermission("catalog.products.read") || canCreate || canUpdate;
+  const apiRelations = repositories.productRelationsDataSource === "api";
+  const canManagePromotions = apiRelations
+    ? hasPermission("catalog.promotions.manage")
+    : canUpdate;
+  const canReadPromotions = !apiRelations || hasPermission("catalog.promotions.read");
 
-  return { canRead, canCreate, canUpdate };
+  return { canRead, canCreate, canUpdate, canReadPromotions, canManagePromotions };
 }

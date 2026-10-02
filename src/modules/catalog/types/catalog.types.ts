@@ -74,6 +74,14 @@ export interface ProductInventorySummaryItem {
   stockStatus: "Sin stock" | "Bajo" | "Disponible";
 }
 
+export interface ProductInventorySettingsSummary {
+  branchId: string;
+  branchName: string;
+  defaultLocationName?: string;
+  minStock: number;
+  reorderPoint?: number;
+}
+
 export interface ProductSupplierSummaryItem {
   supplier: Supplier;
   supplierProduct: SupplierProduct;
@@ -82,6 +90,9 @@ export interface ProductSupplierSummaryItem {
 
 export interface ProductQuickViewModel extends ProductDetailViewModel {
   inventory: ProductInventorySummaryItem[];
+  inventorySettings: ProductInventorySettingsSummary | null;
+  inventorySettingsAvailable: boolean;
   suppliers: ProductSupplierSummaryItem[];
+  suppliersAvailable: boolean;
   promotions: Promotion[];
 }

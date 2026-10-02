@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import { ProductStatus } from "@/core/enums";
@@ -20,7 +21,8 @@ import { cn } from "@/shared/utils/cn";
 
 interface ProductActionsMenuProps {
   canUpdate: boolean;
-  relatedActionsEnabled: boolean;
+  priceHistoryEnabled: boolean;
+  promotionsEnabled: boolean;
   product: ProductListItem;
   onPromotion: (product: ProductListItem) => void;
   onPriceHistory: (product: ProductListItem) => void;
@@ -30,7 +32,8 @@ interface ProductActionsMenuProps {
 
 export function ProductActionsMenu({
   canUpdate,
-  relatedActionsEnabled,
+  priceHistoryEnabled,
+  promotionsEnabled,
   product,
   onPromotion,
   onPriceHistory,
@@ -48,11 +51,11 @@ export function ProductActionsMenu({
     function updateMenuPosition() {
       const rect = buttonRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const menuHeight = canUpdate
-        ? product.status === ProductStatus.published
-          ? 160
-          : 112
-        : 56;
+      const actionCount =
+        (promotionsEnabled && product.status === ProductStatus.published ? 1 : 0) +
+        (priceHistoryEnabled ? 1 : 0) +
+        (canUpdate ? 1 : 0);
+      const menuHeight = actionCount * 44 + 16;
       const spaceBelow = window.innerHeight - rect.bottom;
       const shouldOpenUp = spaceBelow < menuHeight + 12 && rect.top > spaceBelow;
       setMenuStyle({
@@ -70,23 +73,24 @@ export function ProductActionsMenu({
       window.removeEventListener("resize", updateMenuPosition);
       window.removeEventListener("scroll", updateMenuPosition, true);
     };
-  }, [canUpdate, open, product.status]);
+  }, [canUpdate, open, priceHistoryEnabled, product.status, promotionsEnabled]);
 
   useEffect(() => {
     if (!open) return;
 
-    function closeOnOutsideClick(event: MouseEvent) {
-      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    function closeOnOutsideClick(event: globalThis.MouseEvent) {
+      const target = event.target;
+      if (!(target instanceof Node) || !containerRef.current?.contains(target)) setOpen(false);
     }
 
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === "Escape") setOpen(false);
     }
 
-    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("click", closeOnOutsideClick);
     document.addEventListener("keydown", closeOnEscape);
     return () => {
-      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("click", closeOnOutsideClick);
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [open]);
@@ -96,10 +100,15 @@ export function ProductActionsMenu({
     action(product);
   }
 
-  if (!canUpdate && !relatedActionsEnabled) return null;
+  if (!canUpdate && !priceHistoryEnabled && !promotionsEnabled) return null;
 
   return (
-    <div className="relative flex justify-end" ref={containerRef}>
+    <div
+      className="relative flex justify-end"
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+      ref={containerRef}
+    >
       <button
         aria-expanded={open}
         aria-haspopup="menu"
@@ -127,12 +136,12 @@ export function ProductActionsMenu({
           role="menu"
           style={menuStyle}
         >
-          {relatedActionsEnabled && canUpdate && product.status === ProductStatus.published ? (
+          {promotionsEnabled && product.status === ProductStatus.published ? (
             <MenuItem icon={<TagIcon />} onClick={() => selectAction(onPromotion)}>
               Promoción
             </MenuItem>
           ) : null}
-          {relatedActionsEnabled ? (
+          {priceHistoryEnabled ? (
             <MenuItem icon={<HistoryIcon />} onClick={() => selectAction(onPriceHistory)}>
               Historial de precios
             </MenuItem>
@@ -175,7 +184,10 @@ function MenuItem({
         "flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm font-semibold transition hover:bg-[var(--color-app-background)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[var(--color-structure)]",
         destructive ? "text-[var(--color-danger)]" : "text-[var(--color-text)]",
       )}
-      onClick={onClick}
+      onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
+        event.stopPropagation();
+        onClick();
+      }}
       role="menuitem"
       type="button"
     >
