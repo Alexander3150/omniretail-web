@@ -69,6 +69,10 @@ import {
   type ProductAttributesLoadState,
 } from "@/modules/catalog/hooks/useProductAttributes";
 import {
+  useProductSalesPriceTiers,
+  type ProductSalesPriceTiersLoadState,
+} from "@/modules/catalog/hooks/useProductSalesPriceTiers";
+import {
   useSupplierCostTiers,
   type SupplierCostTierLoadState,
 } from "@/modules/catalog/hooks/useSupplierCostTiers";
@@ -142,18 +146,29 @@ export function ProductForm({
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [editorError, setEditorError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ProductFormTab>("general");
-  const productAttributes = useProductAttributes();
-  const supplierCostTiers = useSupplierCostTiers();
+  const detail = editorData.detail;
   const { user } = useCurrentSession();
+  const editorTenantId = detail?.product.tenantId ?? user?.tenantId;
+  const editorProductId = detail?.product.id;
+  const productAttributes = useProductAttributes();
+  const productSalesPriceTiers = useProductSalesPriceTiers();
+  const supplierCostTiers = useSupplierCostTiers();
   const { hasCapability } = useEntitlement();
   const isEdit = mode === "edit";
-  const detail = editorData.detail;
-  const attributeTenantId = detail?.product.tenantId ?? user?.tenantId;
-  const attributeProductId = detail?.product.id;
   const attributeLoadState = productAttributes.getState(
-    attributeTenantId,
-    attributeProductId,
+    editorTenantId,
+    editorProductId,
   );
+  const salesPriceTiersLoadState = productSalesPriceTiers.getState(
+    editorTenantId,
+    editorProductId,
+  );
+  const promotionState = useProductPromotions(editorProductId ?? null, {
+    enabled:
+      activeTab === "promotion" &&
+      editorData.access.canReadPromotions,
+    tenantId: editorTenantId,
+  });
   const categoryName =
     options.categories.find((category) => category.id === value.categoryId)?.name ??
     "Sin categoria";
@@ -186,6 +201,14 @@ export function ProductForm({
   const showPromotionTab = Boolean(
     isEdit && editorData.access.canReadPromotions && promotionProduct,
   );
+  const promotionCount =
+    promotionState.status === "loaded"
+      ? (promotionState.data?.promotions ?? []).filter(
+          (promotion) =>
+            promotion.status === PromotionStatus.active ||
+            promotion.status === PromotionStatus.scheduled,
+        ).length
+      : undefined;
   const tabs = [
     { id: "general", label: "Informacion general", icon: "I" },
     value.productType !== ProductType.kit ? { id: "units", label: "Unidades", icon: "U" } : null,
@@ -194,9 +217,9 @@ export function ProductForm({
     (isEdit && editorData.access.canReadAttributes)
       ? { id: "attributes", label: "Atributos", icon: "A", count: value.attributes?.length }
       : null,
-    { id: "prices", label: "Precios", icon: "Q", count: value.salesPriceTiers.length },
+    { id: "prices", label: "Precios", icon: "Q", count: value.salesPriceTiers?.length },
     showPromotionTab
-      ? { id: "promotion", label: "Promocion", icon: "%", count: editorData.promotionCount }
+      ? { id: "promotion", label: "Promocion", icon: "%", count: promotionCount }
       : null,
     value.productType !== ProductType.kit && editorData.access.canManageSuppliers
       ? { id: "suppliers", label: "Proveedores", icon: "P", count: value.supplierProducts.length }
@@ -219,16 +242,31 @@ export function ProductForm({
   const completedItems = preparationItems.filter((item) => item.complete).length;
   const completionPercentage = Math.round((completedItems / preparationItems.length) * 100);
 
+  function loadSalesPriceTiers() {
+    if (!editorTenantId || value.salesPriceTiers !== undefined) return;
+
+    void productSalesPriceTiers
+      .load(editorTenantId, editorProductId)
+      .then((salesPriceTiers) => {
+        setValue((current) =>
+          current.salesPriceTiers === undefined ? { ...current, salesPriceTiers } : current,
+        );
+      })
+      .catch(() => {
+        // El hook conserva el Error real y deja la consulta reintentable.
+      });
+  }
+
   function loadAttributes() {
     if (
-      !attributeTenantId ||
+      !editorTenantId ||
       !editorData.access.canReadAttributes ||
       value.attributes !== undefined
     ) {
       return;
     }
     void productAttributes
-      .load(attributeTenantId, attributeProductId)
+      .load(editorTenantId, editorProductId)
       .then(({ attributes }) => {
         setValue((current) =>
           current.attributes === undefined ? { ...current, attributes } : current,
@@ -265,6 +303,10 @@ export function ProductForm({
 
   function selectTab(tab: ProductFormTab) {
     setActiveTab(tab);
+    if (tab === "prices") {
+      loadSalesPriceTiers();
+      return;
+    }
     if (tab === "attributes") {
       loadAttributes();
       return;
@@ -493,6 +535,8 @@ export function ProductForm({
           {activeTab === "prices" ? (
             <PricesTab
               errors={errors}
+              loadState={salesPriceTiersLoadState}
+              onLoadTiers={loadSalesPriceTiers}
               onChange={updateValue}
               readOnlyTiers={!editorData.access.canUpdateProductRelations}
               value={value}
@@ -502,6 +546,7 @@ export function ProductForm({
             <PromotionTab
               canManage={editorData.access.canManagePromotions}
               product={promotionProduct}
+              state={promotionState}
             />
           ) : null}
           {activeTab === "suppliers" ? (
@@ -594,7 +639,13 @@ export function ProductForm({
               />
               <SummaryItem
                 label="Promocion"
-                value={showPromotionTab ? `${editorData.promotionCount} vigente` : "-"}
+                value={
+                  showPromotionTab
+                    ? promotionCount === undefined
+                      ? "Sin cargar"
+                      : `${promotionCount} vigente`
+                    : "-"
+                }
               />
             </dl>
           </section>
@@ -1411,25 +1462,44 @@ function AttributesTab({
 function PricesTab({
   value,
   errors,
+  loadState,
+  onLoadTiers,
   onChange,
   readOnlyTiers,
 }: {
   value: ProductEditorDto;
   errors: ProductValidationErrors;
+  loadState: ProductSalesPriceTiersLoadState;
+  onLoadTiers: () => void;
   onChange: (value: Partial<ProductEditorDto>) => void;
   readOnlyTiers?: boolean;
 }) {
+  const salesPriceTiers = value.salesPriceTiers;
+
   function updateTier(index: number, patch: Partial<ProductSalesPriceTierEditorValue>) {
+    if (!salesPriceTiers) return;
     onChange({
-      salesPriceTiers: value.salesPriceTiers.map((tier, itemIndex) =>
+      salesPriceTiers: salesPriceTiers.map((tier, itemIndex) =>
         itemIndex === index ? { ...tier, ...patch } : tier,
       ),
     });
   }
 
-  const sortedTiers = [...value.salesPriceTiers].sort(
-    (left, right) => toFiniteNumber(left.minQuantity) - toFiniteNumber(right.minQuantity),
-  );
+  function removeTier(index: number) {
+    if (!salesPriceTiers) return;
+    onChange({
+      salesPriceTiers: salesPriceTiers.filter((_, itemIndex) => itemIndex !== index),
+    });
+  }
+
+  const sortedTiers = salesPriceTiers
+    ? salesPriceTiers
+        .map((tier, index) => ({ tier, index }))
+        .sort(
+          (left, right) =>
+            toFiniteNumber(left.tier.minQuantity) - toFiniteNumber(right.tier.minQuantity),
+        )
+    : undefined;
 
   return (
     <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
@@ -1463,11 +1533,11 @@ function PricesTab({
             </p>
           </div>
           <Button
-            disabled={readOnlyTiers}
+            disabled={readOnlyTiers || salesPriceTiers === undefined}
             onClick={() =>
               onChange({
                 salesPriceTiers: [
-                  ...value.salesPriceTiers,
+                  ...(salesPriceTiers ?? []),
                   { minQuantity: 2, unitPrice: toFiniteNumber(value.salePrice), active: true },
                 ],
               })
@@ -1479,10 +1549,24 @@ function PricesTab({
             Agregar tramo
           </Button>
         </div>
-        {sortedTiers.length ? (
+        {sortedTiers === undefined ? (
+          <div className="flex flex-col gap-3 rounded-md bg-[var(--color-app-background)] p-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-[var(--color-text-muted)]">
+              {loadState.status === "error"
+                ? loadState.error.message
+                : loadState.status === "loading"
+                  ? "Cargando precios por cantidad..."
+                  : "Los precios por cantidad todavia no se han cargado."}
+            </p>
+            {loadState.status !== "loading" ? (
+              <Button onClick={onLoadTiers} type="button" variant="secondary">
+                {loadState.status === "error" ? "Reintentar" : "Cargar precios"}
+              </Button>
+            ) : null}
+          </div>
+        ) : sortedTiers.length ? (
           <div className="space-y-2">
-            {sortedTiers.map((tier) => {
-              const index = value.salesPriceTiers.indexOf(tier);
+            {sortedTiers.map(({ tier, index }) => {
               return (
                 <div
                   className="grid gap-3 rounded-md bg-[var(--color-app-background)] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
@@ -1514,13 +1598,7 @@ function PricesTab({
                   />
                   <Button
                     disabled={readOnlyTiers}
-                    onClick={() =>
-                      onChange({
-                        salesPriceTiers: value.salesPriceTiers.filter(
-                          (_, itemIndex) => itemIndex !== index,
-                        ),
-                      })
-                    }
+                    onClick={() => removeTier(index)}
                     type="button"
                     variant="danger"
                   >
@@ -1538,18 +1616,30 @@ function PricesTab({
   );
 }
 
-function PromotionTab({ product, canManage }: { product: PromotionProduct; canManage: boolean }) {
-  return <ProductPromotionWorkspace canManage={canManage} product={product} />;
+type ProductPromotionsState = ReturnType<typeof useProductPromotions>;
+
+function PromotionTab({
+  product,
+  canManage,
+  state,
+}: {
+  product: PromotionProduct;
+  canManage: boolean;
+  state: ProductPromotionsState;
+}) {
+  return <ProductPromotionWorkspace canManage={canManage} product={product} state={state} />;
 }
 
 function ProductPromotionWorkspace({
   product,
   canManage,
+  state,
 }: {
   product: PromotionProduct;
   canManage: boolean;
+  state: ProductPromotionsState;
 }) {
-  const { data, error, finalize, loading, save } = useProductPromotions(product.id);
+  const { data, error, finalize, loading, reload, save } = state;
   const [mode, setMode] = useState<"view" | "form">("view");
   const [editingPromotion, setEditingPromotion] = useState<Promotion | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -1613,7 +1703,12 @@ function ProductPromotionWorkspace({
       {loading ? (
         <p className="text-sm text-[var(--color-text-muted)]">Cargando promociones...</p>
       ) : error ? (
-        <FieldError>{error}</FieldError>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <FieldError>{error}</FieldError>
+          <Button onClick={() => void reload()} type="button" variant="secondary">
+            Reintentar
+          </Button>
+        </div>
       ) : showForm ? (
         <PromotionEditor
           busy={busy}
@@ -2736,7 +2831,7 @@ function validateEditor(
     return "Cada componente del kit debe estar entre 0 y 9,999.";
   }
   const salesQuantities = new Set<number>();
-  for (const tier of value.salesPriceTiers) {
+  for (const tier of value.salesPriceTiers ?? []) {
     const minQuantity = toFiniteNumber(tier.minQuantity);
     if (!isPositiveInteger(tier.minQuantity) || minQuantity <= 1) {
       return "La cantidad minima mayorista debe ser un entero mayor a 1.";
@@ -2970,8 +3065,8 @@ function buildInitialValue(
     tracking: getDefaultTracking(options.businessCapabilities, ProductType.physical),
     inventorySettings,
     channels: { ecommerce: true, pos: true, mobileApp: false },
-      attributes: undefined,
-    salesPriceTiers: [],
+    attributes: undefined,
+    salesPriceTiers: undefined,
     supplierProducts: [],
     media: [],
     kitComponents: [],

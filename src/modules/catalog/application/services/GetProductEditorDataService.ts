@@ -1,5 +1,5 @@
 import type { Product } from "@/core/entities";
-import { LocationStatus, ProductType, PromotionStatus } from "@/core/enums";
+import { LocationStatus, ProductType } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   ProductEditorData,
@@ -88,8 +88,8 @@ export class GetProductEditorDataService {
           .then((products) => selectKitEligibleProducts(products));
 
     // Las relaciones dependen de un Product scoped valido, pero no de suppliers ni locations.
-    // Comienzan apenas termina Product Detail mientras esos masters siguen cargando. Attributes
-    // queda fuera de este orquestador y se hidrata al abrir su pestana.
+    // Comienzan apenas termina Product Detail mientras esos masters siguen cargando. Attributes,
+    // price tiers y promotions quedan fuera y se hidratan al abrir sus pestanas.
     const relationsPromise = detailLoadPromise.then(async (detailLoad) => {
       if (!productId || !detailLoad) return null;
       const { detail } = detailLoad;
@@ -125,20 +125,14 @@ export class GetProductEditorDataService {
 
       const [
         conversions,
-        salesPriceTiers,
         supplierProducts,
-        promotions,
         inventorySettings,
         kitComponents,
       ] = await Promise.all([
         detail.product.productType !== ProductType.kit && access.canReadConversions
           ? this.repositories.units.getConversionsByProductScoped(tenantId, productId)
           : Promise.resolve([]),
-        this.repositories.productSalesPriceTiers.getByProduct(productId),
         supplierProductsPromise,
-        access.canReadPromotions
-          ? this.repositories.promotions.getByProductScoped(tenantId, productId)
-          : Promise.resolve([]),
         inventorySettingsPromise,
         detail.product.productType === ProductType.kit
           ? this.repositories.productKitComponents.getByKitProduct(productId)
@@ -146,9 +140,7 @@ export class GetProductEditorDataService {
       ]);
       return {
         conversions,
-        salesPriceTiers,
         supplierProducts,
-        promotions,
         inventorySettings,
         kitComponents,
       };
@@ -179,11 +171,11 @@ export class GetProductEditorDataService {
         currentDefaultLocation: null,
         attributeDefinitions: undefined,
         attributes: undefined,
-        salesPriceTiers: [],
+        salesPriceTiers: undefined,
         suppliers,
         supplierProducts: [],
         media: [],
-        promotionCount: 0,
+        promotionCount: undefined,
         kitComponents: [],
         kitEligibleProducts,
       };
@@ -226,20 +218,11 @@ export class GetProductEditorDataService {
       currentDefaultLocation,
       attributeDefinitions: undefined,
       attributes: undefined,
-      salesPriceTiers: relations.salesPriceTiers.map((tier) => ({
-        id: tier.id,
-        minQuantity: tier.minQuantity,
-        unitPrice: tier.unitPrice,
-        active: tier.active,
-      })),
+      salesPriceTiers: undefined,
       suppliers,
       supplierProducts: relations.supplierProducts,
       media: editableMedia,
-      promotionCount: relations.promotions.filter(
-        (promotion) =>
-          promotion.status === PromotionStatus.active ||
-          promotion.status === PromotionStatus.scheduled,
-      ).length,
+      promotionCount: undefined,
       kitComponents: relations.kitComponents.map((component) => ({
         componentProductId: component.componentProductId,
         quantityPerKit: component.quantityPerKit,
