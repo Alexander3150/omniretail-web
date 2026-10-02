@@ -55,6 +55,7 @@ import { withApiSession } from "@/infrastructure/api/withApiSession";
 import { withApiCatalogMasterData } from "@/infrastructure/api/withApiCatalogMasterData";
 import { withApiProducts } from "@/infrastructure/api/withApiProducts";
 import { withApiProductRelations } from "@/infrastructure/api/withApiProductRelations";
+import { withApiInventoryMovements } from "@/infrastructure/api/withApiInventoryMovements";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import {
@@ -111,6 +112,7 @@ export interface RepositoryRegistry {
   productDataSource: "mock" | "api";
   productRelationsDataSource: "mock" | "api";
   productMediaDataSource: "mock" | "api";
+  inventoryMovementsDataSource: "mock" | "api";
   tenants: TenantRepository;
   tenantOnboarding: TenantOnboardingRepository;
   businessConfig: BusinessConfigRepository;
@@ -178,6 +180,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       productDataSource: "mock",
       productRelationsDataSource: "mock",
       productMediaDataSource: "mock",
+      inventoryMovementsDataSource: "mock",
       tenants: new MockTenantRepository(store, eventBus),
       tenantOnboarding: new MockTenantOnboardingRepository(store, eventBus),
       businessConfig: new MockBusinessConfigRepository(store, eventBus),
@@ -231,12 +234,14 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     // los flujos Product API no lo consultan ni escriben UUID reales en relaciones mock.
     // Modo mock (default): exactamente los mismos repositorios de siempre.
     const repositories = isApiMode()
-      ? withApiProductRelations(
-          withApiProducts(
-            withApiCatalogMasterData(withApiSession(mockRepositories, eventBus), eventBus),
+      ? withApiInventoryMovements(
+          withApiProductRelations(
+            withApiProducts(
+              withApiCatalogMasterData(withApiSession(mockRepositories, eventBus), eventBus),
+              eventBus,
+            ),
             eventBus,
           ),
-          eventBus,
         )
       : mockRepositories;
     return {

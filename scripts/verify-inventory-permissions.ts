@@ -260,6 +260,7 @@ function createHarness() {
 
   function buildRepositories(session: Session): RepositoryRegistry {
     return {
+      inventoryMovementsDataSource: "mock",
       auth: {
         getCurrentSessionId: async () => session.id,
         getSession: async (sessionId: string) =>
@@ -333,6 +334,15 @@ const READ_PERMISSIONS = ["inventory.stock.read", "inventory.movements.read"];
 const ADJUST_PERMISSION = "inventory.adjustment.create";
 const TRANSFER_PERMISSION = "inventory.transfers.manage";
 
+function movementParams(activeBranchId: string) {
+  return {
+    activeBranchId,
+    page: 1,
+    pageSize: 100,
+    sort: "createdAt,desc" as const,
+  };
+}
+
 async function expectDenied(action: () => Promise<unknown>, pattern: RegExp) {
   await assert.rejects(action, pattern);
 }
@@ -363,7 +373,9 @@ async function main() {
   const readOnly = harness.createSession(READ_PERMISSIONS, [BRANCH_CENTRO]);
   const alerts = await new GetInventoryAlertsService(readOnly).execute(BRANCH_CENTRO);
   assert.ok(alerts.rows.length > 0, "read-only stock read should return inventory rows");
-  const movements = await new GetInventoryMovementsService(readOnly).execute(BRANCH_CENTRO);
+  const movements = await new GetInventoryMovementsService(readOnly).execute(
+    movementParams(BRANCH_CENTRO),
+  );
   assert.ok(Array.isArray(movements.rows), "read-only movements read should return rows");
   await expectDenied(
     () => new GetInventoryAlertsService(readOnly).execute(BRANCH_NORTE),
@@ -374,11 +386,11 @@ async function main() {
     /sucursal seleccionada/i,
   );
   await expectDenied(
-    () => new GetInventoryMovementsService(readOnly).execute(BRANCH_NORTE),
+    () => new GetInventoryMovementsService(readOnly).execute(movementParams(BRANCH_NORTE)),
     /No ten.*acceso|sucursal seleccionada/i,
   );
   await expectDenied(
-    () => new GetInventoryMovementsService(readOnly).execute(BRANCH_B),
+    () => new GetInventoryMovementsService(readOnly).execute(movementParams(BRANCH_B)),
     /sucursal seleccionada/i,
   );
 
