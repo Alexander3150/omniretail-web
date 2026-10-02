@@ -9,9 +9,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { isApiMode } from "@/config/api-mode";
 import { useDataEventBus, useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import type { PublicStorefrontConfigDto } from "@/modules/storefront/application/dto/PublicStorefrontConfigDto";
 import { GetPublicStorefrontConfigService } from "@/modules/storefront/application/services/GetPublicStorefrontConfigService";
+import { ApiPublicStorefrontConfigService } from "@/modules/storefront/application/services/ApiPublicStorefrontConfigService";
 import { ResolvePublicStorefrontContextService } from "@/modules/storefront/application/services/ResolvePublicStorefrontContextService";
 import { shouldRefreshPublicConfig } from "@/modules/storefront/application/services/publicConfigReactivity";
 
@@ -32,6 +34,7 @@ export function PublicTenantProvider({ children, tenantSlug }: { children: React
     () => new GetPublicStorefrontConfigService(repositories),
     [repositories],
   );
+  const apiConfigService = useMemo(() => new ApiPublicStorefrontConfigService(), []);
   const contextService = useMemo(
     () => new ResolvePublicStorefrontContextService(repositories),
     [repositories],
@@ -50,6 +53,15 @@ export function PublicTenantProvider({ children, tenantSlug }: { children: React
       const requestId = ++requestIdRef.current;
       setLoading(true);
       try {
+        if (isApiMode()) {
+          const publicConfig = await apiConfigService.execute(tenantSlug);
+          if (!active || requestId !== requestIdRef.current) return;
+          resolvedTenantIdRef.current = publicConfig.tenantId;
+          setConfig(publicConfig.config);
+          setTenantId(publicConfig.tenantId);
+          setError(null);
+          return;
+        }
         const [nextConfig, context] = await Promise.all([
           configService.execute(tenantSlug),
           contextService.execute({ tenantSlug, allowDisabled: true }),
@@ -94,7 +106,7 @@ export function PublicTenantProvider({ children, tenantSlug }: { children: React
       unsubscribeBranches();
       unsubscribeSubscription();
     };
-  }, [configService, contextService, eventBus, tenantSlug]);
+  }, [apiConfigService, configService, contextService, eventBus, tenantSlug]);
 
   const value = useMemo<PublicTenantContextValue>(
     () => ({ tenantId, tenantSlug, config, loading, error }),
