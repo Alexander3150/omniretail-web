@@ -89,7 +89,8 @@ export class GetProductEditorDataService {
 
     // Las relaciones dependen de un Product scoped valido, pero no de suppliers ni locations.
     // Comienzan apenas termina Product Detail mientras esos masters siguen cargando. Attributes,
-    // price tiers y promotions quedan fuera y se hidratan al abrir sus pestanas.
+    // price tiers, promotions, conversions e inventory settings quedan fuera y se hidratan al
+    // abrir sus pestanas.
     const relationsPromise = detailLoadPromise.then(async (detailLoad) => {
       if (!productId || !detailLoad) return null;
       const { detail } = detailLoad;
@@ -114,34 +115,14 @@ export class GetProductEditorDataService {
           }),
         ),
       );
-      const inventorySettingsPromise = branchDataPromise.then(({ tenantBranchId }) =>
-        detail.product.productType === ProductType.physical &&
-        detail.product.tracking.stock &&
-        tenantBranchId &&
-        access.canReadInventorySettings
-          ? this.repositories.inventory.getProductInventorySettings(productId, tenantBranchId)
-          : null,
-      );
-
-      const [
-        conversions,
-        supplierProducts,
-        inventorySettings,
-        kitComponents,
-      ] = await Promise.all([
-        detail.product.productType !== ProductType.kit && access.canReadConversions
-          ? this.repositories.units.getConversionsByProductScoped(tenantId, productId)
-          : Promise.resolve([]),
+      const [supplierProducts, kitComponents] = await Promise.all([
         supplierProductsPromise,
-        inventorySettingsPromise,
         detail.product.productType === ProductType.kit
           ? this.repositories.productKitComponents.getByKitProduct(productId)
           : Promise.resolve([]),
       ]);
       return {
-        conversions,
         supplierProducts,
-        inventorySettings,
         kitComponents,
       };
     });
@@ -164,11 +145,12 @@ export class GetProductEditorDataService {
       return {
         access,
         detail: null,
-        unitConversion: null,
-        unitConversions: [],
-        inventorySettings: null,
+        unitConversion: undefined,
+        unitConversions: undefined,
+        inventorySettings: undefined,
         storageLocations: branchData.activeStorageLocations,
-        currentDefaultLocation: null,
+        branchLocations: branchData.branchLocations,
+        currentDefaultLocation: undefined,
         attributeDefinitions: undefined,
         attributes: undefined,
         salesPriceTiers: undefined,
@@ -182,22 +164,6 @@ export class GetProductEditorDataService {
     }
 
     const { detail, media } = detailLoad;
-    const currentDefaultLocation = relations.inventorySettings?.defaultLocationId
-      ? (branchData.branchLocations.find(
-          (location) => location.id === relations.inventorySettings?.defaultLocationId,
-        ) ?? null)
-      : null;
-    const saleUnitId = detail.product.saleUnitId ?? detail.product.baseUnitId;
-    const unitConversion =
-      relations.conversions.find(
-        (conversion) =>
-          conversion.fromUnitId === detail.product.baseUnitId && conversion.toUnitId === saleUnitId,
-      ) ??
-      relations.conversions.find(
-        (conversion) =>
-          conversion.fromUnitId === saleUnitId && conversion.toUnitId === detail.product.baseUnitId,
-      ) ??
-      null;
     const editableMedia: ProductMediaEditorValue[] = media.map((item) => ({
       id: item.id,
       type: item.type,
@@ -211,11 +177,12 @@ export class GetProductEditorDataService {
     return {
       access,
       detail,
-      unitConversion,
-      unitConversions: relations.conversions,
-      inventorySettings: relations.inventorySettings,
+      unitConversion: undefined,
+      unitConversions: undefined,
+      inventorySettings: undefined,
       storageLocations: branchData.activeStorageLocations,
-      currentDefaultLocation,
+      branchLocations: branchData.branchLocations,
+      currentDefaultLocation: undefined,
       attributeDefinitions: undefined,
       attributes: undefined,
       salesPriceTiers: undefined,
