@@ -1,5 +1,5 @@
 import type { Product } from "@/core/entities";
-import type { SalesChannel } from "@/core/enums";
+import type { ProductStatus, ProductType, SalesChannel } from "@/core/enums";
 import type { PageParams, PaginatedResult } from "@/core/types/pagination.types";
 
 export type ProductSort =
@@ -12,6 +12,17 @@ export type ProductSort =
 
 export interface ProductPageParams extends PageParams {
   sort?: ProductSort;
+  search?: string;
+  status?: ProductStatus;
+  productType?: ProductType;
+  categoryId?: string;
+  channels?: SalesChannel[];
+  promotion?: "with" | "without";
+}
+
+/** Proyección exclusiva del listado; no agrega media a la entidad Product. */
+export interface ProductPageItem extends Product {
+  primaryImageUrl?: string;
 }
 
 export interface ProductRepository {
@@ -24,7 +35,7 @@ export interface ProductRepository {
   getPageScoped(
     tenantId: string,
     params: ProductPageParams,
-  ): Promise<PaginatedResult<Product>>;
+  ): Promise<PaginatedResult<ProductPageItem>>;
   getPublishedForEcommerce(tenantId: string): Promise<Product[]>;
   getAvailableForPos(): Promise<Product[]>;
   getPublishedForChannel(channel: SalesChannel): Promise<Product[]>;
