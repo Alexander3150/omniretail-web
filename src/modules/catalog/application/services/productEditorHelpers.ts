@@ -271,17 +271,7 @@ export async function syncEditorRelatedData(
     syncInventorySettings(repositories, product, dto),
     syncUnitConversion(repositories, product, dto, context),
     syncAttributes(repositories, product, dto, context),
-    repositories.productSalesPriceTiers.replaceForProduct(
-      product.id,
-      dto.salesPriceTiers
-        .filter((tier) => tier.active)
-        .map((tier) => ({
-          tenantId: product.tenantId,
-          minQuantity: toFiniteNumber(tier.minQuantity),
-          unitPrice: toFiniteNumber(tier.unitPrice),
-          active: tier.active,
-        })),
-    ),
+    syncSalesPriceTiers(repositories, product, dto),
     product.productType === "kit"
       ? Promise.resolve([])
       : syncSupplierProducts(repositories, product, dto),
@@ -367,8 +357,10 @@ export async function syncApiEditorRelatedData(
       ),
     );
   }
-  if (canUpdateProductRelations) {
+  if (canUpdateProductRelations && dto.salesPriceTiers !== undefined) {
     await run("priceTiers", () => syncSalesPriceTiers(repositories, product, dto));
+  }
+  if (canUpdateProductRelations) {
     if (repositories.productMediaDataSource === "api") {
       await run("media", () => syncApiProductMedia(repositories, product, dto.media));
     }
@@ -397,6 +389,7 @@ async function syncSalesPriceTiers(
   product: Product,
   dto: ProductEditorDto,
 ) {
+  if (dto.salesPriceTiers === undefined) return;
   return repositories.productSalesPriceTiers.replaceForProduct(
     product.id,
     dto.salesPriceTiers
@@ -865,6 +858,7 @@ export async function removeAssetIfOrphaned(
 }
 
 function assertUniquePositiveSalesTiers(tiers: ProductEditorDto["salesPriceTiers"]) {
+  if (tiers === undefined) return;
   const quantities = new Set<number>();
   for (const tier of tiers) {
     const minQuantity = toFiniteNumber(tier.minQuantity);
