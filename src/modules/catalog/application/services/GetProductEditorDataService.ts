@@ -2,7 +2,6 @@ import type { Product } from "@/core/entities";
 import { LocationStatus, ProductType, PromotionStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
-  ProductAttributeEditorValue,
   ProductEditorData,
   ProductMediaEditorValue,
   SupplierProductEditorValue,
@@ -46,16 +45,6 @@ export class GetProductEditorDataService {
           permissions,
         })
       : Promise.resolve(null);
-    const attributeDefinitionsPromise = (
-      access.canReadAttributes
-        ? this.repositories.attributes.getDefinitions()
-        : Promise.resolve([])
-    ).then((definitions) =>
-      // getDefinitions() sigue siendo global legacy; el DTO solo recibe definiciones del tenant.
-      definitions.filter(
-        (definition) => definition.tenantId === undefined || definition.tenantId === tenantId,
-      ),
-    );
     const suppliersPromise = access.canManageSuppliers
       ? this.repositories.suppliers.getActiveByTenant(tenantId)
       : Promise.resolve([]);
@@ -98,8 +87,9 @@ export class GetProductEditorDataService {
           .getByTenant(tenantId)
           .then((products) => selectKitEligibleProducts(products));
 
-    // Las relaciones dependen de un Product scoped valido, pero no de definitions, suppliers ni
-    // locations. Comienzan apenas termina Product Detail mientras esos masters siguen cargando.
+    // Las relaciones dependen de un Product scoped valido, pero no de suppliers ni locations.
+    // Comienzan apenas termina Product Detail mientras esos masters siguen cargando. Attributes
+    // queda fuera de este orquestador y se hidrata al abrir su pestana.
     const relationsPromise = detailLoadPromise.then(async (detailLoad) => {
       if (!productId || !detailLoad) return null;
       const { detail } = detailLoad;
@@ -135,7 +125,6 @@ export class GetProductEditorDataService {
 
       const [
         conversions,
-        attributeValues,
         salesPriceTiers,
         supplierProducts,
         promotions,
@@ -145,7 +134,6 @@ export class GetProductEditorDataService {
         detail.product.productType !== ProductType.kit && access.canReadConversions
           ? this.repositories.units.getConversionsByProductScoped(tenantId, productId)
           : Promise.resolve([]),
-        this.repositories.attributes.getValuesByProduct(productId),
         this.repositories.productSalesPriceTiers.getByProduct(productId),
         supplierProductsPromise,
         access.canReadPromotions
@@ -158,7 +146,6 @@ export class GetProductEditorDataService {
       ]);
       return {
         conversions,
-        attributeValues,
         salesPriceTiers,
         supplierProducts,
         promotions,
@@ -169,14 +156,12 @@ export class GetProductEditorDataService {
 
     const [
       detailLoad,
-      attributeDefinitions,
       suppliers,
       branchData,
       kitEligibleProducts,
       relations,
     ] = await Promise.all([
       detailLoadPromise,
-      attributeDefinitionsPromise,
       suppliersPromise,
       branchDataPromise,
       kitEligibleProductsPromise,
@@ -192,8 +177,8 @@ export class GetProductEditorDataService {
         inventorySettings: null,
         storageLocations: branchData.activeStorageLocations,
         currentDefaultLocation: null,
-        attributeDefinitions,
-        attributes: [],
+        attributeDefinitions: undefined,
+        attributes: undefined,
         salesPriceTiers: [],
         suppliers,
         supplierProducts: [],
@@ -221,18 +206,6 @@ export class GetProductEditorDataService {
           conversion.fromUnitId === saleUnitId && conversion.toUnitId === detail.product.baseUnitId,
       ) ??
       null;
-    const editableAttributes: ProductAttributeEditorValue[] = relations.attributeValues.map(
-      (value) => {
-        const definition = attributeDefinitions.find(
-          (item) => item.id === value.attributeDefinitionId,
-        );
-        return {
-          attributeDefinitionId: value.attributeDefinitionId,
-          name: definition?.name ?? value.name ?? "Atributo",
-          value: String(value.value),
-        };
-      },
-    );
     const editableMedia: ProductMediaEditorValue[] = media.map((item) => ({
       id: item.id,
       type: item.type,
@@ -251,8 +224,8 @@ export class GetProductEditorDataService {
       inventorySettings: relations.inventorySettings,
       storageLocations: branchData.activeStorageLocations,
       currentDefaultLocation,
-      attributeDefinitions,
-      attributes: editableAttributes,
+      attributeDefinitions: undefined,
+      attributes: undefined,
       salesPriceTiers: relations.salesPriceTiers.map((tier) => ({
         id: tier.id,
         minQuantity: tier.minQuantity,

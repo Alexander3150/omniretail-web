@@ -87,7 +87,8 @@ export interface ProductEditorDto extends Omit<CreateProductDto, "primaryImageUr
   inventoryToBaseFactor: NumericInputValue;
   saleToBaseFactor: NumericInputValue;
   inventorySettings: ProductInventorySettingsEditorValue;
-  attributes: ProductAttributeEditorValue[];
+  /** undefined = todavia no cargados; [] = cargados y sin asignaciones. */
+  attributes?: ProductAttributeEditorValue[];
   salesPriceTiers: ProductSalesPriceTierEditorValue[];
   supplierProducts: SupplierProductEditorValue[];
   media: ProductMediaEditorValue[];
@@ -113,8 +114,8 @@ export interface ProductEditorData {
   inventorySettings: ProductInventorySettings | null;
   storageLocations: StorageLocation[];
   currentDefaultLocation: StorageLocation | null;
-  attributeDefinitions: AttributeDefinition[];
-  attributes: ProductAttributeEditorValue[];
+  attributeDefinitions?: AttributeDefinition[];
+  attributes?: ProductAttributeEditorValue[];
   salesPriceTiers: ProductSalesPriceTierEditorValue[];
   suppliers: Supplier[];
   supplierProducts: SupplierProductEditorValue[];

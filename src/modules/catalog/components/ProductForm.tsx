@@ -65,6 +65,10 @@ import {
 import { productTypeLabels } from "@/modules/catalog/components/productLabels";
 import { useProductPromotions } from "@/modules/catalog/hooks/useProductPromotions";
 import {
+  useProductAttributes,
+  type ProductAttributesLoadState,
+} from "@/modules/catalog/hooks/useProductAttributes";
+import {
   useSupplierCostTiers,
   type SupplierCostTierLoadState,
 } from "@/modules/catalog/hooks/useSupplierCostTiers";
@@ -138,10 +142,18 @@ export function ProductForm({
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [editorError, setEditorError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ProductFormTab>("general");
+  const productAttributes = useProductAttributes();
   const supplierCostTiers = useSupplierCostTiers();
+  const { user } = useCurrentSession();
   const { hasCapability } = useEntitlement();
   const isEdit = mode === "edit";
   const detail = editorData.detail;
+  const attributeTenantId = detail?.product.tenantId ?? user?.tenantId;
+  const attributeProductId = detail?.product.id;
+  const attributeLoadState = productAttributes.getState(
+    attributeTenantId,
+    attributeProductId,
+  );
   const categoryName =
     options.categories.find((category) => category.id === value.categoryId)?.name ??
     "Sin categoria";
@@ -178,8 +190,9 @@ export function ProductForm({
     { id: "general", label: "Informacion general", icon: "I" },
     value.productType !== ProductType.kit ? { id: "units", label: "Unidades", icon: "U" } : null,
     { id: "tracking", label: "Inventario y trazabilidad", icon: "T" },
-    options.businessCapabilities.supportsProductAttributes || value.attributes.length > 0
-      ? { id: "attributes", label: "Atributos", icon: "A", count: value.attributes.length }
+    options.businessCapabilities.supportsProductAttributes ||
+    (isEdit && editorData.access.canReadAttributes)
+      ? { id: "attributes", label: "Atributos", icon: "A", count: value.attributes?.length }
       : null,
     { id: "prices", label: "Precios", icon: "Q", count: value.salesPriceTiers.length },
     showPromotionTab
@@ -205,6 +218,26 @@ export function ProductForm({
   ];
   const completedItems = preparationItems.filter((item) => item.complete).length;
   const completionPercentage = Math.round((completedItems / preparationItems.length) * 100);
+
+  function loadAttributes() {
+    if (
+      !attributeTenantId ||
+      !editorData.access.canReadAttributes ||
+      value.attributes !== undefined
+    ) {
+      return;
+    }
+    void productAttributes
+      .load(attributeTenantId, attributeProductId)
+      .then(({ attributes }) => {
+        setValue((current) =>
+          current.attributes === undefined ? { ...current, attributes } : current,
+        );
+      })
+      .catch(() => {
+        // El hook conserva el Error real y deja definitions/values fallidos reintentables.
+      });
+  }
 
   function loadSupplierCostTiers(supplierProductId: string) {
     const supplierProduct = value.supplierProducts.find(
@@ -232,6 +265,10 @@ export function ProductForm({
 
   function selectTab(tab: ProductFormTab) {
     setActiveTab(tab);
+    if (tab === "attributes") {
+      loadAttributes();
+      return;
+    }
     if (tab !== "suppliers") return;
     value.supplierProducts.forEach((item) => {
       if (item.id && item.costTiers === undefined) loadSupplierCostTiers(item.id);
@@ -441,6 +478,9 @@ export function ProductForm({
           {activeTab === "attributes" ? (
             <AttributesTab
               canCreateDefinitions={editorData.access.canManageAttributes}
+              canRead={editorData.access.canReadAttributes}
+              loadState={attributeLoadState}
+              onLoad={loadAttributes}
               onChange={(attributes) => updateValue({ attributes })}
               readOnly={
                 !options.businessCapabilities.supportsProductAttributes ||
@@ -1255,15 +1295,22 @@ function KitComponentsEditor({
 function AttributesTab({
   value,
   readOnly,
+  canRead,
   canCreateDefinitions,
+  loadState,
+  onLoad,
   onChange,
 }: {
-  value: ProductAttributeEditorValue[];
+  value?: ProductAttributeEditorValue[];
   readOnly?: boolean;
+  canRead: boolean;
   canCreateDefinitions: boolean;
+  loadState: ProductAttributesLoadState;
+  onLoad: () => void;
   onChange: (value: ProductAttributeEditorValue[]) => void;
 }) {
   function update(index: number, patch: Partial<ProductAttributeEditorValue>) {
+    if (!value) return;
     onChange(value.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)));
   }
 
@@ -1277,7 +1324,26 @@ function AttributesTab({
         }
         title="Atributos"
       />
-      {readOnly ? (
+      {!canRead ? (
+        <p className="rounded-md border border-[var(--color-warning)] bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-text)]">
+          No dispone de permiso para consultar los atributos del producto.
+        </p>
+      ) : value === undefined ? (
+        <div className="flex flex-col gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-[var(--color-text-muted)]">
+            {loadState.status === "error"
+              ? loadState.error.message
+              : loadState.status === "loading"
+                ? "Cargando atributos..."
+                : "Los atributos todavia no se han cargado."}
+          </p>
+          {loadState.status !== "loading" ? (
+            <Button onClick={onLoad} type="button" variant="secondary">
+              {loadState.status === "error" ? "Reintentar" : "Cargar atributos"}
+            </Button>
+          ) : null}
+        </div>
+      ) : readOnly ? (
         <p className="rounded-md border border-[var(--color-warning)] bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-text)]">
           Estos atributos no se borran ni se modifican al guardar otros campos del producto.
         </p>
@@ -1298,7 +1364,7 @@ function AttributesTab({
           gestion de atributos.
         </p>
       )}
-      {value.length ? (
+      {value === undefined || !canRead ? null : value.length ? (
         <div className="space-y-3">
           {value.map((attribute, index) => (
             <div
@@ -2904,7 +2970,7 @@ function buildInitialValue(
     tracking: getDefaultTracking(options.businessCapabilities, ProductType.physical),
     inventorySettings,
     channels: { ecommerce: true, pos: true, mobileApp: false },
-    attributes: [],
+      attributes: undefined,
     salesPriceTiers: [],
     supplierProducts: [],
     media: [],

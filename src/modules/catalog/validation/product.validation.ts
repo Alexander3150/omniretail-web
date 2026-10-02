@@ -141,9 +141,9 @@ export function applyCapabilityRulesToEditor(
     saleToBaseFactor: saleUnitId === dto.baseUnitId ? 1 : dto.saleToBaseFactor,
     tracking: applyTrackingRules(dto.productType, dto.tracking, capabilities, current?.tracking),
     // Los atributos de un producto existente no se tocan aqui: syncAttributes es el punto real de
-    // enforcement (omite la escritura por completo cuando la capacidad esta apagada), asi que este
-    // valor es irrelevante para persistencia en ese caso. Solo un producto nuevo se fuerza a [].
-    attributes: current || capabilities.supportsProductAttributes ? dto.attributes : [],
+    // enforcement. En un producto nuevo sin capacidad se usa undefined para que la ausencia de
+    // carga no se convierta en una mutacion destructiva con una lista vacia.
+    attributes: current || capabilities.supportsProductAttributes ? dto.attributes : undefined,
   };
 }
 
