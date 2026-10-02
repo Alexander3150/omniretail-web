@@ -26,7 +26,10 @@ export function OffersPage() {
       setUnavailableQuantityModalOpen(true);
       return;
     }
-    await addProduct(productId);
+    if (!(await addProduct(productId))) {
+      setUnavailableQuantityModalOpen(true);
+      return;
+    }
     setAddedProductId(productId);
     showToast({
       title: "Producto agregado al carrito",
