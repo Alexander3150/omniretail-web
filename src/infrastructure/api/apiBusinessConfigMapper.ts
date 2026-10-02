@@ -9,6 +9,7 @@ import type { BusinessPreset, DeliveryMethod, PaymentMethod } from "@/core/enums
 import type { UpdateEcommerceConfigInput } from "@/core/repositories";
 import type { ProductTrackingConfig } from "@/core/types/tracking.types";
 import { BackendRequestError } from "@/infrastructure/api/backendClient";
+import { toBackendMediaUrl, toSameOriginMediaUrl } from "@/infrastructure/api/mediaUrl";
 import { assertOptionalApiUuid } from "@/infrastructure/api/uuid";
 
 /** BusinessConfigResponse del backend (`/administration/business-config`). */
@@ -79,7 +80,7 @@ export interface ApiHeroBannerConfig {
 }
 
 function toImage(url: string | null): CatalogImageSource | undefined {
-  return url ? { kind: "url", src: url } : undefined;
+  return url ? { kind: "url", src: toSameOriginMediaUrl(url) } : undefined;
 }
 
 /**
@@ -88,7 +89,7 @@ function toImage(url: string | null): CatalogImageSource | undefined {
  */
 function toImageUrl(image: CatalogImageSource | undefined, fieldName: string): string | undefined {
   if (!image) return undefined;
-  if (image.kind === "url") return image.src;
+  if (image.kind === "url") return toBackendMediaUrl(image.src);
   throw new BackendRequestError(
     "El backend aún no admite subir imágenes; usa una imagen con URL pública.",
     400,

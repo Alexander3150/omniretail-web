@@ -1,14 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ProductStatus, ProductType } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
-import { useDataEvent } from "@/shared/hooks/useDataEvent";
-import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 import { GetProductsService } from "@/modules/catalog/application/services/GetProductsService";
 import type { ProductFiltersState, ProductListItem } from "@/modules/catalog/types/catalog.types";
+import { useDataEvent } from "@/shared/hooks/useDataEvent";
+import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 
 const DEFAULT_PAGE_SIZE = 10;
+const DEFAULT_SORT = "name,asc" as const;
 
 const initialFilters: ProductFiltersState = {
   search: "",
@@ -23,126 +24,129 @@ export function useProducts() {
   const repositories = useRepositories();
   const service = useMemo(() => new GetProductsService(repositories), [repositories]);
   const { currentBranch } = useActiveBranch();
+  const branchId = currentBranch?.id;
+  const requestIdRef = useRef(0);
   const [loading, setLoading] = useState(true);
-  const [products, setProducts] = useState<ProductListItem[]>([]);
+  const [items, setItems] = useState<ProductListItem[]>([]);
   const [filters, setFilters] = useState<ProductFiltersState>(initialFilters);
-  const [page, setPage] = useState(1);
+  const [page, setPageState] = useState(1);
   const [pageSize, setPageSizeState] = useState(DEFAULT_PAGE_SIZE);
-  const [error, setError] = useState<string | null>(null);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [error, setError] = useState<Error | null>(null);
+  const filtersEnabled = repositories.productDataSource === "mock";
 
   const reload = useCallback(async () => {
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
     setLoading(true);
     setError(null);
     try {
-      setProducts(await service.execute(currentBranch?.id));
-    } catch {
-      setError("No se pudieron cargar los productos.");
+      const result = await service.execute({
+        branchId,
+        page,
+        pageSize,
+        sort: DEFAULT_SORT,
+        filters,
+      });
+      if (requestIdRef.current !== requestId) return;
+      if (result.totalPages > 0 && result.page > result.totalPages) {
+        setPageState(result.totalPages);
+        return;
+      }
+      setItems(result.items);
+      setPageState(result.page);
+      setPageSizeState(result.pageSize);
+      setTotalItems(result.totalItems);
+      setTotalPages(result.totalPages);
+    } catch (caughtError) {
+      if (requestIdRef.current !== requestId) return;
+      setError(
+        caughtError instanceof Error
+          ? caughtError
+          : new Error("No se pudieron cargar los productos."),
+      );
     } finally {
-      setLoading(false);
+      if (requestIdRef.current === requestId) setLoading(false);
     }
-  }, [currentBranch, service]);
+  }, [branchId, filters, page, pageSize, service]);
 
   useDataEvent("product.changed", reload);
   useDataEvent("promotion.changed", reload);
 
   useEffect(() => {
-    let active = true;
-    service
-      .execute(currentBranch?.id)
-      .then((nextProducts) => {
-        if (!active) return;
-        setProducts(nextProducts);
-        setError(null);
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+
+    void service
+      .execute({
+        branchId,
+        page,
+        pageSize,
+        sort: DEFAULT_SORT,
+        filters,
       })
-      .catch(() => {
-        if (active) setError("No se pudieron cargar los productos.");
+      .then((result) => {
+        if (requestIdRef.current !== requestId) return;
+        setError(null);
+        if (result.totalPages > 0 && result.page > result.totalPages) {
+          setPageState(result.totalPages);
+          return;
+        }
+        setItems(result.items);
+        setPageState(result.page);
+        setPageSizeState(result.pageSize);
+        setTotalItems(result.totalItems);
+        setTotalPages(result.totalPages);
+      })
+      .catch((caughtError: unknown) => {
+        if (requestIdRef.current !== requestId) return;
+        setError(
+          caughtError instanceof Error
+            ? caughtError
+            : new Error("No se pudieron cargar los productos."),
+        );
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (requestIdRef.current === requestId) setLoading(false);
       });
-    return () => {
-      active = false;
-    };
-  }, [currentBranch, service]);
-
-  const filteredProducts = useMemo(() => filterProducts(products, filters), [filters, products]);
-  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
-  const currentPage = Math.min(page, totalPages);
-  const paginatedProducts = filteredProducts.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize,
-  );
+  }, [branchId, filters, page, pageSize, service]);
 
   const updateFilters = useCallback((nextFilters: Partial<ProductFiltersState>) => {
+    setLoading(true);
+    setError(null);
     setFilters((current) => ({ ...current, ...nextFilters }));
-    setPage(1);
-  }, []);
-
-  const clearFilters = useCallback(() => {
-    setFilters((current) => ({ ...initialFilters, search: current.search }));
-    setPage(1);
-  }, []);
-
-  const clearAllFilters = useCallback(() => {
-    setFilters(initialFilters);
-    setPage(1);
+    setPageState(1);
   }, []);
 
   const setPageSize = useCallback((nextPageSize: number) => {
+    setLoading(true);
+    setError(null);
     setPageSizeState(nextPageSize);
-    setPage(1);
+    setPageState(1);
+  }, []);
+
+  const setPage = useCallback((nextPage: number) => {
+    setLoading(true);
+    setError(null);
+    setPageState(nextPage);
   }, []);
 
   return {
     loading,
     error,
-    products,
-    filteredProducts,
-    paginatedProducts,
+    items,
     filters,
-    page: currentPage,
+    filtersEnabled,
+    page,
     pageSize,
+    totalItems,
     totalPages,
     setPage,
     setPageSize,
     updateFilters,
-    clearFilters,
-    clearAllFilters,
     reload,
   };
-}
-
-function filterProducts(products: ProductListItem[], filters: ProductFiltersState) {
-  const query = filters.search.trim().toLowerCase();
-
-  return products.filter((product) => {
-    const matchesSearch =
-      !query ||
-      [product.name, product.sku, product.barcode, product.brand]
-        .filter(Boolean)
-        .some((value) => value?.toLowerCase().includes(query));
-    const matchesStatus = filters.status === "all" || product.status === filters.status;
-    const matchesType =
-      filters.productType === "all" || product.productType === filters.productType;
-    const matchesCategory =
-      filters.categoryId === "all" || product.categoryId === filters.categoryId;
-    const matchesChannel =
-      filters.channels.length === 0 ||
-      filters.channels.some((channel) => product.channels[channel]);
-    const matchesPromotion =
-      filters.promotion === "all" ||
-      (filters.promotion === "with" && product.hasActivePromotion) ||
-      (filters.promotion === "without" && !product.hasActivePromotion);
-
-    return (
-      matchesSearch &&
-      matchesStatus &&
-      matchesType &&
-      matchesCategory &&
-      matchesChannel &&
-      matchesPromotion
-    );
-  });
 }
 
 export const productStatusOptions = Object.values(ProductStatus);

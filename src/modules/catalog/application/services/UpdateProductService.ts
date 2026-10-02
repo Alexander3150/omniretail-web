@@ -27,6 +27,11 @@ export class UpdateProductService {
   async execute(productId: string, dto: UpdateProductDto): Promise<Product> {
     const { tenantId, permissions } = await resolveTenantContext(this.repositories);
     ensureCanUpdateProducts(permissions);
+    if (this.repositories.productDataSource === "api" && dto.primaryImageUrl !== undefined) {
+      throw new CatalogServiceError(
+        "La sincronizacion de imagenes de producto estara disponible en el Bloque 3. El producto no fue modificado.",
+      );
+    }
 
     const baseErrors = validateProductDto(dto);
     if (hasValidationErrors(baseErrors)) {
@@ -83,7 +88,9 @@ export class UpdateProductService {
       ProductMapper.toUpdateInput({ ...dto, sku: normalizedSku, saleUnitId, tracking }, current),
     );
 
-    await this.syncPrimaryImage(updated, dto.primaryImageUrl?.trim() ?? "");
+    if (this.repositories.productDataSource === "mock") {
+      await this.syncPrimaryImage(updated, dto.primaryImageUrl?.trim() ?? "");
+    }
 
     return updated;
   }

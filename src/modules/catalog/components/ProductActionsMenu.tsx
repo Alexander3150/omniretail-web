@@ -20,6 +20,7 @@ import { cn } from "@/shared/utils/cn";
 
 interface ProductActionsMenuProps {
   canUpdate: boolean;
+  relatedActionsEnabled: boolean;
   product: ProductListItem;
   onPromotion: (product: ProductListItem) => void;
   onPriceHistory: (product: ProductListItem) => void;
@@ -29,6 +30,7 @@ interface ProductActionsMenuProps {
 
 export function ProductActionsMenu({
   canUpdate,
+  relatedActionsEnabled,
   product,
   onPromotion,
   onPriceHistory,
@@ -94,6 +96,8 @@ export function ProductActionsMenu({
     action(product);
   }
 
+  if (!canUpdate && !relatedActionsEnabled) return null;
+
   return (
     <div className="relative flex justify-end" ref={containerRef}>
       <button
@@ -123,14 +127,16 @@ export function ProductActionsMenu({
           role="menu"
           style={menuStyle}
         >
-          {canUpdate && product.status === ProductStatus.published ? (
+          {relatedActionsEnabled && canUpdate && product.status === ProductStatus.published ? (
             <MenuItem icon={<TagIcon />} onClick={() => selectAction(onPromotion)}>
               Promoción
             </MenuItem>
           ) : null}
-          <MenuItem icon={<HistoryIcon />} onClick={() => selectAction(onPriceHistory)}>
-            Historial de precios
-          </MenuItem>
+          {relatedActionsEnabled ? (
+            <MenuItem icon={<HistoryIcon />} onClick={() => selectAction(onPriceHistory)}>
+              Historial de precios
+            </MenuItem>
+          ) : null}
           {canUpdate ? (
             product.status === ProductStatus.published ? (
               <div className="mt-1 border-t border-[var(--color-border)] pt-1">

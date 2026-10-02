@@ -288,6 +288,31 @@ export async function syncEditorRelatedData(
   ]);
 }
 
+/**
+ * Bloque 1: el editor completo aun no puede escribir relaciones. Se valida antes de mutar el
+ * Product para impedir exitos parciales o UUID del backend persistidos en repositories mock.
+ */
+export function ensureApiEditorHasOnlyProductCore(
+  repositories: RepositoryRegistry,
+  dto: ProductEditorDto,
+) {
+  if (repositories.productDataSource !== "api") return;
+  const hasRelatedData =
+    dto.inventoryUnitId !== dto.baseUnitId ||
+    dto.saleUnitId !== dto.baseUnitId ||
+    (dto.tracking.stock && Boolean(dto.inventorySettings.branchId)) ||
+    dto.attributes.length > 0 ||
+    dto.salesPriceTiers.length > 0 ||
+    dto.supplierProducts.length > 0 ||
+    dto.media.length > 0 ||
+    dto.kitComponents.length > 0;
+  if (hasRelatedData) {
+    throw new CatalogServiceError(
+      "El editor contiene datos relacionados cuya integracion corresponde a los Bloques 2 y 3. El producto no fue modificado.",
+    );
+  }
+}
+
 function assertInventorySettings(dto: ProductEditorDto) {
   if (!dto.tracking.stock) return;
   const minStock = toFiniteNumber(dto.inventorySettings.minStock);

@@ -33,7 +33,7 @@ export type BackendQuery = Record<string, string | number | boolean | undefined>
 
 export interface BackendFetchInit {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-  /** Se serializa a JSON. */
+  /** Los objetos se serializan a JSON; FormData se envia sin alterar para preservar su boundary. */
   body?: unknown;
   /** Las claves con valor `undefined` se omiten. */
   query?: BackendQuery;
@@ -84,8 +84,15 @@ async function toRequestError(response: Response): Promise<BackendRequestError> 
  */
 export async function backendFetch<T>(path: string, init: BackendFetchInit = {}): Promise<T> {
   const hasBody = init.body !== undefined;
+  const isMultipart =
+    hasBody && typeof FormData !== "undefined" && init.body instanceof FormData;
+  const requestBody: BodyInit | undefined = !hasBody
+    ? undefined
+    : isMultipart
+      ? (init.body as FormData)
+      : JSON.stringify(init.body);
   const headers: Record<string, string> = { Accept: "application/json" };
-  if (hasBody) headers["Content-Type"] = "application/json";
+  if (hasBody && !isMultipart) headers["Content-Type"] = "application/json";
   if (init.headers?.["Idempotency-Key"]) headers["Idempotency-Key"] = init.headers["Idempotency-Key"];
 
   let response: Response;
@@ -93,7 +100,7 @@ export async function backendFetch<T>(path: string, init: BackendFetchInit = {})
     response = await fetch(`/api/backend${path}${toQueryString(init.query)}`, {
       method: init.method ?? "GET",
       headers,
-      body: hasBody ? JSON.stringify(init.body) : undefined,
+      body: requestBody,
       credentials: "same-origin",
       cache: "no-store",
     });

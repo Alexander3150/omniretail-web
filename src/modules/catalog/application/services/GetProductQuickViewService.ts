@@ -13,6 +13,9 @@ export class GetProductQuickViewService {
   async execute(productId: string): Promise<ProductQuickViewModel | null> {
     const detail = await new GetProductDetailService(this.repositories).execute(productId);
     if (!detail) return null;
+    if (this.repositories.productDataSource === "api") {
+      return { ...detail, inventory: [], suppliers: [], promotions: [] };
+    }
     const tenantId = detail.product.tenantId;
 
     const [balances, branches, locations, suppliers, units, promotions] = await Promise.all([

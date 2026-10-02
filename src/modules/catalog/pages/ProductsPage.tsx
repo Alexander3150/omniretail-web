@@ -32,13 +32,13 @@ export function ProductsPage() {
   const {
     loading,
     error,
-    products,
-    filteredProducts,
-    paginatedProducts,
+    items,
     filters,
+    filtersEnabled,
     page,
     pageSize,
     totalPages,
+    totalItems,
     setPage,
     setPageSize,
     updateFilters,
@@ -50,9 +50,9 @@ export function ProductsPage() {
   const [archiveTarget, setArchiveTarget] = useState<ProductListItem | null>(null);
   const [promotionTarget, setPromotionTarget] = useState<ProductListItem | null>(null);
   const [priceHistoryTarget, setPriceHistoryTarget] = useState<ProductListItem | null>(null);
-  const activeFiltersCount = getActiveProductFiltersCount(filters);
-  const firstVisible = filteredProducts.length === 0 ? 0 : (page - 1) * pageSize + 1;
-  const lastVisible = Math.min(page * pageSize, filteredProducts.length);
+  const activeFiltersCount = filtersEnabled ? getActiveProductFiltersCount(filters) : 0;
+  const firstVisible = totalItems === 0 ? 0 : (page - 1) * pageSize + 1;
+  const lastVisible = Math.min(page * pageSize, totalItems);
 
   async function archiveProduct() {
     if (!archiveTarget) return;
@@ -83,7 +83,7 @@ export function ProductsPage() {
   }
 
   const emptyMessage =
-    products.length === 0
+    totalItems === 0
       ? "Aun no hay productos registrados."
       : "No hay productos que coincidan con los filtros.";
 
@@ -111,19 +111,27 @@ export function ProductsPage() {
       <ProductToolbar
         activeFiltersCount={activeFiltersCount}
         canCreate={canCreate}
+        filtersEnabled={filtersEnabled}
         filtersOpen={filtersOpen}
         onSearchChange={(search) => updateFilters({ search })}
         onToggleFilters={() => setFiltersOpen((current) => !current)}
         search={filters.search}
       />
-      {filtersOpen ? (
+      {!filtersEnabled ? (
+        <InlineAlert
+          description="El backend actual solo admite paginacion y ordenamiento. La busqueda y los filtros globales se habilitaran cuando existan esos parametros en Products API."
+          title="Filtros no disponibles temporalmente"
+          tone="info"
+        />
+      ) : null}
+      {filtersOpen && filtersEnabled ? (
         <ProductFilters
           categories={options?.categories ?? []}
           filters={filters}
           onChange={updateFilters}
         />
       ) : null}
-      {error ? <InlineAlert title={error} tone="danger" /> : null}
+      {error ? <InlineAlert title={error.message} tone="danger" /> : null}
       {loading ? (
         <p className="rounded-md border border-[var(--color-border)] bg-white p-5 text-sm text-[var(--color-text-muted)]">
           Cargando productos...
@@ -132,9 +140,10 @@ export function ProductsPage() {
         <>
           <ProductTable
             canUpdate={canUpdate}
+            relatedActionsEnabled={filtersEnabled}
             emptyMessage={emptyMessage}
             footer={
-              filteredProducts.length > 0 ? (
+              totalItems > 0 ? (
                 <ProductTableFooter
                   firstVisible={firstVisible}
                   lastVisible={lastVisible}
@@ -142,7 +151,7 @@ export function ProductsPage() {
                   onPageSizeChange={setPageSize}
                   page={page}
                   pageSize={pageSize}
-                  totalItems={filteredProducts.length}
+                  totalItems={totalItems}
                   totalPages={totalPages}
                 />
               ) : null
@@ -152,9 +161,9 @@ export function ProductsPage() {
             onPriceHistory={setPriceHistoryTarget}
             onPromotion={setPromotionTarget}
             onRestore={restoreProduct}
-            products={paginatedProducts}
+            products={items}
           />
-          {products.length === 0 && canCreate ? (
+          {totalItems === 0 && canCreate ? (
             <div className="flex justify-center">
               <Button href="/catalogo/productos/nuevo">
                 <PlusIcon />

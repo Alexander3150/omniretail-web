@@ -19,6 +19,7 @@ import {
 } from "@/modules/catalog/components/CatalogIcons";
 import { useProductPermissions } from "@/modules/catalog/hooks/useProductPermissions";
 import { useProductQuickView } from "@/modules/catalog/hooks/useProductQuickView";
+import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import type { ProductListItem, ProductQuickViewModel } from "@/modules/catalog/types/catalog.types";
 
 type QuickViewTab = "general" | "inventory" | "suppliers";
@@ -36,6 +37,8 @@ const tabs: { id: QuickViewTab; label: string }[] = [
 
 export function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
   const router = useRouter();
+  const repositories = useRepositories();
+  const relatedDataAvailable = repositories.productDataSource === "mock";
   const { canUpdate } = useProductPermissions();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [activeTab, setActiveTab] = useState<QuickViewTab>("general");
@@ -100,7 +103,7 @@ export function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
             </button>
           </div>
           <div className="mt-4 flex gap-2 overflow-x-auto pb-1" role="tablist">
-            {tabs.map((tab) => (
+            {tabs.filter((tab) => tab.id === "general" || relatedDataAvailable).map((tab) => (
               <button
                 aria-selected={activeTab === tab.id}
                 className={cn(
@@ -138,7 +141,7 @@ export function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
             </>
           )}
         </div>
-        {canUpdate ? (
+        {canUpdate && relatedDataAvailable ? (
           <footer className="border-t border-[var(--color-border)] px-4 py-4 sm:px-5">
             <Button
               className="w-full"

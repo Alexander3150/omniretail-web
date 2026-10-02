@@ -25,6 +25,11 @@ export class CreateProductService {
   async execute(dto: CreateProductDto): Promise<Product> {
     const { tenantId, permissions } = await resolveTenantContext(this.repositories);
     ensureCanCreateProducts(permissions);
+    if (this.repositories.productDataSource === "api" && dto.primaryImageUrl?.trim()) {
+      throw new CatalogServiceError(
+        "La carga de imagenes de producto estara disponible en el Bloque 3. El producto no fue creado.",
+      );
+    }
 
     const baseErrors = validateProductDto(dto);
     if (hasValidationErrors(baseErrors)) {
@@ -59,7 +64,7 @@ export class CreateProductService {
       ProductMapper.toCreateInput({ ...dto, sku: normalizedSku, saleUnitId, tracking }, tenantId),
     );
 
-    if (dto.primaryImageUrl?.trim()) {
+    if (this.repositories.productDataSource === "mock" && dto.primaryImageUrl?.trim()) {
       await this.repositories.productMedia.add({
         tenantId,
         productId: product.id,
