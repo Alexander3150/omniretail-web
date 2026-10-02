@@ -94,6 +94,19 @@ export interface ProductEditorDto extends Omit<CreateProductDto, "primaryImageUr
 }
 
 export interface ProductEditorData {
+  access: {
+    apiMode: boolean;
+    canUpdateProductRelations: boolean;
+    canReadConversions: boolean;
+    canManageConversions: boolean;
+    canReadAttributes: boolean;
+    canManageAttributes: boolean;
+    canManageSuppliers: boolean;
+    canReadInventorySettings: boolean;
+    canReadPromotions: boolean;
+    canManagePromotions: boolean;
+    mediaEnabled: boolean;
+  };
   detail: ProductDetailViewModel | null;
   unitConversion: UnitConversion | null;
   unitConversions: UnitConversion[];

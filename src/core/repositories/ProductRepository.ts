@@ -38,6 +38,7 @@ export interface ProductRepository {
     id: string,
     input: Partial<Omit<Product, "id" | "tenantId" | "createdAt" | "updatedAt">>,
   ): Promise<Product>;
+  updatePrice(id: string, salePrice: number, reason?: string): Promise<Product>;
   archive(id: string): Promise<Product>;
   archiveScoped(tenantId: string, id: string): Promise<Product>;
   restore(id: string): Promise<Product>;

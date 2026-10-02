@@ -7,5 +7,6 @@ export interface ProductPriceHistory {
   previousPrice: number;
   newPrice: number;
   actorUserId?: string;
+  reason?: string;
   changedAt: ISODateString;
 }

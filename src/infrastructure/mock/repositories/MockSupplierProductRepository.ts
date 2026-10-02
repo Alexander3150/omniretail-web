@@ -23,6 +23,14 @@ export class MockSupplierProductRepository
     );
   }
 
+  async getAllByProductForTenant(tenantId: string, productId: string) {
+    return this.read((db) =>
+      db.supplierProducts
+        .filter((item) => item.productId === productId && item.tenantId === tenantId)
+        .sort((a, b) => Number(b.preferred) - Number(a.preferred)),
+    );
+  }
+
   async getBySupplier(supplierId: string) {
     return this.read((db) =>
       db.supplierProducts.filter((item) => item.supplierId === supplierId && item.active),

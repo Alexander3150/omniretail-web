@@ -149,6 +149,27 @@ export class ApiProductRepository implements ProductRepository {
     return this.update(id, input);
   }
 
+  async updatePrice(id: string, salePrice: number, reason?: string) {
+    assertApiUuid(id, "productId");
+    const product = toProduct(
+      parseApiProduct(
+        await backendFetch<unknown>(`/catalog/products/${id}/price`, {
+          method: "PUT",
+          body: { salePrice, reason: reason?.trim() || undefined },
+        }),
+      ),
+    );
+    this.eventBus.emit("product-price.changed", {
+      entityId: product.id,
+      tenantId: product.tenantId,
+      productId: product.id,
+      action: "updated",
+      newPrice: product.salePrice,
+    });
+    this.emit(product, "updated");
+    return product;
+  }
+
   async archive(id: string) {
     assertApiUuid(id, "productId");
     const current = await this.getById(id);

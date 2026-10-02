@@ -83,9 +83,8 @@ mantener los contratos existentes. Categorias y ubicaciones conservan `parentId`
 ordenan en preorden para reflejar la jerarquia. Inventory sigue en mock salvo las tres operaciones
 del maestro de ubicaciones. La pantalla de unidades no agrega CRUD de conversiones: usa su listado
 real para el read model existente y conserva las operaciones administrativas/globales en API.
-Las lecturas y reemplazos de conversiones por producto siguen delegadas al repository original;
-los flujos Product API del Bloque 1 no las invocan. Esta compatibilidad debe retirarse al integrar
-conversiones en el Bloque 2.
+Las conversiones administrativas globales y las conversiones product-scoped usan API real. El
+editor solo reemplaza conversiones product-scoped cuando la sesion puede leerlas y gestionarlas.
 
 ## Integracion API de Products - Bloque 1
 
@@ -94,10 +93,25 @@ administrativo consume paginacion backend 1-based y enriquece unicamente la pagi
 categorias y unidades reales. Los consumidores legacy pueden agregar paginas del API de forma
 temporal; el listado administrativo no usa ese camino.
 
-Promociones, inventario, medios, atributos, conversiones, proveedores, tiers y componentes de kit
-no se cruzan con UUID de Product del backend. El editor integral bloquea esa orquestacion hasta los
-Bloques 2/3. Mientras el backend no exponga filtros de Product, la UI API conserva su estado pero
-deshabilita busqueda y filtros para no presentar resultados parciales como globales.
+Mientras el backend no exponga filtros de Product, la UI API conserva su estado pero deshabilita
+busqueda y filtros para no presentar resultados parciales como globales.
+
+## Integracion API de Products - Bloque 2
+
+En modo `api`, el editor usa adapters reales para precio dedicado e historial, price tiers,
+conversiones product-scoped, definiciones y valores de atributos, promociones, relaciones con
+proveedores y sus escalas de costo, configuracion de inventario y componentes de kit. La
+composicion explicita distingue Product core, relaciones Product y media para impedir que un UUID
+del backend llegue a un repository mock.
+
+La creacion de kits publica de forma segura: crea el core archivado, reemplaza componentes y solo
+despues restaura. Las escrituras posteriores al core se reportan por seccion mediante un error de
+guardado parcial; no se simula rollback y la UI recarga el estado canonico. Un kit archivado puede
+reintentar sus componentes antes de usar la restauracion explicita.
+
+Media permanece diferida al Bloque 3: el editor API devuelve una coleccion vacia, muestra el tab
+informativo y no consulta ni escribe `ProductMediaRepository`. En modo `mock` se conserva el flujo
+multimedia y la orquestacion integral existentes.
 
 ## Estructura futura
 

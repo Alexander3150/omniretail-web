@@ -3,6 +3,7 @@ import { ProductStatus, PromotionStatus, PromotionType } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import {
   CatalogServiceError,
+  ensureCanManagePromotions,
   ensureCanUpdateProducts,
   ensureProduct,
   resolveTenantContext,
@@ -30,7 +31,11 @@ export class SaveProductPromotionService {
 
   async execute(input: SaveProductPromotionInput): Promise<Promotion> {
     const { tenantId, permissions } = await resolveTenantContext(this.repositories);
-    ensureCanUpdateProducts(permissions);
+    if (this.repositories.productRelationsDataSource === "api") {
+      ensureCanManagePromotions(permissions);
+    } else {
+      ensureCanUpdateProducts(permissions);
+    }
     const product = ensureProduct(
       await this.repositories.products.getByIdScoped(tenantId, input.productId),
     );
@@ -51,18 +56,27 @@ export class SaveProductPromotionService {
       new Date(input.startAt).getTime() > Date.now()
         ? PromotionStatus.scheduled
         : PromotionStatus.active;
+    const currentPromotion = input.promotionId
+      ? await this.repositories.promotions.getByIdScoped(tenantId, input.promotionId)
+      : null;
+    if (
+      input.promotionId &&
+      (!currentPromotion || !currentPromotion.productIds.includes(input.productId))
+    ) {
+      throw new CatalogServiceError("La promocion solicitada no existe.");
+    }
     const payload = {
       tenantId,
-      name: `Promoción ${input.productName}`,
-      description: undefined,
+      name: currentPromotion?.name ?? `Promoción ${input.productName}`,
+      description: currentPromotion?.description,
       type: input.type,
       value: input.value,
       channels: input.channels,
       startAt: input.startAt,
       endAt: input.endAt,
       untilStockEnds: input.untilStockEnds,
-      branchIds: [],
-      productIds: [input.productId],
+      branchIds: currentPromotion?.branchIds ?? [],
+      productIds: currentPromotion?.productIds ?? [input.productId],
       status,
     };
 

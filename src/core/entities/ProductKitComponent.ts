@@ -7,6 +7,6 @@ export interface ProductKitComponent {
   kitProductId: string;
   componentProductId: string;
   quantityPerKit: number;
-  createdAt: ISODateString;
-  updatedAt: ISODateString;
+  createdAt?: ISODateString;
+  updatedAt?: ISODateString;
 }

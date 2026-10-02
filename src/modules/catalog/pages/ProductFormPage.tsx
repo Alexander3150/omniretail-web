@@ -16,6 +16,8 @@ import { useProductEditorData } from "@/modules/catalog/hooks/useProductEditorDa
 import { useProductFormOptions } from "@/modules/catalog/hooks/useProductFormOptions";
 import { useProductMutations } from "@/modules/catalog/hooks/useProductMutations";
 import { useProductPermissions } from "@/modules/catalog/hooks/useProductPermissions";
+import { ProductEditorPartialSaveError } from "@/modules/catalog/application/services/ProductEditorPartialSaveError";
+import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 
 interface ProductFormPageProps {
   mode: "create" | "edit";
@@ -25,6 +27,7 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
   const params = useParams<{ id?: string }>();
   const productId = params.id ?? "";
   const router = useRouter();
+  const repositories = useRepositories();
   const { showToast } = useToast();
   const isEdit = mode === "edit";
   const { canCreate, canUpdate } = useProductPermissions();
@@ -38,6 +41,8 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
   const mutations = useProductMutations();
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [createdZeroStockProduct, setCreatedZeroStockProduct] = useState<Product | null>(null);
+  const [canonicalReloadRevision, setCanonicalReloadRevision] = useState(0);
+  const inventoryAdjustmentEnabled = repositories.productDataSource === "mock";
 
   async function submit(dto: ProductEditorDto) {
     try {
@@ -64,6 +69,22 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
       }
       router.push(`/catalogo/productos/${product.id}`);
     } catch (caughtError) {
+      if (caughtError instanceof ProductEditorPartialSaveError) {
+        mutations.clearError();
+        showToast({
+          title: "Producto guardado parcialmente",
+          description: caughtError.message,
+          tone: "warning",
+          duration: 8000,
+        });
+        if (isEdit) {
+          await editorState.reload();
+          setCanonicalReloadRevision((current) => current + 1);
+        } else {
+          router.push(`/catalogo/productos/${caughtError.productId}/editar`);
+        }
+        return;
+      }
       showToast({
         title: "No se pudo guardar",
         description: caughtError instanceof Error ? caughtError.message : undefined,
@@ -133,7 +154,7 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
           busy={mutations.busy}
           editorData={editorState.data}
           error={mutations.error}
-          key={`${mode}-${productId || "new"}-${currentBranch.id}`}
+          key={`${mode}-${productId || "new"}-${currentBranch.id}-${canonicalReloadRevision}`}
           mode={mode}
           onArchive={() => setConfirmArchive(true)}
           onSubmit={submit}
@@ -151,15 +172,23 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
       <ConfirmDialog
         open={Boolean(createdZeroStockProduct)}
         title="Producto creado. Actualmente no tiene existencia."
-        message={`La existencia pertenece a la sucursal activa (${currentBranch.name}). Registra el inventario inicial con el flujo de ajuste para mantener sus validaciones de lote, serie y vencimiento.`}
-        confirmLabel="Agregar existencia inicial"
+        message={
+          inventoryAdjustmentEnabled
+            ? `La existencia pertenece a la sucursal activa (${currentBranch.name}). Registra el inventario inicial con el flujo de ajuste para mantener sus validaciones de lote, serie y vencimiento.`
+            : "La existencia inicial debe registrarse desde el flujo de inventario cuando este disponible para Product API."
+        }
+        confirmLabel={inventoryAdjustmentEnabled ? "Agregar existencia inicial" : "Ver producto"}
         onCancel={() => {
           if (createdZeroStockProduct) router.push(`/catalogo/productos/${createdZeroStockProduct.id}`);
           setCreatedZeroStockProduct(null);
         }}
         onConfirm={() => {
           if (createdZeroStockProduct) {
-            router.push(`/inventario/alertas?productId=${encodeURIComponent(createdZeroStockProduct.id)}&openAdjustment=1`);
+            router.push(
+              inventoryAdjustmentEnabled
+                ? `/inventario/alertas?productId=${encodeURIComponent(createdZeroStockProduct.id)}&openAdjustment=1`
+                : `/catalogo/productos/${createdZeroStockProduct.id}`,
+            );
           }
           setCreatedZeroStockProduct(null);
         }}

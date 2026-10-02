@@ -43,11 +43,6 @@ export function useProductEditorData(productId?: string, branchId?: string, tena
     let active = true;
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
-    queueMicrotask(() => {
-      if (!active || requestIdRef.current !== requestId) return;
-      setLoading(true);
-      setError(null);
-    });
     service
       .execute(productId, branchId)
       .then((nextData) => {

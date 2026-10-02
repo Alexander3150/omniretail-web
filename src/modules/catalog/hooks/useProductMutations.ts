@@ -49,6 +49,7 @@ export function useProductMutations() {
   return {
     busy,
     error,
+    clearError: () => setError(null),
     create: (dto: CreateProductDto) => runMutation(() => createService.execute(dto)),
     update: (productId: string, dto: UpdateProductDto) =>
       runMutation(() => updateService.execute(productId, dto)),

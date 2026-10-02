@@ -1,4 +1,4 @@
-import { LocationStatus, PromotionStatus } from "@/core/enums";
+import { LocationStatus, ProductType, PromotionStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { GetProductDetailService } from "@/modules/catalog/application/services/GetProductDetailService";
 import type {
@@ -7,11 +7,7 @@ import type {
   ProductMediaEditorValue,
   SupplierProductEditorValue,
 } from "@/modules/catalog/application/dto/ProductEditorDto";
-import {
-  CatalogServiceError,
-  ensureCanReadProducts,
-  resolveTenantContext,
-} from "@/modules/catalog/application/services/serviceHelpers";
+import { ensureCanReadProducts, resolveTenantContext } from "@/modules/catalog/application/services/serviceHelpers";
 
 export class GetProductEditorDataService {
   constructor(private readonly repositories: RepositoryRegistry) {}
@@ -19,14 +15,28 @@ export class GetProductEditorDataService {
   async execute(productId?: string, branchId?: string): Promise<ProductEditorData> {
     const { tenantId, permissions } = await resolveTenantContext(this.repositories);
     ensureCanReadProducts(permissions);
-    if (this.repositories.productDataSource === "api") {
-      throw new CatalogServiceError(
-        "El editor integral de productos queda pendiente de los Bloques 2 y 3 para no mezclar datos del backend con repositories relacionados mock.",
-      );
-    }
+    const apiMode = this.repositories.productRelationsDataSource === "api";
+    const hasPermission = (permission: string) => permissions.includes(permission);
+    const access: ProductEditorData["access"] = {
+      apiMode,
+      canUpdateProductRelations: !apiMode || hasPermission("catalog.products.update"),
+      canReadConversions: !apiMode || hasPermission("catalog.units.read"),
+      canManageConversions: !apiMode || hasPermission("catalog.units.manage"),
+      canReadAttributes: !apiMode || hasPermission("catalog.attributes.read"),
+      canManageAttributes: !apiMode || hasPermission("catalog.attributes.manage"),
+      canManageSuppliers: !apiMode || hasPermission("admin.suppliers.manage"),
+      canReadInventorySettings: !apiMode || hasPermission("inventory.stock.read"),
+      canReadPromotions: !apiMode || hasPermission("catalog.promotions.read"),
+      canManagePromotions: !apiMode || hasPermission("catalog.promotions.manage"),
+      mediaEnabled: this.repositories.productMediaDataSource === "mock",
+    };
     const [allAttributeDefinitions, suppliers, allProducts, branch] = await Promise.all([
-      this.repositories.attributes.getDefinitions(),
-      this.repositories.suppliers.getActiveByTenant(tenantId),
+      access.canReadAttributes ? this.repositories.attributes.getDefinitions() : Promise.resolve([]),
+      access.canManageSuppliers
+        ? this.repositories.suppliers.getActiveByTenant(tenantId)
+        : Promise.resolve([]),
+      // Costo temporal documentado: Products API aún no filtra candidatos físicos de kit.
+      // El adapter agrega todas las páginas únicamente para este selector del editor.
       this.repositories.products.getByTenant(tenantId),
       branchId
         ? this.repositories.branches.getByIdScoped(tenantId, branchId)
@@ -34,13 +44,17 @@ export class GetProductEditorDataService {
     ]);
     // `getDefinitions()` aun es una lectura global legacy; se filtra antes de crear la DTO.
     const attributeDefinitions = allAttributeDefinitions.filter(
-      (definition) => definition.tenantId === tenantId,
+      (definition) => definition.tenantId === undefined || definition.tenantId === tenantId,
     );
     const tenantProducts = allProducts;
     // branchId llega del cliente (selector de sucursal): no se usa para leer ubicaciones ni
     // configuracion de inventario a menos que la sucursal exista y pertenezca al tenant activo.
     const tenantBranchId = branch && branch.tenantId === tenantId ? branch.id : undefined;
-    const branchLocations = tenantBranchId
+    const canReadLocations =
+      !apiMode ||
+      hasPermission("catalog.locations.read") ||
+      hasPermission("catalog.locations.manage");
+    const branchLocations = tenantBranchId && canReadLocations
       ? await this.repositories.inventory.getLocations(tenantBranchId)
       : [];
     const activeStorageLocations = branchLocations.filter(
@@ -56,6 +70,7 @@ export class GetProductEditorDataService {
 
     if (!productId) {
       return {
+        access,
         detail: null,
         unitConversion: null,
         unitConversions: [],
@@ -80,6 +95,7 @@ export class GetProductEditorDataService {
     const product = tenantProducts.find((item) => item.id === productId);
     if (!product) {
       return {
+        access,
         detail: null,
         unitConversion: null,
         unitConversions: [],
@@ -101,6 +117,7 @@ export class GetProductEditorDataService {
     const detail = await new GetProductDetailService(this.repositories).execute(productId);
     if (!detail) {
       return {
+        access,
         detail: null,
         unitConversion: null,
         unitConversions: [],
@@ -129,16 +146,29 @@ export class GetProductEditorDataService {
       inventorySettings,
       kitComponents,
     ] = await Promise.all([
-      this.repositories.units.getConversionsByProductScoped(tenantId, productId),
+      detail.product.productType !== ProductType.kit && access.canReadConversions
+        ? this.repositories.units.getConversionsByProductScoped(tenantId, productId)
+        : Promise.resolve([]),
       this.repositories.attributes.getValuesByProduct(productId),
       this.repositories.productSalesPriceTiers.getByProduct(productId),
-      this.repositories.supplierProducts.getByProductForTenant(tenantId, productId),
-      this.repositories.productMedia.getByProduct(productId),
-      this.repositories.promotions.getByProductScoped(tenantId, productId),
-      tenantBranchId
+      detail.product.productType !== ProductType.kit && access.canManageSuppliers
+        ? this.repositories.supplierProducts.getByProductForTenant(tenantId, productId)
+        : Promise.resolve([]),
+      access.mediaEnabled
+        ? this.repositories.productMedia.getByProduct(productId)
+        : Promise.resolve([]),
+      access.canReadPromotions
+        ? this.repositories.promotions.getByProductScoped(tenantId, productId)
+        : Promise.resolve([]),
+      detail.product.productType === ProductType.physical &&
+      detail.product.tracking.stock &&
+      tenantBranchId &&
+      access.canReadInventorySettings
         ? this.repositories.inventory.getProductInventorySettings(productId, tenantBranchId)
         : Promise.resolve(null),
-      this.repositories.productKitComponents.getByKitProduct(productId),
+      detail.product.productType === ProductType.kit
+        ? this.repositories.productKitComponents.getByKitProduct(productId)
+        : Promise.resolve([]),
     ]);
     const currentDefaultLocation = inventorySettings?.defaultLocationId
       ? (branchLocations.find((location) => location.id === inventorySettings.defaultLocationId) ??
@@ -187,7 +217,7 @@ export class GetProductEditorDataService {
       );
       return {
         attributeDefinitionId: value.attributeDefinitionId,
-        name: definition?.name ?? "Atributo",
+        name: definition?.name ?? value.name ?? "Atributo",
         value: String(value.value),
       };
     });
@@ -203,6 +233,7 @@ export class GetProductEditorDataService {
     }));
 
     return {
+      access,
       detail,
       unitConversion,
       unitConversions: conversions,

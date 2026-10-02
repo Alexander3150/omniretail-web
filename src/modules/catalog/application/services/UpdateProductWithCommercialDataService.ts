@@ -1,13 +1,19 @@
 import type { Product } from "@/core/entities";
+import { ProductStatus, ProductType } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { ProductEditorDto } from "@/modules/catalog/application/dto/ProductEditorDto";
 import { ProductMapper } from "@/modules/catalog/application/mappers/ProductMapper";
 import {
-  ensureApiEditorHasOnlyProductCore,
+  syncApiEditorRelatedData,
   syncEditorRelatedData,
+  syncKitComponents,
   toProductDto,
   validateEditorProduct,
 } from "@/modules/catalog/application/services/productEditorHelpers";
+import {
+  ProductEditorPartialSaveError,
+  type ProductEditorFailedSection,
+} from "@/modules/catalog/application/services/ProductEditorPartialSaveError";
 import {
   CatalogServiceError,
   ensureCanUpdateProducts,
@@ -30,14 +36,47 @@ export class UpdateProductWithCommercialDataService {
       current.tenantId,
       current,
     );
-    ensureApiEditorHasOnlyProductCore(this.repositories, normalizedDto);
-    if (
-      this.repositories.productDataSource === "api" &&
-      (Number(normalizedDto.salePrice) !== current.salePrice ||
-        normalizedDto.status !== current.status)
-    ) {
+    if (this.repositories.productDataSource === "mock") {
+      const updated = await this.repositories.products.updateScoped(
+        tenantId,
+        current.id,
+        ProductMapper.toUpdateInput(toProductDto(normalizedDto), current),
+      );
+      await syncEditorRelatedData(this.repositories, updated, normalizedDto, {
+        capabilities,
+        isNewProduct,
+      });
+      return updated;
+    }
+
+    if (current.status === ProductStatus.archived) {
+      if (hasCoreChanges(current, normalizedDto)) {
+        throw new CatalogServiceError(
+          "El producto archivado no admite cambios generales. Restaurelo antes de editar esos campos.",
+        );
+      }
+      if (current.productType !== ProductType.kit) {
+        throw new CatalogServiceError(
+          "Restaure el producto antes de editarlo.",
+        );
+      }
+      try {
+        await syncKitComponents(this.repositories, current, normalizedDto);
+      } catch {
+        throw new ProductEditorPartialSaveError(current.id, false, ["kitComponents"]);
+      }
+      try {
+        return (
+          (await this.repositories.products.getByIdScoped(tenantId, current.id)) ?? current
+        );
+      } catch {
+        throw new ProductEditorPartialSaveError(current.id, false, ["canonicalReload"]);
+      }
+    }
+
+    if (normalizedDto.status !== current.status) {
       throw new CatalogServiceError(
-        "El precio y el estado usan flujos dedicados en Products API. El producto no fue modificado.",
+        "Use las acciones de archivar o restaurar para cambiar el estado del producto.",
       );
     }
     const updated = await this.repositories.products.updateScoped(
@@ -45,12 +84,52 @@ export class UpdateProductWithCommercialDataService {
       current.id,
       ProductMapper.toUpdateInput(toProductDto(normalizedDto), current),
     );
-    if (this.repositories.productDataSource === "mock") {
-      await syncEditorRelatedData(this.repositories, updated, normalizedDto, {
+    const failedSections: ProductEditorFailedSection[] = [];
+    if (Number(normalizedDto.salePrice) !== current.salePrice) {
+      try {
+        await this.repositories.products.updatePrice(
+          current.id,
+          Number(normalizedDto.salePrice),
+          "Actualizacion desde el editor de producto",
+        );
+      } catch {
+        failedSections.push("price");
+      }
+    }
+    failedSections.push(
+      ...(await syncApiEditorRelatedData(this.repositories, updated, normalizedDto, {
+        permissions,
         capabilities,
         isNewProduct,
-      });
+      })),
+    );
+    if (failedSections.length > 0) {
+      throw new ProductEditorPartialSaveError(current.id, true, failedSections);
     }
-    return updated;
+    try {
+      return (await this.repositories.products.getByIdScoped(tenantId, current.id)) ?? updated;
+    } catch {
+      throw new ProductEditorPartialSaveError(current.id, true, ["canonicalReload"]);
+    }
   }
+}
+
+function hasCoreChanges(current: Product, dto: ProductEditorDto) {
+  const next = ProductMapper.toUpdateInput(toProductDto(dto), current);
+  return (
+    next.sku !== current.sku ||
+    next.barcode !== current.barcode ||
+    next.name !== current.name ||
+    next.description !== current.description ||
+    next.brand !== current.brand ||
+    next.productType !== current.productType ||
+    next.categoryId !== current.categoryId ||
+    next.baseUnitId !== current.baseUnitId ||
+    next.inventoryUnitId !== current.inventoryUnitId ||
+    next.saleUnitId !== current.saleUnitId ||
+    next.salePrice !== current.salePrice ||
+    next.status !== current.status ||
+    JSON.stringify(next.tracking) !== JSON.stringify(current.tracking) ||
+    JSON.stringify(next.channels) !== JSON.stringify(current.channels)
+  );
 }
