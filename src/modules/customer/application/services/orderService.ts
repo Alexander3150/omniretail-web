@@ -8,6 +8,9 @@ import {
   type CustomerOrderDetailDto,
 } from "@/modules/customer/application/dto/CustomerOrderDetailDto";
 import { resolveCustomerAuthorizationContext } from "@/modules/customer/application/services/CustomerAuthorizationContext";
+import { isApiMode } from "@/config/api-mode";
+import { backendFetch } from "@/infrastructure/api/backendClient";
+import type { PaginatedResult } from "@/core/types";
 
 type OrderRepositories = Pick<
   RepositoryRegistry,
@@ -19,14 +22,19 @@ type OrderRepositories = Pick<
  * cualquier accion sobre un pedido (cancelar, ver detalle completo,
  * reordenar) es responsabilidad del modulo storefront, no de este.
  *
- * No recibe customerId/tenantId del caller -- los resuelve internamente
- * via el mismo contexto canonico que Profile/Addresses/PaymentMethods,
- * y repositories.orders.getByCustomer exige ambos igual que los demas
- * repositorios de este modulo.
+ * En modo api: consume directamente `/customer/orders` a traves del puente
+ * autenticado con JWT de sesion del cliente.
+ * En modo mock: resuelve context y consulta repositories.orders.
  */
 export async function getCurrentCustomerOrders(
   repositories: OrderRepositories,
 ): Promise<CustomerOrderSummaryDto[]> {
+  if (isApiMode()) {
+    const result = await backendFetch<PaginatedResult<CustomerOrderSummaryDto>>("/customer/orders", {
+      query: { page: 0, size: 50 },
+    });
+    return result.items;
+  }
   const context = await resolveCustomerAuthorizationContext(repositories);
   const orders = await repositories.orders.getByCustomer(context.tenantId, context.customerId);
   return [...orders]
@@ -43,6 +51,13 @@ export async function getCurrentCustomerOrderDetail(
   repositories: OrderRepositories,
   orderId: string,
 ): Promise<CustomerOrderDetailDto | null> {
+  if (isApiMode()) {
+    try {
+      return await backendFetch<CustomerOrderDetailDto>(`/customer/orders/${orderId}`);
+    } catch {
+      return null;
+    }
+  }
   const context = await resolveCustomerAuthorizationContext(repositories);
   const orders = await repositories.orders.getByCustomer(context.tenantId, context.customerId);
   const order = orders.find((item) => item.id === orderId);
