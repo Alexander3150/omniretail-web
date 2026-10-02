@@ -15,6 +15,10 @@ export interface StorefrontDiscoveryProductDto {
   description?: string;
   brand?: string;
   salePrice: number;
+  basePrice?: number;
+  effectivePrice?: number;
+  discountAmount?: number;
+  promotionId?: string;
   salesPriceTiers: Array<Pick<ProductSalesPriceTier, "minQuantity" | "unitPrice" | "active">>;
   categoryId: string;
   categoryName?: string;

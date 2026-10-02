@@ -1,41 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { BranchType } from "@/core/enums";
-import type { Branch } from "@/core/entities";
-import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 
 export function BranchesPage() {
-  const repositories = useRepositories();
-  const { tenantId, loading: tenantLoading } = usePublicTenant();
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      if (!tenantId) {
-        if (active) {
-          setBranches([]);
-          setLoading(false);
-        }
-        return;
-      }
-      setLoading(true);
-      const stores = (await repositories.branches.getActive()).filter(
-        (branch) => branch.tenantId === tenantId && branch.type === BranchType.store,
-      );
-      if (active) {
-        setBranches(stores);
-        setLoading(false);
-      }
-    };
-    if (!tenantLoading) void load();
-    return () => {
-      active = false;
-    };
-  }, [repositories.branches, tenantId, tenantLoading]);
+  const { config, loading } = usePublicTenant();
+  const branches = config?.branches ?? [];
 
   return (
     <main className="mx-auto max-w-6xl px-5 py-12">
@@ -72,9 +41,11 @@ export function BranchesPage() {
                       <span className="text-[var(--color-title)]">⌖</span>
                       <h2 className="font-black text-[var(--color-text)]">{branch.name}</h2>
                     </div>
-                    <span className="rounded bg-[var(--color-primary)]/15 px-2 py-1 text-xs font-black text-[var(--color-title)]">
-                      {branch.code}
-                    </span>
+                    {branch.code ? (
+                      <span className="rounded bg-[var(--color-primary)]/15 px-2 py-1 text-xs font-black text-[var(--color-title)]">
+                        {branch.code}
+                      </span>
+                    ) : null}
                   </div>
                   {branch.address ? (
                     <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">

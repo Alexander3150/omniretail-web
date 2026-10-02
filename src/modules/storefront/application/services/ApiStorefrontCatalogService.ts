@@ -7,6 +7,10 @@ interface BackendProduct {
   description?: string;
   brand?: string;
   salePrice: number;
+  basePrice?: number | null;
+  effectivePrice?: number | null;
+  discountAmount?: number | null;
+  promotionId?: string | null;
   categoryId: string;
   categoryName?: string | null;
   saleUnitId?: string | null;
@@ -21,6 +25,10 @@ function toProduct(product: BackendProduct): StorefrontDiscoveryProductDto {
     description: product.description,
     brand: product.brand,
     salePrice: Number(product.salePrice),
+    basePrice: product.basePrice == null ? undefined : Number(product.basePrice),
+    effectivePrice: product.effectivePrice == null ? undefined : Number(product.effectivePrice),
+    discountAmount: product.discountAmount == null ? undefined : Number(product.discountAmount),
+    promotionId: product.promotionId ?? undefined,
     salesPriceTiers: [],
     categoryId: product.categoryId,
     categoryName: product.categoryName ?? undefined,

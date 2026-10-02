@@ -3,7 +3,10 @@ import type { CatalogImageSource } from "@/core/entities";
 export interface PublicStorefrontBranchDto {
   id: string;
   name: string;
+  code?: string;
   address?: string;
+  phone?: string;
+  email?: string;
 }
 
 export interface PublicHeroBannerSlideDto {

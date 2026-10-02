@@ -6,7 +6,9 @@ import { getProductMediaSource, selectPrimaryProductMedia } from "@/core/media/c
 import { BranchStatus, PromotionStatus, SalesChannel } from "@/core/enums";
 import { calculateEffectivePrice, resolveQuantityPrice } from "@/core/pricing";
 import { isBranchScopedResourceAvailable } from "@/core/scopes/branchScope";
+import { isApiMode } from "@/config/api-mode";
 import { useDataEventBus, useRepositories } from "@/infrastructure/providers/RepositoryProvider";
+import { ApiStorefrontCatalogService } from "@/modules/storefront/application/services/ApiStorefrontCatalogService";
 import { ensurePublicStorefrontTenant } from "@/modules/storefront/application/services/ResolvePublicStorefrontContextService";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
@@ -22,7 +24,7 @@ export interface StorefrontOfferItem {
   effectivePrice: number;
   discount: number;
   promotionName: string;
-  promotion: Pick<Promotion, "id" | "type" | "value">;
+  promotion?: Pick<Promotion, "id" | "type" | "value">;
 }
 
 function isApplicableEcommercePromotion(
@@ -63,6 +65,7 @@ export function useStorefrontOffers(quantityOverride?: { productId: string; quan
   const repositories = useRepositories();
   const eventBus = useDataEventBus();
   const { tenantId, tenantSlug, loading: tenantLoading, error: tenantError } = usePublicTenant();
+  const apiCatalogService = useMemo(() => new ApiStorefrontCatalogService(), []);
   const { items: cartItems } = useStorefrontCart();
   const overrideProductId = quantityOverride?.productId;
   const overrideQuantity = quantityOverride?.quantity;
@@ -84,6 +87,25 @@ export function useStorefrontOffers(quantityOverride?: { productId: string; quan
       setLoading(true);
       setError(null);
       try {
+        if (isApiMode()) {
+          const discovery = await apiCatalogService.list(tenantSlug);
+          const offers = discovery.products
+            .filter((product) => (product.discountAmount ?? 0) > 0)
+            .map((product) => ({
+              productId: product.id,
+              name: product.name,
+              sku: product.sku,
+              description: product.description,
+              imageSource: product.imageSource,
+              imageAlt: product.imageAlt,
+              basePrice: product.basePrice ?? product.salePrice,
+              effectivePrice: product.effectivePrice ?? product.salePrice,
+              discount: product.discountAmount ?? 0,
+              promotionName: "Oferta especial",
+            }));
+          if (active) setItems(offers);
+          return;
+        }
         // Auditoría §15/§30 (BLOCKER): esta lectura pública lee productos/precios directo del
         // repositorio (sin pasar por Discovery/ProductDetail) -- mismo bypass, mismo guard.
         await ensurePublicStorefrontTenant(repositories, tenantSlug, tenantId);
@@ -177,6 +199,7 @@ export function useStorefrontOffers(quantityOverride?: { productId: string; quan
       unsubscribe();
     };
   }, [
+    apiCatalogService,
     cartItems,
     eventBus,
     overrideProductId,
