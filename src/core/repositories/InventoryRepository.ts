@@ -10,6 +10,80 @@ import type {
 } from "@/core/entities";
 import type { InventoryMovementType } from "@/core/enums";
 
+export type InventoryMovementDisplayType =
+  | "purchase_in"
+  | "sale"
+  | "return"
+  | "void"
+  | "dispatch"
+  | "in"
+  | "out"
+  | "transfer";
+
+export type InventoryMovementSort =
+  | "createdAt,asc"
+  | "createdAt,desc"
+  | "quantity,asc"
+  | "quantity,desc"
+  | "type,asc"
+  | "type,desc"
+  | "productId,asc"
+  | "productId,desc"
+  | "branchId,asc"
+  | "branchId,desc";
+
+export interface InventoryMovementPageParams {
+  branchId?: string;
+  productId?: string;
+  type?: InventoryMovementType;
+  from?: string;
+  to?: string;
+  search?: string;
+  displayType?: InventoryMovementDisplayType;
+  page: number;
+  pageSize: number;
+  sort?: InventoryMovementSort;
+}
+
+export interface InventoryMovementListItem {
+  id: string;
+  tenantId: string;
+  branchId: string;
+  branchName: string | null;
+  productId: string;
+  productName: string | null;
+  sku: string | null;
+  type: InventoryMovementType;
+  displayType: InventoryMovementDisplayType;
+  reason: string;
+  quantity: number;
+  quantityBefore: number | null;
+  quantityAfter: number | null;
+  fromLocationId: string | null;
+  fromLocationName: string | null;
+  toLocationId: string | null;
+  toLocationName: string | null;
+  referenceType: string | null;
+  referenceId: string | null;
+  referenceLabel: string | null;
+  performedByUserId: string | null;
+  userLabel: string | null;
+  createdAt: string;
+}
+
+export interface InventoryMovementPageResult {
+  items: InventoryMovementListItem[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+  summary: {
+    incoming: number;
+    outgoing: number;
+    net: number;
+  };
+}
+
 export interface PickingInventoryLotAvailability {
   lotId: string;
   lotNumber: string;
@@ -172,6 +246,7 @@ export interface InventoryRepository {
   ): Promise<PickingFulfillmentItemTrace[]>;
   getBalanceByProduct(productId: string, branchId?: string): Promise<InventoryBalance[]>;
   getMovements(productId?: string): Promise<InventoryMovement[]>;
+  getMovementPage(params: InventoryMovementPageParams): Promise<InventoryMovementPageResult>;
   getLots(productId?: string): Promise<StockLot[]>;
   getSerialNumbers(productId?: string): Promise<SerialNumber[]>;
   getLocations(branchId?: string): Promise<StorageLocation[]>;

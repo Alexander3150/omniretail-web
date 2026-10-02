@@ -197,6 +197,7 @@ async function main() {
   assert.equal(movement.performedByUserId, actorUserId);
   assert.equal(movement.fromLocationId, locationId);
   const getMovementsView = () => new GetInventoryMovementsService({
+    inventoryMovementsDataSource: "mock",
     auth: {
       getCurrentSessionId: async () => "dispatch-inventory-session",
       getSession: async () => ({ id: "dispatch-inventory-session", userId: "user-admin",
@@ -228,7 +229,12 @@ async function main() {
     sales: { getAll: async () => store.getSnapshot().sales },
     inventoryAdjustments: { query: async () => store.getSnapshot().inventoryAdjustments },
     inventoryTransfers: { query: async () => [] },
-  } as unknown as RepositoryRegistry).execute(branchId);
+  } as unknown as RepositoryRegistry).execute({
+    activeBranchId: branchId,
+    page: 1,
+    pageSize: 100,
+    sort: "createdAt,desc",
+  });
   const movementsView = await getMovementsView();
   const movementRow = movementsView.rows.find((row) => row.id === movement.id);
   assert.equal(movementRow?.typeLabel, "Despacho");

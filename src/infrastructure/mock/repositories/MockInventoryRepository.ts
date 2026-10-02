@@ -373,6 +373,12 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
       db.inventoryMovements.filter((item) => !productId || item.productId === productId),
     );
   }
+  async getMovementPage(
+    _params: Parameters<InventoryRepository["getMovementPage"]>[0],
+  ): ReturnType<InventoryRepository["getMovementPage"]> {
+    void _params;
+    throw new Error("Server-side inventory movement pages are only available in API mode.");
+  }
   async getLots(productId?: string) {
     return this.read((db) =>
       db.stockLots.filter((item) => !productId || item.productId === productId),

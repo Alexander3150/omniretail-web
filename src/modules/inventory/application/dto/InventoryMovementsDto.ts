@@ -1,4 +1,5 @@
 import type { InventoryMovementType } from "@/core/enums";
+import type { InventoryMovementDisplayType } from "@/core/repositories";
 
 export type MovementPeriodFilter = "7d" | "30d" | "90d" | "all";
 export type MovementDisplayType =
@@ -19,6 +20,17 @@ export type MovementDisplayType =
   | "adjustment"
   | "transfer";
 export type MovementTypeFilter = MovementDisplayType | "all";
+
+export const API_MOVEMENT_DISPLAY_TYPES: readonly InventoryMovementDisplayType[] = [
+  "purchase_in",
+  "sale",
+  "return",
+  "void",
+  "dispatch",
+  "in",
+  "out",
+  "transfer",
+];
 
 export interface InventoryTransferDetailDto {
   number: string;
@@ -74,6 +86,11 @@ export interface InventoryMovementRow {
 export interface InventoryMovementsData {
   rows: InventoryMovementRow[];
   branches: Array<{ id: string; name: string }>;
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+  summary: InventoryMovementKpis;
 }
 
 export interface InventoryMovementKpis {

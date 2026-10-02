@@ -1,9 +1,14 @@
 import type { InventoryAdjustment, InventoryMovement } from "@/core/entities";
 import { InventoryAdjustmentType, InventoryMovementType } from "@/core/enums";
-import type { InventoryTransferWithItems } from "@/core/repositories";
+import type {
+  InventoryMovementListItem,
+  InventoryMovementPageParams,
+  InventoryTransferWithItems,
+} from "@/core/repositories";
 import { canUserOperateBranch } from "@/core/scopes/userBranchAccess";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
+  InventoryMovementKpis,
   InventoryMovementRow,
   InventoryMovementsData,
 } from "@/modules/inventory/application/dto/InventoryMovementsDto";
@@ -16,7 +21,75 @@ import {
 export class GetInventoryMovementsService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async execute(activeBranchId?: string): Promise<InventoryMovementsData> {
+  async execute(params: GetInventoryMovementsParams): Promise<InventoryMovementsData> {
+    if (this.repositories.inventoryMovementsDataSource === "api") {
+      return this.getApiPage(params);
+    }
+    return this.getMockMovements(params.activeBranchId);
+  }
+
+  async exportAll(params: GetInventoryMovementsParams): Promise<InventoryMovementsData> {
+    if (this.repositories.inventoryMovementsDataSource !== "api") {
+      return this.getMockMovements(params.activeBranchId);
+    }
+
+    const { permissions } = await resolveInventoryContext(this.repositories);
+    ensureCanReadMovements(permissions);
+
+    const firstPage = await this.repositories.inventory.getMovementPage({
+      ...toApiPageParams(params),
+      page: 1,
+      pageSize: EXPORT_PAGE_SIZE,
+    });
+    const rows = firstPage.items.map(mapApiMovement);
+    const expectedPages = Math.max(
+      firstPage.totalPages,
+      Math.ceil(firstPage.totalItems / EXPORT_PAGE_SIZE),
+    );
+    if (!Number.isSafeInteger(expectedPages) || expectedPages > MAX_EXPORT_PAGES) {
+      throw new Error("La exportacion supera el limite seguro de paginas.");
+    }
+
+    for (let page = 2; page <= expectedPages && rows.length < firstPage.totalItems; page += 1) {
+      const nextPage = await this.repositories.inventory.getMovementPage({
+        ...toApiPageParams(params),
+        page,
+        pageSize: EXPORT_PAGE_SIZE,
+      });
+      if (nextPage.page !== page) {
+        throw new Error("El backend devolvio una pagina de movimientos inesperada.");
+      }
+      if (nextPage.items.length === 0) break;
+      rows.push(...nextPage.items.map(mapApiMovement));
+    }
+
+    return {
+      rows,
+      branches: [],
+      page: 1,
+      pageSize: EXPORT_PAGE_SIZE,
+      totalItems: firstPage.totalItems,
+      totalPages: firstPage.totalPages,
+      summary: firstPage.summary,
+    };
+  }
+
+  private async getApiPage(params: GetInventoryMovementsParams): Promise<InventoryMovementsData> {
+    const { permissions } = await resolveInventoryContext(this.repositories);
+    ensureCanReadMovements(permissions);
+    const result = await this.repositories.inventory.getMovementPage(toApiPageParams(params));
+    return {
+      rows: result.items.map(mapApiMovement),
+      branches: [],
+      page: result.page,
+      pageSize: result.pageSize,
+      totalItems: result.totalItems,
+      totalPages: result.totalPages,
+      summary: result.summary,
+    };
+  }
+
+  private async getMockMovements(activeBranchId?: string): Promise<InventoryMovementsData> {
     const { tenantId, user, permissions } = await resolveInventoryContext(this.repositories);
     ensureCanReadMovements(permissions);
     const branches = await this.repositories.branches.getAll();
@@ -137,13 +210,97 @@ export class GetInventoryMovementsService {
         (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
       );
 
+    const summary = getMovementKpis(rows);
     return {
       rows,
       branches: visibleBranches
         .map((branch) => ({ id: branch.id, name: branch.name }))
         .sort((left, right) => left.name.localeCompare(right.name)),
+      page: 1,
+      pageSize: Math.max(1, rows.length),
+      totalItems: rows.length,
+      totalPages: 1,
+      summary,
     };
   }
+}
+
+export interface GetInventoryMovementsParams extends InventoryMovementPageParams {
+  activeBranchId?: string;
+}
+
+const EXPORT_PAGE_SIZE = 100;
+const MAX_EXPORT_PAGES = 10_000;
+
+function toApiPageParams(params: GetInventoryMovementsParams): InventoryMovementPageParams {
+  return {
+    branchId: params.branchId,
+    productId: params.productId,
+    type: params.type,
+    from: params.from,
+    to: params.to,
+    search: params.search,
+    displayType: params.displayType,
+    page: params.page,
+    pageSize: params.pageSize,
+    sort: params.sort,
+  };
+}
+
+function mapApiMovement(movement: InventoryMovementListItem): InventoryMovementRow {
+  return {
+    id: movement.id,
+    tenantId: movement.tenantId,
+    branchId: movement.branchId,
+    branchName: movement.branchName ?? "Sucursal no disponible",
+    productId: movement.productId,
+    productName: movement.productName ?? "Producto no disponible",
+    sku: movement.sku ?? movement.productId,
+    type: movement.type,
+    displayType: movement.displayType,
+    typeLabel: getMovementTypeLabel(movement.displayType),
+    typeTone: getMovementTypeTone(movement.displayType),
+    quantity: movement.quantity,
+    signedQuantity: getApiSignedQuantity(movement),
+    quantityBefore: movement.quantityBefore ?? undefined,
+    quantityAfter: movement.quantityAfter ?? undefined,
+    unitLabel: "",
+    fromLocationName: movement.fromLocationName ?? undefined,
+    toLocationName: movement.toLocationName ?? undefined,
+    locationLabel: getApiLocationLabel(movement),
+    referenceType: movement.referenceType ?? undefined,
+    referenceId: movement.referenceId ?? undefined,
+    referenceLabel: movement.referenceLabel ?? "-",
+    performedByUserId: movement.performedByUserId ?? undefined,
+    userLabel: movement.userLabel ?? "-",
+    reason: movement.reason,
+    createdAt: movement.createdAt,
+  };
+}
+
+function getApiSignedQuantity(movement: InventoryMovementListItem) {
+  if (movement.type === InventoryMovementType.out) return -movement.quantity;
+  if (movement.type === InventoryMovementType.transfer) return 0;
+  return movement.quantity;
+}
+
+function getApiLocationLabel(movement: InventoryMovementListItem) {
+  if (movement.type === InventoryMovementType.transfer) {
+    return `${movement.fromLocationName ?? "Origen no disponible"} -> ${
+      movement.toLocationName ?? "Destino no disponible"
+    }`;
+  }
+  return movement.toLocationName ?? movement.fromLocationName ?? "-";
+}
+
+function getMovementKpis(rows: InventoryMovementRow[]): InventoryMovementKpis {
+  const incoming = rows
+    .filter((row) => row.signedQuantity > 0)
+    .reduce((total, row) => total + row.signedQuantity, 0);
+  const outgoing = rows
+    .filter((row) => row.signedQuantity < 0)
+    .reduce((total, row) => total + Math.abs(row.signedQuantity), 0);
+  return { incoming, outgoing, net: incoming - outgoing };
 }
 
 function getSignedQuantity(movement: InventoryMovement) {
