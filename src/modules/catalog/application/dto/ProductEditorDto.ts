@@ -86,7 +86,10 @@ export interface ProductEditorDto extends Omit<CreateProductDto, "primaryImageUr
   salePrice: NumericInputValue;
   inventoryToBaseFactor: NumericInputValue;
   saleToBaseFactor: NumericInputValue;
-  inventorySettings: ProductInventorySettingsEditorValue;
+  /** undefined = conversiones todavia no cargadas; [] = cargadas y vacias. */
+  unitConversions?: UnitConversion[];
+  /** undefined = settings todavia no cargados. */
+  inventorySettings?: ProductInventorySettingsEditorValue;
   /** undefined = todavia no cargados; [] = cargados y sin asignaciones. */
   attributes?: ProductAttributeEditorValue[];
   /** undefined = todavia no cargados; [] = cargados y sin tramos. */
@@ -110,11 +113,12 @@ export interface ProductEditorData {
     canManagePromotions: boolean;
   };
   detail: ProductDetailViewModel | null;
-  unitConversion: UnitConversion | null;
-  unitConversions: UnitConversion[];
-  inventorySettings: ProductInventorySettings | null;
+  unitConversion?: UnitConversion | null;
+  unitConversions?: UnitConversion[];
+  inventorySettings?: ProductInventorySettings | null;
   storageLocations: StorageLocation[];
-  currentDefaultLocation: StorageLocation | null;
+  branchLocations: StorageLocation[];
+  currentDefaultLocation?: StorageLocation | null;
   attributeDefinitions?: AttributeDefinition[];
   attributes?: ProductAttributeEditorValue[];
   salesPriceTiers?: ProductSalesPriceTierEditorValue[];

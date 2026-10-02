@@ -48,10 +48,12 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
     try {
       const dtoWithActiveBranch = {
         ...dto,
-        inventorySettings: {
-          ...dto.inventorySettings,
-          branchId: currentBranch?.id ?? dto.inventorySettings.branchId,
-        },
+        inventorySettings: dto.inventorySettings
+          ? {
+              ...dto.inventorySettings,
+              branchId: currentBranch?.id ?? dto.inventorySettings.branchId,
+            }
+          : undefined,
       };
       const product = isEdit
         ? await mutations.updateWithCommercialData(productId, dtoWithActiveBranch)
@@ -151,6 +153,7 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
     <>
       <div className="mx-auto w-full min-w-0 max-w-7xl xl:[&>form>nav]:overflow-visible xl:[&>form>nav>div]:min-w-0 xl:[&>form>nav>div]:flex-wrap xl:[&>form>nav>div]:gap-1 xl:[&>form>nav_button]:min-w-0 xl:[&>form>nav_button]:flex-1 xl:[&>form>nav_button]:justify-center xl:[&>form>nav_button]:gap-1.5 xl:[&>form>nav_button]:px-2 xl:[&>form>nav_button]:text-[13px] xl:[&>form>nav_button]:leading-tight xl:[&>form>nav_button>span]:shrink-0">
         <ProductForm
+          branchId={currentBranch.id}
           busy={mutations.busy}
           editorData={editorState.data}
           error={mutations.error}

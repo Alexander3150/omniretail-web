@@ -97,21 +97,38 @@ export async function validateEditorProduct(
     throw new CatalogServiceError("Cada componente del kit debe estar entre 0 y 9,999.");
   }
 
+  const unitConfigurationChanged = current
+    ? normalizedDto.baseUnitId !== current.baseUnitId ||
+      normalizedDto.inventoryUnitId !== (current.inventoryUnitId ?? current.baseUnitId) ||
+      normalizedDto.saleUnitId !== (current.saleUnitId ?? current.baseUnitId)
+    : normalizedDto.inventoryUnitId !== normalizedDto.baseUnitId ||
+      normalizedDto.saleUnitId !== normalizedDto.baseUnitId;
   if (
-    (normalizedDto.inventoryUnitId !== normalizedDto.baseUnitId &&
-      !isPositiveNumber(normalizedDto.inventoryToBaseFactor)) ||
-    (normalizedDto.saleUnitId !== normalizedDto.baseUnitId &&
-      !isPositiveNumber(normalizedDto.saleToBaseFactor))
+    normalizedDto.productType !== ProductType.kit &&
+    normalizedDto.unitConversions === undefined &&
+    unitConfigurationChanged
   ) {
     throw new CatalogServiceError(
-      "Cada presentacion debe equivaler a un multiplo positivo de la unidad base.",
+      "Abra la seccion de unidades para validar la configuracion de conversiones.",
     );
   }
-  if (
-    toFiniteNumber(normalizedDto.inventoryToBaseFactor) > MAX_SAFE_CONVERSION_FACTOR ||
-    toFiniteNumber(normalizedDto.saleToBaseFactor) > MAX_SAFE_CONVERSION_FACTOR
-  ) {
-    throw new CatalogServiceError("El factor de conversion no puede superar 999,999.99.");
+  if (normalizedDto.unitConversions !== undefined) {
+    if (
+      (normalizedDto.inventoryUnitId !== normalizedDto.baseUnitId &&
+        !isPositiveNumber(normalizedDto.inventoryToBaseFactor)) ||
+      (normalizedDto.saleUnitId !== normalizedDto.baseUnitId &&
+        !isPositiveNumber(normalizedDto.saleToBaseFactor))
+    ) {
+      throw new CatalogServiceError(
+        "Cada presentacion debe equivaler a un multiplo positivo de la unidad base.",
+      );
+    }
+    if (
+      toFiniteNumber(normalizedDto.inventoryToBaseFactor) > MAX_SAFE_CONVERSION_FACTOR ||
+      toFiniteNumber(normalizedDto.saleToBaseFactor) > MAX_SAFE_CONVERSION_FACTOR
+    ) {
+      throw new CatalogServiceError("El factor de conversion no puede superar 999,999.99.");
+    }
   }
   if (
     (normalizedDto.attributes ?? []).some(
@@ -123,6 +140,7 @@ export async function validateEditorProduct(
     throw new CatalogServiceError("Los atributos admiten 50 caracteres en nombre y 100 en valor.");
   }
   if (
+    normalizedDto.unitConversions !== undefined &&
     normalizedDto.inventoryUnitId === normalizedDto.saleUnitId &&
     normalizedDto.inventoryUnitId !== normalizedDto.baseUnitId &&
     toFiniteNumber(normalizedDto.inventoryToBaseFactor) !==
@@ -140,7 +158,10 @@ export async function validateEditorProduct(
   }
 
   assertUniquePositiveSalesTiers(normalizedDto.salesPriceTiers);
-  assertInventorySettings(normalizedDto);
+  assertInventorySettings(
+    normalizedDto,
+    !current || (!current.tracking.stock && normalizedDto.tracking.stock),
+  );
 
   const normalizedSku = normalizeSku(normalizedDto.sku);
   const duplicateSku = await repositories.products.getBySkuScoped(tenantId, normalizedSku);
@@ -171,24 +192,26 @@ export async function validateEditorProduct(
   ensureActiveUnit(saleUnit);
   if (!baseUnit) throw new CatalogServiceError("La unidad base no esta disponible.");
 
-  const conversionValues = [
-    ...(normalizedDto.inventoryUnitId === normalizedDto.baseUnitId
-      ? []
-      : [normalizedDto.inventoryToBaseFactor]),
-    ...(normalizedDto.saleUnitId === normalizedDto.baseUnitId
-      ? []
-      : [normalizedDto.saleToBaseFactor]),
-  ];
-  if (
-    conversionValues.some(
-      (factor) => !isConversionFactorCompatibleWithBaseUnit(factor, baseUnit.allowsDecimals),
-    )
-  ) {
-    throw new CatalogServiceError(
-      baseUnit.allowsDecimals
-        ? "El factor de conversion admite hasta 6 decimales."
-        : "La conversion debe producir una cantidad entera de la unidad base.",
-    );
+  if (normalizedDto.unitConversions !== undefined) {
+    const conversionValues = [
+      ...(normalizedDto.inventoryUnitId === normalizedDto.baseUnitId
+        ? []
+        : [normalizedDto.inventoryToBaseFactor]),
+      ...(normalizedDto.saleUnitId === normalizedDto.baseUnitId
+        ? []
+        : [normalizedDto.saleToBaseFactor]),
+    ];
+    if (
+      conversionValues.some(
+        (factor) => !isConversionFactorCompatibleWithBaseUnit(factor, baseUnit.allowsDecimals),
+      )
+    ) {
+      throw new CatalogServiceError(
+        baseUnit.allowsDecimals
+          ? "El factor de conversion admite hasta 6 decimales."
+          : "La conversion debe producir una cantidad entera de la unidad base.",
+      );
+    }
   }
   assertSupplierProducts(normalizedDto.supplierProducts, baseUnit.allowsDecimals);
 
@@ -321,6 +344,7 @@ export async function syncApiEditorRelatedData(
     }
   } else {
     if (
+      dto.unitConversions !== undefined &&
       hasPermission("catalog.units.read") &&
       hasPermission("catalog.units.manage")
     ) {
@@ -336,7 +360,7 @@ export async function syncApiEditorRelatedData(
       product.productType === ProductType.physical &&
       dto.tracking.stock &&
       hasPermission("inventory.stock.read") &&
-      dto.inventorySettings.branchId
+      dto.inventorySettings?.branchId
     ) {
       await run("inventorySettings", () => syncInventorySettings(repositories, product, dto));
     }
@@ -403,8 +427,16 @@ async function syncSalesPriceTiers(
   );
 }
 
-function assertInventorySettings(dto: ProductEditorDto) {
+function assertInventorySettings(dto: ProductEditorDto, required: boolean) {
   if (!dto.tracking.stock) return;
+  if (!dto.inventorySettings) {
+    if (required) {
+      throw new CatalogServiceError(
+        "Abra la seccion de inventario para configurar la ubicacion predeterminada.",
+      );
+    }
+    return;
+  }
   const minStock = toFiniteNumber(dto.inventorySettings.minStock);
   if (
     dto.inventorySettings.minStock === "" ||
@@ -421,7 +453,7 @@ async function syncInventorySettings(
   product: Product,
   dto: ProductEditorDto,
 ) {
-  if (!dto.tracking.stock || !dto.inventorySettings.branchId) return;
+  if (!dto.tracking.stock || !dto.inventorySettings?.branchId) return;
 
   await repositories.inventory.upsertProductInventorySettings({
     tenantId: product.tenantId,
@@ -438,6 +470,7 @@ async function syncUnitConversion(
   dto: ProductEditorDto,
   context: { capabilities: BusinessCapabilitiesConfig; isNewProduct: boolean },
 ) {
+  if (dto.unitConversions === undefined) return;
   // Producto existente + capacidad apagada: no se toca la tabla de conversiones en absoluto. La UI
   // no puede producir un valor nuevo legitimo (el selector de unidad de venta queda deshabilitado),
   // asi que la unica escritura segura es NO escribir, dejando la conversion historica intacta pase
