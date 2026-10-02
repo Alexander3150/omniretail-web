@@ -80,6 +80,7 @@ export interface InventoryAlert {
   message: string;
   tone: "warning" | "danger" | "info";
   suggestedReorder?: number;
+  row?: InventoryProductRow;
 }
 
 export interface InventoryKpis {
@@ -92,12 +93,17 @@ export interface InventoryKpis {
 export interface InventoryAlertsData {
   rows: InventoryProductRow[];
   alerts: InventoryAlert[];
+  alertTotalItems: number;
   transferRequests: InventoryTransferRequestRow[];
   kpis: InventoryKpis;
   visibility: InventoryAlertsVisibility;
   branches: Branch[];
   categories: Category[];
   locations: StorageLocation[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
 }
 
 export interface InventoryAlertsVisibility {

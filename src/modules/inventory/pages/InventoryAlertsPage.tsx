@@ -74,7 +74,6 @@ const STATUS_OPTIONS: Array<{ value: InventoryStatusFilter; label: string }> = [
 ];
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100];
-const DEFAULT_PAGE_SIZE = 20;
 const VIEWED_TRANSFER_ALERTS_STORAGE_KEY = "omniretail:inventory:viewed-transfer-alerts:v1";
 
 const TRANSFER_REASONS: Array<{ value: InventoryTransferReason; label: string }> = [
@@ -91,8 +90,15 @@ export function InventoryAlertsPage() {
   const { showToast } = useToast();
   const {
     data,
+    detailRow,
     kpis,
     rows,
+    paginatedRows,
+    totalItems,
+    totalPages,
+    page,
+    pageSize,
+    apiMode,
     branchId,
     currentBranchId,
     activeBranch,
@@ -114,6 +120,10 @@ export function InventoryAlertsPage() {
     setStatus,
     setKpiFilter,
     setFiltersOpen,
+    setPage,
+    setPageSize,
+    loadAlerts,
+    loadProductRow,
     canAdjustStock,
     canManageTransfers,
     adjustStock,
@@ -134,8 +144,6 @@ export function InventoryAlertsPage() {
     () => new Set(),
   );
   const [hasRestoredViewedTransferAlerts, setHasRestoredViewedTransferAlerts] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [, setClockTick] = useState(0);
   if (previousCurrentBranchId !== currentBranchId) {
     setPreviousCurrentBranchId(currentBranchId);
@@ -147,15 +155,14 @@ export function InventoryAlertsPage() {
   const selectedRow =
     rows.find((row) => row.productId === selectedProductId) ??
     data.rows.find((row) => row.productId === selectedProductId) ??
+    data.alerts.find((alert) => alert.productId === selectedProductId)?.row ??
+    (detailRow?.productId === selectedProductId ? detailRow : null) ??
     null;
   const selectedTransferRequest =
     data.transferRequests.find((request) => request.id === selectedTransferRequestId) ?? null;
   const branchLocations = locations.filter((location) => location.branchId === branchId);
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const currentPage = Math.min(page, totalPages);
-  const firstVisible = rows.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
-  const lastVisible = Math.min(currentPage * pageSize, rows.length);
-  const paginatedRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const firstVisible = totalItems === 0 ? 0 : (page - 1) * pageSize + 1;
+  const lastVisible = Math.min((page - 1) * pageSize + paginatedRows.length, totalItems);
   const unreadAlertCount = hasRestoredViewedTransferAlerts
     ? data.transferRequests.filter(
         (request) => !viewedTransferAlertKeys.has(getTransferAlertKey(branchId, request)),
@@ -172,8 +179,10 @@ export function InventoryAlertsPage() {
   // stock mutation boundary and retains all traceability validation.
   useEffect(() => {
     const productId = searchParams.get("productId");
-    if (!productId || !data.rows.some((row) => row.productId === productId)) return;
-    window.queueMicrotask(() => {
+    if (!productId) return;
+    let active = true;
+    void loadProductRow(productId).then((row) => {
+      if (!active || !row) return;
       setSelectedProductId(productId);
       setPanelMode("product-detail");
       setContextPanelExpanded(true);
@@ -181,7 +190,10 @@ export function InventoryAlertsPage() {
         setActionMode("adjust");
       }
     });
-  }, [canAdjustStock, data.rows, searchParams]);
+    return () => {
+      active = false;
+    };
+  }, [canAdjustStock, loadProductRow, searchParams]);
 
   useEffect(() => {
     let active = true;
@@ -196,12 +208,14 @@ export function InventoryAlertsPage() {
   }, []);
 
   function selectRow(row: InventoryProductRow) {
+    void loadAlerts();
     setSelectedProductId(row.productId);
     setPanelMode("product-detail");
     setContextPanelExpanded(true);
   }
 
   function selectProduct(productId: string) {
+    void loadAlerts();
     setSelectedProductId(productId);
     setPanelMode("product-detail");
     setContextPanelExpanded(true);
@@ -300,10 +314,10 @@ export function InventoryAlertsPage() {
         expiringSoon={kpis.expiringSoon}
         selectedFilter={kpiFilter}
         showExpiration={data.visibility.showExpirationFeatures}
+        lowStockFilterable={!apiMode}
         lowStock={kpis.lowStock}
         outOfStock={kpis.outOfStock}
         onFilterChange={(filter) => {
-          setPage(1);
           setKpiFilter(filter);
         }}
       />
@@ -329,28 +343,24 @@ export function InventoryAlertsPage() {
             status={status}
             unreadAlertCount={unreadAlertCount}
             onBranchChange={(value) => {
-              setPage(1);
               setBranchId(value);
               setPanelMode("alerts");
               setSelectedProductId(null);
             }}
             onCategoryChange={(value) => {
-              setPage(1);
               setCategoryId(value);
             }}
             onSearchChange={(value) => {
-              setPage(1);
               setSearch(value);
             }}
             onStatusChange={(value) => {
-              setPage(1);
               setStatus(value);
             }}
             onToggleFilters={() => {
-              setPage(1);
               setFiltersOpen((current) => !current);
             }}
             onOpenAlerts={() => {
+              void loadAlerts();
               setPanelMode("alerts");
               setContextPanelExpanded(true);
             }}
@@ -363,12 +373,12 @@ export function InventoryAlertsPage() {
             <InventoryTable
               firstVisible={firstVisible}
               lastVisible={lastVisible}
-              page={currentPage}
+              page={page}
               pageSize={pageSize}
               rows={paginatedRows}
               selectedProductId={selectedProductId}
               showExpiration={data.visibility.showExpirationFeatures}
-              totalItems={rows.length}
+              totalItems={totalItems}
               totalPages={totalPages}
               canAdjustStock={canAdjustStock}
               canManageTransfers={canManageTransfers}
@@ -376,10 +386,7 @@ export function InventoryAlertsPage() {
               onAdjust={openAdjust}
               onOpen={selectRow}
               onPageChange={setPage}
-              onPageSizeChange={(nextPageSize) => {
-                setPage(1);
-                setPageSize(nextPageSize);
-              }}
+              onPageSizeChange={setPageSize}
               onTransfer={openTransfer}
               onViewHistory={openMovementHistory}
             />
@@ -390,6 +397,7 @@ export function InventoryAlertsPage() {
           activeBranchName={activeBranch?.name ?? "Sucursal"}
           activeBranchId={branchId}
           alerts={data.alerts}
+          alertTotalItems={data.alertTotalItems}
           mode={panelMode}
           row={selectedRow}
           canAdjustStock={canAdjustStock}
@@ -501,6 +509,7 @@ function KpiGrid({
   outOfStock,
   selectedFilter,
   showExpiration,
+  lowStockFilterable,
   onFilterChange,
 }: {
   activeProducts: number;
@@ -509,6 +518,7 @@ function KpiGrid({
   outOfStock: number;
   selectedFilter: InventoryKpiFilter;
   showExpiration: boolean;
+  lowStockFilterable: boolean;
   onFilterChange: (filter: InventoryKpiFilter) => void;
 }) {
   return (
@@ -532,6 +542,7 @@ function KpiGrid({
         filter="lowStock"
         icon="B"
         label="Stock bajo"
+        disabled={!lowStockFilterable}
         selected={selectedFilter === "lowStock"}
         tone="warning"
         value={lowStock}
@@ -569,6 +580,7 @@ function KpiCard({
   icon,
   label,
   selected,
+  disabled = false,
   tone = "info",
   value,
   onSelect,
@@ -578,6 +590,7 @@ function KpiCard({
   icon: string;
   label: string;
   selected: boolean;
+  disabled?: boolean;
   tone?: "info" | "warning" | "danger";
   value: number;
   onSelect: (filter: InventoryKpiFilter) => void;
@@ -591,7 +604,9 @@ function KpiCard({
         tone === "danger" && "border-red-200",
         tone === "info" && "border-[var(--color-border)]",
         selected && "border-[var(--color-structure)] ring-2 ring-[var(--color-primary)]/25",
+        disabled && "cursor-default hover:border-amber-200 hover:bg-white",
       )}
+      disabled={disabled}
       onClick={() => onSelect(selected ? "all" : filter)}
       type="button"
     >
@@ -1223,6 +1238,7 @@ function HistoryIcon() {
 function ContextPanel({
   activeBranchId,
   activeBranchName,
+  alertTotalItems,
   canAdjustStock,
   canManageTransfers,
   desktopExpanded,
@@ -1245,6 +1261,7 @@ function ContextPanel({
 }: {
   activeBranchId: string;
   activeBranchName: string;
+  alertTotalItems: number;
   canAdjustStock: boolean;
   canManageTransfers: boolean;
   desktopExpanded: boolean;
@@ -1266,7 +1283,7 @@ function ContextPanel({
   onViewProductTransfers: () => void;
 }) {
   const productAlerts = row ? alerts.filter((alert) => alert.productId === row.productId) : [];
-  const totalAlerts = alerts.length + transferRequests.length;
+  const totalAlerts = alertTotalItems + transferRequests.length;
 
   const showProduct = mode === "product-detail" && Boolean(row);
 
@@ -1302,6 +1319,7 @@ function ContextPanel({
         <AlertsPanel
           activeBranchId={activeBranchId}
           alerts={alerts}
+          alertTotalItems={alertTotalItems}
           transferRequests={transferRequests}
           hasRestoredViewedTransferAlerts={hasRestoredViewedTransferAlerts}
           viewedTransferAlertKeys={viewedTransferAlertKeys}
@@ -1334,6 +1352,7 @@ function ContextPanel({
 function AlertsPanel({
   activeBranchId,
   alerts,
+  alertTotalItems,
   transferRequests,
   hasRestoredViewedTransferAlerts,
   viewedTransferAlertKeys,
@@ -1343,6 +1362,7 @@ function AlertsPanel({
 }: {
   activeBranchId: string;
   alerts: InventoryAlert[];
+  alertTotalItems: number;
   transferRequests: InventoryTransferRequestRow[];
   hasRestoredViewedTransferAlerts: boolean;
   viewedTransferAlertKeys: Set<string>;
@@ -1357,6 +1377,8 @@ function AlertsPanel({
     hasRestoredViewedTransferAlerts,
     viewedTransferAlertKeys,
   );
+  const loadedAlertCount = alerts.length + transferRequests.length;
+  const totalAlertCount = alertTotalItems + transferRequests.length;
 
   return (
     <section>
@@ -1366,8 +1388,13 @@ function AlertsPanel({
             Alertas prioritarias
           </p>
           <h2 className="mt-1 text-base font-bold text-[var(--color-title)]">
-            Alertas {feedItems.length}
+            Alertas {totalAlertCount}
           </h2>
+          {loadedAlertCount < totalAlertCount ? (
+            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+              Mostrando {loadedAlertCount} alertas cargadas
+            </p>
+          ) : null}
         </div>
         <button
           aria-label="Cerrar panel de alertas"

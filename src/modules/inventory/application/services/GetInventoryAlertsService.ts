@@ -9,7 +9,14 @@ import type {
   InventoryTransferRequest,
   Product,
   StockLot,
+  StorageLocation,
+  Unit,
 } from "@/core/entities";
+import type {
+  InventoryAlertListItem,
+  InventoryStockListItem,
+  InventoryStockSort,
+} from "@/core/repositories";
 import {
   getAvailableQuantity,
   getBranchAvailableQuantity,
@@ -37,9 +44,156 @@ const NEAR_MINIMUM_RATIO = 1.25;
 const TRANSFER_RESPONSE_ALERT_DAYS = 14;
 
 export class GetInventoryAlertsService {
+  private readonly categoriesByTenant = new Map<
+    string,
+    Promise<InventoryAlertsData["categories"]>
+  >();
+  private readonly unitsByTenant = new Map<string, Promise<Unit[]>>();
+  private readonly locationsByBranch = new Map<string, Promise<StorageLocation[]>>();
+
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async execute(branchId: string): Promise<InventoryAlertsData> {
+  async execute(input: string | GetInventoryAlertsParams): Promise<InventoryAlertsData> {
+    if (typeof input === "string") return this.getMockData(input);
+    if (this.repositories.inventoryStockDataSource === "api") return this.getApiPage(input);
+    return this.getMockData(input.branchId);
+  }
+
+  async getApiAlerts(params: Pick<GetInventoryAlertsParams, "branchId" | "branchName">) {
+    if (this.repositories.inventoryStockDataSource !== "api") {
+      return { items: [], page: 1, pageSize: API_PAGE_SIZE, totalItems: 0, totalPages: 0 };
+    }
+    const { tenantId, permissions } = await resolveInventoryContext(this.repositories);
+    ensureCanReadStock(permissions);
+    const [units, locations, page] = await Promise.all([
+      this.getUnits(tenantId),
+      this.getLocations(params.branchId),
+      this.repositories.inventory.getInventoryAlertPage({
+        branchId: params.branchId,
+        page: 1,
+        pageSize: API_PAGE_SIZE,
+      }),
+    ]);
+    const unitById = new Map(units.map((unit) => [unit.id, unit]));
+    const locationById = new Map(locations.map((location) => [location.id, location]));
+    return {
+      ...page,
+      items: page.items.map((item) =>
+        mapApiAlert(item, tenantId, params.branchName, unitById, locationById),
+      ),
+    };
+  }
+
+  async getApiProductRow({
+    branchId,
+    branchName,
+    productId,
+  }: Pick<GetInventoryAlertsParams, "branchId" | "branchName"> & { productId: string }) {
+    if (this.repositories.inventoryStockDataSource !== "api") return null;
+    const { tenantId, permissions } = await resolveInventoryContext(this.repositories);
+    ensureCanReadStock(permissions);
+    const product = await this.repositories.products.getById(productId);
+    if (!product || product.tenantId !== tenantId) return null;
+    const [result, units] = await Promise.all([
+      this.repositories.inventory.getStockPage({
+        branchId,
+        search: product.sku,
+        page: 1,
+        pageSize: API_PAGE_SIZE,
+        sort: DEFAULT_API_SORT,
+      }),
+      this.getUnits(tenantId),
+    ]);
+    const item = result.items.find((candidate) => candidate.productId === productId);
+    if (!item) return null;
+    return mapApiStockRow(
+      item,
+      tenantId,
+      branchName,
+      new Map(units.map((unit) => [unit.id, unit])),
+    );
+  }
+
+  private async getApiPage(params: GetInventoryAlertsParams): Promise<InventoryAlertsData> {
+    const { tenantId, permissions } = await resolveInventoryContext(this.repositories);
+    ensureCanReadStock(permissions);
+    const [result, categories, units, locations] = await Promise.all([
+      this.repositories.inventory.getStockPage({
+        branchId: params.branchId,
+        search: params.search,
+        categoryId: params.categoryId,
+        status: params.status,
+        page: params.page,
+        pageSize: params.pageSize,
+        sort: params.sort,
+      }),
+      this.getCategories(tenantId),
+      this.getUnits(tenantId),
+      this.getLocations(params.branchId),
+    ]);
+    const unitById = new Map(units.map((unit) => [unit.id, unit]));
+    return {
+      rows: result.items.map((item) =>
+        mapApiStockRow(item, tenantId, params.branchName, unitById),
+      ),
+      alerts: [],
+      alertTotalItems: 0,
+      transferRequests: [],
+      kpis: {
+        activeProducts: result.summary.activeProducts,
+        lowStock: result.summary.lowStock,
+        expiringSoon: 0,
+        outOfStock: result.summary.outOfStock,
+      },
+      visibility: {
+        supportsExpiration: false,
+        hasExpirationProducts: false,
+        showExpirationFeatures: false,
+      },
+      branches: [],
+      categories,
+      locations,
+      page: result.page,
+      pageSize: result.pageSize,
+      totalItems: result.totalItems,
+      totalPages: result.totalPages,
+    };
+  }
+
+  private getCategories(tenantId: string) {
+    return this.getOrCreatePromise(this.categoriesByTenant, tenantId, () =>
+      this.repositories.categories.getAll(),
+    );
+  }
+
+  private getUnits(tenantId: string) {
+    return this.getOrCreatePromise(this.unitsByTenant, tenantId, () =>
+      this.repositories.units.getAll(),
+    );
+  }
+
+  private getLocations(branchId: string) {
+    return this.getOrCreatePromise(this.locationsByBranch, branchId, () =>
+      this.repositories.inventory.getLocations(branchId),
+    );
+  }
+
+  private getOrCreatePromise<T>(
+    cache: Map<string, Promise<T>>,
+    key: string,
+    load: () => Promise<T>,
+  ) {
+    const cached = cache.get(key);
+    if (cached) return cached;
+    const pending = load();
+    cache.set(key, pending);
+    void pending.catch(() => {
+      if (cache.get(key) === pending) cache.delete(key);
+    });
+    return pending;
+  }
+
+  private async getMockData(branchId: string): Promise<InventoryAlertsData> {
     const { tenantId, user, permissions } = await resolveInventoryContext(this.repositories);
     ensureCanReadStock(permissions);
     await ensureUserCanOperateInventoryBranch(this.repositories, user, branchId);
@@ -167,6 +321,7 @@ export class GetInventoryAlertsService {
     return {
       rows,
       alerts,
+      alertTotalItems: alerts.length,
       transferRequests: [
         ...buildTransferRequestRows(receivedTransferRequests, "received", products, balances, maps),
         ...buildTransferRequestRows(
@@ -194,8 +349,144 @@ export class GetInventoryAlertsService {
           : 0,
         outOfStock: rows.filter((row) => row.status === "out_of_stock").length,
       },
+      page: 1,
+      pageSize: Math.max(1, rows.length),
+      totalItems: rows.length,
+      totalPages: 1,
     };
   }
+}
+
+export interface GetInventoryAlertsParams {
+  branchId: string;
+  branchName: string;
+  search?: string;
+  categoryId?: string;
+  status?: InventoryStatus;
+  page: number;
+  pageSize: number;
+  sort?: InventoryStockSort;
+}
+
+const API_PAGE_SIZE = 100;
+const DEFAULT_API_SORT = "productName,asc" as const;
+
+function mapApiStockRow(
+  item: InventoryStockListItem,
+  tenantId: string,
+  branchName: string,
+  unitById: Map<string, Unit>,
+): InventoryProductRow {
+  return buildApiRow({
+    item,
+    tenantId,
+    branchName,
+    categoryId: item.categoryId,
+    categoryName: item.categoryName,
+    defaultLocationName: item.defaultLocationName ?? "Sin ubicacion habitual",
+    unitById,
+  });
+}
+
+function mapApiAlert(
+  item: InventoryAlertListItem,
+  tenantId: string,
+  branchName: string,
+  unitById: Map<string, Unit>,
+  locationById: Map<string, StorageLocation>,
+): InventoryAlert {
+  const row = buildApiRow({
+    item,
+    tenantId,
+    branchName,
+    categoryId: "",
+    categoryName: "No disponible",
+    defaultLocationName: item.defaultLocationId
+      ? (locationById.get(item.defaultLocationId)?.name ?? "Ubicacion no disponible")
+      : "Sin ubicacion habitual",
+    unitById,
+  });
+  const alert: InventoryAlert = {
+    id: `stock-${item.branchId}-${item.productId}`,
+    type: "low_stock",
+    productId: item.productId,
+    title: item.productName,
+    message: getInventoryAvailabilityAlertMessage(row),
+    tone: item.status === "near_minimum" ? "warning" : "danger",
+    suggestedReorder: item.suggestedReorder > 0 ? item.suggestedReorder : undefined,
+  };
+  row.activeAlerts = [alert];
+  return { ...alert, row };
+}
+
+function buildApiRow({
+  item,
+  tenantId,
+  branchName,
+  categoryId,
+  categoryName,
+  defaultLocationName,
+  unitById,
+}: {
+  item: InventoryStockListItem | InventoryAlertListItem;
+  tenantId: string;
+  branchName: string;
+  categoryId: string;
+  categoryName: string;
+  defaultLocationName: string;
+  unitById: Map<string, Unit>;
+}): InventoryProductRow {
+  const unit = unitById.get(item.baseUnitId);
+  const unitName = unit?.name ?? item.baseUnitId;
+  return {
+    productId: item.productId,
+    tenantId,
+    sku: item.sku,
+    productName: item.productName,
+    categoryId,
+    categoryName,
+    unitId: item.baseUnitId,
+    unitName,
+    unitAllowsDecimals: unit?.allowsDecimals ?? false,
+    saleUnitId: item.baseUnitId,
+    saleUnitName: unitName,
+    sellableQuantity: item.quantity,
+    sellableReservedQuantity: item.reservedQuantity,
+    sellableAvailableQuantity: item.availableQuantity,
+    inventoryUnitId: item.baseUnitId,
+    inventoryUnitName: unitName,
+    inventoryPresentationQuantity: item.quantity,
+    inventoryPresentationAvailableQuantity: item.availableQuantity,
+    inventoryToBaseFactor: 1,
+    adjustmentUnits: [
+      {
+        unitId: item.baseUnitId,
+        unitName,
+        unitAllowsDecimals: unit?.allowsDecimals ?? false,
+        toBaseFactor: 1,
+        label: unitName,
+      },
+    ],
+    branchId: item.branchId,
+    branchName: branchName || "Sucursal",
+    defaultLocationId: item.defaultLocationId,
+    defaultLocationName,
+    locationQuantities: {},
+    tracking: { stock: true, lot: false, expiration: false, serial: false },
+    availableLots: [],
+    availableSerials: [],
+    quantity: item.quantity,
+    reservedQuantity: item.reservedQuantity,
+    availableQuantity: item.availableQuantity,
+    minStock: item.minStock,
+    reorderPoint: item.reorderPoint,
+    status: item.status,
+    statusLabel: getInventoryStatusLabel(item.status),
+    tracksExpiration: false,
+    nextExpirationLabel: "No disponible",
+    activeAlerts: [],
+    otherBranchStocks: [],
+  };
 }
 
 function getVisibilityFlags(supportsExpiration: boolean, products: Product[]) {

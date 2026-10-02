@@ -84,6 +84,93 @@ export interface InventoryMovementPageResult {
   };
 }
 
+export type InventoryStockStatus = "out_of_stock" | "critical" | "near_minimum" | "normal";
+
+export type InventoryStockSort =
+  | "productName,asc"
+  | "productName,desc"
+  | "sku,asc"
+  | "sku,desc"
+  | "categoryName,asc"
+  | "categoryName,desc"
+  | "availableQuantity,asc"
+  | "availableQuantity,desc"
+  | "status,asc"
+  | "status,desc";
+
+export interface InventoryStockPageParams {
+  branchId: string;
+  search?: string;
+  categoryId?: string;
+  status?: InventoryStockStatus;
+  page: number;
+  pageSize: number;
+  sort?: InventoryStockSort;
+}
+
+export interface InventoryStockListItem {
+  productId: string;
+  branchId: string;
+  sku: string;
+  productName: string;
+  categoryId: string;
+  categoryName: string;
+  baseUnitId: string;
+  quantity: number;
+  reservedQuantity: number;
+  availableQuantity: number;
+  minStock: number;
+  reorderPoint: number;
+  defaultLocationId: string | null;
+  defaultLocationName: string | null;
+  status: InventoryStockStatus;
+  suggestedReorder: number;
+}
+
+export interface InventoryStockPageResult {
+  items: InventoryStockListItem[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+  summary: {
+    activeProducts: number;
+    lowStock: number;
+    outOfStock: number;
+  };
+}
+
+export interface InventoryAlertPageParams {
+  branchId: string;
+  status?: Exclude<InventoryStockStatus, "normal">;
+  page: number;
+  pageSize: number;
+}
+
+export interface InventoryAlertListItem {
+  productId: string;
+  branchId: string;
+  sku: string;
+  productName: string;
+  baseUnitId: string;
+  quantity: number;
+  reservedQuantity: number;
+  availableQuantity: number;
+  minStock: number;
+  reorderPoint: number;
+  defaultLocationId: string | null;
+  status: Exclude<InventoryStockStatus, "normal">;
+  suggestedReorder: number;
+}
+
+export interface InventoryAlertPageResult {
+  items: InventoryAlertListItem[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+}
+
 export interface PickingInventoryLotAvailability {
   lotId: string;
   lotNumber: string;
@@ -247,6 +334,8 @@ export interface InventoryRepository {
   getBalanceByProduct(productId: string, branchId?: string): Promise<InventoryBalance[]>;
   getMovements(productId?: string): Promise<InventoryMovement[]>;
   getMovementPage(params: InventoryMovementPageParams): Promise<InventoryMovementPageResult>;
+  getStockPage(params: InventoryStockPageParams): Promise<InventoryStockPageResult>;
+  getInventoryAlertPage(params: InventoryAlertPageParams): Promise<InventoryAlertPageResult>;
   getLots(productId?: string): Promise<StockLot[]>;
   getSerialNumbers(productId?: string): Promise<SerialNumber[]>;
   getLocations(branchId?: string): Promise<StorageLocation[]>;

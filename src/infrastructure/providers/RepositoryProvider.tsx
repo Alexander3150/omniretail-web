@@ -56,6 +56,7 @@ import { withApiCatalogMasterData } from "@/infrastructure/api/withApiCatalogMas
 import { withApiProducts } from "@/infrastructure/api/withApiProducts";
 import { withApiProductRelations } from "@/infrastructure/api/withApiProductRelations";
 import { withApiInventoryMovements } from "@/infrastructure/api/withApiInventoryMovements";
+import { withApiInventoryStock } from "@/infrastructure/api/withApiInventoryStock";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import {
@@ -113,6 +114,7 @@ export interface RepositoryRegistry {
   productRelationsDataSource: "mock" | "api";
   productMediaDataSource: "mock" | "api";
   inventoryMovementsDataSource: "mock" | "api";
+  inventoryStockDataSource: "mock" | "api";
   tenants: TenantRepository;
   tenantOnboarding: TenantOnboardingRepository;
   businessConfig: BusinessConfigRepository;
@@ -181,6 +183,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       productRelationsDataSource: "mock",
       productMediaDataSource: "mock",
       inventoryMovementsDataSource: "mock",
+      inventoryStockDataSource: "mock",
       tenants: new MockTenantRepository(store, eventBus),
       tenantOnboarding: new MockTenantOnboardingRepository(store, eventBus),
       businessConfig: new MockBusinessConfigRepository(store, eventBus),
@@ -234,13 +237,15 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     // los flujos Product API no lo consultan ni escriben UUID reales en relaciones mock.
     // Modo mock (default): exactamente los mismos repositorios de siempre.
     const repositories = isApiMode()
-      ? withApiInventoryMovements(
-          withApiProductRelations(
-            withApiProducts(
-              withApiCatalogMasterData(withApiSession(mockRepositories, eventBus), eventBus),
+      ? withApiInventoryStock(
+          withApiInventoryMovements(
+            withApiProductRelations(
+              withApiProducts(
+                withApiCatalogMasterData(withApiSession(mockRepositories, eventBus), eventBus),
+                eventBus,
+              ),
               eventBus,
             ),
-            eventBus,
           ),
         )
       : mockRepositories;
