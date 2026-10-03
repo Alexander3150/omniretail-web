@@ -96,7 +96,9 @@ export class GetProductEditorDataService {
       const { detail } = detailLoad;
       const supplierProductsPromise = (
         detail.product.productType !== ProductType.kit && access.canManageSuppliers
-          ? this.repositories.supplierProducts.getByProductForTenant(tenantId, productId)
+          ? this.repositories.supplierProducts
+              .getAllByProductForTenant(tenantId, productId)
+              .then((items) => items.filter((item) => item.active))
           : Promise.resolve([])
       ).then((supplierProducts) =>
         supplierProducts.map(

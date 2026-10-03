@@ -6,6 +6,7 @@ import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { assertApiUuid } from "@/infrastructure/api/uuid";
 import {
   apiSupplierCostTierSchema,
+  apiSupplierProductListSchema,
   apiSupplierProductPageSchema,
   apiSupplierProductSchema,
   parseApi,
@@ -22,27 +23,23 @@ export class ApiSupplierProductRepository implements SupplierProductRepository {
   constructor(private readonly eventBus: DataEventBus) {}
 
   async getByProduct(productId: string) {
-    return this.list({ productId, active: true });
+    return this.listAdmin({ productId, active: true });
   }
 
   async getBySupplier(supplierId: string) {
-    return this.list({ supplierId, active: true });
+    return this.listAdmin({ supplierId, active: true });
   }
 
   async getByProductForTenant(tenantId: string, productId: string) {
-    return (await this.list({ productId, active: true })).filter(
-      (item) => item.tenantId === tenantId,
-    );
+    return assertTenantScope(await this.listOperational({ productId }), tenantId);
   }
 
   async getAllByProductForTenant(tenantId: string, productId: string) {
-    return (await this.list({ productId })).filter((item) => item.tenantId === tenantId);
+    return assertTenantScope(await this.listAdmin({ productId }), tenantId);
   }
 
   async getBySupplierForTenant(tenantId: string, supplierId: string) {
-    return (await this.list({ supplierId, active: true })).filter(
-      (item) => item.tenantId === tenantId,
-    );
+    return assertTenantScope(await this.listOperational({ supplierId }), tenantId);
   }
 
   async create(
@@ -149,7 +146,7 @@ export class ApiSupplierProductRepository implements SupplierProductRepository {
 
   async getCostTiers(supplierProductId: string): Promise<SupplierCostTier[]> {
     const supplierProduct = await this.getRequired(supplierProductId);
-    return supplierProduct.costTiers;
+    return supplierProduct.costTiers ?? [];
   }
 
   async replaceCostTiers(
@@ -179,19 +176,36 @@ export class ApiSupplierProductRepository implements SupplierProductRepository {
     return values.map((item) => toCostTier(item, tenantId));
   }
 
-  private async list(query: {
+  private async listOperational(query: {
+    supplierId?: string;
+    productId?: string;
+  }): Promise<SupplierProduct[]> {
+    this.assertListQuery(query);
+    const items = parseApi(
+      apiSupplierProductListSchema,
+      await backendFetch<unknown>(`${BASE_PATH}/active`, { query }),
+      "El backend devolvio relaciones activas de proveedor invalidas.",
+    );
+    return items.map(toSupplierProduct);
+  }
+
+  private async listAdmin(query: {
     supplierId?: string;
     productId?: string;
     active?: boolean;
   }): Promise<SupplierProduct[]> {
-    if (query.supplierId) assertApiUuid(query.supplierId, "supplierId");
-    if (query.productId) assertApiUuid(query.productId, "productId");
+    this.assertListQuery(query);
     const first = await this.listPage(1, query);
     const items = [...first.items];
     for (let page = 2; page <= first.totalPages; page += 1) {
       items.push(...(await this.listPage(page, query)).items);
     }
     return items.map(toSupplierProduct);
+  }
+
+  private assertListQuery(query: { supplierId?: string; productId?: string }) {
+    if (query.supplierId) assertApiUuid(query.supplierId, "supplierId");
+    if (query.productId) assertApiUuid(query.productId, "productId");
   }
 
   private async listPage(
@@ -207,7 +221,7 @@ export class ApiSupplierProductRepository implements SupplierProductRepository {
     ) as PaginatedResult<ApiSupplierProduct>;
   }
 
-  private async getRequired(id: string, tenantId?: string): Promise<SupplierProductWithCosts> {
+  private async getRequired(id: string, tenantId?: string): Promise<SupplierProduct> {
     assertApiUuid(id, "supplierProductId");
     const item = toSupplierProduct(
       parseApi(
@@ -232,9 +246,7 @@ export class ApiSupplierProductRepository implements SupplierProductRepository {
   }
 }
 
-type SupplierProductWithCosts = SupplierProduct & { costTiers: SupplierCostTier[] };
-
-function toSupplierProduct(item: ApiSupplierProduct): SupplierProductWithCosts {
+function toSupplierProduct(item: ApiSupplierProduct): SupplierProduct {
   return {
     id: item.id,
     tenantId: item.tenantId,
@@ -252,6 +264,17 @@ function toSupplierProduct(item: ApiSupplierProduct): SupplierProductWithCosts {
     updatedAt: item.updatedAt,
     costTiers: item.costTiers.map((tier) => toCostTier(tier, item.tenantId)),
   };
+}
+
+function assertTenantScope(items: SupplierProduct[], tenantId: string): SupplierProduct[] {
+  if (items.some((item) => item.tenantId !== tenantId)) {
+    throw new BackendRequestError(
+      "El backend devolvio relaciones de proveedor fuera del negocio activo.",
+      502,
+      "TENANT_SCOPE_MISMATCH",
+    );
+  }
+  return items;
 }
 
 function toCostTier(item: ApiSupplierCostTier, tenantId: string): SupplierCostTier {
