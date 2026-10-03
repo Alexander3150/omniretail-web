@@ -23,13 +23,97 @@ import {
   resolvePurchasingContext,
 } from "@/modules/purchasing/application/services/serviceHelpers";
 
+export interface GetPurchaseOrdersParams {
+  branchId?: string;
+  branchName?: string;
+  supplierId?: string;
+  status?: PurchaseOrderStatus;
+  page: number;
+  pageSize: number;
+}
+
+const PURCHASE_ORDER_STATUSES: PurchaseOrderStatus[] = [
+  PurchaseOrderStatus.draft,
+  PurchaseOrderStatus.pending_approval,
+  PurchaseOrderStatus.approved,
+  PurchaseOrderStatus.sent,
+  PurchaseOrderStatus.partially_received,
+  PurchaseOrderStatus.received,
+  PurchaseOrderStatus.cancelled,
+];
+
 export class GetPurchaseOrdersReadModelService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async execute(activeBranchId?: string): Promise<PurchaseOrdersReadModel> {
+  async execute(input?: string | GetPurchaseOrdersParams): Promise<PurchaseOrdersReadModel> {
     const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
     ensureCanReadPurchaseOrders(permissions);
 
+    if (this.repositories.purchaseOrdersDataSource === "api") {
+      const params = typeof input === "object" ? input : defaultApiParams(input);
+      return this.getApiPage(tenantId, permissions, params);
+    }
+    return this.getMockData(
+      tenantId,
+      permissions,
+      typeof input === "string" ? input : input?.branchId,
+    );
+  }
+
+  async getById(
+    id: string,
+    branch?: { id?: string; name?: string },
+  ): Promise<PurchaseOrderRowReadModel | null> {
+    const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
+    ensureCanReadPurchaseOrders(permissions);
+    if (this.repositories.purchaseOrdersDataSource !== "api") return null;
+    const order = await this.repositories.purchaseOrders.getByIdScoped(tenantId, id);
+    return order
+      ? toApiOrderReadModel(
+          order,
+          tenantId,
+          order.branchId === branch?.id ? branch.name : undefined,
+          permissions,
+        )
+      : null;
+  }
+
+  private async getApiPage(
+    tenantId: string,
+    permissions: readonly string[],
+    params: GetPurchaseOrdersParams,
+  ): Promise<PurchaseOrdersReadModel> {
+    const page = await this.repositories.purchaseOrders.getPageScoped(tenantId, {
+      branchId: params.branchId,
+      supplierId: params.supplierId,
+      status: params.status,
+      page: params.page,
+      pageSize: params.pageSize,
+    });
+    return {
+      orders: page.items.map((order) =>
+        toApiOrderReadModel(
+          order,
+          tenantId,
+          order.branchId === params.branchId ? params.branchName : undefined,
+          permissions,
+        ),
+      ),
+      suppliers: [],
+      statuses: PURCHASE_ORDER_STATUSES,
+      suggestions: [],
+      page: page.page,
+      pageSize: page.pageSize,
+      totalItems: page.totalItems,
+      totalPages: page.totalPages,
+    };
+  }
+
+  private async getMockData(
+    tenantId: string,
+    permissions: readonly string[],
+    activeBranchId?: string,
+  ): Promise<PurchaseOrdersReadModel> {
     const [orders, suppliers, products, units, branches, receipts] = await Promise.all([
       this.repositories.purchaseOrders.listByTenant(tenantId),
       this.repositories.suppliers.listByTenant(tenantId),
@@ -71,16 +155,12 @@ export class GetPurchaseOrdersReadModelService {
       suppliers: suppliers
         .map((supplier) => ({ id: supplier.id, name: supplier.name }))
         .sort((left, right) => left.name.localeCompare(right.name)),
-      statuses: [
-        PurchaseOrderStatus.draft,
-        PurchaseOrderStatus.pending_approval,
-        PurchaseOrderStatus.approved,
-        PurchaseOrderStatus.sent,
-        PurchaseOrderStatus.partially_received,
-        PurchaseOrderStatus.received,
-        PurchaseOrderStatus.cancelled,
-      ],
+      statuses: PURCHASE_ORDER_STATUSES,
       suggestions,
+      page: 1,
+      pageSize: Math.max(1, mappedOrders.length),
+      totalItems: mappedOrders.length,
+      totalPages: 1,
     };
   }
 
@@ -215,6 +295,108 @@ function getOpenPurchaseQuantity(orders: PurchaseOrder[], branchId: string, prod
     .flatMap((order) => order.items ?? [])
     .filter((item) => item.productId === productId)
     .reduce((total, item) => total + item.quantity, 0);
+}
+
+function defaultApiParams(branchId?: string): GetPurchaseOrdersParams {
+  return {
+    branchId,
+    page: 1,
+    pageSize: 10,
+  };
+}
+
+function toApiOrderReadModel(
+  order: PurchaseOrder,
+  tenantId: string,
+  branchName: string | undefined,
+  permissions: readonly string[],
+): PurchaseOrderRowReadModel {
+  const lines = (order.items ?? []).map((item) => ({
+    id: item.id,
+    productName: item.productNameSnapshot ?? "Producto no disponible",
+    sku: item.productSkuSnapshot ?? item.productId,
+    supplierSku: item.supplierSkuSnapshot,
+    quantity: item.quantity,
+    unitLabel: item.unitSymbolSnapshot ?? item.unitId,
+    purchaseToBaseFactor: item.purchaseToBaseFactor,
+    unitCost: item.unitCost,
+    suggestedUnitCost: item.suggestedUnitCost,
+    subtotal: item.subtotal,
+  }));
+  const supplierName = order.supplierNameSnapshot ?? "Proveedor no disponible";
+
+  return {
+    id: order.id,
+    tenantId,
+    branchId: order.branchId,
+    branchName: branchName ?? "Sucursal no disponible",
+    number: order.number,
+    supplierId: order.supplierId,
+    supplierName,
+    supplierContactLabel: "Contacto no incluido en la orden",
+    status: order.status,
+    expectedDate: order.expectedDate,
+    createdAt: order.createdAt,
+    total: order.total,
+    productCount: lines.length,
+    lines,
+    reception: getApiReception(order),
+    actions: getPurchaseOrderActions(order.status, permissions),
+    searchText: [
+      order.number,
+      supplierName,
+      ...lines.flatMap((line) => [line.productName, line.sku, line.supplierSku]),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase(),
+  };
+}
+
+function getApiReception(order: PurchaseOrder): PurchaseOrderReceptionReadModel {
+  const ordered = order.items?.reduce((total, item) => total + item.quantity, 0);
+  if (order.status === PurchaseOrderStatus.received) {
+    return {
+      received: ordered,
+      ordered,
+      percentage: 100,
+      label: "Recibida",
+      tone: "success",
+    };
+  }
+  if (order.status === PurchaseOrderStatus.partially_received) {
+    return {
+      ordered,
+      percentage: 0,
+      label: "Recepcion parcial",
+      tone: "warning",
+    };
+  }
+  if (order.status === PurchaseOrderStatus.approved || order.status === PurchaseOrderStatus.sent) {
+    return {
+      ordered,
+      percentage: 0,
+      label: "Pendiente de recepcion",
+      tone: "info",
+    };
+  }
+  if (
+    order.status === PurchaseOrderStatus.draft ||
+    order.status === PurchaseOrderStatus.pending_approval
+  ) {
+    return {
+      ordered,
+      percentage: 0,
+      label: "Aun no recibible",
+      tone: "neutral",
+    };
+  }
+  return {
+    ordered,
+    percentage: 0,
+    label: "Cancelada",
+    tone: "neutral",
+  };
 }
 
 function isActiveReplenishmentOrder(status: PurchaseOrderStatus) {
