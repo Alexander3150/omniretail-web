@@ -38,6 +38,7 @@ export class PurchaseOrderEditorService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async getActiveSuppliers(): Promise<PurchaseOrderEditorSupplier[]> {
+    this.ensureEditorAvailable();
     const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
     ensureCanCreatePurchaseOrders(permissions);
     const suppliers = await this.repositories.suppliers.getActiveByTenant(tenantId);
@@ -62,6 +63,7 @@ export class PurchaseOrderEditorService {
   }
 
   async getOrderForEdit(id: string, branchId?: string): Promise<PurchaseOrderEditorModel> {
+    this.ensureEditorAvailable();
     const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
     ensureCanCreatePurchaseOrders(permissions);
     // El id llega desde la URL/estado del cliente: `getByIdScoped` trata una orden de otro
@@ -105,6 +107,7 @@ export class PurchaseOrderEditorService {
     supplierId: string,
     branchId?: string,
   ): Promise<PurchaseOrderAvailableProduct[]> {
+    this.ensureEditorAvailable();
     const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
     ensureCanCreatePurchaseOrders(permissions);
     if (!supplierId) return [];
@@ -195,6 +198,7 @@ export class PurchaseOrderEditorService {
   async resolvePrefillContext(
     context: PurchaseOrderPrefillContext,
   ): Promise<PurchaseOrderPrefillResolution | null> {
+    this.ensureEditorAvailable();
     const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
     ensureCanCreatePurchaseOrders(permissions);
     if (!context.productId) return null;
@@ -252,6 +256,7 @@ export class PurchaseOrderEditorService {
   }
 
   async saveDraft(input: SavePurchaseOrderInput): Promise<PurchaseOrder> {
+    this.ensureEditorAvailable();
     const { tenantId, actorUserId, user, permissions } = await resolvePurchasingContext(
       this.repositories,
     );
@@ -259,7 +264,7 @@ export class PurchaseOrderEditorService {
     await ensureTenantCanUsePurchasing(this.repositories, tenantId);
     const authoritativeContext = await this.ensureSaveInputTenantSafe(tenantId, user, input);
     validateOrderQuantities(input.lines, authoritativeContext);
-    const payload = toPurchaseOrderPayload(input, PurchaseOrderStatus.draft, tenantId, actorUserId);
+    const payload = toPurchaseOrderPayload(input, tenantId, actorUserId);
     if (input.orderId) {
       const order = ensurePurchaseOrderBelongsToTenant(
         await this.repositories.purchaseOrders.getByIdScoped(tenantId, input.orderId),
@@ -271,28 +276,18 @@ export class PurchaseOrderEditorService {
   }
 
   async createOrder(input: SavePurchaseOrderInput): Promise<PurchaseOrder> {
+    this.ensureEditorAvailable();
     validateCompleteOrder(input);
-    const { tenantId, actorUserId, user, permissions } = await resolvePurchasingContext(
-      this.repositories,
-    );
-    ensureCanCreatePurchaseOrders(permissions);
-    await ensureTenantCanUsePurchasing(this.repositories, tenantId);
-    const authoritativeContext = await this.ensureSaveInputTenantSafe(tenantId, user, input);
-    validateOrderQuantities(input.lines, authoritativeContext);
-    const payload = toPurchaseOrderPayload(
-      input,
-      PurchaseOrderStatus.pending_approval,
-      tenantId,
-      actorUserId,
-    );
-    if (input.orderId) {
-      const order = ensurePurchaseOrderBelongsToTenant(
-        await this.repositories.purchaseOrders.getByIdScoped(tenantId, input.orderId),
-        tenantId,
+    const draft = await this.saveDraft(input);
+    return this.repositories.purchaseOrders.submitScoped(draft.tenantId, draft.id);
+  }
+
+  private ensureEditorAvailable() {
+    if (this.repositories.purchaseOrdersDataSource === "api") {
+      throw new PurchasingServiceError(
+        "La creacion y edicion de ordenes estara disponible cuando se integre el catalogo operacional de proveedores.",
       );
-      return this.repositories.purchaseOrders.updateScoped(tenantId, order.id, payload);
     }
-    return this.repositories.purchaseOrders.create(payload);
   }
 
   // supplierId/branchId/cada productId de las lineas llegan del cliente: la validacion de branch
@@ -512,7 +507,6 @@ export function getExpectedLeadTime(
 
 function toPurchaseOrderPayload(
   input: SavePurchaseOrderInput,
-  status: PurchaseOrderStatus,
   tenantId: string,
   createdByUserId: string,
 ) {
@@ -531,7 +525,7 @@ function toPurchaseOrderPayload(
     tenantId,
     branchId: input.branchId,
     supplierId: input.supplierId,
-    status,
+    status: PurchaseOrderStatus.draft,
     expectedDate: input.expectedDate
       ? new Date(`${input.expectedDate}T00:00:00.000`).toISOString()
       : undefined,

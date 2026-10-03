@@ -178,6 +178,36 @@ export class MockPurchaseOrderRepository
     });
     return item;
   }
+  async submitScoped(tenantId: string, id: string) {
+    return this.updateStatusScoped(tenantId, id, PurchaseOrderStatus.pending_approval);
+  }
+  async approveScoped(tenantId: string, id: string) {
+    return this.updateStatusScoped(tenantId, id, PurchaseOrderStatus.approved);
+  }
+  async cancelScoped(tenantId: string, id: string, reason: string) {
+    const item = this.store.mutate((db) => {
+      const index = db.purchaseOrders.findIndex(
+        (order) => order.id === id && order.tenantId === tenantId,
+      );
+      if (index < 0) throw this.missing("PurchaseOrder", id);
+      const now = this.now();
+      const updated = {
+        ...db.purchaseOrders[index],
+        status: PurchaseOrderStatus.cancelled,
+        cancellationReason: reason.trim(),
+        cancelledAt: now,
+        updatedAt: now,
+      };
+      db.purchaseOrders[index] = updated;
+      return hydratePurchaseOrder(updated, db);
+    });
+    this.emit("purchase-order.changed", {
+      entityId: item.id,
+      tenantId: item.tenantId,
+      action: "status_changed",
+    });
+    return item;
+  }
 }
 
 function assertValidConversionSnapshots(

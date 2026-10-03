@@ -109,6 +109,17 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
     }
   }
 
+  if (editor.blockedReason) {
+    return (
+      <div className="space-y-4">
+        <PageHeader title="Orden de compra" description={editor.blockedReason} />
+        <Button onClick={() => router.push("/compras/ordenes")} type="button" variant="secondary">
+          Volver
+        </Button>
+      </div>
+    );
+  }
+
   if (editor.loading) {
     return <p className="p-5 text-sm text-[var(--color-text-muted)]">Cargando orden...</p>;
   }

@@ -55,14 +55,16 @@ export interface PurchaseOrderRepository {
   updateScoped(tenantId: string, id: string, input: UpdatePurchaseOrderInput): Promise<PurchaseOrder>;
   updateStatus(id: string, status: PurchaseOrderStatus): Promise<PurchaseOrder>;
   /**
-   * Variante tenant-scoped de `updateStatus` -- cierra el bypass real que tenia
-   * `usePurchaseOrders.updateStatus` (llamaba a `updateStatus(id, status)` directo desde el hook,
-   * saltandose cualquier Application Service, permiso o validacion de tenant). Ahora es el unico
-   * metodo que `UpdatePurchaseOrderStatusService` puede usar para aprobar/cancelar/enviar.
+   * Compatibilidad legacy para consumidores mock. Los flujos API de lifecycle usan las
+   * operaciones semanticas tenant-scoped declaradas debajo; el backend no expone un endpoint
+   * generico para cambiar status.
    */
   updateStatusScoped(
     tenantId: string,
     id: string,
     status: PurchaseOrderStatus,
   ): Promise<PurchaseOrder>;
+  submitScoped(tenantId: string, id: string): Promise<PurchaseOrder>;
+  approveScoped(tenantId: string, id: string): Promise<PurchaseOrder>;
+  cancelScoped(tenantId: string, id: string, reason: string): Promise<PurchaseOrder>;
 }

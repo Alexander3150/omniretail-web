@@ -1,14 +1,19 @@
 import type { PurchaseOrder } from "@/core/entities";
 import { PurchaseOrderStatus } from "@/core/enums";
 import type {
+  CreatePurchaseOrderInput,
   PurchaseOrderPageParams,
   PurchaseOrderRepository,
+  UpdatePurchaseOrderInput,
 } from "@/core/repositories";
 import { BackendRequestError, backendFetch } from "@/infrastructure/api/backendClient";
+import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { assertApiUuid, assertOptionalApiUuid } from "@/infrastructure/api/uuid";
 import {
   parseApiPurchaseOrder,
   parseApiPurchaseOrderPage,
+  parsePurchaseOrderCancellationRequest,
+  parsePurchaseOrderMutationRequest,
   type ApiPurchaseOrder,
 } from "@/infrastructure/api/repositories/purchaseOrderApi.schema";
 
@@ -16,21 +21,31 @@ const UNSUPPORTED_OPERATIONS = new Set<PropertyKey>([
   "getAll",
   "getById",
   "listByTenant",
-  "create",
   "update",
-  "updateScoped",
   "updateStatus",
   "updateStatusScoped",
 ]);
 
 export class ApiPurchaseOrderRepository {
+  constructor(private readonly eventBus: DataEventBus) {}
+
   withPurchaseOrderDelegate(delegate: PurchaseOrderRepository): PurchaseOrderRepository {
     const getPageScoped = this.getPageScoped.bind(this);
     const getByIdScoped = this.getByIdScoped.bind(this);
+    const create = this.create.bind(this);
+    const updateScoped = this.updateScoped.bind(this);
+    const submitScoped = this.submitScoped.bind(this);
+    const approveScoped = this.approveScoped.bind(this);
+    const cancelScoped = this.cancelScoped.bind(this);
     return new Proxy(delegate, {
       get: (target, property) => {
         if (property === "getPageScoped") return getPageScoped;
         if (property === "getByIdScoped") return getByIdScoped;
+        if (property === "create") return create;
+        if (property === "updateScoped") return updateScoped;
+        if (property === "submitScoped") return submitScoped;
+        if (property === "approveScoped") return approveScoped;
+        if (property === "cancelScoped") return cancelScoped;
         if (UNSUPPORTED_OPERATIONS.has(property)) return unsupportedOperation;
         const value = Reflect.get(target, property, target);
         return typeof value === "function" ? value.bind(target) : value;
@@ -71,6 +86,94 @@ export class ApiPurchaseOrderRepository {
       throw error;
     }
   }
+
+  async create(input: CreatePurchaseOrderInput) {
+    const order = toPurchaseOrder(
+      parseApiPurchaseOrder(
+        await backendFetch<unknown>("/purchasing/orders", {
+          method: "POST",
+          body: toMutationRequest(input),
+        }),
+      ),
+      input.tenantId,
+    );
+    this.emit(order, "created");
+    return order;
+  }
+
+  async updateScoped(tenantId: string, id: string, input: UpdatePurchaseOrderInput) {
+    assertApiUuid(id, "purchaseOrderId");
+    const order = toPurchaseOrder(
+      parseApiPurchaseOrder(
+        await backendFetch<unknown>(`/purchasing/orders/${id}`, {
+          method: "PUT",
+          body: toMutationRequest(input),
+        }),
+      ),
+      tenantId,
+    );
+    this.emit(order, "updated");
+    return order;
+  }
+
+  async submitScoped(tenantId: string, id: string) {
+    return this.transition(tenantId, id, "submit");
+  }
+
+  async approveScoped(tenantId: string, id: string) {
+    return this.transition(tenantId, id, "approve");
+  }
+
+  async cancelScoped(tenantId: string, id: string, reason: string) {
+    assertApiUuid(id, "purchaseOrderId");
+    const body = parsePurchaseOrderCancellationRequest({ reason });
+    const order = toPurchaseOrder(
+      parseApiPurchaseOrder(
+        await backendFetch<unknown>(`/purchasing/orders/${id}/cancel`, {
+          method: "POST",
+          body,
+        }),
+      ),
+      tenantId,
+    );
+    this.emit(order, "status_changed");
+    return order;
+  }
+
+  private async transition(tenantId: string, id: string, action: "submit" | "approve") {
+    assertApiUuid(id, "purchaseOrderId");
+    const order = toPurchaseOrder(
+      parseApiPurchaseOrder(
+        await backendFetch<unknown>(`/purchasing/orders/${id}/${action}`, { method: "POST" }),
+      ),
+      tenantId,
+    );
+    this.emit(order, "status_changed");
+    return order;
+  }
+
+  private emit(order: PurchaseOrder, action: "created" | "updated" | "status_changed") {
+    this.eventBus.emit("purchase-order.changed", {
+      entityId: order.id,
+      tenantId: order.tenantId,
+      branchId: order.branchId,
+      action,
+    });
+  }
+}
+
+function toMutationRequest(input: CreatePurchaseOrderInput | UpdatePurchaseOrderInput) {
+  return parsePurchaseOrderMutationRequest({
+    branchId: input.branchId,
+    supplierId: input.supplierId,
+    expectedDate: input.expectedDate ? input.expectedDate.slice(0, 10) : null,
+    notes: input.notes?.trim() || null,
+    items: input.items?.map((item) => ({
+      productId: item.productId,
+      quantity: item.quantity,
+      unitCost: item.unitCost,
+    })),
+  });
 }
 
 function unsupportedOperation(): Promise<never> {
