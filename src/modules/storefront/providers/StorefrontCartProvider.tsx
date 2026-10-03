@@ -1,6 +1,15 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type { ProductSalesPriceTier, Promotion } from "@/core/entities";
 import { SalesChannel } from "@/core/enums";
 import { calculateEffectivePrice, resolveQuantityPrice } from "@/core/pricing";
@@ -18,7 +27,11 @@ interface StorefrontCartContextValue {
   items: StorefrontCartItemDto[];
   itemCount: number;
   subtotal: number;
-  addProduct: (productId: string) => Promise<void>;
+  /**
+   * Agrega `quantity` unidades (1 por defecto). Devuelve `false` si no se agrego nada: producto no
+   * disponible o, en modo api, la cantidad supera el stock vigente del backend.
+   */
+  addProduct: (productId: string, quantity?: number) => Promise<boolean>;
   updateQuantity: (productId: string, quantity: number) => void;
   removeProduct: (productId: string) => void;
   clearCart: () => void;
@@ -49,6 +62,11 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
   );
   const apiCatalogService = useMemo(() => new ApiStorefrontCatalogService(), []);
   const [allItems, setAllItems] = useState<PricedStorefrontCartItem[]>([]);
+  // Lectura sincrona del carrito para decidir el resultado de addProduct antes de encolar el cambio.
+  const allItemsRef = useRef(allItems);
+  useEffect(() => {
+    allItemsRef.current = allItems;
+  }, [allItems]);
   const items = useMemo(
     () => allItems.filter((item) => item.tenantId === tenantId),
     [allItems, tenantId],
@@ -60,8 +78,8 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
   );
 
   const addProduct = useCallback(
-    async (productId: string) => {
-      if (!tenantId) return;
+    async (productId: string, quantity = 1): Promise<boolean> => {
+      if (!tenantId || !Number.isInteger(quantity) || quantity < 1) return false;
       const apiProduct = isApiMode() ? await apiCatalogService.getProduct(tenantSlug, productId) : null;
       const product = isApiMode()
         ? apiProduct && {
@@ -72,27 +90,38 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
             salePrice: apiProduct.salePrice,
           }
         : await publishedProductService.execute(tenantId, productId);
-      if (!product) return;
+      if (!product) return false;
       if (isApiMode()) {
+        // La UI ya bloquea con el catalogo, pero este stock es el mas reciente del backend.
+        const availableQuantity = apiProduct?.availableQuantity ?? null;
+        const exceedsStock = (inCart: number) =>
+          availableQuantity !== null && inCart + quantity > availableQuantity;
+        const quantityInCart =
+          allItemsRef.current.find(
+            (item) => item.tenantId === tenantId && item.productId === product.id,
+          )?.quantity ?? 0;
+        if (exceedsStock(quantityInCart)) return false;
         setAllItems((current) => {
           const existing = current.find(
             (item) => item.tenantId === tenantId && item.productId === product.id,
           );
+          // Invariante: el carrito nunca supera el stock, aun con agregados concurrentes.
+          if (exceedsStock(existing?.quantity ?? 0)) return current;
           if (existing) {
             return current.map((item) =>
-              item === existing ? withQuantityPrice(item, item.quantity + 1) : item,
+              item === existing ? withQuantityPrice(item, item.quantity + quantity) : item,
             );
           }
           return [...current, withQuantityPrice({
             ...createStorefrontCartItem(product),
             basePrice: product.salePrice,
             salesPriceTiers: [],
-          }, 1)];
+          }, quantity)];
         });
-        return;
+        return true;
       }
       const ecommerceConfig = await repositories.businessConfig.getEcommerceConfig(tenantId);
-      if (!ecommerceConfig?.defaultBranchId) return;
+      if (!ecommerceConfig?.defaultBranchId) return false;
       const [primaryMedia, salesPriceTiers, promotion] = await Promise.all([
         repositories.productMedia.getPrimaryByProduct(product.id),
         repositories.productSalesPriceTiers.getByProduct(product.id),
@@ -125,7 +154,7 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
             ...current,
             withQuantityPrice(
               { ...createStorefrontCartItem(product, media), ...pricingContext },
-              1,
+              quantity,
             ),
           ];
 
@@ -137,10 +166,11 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
                 name: product.name,
                 ...media,
                 ...pricingContext,
-              }, item.quantity + 1)
+              }, item.quantity + quantity)
             : item,
         );
       });
+      return true;
     },
     [apiCatalogService, publishedProductService, repositories, tenantId, tenantSlug],
   );

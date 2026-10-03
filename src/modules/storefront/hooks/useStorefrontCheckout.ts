@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { isApiMode } from "@/config/api-mode";
+import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import type { StorefrontCheckoutFormDto } from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
 import { CreateStorefrontCheckoutService } from "@/modules/storefront/application/services/CreateStorefrontCheckoutService";
@@ -9,6 +10,18 @@ import { ApiStorefrontCheckoutService } from "@/modules/storefront/application/s
 import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCartProvider";
 import { useStorefrontCheckoutConfirmation } from "@/modules/storefront/providers/StorefrontCheckoutConfirmationProvider";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
+
+const INSUFFICIENT_STOCK_MESSAGE =
+  "Uno o más productos en tu carrito no cuentan con existencias suficientes. Por favor revisa las cantidades.";
+
+function isInsufficientStockError(cause: unknown): boolean {
+  if (cause instanceof BackendRequestError) {
+    return cause.status === 409 && cause.code === "INSUFFICIENT_STOCK";
+  }
+  // Modo mock: el reservador local lanza errores planos con estos textos.
+  const message = cause instanceof Error ? cause.message : "";
+  return message.includes("Inventory reservation conflict") || message.includes("Insufficient stock");
+}
 
 export function useStorefrontCheckout() {
   const repositories = useRepositories();
@@ -47,9 +60,8 @@ export function useStorefrontCheckout() {
         keyRef.current = null;
         const message = cause instanceof Error ? cause.message : "";
         setError(
-          message.includes("Inventory reservation conflict") ||
-            message.includes("Insufficient stock")
-            ? "No se pudo reservar uno de los productos. Revise la disponibilidad o ajuste el carrito."
+          isInsufficientStockError(cause)
+            ? INSUFFICIENT_STOCK_MESSAGE
             : message || "No se pudo procesar el pedido.",
         );
       } finally {

@@ -7,10 +7,26 @@ interface BackendProduct {
   description?: string;
   brand?: string;
   salePrice: number;
+  basePrice?: number | null;
+  effectivePrice?: number | null;
+  discountAmount?: number | null;
+  promotionId?: string | null;
   categoryId: string;
   categoryName?: string | null;
   saleUnitId?: string | null;
   saleUnitName?: string | null;
+  /** Hay disponible en la sucursal que atiende el e-commerce (siempre true si no controla stock). */
+  inStock?: boolean;
+  /** Disponible (cantidad - reservado); `null` si el producto no controla inventario (servicios). */
+  availableQuantity?: number | null;
+}
+
+/** `null` = stock ilimitado para la UI; `inStock: false` siempre se trata como agotado. */
+function toAvailableQuantity(product: BackendProduct): number | null {
+  if (product.inStock === false) return 0;
+  return product.availableQuantity !== undefined && product.availableQuantity !== null
+    ? Number(product.availableQuantity)
+    : null;
 }
 
 function toProduct(product: BackendProduct): StorefrontDiscoveryProductDto {
@@ -21,10 +37,14 @@ function toProduct(product: BackendProduct): StorefrontDiscoveryProductDto {
     description: product.description,
     brand: product.brand,
     salePrice: Number(product.salePrice),
+    basePrice: product.basePrice == null ? undefined : Number(product.basePrice),
+    effectivePrice: product.effectivePrice == null ? undefined : Number(product.effectivePrice),
+    discountAmount: product.discountAmount == null ? undefined : Number(product.discountAmount),
+    promotionId: product.promotionId ?? undefined,
     salesPriceTiers: [],
     categoryId: product.categoryId,
     categoryName: product.categoryName ?? undefined,
-    availableQuantity: null,
+    availableQuantity: toAvailableQuantity(product),
     saleUnitId: product.saleUnitId ?? "",
     saleUnitName: product.saleUnitName ?? "",
   };
