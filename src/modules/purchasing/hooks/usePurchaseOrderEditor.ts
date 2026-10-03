@@ -29,10 +29,14 @@ const EMPTY_MODEL: PurchaseOrderEditorModel = {
   lines: [],
 };
 
+const API_EDITOR_BLOCKED_REASON =
+  "La creacion y edicion de ordenes estara disponible cuando se integre el catalogo operacional de proveedores.";
+
 export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrderPrefillContext) {
   const repositories = useRepositories();
   const { currentBranch, loading: branchLoading } = useActiveBranch();
   const { loading: sessionLoading } = useCurrentSession();
+  const apiMode = repositories.purchaseOrdersDataSource === "api";
   const service = useMemo(() => new PurchaseOrderEditorService(repositories), [repositories]);
   const [model, setModel] = useState<PurchaseOrderEditorModel>(EMPTY_MODEL);
   const [suppliers, setSuppliers] = useState<PurchaseOrderEditorSupplier[]>([]);
@@ -43,21 +47,23 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
   );
   const [prefillNotice, setPrefillNotice] = useState<string | null>(null);
   const [prefillWarning, setPrefillWarning] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!apiMode);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadAvailableProducts = useCallback(
     async (supplierId: string) => {
+      if (apiMode) return [];
       if (!currentBranch?.tenantId) return [];
       const products = await service.getAvailableProducts(supplierId, currentBranch?.id);
       setAvailableProducts(products);
       return products;
     },
-    [currentBranch, service],
+    [apiMode, currentBranch, service],
   );
 
   useEffect(() => {
+    if (apiMode) return;
     let active = true;
     async function load() {
       if (!currentBranch?.tenantId) return;
@@ -137,7 +143,7 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
     return () => {
       active = false;
     };
-  }, [currentBranch?.id, currentBranch?.tenantId, orderId, prefill, service]);
+  }, [apiMode, currentBranch?.id, currentBranch?.tenantId, orderId, prefill, service]);
 
   const linePricing = useMemo(
     () => model.lines.map((line) => ({ lineId: line.id, ...getPricingDetails(line) })),
@@ -282,6 +288,7 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
   }, []);
 
   const saveDraft = useCallback(async () => {
+    if (apiMode) throw new Error(API_EDITOR_BLOCKED_REASON);
     if (!model.supplierId) throw new Error("Selecciona un proveedor.");
     if (!currentBranch) throw new Error("Selecciona una sucursal destino.");
     setSaving(true);
@@ -297,9 +304,10 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
     } finally {
       setSaving(false);
     }
-  }, [currentBranch, model, service]);
+  }, [apiMode, currentBranch, model, service]);
 
   const createOrder = useCallback(async () => {
+    if (apiMode) throw new Error(API_EDITOR_BLOCKED_REASON);
     if (!currentBranch) throw new Error("Selecciona una sucursal destino.");
     setSaving(true);
     try {
@@ -314,7 +322,7 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
     } finally {
       setSaving(false);
     }
-  }, [currentBranch, model, service]);
+  }, [apiMode, currentBranch, model, service]);
 
   return {
     model,
@@ -323,7 +331,8 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
     availableProducts: filteredProducts,
     productSearch,
     branchName: currentBranch?.name ?? "Sin sucursal",
-    loading: loading || branchLoading || sessionLoading,
+    blockedReason: apiMode ? API_EDITOR_BLOCKED_REASON : null,
+    loading: !apiMode && (loading || branchLoading || sessionLoading),
     saving,
     error,
     total,

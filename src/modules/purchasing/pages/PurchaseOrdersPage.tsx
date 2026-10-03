@@ -51,6 +51,7 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
     currentBranch,
     loading,
     error,
+    mutationPending,
     updateFilters,
     setPage,
     setPageSize,
@@ -220,7 +221,25 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
 
   async function handleAction(order: PurchaseOrderRowReadModel, action: PurchaseOrderAction) {
     setOpenActionsOrderId(null);
+    if (mutationPending) return;
+    if (!action.enabled) {
+      showToast({
+        title: action.label,
+        description: action.unavailableReason ?? "Accion preparada para una siguiente feature.",
+        tone: "info",
+      });
+      return;
+    }
     if (action.id === "edit-draft") {
+      if (apiMode) {
+        showToast({
+          title: "Creacion de ordenes no disponible todavia",
+          description:
+            "La edicion se habilitara cuando se integre el catalogo operacional de proveedores.",
+          tone: "info",
+        });
+        return;
+      }
       router.push(`/compras/ordenes/${order.id}/editar`);
       return;
     }
@@ -245,14 +264,6 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
       setPendingAction({ order, action });
       return;
     }
-    if (!action.enabled) {
-      showToast({
-        title: action.label,
-        description: action.unavailableReason ?? "Accion preparada para una siguiente feature.",
-        tone: "info",
-      });
-      return;
-    }
     if (!action.statusTarget) return;
 
     try {
@@ -268,11 +279,16 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
     }
   }
 
-  async function confirmPendingAction() {
-    if (!pendingAction?.action.statusTarget) return;
+  async function confirmPendingAction(cancellationReason?: string) {
+    if (!pendingAction?.action.statusTarget || mutationPending) return;
     try {
-      await updateStatus(pendingAction.order.id, pendingAction.action.statusTarget);
+      await updateStatus(
+        pendingAction.order.id,
+        pendingAction.action.statusTarget,
+        cancellationReason,
+      );
       setSelectedOrderId(null);
+      setPendingAction(null);
       if (pendingAction.action.id === "approve") {
         await handleApprovedOrder(pendingAction.order);
       } else {
@@ -284,8 +300,6 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
         description: caughtError instanceof Error ? caughtError.message : undefined,
         tone: "danger",
       });
-    } finally {
-      setPendingAction(null);
     }
   }
 
@@ -458,6 +472,7 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
         <ConfirmActionDialog
           action={pendingAction.action}
           order={pendingAction.order}
+          submitting={mutationPending}
           onCancel={() => setPendingAction(null)}
           onConfirm={confirmPendingAction}
         />
@@ -969,15 +984,20 @@ function PurchaseOrderDrawer({
 function ConfirmActionDialog({
   order,
   action,
+  submitting,
   onCancel,
   onConfirm,
 }: {
   order: PurchaseOrderRowReadModel;
   action: PurchaseOrderAction;
+  submitting: boolean;
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: (cancellationReason?: string) => void;
 }) {
   const isCancel = action.id === "cancel";
+  const [cancellationReason, setCancellationReason] = useState("");
+  const trimmedReason = cancellationReason.trim();
+  const confirmDisabled = submitting || (isCancel && trimmedReason.length === 0);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-topbar)]/35 p-4">
       <div className="w-full max-w-md rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-xl">
@@ -992,12 +1012,36 @@ function ConfirmActionDialog({
             ? "Esta accion cambiara el estado de la orden a Cancelada."
             : "La orden pasara a Aprobada despues de recibir autorizacion externa."}
         </p>
+        {isCancel ? (
+          <label className="mt-4 block">
+            <span className="text-xs font-bold uppercase text-[var(--color-text-muted)]">
+              Motivo de cancelacion
+            </span>
+            <textarea
+              className="mt-1 min-h-24 w-full resize-y rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-structure)]/15 disabled:cursor-not-allowed disabled:bg-[var(--color-app-background)]"
+              disabled={submitting}
+              maxLength={500}
+              onChange={(event) => setCancellationReason(event.target.value)}
+              placeholder="Describe por que se cancela esta orden"
+              required
+              value={cancellationReason}
+            />
+            <span className="mt-1 block text-right text-xs text-[var(--color-text-muted)]">
+              {cancellationReason.length}/500
+            </span>
+          </label>
+        ) : null}
         <div className="mt-5 flex justify-end gap-2">
-          <Button onClick={onCancel} type="button" variant="secondary">
+          <Button disabled={submitting} onClick={onCancel} type="button" variant="secondary">
             Volver
           </Button>
-          <Button onClick={onConfirm} type="button" variant={isCancel ? "danger" : "primary"}>
-            {isCancel ? "Cancelar orden" : "Aprobar orden"}
+          <Button
+            disabled={confirmDisabled}
+            onClick={() => onConfirm(isCancel ? trimmedReason : undefined)}
+            type="button"
+            variant={isCancel ? "danger" : "primary"}
+          >
+            {submitting ? "Procesando..." : isCancel ? "Cancelar orden" : "Aprobar orden"}
           </Button>
         </div>
       </div>

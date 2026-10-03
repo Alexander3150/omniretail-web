@@ -252,6 +252,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
               ),
             ),
           ),
+          eventBus,
         )
       : mockRepositories;
     return {

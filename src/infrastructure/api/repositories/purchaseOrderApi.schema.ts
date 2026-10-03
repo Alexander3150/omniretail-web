@@ -9,6 +9,22 @@ const nullableUuidSchema = apiUuidSchema.nullable();
 const instantSchema = z.string().datetime({ offset: true });
 const localDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const finiteNumberSchema = z.coerce.number().finite();
+const purchaseOrderMutationRequestSchema = z.object({
+  branchId: apiUuidSchema,
+  supplierId: apiUuidSchema,
+  expectedDate: localDateSchema.nullable(),
+  notes: z.string().max(1000).nullable(),
+  items: z.array(
+    z.object({
+      productId: apiUuidSchema,
+      quantity: z.number().finite().positive(),
+      unitCost: z.number().finite().nonnegative(),
+    }),
+  ),
+});
+const purchaseOrderCancellationRequestSchema = z.object({
+  reason: z.string().trim().min(1).max(500),
+});
 const purchaseOrderStatusSchema = z.enum([
   "draft",
   "pending_approval",
@@ -66,6 +82,9 @@ const purchaseOrderPageSchema = z.object({
 });
 
 export type ApiPurchaseOrder = z.infer<typeof purchaseOrderSchema>;
+export type ApiPurchaseOrderMutationRequest = z.infer<
+  typeof purchaseOrderMutationRequestSchema
+>;
 
 export function parseApiPurchaseOrder(value: unknown): ApiPurchaseOrder {
   const parsed = purchaseOrderSchema.safeParse(value);
@@ -79,10 +98,32 @@ export function parseApiPurchaseOrderPage(value: unknown) {
   return parsed.data;
 }
 
+export function parsePurchaseOrderMutationRequest(
+  value: unknown,
+): ApiPurchaseOrderMutationRequest {
+  const parsed = purchaseOrderMutationRequestSchema.safeParse(value);
+  if (!parsed.success) throw invalidRequest("orden de compra");
+  return parsed.data;
+}
+
+export function parsePurchaseOrderCancellationRequest(value: unknown) {
+  const parsed = purchaseOrderCancellationRequestSchema.safeParse(value);
+  if (!parsed.success) throw invalidRequest("cancelacion de orden de compra");
+  return parsed.data;
+}
+
 function invalidResponse(resource: string) {
   return new BackendRequestError(
     `El backend devolvio una ${resource} invalida.`,
     502,
     "INVALID_BACKEND_RESPONSE",
+  );
+}
+
+function invalidRequest(resource: string) {
+  return new BackendRequestError(
+    `Los datos de ${resource} no son validos.`,
+    400,
+    "INVALID_REQUEST",
   );
 }

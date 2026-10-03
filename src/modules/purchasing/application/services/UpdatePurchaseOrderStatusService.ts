@@ -21,6 +21,8 @@ import {
  * Las transiciones validas se derivan de `getPurchaseOrderActions` (la MISMA fuente que ya
  * decide que botones mostrar en la UI) en vez de duplicar la maquina de estados: un
  * `statusTarget` que no aparece entre las acciones del estado actual se rechaza.
+ * Una vez validado, el target se traduce a una operacion semantica del repository; nunca se
+ * intenta persistir un status arbitrario ni se presupone un endpoint REST generico.
  *
  * Mapeo de permisos por transicion (ver docstring de `ensureCanApprovePurchaseOrders`): cancelar
  * un DRAFT propio usa `purchasing.orders.create` (ciclo de vida del propio borrador); cualquier
@@ -30,7 +32,11 @@ import {
 export class UpdatePurchaseOrderStatusService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async execute(orderId: string, targetStatus: PurchaseOrderStatus): Promise<PurchaseOrder> {
+  async execute(
+    orderId: string,
+    targetStatus: PurchaseOrderStatus,
+    cancellationReason?: string,
+  ): Promise<PurchaseOrder> {
     const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
     await ensureTenantCanUsePurchasing(this.repositories, tenantId);
     const order = ensurePurchaseOrderBelongsToTenant(
@@ -43,7 +49,23 @@ export class UpdatePurchaseOrderStatusService {
     } else {
       ensureCanApprovePurchaseOrders(permissions);
     }
-    return this.repositories.purchaseOrders.updateStatusScoped(tenantId, orderId, targetStatus);
+    if (targetStatus === PurchaseOrderStatus.pending_approval) {
+      return this.repositories.purchaseOrders.submitScoped(tenantId, orderId);
+    }
+    if (targetStatus === PurchaseOrderStatus.approved) {
+      return this.repositories.purchaseOrders.approveScoped(tenantId, orderId);
+    }
+    if (targetStatus === PurchaseOrderStatus.cancelled) {
+      const reason = cancellationReason?.trim() ?? "";
+      if (!reason) {
+        throw new PurchasingServiceError("Ingresa el motivo de cancelacion.");
+      }
+      if (reason.length > 500) {
+        throw new PurchasingServiceError("El motivo de cancelacion admite hasta 500 caracteres.");
+      }
+      return this.repositories.purchaseOrders.cancelScoped(tenantId, orderId, reason);
+    }
+    throw new PurchasingServiceError("Esta transicion de estado no esta soportada.");
   }
 }
 

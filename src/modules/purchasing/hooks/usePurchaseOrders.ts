@@ -69,6 +69,7 @@ export function usePurchaseOrders() {
   );
   const requestIdRef = useRef(0);
   const detailRequestIdRef = useRef(0);
+  const mutationInFlightRef = useRef(false);
   const [data, setData] = useState<PurchaseOrdersReadModel>(EMPTY_DATA);
   const [detailOrder, setDetailOrder] = useState<PurchaseOrderRowReadModel | null>(null);
   const [filters, setFilters] = useState<PurchaseOrderFilters>(DEFAULT_FILTERS);
@@ -76,6 +77,7 @@ export function usePurchaseOrders() {
   const [page, setPageState] = useState(1);
   const [pageSize, setPageSizeState] = useState<TablePageSize>(DEFAULT_PAGE_SIZE);
   const [loading, setLoading] = useState(true);
+  const [mutationPending, setMutationPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const statusFilter = filters.status;
@@ -257,13 +259,20 @@ export function usePurchaseOrders() {
   );
 
   const updateStatus = useCallback(
-    async (orderId: string, status: PurchaseOrderStatus) => {
-      if (apiMode) {
-        throw new Error("La actualizacion de ordenes por API no forma parte de esta entrega.");
+    async (orderId: string, status: PurchaseOrderStatus, cancellationReason?: string) => {
+      if (mutationInFlightRef.current) {
+        throw new Error("Ya hay una actualizacion de orden en curso.");
       }
-      await updateStatusService.execute(orderId, status);
+      mutationInFlightRef.current = true;
+      setMutationPending(true);
+      try {
+        return await updateStatusService.execute(orderId, status, cancellationReason);
+      } finally {
+        mutationInFlightRef.current = false;
+        setMutationPending(false);
+      }
     },
-    [apiMode, updateStatusService],
+    [updateStatusService],
   );
 
   return {
@@ -280,6 +289,7 @@ export function usePurchaseOrders() {
     currentBranch,
     loading: branchLoading || loading,
     error,
+    mutationPending,
     updateFilters,
     setPage,
     setPageSize,
