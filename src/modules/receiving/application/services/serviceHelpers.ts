@@ -75,8 +75,12 @@ export function ensureCanConfirmReceiving(permissions: readonly string[]) {
 }
 
 export function ensureCanManageIncidentTypes(permissions: readonly string[]) {
+  ensureCanManageReceivingIncidents(permissions);
+}
+
+export function ensureCanManageReceivingIncidents(permissions: readonly string[]) {
   if (permissions.includes("receiving.incidents.manage")) return;
-  throw new ReceivingServiceError("No dispone de permisos para gestionar tipos de incidencia.");
+  throw new ReceivingServiceError("No dispone de permisos para gestionar incidencias.");
 }
 
 /** Validacion de sucursal contra `User.allowedBranchIds` (fuente autoritativa desde #94). */

@@ -24,7 +24,7 @@ export type * from "./InventoryTransferRepository";
 export type * from "./SupplierRepository";
 export type * from "./SupplierProductRepository";
 export type * from "./PurchaseOrderRepository";
-export type * from "./ReceiptRepository";
+export * from "./ReceiptRepository";
 export type * from "./IncidentTypeRepository";
 export type * from "./CustomerRepository";
 export type * from "./CustomerPaymentMethodRepository";

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReceivingDocumentsService } from "@/modules/receiving/application/services/ReceivingDocumentsService";
 import type {
+  ReceivingIncidentRow,
   ReceivingDocumentRow,
   ReceivingReadModel,
   ReceivingStatus,
@@ -208,8 +209,23 @@ export function mergeReceivingReadModels(
   return {
     ...current,
     documents: mergeReceivingDocuments(current.documents, next.documents),
+    incidents: mergeReceivingIncidents(current.incidents, next.incidents),
+    incidentListIncomplete:
+      Boolean(current.incidentListIncomplete) || Boolean(next.incidentListIncomplete),
     pagination: next.pagination ?? current.pagination,
   };
+}
+
+function mergeReceivingIncidents(
+  current: ReceivingIncidentRow[],
+  next: ReceivingIncidentRow[],
+): ReceivingIncidentRow[] {
+  const incidentsById = new Map(current.map((incident) => [incident.id, incident]));
+  next.forEach((incident) => {
+    const stored = incidentsById.get(incident.id);
+    if (!stored || incident.date >= stored.date) incidentsById.set(incident.id, incident);
+  });
+  return [...incidentsById.values()].sort((left, right) => right.date.localeCompare(left.date));
 }
 
 export function mergeReceivingDocuments(

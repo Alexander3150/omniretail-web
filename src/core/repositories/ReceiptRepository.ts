@@ -1,6 +1,12 @@
-import type { Receipt, ReceiptIncident, ReceiptLine } from "@/core/entities";
+import type {
+  Receipt,
+  ReceiptIncident,
+  ReceiptIncidentApiStatus,
+  ReceiptIncidentTypeCode,
+  ReceiptLine,
+} from "@/core/entities";
 import type { ReceiptStatus } from "@/core/enums";
-import type { PaginatedResult } from "@/core/types/pagination.types";
+import type { PageParams, PaginatedResult } from "@/core/types/pagination.types";
 
 export type ReceiptLineInput = Omit<ReceiptLine, "id" | "receiptId"> & { id?: string };
 export type ReceiptIncidentInput = Omit<ReceiptIncident, "id" | "receiptId" | "createdAt"> & {
@@ -9,6 +15,8 @@ export type ReceiptIncidentInput = Omit<ReceiptIncident, "id" | "receiptId" | "c
 };
 
 export type GoodsReceiptStatus = "draft" | "confirmed";
+
+export const RECEIPT_INCIDENT_NOTES_MAX_LENGTH = 1_000;
 
 export interface ReceiptPageParams {
   branchId?: string;
@@ -41,6 +49,31 @@ export interface ReceiptRecord {
   receipt: Receipt;
   purchaseOrderNumber?: string;
   items: ReceiptItemRecord[];
+}
+
+export interface ReceiptIncidentRecord {
+  id: string;
+  branchId: string;
+  goodsReceiptId: string;
+  goodsReceiptItemId?: string;
+  incidentType: ReceiptIncidentTypeCode;
+  status: ReceiptIncidentApiStatus;
+  quantityAffected?: number;
+  notes: string;
+  createdByUserId: string;
+  resolvedByUserId?: string;
+  resolvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateReceiptIncidentScopedInput {
+  tenantId: string;
+  receiptId: string;
+  incidentType: ReceiptIncidentTypeCode;
+  goodsReceiptItemId?: string;
+  quantityAffected?: number;
+  notes: string;
 }
 
 export interface ReceiptDraftTrackingDetailInput {
@@ -101,6 +134,19 @@ export interface ReceiptRepository {
     input: Omit<ReceiptDraftInput, "purchaseOrderId">,
   ): Promise<ReceiptRecord>;
   deleteDraftScoped(tenantId: string, id: string): Promise<void>;
+  confirmDraftScoped(tenantId: string, id: string): Promise<ReceiptRecord>;
+  listIncidentsScoped(
+    tenantId: string,
+    receiptId: string,
+    params: PageParams,
+  ): Promise<PaginatedResult<ReceiptIncidentRecord>>;
+  createIncidentScoped(
+    input: CreateReceiptIncidentScopedInput,
+  ): Promise<ReceiptIncidentRecord>;
+  resolveIncidentScoped(
+    tenantId: string,
+    incidentId: string,
+  ): Promise<ReceiptIncidentRecord>;
 }
 
 export interface ConfirmReceiptInventoryInput {

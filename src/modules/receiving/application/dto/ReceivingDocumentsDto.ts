@@ -36,6 +36,8 @@ export interface ReceivingReadModel {
   documents: ReceivingDocumentRow[];
   incidents: ReceivingIncidentRow[];
   incidentTypes: IncidentTypeReadModel[];
+  /** Al menos un receipt tiene más incidencias que la primera página cargada. */
+  incidentListIncomplete?: boolean;
   pagination?: ReceivingPaginationState;
 }
 

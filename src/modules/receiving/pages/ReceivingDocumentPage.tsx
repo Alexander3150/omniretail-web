@@ -19,7 +19,12 @@ import {
   type NumericInputValue,
 } from "@/shared/utils/numberInput";
 import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
-import type { ReceiptIncidentEvidence } from "@/core/entities";
+import {
+  isReceiptIncidentTypeCode,
+  type ReceiptIncidentEvidence,
+  type ReceiptIncidentTypeCode,
+} from "@/core/entities";
+import { RECEIPT_INCIDENT_NOTES_MAX_LENGTH } from "@/core/repositories/ReceiptRepository";
 import {
   EXPIRATION_BEFORE_ENTRY_MESSAGE,
   getLocalCalendarDate,
@@ -29,6 +34,7 @@ import type {
   ReceivingDocumentDetailType,
   ReceivingDocumentIncident,
   ReceivingDocumentLine,
+  ReceivingTrackingDetail,
   ReceivingPreviousReceipt,
   ReceivingPreviousReceiptLine,
 } from "@/modules/receiving/application/dto/ReceivingDocumentDetailDto";
@@ -54,7 +60,10 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
     incidents,
     loading,
     saving,
+    incidentSaving,
+    dirty,
     error,
+    apiMode,
     confirmAvailable,
     incidentsAvailable,
     updateLine,
@@ -63,6 +72,8 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
     confirm,
     saveIncident,
     removeIncident,
+    createApiIncident,
+    resolveApiIncident,
   } = useReceivingDocumentDetail(documentType, documentId);
   const { hasCapability } = useEntitlement();
   const canUseReceiving = hasCapability(SaasCapabilityKey.receiving);
@@ -83,14 +94,23 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
     (incident) => incident.id === selectedHistoricalIncidentId,
   );
   const summary = useMemo(() => getSummary(lines, incidents), [incidents, lines]);
-  const saveProgressInvalid = detail
-    ? validateIncidentQuantities(lines, incidents, detail).length > 0
-    : true;
+  const saveProgressErrors = detail
+    ? (detail.dataSource === "api"
+        ? validateLines(lines, incidents, detail)
+        : validateIncidentQuantities(lines, incidents, detail)
+      )
+    : [];
+  const saveProgressInvalid = !detail || saveProgressErrors.length > 0;
+  const hasOpenApiIncidents = incidents.some((incident) => incident.status === "open");
   const confirmationInvalid = detail?.document.type === "transfer"
     ? !lines.some((line) => toFiniteNumber(line.receivedNow) > 0) ||
       validateLines(lines, incidents, detail).length > 0 ||
       lines.some((line) => toFiniteNumber(line.receivedNow) > 0 && !line.locationId)
-    : detail ? validateLines(lines, incidents, detail).length > 0 : true;
+    : detail
+      ? validateLines(lines, incidents, detail).length > 0 ||
+        hasOpenApiIncidents ||
+        Boolean(detail.incidentListIncomplete)
+      : true;
 
   async function handleSaveProgress() {
     try {
@@ -118,9 +138,42 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
     }
   }
 
+  async function handleCreateApiIncident(input: {
+    incidentType: ReceiptIncidentTypeCode;
+    goodsReceiptItemId?: string;
+    quantityAffected?: number;
+    notes: string;
+  }) {
+    try {
+      await createApiIncident(input);
+      showToast({ title: "Incidencia registrada", tone: "success" });
+      setIncidentEditorOpen(false);
+    } catch (caughtError) {
+      showToast({
+        title: "No se pudo registrar la incidencia",
+        description: caughtError instanceof Error ? caughtError.message : undefined,
+        tone: "danger",
+      });
+    }
+  }
+
+  async function handleResolveApiIncident(incidentId: string) {
+    try {
+      await resolveApiIncident(incidentId);
+      showToast({ title: "Incidencia resuelta", tone: "success" });
+      setSelectedHistoricalIncidentId(null);
+    } catch (caughtError) {
+      showToast({
+        title: "No se pudo resolver la incidencia",
+        description: caughtError instanceof Error ? caughtError.message : undefined,
+        tone: "danger",
+      });
+    }
+  }
+
   if (loading) {
     return (
-      <section className="mx-auto w-full min-w-0 max-w-7xl rounded-lg border border-[var(--color-border)] bg-white p-5 shadow-sm">
+      <section className="rounded-lg border border-[var(--color-border)] bg-white p-5 shadow-sm">
         <p className="text-sm font-medium text-[var(--color-text-muted)]">Cargando recepcion...</p>
       </section>
     );
@@ -128,8 +181,10 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
 
   if (error || !detail) {
     return (
-      <section className="mx-auto w-full min-w-0 max-w-7xl space-y-4 rounded-lg border border-[var(--color-border)] bg-white p-5 shadow-sm">
-        <InlineAlert title={error ?? "No se encontró el documento."} tone="danger" />
+      <section className="space-y-4 rounded-lg border border-[var(--color-border)] bg-white p-5 shadow-sm">
+        <p className="text-sm font-semibold text-[var(--color-danger)]">
+          {error ?? "No se encontro el documento."}
+        </p>
         <Button href="/compras/recepciones" variant="secondary">
           <ArrowLeftIcon />
           Volver a recepciones
@@ -139,9 +194,10 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
   }
 
   const readOnly = detail.readOnly;
+  const editingDisabled = readOnly || Boolean(detail.draftEditingLocked);
 
   return (
-    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
+    <div className="min-w-0 space-y-5">
       <div>
         <p className="mb-1 text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
           Recepciones &gt; Recepcion de mercaderia
@@ -157,9 +213,9 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
               </Button>
               {!readOnly ? (
                 <>
-                  {detail.document.type === "purchase_order" ? (
+                  {detail.document.type === "purchase_order" && !detail.draftEditingLocked ? (
                     <Button
-                      disabled={saving || !canUseReceiving || saveProgressInvalid}
+                      disabled={saving || incidentSaving || !canUseReceiving || saveProgressInvalid}
                       onClick={handleSaveProgress}
                       type="button"
                       variant="secondary"
@@ -170,7 +226,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
                   ) : null}
                   {confirmAvailable ? (
                     <Button
-                      disabled={saving || !canUseReceiving || confirmationInvalid}
+                      disabled={saving || incidentSaving || !canUseReceiving || confirmationInvalid}
                       onClick={handleConfirm}
                       type="button"
                     >
@@ -185,8 +241,24 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
         />
       </div>
 
-      {detail.multiLotDraftSummary ? (
-        <InlineAlert title={detail.multiLotDraftSummary} tone="warning" />
+      {detail.draftEditingLocked ? (
+        <InlineAlert
+          title={
+            detail.incidentListIncomplete
+              ? "Los productos quedan bloqueados porque la lista de incidencias está incompleta y no puede descartarse una referencia a sus líneas."
+              : "Este borrador tiene una incidencia asociada a una línea. Para preservar su referencia canónica, los productos quedan bloqueados incluso si la incidencia ya fue resuelta."
+          }
+          tone="warning"
+        />
+      ) : null}
+      {detail.incidentListIncomplete ? (
+        <InlineAlert
+          title="La recepción tiene más incidencias que las mostradas. Resuelve las incidencias abiertas antes de confirmar; el backend vuelve a validar esta regla."
+          tone="warning"
+        />
+      ) : null}
+      {apiMode && dirty && saveProgressErrors[0] ? (
+        <InlineAlert title={saveProgressErrors[0]} tone="warning" />
       ) : null}
       {detail.receiptHistoryIncomplete ? (
         <InlineAlert
@@ -196,7 +268,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
       ) : null}
 
       <section className="rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-5">
           <DetailItem label="Documento vinculado" value={detail.document.number} />
           <DetailItem label="Tipo" value={detail.document.typeLabel} />
           <DetailItem label={detail.document.originLabel} value={detail.document.originName} />
@@ -215,7 +287,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
         />
       ) : null}
 
-      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_300px] xl:items-start">
+      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_400px] 2xl:items-start">
         <main className="min-w-0 space-y-5">
           <section className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-white shadow-sm">
             <div className="flex flex-col gap-3 border-b border-[var(--color-border)] p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -232,6 +304,7 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
               </div>
               {!readOnly && incidentsAvailable && detail.document.type === "purchase_order" ? (
                 <Button
+                  disabled={incidentSaving || saving || dirty}
                   onClick={() => {
                     setSelectedIncidentId(null);
                     setIncidentEditorOpen(true);
@@ -248,14 +321,14 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
               detail={detail}
               incidents={incidents}
               lines={lines}
-              readOnly={readOnly}
+              readOnly={editingDisabled}
               onQuantityChange={updateLineQuantity}
               onUpdateLine={updateLine}
             />
           </section>
 
           <IncidentsSection
-            incidents={incidents.filter((incident) => incident.editable)}
+            incidents={apiMode ? incidents : incidents.filter((incident) => incident.editable)}
             selectedIncidentId={selectedIncidentId}
             onSelect={(incident) => {
               if (incident.editable && !readOnly) {
@@ -316,6 +389,14 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
                 </p>
               </div>
             </section>
+          ) : apiMode ? (
+            <ApiIncidentForm
+              detail={detail}
+              lines={lines}
+              saving={incidentSaving}
+              onCancel={() => setIncidentEditorOpen(false)}
+              onSave={handleCreateApiIncident}
+            />
           ) : (
             <IncidentForm
               key={selectedIncident?.id ?? "new-incident"}
@@ -374,6 +455,12 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
         originName={detail.document.originName}
         onClose={() => setSelectedHistoricalIncidentId(null)}
         onPreview={setPreviewEvidence}
+        resolving={incidentSaving}
+        onResolve={
+          apiMode && detail.canManageIncidents && selectedHistoricalIncident?.status === "open"
+            ? () => void handleResolveApiIncident(selectedHistoricalIncident.id)
+            : undefined
+        }
       />
       <EvidencePreview evidence={previewEvidence} onClose={() => setPreviewEvidence(null)} />
     </div>
@@ -479,27 +566,35 @@ function ReceivingLinesTable({
               {detail.document.type === "transfer" ? (
                 <TransferTraceabilityFields detail={detail} line={line}
                   readOnly={readOnly} onUpdateLine={onUpdateLine} />
-              ) : <TrackingFields
-                capabilities={detail.capabilities}
-                line={line}
-                readOnly={readOnly}
-                onUpdateLine={onUpdateLine}
-              />}
+              ) : detail.dataSource === "api" ? (
+                <ApiTrackingDetailsEditor
+                  line={line}
+                  readOnly={readOnly}
+                  onUpdateLine={onUpdateLine}
+                />
+              ) : (
+                <TrackingFields
+                  capabilities={detail.capabilities}
+                  line={line}
+                  readOnly={readOnly}
+                  onUpdateLine={onUpdateLine}
+                />
+              )}
             </article>
           );
         })}
       </div>
       <div className="hidden overflow-x-auto xl:block">
-        <table className="w-full min-w-[820px] table-fixed border-collapse text-left text-sm [&_td]:px-1.5 [&_th]:px-1.5">
+        <table className="w-full min-w-[970px] table-fixed border-collapse text-left text-sm">
           <colgroup>
-            <col className="w-[145px]" />
-            <col className="w-[62px]" />
-            <col className="w-[60px]" />
+            <col className="w-[180px]" />
+            <col className="w-[78px]" />
+            <col className="w-[68px]" />
+            <col className="w-[96px]" />
             <col className="w-[88px]" />
-            <col className="w-[76px]" />
-            <col className="w-[60px]" />
-            <col className="w-[125px]" />
-            <col className="w-[204px]" />
+            <col className="w-[72px]" />
+            <col className="w-[155px]" />
+            <col className="w-[233px]" />
           </colgroup>
           <thead className="bg-[var(--color-structure)] text-[11px] uppercase text-white">
             <tr>
@@ -618,12 +713,20 @@ function ReceivingLinesTable({
                   {detail.document.type === "transfer" ? (
                     <TransferTraceabilityFields detail={detail} line={line}
                       readOnly={readOnly} onUpdateLine={onUpdateLine} />
-                  ) : <TrackingFields
-                    capabilities={detail.capabilities}
-                    line={line}
-                    readOnly={readOnly}
-                    onUpdateLine={onUpdateLine}
-                  />}
+                  ) : detail.dataSource === "api" ? (
+                    <ApiTrackingDetailsEditor
+                      line={line}
+                      readOnly={readOnly}
+                      onUpdateLine={onUpdateLine}
+                    />
+                  ) : (
+                    <TrackingFields
+                      capabilities={detail.capabilities}
+                      line={line}
+                      readOnly={readOnly}
+                      onUpdateLine={onUpdateLine}
+                    />
+                  )}
                 </td>
               </tr>
             ))}
@@ -711,6 +814,154 @@ function TransferTraceabilityFields({
   );
 }
 
+function ApiTrackingDetailsEditor({
+  line,
+  readOnly,
+  onUpdateLine,
+}: {
+  line: ReceivingDocumentLine;
+  readOnly: boolean;
+  onUpdateLine: (lineId: string, patch: Partial<ReceivingDocumentLine>) => void;
+}) {
+  if (!line.tracking.lot && !line.tracking.serial) {
+    return <MutedText>No requerido</MutedText>;
+  }
+  const updateDetail = (detailId: string, patch: Partial<ReceivingTrackingDetail>) => {
+    onUpdateLine(line.id, {
+      trackingDetails: line.trackingDetails.map((detail) =>
+        detail.id === detailId ? { ...detail, ...patch } : detail,
+      ),
+    });
+  };
+  const addDetail = () => {
+    onUpdateLine(line.id, {
+      trackingDetails: [
+        ...line.trackingDetails,
+        {
+          id: crypto.randomUUID(),
+          baseQuantity: "",
+          lotNumber: "",
+          expirationDate: "",
+          serialNumbersText: "",
+        },
+      ],
+    });
+  };
+  const expectedBaseQuantity = Math.max(
+    0,
+    toFiniteNumber(line.receivedNow) * line.purchaseToBaseFactor,
+  );
+  const registeredBaseQuantity = line.trackingDetails.reduce(
+    (sum, detail) => sum + toFiniteNumber(detail.baseQuantity),
+    0,
+  );
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold text-[var(--color-text)]">
+        Base asignada: {formatNumber(registeredBaseQuantity)} / {formatNumber(expectedBaseQuantity)}{" "}
+        {line.baseUnitName}
+      </p>
+      {line.trackingDetails.map((detail, index) => {
+        const serialCount = detail.serialNumbersText
+          .split(/\r?\n|,/)
+          .map((serial) => serial.trim())
+          .filter(Boolean).length;
+        const operationDate = getLocalCalendarDate();
+        return (
+          <div
+            className="space-y-2 rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] p-2"
+            key={detail.id}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-bold text-[var(--color-title)]">Detalle {index + 1}</p>
+              {!readOnly ? (
+                <button
+                  aria-label={`Quitar detalle ${index + 1}`}
+                  className="rounded p-1 text-[var(--color-danger)] hover:bg-red-50"
+                  onClick={() =>
+                    onUpdateLine(line.id, {
+                      trackingDetails: line.trackingDetails.filter(
+                        (candidate) => candidate.id !== detail.id,
+                      ),
+                    })
+                  }
+                  type="button"
+                >
+                  <TrashIcon />
+                </button>
+              ) : null}
+            </div>
+            <Input
+              aria-label={`Cantidad base del detalle ${index + 1}`}
+              className="h-9 px-2 text-xs"
+              disabled={readOnly}
+              inputMode={line.baseUnitAllowsDecimals && !line.tracking.serial ? "decimal" : "numeric"}
+              maxLength={12}
+              onChange={(event) =>
+                updateDetail(detail.id, {
+                  baseQuantity: parseUnitQuantityInput(
+                    event.target.value,
+                    line.baseUnitAllowsDecimals && !line.tracking.serial,
+                  ),
+                })
+              }
+              placeholder={`Cantidad en ${line.baseUnitName}`}
+              type="text"
+              value={detail.baseQuantity}
+            />
+            {line.tracking.lot ? (
+              <Input
+                aria-label={`Lote del detalle ${index + 1}`}
+                className="h-9 px-2 text-xs"
+                disabled={readOnly}
+                maxLength={TEXT_LIMITS.lotNumber}
+                onChange={(event) => updateDetail(detail.id, { lotNumber: event.target.value })}
+                placeholder="Número de lote"
+                value={detail.lotNumber}
+              />
+            ) : null}
+            {line.tracking.expiration ? (
+              <Input
+                aria-label={`Vencimiento del detalle ${index + 1}`}
+                className="h-9 px-2 text-xs"
+                disabled={readOnly}
+                min={operationDate}
+                onChange={(event) =>
+                  updateDetail(detail.id, { expirationDate: event.target.value })
+                }
+                type="date"
+                value={detail.expirationDate}
+              />
+            ) : null}
+            {line.tracking.serial ? (
+              <div className="space-y-1">
+                <textarea
+                  aria-label={`Series del detalle ${index + 1}`}
+                  className="min-h-20 w-full resize-y rounded-md border border-[var(--color-border)] bg-white px-2 py-1.5 text-xs text-[var(--color-text)] outline-none transition focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={readOnly}
+                  maxLength={TEXT_LIMITS.serialNumbers}
+                  onChange={(event) =>
+                    updateDetail(detail.id, { serialNumbersText: event.target.value })
+                  }
+                  placeholder="Una serie por línea"
+                  value={detail.serialNumbersText}
+                />
+                <MutedText>{serialCount} series registradas</MutedText>
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+      {!readOnly ? (
+        <Button className="w-full justify-center px-2" onClick={addDetail} type="button" variant="ghost">
+          Agregar detalle
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 function TrackingFields({
   capabilities,
   line,
@@ -791,6 +1042,164 @@ function TrackingFields({
   }
   if (fields.length === 0) return <MutedText>No requerido</MutedText>;
   return <div className="space-y-2">{fields}</div>;
+}
+
+function ApiIncidentForm({
+  detail,
+  lines,
+  saving,
+  onCancel,
+  onSave,
+}: {
+  detail: NonNullable<ReturnType<typeof useReceivingDocumentDetail>["detail"]>;
+  lines: ReceivingDocumentLine[];
+  saving: boolean;
+  onCancel: () => void;
+  onSave: (input: {
+    incidentType: ReceiptIncidentTypeCode;
+    goodsReceiptItemId?: string;
+    quantityAffected?: number;
+    notes: string;
+  }) => Promise<void>;
+}) {
+  const [scope, setScope] = useState<"document" | "line">("document");
+  const lineOptions = lines.filter((line) => line.goodsReceiptItemId);
+  const [goodsReceiptItemId, setGoodsReceiptItemId] = useState(
+    lineOptions[0]?.goodsReceiptItemId ?? "",
+  );
+  const [incidentType, setIncidentType] = useState(detail.incidentTypes[0]?.id ?? "");
+  const [quantity, setQuantity] = useState<NumericInputValue>(1);
+  const [notes, setNotes] = useState("");
+  const selectedLine = lineOptions.find(
+    (line) => line.goodsReceiptItemId === goodsReceiptItemId,
+  );
+  const numericQuantity = toFiniteNumber(quantity);
+  const lineScopeInvalid =
+    scope === "line" &&
+    (!goodsReceiptItemId ||
+      numericQuantity <= 0 ||
+      numericQuantity > toFiniteNumber(selectedLine?.receivedNow ?? 0) ||
+      !isQuantityCompatibleWithUnit(quantity, selectedLine?.unitAllowsDecimals ?? false));
+  const invalid =
+    !isReceiptIncidentTypeCode(incidentType) ||
+    !notes.trim() ||
+    notes.length > RECEIPT_INCIDENT_NOTES_MAX_LENGTH ||
+    lineScopeInvalid;
+
+  async function handleSave() {
+    if (invalid || !isReceiptIncidentTypeCode(incidentType)) return;
+    await onSave({
+      incidentType,
+      ...(scope === "line" && goodsReceiptItemId
+        ? {
+            goodsReceiptItemId,
+            quantityAffected: numericQuantity,
+          }
+        : {}),
+      notes,
+    });
+  }
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-white shadow-sm">
+      <div className="flex items-center justify-between gap-3 bg-[var(--color-structure)] px-4 py-3 text-white">
+        <div>
+          <h2 className="text-sm font-bold">Registrar incidencia</h2>
+          <p className="text-xs font-semibold opacity-80">{detail.document.number}</p>
+        </div>
+        <button
+          aria-label="Volver al resumen"
+          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-bold hover:bg-white/10"
+          onClick={onCancel}
+          type="button"
+        >
+          <ArrowLeftIcon />
+          Resumen
+        </button>
+      </div>
+      <div className="space-y-3 p-4">
+        <Field label="Alcance">
+          <Select
+            disabled={saving}
+            onChange={(event) => setScope(event.target.value === "line" ? "line" : "document")}
+            value={scope}
+          >
+            <option value="document">Documento completo</option>
+            <option disabled={lineOptions.length === 0} value="line">Línea recibida</option>
+          </Select>
+        </Field>
+        {scope === "line" ? (
+          <>
+            <Field label="Producto recibido">
+              <Select
+                disabled={saving}
+                onChange={(event) => setGoodsReceiptItemId(event.target.value)}
+                value={goodsReceiptItemId}
+              >
+                {lineOptions.map((line) => (
+                  <option key={line.goodsReceiptItemId} value={line.goodsReceiptItemId}>
+                    {line.productName} ({line.sku})
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Cantidad afectada">
+              <Input
+                disabled={saving}
+                inputMode={selectedLine?.unitAllowsDecimals ? "decimal" : "numeric"}
+                maxLength={12}
+                onChange={(event) =>
+                  setQuantity(
+                    parseUnitQuantityInput(
+                      event.target.value,
+                      selectedLine?.unitAllowsDecimals ?? false,
+                    ),
+                  )
+                }
+                type="text"
+                value={quantity}
+              />
+              <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
+                Máximo recibido: {formatNumber(toFiniteNumber(selectedLine?.receivedNow ?? 0))}
+              </p>
+            </Field>
+          </>
+        ) : null}
+        <Field label="Tipo de incidencia">
+          <Select
+            disabled={saving}
+            onChange={(event) => setIncidentType(event.target.value)}
+            value={incidentType}
+          >
+            {detail.incidentTypes.map((type) => (
+              <option key={type.id} value={type.id}>{type.name}</option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Observación">
+          <textarea
+            className="min-h-28 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={saving}
+            maxLength={RECEIPT_INCIDENT_NOTES_MAX_LENGTH}
+            onChange={(event) => setNotes(event.target.value)}
+            value={notes}
+          />
+          <p className="text-right text-xs text-[var(--color-text-muted)]">
+            {notes.length} / {RECEIPT_INCIDENT_NOTES_MAX_LENGTH}
+          </p>
+        </Field>
+        <div className="grid grid-cols-2 gap-2 border-t border-[var(--color-border)] pt-3">
+          <Button disabled={saving} onClick={onCancel} type="button" variant="ghost">
+            Cancelar
+          </Button>
+          <Button disabled={saving || invalid} onClick={() => void handleSave()} type="button">
+            <SaveIcon />
+            Guardar incidencia
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function IncidentForm({
@@ -1104,12 +1513,26 @@ function IncidentsSection({
                 </div>
                 <span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-[var(--color-text-muted)]">
                   {incident.editable ? <PencilIcon /> : null}
+                  {incident.status ? (
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 font-bold",
+                        incident.status === "open"
+                          ? "bg-amber-100 text-amber-800"
+                          : "bg-emerald-100 text-emerald-800",
+                      )}
+                    >
+                      {incident.status === "open" ? "Abierta" : "Resuelta"}
+                    </span>
+                  ) : null}
                   {formatDate(incident.createdAt)}
                 </span>
               </div>
               <p className="mt-2 text-sm text-[var(--color-text)]">{incident.description}</p>
               <p className="mt-2 text-xs font-bold uppercase text-[var(--color-text-muted)]">
-                {formatNumber(incident.quantityAffected ?? 0)} afectadas -{" "}
+                {incident.quantityAffected === undefined
+                  ? "Incidencia general"
+                  : `${formatNumber(incident.quantityAffected)} afectadas`} -{" "}
                 {incident.evidence.length}{" "}
                 {incident.evidence.length === 1 ? "evidencia" : "evidencias"}
               </p>
@@ -1354,12 +1777,16 @@ function HistoricalIncidentModal({
   incident,
   documentNumber,
   originName,
+  resolving,
+  onResolve,
   onClose,
   onPreview,
 }: {
   incident?: ReceivingDocumentIncident;
   documentNumber: string;
   originName: string;
+  resolving: boolean;
+  onResolve?: () => void;
   onClose: () => void;
   onPreview: (evidence: ReceiptIncidentEvidence) => void;
 }) {
@@ -1367,7 +1794,7 @@ function HistoricalIncidentModal({
     <Modal
       open={Boolean(incident)}
       title="Detalle de incidencia"
-      subtitle="Registro historico - solo lectura"
+      subtitle={incident?.status ? `Estado: ${incident.status === "open" ? "Abierta" : "Resuelta"}` : "Registro historico - solo lectura"}
       onClose={onClose}
       size="lg"
     >
@@ -1379,8 +1806,18 @@ function HistoricalIncidentModal({
             <DetailItem label="Tipo" value={incident.incidentTypeName} />
             <DetailItem
               label="Cantidad afectada"
-              value={formatNumber(incident.quantityAffected ?? 0)}
+              value={
+                incident.quantityAffected === undefined
+                  ? "Incidencia general"
+                  : formatNumber(incident.quantityAffected)
+              }
             />
+            {incident.status ? (
+              <DetailItem
+                label="Estado"
+                value={incident.status === "open" ? "Abierta" : "Resuelta"}
+              />
+            ) : null}
             <DetailItem label="Fecha" value={formatDateTime(incident.createdAt)} />
             <DetailItem label="Responsable" value={incident.createdByName} />
             <DetailItem label="Recepcion relacionada" value={incident.receiptNumber} />
@@ -1396,6 +1833,14 @@ function HistoricalIncidentModal({
             </p>
           </div>
           <EvidenceGallery evidence={incident.evidence} onPreview={onPreview} />
+          {onResolve ? (
+            <div className="flex justify-end border-t border-[var(--color-border)] pt-3">
+              <Button disabled={resolving} onClick={onResolve} type="button">
+                <CheckIcon />
+                Marcar como resuelta
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </Modal>

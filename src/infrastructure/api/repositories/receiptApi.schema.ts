@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { RECEIPT_INCIDENT_TYPES } from "@/core/entities";
+import { RECEIPT_INCIDENT_NOTES_MAX_LENGTH } from "@/core/repositories";
 import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import { isApiUuid } from "@/infrastructure/api/uuid";
 
@@ -82,9 +84,53 @@ const updateGoodsReceiptRequestSchema = z.object({
   items: z.array(draftItemSchema).min(1),
 });
 
+const receiptIncidentSchema = z.object({
+  id: apiUuidSchema,
+  branchId: apiUuidSchema,
+  goodsReceiptId: apiUuidSchema,
+  goodsReceiptItemId: apiUuidSchema.nullable(),
+  incidentType: z.enum(RECEIPT_INCIDENT_TYPES),
+  status: z.enum(["open", "resolved"]),
+  quantityAffected: finiteNumberSchema.positive().nullable(),
+  notes: z.string(),
+  createdByUserId: apiUuidSchema,
+  resolvedByUserId: apiUuidSchema.nullable(),
+  resolvedAt: instantSchema.nullable(),
+  createdAt: instantSchema,
+  updatedAt: instantSchema,
+});
+
+const receiptIncidentPageSchema = z.object({
+  items: z.array(receiptIncidentSchema),
+  page: z.number().int().positive(),
+  pageSize: z.number().int().positive(),
+  totalItems: z.number().int().nonnegative(),
+  totalPages: z.number().int().nonnegative(),
+});
+
+const createReceiptIncidentRequestSchema = z
+  .object({
+    incidentType: z.enum(RECEIPT_INCIDENT_TYPES),
+    goodsReceiptItemId: apiUuidSchema.nullable(),
+    quantityAffected: z.number().finite().positive().nullable(),
+    notes: z.string().trim().min(1).max(RECEIPT_INCIDENT_NOTES_MAX_LENGTH),
+  })
+  .superRefine((value, context) => {
+    if ((value.goodsReceiptItemId === null) !== (value.quantityAffected === null)) {
+      context.addIssue({
+        code: "custom",
+        message: "La línea y la cantidad afectada deben enviarse juntas.",
+      });
+    }
+  });
+
 export type ApiGoodsReceipt = z.infer<typeof goodsReceiptSchema>;
 export type ApiGoodsReceiptCreateRequest = z.infer<typeof createGoodsReceiptRequestSchema>;
 export type ApiGoodsReceiptUpdateRequest = z.infer<typeof updateGoodsReceiptRequestSchema>;
+export type ApiReceiptIncident = z.infer<typeof receiptIncidentSchema>;
+export type ApiReceiptIncidentCreateRequest = z.infer<
+  typeof createReceiptIncidentRequestSchema
+>;
 
 export function parseApiGoodsReceipt(value: unknown): ApiGoodsReceipt {
   const parsed = goodsReceiptSchema.safeParse(value);
@@ -107,6 +153,32 @@ export function parseGoodsReceiptCreateRequest(value: unknown): ApiGoodsReceiptC
 export function parseGoodsReceiptUpdateRequest(value: unknown): ApiGoodsReceiptUpdateRequest {
   const parsed = updateGoodsReceiptRequestSchema.safeParse(value);
   if (!parsed.success) throw invalidRequest();
+  return parsed.data;
+}
+
+export function parseApiReceiptIncident(value: unknown): ApiReceiptIncident {
+  const parsed = receiptIncidentSchema.safeParse(value);
+  if (!parsed.success) throw invalidResponse("incidencia de recepción");
+  return parsed.data;
+}
+
+export function parseApiReceiptIncidentPage(value: unknown) {
+  const parsed = receiptIncidentPageSchema.safeParse(value);
+  if (!parsed.success) throw invalidResponse("página de incidencias de recepción");
+  return parsed.data;
+}
+
+export function parseReceiptIncidentCreateRequest(
+  value: unknown,
+): ApiReceiptIncidentCreateRequest {
+  const parsed = createReceiptIncidentRequestSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new BackendRequestError(
+      "Los datos de la incidencia no son válidos.",
+      400,
+      "INVALID_REQUEST",
+    );
+  }
   return parsed.data;
 }
 

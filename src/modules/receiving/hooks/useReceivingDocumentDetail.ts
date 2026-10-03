@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReceiptIncidentEvidence } from "@/core/entities";
+import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import type {
+  CreateReceivingIncidentInput,
   ReceivingDocumentDetail,
   ReceivingDocumentIncident,
   ReceivingDocumentDetailType,
@@ -27,9 +29,24 @@ export function useReceivingDocumentDetail(
   const [incidents, setIncidents] = useState<ReceivingDocumentIncident[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [incidentSaving, setIncidentSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmationId, setConfirmationId] = useState(() => crypto.randomUUID());
   const requestIdRef = useRef(0);
+  const activeBranchIdRef = useRef(activeBranchId);
+  const dirtyRef = useRef(false);
+  const mutationPendingRef = useRef(false);
+  const incidentMutationPendingRef = useRef(false);
+
+  useEffect(() => {
+    activeBranchIdRef.current = activeBranchId;
+  }, [activeBranchId]);
+
+  const updateDirty = useCallback((value: boolean) => {
+    dirtyRef.current = value;
+    setDirty(value);
+  }, []);
 
   const reload = useCallback(async () => {
     const requestId = ++requestIdRef.current;
@@ -49,6 +66,7 @@ export function useReceivingDocumentDetail(
       setDetail(nextDetail);
       setLines(nextDetail.lines);
       setIncidents(nextDetail.incidents);
+      updateDirty(false);
     } catch (caughtError) {
       if (requestId !== requestIdRef.current) return;
       setError(caughtError instanceof Error ? caughtError.message : "No se pudo cargar.");
@@ -57,7 +75,7 @@ export function useReceivingDocumentDetail(
         setLoading(false);
       }
     }
-  }, [activeBranchId, documentId, documentType, service]);
+  }, [activeBranchId, documentId, documentType, service, updateDirty]);
 
   useEffect(() => {
     let active = true;
@@ -69,20 +87,26 @@ export function useReceivingDocumentDetail(
     };
   }, [reload]);
 
-  useDataEvent("receipt.changed", reload);
-  useDataEvent("purchase-order.changed", reload);
-  useDataEvent("inventory.changed", reload);
-  useDataEvent("stock.changed", reload);
-  useDataEvent("incident-type.changed", reload);
-  useDataEvent("unit-conversion.changed", reload);
-  useDataEvent("supplier-product.changed", reload);
-  useDataEvent("business-config.changed", reload);
+  const reloadFromEvent = useCallback(async () => {
+    if (dirtyRef.current || mutationPendingRef.current || incidentMutationPendingRef.current) return;
+    await reload();
+  }, [reload]);
+
+  useDataEvent("receipt.changed", reloadFromEvent);
+  useDataEvent("purchase-order.changed", reloadFromEvent);
+  useDataEvent("inventory.changed", reloadFromEvent);
+  useDataEvent("stock.changed", reloadFromEvent);
+  useDataEvent("incident-type.changed", reloadFromEvent);
+  useDataEvent("unit-conversion.changed", reloadFromEvent);
+  useDataEvent("supplier-product.changed", reloadFromEvent);
+  useDataEvent("business-config.changed", reloadFromEvent);
 
   const updateLine = useCallback((lineId: string, patch: Partial<ReceivingDocumentLine>) => {
+    updateDirty(true);
     setLines((current) =>
       current.map((line) => (line.id === lineId ? recalculateLine({ ...line, ...patch }) : line)),
     );
-  }, []);
+  }, [updateDirty]);
 
   const updateLineQuantity = useCallback(
     (lineId: string, value: NumericInputValue) => {
@@ -92,6 +116,9 @@ export function useReceivingDocumentDetail(
   );
 
   const saveProgress = useCallback(async () => {
+    if (mutationPendingRef.current || incidentMutationPendingRef.current) return;
+    const mutationBranchId = activeBranchIdRef.current;
+    mutationPendingRef.current = true;
     setSaving(true);
     try {
       await service.saveProgress({
@@ -100,13 +127,18 @@ export function useReceivingDocumentDetail(
         lines,
         incidents,
       });
+      if (activeBranchIdRef.current !== mutationBranchId) return;
       await reload();
     } finally {
+      mutationPendingRef.current = false;
       setSaving(false);
     }
   }, [documentId, documentType, incidents, lines, reload, service]);
 
   const confirm = useCallback(async () => {
+    if (mutationPendingRef.current || incidentMutationPendingRef.current) return;
+    const mutationBranchId = activeBranchIdRef.current;
+    mutationPendingRef.current = true;
     setSaving(true);
     try {
       await service.confirm({
@@ -115,10 +147,22 @@ export function useReceivingDocumentDetail(
         lines,
         incidents,
         confirmationId,
+        hasUnsavedChanges: dirtyRef.current,
       });
+      if (activeBranchIdRef.current !== mutationBranchId) return;
       await reload();
       setConfirmationId(crypto.randomUUID());
+    } catch (caughtError) {
+      if (
+        caughtError instanceof BackendRequestError &&
+        caughtError.code === "RECEIPT_HAS_OPEN_INCIDENTS" &&
+        activeBranchIdRef.current === mutationBranchId
+      ) {
+        await reload();
+      }
+      throw caughtError;
     } finally {
+      mutationPendingRef.current = false;
       setSaving(false);
     }
   }, [confirmationId, documentId, documentType, incidents, lines, reload, service]);
@@ -173,8 +217,9 @@ export function useReceivingDocumentDetail(
         : [...incidents, nextIncident];
       setIncidents(nextIncidents);
       setLines((current) => current.map((item) => recalculateLine(item)));
+      updateDirty(true);
     },
-    [detail, incidents, lines],
+    [detail, incidents, lines, updateDirty],
   );
 
   const removeIncident = useCallback(
@@ -184,9 +229,62 @@ export function useReceivingDocumentDetail(
       );
       setIncidents(nextIncidents);
       setLines((current) => current.map((item) => recalculateLine(item)));
+      updateDirty(true);
     },
-    [incidents],
+    [incidents, updateDirty],
   );
+
+  const createApiIncident = useCallback(
+    async (input: Omit<CreateReceivingIncidentInput, "documentId" | "receiptId">) => {
+      if (!detail?.document.receiptId) {
+        throw new Error("Guarda el borrador antes de registrar una incidencia.");
+      }
+      if (dirtyRef.current) {
+        throw new Error("Guarda los cambios del borrador antes de registrar la incidencia.");
+      }
+      if (incidentMutationPendingRef.current || mutationPendingRef.current) return;
+      const mutationBranchId = activeBranchIdRef.current;
+      incidentMutationPendingRef.current = true;
+      setIncidentSaving(true);
+      try {
+        await service.createIncident({
+          documentId,
+          receiptId: detail.document.receiptId,
+          ...input,
+        });
+        if (activeBranchIdRef.current !== mutationBranchId) return;
+        await reload();
+      } finally {
+        incidentMutationPendingRef.current = false;
+        setIncidentSaving(false);
+      }
+    },
+    [detail?.document.receiptId, documentId, reload, service],
+  );
+
+  const resolveApiIncident = useCallback(
+    async (incidentId: string) => {
+      if (!detail?.document.receiptId) {
+        throw new Error("No se encontró el borrador asociado a la incidencia.");
+      }
+      if (incidentMutationPendingRef.current || mutationPendingRef.current) return;
+      const mutationBranchId = activeBranchIdRef.current;
+      incidentMutationPendingRef.current = true;
+      setIncidentSaving(true);
+      try {
+        await service.resolveIncident(documentId, detail.document.receiptId, incidentId);
+        if (activeBranchIdRef.current !== mutationBranchId) return;
+        await reload();
+      } finally {
+        incidentMutationPendingRef.current = false;
+        setIncidentSaving(false);
+      }
+    },
+    [detail?.document.receiptId, documentId, reload, service],
+  );
+
+  const apiMode = repositories.receivingDataSource === "api";
+  const apiPurchaseOrder = apiMode && documentType === "purchase_order";
 
   return {
     detail,
@@ -195,9 +293,14 @@ export function useReceivingDocumentDetail(
     currentBranch,
     loading: branchLoading || loading,
     saving,
+    incidentSaving,
+    dirty,
     error,
-    confirmAvailable: repositories.receivingDataSource !== "api",
-    incidentsAvailable: repositories.receivingDataSource !== "api",
+    apiMode,
+    confirmAvailable: !apiMode || Boolean(apiPurchaseOrder && detail?.canConfirm),
+    incidentsAvailable:
+      !apiMode ||
+      Boolean(apiPurchaseOrder && detail?.canManageIncidents && detail.document.receiptId),
     reload,
     updateLine,
     updateLineQuantity,
@@ -205,6 +308,8 @@ export function useReceivingDocumentDetail(
     confirm,
     saveIncident,
     removeIncident,
+    createApiIncident,
+    resolveApiIncident,
   };
 }
 
