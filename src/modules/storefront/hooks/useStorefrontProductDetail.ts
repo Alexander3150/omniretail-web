@@ -68,6 +68,7 @@ export function useStorefrontProductDetail(productId: string) {
               categoryName: apiProduct.categoryName,
               media: [],
               attributes: [],
+              availableQuantity: apiProduct.availableQuantity,
             }
           : await service.execute(tenantSlug, tenantId, productId);
         if (!active) return;

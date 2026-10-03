@@ -55,8 +55,12 @@ export function ProductDetailPage({ productId }: { productId: string }) {
       </main>
     );
   const { product, availability, categoryName, media, attributes } = data;
-  const availableQuantity = products.find((item) => item.id === product.id)?.availableQuantity;
   const discoveryProduct = products.find((item) => item.id === product.id);
+  // El stock del propio detalle manda; asi no depende de que el catalogo haya terminado de cargar.
+  const availableQuantity =
+    data.availableQuantity !== undefined
+      ? data.availableQuantity
+      : discoveryProduct?.availableQuantity;
   const promotion = offers.find((item) => item.productId === product.id)?.promotion;
   const price = calculateEffectivePrice(
     resolveQuantityPrice({
@@ -95,7 +99,10 @@ export function ProductDetailPage({ productId }: { productId: string }) {
       notifyUnavailableQuantity();
       return;
     }
-    await Promise.all(Array.from({ length: quantity }, () => addProduct(product.id)));
+    if (!(await addProduct(product.id, quantity))) {
+      notifyUnavailableQuantity();
+      return;
+    }
     setAddedQuantity(quantity);
     showToast({
       title: "Producto agregado al carrito",

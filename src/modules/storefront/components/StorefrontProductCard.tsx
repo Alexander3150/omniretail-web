@@ -33,7 +33,10 @@ export function StorefrontProductCard({
       setUnavailableQuantityModalOpen(true);
       return;
     }
-    await addProduct(product.id);
+    if (!(await addProduct(product.id))) {
+      setUnavailableQuantityModalOpen(true);
+      return;
+    }
     setAdded(true);
     showToast({
       title: "Producto agregado al carrito",
