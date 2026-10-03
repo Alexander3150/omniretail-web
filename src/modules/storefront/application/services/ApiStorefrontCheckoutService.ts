@@ -3,6 +3,7 @@ import type {
   StorefrontCheckoutResultDto,
 } from "@/modules/storefront/application/dto/StorefrontCheckoutDto";
 import type { StorefrontCartItemDto } from "@/modules/storefront/application/dto/StorefrontCartDto";
+import { BackendRequestError } from "@/infrastructure/api/backendClient";
 
 interface BackendCheckoutResponse extends Omit<StorefrontCheckoutResultDto, "items"> {
   items: Array<Omit<StorefrontCheckoutResultDto["items"][number], "imageUrl" | "imageAlt">>;
@@ -23,9 +24,18 @@ export class ApiStorefrontCheckoutService {
       },
       body: JSON.stringify({ ...input.form, items: input.items.map(({ productId, quantity }) => ({ productId, quantity })) }),
     });
-    const payload = (await response.json().catch(() => null)) as BackendCheckoutResponse | { message?: string } | null;
+    const payload = (await response.json().catch(() => null)) as
+      | BackendCheckoutResponse
+      | { message?: string; code?: string }
+      | null;
     if (!response.ok) {
-      throw new Error(payload && "message" in payload ? payload.message : "No se pudo procesar el pedido.");
+      // Se conserva status/code del ApiError (p. ej. 409 INSUFFICIENT_STOCK) para que la UI decida el mensaje.
+      const apiError = payload && "message" in payload ? payload : null;
+      throw new BackendRequestError(
+        apiError?.message || "No se pudo procesar el pedido.",
+        response.status,
+        typeof apiError?.code === "string" ? apiError.code : undefined,
+      );
     }
     const checkout = payload as BackendCheckoutResponse;
     return {

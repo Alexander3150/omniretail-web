@@ -74,10 +74,15 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
         : await publishedProductService.execute(tenantId, productId);
       if (!product) return;
       if (isApiMode()) {
+        // Ultima defensa: la UI ya bloquea con el catalogo, pero este dato es el mas reciente.
+        const availableQuantity = apiProduct?.availableQuantity ?? null;
         setAllItems((current) => {
           const existing = current.find(
             (item) => item.tenantId === tenantId && item.productId === product.id,
           );
+          if (availableQuantity !== null && (existing?.quantity ?? 0) + 1 > availableQuantity) {
+            return current;
+          }
           if (existing) {
             return current.map((item) =>
               item === existing ? withQuantityPrice(item, item.quantity + 1) : item,
