@@ -1,7 +1,9 @@
 import type { Receipt } from "@/core/entities";
 import { ReceiptLineStatus, ReceiptStatus } from "@/core/enums";
 import type {
+  CreateReceiptIncidentScopedInput,
   ReceiptDraftInput,
+  ReceiptIncidentRecord,
   ReceiptPageParams,
   ReceiptRecord,
   ReceiptRepository,
@@ -12,8 +14,12 @@ import { assertApiUuid, assertOptionalApiUuid } from "@/infrastructure/api/uuid"
 import {
   parseApiGoodsReceipt,
   parseApiGoodsReceiptPage,
+  parseApiReceiptIncident,
+  parseApiReceiptIncidentPage,
   parseGoodsReceiptCreateRequest,
   parseGoodsReceiptUpdateRequest,
+  parseReceiptIncidentCreateRequest,
+  type ApiReceiptIncident,
   type ApiGoodsReceipt,
 } from "@/infrastructure/api/repositories/receiptApi.schema";
 
@@ -42,6 +48,10 @@ export class ApiReceiptRepository {
     const createDraftScoped = this.createDraftScoped.bind(this);
     const updateDraftScoped = this.updateDraftScoped.bind(this);
     const deleteDraftScoped = this.deleteDraftScoped.bind(this);
+    const confirmDraftScoped = this.confirmDraftScoped.bind(this);
+    const listIncidentsScoped = this.listIncidentsScoped.bind(this);
+    const createIncidentScoped = this.createIncidentScoped.bind(this);
+    const resolveIncidentScoped = this.resolveIncidentScoped.bind(this);
     return new Proxy(delegate, {
       get: (target, property) => {
         if (property === "getPageScoped") return getPageScoped;
@@ -49,6 +59,10 @@ export class ApiReceiptRepository {
         if (property === "createDraftScoped") return createDraftScoped;
         if (property === "updateDraftScoped") return updateDraftScoped;
         if (property === "deleteDraftScoped") return deleteDraftScoped;
+        if (property === "confirmDraftScoped") return confirmDraftScoped;
+        if (property === "listIncidentsScoped") return listIncidentsScoped;
+        if (property === "createIncidentScoped") return createIncidentScoped;
+        if (property === "resolveIncidentScoped") return resolveIncidentScoped;
         if (UNSUPPORTED_LEGACY_OPERATIONS.has(property)) return unsupportedOperation;
         const value = Reflect.get(target, property, target);
         return typeof value === "function" ? value.bind(target) : value;
@@ -130,6 +144,102 @@ export class ApiReceiptRepository {
     this.eventBus.emit("receipt.changed", { entityId: id, tenantId, action: "deleted" });
   }
 
+  async confirmDraftScoped(tenantId: string, id: string) {
+    assertApiUuid(id, "receiptId");
+    const record = mapApiReceipt(
+      parseApiGoodsReceipt(
+        await backendFetch<unknown>(`/purchasing/receipts/${id}/confirm`, {
+          method: "POST",
+        }),
+      ),
+      tenantId,
+    );
+    this.eventBus.emit("receipt.changed", {
+      entityId: record.receipt.id,
+      tenantId,
+      branchId: record.receipt.branchId,
+      action: "status_changed",
+    });
+    this.eventBus.emit("purchase-order.changed", {
+      entityId: record.receipt.purchaseOrderId,
+      tenantId,
+      branchId: record.receipt.branchId,
+      action: "status_changed",
+    });
+    const inventoryPayload = {
+      entityId: record.receipt.id,
+      tenantId,
+      branchId: record.receipt.branchId,
+      action: "updated" as const,
+    };
+    this.eventBus.emit("inventory.changed", inventoryPayload);
+    this.eventBus.emit("stock.changed", inventoryPayload);
+    return record;
+  }
+
+  async listIncidentsScoped(
+    _tenantId: string,
+    receiptId: string,
+    params: { page: number; pageSize: number },
+  ) {
+    assertApiUuid(receiptId, "receiptId");
+    assertPage(params.page, params.pageSize);
+    const page = parseApiReceiptIncidentPage(
+      await backendFetch<unknown>(`/purchasing/receipts/${receiptId}/incidents`, {
+        query: { page: params.page, size: params.pageSize },
+      }),
+    );
+    return {
+      ...page,
+      items: page.items.map(mapApiReceiptIncident),
+    };
+  }
+
+  async createIncidentScoped(input: CreateReceiptIncidentScopedInput) {
+    assertApiUuid(input.receiptId, "receiptId");
+    const body = parseReceiptIncidentCreateRequest({
+      incidentType: input.incidentType,
+      goodsReceiptItemId: input.goodsReceiptItemId ?? null,
+      quantityAffected: input.quantityAffected ?? null,
+      notes: input.notes,
+    });
+    const incident = mapApiReceiptIncident(
+      parseApiReceiptIncident(
+        await backendFetch<unknown>(`/purchasing/receipts/${input.receiptId}/incidents`, {
+          method: "POST",
+          body,
+        }),
+      ),
+    );
+    this.eventBus.emit("receipt.changed", {
+      entityId: input.receiptId,
+      tenantId: input.tenantId,
+      branchId: incident.branchId,
+      incidentId: incident.id,
+      action: "updated",
+    });
+    return incident;
+  }
+
+  async resolveIncidentScoped(tenantId: string, incidentId: string) {
+    assertApiUuid(incidentId, "incidentId");
+    const incident = mapApiReceiptIncident(
+      parseApiReceiptIncident(
+        await backendFetch<unknown>(`/purchasing/receipts/incidents/${incidentId}/resolve`, {
+          method: "PATCH",
+        }),
+      ),
+    );
+    this.eventBus.emit("receipt.changed", {
+      entityId: incident.goodsReceiptId,
+      tenantId,
+      branchId: incident.branchId,
+      incidentId: incident.id,
+      action: "updated",
+    });
+    return incident;
+  }
+
   private emit(receipt: Receipt, action: "created" | "updated") {
     this.eventBus.emit("receipt.changed", {
       entityId: receipt.id,
@@ -138,6 +248,24 @@ export class ApiReceiptRepository {
       action,
     });
   }
+}
+
+export function mapApiReceiptIncident(api: ApiReceiptIncident): ReceiptIncidentRecord {
+  return {
+    id: api.id,
+    branchId: api.branchId,
+    goodsReceiptId: api.goodsReceiptId,
+    ...(api.goodsReceiptItemId ? { goodsReceiptItemId: api.goodsReceiptItemId } : {}),
+    incidentType: api.incidentType,
+    status: api.status,
+    ...(api.quantityAffected !== null ? { quantityAffected: api.quantityAffected } : {}),
+    notes: api.notes,
+    createdByUserId: api.createdByUserId,
+    ...(api.resolvedByUserId ? { resolvedByUserId: api.resolvedByUserId } : {}),
+    ...(api.resolvedAt ? { resolvedAt: api.resolvedAt } : {}),
+    createdAt: api.createdAt,
+    updatedAt: api.updatedAt,
+  };
 }
 
 export function mapApiReceipt(api: ApiGoodsReceipt, tenantId: string): ReceiptRecord {

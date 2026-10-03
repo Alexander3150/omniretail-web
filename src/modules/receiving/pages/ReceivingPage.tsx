@@ -98,7 +98,7 @@ export function ReceivingPage() {
   }
 
   return (
-    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
+    <div className="min-w-0 space-y-5">
       <div>
         <p className="mb-1 text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
           Recepciones
@@ -119,7 +119,11 @@ export function ReceivingPage() {
         />
       </div>
 
-      {error ? <InlineAlert title={error} tone="danger" /> : null}
+      {error ? (
+        <p className="rounded-md border border-[var(--color-danger)] bg-white px-4 py-3 text-sm font-medium text-[var(--color-danger)]">
+          {error}
+        </p>
+      ) : null}
       {incrementalError ? <InlineAlert title={incrementalError} tone="danger" /> : null}
       {receiptHistoryIncomplete ? (
         <InlineAlert
@@ -204,12 +208,20 @@ export function ReceivingPage() {
           )}
         </section>
       ) : (
-        <IncidentsPanel
-          incidents={data.incidents}
-          loading={loading}
-          selectedIncidentId={selectedIncidentId}
-          onSelect={setSelectedIncidentId}
-        />
+        <div className="space-y-3">
+          {data.incidentListIncomplete ? (
+            <InlineAlert
+              title="Algunas recepciones tienen más incidencias que la primera página cargada. Abre la recepción correspondiente para consultar su estado canónico antes de confirmar."
+              tone="warning"
+            />
+          ) : null}
+          <IncidentsPanel
+            incidents={data.incidents}
+            loading={loading}
+            selectedIncidentId={selectedIncidentId}
+            onSelect={setSelectedIncidentId}
+          />
+        </div>
       )}
 
       <SelectedDocumentModal
@@ -535,7 +547,21 @@ function IncidentsPanel({
                 </p>
               </div>
               <div className="min-w-0">
-                <p className="font-bold text-amber-800">{incident.typeName}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-bold text-amber-800">{incident.typeName}</p>
+                  {incident.status ? (
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-xs font-bold",
+                        incident.status === "open"
+                          ? "bg-amber-100 text-amber-800"
+                          : "bg-emerald-100 text-emerald-800",
+                      )}
+                    >
+                      {incident.status === "open" ? "Abierta" : "Resuelta"}
+                    </span>
+                  ) : null}
+                </div>
                 <p
                   className="mt-1 line-clamp-2 break-words text-sm text-[var(--color-text)]"
                   title={incident.observation}

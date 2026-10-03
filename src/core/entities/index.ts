@@ -47,7 +47,7 @@ export type * from "./PurchaseOrder";
 export type * from "./PurchaseOrderItem";
 export type * from "./Receipt";
 export type * from "./ReceiptLine";
-export type * from "./ReceiptIncident";
+export * from "./ReceiptIncident";
 export type * from "./IncidentType";
 export type * from "./Customer";
 export type * from "./Address";

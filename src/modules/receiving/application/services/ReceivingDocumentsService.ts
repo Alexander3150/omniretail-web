@@ -7,7 +7,11 @@ import type {
   ReceiptLine,
 } from "@/core/entities";
 import { InventoryTransferStatus, PurchaseOrderStatus, ReceiptStatus } from "@/core/enums";
-import type { InventoryTransferWithItems } from "@/core/repositories";
+import type {
+  InventoryTransferWithItems,
+  ReceiptIncidentRecord,
+  ReceiptRecord,
+} from "@/core/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   IncidentTypeReadModel,
@@ -17,6 +21,8 @@ import type {
   ReceivingReadModel,
   ReceivingStatus,
 } from "@/modules/receiving/application/dto/ReceivingDocumentsDto";
+import { RECEIPT_INCIDENT_TYPE_LABELS } from "@/modules/receiving/application/dto/ReceivingDocumentDetailDto";
+import type { IncidentListItemViewModel } from "@/modules/receiving/application/dto/IncidentListItemViewModel";
 import { buildIncidentListItems } from "@/modules/receiving/application/services/buildIncidentListItems";
 import {
   ensureCanManageIncidentTypes,
@@ -222,8 +228,9 @@ export class ReceivingDocumentsService {
     };
     return {
       documents: batch.documents,
-      incidents: [],
+      incidents: batch.incidents,
       incidentTypes: [],
+      incidentListIncomplete: batch.incidentListIncomplete,
       pagination: {
         branchId: activeBranchId,
         streams,
@@ -237,7 +244,7 @@ export class ReceivingDocumentsService {
   private ensureApiIncidentOperationsAreUnavailable() {
     if (this.repositories.receivingDataSource !== "api") return;
     throw new ReceivingServiceError(
-      "Las incidencias por API se habilitaran en un bloque posterior.",
+      "Los tipos dinámicos de incidencia no están disponibles en modo API.",
     );
   }
 
@@ -275,8 +282,9 @@ export class ReceivingDocumentsService {
         (left, right) =>
           new Date(right.lastUpdatedAt).getTime() - new Date(left.lastUpdatedAt).getTime(),
       ),
-      incidents: [],
+      incidents: batch.incidents,
       incidentTypes: [],
+      incidentListIncomplete: batch.incidentListIncomplete,
       pagination: {
         branchId: activeBranchId,
         streams,
@@ -313,6 +321,20 @@ export class ReceivingDocumentsService {
         return { order, drafts, confirmed };
       }),
     );
+    const receiptContexts = records.flatMap(({ order, drafts, confirmed }) =>
+      [...drafts.items, ...confirmed.items].map((record) => ({ order, record })),
+    );
+    const incidentPages = await Promise.all(
+      receiptContexts.map(async ({ order, record }) => ({
+        order,
+        record,
+        page: await this.repositories.receipts.listIncidentsScoped(
+          tenantId,
+          record.receipt.id,
+          { page: 1, pageSize: RECEIPT_HISTORY_PAGE_SIZE },
+        ),
+      })),
+    );
     const productById = new Map<string, { name: string; sku: string }>();
     uniqueOrders.forEach((order) =>
       (order.items ?? []).forEach((item) =>
@@ -334,12 +356,53 @@ export class ReceivingDocumentsService {
           productById,
         ),
       ),
+      incidents: incidentPages
+        .flatMap(({ order, record, page }) =>
+          page.items.map((incident) => toApiIncidentListItem(incident, record, order)),
+        )
+        .sort((left, right) => right.date.localeCompare(left.date)),
+      incidentListIncomplete: incidentPages.some(
+        ({ page }) => page.page < page.totalPages,
+      ),
       receiptHistoryIncomplete: records.some(
         ({ drafts, confirmed }) =>
           drafts.page < drafts.totalPages || confirmed.page < confirmed.totalPages,
       ),
     };
   }
+}
+
+function toApiIncidentListItem(
+  incident: ReceiptIncidentRecord,
+  receipt: ReceiptRecord,
+  order: PurchaseOrder,
+): IncidentListItemViewModel {
+  const item = incident.goodsReceiptItemId
+    ? receipt.items.find((candidate) => candidate.line.id === incident.goodsReceiptItemId)
+    : undefined;
+  return {
+    id: incident.id,
+    receiptId: receipt.receipt.id,
+    receiptNumber: receipt.receipt.number,
+    purchaseOrderId: order.id,
+    purchaseOrderNumber: order.number,
+    productName: item?.productNameSnapshot ?? "Incidencia general",
+    sku: item?.productSkuSnapshot ?? "-",
+    supplierId: order.supplierId,
+    ...(order.supplierNameSnapshot
+      ? { supplierName: order.supplierNameSnapshot }
+      : {}),
+    typeName: RECEIPT_INCIDENT_TYPE_LABELS[incident.incidentType],
+    ...(incident.quantityAffected !== undefined
+      ? { quantityAffected: incident.quantityAffected }
+      : {}),
+    observation: incident.notes,
+    date: incident.createdAt,
+    responsibleName: incident.createdByUserId,
+    evidence: [],
+    status: incident.status,
+    confirmed: receipt.receipt.status === ReceiptStatus.received,
+  };
 }
 
 const RECEIVING_PAGE_SIZE = 25;

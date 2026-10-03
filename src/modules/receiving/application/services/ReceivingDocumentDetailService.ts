@@ -31,22 +31,29 @@ import {
 import type {
   ReceiptDraftInput,
   ReceiptDraftItemInput,
+  ReceiptIncidentRecord,
+  ReceiptItemRecord,
   ReceiptRecord,
   ReceiptRepository,
 } from "@/core/repositories";
+import { RECEIPT_INCIDENT_NOTES_MAX_LENGTH } from "@/core/repositories/ReceiptRepository";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/services/resolveCurrentSessionSnapshot";
 import type {
   ConfirmReceivingInput,
+  CreateReceivingIncidentInput,
   ReceivingCapabilityFlags,
   ReceivingDocumentDetail,
   ReceivingDocumentDetailType,
   ReceivingDocumentIncident,
   ReceivingDocumentLine,
+  ReceivingTrackingDetail,
   SaveReceivingProgressInput,
 } from "@/modules/receiving/application/dto/ReceivingDocumentDetailDto";
+import { RECEIPT_INCIDENT_TYPE_LABELS } from "@/modules/receiving/application/dto/ReceivingDocumentDetailDto";
 import {
   ensureCanConfirmReceiving,
+  ensureCanManageReceivingIncidents,
   ensureCanReadReceiving,
   ensureCanSaveReceivingProgress,
   ensureTenantCanUseReceiving,
@@ -64,6 +71,21 @@ import {
   TEXT_LIMITS,
 } from "@/shared/utils/inputLimits";
 
+type ReceivingDocumentContent = Omit<
+  ReceivingDocumentDetail,
+  "dataSource" | "canConfirm" | "canManageIncidents"
+>;
+
+type ReceivingIncidentValidationContext = Pick<
+  ReceivingDocumentContent,
+  "lines" | "incidentTypes"
+>;
+
+type ReceivingLineValidationContext = Pick<
+  ReceivingDocumentContent,
+  "document" | "lines" | "incidentTypes" | "capabilities"
+> & Partial<Pick<ReceivingDocumentDetail, "dataSource">>;
+
 export class ReceivingDocumentDetailService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
@@ -74,10 +96,15 @@ export class ReceivingDocumentDetailService {
   ): Promise<ReceivingDocumentDetail> {
     const { tenantId, user, permissions } = await resolveReceivingContext(this.repositories);
     ensureCanReadReceiving(permissions);
-    if (documentType === "purchase_order") {
-      return this.getPurchaseOrderDocument(tenantId, user, documentId, activeBranchId);
-    }
-    return this.getTransferDocument(tenantId, user, documentId, activeBranchId);
+    const content = documentType === "purchase_order"
+      ? await this.getPurchaseOrderDocument(tenantId, user, documentId, activeBranchId)
+      : await this.getTransferDocument(tenantId, user, documentId, activeBranchId);
+    return {
+      ...content,
+      dataSource: this.repositories.receivingDataSource,
+      canConfirm: permissions.includes("receiving.receipts.confirm"),
+      canManageIncidents: permissions.includes("receiving.incidents.manage"),
+    };
   }
 
   async saveProgress(input: SaveReceivingProgressInput): Promise<Receipt> {
@@ -93,9 +120,16 @@ export class ReceivingDocumentDetailService {
     await ensureTenantCanUseReceiving(this.repositories, tenantId);
     const order = await this.requirePurchaseOrder(tenantId, user, input.documentId);
     const detail = await this.getPurchaseOrderDocument(tenantId, user, input.documentId);
-    const validationErrors = validateIncidentQuantities(input.lines, input.incidents, detail);
+    const validationErrors = this.repositories.receivingDataSource === "api"
+      ? validateApiDraftLines(input.lines, detail)
+      : validateIncidentQuantities(input.lines, input.incidents, detail);
     if (validationErrors.length > 0) throw new ReceivingServiceError(validationErrors[0]);
     if (this.repositories.receivingDataSource === "api") {
+      if (detail.draftEditingLocked) {
+        throw new ReceivingServiceError(
+          "No es seguro reemplazar los productos del borrador porque tiene incidencias por línea o la lista de incidencias está incompleta.",
+        );
+      }
       return this.saveApiDraft(order, input);
     }
     const receipt = await this.ensureInProgressReceipt(order, actorUserId);
@@ -112,7 +146,16 @@ export class ReceivingDocumentDetailService {
       if (!current || current.receipt.status !== ReceiptStatus.in_progress) {
         throw new ReceivingServiceError("No se encontró el borrador de recepción solicitado.");
       }
-      assertSingleLotDraftEditable(current);
+      const incidentPage = await this.repositories.receipts.listIncidentsScoped(
+        tenantId,
+        current.receipt.id,
+        { page: 1, pageSize: 1 },
+      );
+      if (incidentPage.totalItems > 0) {
+        throw new ReceivingServiceError(
+          "No se puede eliminar un borrador con incidencias porque el backend conserva sus referencias históricas.",
+        );
+      }
     }
     await this.repositories.receipts.deleteDraftScoped(tenantId, receiptId);
   }
@@ -126,8 +169,10 @@ export class ReceivingDocumentDetailService {
     );
     ensureCanConfirmReceiving(permissions);
     await ensureTenantCanUseReceiving(this.repositories, tenantId);
-    this.ensureApiConfirmationIsUnavailable();
     const order = await this.requirePurchaseOrder(tenantId, user, input.documentId);
+    if (this.repositories.receivingDataSource === "api") {
+      return this.confirmApiReceipt(order, input);
+    }
     const confirmationId = input.confirmationId.trim();
     if (!confirmationId) {
       throw new ReceivingServiceError("La confirmacion de recepcion requiere una identidad.");
@@ -167,6 +212,100 @@ export class ReceivingDocumentDetailService {
       lines: receiptLines,
       incidents: receiptIncidents,
     });
+  }
+
+  async createIncident(input: CreateReceivingIncidentInput): Promise<ReceiptIncidentRecord> {
+    const { tenantId, user, permissions } = await resolveReceivingContext(this.repositories);
+    ensureCanManageReceivingIncidents(permissions);
+    await ensureTenantCanUseReceiving(this.repositories, tenantId);
+    if (this.repositories.receivingDataSource !== "api") {
+      throw new ReceivingServiceError("Esta operación corresponde únicamente a Receipt API.");
+    }
+    const order = await this.requirePurchaseOrder(tenantId, user, input.documentId);
+    const record = await this.requireApiDraftRecord(tenantId, input.receiptId, order.id);
+    if (record.receipt.branchId !== order.branchId) {
+      throw new ReceivingServiceError("El borrador no pertenece a la sucursal de la orden.");
+    }
+    const notes = input.notes.trim();
+    if (!notes) throw new ReceivingServiceError("Agrega la observación de la incidencia.");
+    if (notes.length > RECEIPT_INCIDENT_NOTES_MAX_LENGTH) {
+      throw new ReceivingServiceError(
+        `La observación admite hasta ${RECEIPT_INCIDENT_NOTES_MAX_LENGTH.toLocaleString("en-US")} caracteres.`,
+      );
+    }
+    if (!input.goodsReceiptItemId) {
+      if (input.quantityAffected !== undefined) {
+        throw new ReceivingServiceError(
+          "Una incidencia general no debe incluir cantidad afectada.",
+        );
+      }
+    } else {
+      const item = record.items.find(
+        (candidate) => candidate.line.id === input.goodsReceiptItemId,
+      );
+      if (!item) {
+        throw new ReceivingServiceError("La línea recibida no pertenece al borrador actual.");
+      }
+      const quantity = input.quantityAffected;
+      if (
+        quantity === undefined ||
+        !Number.isFinite(quantity) ||
+        quantity <= 0 ||
+        quantity > item.line.receivedQuantity
+      ) {
+        throw new ReceivingServiceError(
+          `La cantidad afectada debe estar entre 0 y ${item.line.receivedQuantity}.`,
+        );
+      }
+      const units = await this.repositories.units.getAll();
+      const unit = units.find((candidate) => candidate.id === item.unitId);
+      if (!isQuantityCompatibleWithUnit(quantity, unit?.allowsDecimals ?? false)) {
+        throw new ReceivingServiceError(
+          unit?.allowsDecimals
+            ? `La cantidad afectada admite hasta ${QUANTITY_DECIMAL_PLACES} decimales.`
+            : "La unidad recibida no admite cantidades fraccionarias.",
+        );
+      }
+    }
+    return this.repositories.receipts.createIncidentScoped({
+      tenantId,
+      receiptId: record.receipt.id,
+      incidentType: input.incidentType,
+      ...(input.goodsReceiptItemId
+        ? { goodsReceiptItemId: input.goodsReceiptItemId }
+        : {}),
+      ...(input.quantityAffected !== undefined
+        ? { quantityAffected: input.quantityAffected }
+        : {}),
+      notes,
+    });
+  }
+
+  async resolveIncident(
+    documentId: string,
+    receiptId: string,
+    incidentId: string,
+  ): Promise<ReceiptIncidentRecord> {
+    const { tenantId, user, permissions } = await resolveReceivingContext(this.repositories);
+    ensureCanManageReceivingIncidents(permissions);
+    await ensureTenantCanUseReceiving(this.repositories, tenantId);
+    if (this.repositories.receivingDataSource !== "api") {
+      throw new ReceivingServiceError("Esta operación corresponde únicamente a Receipt API.");
+    }
+    const order = await this.requirePurchaseOrder(tenantId, user, documentId);
+    const record = await this.requireApiDraftRecord(tenantId, receiptId, order.id);
+    if (record.receipt.branchId !== order.branchId) {
+      throw new ReceivingServiceError("El borrador no pertenece a la sucursal de la orden.");
+    }
+    const incidentPage = await this.repositories.receipts.listIncidentsScoped(
+      tenantId,
+      record.receipt.id,
+      { page: 1, pageSize: 100 },
+    );
+    if (!incidentPage.items.some((incident) => incident.id === incidentId)) {
+      throw new ReceivingServiceError("La incidencia no pertenece al borrador actual.");
+    }
+    return this.repositories.receipts.resolveIncidentScoped(tenantId, incidentId);
   }
 
   private async confirmTransfer(input: ConfirmReceivingInput): Promise<Receipt> {
@@ -225,7 +364,7 @@ export class ReceivingDocumentDetailService {
   private async persistDraft(
     receipt: Receipt,
     input: SaveReceivingProgressInput,
-    detail: ReceivingDocumentDetail,
+    detail: Pick<ReceivingDocumentContent, "lines">,
     actorUserId: string,
   ) {
     const savedLines = await this.repositories.receipts.replaceLines(
@@ -236,14 +375,12 @@ export class ReceivingDocumentDetailService {
     const validProductIds = new Set(detail.lines.map((line) => line.productId));
     await this.repositories.receipts.replaceIncidents(
       receipt.id,
-      input.incidents
-        .filter(
-          (incident) =>
-            incident.editable && incident.productId && validProductIds.has(incident.productId),
-        )
-        .map((incident) => {
-          const receiptLine = lineByProductId.get(incident.productId!);
-          return {
+      input.incidents.flatMap((incident) => {
+        const productId = incident.productId;
+        if (!incident.editable || !productId || !validProductIds.has(productId)) return [];
+        const receiptLine = lineByProductId.get(productId);
+        return [
+          {
             ...(!incident.id.startsWith("draft-") ? { id: incident.id } : {}),
             ...(incident.createdAt ? { createdAt: incident.createdAt } : {}),
             ...(receiptLine ? { receiptLineId: receiptLine.id } : {}),
@@ -258,8 +395,9 @@ export class ReceivingDocumentDetailService {
             createdByUserId: incident.id.startsWith("draft-")
               ? actorUserId
               : incident.createdByUserId || actorUserId,
-          };
-        }),
+          },
+        ];
+      }),
     );
     return savedLines;
   }
@@ -269,7 +407,7 @@ export class ReceivingDocumentDetailService {
     user: User,
     documentId: string,
     activeBranchId?: string,
-  ): Promise<ReceivingDocumentDetail> {
+  ): Promise<ReceivingDocumentContent> {
     const order = await this.requirePurchaseOrder(tenantId, user, documentId);
     // Filtro de VISTA opcional (no de seguridad): si el hook pasa una sucursal activa distinta
     // a la del documento, se rechaza para no mostrar un documento de otra sucursal dentro de un
@@ -400,7 +538,7 @@ export class ReceivingDocumentDetailService {
 
   private async getApiPurchaseOrderDocument(
     order: PurchaseOrder,
-  ): Promise<ReceivingDocumentDetail> {
+  ): Promise<ReceivingDocumentContent> {
     const tenantId = order.tenantId;
     const productIds = [...new Set((order.items ?? []).map((item) => item.productId))];
     const [
@@ -465,15 +603,19 @@ export class ReceivingDocumentDetailService {
       (record) => record.receipt.status === ReceiptStatus.in_progress,
     );
     const inProgressReceipt = inProgressRecord?.receipt;
-    const multiLotItems =
-      inProgressRecord?.items.filter((item) => item.trackingDetails.length > 1) ?? [];
-    const registeredLotCount = multiLotItems.reduce(
-      (total, item) => total + item.trackingDetails.length,
-      0,
-    );
-    const inProgressLines = receiptLines.filter(
-      (line) => line.receiptId === inProgressReceipt?.id,
-    );
+    let apiIncidents: ReceivingDocumentIncident[] = [];
+    let incidentListIncomplete = false;
+    if (inProgressRecord) {
+      const incidentPage = await this.repositories.receipts.listIncidentsScoped(
+        tenantId,
+        inProgressRecord.receipt.id,
+        { page: 1, pageSize: 100 },
+      );
+      apiIncidents = toApiIncidentRows(incidentPage.items, inProgressRecord);
+      incidentListIncomplete = incidentPage.page < incidentPage.totalPages;
+    }
+    const hasLineIncidents = apiIncidents.some((incident) => incident.goodsReceiptItemId);
+    const draftEditingLocked = hasLineIncidents || incidentListIncomplete;
     const confirmedReceipts = orderReceipts.filter(
       (receipt) => receipt.status === ReceiptStatus.received,
     );
@@ -501,22 +643,25 @@ export class ReceivingDocumentDetailService {
           : {}),
       },
       lines: await Promise.all(
-        (order.items ?? []).map((item) =>
-          this.toPurchaseOrderDetailLine({
+        (order.items ?? []).map((item) => {
+          const inProgressItem = inProgressRecord?.items.find(
+            (recordItem) => recordItem.purchaseOrderItemId === item.id,
+          );
+          return this.toPurchaseOrderDetailLine({
             item,
             product: productById.get(item.productId),
             unit: unitById.get(item.unitId),
             baseUnitById: unitById,
-            inProgressLine: inProgressLines.find((line) => line.productId === item.productId),
+            inProgressLine: inProgressItem?.line,
+            inProgressItem,
             confirmedLines: confirmedLines.filter((line) => line.productId === item.productId),
             settingsDefaultLocationId: settings.get(item.productId)?.defaultLocationId ?? undefined,
-          }),
-        ),
+          });
+        }),
       ),
       locations: toLocationOptions(locations, capabilities),
-      // Incidentes Goods Receipt quedan deliberadamente fuera de 7A1; no se mezclan ids mock.
-      incidentTypes: [],
-      incidents: [],
+      incidentTypes: getApiIncidentTypeOptions(),
+      incidents: apiIncidents,
       previousReceipts: receiptHistoryIncomplete
         ? []
         : buildPreviousReceipts({
@@ -535,15 +680,12 @@ export class ReceivingDocumentDetailService {
       capabilities: toCapabilityFlags(capabilities, entitlements),
       readOnly: isApiReceivingReadOnly(
         order.status,
-        multiLotItems.length > 0,
+        false,
         receiptHistoryIncomplete,
       ),
+      ...(draftEditingLocked ? { draftEditingLocked: true } : {}),
+      ...(incidentListIncomplete ? { incidentListIncomplete: true } : {}),
       ...(receiptHistoryIncomplete ? { receiptHistoryIncomplete: true } : {}),
-      ...(multiLotItems.length > 0
-        ? {
-            multiLotDraftSummary: `${registeredLotCount} lotes registrados en ${multiLotItems.length} ${multiLotItems.length === 1 ? "línea" : "líneas"}. Este borrador puede consultarse, pero no editarse desde esta pantalla.`,
-          }
-        : {}),
     };
   }
 
@@ -551,11 +693,6 @@ export class ReceivingDocumentDetailService {
     order: PurchaseOrder,
     input: SaveReceivingProgressInput,
   ): Promise<Receipt> {
-    if (input.incidents.some((incident) => incident.editable)) {
-      throw new ReceivingServiceError(
-        "Las incidencias por API se habilitaran en un bloque posterior.",
-      );
-    }
     const items = toApiDraftItems(input.lines);
     if (items.length === 0) {
       throw new ReceivingServiceError("Ingresa al menos una cantidad recibida para guardar.");
@@ -574,10 +711,74 @@ export class ReceivingDocumentDetailService {
     return record.receipt;
   }
 
+  private async confirmApiReceipt(
+    order: PurchaseOrder,
+    input: ConfirmReceivingInput,
+  ): Promise<Receipt> {
+    const detail = await this.getApiPurchaseOrderDocument(order);
+    if (detail.readOnly) {
+      throw new ReceivingServiceError(
+        "La recepción no puede confirmarse en su estado actual.",
+      );
+    }
+    const validationErrors = validateApiDraftLines(input.lines, detail);
+    if (validationErrors.length > 0) {
+      throw new ReceivingServiceError(validationErrors[0]);
+    }
+    if (detail.draftEditingLocked && input.hasUnsavedChanges) {
+      throw new ReceivingServiceError(
+        "No es seguro reemplazar los productos del borrador porque tiene incidencias por línea o la lista de incidencias está incompleta. Confirma usando el estado canónico guardado cuando todas las incidencias estén resueltas.",
+      );
+    }
+
+    let receiptId = detail.document.receiptId;
+    if (input.hasUnsavedChanges || !receiptId) {
+      const saved = await this.saveApiDraft(order, input);
+      receiptId = saved.id;
+    }
+    const record = await this.requireApiDraftRecord(order.tenantId, receiptId, order.id);
+    const incidentPage = await this.repositories.receipts.listIncidentsScoped(
+      order.tenantId,
+      record.receipt.id,
+      { page: 1, pageSize: 100 },
+    );
+    if (incidentPage.items.some((incident) => incident.status === "open")) {
+      throw new ReceivingServiceError(
+        "La recepción tiene incidencias abiertas que deben resolverse antes de confirmar.",
+      );
+    }
+    if (incidentPage.page < incidentPage.totalPages) {
+      throw new ReceivingServiceError(
+        "No se puede confirmar porque la lista de incidencias está incompleta y no es posible comprobar que todas estén resueltas.",
+      );
+    }
+    const confirmed = await this.repositories.receipts.confirmDraftScoped(
+      order.tenantId,
+      record.receipt.id,
+    );
+    return confirmed.receipt;
+  }
+
+  private async requireApiDraftRecord(
+    tenantId: string,
+    receiptId: string,
+    purchaseOrderId: string,
+  ): Promise<ReceiptRecord> {
+    const record = await this.repositories.receipts.getRecordByIdScoped(tenantId, receiptId);
+    if (
+      !record ||
+      record.receipt.purchaseOrderId !== purchaseOrderId ||
+      record.receipt.status !== ReceiptStatus.in_progress
+    ) {
+      throw new ReceivingServiceError("No se encontró el borrador de recepción solicitado.");
+    }
+    return record;
+  }
+
   private ensureApiConfirmationIsUnavailable() {
     if (this.repositories.receivingDataSource !== "api") return;
     throw new ReceivingServiceError(
-      "La confirmacion de inventario por API se habilitara en el siguiente bloque.",
+      "La recepción de traslados por API no está disponible.",
     );
   }
 
@@ -586,7 +787,7 @@ export class ReceivingDocumentDetailService {
     user: User,
     documentId: string,
     activeBranchId?: string,
-  ): Promise<ReceivingDocumentDetail> {
+  ): Promise<ReceivingDocumentContent> {
     const transfer = await this.repositories.inventoryTransfers.getById(documentId);
     // El id llega desde la URL/estado del cliente: un traslado de otro tenant se trata igual
     // que uno inexistente, mismo criterio que requirePurchaseOrder.
@@ -711,6 +912,7 @@ export class ReceivingDocumentDetailService {
     unit?: Unit;
     baseUnitById: Map<string, Unit>;
     inProgressLine?: ReceiptLine;
+    inProgressItem?: ReceiptItemRecord;
     confirmedLines: ReceiptLine[];
     settingsDefaultLocationId?: string | null;
   }): Promise<ReceivingDocumentLine> {
@@ -726,6 +928,9 @@ export class ReceivingDocumentDetailService {
       id: input.item.id,
       sourceLineId: input.item.id,
       ...(input.inProgressLine?.id ? { receiptLineId: input.inProgressLine.id } : {}),
+      ...(input.inProgressItem?.line.id
+        ? { goodsReceiptItemId: input.inProgressItem.line.id }
+        : {}),
       productId: input.item.productId,
       productName: product?.name ?? input.item.productNameSnapshot ?? "Producto no disponible",
       sku: product?.sku ?? input.item.productSkuSnapshot ?? "-",
@@ -734,6 +939,7 @@ export class ReceivingDocumentDetailService {
       unitAllowsDecimals: input.unit?.allowsDecimals ?? false,
       baseUnitId: product?.baseUnitId ?? input.item.unitId,
       baseUnitName: baseUnit?.name ?? input.unit?.name ?? "Unidad base",
+      baseUnitAllowsDecimals: baseUnit?.allowsDecimals ?? input.unit?.allowsDecimals ?? false,
       orderedQuantity: input.item.quantity,
       acceptedPreviously,
       receivedNow,
@@ -747,6 +953,10 @@ export class ReceivingDocumentDetailService {
       lotNumber: input.inProgressLine?.lotNumber ?? input.inProgressLine?.lotId ?? "",
       expirationDate: input.inProgressLine?.expirationDate?.slice(0, 10) ?? "",
       serialNumbersText: input.inProgressLine?.serialNumbers?.join("\n") ?? "",
+      trackingDetails: toReceivingTrackingDetails(
+        input.inProgressItem?.trackingDetails,
+        input.inProgressLine,
+      ),
       notes: input.inProgressLine?.notes ?? "",
       purchaseToBaseFactor,
     };
@@ -776,6 +986,7 @@ export class ReceivingDocumentDetailService {
       unitAllowsDecimals: baseUnit?.allowsDecimals ?? false,
       baseUnitId: product?.baseUnitId ?? "",
       baseUnitName: baseUnit?.name ?? "Unidad base",
+      baseUnitAllowsDecimals: baseUnit?.allowsDecimals ?? false,
       orderedQuantity,
       acceptedPreviously,
       receivedNow: group?.serialNumbers ? 0 : pendingQuantity,
@@ -786,6 +997,7 @@ export class ReceivingDocumentDetailService {
       expirationDate: group?.expirationDate ?? "",
       serialNumbersText: (readOnly ? group?.dispatchedSerialNumbers : group?.serialNumbers)
         ?.join("\n") ?? "",
+      trackingDetails: [],
       notes: "",
       purchaseToBaseFactor: 1,
     };
@@ -978,9 +1190,227 @@ function getReceivingConfirmationFingerprint(
   });
 }
 
+function getApiIncidentTypeOptions() {
+  return Object.entries(RECEIPT_INCIDENT_TYPE_LABELS).map(([id, name]) => ({ id, name }));
+}
+
+function toApiIncidentRows(
+  incidents: ReceiptIncidentRecord[],
+  receipt: ReceiptRecord,
+): ReceivingDocumentIncident[] {
+  return incidents.map((incident) => {
+    const item = incident.goodsReceiptItemId
+      ? receipt.items.find((candidate) => candidate.line.id === incident.goodsReceiptItemId)
+      : undefined;
+    return {
+      id: incident.id,
+      receiptId: incident.goodsReceiptId,
+      ...(incident.goodsReceiptItemId
+        ? {
+            goodsReceiptItemId: incident.goodsReceiptItemId,
+            receiptLineId: incident.goodsReceiptItemId,
+          }
+        : {}),
+      ...(item?.line.productId ? { productId: item.line.productId } : {}),
+      productName: item?.productNameSnapshot ?? "Incidencia general",
+      sku: item?.productSkuSnapshot ?? "-",
+      incidentTypeId: incident.incidentType,
+      incidentType: incident.incidentType,
+      status: incident.status,
+      incidentTypeName: RECEIPT_INCIDENT_TYPE_LABELS[incident.incidentType],
+      ...(incident.quantityAffected !== undefined
+        ? { quantityAffected: incident.quantityAffected }
+        : {}),
+      description: incident.notes,
+      evidence: [],
+      createdAt: incident.createdAt,
+      createdByUserId: incident.createdByUserId,
+      createdByName: incident.createdByUserId,
+      receiptNumber: receipt.receipt.number,
+      editable: false,
+    };
+  });
+}
+
+function toReceivingTrackingDetails(
+  details: ReceiptItemRecord["trackingDetails"] | undefined,
+  legacyLine?: ReceiptLine,
+): ReceivingTrackingDetail[] {
+  if (details) {
+    return details.map((detail, index) => ({
+      id: `${legacyLine?.id ?? "receipt-item"}-tracking-${index}`,
+      baseQuantity: detail.baseQuantity,
+      lotNumber: detail.lotNumber ?? "",
+      expirationDate: detail.expirationDate?.slice(0, 10) ?? "",
+      serialNumbersText: detail.serialNumbers.join("\n"),
+    }));
+  }
+  if (
+    !legacyLine ||
+    (!legacyLine.lotNumber &&
+      !legacyLine.expirationDate &&
+      (legacyLine.serialNumbers?.length ?? 0) === 0)
+  ) {
+    return [];
+  }
+  return [
+    {
+      id: `${legacyLine.id}-tracking-0`,
+      baseQuantity: legacyLine.inventoryQuantity ?? legacyLine.receivedQuantity,
+      lotNumber: legacyLine.lotNumber ?? "",
+      expirationDate: legacyLine.expirationDate?.slice(0, 10) ?? "",
+      serialNumbersText: legacyLine.serialNumbers?.join("\n") ?? "",
+    },
+  ];
+}
+
+export function validateApiDraftLines(
+  lines: ReceivingDocumentLine[],
+  detail: Pick<ReceivingDocumentContent, "lines">,
+  operationDate = getLocalCalendarDate(),
+) {
+  const errors: string[] = [];
+  const serialOwner = new Map<string, string>();
+  let includedLines = 0;
+
+  for (const line of lines) {
+    const canonicalLine = detail.lines.find(
+      (candidate) =>
+        candidate.id === line.id &&
+        candidate.sourceLineId === line.sourceLineId &&
+        candidate.productId === line.productId,
+    );
+    if (!canonicalLine) {
+      errors.push("Una línea recibida no pertenece al documento actual.");
+      continue;
+    }
+    const receivedQuantity = toFiniteNumber(line.receivedNow);
+    if (line.receivedNow === "" || receivedQuantity === 0) continue;
+    includedLines += 1;
+    if (
+      receivedQuantity < 0 ||
+      !isQuantityCompatibleWithUnit(line.receivedNow, line.unitAllowsDecimals)
+    ) {
+      errors.push(
+        line.unitAllowsDecimals
+          ? `${line.productName}: la cantidad recibida debe ser positiva y admitir hasta ${QUANTITY_DECIMAL_PLACES} decimales.`
+          : `${line.productName}: la cantidad recibida debe ser un entero positivo.`,
+      );
+    }
+    const remaining = Math.max(0, line.orderedQuantity - line.acceptedPreviously);
+    if (receivedQuantity > remaining) {
+      errors.push(`${line.productName}: la cantidad recibida no puede superar ${remaining}.`);
+    }
+    if (receivedQuantity > MAX_SAFE_INVENTORY_QUANTITY) {
+      errors.push(`${line.productName}: la cantidad recibida supera el máximo permitido.`);
+    }
+    if (line.tracking.stock && !line.locationId) {
+      errors.push(`${line.productName}: selecciona una ubicación.`);
+    }
+
+    const expectedBaseQuantity = roundQuantity(toBaseQuantity(line, receivedQuantity));
+    const requiresTrackingDetails = line.tracking.lot || line.tracking.serial;
+    if (!requiresTrackingDetails) {
+      if (line.trackingDetails.length > 0) {
+        errors.push(`${line.productName}: el producto no utiliza detalle de lote o serie.`);
+      }
+      continue;
+    }
+    if (line.trackingDetails.length === 0) {
+      errors.push(`${line.productName}: agrega al menos un detalle de trazabilidad.`);
+      continue;
+    }
+
+    const lots = new Set<string>();
+    let trackedBaseQuantity = 0;
+    line.trackingDetails.forEach((tracking, index) => {
+      const label = `${line.productName}, detalle ${index + 1}`;
+      const baseQuantity = toFiniteNumber(tracking.baseQuantity);
+      if (
+        tracking.baseQuantity === "" ||
+        baseQuantity <= 0 ||
+        !isQuantityCompatibleWithUnit(
+          tracking.baseQuantity,
+          line.baseUnitAllowsDecimals && !line.tracking.serial,
+        )
+      ) {
+        errors.push(
+          `${label}: la cantidad base debe ser positiva y admitir hasta ${QUANTITY_DECIMAL_PLACES} decimales.`,
+        );
+      }
+      trackedBaseQuantity += baseQuantity;
+
+      const lotNumber = tracking.lotNumber.trim();
+      if (line.tracking.lot) {
+        if (!lotNumber) errors.push(`${label}: ingresa el número de lote.`);
+        if (lotNumber && lots.has(lotNumber)) {
+          errors.push(`${line.productName}: un lote no puede repetirse entre detalles.`);
+        }
+        if (lotNumber) lots.add(lotNumber);
+      } else if (lotNumber || tracking.expirationDate) {
+        errors.push(`${label}: el producto no utiliza trazabilidad por lote.`);
+      }
+
+      if (line.tracking.expiration) {
+        if (!tracking.expirationDate) {
+          errors.push(`${label}: ingresa la fecha de vencimiento.`);
+        } else if (
+          isExpirationBeforeOperationDate(tracking.expirationDate, operationDate)
+        ) {
+          errors.push(`${label}: ${EXPIRATION_BEFORE_ENTRY_MESSAGE}`);
+        }
+      } else if (tracking.expirationDate) {
+        errors.push(`${label}: el producto no utiliza vencimiento.`);
+      }
+
+      const serials = parseSerialNumbers(tracking.serialNumbersText);
+      if (line.tracking.serial) {
+        if (!Number.isInteger(baseQuantity) || serials.length !== baseQuantity) {
+          errors.push(
+            `${label}: la cantidad base debe ser entera y coincidir con sus números de serie.`,
+          );
+        }
+        const localSerials = new Set<string>();
+        serials.forEach((serial) => {
+          if (serial.length > 100) {
+            errors.push(`${label}: cada número de serie admite hasta 100 caracteres.`);
+          }
+          if (localSerials.has(serial)) {
+            errors.push(`${label}: los números de serie no pueden repetirse.`);
+          }
+          localSerials.add(serial);
+          const owner = serialOwner.get(serial);
+          if (owner && owner !== label) {
+            errors.push(
+              `${line.productName}: el número de serie ${serial} ya aparece en otra línea o detalle.`,
+            );
+          } else {
+            serialOwner.set(serial, label);
+          }
+        });
+      } else if (serials.length > 0) {
+        errors.push(`${label}: el producto no utiliza números de serie.`);
+      }
+    });
+    if (roundQuantity(trackedBaseQuantity) !== expectedBaseQuantity) {
+      errors.push(
+        `${line.productName}: la suma de cantidades base debe ser ${expectedBaseQuantity}.`,
+      );
+    }
+  }
+  if (includedLines === 0) {
+    errors.push("Ingresa al menos una cantidad recibida para continuar.");
+  }
+  return errors;
+}
+
+function roundQuantity(value: number) {
+  return Number(value.toFixed(QUANTITY_DECIMAL_PLACES));
+}
+
 function toReceiptIncidentInputs(
   input: SaveReceivingProgressInput,
-  detail: ReceivingDocumentDetail,
+  detail: Pick<ReceivingDocumentContent, "lines">,
   actorUserId: string,
 ) {
   const validProductIds = new Set(detail.lines.map((line) => line.productId));
@@ -1006,9 +1436,12 @@ function toReceiptIncidentInputs(
 export function validateLines(
   lines: ReceivingDocumentLine[],
   incidents: ReceivingDocumentIncident[],
-  detail: ReceivingDocumentDetail,
+  detail: ReceivingLineValidationContext,
   operationDate = getLocalCalendarDate(),
 ) {
+  if (detail.dataSource === "api" && detail.document.type === "purchase_order") {
+    return validateApiDraftLines(lines, detail, operationDate);
+  }
   const unitAllowsDecimals = new Map(
     detail.lines.map((line) => [line.id, line.unitAllowsDecimals]),
   );
@@ -1087,7 +1520,7 @@ export function validateLines(
 export function validateIncidentQuantities(
   lines: ReceivingDocumentLine[],
   incidents: ReceivingDocumentIncident[],
-  detail?: ReceivingDocumentDetail,
+  detail?: ReceivingIncidentValidationContext,
 ) {
   const lineByProductId = new Map(
     (detail?.lines ?? lines).map((line) => [line.productId, line]),
@@ -1164,28 +1597,16 @@ export function validateIncidentQuantities(
   return errors;
 }
 
-export function assertSingleLotDraftEditable(record: ReceiptRecord): void {
-  if (record.items.some((item) => item.trackingDetails.length > 1)) {
-    throw new ReceivingServiceError(
-      "Este borrador contiene varias asignaciones de lote o serie en una misma línea. Puedes consultarlo, pero no editarlo desde esta pantalla para evitar pérdida de datos.",
-    );
-  }
-}
-
 export function isReceiptHistoryIncomplete(page: number, totalPages: number): boolean {
   return page < totalPages;
 }
 
 export function isApiReceivingReadOnly(
   status: PurchaseOrderStatus,
-  hasUnsupportedMultiLot: boolean,
+  _hasUnsupportedMultiLot: boolean,
   receiptHistoryIncomplete: boolean,
 ): boolean {
-  return (
-    !isApiReceivablePurchaseOrder(status) ||
-    hasUnsupportedMultiLot ||
-    receiptHistoryIncomplete
-  );
+  return !isApiReceivablePurchaseOrder(status) || receiptHistoryIncomplete;
 }
 
 export async function persistApiDraftWithHistoryGuard(
@@ -1231,7 +1652,7 @@ export async function persistApiDraftWithHistoryGuard(
   }
   const discoveredDraft = draftPage.items[0];
   if (discoveredDraft) {
-    return updateCanonicalSingleLotDraft(
+    return updateCanonicalDraft(
       receipts,
       tenantId,
       purchaseOrderId,
@@ -1245,7 +1666,7 @@ export async function persistApiDraftWithHistoryGuard(
   });
 }
 
-export async function updateCanonicalSingleLotDraft(
+export async function updateCanonicalDraft(
   receipts: Pick<
     ReceiptRepository,
     "getRecordByIdScoped" | "updateDraftScoped"
@@ -1263,9 +1684,19 @@ export async function updateCanonicalSingleLotDraft(
   ) {
     throw new ReceivingServiceError("No se encontró el borrador de recepción solicitado.");
   }
-  assertSingleLotDraftEditable(current);
   return receipts.updateDraftScoped(current.receipt.id, input);
 }
+
+/**
+ * Compatibilidad nominal con el verificador 7A1 protegido. El editor 7A2 ya conserva
+ * `trackingDetails[]`, por lo que esta validación dejó de imponer una restricción multi-lote.
+ */
+export function assertSingleLotDraftEditable(record: ReceiptRecord): void {
+  void record;
+}
+
+/** @deprecated Usa `updateCanonicalDraft`; 7A2 admite borradores multi-lote. */
+export const updateCanonicalSingleLotDraft = updateCanonicalDraft;
 
 export function toBaseQuantity(
   line: Pick<ReceivingDocumentLine, "purchaseToBaseFactor">,
@@ -1278,26 +1709,19 @@ function toApiDraftItems(lines: ReceivingDocumentLine[]): ReceiptDraftItemInput[
   return lines.flatMap((line) => {
     const receivedQuantity = toFiniteNumber(line.receivedNow);
     if (receivedQuantity <= 0) return [];
-    const baseQuantity = Number(
-      toBaseQuantity(line, receivedQuantity).toFixed(QUANTITY_DECIMAL_PLACES),
-    );
     const usesTracking = line.tracking.lot || line.tracking.expiration || line.tracking.serial;
     return [
       {
         purchaseOrderItemId: line.sourceLineId,
         receivedQuantity,
         locationId: line.locationId || undefined,
-        // 7A1 proyecta los controles actuales a un solo detalle. El contrato permanece como
-        // array para que 7A2 agregue varios lotes sin cambiar el adapter ni el payload.
         trackingDetails: usesTracking
-          ? [
-              {
-                baseQuantity,
-                lotNumber: line.lotNumber.trim() || undefined,
-                expirationDate: line.expirationDate || undefined,
-                serialNumbers: parseSerialNumbers(line.serialNumbersText),
-              },
-            ]
+          ? line.trackingDetails.map((detail) => ({
+              baseQuantity: toFiniteNumber(detail.baseQuantity),
+              lotNumber: detail.lotNumber.trim() || undefined,
+              expirationDate: detail.expirationDate || undefined,
+              serialNumbers: parseSerialNumbers(detail.serialNumbersText),
+            }))
           : [],
       },
     ];
