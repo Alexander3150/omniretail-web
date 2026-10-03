@@ -140,7 +140,8 @@ export class PurchaseOrderEditorService {
             ? (categoryById.get(product.categoryId)?.name ?? "Sin categoria")
             : "Sin categoria";
           const [tiers, balances, settings] = await Promise.all([
-            this.repositories.supplierProducts.getCostTiers(supplierProduct.id),
+            supplierProduct.costTiers ??
+              this.repositories.supplierProducts.getCostTiers(supplierProduct.id),
             tenantBranchId
               ? this.repositories.inventory.getBalanceByProduct(
                   supplierProduct.productId,

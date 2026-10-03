@@ -42,7 +42,9 @@ export class GetProductQuickViewService {
           ? this.repositories.inventory.getProductInventorySettings(productId, validBranch.id)
           : Promise.resolve(null),
         canReadSuppliers
-          ? this.repositories.supplierProducts.getByProductForTenant(tenantId, productId)
+          ? this.repositories.supplierProducts
+              .getAllByProductForTenant(tenantId, productId)
+              .then((items) => items.filter((item) => item.active))
           : Promise.resolve([]),
         canReadSuppliers
           ? this.repositories.suppliers.listByTenant(tenantId)

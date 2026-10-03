@@ -131,6 +131,7 @@ export const apiSupplierProductSchema = z.object({
   updatedAt: isoDateSchema,
   costTiers: z.array(apiSupplierCostTierSchema),
 });
+export const apiSupplierProductListSchema = z.array(apiSupplierProductSchema);
 export const apiSupplierProductPageSchema = z.object({
   items: z.array(apiSupplierProductSchema),
   page: z.number().int().positive(),
