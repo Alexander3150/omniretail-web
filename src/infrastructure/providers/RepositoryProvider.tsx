@@ -58,6 +58,7 @@ import { withApiProductRelations } from "@/infrastructure/api/withApiProductRela
 import { withApiInventoryMovements } from "@/infrastructure/api/withApiInventoryMovements";
 import { withApiInventoryStock } from "@/infrastructure/api/withApiInventoryStock";
 import { withApiPurchaseOrders } from "@/infrastructure/api/withApiPurchaseOrders";
+import { withApiReceiving } from "@/infrastructure/api/withApiReceiving";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import {
@@ -117,6 +118,7 @@ export interface RepositoryRegistry {
   inventoryMovementsDataSource: "mock" | "api";
   inventoryStockDataSource: "mock" | "api";
   purchaseOrdersDataSource: "mock" | "api";
+  receivingDataSource: "mock" | "api";
   tenants: TenantRepository;
   tenantOnboarding: TenantOnboardingRepository;
   businessConfig: BusinessConfigRepository;
@@ -187,6 +189,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       inventoryMovementsDataSource: "mock",
       inventoryStockDataSource: "mock",
       purchaseOrdersDataSource: "mock",
+      receivingDataSource: "mock",
       tenants: new MockTenantRepository(store, eventBus),
       tenantOnboarding: new MockTenantOnboardingRepository(store, eventBus),
       businessConfig: new MockBusinessConfigRepository(store, eventBus),
@@ -240,17 +243,20 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     // los flujos Product API no lo consultan ni escriben UUID reales en relaciones mock.
     // Modo mock (default): exactamente los mismos repositorios de siempre.
     const repositories = isApiMode()
-      ? withApiPurchaseOrders(
-          withApiInventoryStock(
-            withApiInventoryMovements(
-              withApiProductRelations(
-                withApiProducts(
-                  withApiCatalogMasterData(withApiSession(mockRepositories, eventBus), eventBus),
+      ? withApiReceiving(
+          withApiPurchaseOrders(
+            withApiInventoryStock(
+              withApiInventoryMovements(
+                withApiProductRelations(
+                  withApiProducts(
+                    withApiCatalogMasterData(withApiSession(mockRepositories, eventBus), eventBus),
+                    eventBus,
+                  ),
                   eventBus,
                 ),
-                eventBus,
               ),
             ),
+            eventBus,
           ),
           eventBus,
         )

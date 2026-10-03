@@ -28,6 +28,12 @@ import {
   getLocalCalendarDate,
   isExpirationBeforeOperationDate,
 } from "@/core/inventory/expirationDate";
+import type {
+  ReceiptDraftInput,
+  ReceiptDraftItemInput,
+  ReceiptRecord,
+  ReceiptRepository,
+} from "@/core/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/services/resolveCurrentSessionSnapshot";
 import type {
@@ -89,9 +95,26 @@ export class ReceivingDocumentDetailService {
     const detail = await this.getPurchaseOrderDocument(tenantId, user, input.documentId);
     const validationErrors = validateIncidentQuantities(input.lines, input.incidents, detail);
     if (validationErrors.length > 0) throw new ReceivingServiceError(validationErrors[0]);
+    if (this.repositories.receivingDataSource === "api") {
+      return this.saveApiDraft(order, input);
+    }
     const receipt = await this.ensureInProgressReceipt(order, actorUserId);
     await this.persistDraft(receipt, input, detail, actorUserId);
     return this.repositories.receipts.update(receipt.id, { status: ReceiptStatus.in_progress });
+  }
+
+  async deleteDraft(receiptId: string): Promise<void> {
+    const { tenantId, permissions } = await resolveReceivingContext(this.repositories);
+    ensureCanSaveReceivingProgress(permissions);
+    await ensureTenantCanUseReceiving(this.repositories, tenantId);
+    if (this.repositories.receivingDataSource === "api") {
+      const current = await this.repositories.receipts.getRecordByIdScoped(tenantId, receiptId);
+      if (!current || current.receipt.status !== ReceiptStatus.in_progress) {
+        throw new ReceivingServiceError("No se encontró el borrador de recepción solicitado.");
+      }
+      assertSingleLotDraftEditable(current);
+    }
+    await this.repositories.receipts.deleteDraftScoped(tenantId, receiptId);
   }
 
   async confirm(input: ConfirmReceivingInput): Promise<Receipt> {
@@ -103,6 +126,7 @@ export class ReceivingDocumentDetailService {
     );
     ensureCanConfirmReceiving(permissions);
     await ensureTenantCanUseReceiving(this.repositories, tenantId);
+    this.ensureApiConfirmationIsUnavailable();
     const order = await this.requirePurchaseOrder(tenantId, user, input.documentId);
     const confirmationId = input.confirmationId.trim();
     if (!confirmationId) {
@@ -151,6 +175,7 @@ export class ReceivingDocumentDetailService {
     );
     ensureCanConfirmReceiving(permissions);
     await ensureTenantCanUseReceiving(this.repositories, tenantId);
+    this.ensureApiConfirmationIsUnavailable();
     const transfer = await this.repositories.inventoryTransfers.getById(input.documentId);
     if (!transfer || transfer.transfer.tenantId !== tenantId) {
       throw new ReceivingServiceError("Traslado no encontrado.");
@@ -252,6 +277,9 @@ export class ReceivingDocumentDetailService {
     // requirePurchaseOrder.
     if (activeBranchId && order.branchId !== activeBranchId) {
       throw new ReceivingServiceError("El documento no pertenece a la sucursal activa.");
+    }
+    if (this.repositories.receivingDataSource === "api") {
+      return this.getApiPurchaseOrderDocument(order);
     }
     const [suppliers, branches, products, units, locations, receipts, incidentTypes, users] =
       await Promise.all([
@@ -368,6 +396,189 @@ export class ReceivingDocumentDetailService {
       capabilities: toCapabilityFlags(capabilities, entitlements),
       readOnly: order.status === PurchaseOrderStatus.received,
     };
+  }
+
+  private async getApiPurchaseOrderDocument(
+    order: PurchaseOrder,
+  ): Promise<ReceivingDocumentDetail> {
+    const tenantId = order.tenantId;
+    const productIds = [...new Set((order.items ?? []).map((item) => item.productId))];
+    const [
+      branches,
+      products,
+      units,
+      locations,
+      draftReceiptPage,
+      confirmedReceiptPage,
+      capabilities,
+      entitlements,
+      settings,
+    ] = await Promise.all([
+        this.repositories.branches.getAll(),
+        Promise.all(
+          productIds.map((productId) =>
+            this.repositories.products.getByIdScoped(tenantId, productId),
+          ),
+        ),
+        this.repositories.units.getAll(),
+        this.repositories.inventory.getLocations(order.branchId),
+        this.repositories.receipts.getPageScoped(tenantId, {
+          branchId: order.branchId,
+          purchaseOrderId: order.id,
+          status: "draft",
+          page: 1,
+          pageSize: 100,
+        }),
+        this.repositories.receipts.getPageScoped(tenantId, {
+          branchId: order.branchId,
+          purchaseOrderId: order.id,
+          status: "confirmed",
+          page: 1,
+          pageSize: 100,
+        }),
+        this.getCapabilities(tenantId),
+        new ResolveTenantEntitlementsService(this.repositories).execute(tenantId),
+        this.getInventorySettings(order),
+      ]);
+    if (draftReceiptPage.totalItems > 1) {
+      throw new ReceivingServiceError(
+        "La orden tiene varios borradores de recepción. Resuelve el conflicto antes de editar.",
+      );
+    }
+    const receiptHistoryIncomplete = isReceiptHistoryIncomplete(
+      confirmedReceiptPage.page,
+      confirmedReceiptPage.totalPages,
+    );
+    const branch = branches.find((item) => item.id === order.branchId);
+    const receiptRecords = [...draftReceiptPage.items, ...confirmedReceiptPage.items];
+    const orderReceipts = receiptRecords.map((record) => record.receipt);
+    const receiptLines = receiptRecords.flatMap((record) =>
+      record.items.map((item) => item.line),
+    );
+    const productById = new Map(
+      products
+        .filter((product): product is Product => product !== null)
+        .map((product) => [product.id, product]),
+    );
+    const unitById = new Map(units.map((unit) => [unit.id, unit]));
+    const inProgressRecord = draftReceiptPage.items.find(
+      (record) => record.receipt.status === ReceiptStatus.in_progress,
+    );
+    const inProgressReceipt = inProgressRecord?.receipt;
+    const multiLotItems =
+      inProgressRecord?.items.filter((item) => item.trackingDetails.length > 1) ?? [];
+    const registeredLotCount = multiLotItems.reduce(
+      (total, item) => total + item.trackingDetails.length,
+      0,
+    );
+    const inProgressLines = receiptLines.filter(
+      (line) => line.receiptId === inProgressReceipt?.id,
+    );
+    const confirmedReceipts = orderReceipts.filter(
+      (receipt) => receipt.status === ReceiptStatus.received,
+    );
+    const confirmedReceiptIds = new Set(confirmedReceipts.map((receipt) => receipt.id));
+    const confirmedLines = receiptHistoryIncomplete
+      ? []
+      : receiptLines.filter((line) => confirmedReceiptIds.has(line.receiptId));
+    const locationNameById = new Map(locations.map((location) => [location.id, location.name]));
+
+    return {
+      document: {
+        id: order.id,
+        type: "purchase_order",
+        number: order.number,
+        typeLabel: "Orden de compra",
+        originLabel: "Proveedor",
+        originName: order.supplierNameSnapshot ?? "Proveedor no disponible",
+        branchId: order.branchId,
+        branchName: branch?.name ?? "Sucursal destino",
+        tenantId,
+        ...(order.expectedDate ? { expectedDate: order.expectedDate } : {}),
+        statusLabel: getPurchaseOrderStatusLabel(order.status),
+        ...(inProgressReceipt
+          ? { receiptId: inProgressReceipt.id, receiptNumber: inProgressReceipt.number }
+          : {}),
+      },
+      lines: await Promise.all(
+        (order.items ?? []).map((item) =>
+          this.toPurchaseOrderDetailLine({
+            item,
+            product: productById.get(item.productId),
+            unit: unitById.get(item.unitId),
+            baseUnitById: unitById,
+            inProgressLine: inProgressLines.find((line) => line.productId === item.productId),
+            confirmedLines: confirmedLines.filter((line) => line.productId === item.productId),
+            settingsDefaultLocationId: settings.get(item.productId)?.defaultLocationId ?? undefined,
+          }),
+        ),
+      ),
+      locations: toLocationOptions(locations, capabilities),
+      // Incidentes Goods Receipt quedan deliberadamente fuera de 7A1; no se mezclan ids mock.
+      incidentTypes: [],
+      incidents: [],
+      previousReceipts: receiptHistoryIncomplete
+        ? []
+        : buildPreviousReceipts({
+            receipts: confirmedReceipts,
+            receiptLines,
+            incidents: [],
+            incidentTypes: [],
+            productById,
+            unitById,
+            locationNameById,
+            userNameById: new Map(),
+            orderItems: order.items ?? [],
+            orderNumber: order.number,
+            orderedTotal: (order.items ?? []).reduce((sum, item) => sum + item.quantity, 0),
+          }),
+      capabilities: toCapabilityFlags(capabilities, entitlements),
+      readOnly: isApiReceivingReadOnly(
+        order.status,
+        multiLotItems.length > 0,
+        receiptHistoryIncomplete,
+      ),
+      ...(receiptHistoryIncomplete ? { receiptHistoryIncomplete: true } : {}),
+      ...(multiLotItems.length > 0
+        ? {
+            multiLotDraftSummary: `${registeredLotCount} lotes registrados en ${multiLotItems.length} ${multiLotItems.length === 1 ? "línea" : "líneas"}. Este borrador puede consultarse, pero no editarse desde esta pantalla.`,
+          }
+        : {}),
+    };
+  }
+
+  private async saveApiDraft(
+    order: PurchaseOrder,
+    input: SaveReceivingProgressInput,
+  ): Promise<Receipt> {
+    if (input.incidents.some((incident) => incident.editable)) {
+      throw new ReceivingServiceError(
+        "Las incidencias por API se habilitaran en un bloque posterior.",
+      );
+    }
+    const items = toApiDraftItems(input.lines);
+    if (items.length === 0) {
+      throw new ReceivingServiceError("Ingresa al menos una cantidad recibida para guardar.");
+    }
+    const draft = {
+      tenantId: order.tenantId,
+      items,
+    };
+    const record = await persistApiDraftWithHistoryGuard(
+      this.repositories.receipts,
+      order.tenantId,
+      order.branchId,
+      order.id,
+      draft,
+    );
+    return record.receipt;
+  }
+
+  private ensureApiConfirmationIsUnavailable() {
+    if (this.repositories.receivingDataSource !== "api") return;
+    throw new ReceivingServiceError(
+      "La confirmacion de inventario por API se habilitara en el siguiente bloque.",
+    );
   }
 
   private async getTransferDocument(
@@ -516,10 +727,10 @@ export class ReceivingDocumentDetailService {
       sourceLineId: input.item.id,
       ...(input.inProgressLine?.id ? { receiptLineId: input.inProgressLine.id } : {}),
       productId: input.item.productId,
-      productName: product?.name ?? "Producto no disponible",
-      sku: product?.sku ?? "-",
+      productName: product?.name ?? input.item.productNameSnapshot ?? "Producto no disponible",
+      sku: product?.sku ?? input.item.productSkuSnapshot ?? "-",
       unitId: input.item.unitId,
-      unitName: input.unit?.name ?? "Unidad",
+      unitName: input.unit?.name ?? input.item.unitSymbolSnapshot ?? "Unidad",
       unitAllowsDecimals: input.unit?.allowsDecimals ?? false,
       baseUnitId: product?.baseUnitId ?? input.item.unitId,
       baseUnitName: baseUnit?.name ?? input.unit?.name ?? "Unidad base",
@@ -953,8 +1164,144 @@ export function validateIncidentQuantities(
   return errors;
 }
 
-export function toBaseQuantity(line: ReceivingDocumentLine, quantity: number) {
+export function assertSingleLotDraftEditable(record: ReceiptRecord): void {
+  if (record.items.some((item) => item.trackingDetails.length > 1)) {
+    throw new ReceivingServiceError(
+      "Este borrador contiene varias asignaciones de lote o serie en una misma línea. Puedes consultarlo, pero no editarlo desde esta pantalla para evitar pérdida de datos.",
+    );
+  }
+}
+
+export function isReceiptHistoryIncomplete(page: number, totalPages: number): boolean {
+  return page < totalPages;
+}
+
+export function isApiReceivingReadOnly(
+  status: PurchaseOrderStatus,
+  hasUnsupportedMultiLot: boolean,
+  receiptHistoryIncomplete: boolean,
+): boolean {
+  return (
+    !isApiReceivablePurchaseOrder(status) ||
+    hasUnsupportedMultiLot ||
+    receiptHistoryIncomplete
+  );
+}
+
+export async function persistApiDraftWithHistoryGuard(
+  receipts: Pick<
+    ReceiptRepository,
+    | "getPageScoped"
+    | "getRecordByIdScoped"
+    | "createDraftScoped"
+    | "updateDraftScoped"
+  >,
+  tenantId: string,
+  branchId: string,
+  purchaseOrderId: string,
+  input: Omit<ReceiptDraftInput, "purchaseOrderId">,
+): Promise<ReceiptRecord> {
+  const [draftPage, confirmedReceiptPage] = await Promise.all([
+    receipts.getPageScoped(tenantId, {
+      branchId,
+      purchaseOrderId,
+      status: "draft",
+      page: 1,
+      pageSize: 2,
+    }),
+    receipts.getPageScoped(tenantId, {
+      branchId,
+      purchaseOrderId,
+      status: "confirmed",
+      page: 1,
+      pageSize: 100,
+    }),
+  ]);
+  if (
+    isReceiptHistoryIncomplete(confirmedReceiptPage.page, confirmedReceiptPage.totalPages)
+  ) {
+    throw new ReceivingServiceError(
+      "No se puede modificar esta recepción porque el historial de recepciones anteriores está incompleto. Consulta el historial completo antes de editar.",
+    );
+  }
+  if (draftPage.totalItems > 1) {
+    throw new ReceivingServiceError(
+      "La orden tiene varios borradores de recepción. Resuelve el conflicto antes de editar.",
+    );
+  }
+  const discoveredDraft = draftPage.items[0];
+  if (discoveredDraft) {
+    return updateCanonicalSingleLotDraft(
+      receipts,
+      tenantId,
+      purchaseOrderId,
+      discoveredDraft.receipt.id,
+      input,
+    );
+  }
+  return receipts.createDraftScoped({
+    ...input,
+    purchaseOrderId,
+  });
+}
+
+export async function updateCanonicalSingleLotDraft(
+  receipts: Pick<
+    ReceiptRepository,
+    "getRecordByIdScoped" | "updateDraftScoped"
+  >,
+  tenantId: string,
+  purchaseOrderId: string,
+  receiptId: string,
+  input: Omit<ReceiptDraftInput, "purchaseOrderId">,
+): Promise<ReceiptRecord> {
+  const current = await receipts.getRecordByIdScoped(tenantId, receiptId);
+  if (
+    !current ||
+    current.receipt.purchaseOrderId !== purchaseOrderId ||
+    current.receipt.status !== ReceiptStatus.in_progress
+  ) {
+    throw new ReceivingServiceError("No se encontró el borrador de recepción solicitado.");
+  }
+  assertSingleLotDraftEditable(current);
+  return receipts.updateDraftScoped(current.receipt.id, input);
+}
+
+export function toBaseQuantity(
+  line: Pick<ReceivingDocumentLine, "purchaseToBaseFactor">,
+  quantity: number,
+) {
   return quantity * line.purchaseToBaseFactor;
+}
+
+function toApiDraftItems(lines: ReceivingDocumentLine[]): ReceiptDraftItemInput[] {
+  return lines.flatMap((line) => {
+    const receivedQuantity = toFiniteNumber(line.receivedNow);
+    if (receivedQuantity <= 0) return [];
+    const baseQuantity = Number(
+      toBaseQuantity(line, receivedQuantity).toFixed(QUANTITY_DECIMAL_PLACES),
+    );
+    const usesTracking = line.tracking.lot || line.tracking.expiration || line.tracking.serial;
+    return [
+      {
+        purchaseOrderItemId: line.sourceLineId,
+        receivedQuantity,
+        locationId: line.locationId || undefined,
+        // 7A1 proyecta los controles actuales a un solo detalle. El contrato permanece como
+        // array para que 7A2 agregue varios lotes sin cambiar el adapter ni el payload.
+        trackingDetails: usesTracking
+          ? [
+              {
+                baseQuantity,
+                lotNumber: line.lotNumber.trim() || undefined,
+                expirationDate: line.expirationDate || undefined,
+                serialNumbers: parseSerialNumbers(line.serialNumbersText),
+              },
+            ]
+          : [],
+      },
+    ];
+  });
 }
 
 function toReceiptLineInput(line: ReceivingDocumentLine, incidents: ReceivingDocumentIncident[]) {
@@ -1181,4 +1528,12 @@ function getPurchaseOrderStatusLabel(status: PurchaseOrderStatus) {
     cancelled: "Cancelada",
   };
   return labels[status];
+}
+
+function isApiReceivablePurchaseOrder(status: PurchaseOrderStatus) {
+  return (
+    status === PurchaseOrderStatus.approved ||
+    status === PurchaseOrderStatus.sent ||
+    status === PurchaseOrderStatus.partially_received
+  );
 }

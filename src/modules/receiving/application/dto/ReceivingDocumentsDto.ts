@@ -36,4 +36,20 @@ export interface ReceivingReadModel {
   documents: ReceivingDocumentRow[];
   incidents: ReceivingIncidentRow[];
   incidentTypes: IncidentTypeReadModel[];
+  pagination?: ReceivingPaginationState;
+}
+
+export type ReceivingPurchaseOrderStream = "approved" | "sent" | "partially_received";
+
+export interface ReceivingPaginationStreamState {
+  currentPage: number;
+  totalPages: number;
+}
+
+export interface ReceivingPaginationState {
+  branchId: string;
+  streams: Record<ReceivingPurchaseOrderStream, ReceivingPaginationStreamState>;
+  hasMore: boolean;
+  /** El backend no ofrece un agregado de cantidades recibidas por PO. */
+  receiptHistoryIncomplete: boolean;
 }

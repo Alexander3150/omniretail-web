@@ -11,6 +11,8 @@ import type { InventoryTransferWithItems } from "@/core/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   IncidentTypeReadModel,
+  ReceivingPaginationState,
+  ReceivingPurchaseOrderStream,
   ReceivingDocumentRow,
   ReceivingReadModel,
   ReceivingStatus,
@@ -37,6 +39,10 @@ export class ReceivingDocumentsService {
     // User.allowedBranchIds antes de usarse para filtrar cualquier dato, no solo contra el
     // tenant -- permission-hardening.
     await ensureUserCanOperateBranch(this.repositories, user, activeBranchId);
+
+    if (this.repositories.receivingDataSource === "api") {
+      return this.getApiDocuments(tenantId, activeBranchId);
+    }
 
     const [purchaseOrders, suppliers, branches, transfers, receipts, incidentTypes, users] =
       await Promise.all([
@@ -131,6 +137,7 @@ export class ReceivingDocumentsService {
     const { tenantId, permissions } = await resolveReceivingContext(this.repositories);
     ensureCanManageIncidentTypes(permissions);
     await ensureTenantCanUseReceiving(this.repositories, tenantId);
+    this.ensureApiIncidentOperationsAreUnavailable();
     const trimmedName = name.trim();
     if (!trimmedName) throw new ReceivingServiceError("Ingresa el nombre del tipo de incidencia.");
     if (trimmedName.length > TEXT_LIMITS.incidentName) {
@@ -148,6 +155,7 @@ export class ReceivingDocumentsService {
     const { tenantId, permissions } = await resolveReceivingContext(this.repositories);
     ensureCanManageIncidentTypes(permissions);
     await ensureTenantCanUseReceiving(this.repositories, tenantId);
+    this.ensureApiIncidentOperationsAreUnavailable();
     await this.ensureIncidentTypeBelongsToTenant(tenantId, id);
     return this.repositories.incidentTypes.update(id, { active: false });
   }
@@ -156,6 +164,7 @@ export class ReceivingDocumentsService {
     const { tenantId, permissions } = await resolveReceivingContext(this.repositories);
     ensureCanManageIncidentTypes(permissions);
     await ensureTenantCanUseReceiving(this.repositories, tenantId);
+    this.ensureApiIncidentOperationsAreUnavailable();
     await this.ensureIncidentTypeBelongsToTenant(tenantId, id);
     const incidents = await this.getReceiptIncidents();
     if (incidents.some((incident) => incident.incidentTypeId === id)) {
@@ -183,6 +192,174 @@ export class ReceivingDocumentsService {
   private async getReceiptIncidents() {
     return this.repositories.receipts.getIncidents();
   }
+
+  async loadMore(
+    activeBranchId: string,
+    pagination: ReceivingPaginationState,
+  ): Promise<ReceivingReadModel> {
+    const { tenantId, user, permissions } = await resolveReceivingContext(this.repositories);
+    ensureCanReadReceiving(permissions);
+    await ensureUserCanOperateBranch(this.repositories, user, activeBranchId);
+    if (this.repositories.receivingDataSource !== "api") {
+      throw new ReceivingServiceError("La paginacion incremental solo aplica al modo API.");
+    }
+    if (pagination.branchId !== activeBranchId) {
+      throw new ReceivingServiceError("La sucursal activa cambio; vuelve a cargar recepciones.");
+    }
+    const stream = nextReceivingStream(pagination);
+    if (!stream) return { documents: [], incidents: [], incidentTypes: [], pagination };
+    const nextPage = pagination.streams[stream].currentPage + 1;
+    const page = await this.repositories.purchaseOrders.getPageScoped(tenantId, {
+      branchId: activeBranchId,
+      status: PURCHASE_ORDER_STREAMS[stream],
+      page: nextPage,
+      pageSize: RECEIVING_PAGE_SIZE,
+    });
+    const batch = await this.toApiPurchaseOrderRows(tenantId, activeBranchId, page.items);
+    const streams = {
+      ...pagination.streams,
+      [stream]: { currentPage: page.page, totalPages: page.totalPages },
+    };
+    return {
+      documents: batch.documents,
+      incidents: [],
+      incidentTypes: [],
+      pagination: {
+        branchId: activeBranchId,
+        streams,
+        hasMore: hasMoreReceivingPages(streams),
+        receiptHistoryIncomplete:
+          pagination.receiptHistoryIncomplete || batch.receiptHistoryIncomplete,
+      },
+    };
+  }
+
+  private ensureApiIncidentOperationsAreUnavailable() {
+    if (this.repositories.receivingDataSource !== "api") return;
+    throw new ReceivingServiceError(
+      "Las incidencias por API se habilitaran en un bloque posterior.",
+    );
+  }
+
+  private async getApiDocuments(
+    tenantId: string,
+    activeBranchId: string,
+  ): Promise<ReceivingReadModel> {
+    const entries = Object.entries(PURCHASE_ORDER_STREAMS) as Array<
+      [ReceivingPurchaseOrderStream, PurchaseOrderStatus]
+    >;
+    const pages = await Promise.all(
+      entries.map(async ([stream, status]) => [
+        stream,
+        await this.repositories.purchaseOrders.getPageScoped(tenantId, {
+          branchId: activeBranchId,
+          status,
+          page: 1,
+          pageSize: RECEIVING_PAGE_SIZE,
+        }),
+      ] as const),
+    );
+    const batch = await this.toApiPurchaseOrderRows(
+      tenantId,
+      activeBranchId,
+      pages.flatMap(([, page]) => page.items),
+    );
+    const streams = Object.fromEntries(
+      pages.map(([stream, page]) => [
+        stream,
+        { currentPage: page.page, totalPages: page.totalPages },
+      ]),
+    ) as ReceivingPaginationState["streams"];
+    return {
+      documents: batch.documents.sort(
+        (left, right) =>
+          new Date(right.lastUpdatedAt).getTime() - new Date(left.lastUpdatedAt).getTime(),
+      ),
+      incidents: [],
+      incidentTypes: [],
+      pagination: {
+        branchId: activeBranchId,
+        streams,
+        hasMore: hasMoreReceivingPages(streams),
+        receiptHistoryIncomplete: batch.receiptHistoryIncomplete,
+      },
+    };
+  }
+
+  private async toApiPurchaseOrderRows(
+    tenantId: string,
+    branchId: string,
+    purchaseOrders: PurchaseOrder[],
+  ) {
+    const uniqueOrders = [...new Map(purchaseOrders.map((order) => [order.id, order])).values()];
+    const records = await Promise.all(
+      uniqueOrders.map(async (order) => {
+        const [drafts, confirmed] = await Promise.all([
+          this.repositories.receipts.getPageScoped(tenantId, {
+            branchId,
+            purchaseOrderId: order.id,
+            status: "draft",
+            page: 1,
+            pageSize: RECEIPT_HISTORY_PAGE_SIZE,
+          }),
+          this.repositories.receipts.getPageScoped(tenantId, {
+            branchId,
+            purchaseOrderId: order.id,
+            status: "confirmed",
+            page: 1,
+            pageSize: RECEIPT_HISTORY_PAGE_SIZE,
+          }),
+        ]);
+        return { order, drafts, confirmed };
+      }),
+    );
+    const productById = new Map<string, { name: string; sku: string }>();
+    uniqueOrders.forEach((order) =>
+      (order.items ?? []).forEach((item) =>
+        productById.set(item.productId, {
+          name: item.productNameSnapshot ?? "Producto no disponible",
+          sku: item.productSkuSnapshot ?? "-",
+        }),
+      ),
+    );
+    return {
+      documents: records.map(({ order, drafts, confirmed }) =>
+        toPurchaseOrderRow(
+          order,
+          order.supplierNameSnapshot ?? "Proveedor no disponible",
+          drafts.items.map((record) => record.receipt),
+          confirmed.page < confirmed.totalPages
+            ? []
+            : confirmed.items.flatMap((record) => record.items.map((item) => item.line)),
+          productById,
+        ),
+      ),
+      receiptHistoryIncomplete: records.some(
+        ({ drafts, confirmed }) =>
+          drafts.page < drafts.totalPages || confirmed.page < confirmed.totalPages,
+      ),
+    };
+  }
+}
+
+const RECEIVING_PAGE_SIZE = 25;
+const RECEIPT_HISTORY_PAGE_SIZE = 100;
+const PURCHASE_ORDER_STREAMS: Record<ReceivingPurchaseOrderStream, PurchaseOrderStatus> = {
+  approved: PurchaseOrderStatus.approved,
+  sent: PurchaseOrderStatus.sent,
+  partially_received: PurchaseOrderStatus.partially_received,
+};
+
+export function nextReceivingStream(
+  pagination: ReceivingPaginationState,
+): ReceivingPurchaseOrderStream | null {
+  return (Object.keys(PURCHASE_ORDER_STREAMS) as ReceivingPurchaseOrderStream[]).find(
+    (stream) => pagination.streams[stream].currentPage < pagination.streams[stream].totalPages,
+  ) ?? null;
+}
+
+function hasMoreReceivingPages(streams: ReceivingPaginationState["streams"]) {
+  return Object.values(streams).some((stream) => stream.currentPage < stream.totalPages);
 }
 
 export function canDeleteIncidentType(usageCount: number) {

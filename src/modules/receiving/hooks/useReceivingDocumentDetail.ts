@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReceiptIncidentEvidence } from "@/core/entities";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import type {
@@ -29,20 +29,33 @@ export function useReceivingDocumentDetail(
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmationId, setConfirmationId] = useState(() => crypto.randomUUID());
+  const requestIdRef = useRef(0);
 
   const reload = useCallback(async () => {
-    if (!activeBranchId) return;
+    const requestId = ++requestIdRef.current;
+    if (!activeBranchId) {
+      setDetail(null);
+      setLines([]);
+      setIncidents([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const nextDetail = await service.getDocument(documentType, documentId, activeBranchId);
+      if (requestId !== requestIdRef.current) return;
       setDetail(nextDetail);
       setLines(nextDetail.lines);
       setIncidents(nextDetail.incidents);
     } catch (caughtError) {
+      if (requestId !== requestIdRef.current) return;
       setError(caughtError instanceof Error ? caughtError.message : "No se pudo cargar.");
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [activeBranchId, documentId, documentType, service]);
 
@@ -183,6 +196,8 @@ export function useReceivingDocumentDetail(
     loading: branchLoading || loading,
     saving,
     error,
+    confirmAvailable: repositories.receivingDataSource !== "api",
+    incidentsAvailable: repositories.receivingDataSource !== "api",
     reload,
     updateLine,
     updateLineQuantity,

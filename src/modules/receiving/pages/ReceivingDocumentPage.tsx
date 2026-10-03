@@ -55,6 +55,8 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
     loading,
     saving,
     error,
+    confirmAvailable,
+    incidentsAvailable,
     updateLine,
     updateLineQuantity,
     saveProgress,
@@ -155,29 +157,43 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
               </Button>
               {!readOnly ? (
                 <>
-                  {detail.document.type === "purchase_order" ? <Button
-                    disabled={saving || !canUseReceiving || saveProgressInvalid}
-                    onClick={handleSaveProgress}
-                    type="button"
-                    variant="secondary"
-                  >
-                    <SaveIcon />
-                    Guardar avance
-                  </Button> : null}
-                  <Button
-                    disabled={saving || !canUseReceiving || confirmationInvalid}
-                    onClick={handleConfirm}
-                    type="button"
-                  >
-                    <CheckIcon />
-                    Confirmar recepcion
-                  </Button>
+                  {detail.document.type === "purchase_order" ? (
+                    <Button
+                      disabled={saving || !canUseReceiving || saveProgressInvalid}
+                      onClick={handleSaveProgress}
+                      type="button"
+                      variant="secondary"
+                    >
+                      <SaveIcon />
+                      Guardar avance
+                    </Button>
+                  ) : null}
+                  {confirmAvailable ? (
+                    <Button
+                      disabled={saving || !canUseReceiving || confirmationInvalid}
+                      onClick={handleConfirm}
+                      type="button"
+                    >
+                      <CheckIcon />
+                      Confirmar recepcion
+                    </Button>
+                  ) : null}
                 </>
               ) : null}
             </div>
           }
         />
       </div>
+
+      {detail.multiLotDraftSummary ? (
+        <InlineAlert title={detail.multiLotDraftSummary} tone="warning" />
+      ) : null}
+      {detail.receiptHistoryIncomplete ? (
+        <InlineAlert
+          title="El historial confirmado tiene más páginas. Los totales históricos y pendientes no están disponibles; esta recepción es solo de consulta."
+          tone="warning"
+        />
+      ) : null}
 
       <section className="rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
@@ -208,10 +224,13 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
                   Recepcion actual de {detail.document.number}
                 </h2>
                 <p className="text-xs font-semibold text-[var(--color-text-muted)]">
-                  Pendiente inicial: {formatNumber(summary.ordered - summary.acceptedPreviously)}
+                  Pendiente inicial:{" "}
+                  {detail.receiptHistoryIncomplete
+                    ? "No disponible"
+                    : formatNumber(summary.ordered - summary.acceptedPreviously)}
                 </p>
               </div>
-              {!readOnly && detail.document.type === "purchase_order" ? (
+              {!readOnly && incidentsAvailable && detail.document.type === "purchase_order" ? (
                 <Button
                   onClick={() => {
                     setSelectedIncidentId(null);
@@ -257,7 +276,11 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
                 <SummaryItem label="Pedido total" value={formatNumber(summary.ordered)} />
                 <SummaryItem
                   label="Aceptado previamente"
-                  value={formatNumber(summary.acceptedPreviously)}
+                  value={
+                    detail.receiptHistoryIncomplete
+                      ? "No disponible"
+                      : formatNumber(summary.acceptedPreviously)
+                  }
                 />
                 <SummaryItem label="Aceptado ahora" value={formatNumber(summary.acceptedNow)} />
                 <SummaryItem
@@ -266,9 +289,20 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
                 />
                 <SummaryItem
                   label="Aceptado acumulado"
-                  value={formatNumber(summary.acceptedAccumulated)}
+                  value={
+                    detail.receiptHistoryIncomplete
+                      ? "No disponible"
+                      : formatNumber(summary.acceptedAccumulated)
+                  }
                 />
-                <SummaryItem label="Pendiente despues" value={formatNumber(summary.pendingAfter)} />
+                <SummaryItem
+                  label="Pendiente despues"
+                  value={
+                    detail.receiptHistoryIncomplete
+                      ? "No disponible"
+                      : formatNumber(summary.pendingAfter)
+                  }
+                />
               </div>
               <div className="mt-4 rounded-md border border-blue-100 bg-blue-50 p-3">
                 <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">
@@ -394,11 +428,19 @@ function ReceivingLinesTable({
                 />
                 <SmallDescription
                   label="Recibido anteriormente"
-                  value={`${formatNumber(line.acceptedPreviously)} ${line.unitName} / ${formatNumber(line.acceptedPreviously * line.purchaseToBaseFactor)} ${line.baseUnitName}`}
+                  value={
+                    detail.receiptHistoryIncomplete
+                      ? "No disponible"
+                      : `${formatNumber(line.acceptedPreviously)} ${line.unitName} / ${formatNumber(line.acceptedPreviously * line.purchaseToBaseFactor)} ${line.baseUnitName}`
+                  }
                 />
                 <SmallDescription
                   label="Pendiente"
-                  value={`${formatNumber(pendingBefore)} ${line.unitName} / ${formatNumber(pendingBefore * line.purchaseToBaseFactor)} ${line.baseUnitName}`}
+                  value={
+                    detail.receiptHistoryIncomplete
+                      ? "No disponible"
+                      : `${formatNumber(pendingBefore)} ${line.unitName} / ${formatNumber(pendingBefore * line.purchaseToBaseFactor)} ${line.baseUnitName}`
+                  }
                 />
                 <SmallDescription
                   label="Con incidencia"
@@ -498,8 +540,14 @@ function ReceivingLinesTable({
                     {line.baseUnitName}
                   </span>
                   <span className="block text-[10px] font-medium text-[var(--color-text-muted)]">
-                    Previo {formatNumber(line.acceptedPreviously)} /{" "}
-                    {formatNumber(line.acceptedPreviously * line.purchaseToBaseFactor)} base
+                    {detail.receiptHistoryIncomplete ? (
+                      "Previo no disponible"
+                    ) : (
+                      <>
+                        Previo {formatNumber(line.acceptedPreviously)} /{" "}
+                        {formatNumber(line.acceptedPreviously * line.purchaseToBaseFactor)} base
+                      </>
+                    )}
                   </span>
                 </td>
                 <td className="px-2 py-2.5">
@@ -529,11 +577,17 @@ function ReceivingLinesTable({
                   </span>
                 </td>
                 <td className="px-2 py-2.5 text-right font-bold text-[var(--color-title)]">
-                  {formatNumber(line.pendingQuantity)}
-                  <span className="block text-[10px] font-medium text-[var(--color-text-muted)]">
-                    {formatNumber(line.pendingQuantity * line.purchaseToBaseFactor)}{" "}
-                    {line.baseUnitName}
-                  </span>
+                  {detail.receiptHistoryIncomplete ? (
+                    "No disponible"
+                  ) : (
+                    <>
+                      {formatNumber(line.pendingQuantity)}
+                      <span className="block text-[10px] font-medium text-[var(--color-text-muted)]">
+                        {formatNumber(line.pendingQuantity * line.purchaseToBaseFactor)}{" "}
+                        {line.baseUnitName}
+                      </span>
+                    </>
+                  )}
                 </td>
                 <td className="px-2 py-2.5">
                   {detail.capabilities.supportsMultipleLocations && line.tracking.stock ? (
