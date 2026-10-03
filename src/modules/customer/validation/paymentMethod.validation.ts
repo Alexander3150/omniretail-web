@@ -1,6 +1,10 @@
-import { CARD_BRANDS, MAX_EXPIRATION_YEARS_AHEAD } from "@/config/card-brands";
+import {
+  CARD_BRANDS,
+  CARDHOLDER_NAME_MAX_LENGTH,
+  MAX_EXPIRATION_YEARS_AHEAD,
+} from "@/config/card-brands";
 import { GUATEMALA_BANKS } from "@/config/guatemala-banks";
-import { TEXT_FIELD_POLICY, validateMaxLength } from "@/config/text-field-policy";
+import { validateMaxLength } from "@/config/text-field-policy";
 import type { PaymentMethodFormDto } from "@/modules/customer/application/dto/PaymentMethodFormDto";
 
 export type PaymentMethodValidationErrors = Partial<
@@ -68,7 +72,7 @@ export function validatePaymentMethodForm(
   if (dto.cardholderName.trim()) {
     const lengthError = validateMaxLength(
       dto.cardholderName,
-      TEXT_FIELD_POLICY.NAME_MAX_LENGTH,
+      CARDHOLDER_NAME_MAX_LENGTH,
       "El nombre en la tarjeta",
     );
     if (lengthError) errors.cardholderName = lengthError;
