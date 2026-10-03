@@ -26,6 +26,7 @@ const GENERIC_LOGIN_ERROR = "No fue posible iniciar sesión. Verifica tus creden
 const GENERIC_REGISTER_ERROR = "No se pudo completar el registro.";
 const INVALID_LINK_ERROR = "Este enlace no es válido o ya expiró.";
 const INVALID_ACTIVATION_LINK = "Este enlace de activación no es válido o ya expiró.";
+const GENERIC_BRANCH_ERROR = "No se pudo cambiar la sucursal activa.";
 
 interface ApiInviteEmployeeResult {
   userId: string;
@@ -117,12 +118,6 @@ function postJson(url: string, body: unknown): Promise<Response> {
  * lanzan un error explicito: no se simulan.
  */
 export class ApiAuthRepository implements AuthRepository {
-  /**
-   * TEMPORAL: sucursal activa elegida en el selector, solo en memoria de esta pestaña, hasta que
-   * el backend tenga un endpoint para persistirla. El backend nunca usa este valor como autoridad.
-   */
-  private selectedBranchId: string | null = null;
-
   /** tenantId real de la tienda publica configurada; se consulta una sola vez (ver resolveTenantSlug). */
   private publicStorefrontTenantId: Promise<string | null> | null = null;
 
@@ -153,7 +148,6 @@ export class ApiAuthRepository implements AuthRepository {
 
     const current = (await response.json()) as ApiCurrentSession;
     this.currentSession.prime(current);
-    this.selectedBranchId = null;
     this.eventBus.emit("auth.changed", { entityId: current.session.id, action: "created" });
     return { status: "authenticated", session: toSession(current) };
   }
@@ -171,16 +165,27 @@ export class ApiAuthRepository implements AuthRepository {
   async getSession(sessionId: string): Promise<Session | null> {
     const current = await this.currentSession.get();
     if (!current || current.session.id !== sessionId) return null;
-    return toSession(current, this.selectedBranchId);
+    return toSession(current);
   }
 
   async getCurrentSessionId(): Promise<string | null> {
     return (await this.currentSession.get())?.session.id ?? null;
   }
 
-  /** TEMPORAL (ver `selectedBranchId`): no persiste en el servidor. */
+  /**
+   * Guarda la sucursal activa en la sesion del backend (que valida que este permitida). La
+   * respuesta tiene la forma de /auth/me: se usa como sesion cacheada, asi `getSession` devuelve
+   * ya la sucursal persistida sin otra llamada.
+   */
   async setActiveBranchId(branchId: string): Promise<void> {
-    this.selectedBranchId = branchId;
+    const response = await fetch("/api/auth/session/branch", {
+      method: "PATCH",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ branchId }),
+    });
+    if (!response.ok) throw new Error(await errorMessage(response, GENERIC_BRANCH_ERROR));
+    this.currentSession.prime((await response.json()) as ApiCurrentSession);
   }
 
   /**
@@ -388,6 +393,5 @@ export class ApiAuthRepository implements AuthRepository {
 
   private forgetLocalState(): void {
     this.currentSession.invalidate();
-    this.selectedBranchId = null;
   }
 }
