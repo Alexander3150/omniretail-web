@@ -35,11 +35,17 @@ export function ReceivingPage() {
     filters,
     filteredDocuments,
     loading,
+    loadingMore,
     error,
+    incrementalError,
+    hasMore,
+    receiptHistoryIncomplete,
+    incidentManagementAvailable,
     updateFilters,
     createIncidentType,
     archiveIncidentType,
     deleteIncidentType,
+    loadMore,
   } = useReceivingDocuments();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<TablePageSize>(DEFAULT_PAGE_SIZE);
@@ -100,7 +106,7 @@ export function ReceivingPage() {
         <PageHeader
           title="Recepciones"
           description="Consulta ordenes, avances de recepcion e incidencias operativas."
-          actions={
+          actions={incidentManagementAvailable ? (
             <Button
               onClick={() => setIncidentTypeModalOpen(true)}
               type="button"
@@ -109,11 +115,18 @@ export function ReceivingPage() {
               <AlertIcon />
               Tipos de incidencia
             </Button>
-          }
+          ) : undefined}
         />
       </div>
 
       {error ? <InlineAlert title={error} tone="danger" /> : null}
+      {incrementalError ? <InlineAlert title={incrementalError} tone="danger" /> : null}
+      {receiptHistoryIncomplete ? (
+        <InlineAlert
+          title="El historial de recepciones está incompleto; se muestra únicamente la primera página disponible por orden."
+          tone="warning"
+        />
+      ) : null}
 
       <section className="rounded-lg border border-[var(--color-border)] bg-white p-3 shadow-sm">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
@@ -175,6 +188,18 @@ export function ReceivingPage() {
                 onPageChange={changePage}
                 onPageSizeChange={handlePageSizeChange}
               />
+              {hasMore ? (
+                <div className="flex justify-center border-t border-[var(--color-border)] p-4">
+                  <Button
+                    disabled={loadingMore}
+                    onClick={() => void loadMore()}
+                    type="button"
+                    variant="secondary"
+                  >
+                    {loadingMore ? "Cargando..." : "Cargar más"}
+                  </Button>
+                </div>
+              ) : null}
             </>
           )}
         </section>
@@ -200,14 +225,16 @@ export function ReceivingPage() {
         />
       ) : null}
 
-      <IncidentTypesModal
-        incidentTypes={data.incidentTypes}
-        open={incidentTypeModalOpen}
-        onArchive={archiveIncidentType}
-        onClose={() => setIncidentTypeModalOpen(false)}
-        onCreate={createIncidentType}
-        onDelete={deleteIncidentType}
-      />
+      {incidentManagementAvailable ? (
+        <IncidentTypesModal
+          incidentTypes={data.incidentTypes}
+          open={incidentTypeModalOpen}
+          onArchive={archiveIncidentType}
+          onClose={() => setIncidentTypeModalOpen(false)}
+          onCreate={createIncidentType}
+          onDelete={deleteIncidentType}
+        />
+      ) : null}
       <Modal
         open={Boolean(previewEvidence)}
         title={previewEvidence?.name ?? "Evidencia"}

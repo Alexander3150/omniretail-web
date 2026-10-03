@@ -13,6 +13,10 @@ export interface ReceivingDocumentDetail {
   previousReceipts: ReceivingPreviousReceipt[];
   capabilities: ReceivingCapabilityFlags;
   readOnly: boolean;
+  /** Indicador informativo; 7A1 permite consultar, pero no editar, estos drafts. */
+  multiLotDraftSummary?: string;
+  /** La primera página no contiene todo el historial confirmado del backend. */
+  receiptHistoryIncomplete?: boolean;
 }
 
 export interface ReceivingDocumentHeader {
