@@ -4,6 +4,7 @@ import type { Session, User } from "@/core/entities";
 import { AccountStatus, UserStatus, UserType } from "@/core/enums";
 import type {
   AuthRepository,
+  ChangePasswordInput,
   EmployeeAuthSummary,
   InviteEmployeeResult,
   LoginInput,
@@ -26,6 +27,7 @@ const GENERIC_LOGIN_ERROR = "No fue posible iniciar sesión. Verifica tus creden
 const GENERIC_REGISTER_ERROR = "No se pudo completar el registro.";
 const INVALID_LINK_ERROR = "Este enlace no es válido o ya expiró.";
 const INVALID_ACTIVATION_LINK = "Este enlace de activación no es válido o ya expiró.";
+const GENERIC_CHANGE_PASSWORD_ERROR = "No se pudo cambiar la contraseña. Inténtalo nuevamente.";
 
 interface ApiInviteEmployeeResult {
   userId: string;
@@ -110,11 +112,11 @@ function postJson(url: string, body: unknown): Promise<Response> {
  * queda en la cookie HttpOnly y este repositorio nunca lo ve.
  *
  * Soportados en modo api: login, logout, sesion actual, registro de clientes, verificacion de
- * correo, recuperacion de contraseña, activacion e invitacion de empleados. Ninguno de los flujos de
- * cuenta crea sesion: el token de un solo uso viaja solo por correo.
+ * correo, recuperacion de contraseña, activacion e invitacion de empleados, y cambio de contraseña
+ * de la sesion actual. Ninguno de los flujos de cuenta crea sesion: el token de un solo uso viaja
+ * solo por correo.
  *
- * Los metodos que el backend todavia no soporta (MFA, cambio de contraseña del cliente...)
- * lanzan un error explicito: no se simulan.
+ * Los metodos que el backend todavia no soporta (MFA...) lanzan un error explicito: no se simulan.
  */
 export class ApiAuthRepository implements AuthRepository {
   /**
@@ -305,8 +307,17 @@ export class ApiAuthRepository implements AuthRepository {
     throw new Error(errorData?.message || INVALID_ACTIVATION_LINK);
   }
 
-  changePassword(): Promise<void> {
-    return notAvailable();
+  /**
+   * La cuenta sale del JWT de la cookie: `sessionId` no se envia, y `mfaCodeMock` tampoco (el
+   * backend aun no tiene MFA). `fields.newPassword` (politica o igual a la actual) llega como
+   * PasswordPolicyError; `fields.currentPassword` como Error con su mensaje (ver `toError`).
+   */
+  async changePassword(input: ChangePasswordInput): Promise<void> {
+    const response = await postJson("/api/auth/password/change", {
+      currentPassword: input.currentPasswordMock,
+      newPassword: input.newPasswordMock,
+    });
+    if (!response.ok) throw await toError(response, GENERIC_CHANGE_PASSWORD_ERROR);
   }
 
   /**

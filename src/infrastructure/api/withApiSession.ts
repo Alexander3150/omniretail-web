@@ -1,9 +1,11 @@
 import type { Branch, Role, Tenant, User } from "@/core/entities";
 import { type BranchType, type PlanCode, UserType } from "@/core/enums";
 import type {
+  AddressRepository,
   BankAccountRepository,
   BranchRepository,
   BusinessConfigRepository,
+  CustomerRepository,
   PlanRepository,
   RoleRepository,
   SupplierRepository,
@@ -12,10 +14,12 @@ import type {
 } from "@/core/repositories";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import { ApiAddressRepository } from "@/infrastructure/api/ApiAddressRepository";
 import { ApiAuthRepository } from "@/infrastructure/api/ApiAuthRepository";
 import { ApiBankAccountRepository } from "@/infrastructure/api/ApiBankAccountRepository";
 import { ApiBranchRepository } from "@/infrastructure/api/ApiBranchRepository";
 import { ApiBusinessConfigRepository } from "@/infrastructure/api/ApiBusinessConfigRepository";
+import { ApiCustomerRepository } from "@/infrastructure/api/ApiCustomerRepository";
 import { ApiPlanRepository } from "@/infrastructure/api/ApiPlanRepository";
 import { ApiRoleRepository } from "@/infrastructure/api/ApiRoleRepository";
 import { ApiSupplierRepository } from "@/infrastructure/api/ApiSupplierRepository";
@@ -60,6 +64,61 @@ function employeeRouter<T>(
     const granted = current.role?.permissions ?? [];
     const allowed = permissions.length === 0 || permissions.some((key) => granted.includes(key));
     return allowed ? api : mock;
+  };
+}
+
+/**
+ * Igual que `employeeRouter`, pero para el autoservicio de "Mi cuenta": el backend solo con sesion
+ * de cliente. Empleados, invitados y el storefront publico siguen en el mock. El repositorio del
+ * backend vuelve a comprobar que tenantId/customerId sean los de la sesion.
+ */
+function customerRouter<T>(mock: T, api: T, currentSession: CurrentSessionClient) {
+  return async (): Promise<T> => {
+    const current = await currentSession.get();
+    return current?.user.type === UserType.customer ? api : mock;
+  };
+}
+
+/**
+ * `/me/profile` (perfil del cliente autenticado). Los demas metodos (gestion administrativa de
+ * clientes) no tienen endpoint de autoservicio y siguen en el mock.
+ */
+function apiCustomersForCustomers(
+  mock: CustomerRepository,
+  api: ApiCustomerRepository,
+  currentSession: CurrentSessionClient,
+): CustomerRepository {
+  const resolve = customerRouter<Pick<CustomerRepository, "getByUserId" | "updateProfileForCustomer">>(
+    mock,
+    api,
+    currentSession,
+  );
+
+  return withOverrides(mock, {
+    getByUserId: async (userId: string) => (await resolve()).getByUserId(userId),
+    updateProfileForCustomer: async (tenantId, customerId, input) =>
+      (await resolve()).updateProfileForCustomer(tenantId, customerId, input),
+  });
+}
+
+/** `/me/addresses` (direcciones del cliente autenticado). */
+function apiAddressesForCustomers(
+  mock: AddressRepository,
+  api: AddressRepository,
+  currentSession: CurrentSessionClient,
+): AddressRepository {
+  const resolve = customerRouter(mock, api, currentSession);
+
+  return {
+    getByCustomer: async (tenantId, customerId) =>
+      (await resolve()).getByCustomer(tenantId, customerId),
+    getById: async (tenantId, customerId, id) => (await resolve()).getById(tenantId, customerId, id),
+    create: async (input) => (await resolve()).create(input),
+    update: async (tenantId, customerId, id, input) =>
+      (await resolve()).update(tenantId, customerId, id, input),
+    remove: async (tenantId, customerId, id) => (await resolve()).remove(tenantId, customerId, id),
+    setDefault: async (tenantId, customerId, addressId) =>
+      (await resolve()).setDefault(tenantId, customerId, addressId),
   };
 }
 
@@ -274,7 +333,8 @@ function apiBusinessConfigForEmployees(
  * Modo api: reemplaza `auth` por ApiAuthRepository y enruta al backend la administracion
  * (`branches`, `roles`, `users`, `tenantSubscriptions`, `plans`, `bankAccounts`, `suppliers`,
  * `businessConfig`) para empleados con el permiso de
- * cada endpoint (ver `employeeRouter`). La identidad de la sesion actual (usuario, rol con
+ * cada endpoint (ver `employeeRouter`), y "Mi cuenta" (`customers`, `addresses`) solo para la sesion
+ * de cliente (ver `customerRouter`). La identidad de la sesion actual (usuario, rol con
  * permisos, tienda) sale de /auth/me. Cualquier otra lectura se delega al mock, asi los modulos no
  * migrados siguen igual.
  *
@@ -321,6 +381,16 @@ export function withApiSession(repositories: RepositoryRegistry, eventBus: DataE
     businessConfig: apiBusinessConfigForEmployees(
       repositories.businessConfig,
       new ApiBusinessConfigRepository(eventBus),
+      currentSession,
+    ),
+    customers: apiCustomersForCustomers(
+      repositories.customers,
+      new ApiCustomerRepository(currentSession, eventBus),
+      currentSession,
+    ),
+    addresses: apiAddressesForCustomers(
+      repositories.addresses,
+      new ApiAddressRepository(currentSession, eventBus),
       currentSession,
     ),
   };
