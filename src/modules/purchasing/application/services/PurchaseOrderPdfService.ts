@@ -19,7 +19,7 @@ interface PdfLine {
   quantity: number;
   unitCost: number;
   subtotal: number;
-  receivedQuantity: number;
+  receivedQuantity?: number;
 }
 
 interface PdfReceiptLine {
@@ -94,6 +94,11 @@ export class PurchaseOrderPdfService {
   }
 
   async downloadReceivingReport(orderId: string) {
+    if (this.repositories.purchaseOrdersDataSource === "api") {
+      throw new Error(
+        "El reporte de recepcion estara disponible cuando la integracion de recepciones este habilitada.",
+      );
+    }
     const data = await this.getPdfData(orderId);
     await generateReceivingReportPdf(data, true);
   }
@@ -105,6 +110,7 @@ export class PurchaseOrderPdfService {
       await this.repositories.purchaseOrders.getByIdScoped(tenantId, orderId),
       tenantId,
     );
+    if (this.repositories.purchaseOrdersDataSource === "api") return "";
     const supplier = await this.repositories.suppliers.getById(order.supplierId);
     return supplier?.email?.trim() || "";
   }
@@ -116,6 +122,9 @@ export class PurchaseOrderPdfService {
       await this.repositories.purchaseOrders.getByIdScoped(tenantId, orderId),
       tenantId,
     );
+    if (this.repositories.purchaseOrdersDataSource === "api") {
+      return toApiPurchaseOrderPdfData(order);
+    }
     const [
       tenant,
       supplier,
@@ -271,6 +280,32 @@ export class PurchaseOrderPdfService {
   }
 }
 
+function toApiPurchaseOrderPdfData(order: PurchaseOrder): PdfData {
+  return {
+    order,
+    tenantName: "OmniRetail",
+    supplierName: order.supplierNameSnapshot ?? "Proveedor no disponible",
+    supplierLegalName: "-",
+    supplierTaxId: "-",
+    supplierContact: "No incluido en la orden",
+    supplierEmail: "-",
+    branchName: "Sucursal no disponible",
+    branchAddress: "-",
+    lines: (order.items ?? []).map((item) => ({
+      productId: item.productId,
+      productName: item.productNameSnapshot ?? "Producto no disponible",
+      sku: item.productSkuSnapshot ?? item.productId,
+      supplierSku: item.supplierSkuSnapshot ?? "-",
+      unitLabel: item.unitSymbolSnapshot ?? item.unitId,
+      quantity: item.quantity,
+      unitCost: item.unitCost,
+      subtotal: item.subtotal,
+    })),
+    receipts: [],
+    incidents: [],
+  };
+}
+
 export class PurchaseOrderEmailSimulationService {
   async simulatePurchaseOrderSend(input: { orderNumber: string; supplierEmail?: string }) {
     if (!input.supplierEmail) {
@@ -375,7 +410,7 @@ export async function generatePurchaseOrderPdf(data: PdfData, download: boolean)
 export async function generateReceivingReportPdf(data: PdfData, download: boolean) {
   const doc = await createDocument();
   const ordered = data.lines.reduce((sum, line) => sum + line.quantity, 0);
-  const accepted = data.lines.reduce((sum, line) => sum + line.receivedQuantity, 0);
+  const accepted = data.lines.reduce((sum, line) => sum + (line.receivedQuantity ?? 0), 0);
   const pending = Math.max(0, ordered - accepted);
   const incidentQuantity = data.incidents.reduce((sum, incident) => sum + incident.quantity, 0);
   const progress = ordered > 0 ? Math.min(100, Math.round((accepted / ordered) * 100)) : 0;

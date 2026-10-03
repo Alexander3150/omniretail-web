@@ -34,25 +34,31 @@ import {
   PurchaseOrderPdfService,
 } from "@/modules/purchasing/application/services/PurchaseOrderPdfService";
 
-const DEFAULT_PAGE_SIZE: TablePageSize = 10;
-
 export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string }) {
   const router = useRouter();
   const repositories = useRepositories();
   const { showToast } = useToast();
   const {
+    apiMode,
     data,
+    detailOrder,
     filters,
-    filteredOrders,
+    paginatedOrders,
+    totalItems,
+    totalPages,
+    page,
+    pageSize,
     currentBranch,
     loading,
     error,
     updateFilters,
+    setPage,
+    setPageSize,
+    loadOrderById,
     updateStatus,
   } = usePurchaseOrders();
   const pdfService = useMemo(() => new PurchaseOrderPdfService(repositories), [repositories]);
   const emailSimulationService = useMemo(() => new PurchaseOrderEmailSimulationService(), []);
-  const [page, setPage] = useState(1);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [openActionsOrderId, setOpenActionsOrderId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<{
@@ -60,36 +66,41 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
     action: PurchaseOrderAction;
   } | null>(null);
   const [suggestionsExpanded, setSuggestionsExpanded] = useState(false);
-  const [pageSize, setPageSize] = useState<TablePageSize>(DEFAULT_PAGE_SIZE);
   const appliedOrderIdRef = useRef<string | null>(null);
+  const locatingOrderIdRef = useRef<string | null>(null);
   const directlyLocatedOrder = useMemo(() => {
     const orderId = initialOrderId?.trim();
     if (!orderId) return null;
+    const candidates = detailOrder ? [...data.orders, detailOrder] : data.orders;
     return (
-      data.orders.find(
+      candidates.find(
         (candidate) =>
           candidate.id === orderId &&
-          candidate.branchId === currentBranch?.id &&
-          candidate.tenantId === currentBranch?.tenantId,
+          (apiMode ||
+            (candidate.branchId === currentBranch?.id &&
+              candidate.tenantId === currentBranch?.tenantId)),
       ) ?? null
     );
-  }, [currentBranch?.id, currentBranch?.tenantId, data.orders, initialOrderId]);
+  }, [
+    apiMode,
+    currentBranch?.id,
+    currentBranch?.tenantId,
+    data.orders,
+    detailOrder,
+    initialOrderId,
+  ]);
   const visibleOrders = useMemo(
-    () => (directlyLocatedOrder ? [directlyLocatedOrder] : filteredOrders),
-    [directlyLocatedOrder, filteredOrders],
+    () => (directlyLocatedOrder ? [directlyLocatedOrder] : paginatedOrders),
+    [directlyLocatedOrder, paginatedOrders],
   );
-  const totalPages = Math.max(1, Math.ceil(visibleOrders.length / pageSize));
-  const currentPage = Math.min(page, totalPages);
-  const paginatedOrders = useMemo(
-    () => visibleOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize),
-    [currentPage, pageSize, visibleOrders],
-  );
+  const currentPage = directlyLocatedOrder ? 1 : Math.min(page, Math.max(1, totalPages));
+  const visibleTotalItems = directlyLocatedOrder ? 1 : totalItems;
   const selectedOrder = useMemo(
-    () => paginatedOrders.find((order) => order.id === selectedOrderId) ?? null,
-    [paginatedOrders, selectedOrderId],
+    () => visibleOrders.find((order) => order.id === selectedOrderId) ?? null,
+    [selectedOrderId, visibleOrders],
   );
   const emptyMessage =
-    data.orders.length === 0
+    (apiMode ? totalItems === 0 : data.orders.length === 0)
       ? "No hay ordenes de compra registradas."
       : "No se encontraron ordenes.";
 
@@ -97,11 +108,27 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
     const orderId = initialOrderId?.trim();
     if (!orderId) {
       appliedOrderIdRef.current = null;
+      locatingOrderIdRef.current = null;
       return;
     }
     if (loading || appliedOrderIdRef.current === orderId) return;
 
     if (!directlyLocatedOrder) {
+      if (apiMode) {
+        if (locatingOrderIdRef.current === orderId) return;
+        locatingOrderIdRef.current = orderId;
+        let active = true;
+        void loadOrderById(orderId).then((locatedOrder) => {
+          if (!active) return;
+          if (!locatedOrder) {
+            appliedOrderIdRef.current = orderId;
+            router.replace("/compras/ordenes", { scroll: false });
+          }
+        });
+        return () => {
+          active = false;
+        };
+      }
       appliedOrderIdRef.current = orderId;
       router.replace("/compras/ordenes", { scroll: false });
       return;
@@ -111,19 +138,29 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
     window.queueMicrotask(() => {
       if (!active) return;
       appliedOrderIdRef.current = orderId;
-      setPage(1);
+      locatingOrderIdRef.current = null;
       setSelectedOrderId(null);
       setOpenActionsOrderId(null);
-      updateFilters({
-        search: directlyLocatedOrder.number,
-        status: "all",
-        supplierId: "all",
-      });
+      if (!apiMode) {
+        updateFilters({
+          search: directlyLocatedOrder.number,
+          status: "all",
+          supplierId: "all",
+        });
+      }
     });
     return () => {
       active = false;
     };
-  }, [directlyLocatedOrder, initialOrderId, loading, router, updateFilters]);
+  }, [
+    apiMode,
+    directlyLocatedOrder,
+    initialOrderId,
+    loadOrderById,
+    loading,
+    router,
+    updateFilters,
+  ]);
 
   function clearOrderLocator() {
     if (!initialOrderId) return;
@@ -133,7 +170,6 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
 
   function handleSearchChange(search: string) {
     clearOrderLocator();
-    setPage(1);
     setSelectedOrderId(null);
     setOpenActionsOrderId(null);
     updateFilters({ search });
@@ -141,7 +177,6 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
 
   function handleStatusChange(status: PurchaseOrderStatusFilter) {
     clearOrderLocator();
-    setPage(1);
     setSelectedOrderId(null);
     setOpenActionsOrderId(null);
     updateFilters({ status });
@@ -149,7 +184,6 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
 
   function handleSupplierChange(supplierId: string) {
     clearOrderLocator();
-    setPage(1);
     setSelectedOrderId(null);
     setOpenActionsOrderId(null);
     updateFilters({ supplierId });
@@ -170,12 +204,11 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
   function changePage(nextPage: number) {
     setSelectedOrderId(null);
     setOpenActionsOrderId(null);
-    setPage(Math.min(Math.max(nextPage, 1), totalPages));
+    setPage(Math.min(Math.max(nextPage, 1), Math.max(1, totalPages)));
   }
 
   function handlePageSizeChange(nextPageSize: TablePageSize) {
     setPageSize(nextPageSize);
-    setPage(1);
     setSelectedOrderId(null);
     setOpenActionsOrderId(null);
   }
@@ -192,6 +225,15 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
       return;
     }
     if (action.id === "continue-receiving" && action.enabled) {
+      if (apiMode) {
+        showToast({
+          title: "Recepcion no disponible todavia",
+          description:
+            "La integracion de recepciones con API se habilitara en una siguiente fase.",
+          tone: "info",
+        });
+        return;
+      }
       router.push(`/compras/recepciones/purchase_order/${order.id}`);
       return;
     }
@@ -305,34 +347,45 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
           title="Ordenes de compra"
           description="Consulta ordenes, recepcion, proveedores y necesidades de reposicion."
           actions={
-            <Button onClick={() => router.push("/compras/ordenes/nueva")} type="button">
-              <PlusIcon />
-              Nueva orden
-            </Button>
+            !apiMode ? (
+              <Button onClick={() => router.push("/compras/ordenes/nueva")} type="button">
+                <PlusIcon />
+                Nueva orden
+              </Button>
+            ) : undefined
           }
         />
       </div>
 
-      <ReorderSuggestions
-        expanded={suggestionsExpanded}
-        suggestions={data.suggestions}
-        onCreateOrder={openSuggestionOrder}
-        onToggle={() => setSuggestionsExpanded((current) => !current)}
-      />
+      {!apiMode ? (
+        <ReorderSuggestions
+          expanded={suggestionsExpanded}
+          suggestions={data.suggestions}
+          onCreateOrder={openSuggestionOrder}
+          onToggle={() => setSuggestionsExpanded((current) => !current)}
+        />
+      ) : null}
 
       {error ? <InlineAlert title={error} tone="danger" /> : null}
 
       <section className="rounded-lg border border-[var(--color-border)] bg-white p-2.5 shadow-sm">
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_220px_220px]">
-          <Input
-            aria-label="Buscar ordenes"
-            maxLength={TEXT_LIMITS.search}
-            className="h-10"
-            onChange={(event) => handleSearchChange(event.target.value)}
-            placeholder="Buscar por numero, proveedor o producto..."
-            type="search"
-            value={filters.search}
-          />
+        <div
+          className={cn(
+            "grid gap-3",
+            apiMode ? "xl:grid-cols-[220px]" : "xl:grid-cols-[minmax(0,1fr)_220px_220px]",
+          )}
+        >
+          {!apiMode ? (
+            <Input
+              aria-label="Buscar ordenes"
+              maxLength={TEXT_LIMITS.search}
+              className="h-10"
+              onChange={(event) => handleSearchChange(event.target.value)}
+              placeholder="Buscar por numero, proveedor o producto..."
+              type="search"
+              value={filters.search}
+            />
+          ) : null}
           <Select
             aria-label="Estado"
             className="h-10 rounded-md"
@@ -348,19 +401,21 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
               </option>
             ))}
           </Select>
-          <Select
-            aria-label="Proveedor"
-            className="h-10 rounded-md"
-            onChange={(event) => handleSupplierChange(event.target.value)}
-            value={filters.supplierId}
-          >
-            <option value="all">Todos los proveedores</option>
-            {data.suppliers.map((supplier) => (
-              <option key={supplier.id} value={supplier.id}>
-                {supplier.name}
-              </option>
-            ))}
-          </Select>
+          {!apiMode ? (
+            <Select
+              aria-label="Proveedor"
+              className="h-10 rounded-md"
+              onChange={(event) => handleSupplierChange(event.target.value)}
+              value={filters.supplierId}
+            >
+              <option value="all">Todos los proveedores</option>
+              {data.suppliers.map((supplier) => (
+                <option key={supplier.id} value={supplier.id}>
+                  {supplier.name}
+                </option>
+              ))}
+            </Select>
+          ) : null}
         </div>
       </section>
 
@@ -372,7 +427,7 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
             <PurchaseOrdersTable
               emptyMessage={emptyMessage}
               openActionsOrderId={openActionsOrderId}
-              orders={paginatedOrders}
+              orders={visibleOrders}
               selectedOrderId={selectedOrderId}
               onActionsOpenChange={setOpenActionsOrderId}
               onAction={handleAction}
@@ -383,7 +438,7 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
               itemLabel="ordenes"
               page={currentPage}
               pageSize={pageSize}
-              totalItems={visibleOrders.length}
+              totalItems={visibleTotalItems}
               onPageChange={changePage}
               onPageSizeChange={handlePageSizeChange}
             />
@@ -1012,11 +1067,12 @@ function formatNumber(value: number) {
 }
 
 function formatDate(value: string) {
+  const dateValue = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value;
   return new Intl.DateTimeFormat("es-GT", {
     day: "numeric",
     month: "short",
     year: "numeric",
-  }).format(new Date(value));
+  }).format(new Date(dateValue));
 }
 
 function buildQueryString(params: Record<string, string | number | undefined>) {

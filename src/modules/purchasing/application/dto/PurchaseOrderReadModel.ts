@@ -6,9 +6,12 @@ export interface PurchaseOrderLineReadModel {
   id: string;
   productName: string;
   sku: string;
+  supplierSku?: string;
   quantity: number;
   unitLabel: string;
+  purchaseToBaseFactor?: number;
   unitCost: number;
+  suggestedUnitCost?: number;
   subtotal: number;
   receivedQuantity?: number;
   expectedDate?: string;
@@ -78,4 +81,8 @@ export interface PurchaseOrdersReadModel {
   suppliers: Array<{ id: string; name: string }>;
   statuses: PurchaseOrderStatus[];
   suggestions: ReorderSuggestionReadModel[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
 }

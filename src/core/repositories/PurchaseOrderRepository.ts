@@ -1,5 +1,14 @@
 import type { PurchaseOrder, PurchaseOrderItem } from "@/core/entities";
 import type { PurchaseOrderStatus } from "@/core/enums";
+import type { PaginatedResult } from "@/core/types/pagination.types";
+
+export interface PurchaseOrderPageParams {
+  branchId?: string;
+  supplierId?: string;
+  status?: PurchaseOrderStatus;
+  page: number;
+  pageSize: number;
+}
 
 export type PurchaseOrderItemInput = Omit<PurchaseOrderItem, "id" | "purchaseOrderId">;
 
@@ -29,6 +38,10 @@ export interface PurchaseOrderRepository {
    * fix vive en los application services de Purchasing/Receiving, no en el contrato existente.
    */
   listByTenant(tenantId: string): Promise<PurchaseOrder[]>;
+  getPageScoped(
+    tenantId: string,
+    params: PurchaseOrderPageParams,
+  ): Promise<PaginatedResult<PurchaseOrder>>;
   getByIdScoped(tenantId: string, id: string): Promise<PurchaseOrder | null>;
   create(input: CreatePurchaseOrderInput): Promise<PurchaseOrder>;
   update(id: string, input: UpdatePurchaseOrderInput): Promise<PurchaseOrder>;

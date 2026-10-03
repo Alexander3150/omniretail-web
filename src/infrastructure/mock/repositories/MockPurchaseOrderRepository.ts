@@ -24,6 +24,28 @@ export class MockPurchaseOrderRepository
         .map((order) => hydratePurchaseOrder(order, db)),
     );
   }
+  async getPageScoped(
+    tenantId: string,
+    params: Parameters<PurchaseOrderRepository["getPageScoped"]>[1],
+  ) {
+    const orders = await this.listByTenant(tenantId);
+    const filtered = orders
+      .filter((order) => !params.branchId || order.branchId === params.branchId)
+      .filter((order) => !params.supplierId || order.supplierId === params.supplierId)
+      .filter((order) => !params.status || order.status === params.status)
+      .sort((left, right) => {
+        const byDate = right.createdAt.localeCompare(left.createdAt);
+        return byDate || right.id.localeCompare(left.id);
+      });
+    const start = (params.page - 1) * params.pageSize;
+    return {
+      items: filtered.slice(start, start + params.pageSize),
+      page: params.page,
+      pageSize: params.pageSize,
+      totalItems: filtered.length,
+      totalPages: Math.ceil(filtered.length / params.pageSize),
+    };
+  }
   async getByIdScoped(tenantId: string, id: string) {
     return this.read((db) => {
       const order = db.purchaseOrders.find(
