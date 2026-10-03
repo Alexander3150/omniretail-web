@@ -56,15 +56,14 @@ export function toTenant(current: ApiCurrentSession): Tenant {
   };
 }
 
-/** `activeBranchId` puede venir sobrescrito por la seleccion en memoria (ver ApiAuthRepository). */
-export function toSession(current: ApiCurrentSession, activeBranchId?: string | null): Session {
+export function toSession(current: ApiCurrentSession): Session {
   return {
     id: current.session.id,
     userId: current.user.id,
     createdAt: current.session.createdAt,
     expiresAt: current.session.expiresAt,
     rememberMe: current.session.rememberMe ?? false,
-    activeBranchId: (activeBranchId ?? current.session.activeBranchId) ?? undefined,
+    activeBranchId: current.session.activeBranchId ?? undefined,
     deviceLabel: current.session.deviceLabel ?? undefined,
   };
 }

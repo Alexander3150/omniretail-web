@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Branch } from "@/core/entities";
+import type { AuthRepository } from "@/core/repositories";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 
@@ -54,6 +55,13 @@ export function selectNextActiveBranchId(
   return accessibleBranches[0]?.id ?? null;
 }
 
+/** Sucursal activa guardada en la sesion actual (backend o mock), o null si no hay. */
+async function readSessionActiveBranchId(auth: AuthRepository): Promise<string | null> {
+  const sessionId = await auth.getCurrentSessionId();
+  if (!sessionId) return null;
+  return (await auth.getSession(sessionId))?.activeBranchId ?? null;
+}
+
 /** Pura y exportada: defensa en profundidad para setActiveBranchId (ver su uso mas abajo). */
 export function isBranchIdSelectable(branches: Branch[], branchId: string): boolean {
   return branches.some((branch) => branch.id === branchId);
@@ -74,8 +82,21 @@ export function ActiveBranchProvider({
       const accessibleBranches = canAccessBranch
         ? activeBranches.filter((branch) => canAccessBranch(branch))
         : activeBranches;
-      const nextBranchId = selectNextActiveBranchId(accessibleBranches, activeBranchId);
-      if (nextBranchId) await repositories.auth.setActiveBranchId(nextBranchId);
+      // Al cargar (sin seleccion previa en memoria) se parte de la sucursal guardada en la sesion,
+      // asi se conserva al recargar; solo se persiste si cambia, para no escribir en cada carga.
+      const sessionBranchId = await readSessionActiveBranchId(repositories.auth);
+      const nextBranchId = selectNextActiveBranchId(
+        accessibleBranches,
+        activeBranchId ?? sessionBranchId,
+      );
+      if (nextBranchId && nextBranchId !== sessionBranchId) {
+        try {
+          await repositories.auth.setActiveBranchId(nextBranchId);
+        } catch {
+          // Si no se puede guardar, la sucursal igual queda elegida en esta pestaña: el selector
+          // no se queda en "Cargando sucursal".
+        }
+      }
       setBranches(accessibleBranches);
       setActiveBranchId(nextBranchId);
       setLoading(false);
