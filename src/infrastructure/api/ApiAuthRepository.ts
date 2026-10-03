@@ -1,4 +1,5 @@
 import { PasswordPolicyError } from "@/config/auth-policy";
+import { publicStorefrontSlug } from "@/config/publicStorefront";
 import type { Session, User } from "@/core/entities";
 import { AccountStatus, UserStatus, UserType } from "@/core/enums";
 import type {
@@ -121,6 +122,9 @@ export class ApiAuthRepository implements AuthRepository {
    * el backend tenga un endpoint para persistirla. El backend nunca usa este valor como autoridad.
    */
   private selectedBranchId: string | null = null;
+
+  /** tenantId real de la tienda publica configurada; se consulta una sola vez (ver resolveTenantSlug). */
+  private publicStorefrontTenantId: Promise<string | null> | null = null;
 
   constructor(
     private readonly currentSession: CurrentSessionClient,
@@ -340,14 +344,37 @@ export class ApiAuthRepository implements AuthRepository {
    * El backend identifica la tienda por slug. Se traduce el tenantId que ya resolvio el storefront
    * publico al slug de ESA tienda; si no se puede, no se envia y el backend responde el error
    * generico para cuentas de cliente.
+   *
+   * En modo api PublicTenantProvider entrega el tenantId real del backend (UUID), que no existe en
+   * el mock: en ese caso solo se acepta si es el de la tienda publica configurada. Nunca se adivina.
    */
   private async resolveTenantSlug(tenantId: string | undefined): Promise<string | undefined> {
     if (!tenantId) return undefined;
     try {
-      return (await this.tenants.getById(tenantId))?.slug ?? undefined;
+      const mockSlug = (await this.tenants.getById(tenantId))?.slug;
+      if (mockSlug) return mockSlug;
     } catch {
-      return undefined;
+      // Se intenta con la tienda publica configurada.
     }
+    return (await this.getPublicStorefrontTenantId()) === tenantId ? publicStorefrontSlug : undefined;
+  }
+
+  /**
+   * Mismo endpoint publico que usa el storefront (`/public/{slug}/config`), leido aqui para que
+   * infraestructura no dependa del modulo storefront. Un fallo no se cachea: se reintenta despues.
+   */
+  private getPublicStorefrontTenantId(): Promise<string | null> {
+    if (!this.publicStorefrontTenantId) {
+      this.publicStorefrontTenantId = backendFetch<{ tenantId?: unknown }>(
+        `/public/${encodeURIComponent(publicStorefrontSlug)}/config`,
+      )
+        .then((config) => (typeof config.tenantId === "string" ? config.tenantId : null))
+        .catch(() => {
+          this.publicStorefrontTenantId = null;
+          return null;
+        });
+    }
+    return this.publicStorefrontTenantId;
   }
 
   /** Solo para completar `User.tenantId` en el resultado del registro; nunca decide nada. */
