@@ -1,4 +1,6 @@
+import { isApiMode } from "@/config/api-mode";
 import { SaleStatus } from "@/core/enums";
+import { backendFetch } from "@/infrastructure/api/backendClient";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { DashboardSummaryDto, DashboardTopProduct } from "@/modules/administration/application/dto/DashboardDto";
 import {
@@ -13,6 +15,10 @@ export class GetDashboardSummaryService {
   async execute(tenantId: string, permissions: readonly string[]): Promise<DashboardSummaryDto> {
     ensureCanReadDashboard(permissions);
     ensureDashboardTenant(tenantId);
+
+    if (isApiMode()) {
+      return backendFetch<DashboardSummaryDto>("/administration/dashboard");
+    }
 
     const [
       sales,
