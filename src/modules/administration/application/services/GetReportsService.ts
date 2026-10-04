@@ -1,4 +1,6 @@
+import { isApiMode } from "@/config/api-mode";
 import { RoleStatus, SaasCapabilityKey, UserStatus } from "@/core/enums";
+import { backendFetch } from "@/infrastructure/api/backendClient";
 import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
 import { ensureTenantCapability } from "@/shared/application/services/entitlementGuards";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
@@ -20,6 +22,10 @@ export class GetReportsService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async execute(): Promise<ReportsDataDto> {
+    if (isApiMode()) {
+      return backendFetch<ReportsDataDto>("/administration/reports");
+    }
+
     const { tenantId, permissions } = await this.resolveAuthenticatedContext();
     ensureCanReadReports(permissions);
 
