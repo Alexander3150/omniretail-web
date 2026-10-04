@@ -53,7 +53,7 @@ export function validateAdjustment(
   } else if (dto.movementKind === "count" && row.quantity - dto.quantity > locationQuantity) {
     errors.quantity = "La correccion no puede descontar mas stock del disponible en la ubicacion.";
   } else if (dto.movementKind === "count" && dto.quantity === row.quantity) {
-    errors.quantity = "El conteo coincide con el stock actual.";
+    errors.quantity = "La existencia ya coincide con el conteo ingresado.";
   }
   if (!dto.reason.trim()) errors.reason = "El motivo es requerido.";
   else if (dto.reason.length > TEXT_LIMITS.reason)

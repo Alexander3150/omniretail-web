@@ -472,6 +472,8 @@ function buildApiRow({
     defaultLocationId: item.defaultLocationId,
     defaultLocationName,
     locationQuantities: {},
+    // PLACEHOLDER, no fuente autoritativa: /inventory/stock no expone tracking. El tracking real
+    // se resuelve on-demand desde el Product detail al abrir el ajuste (AdjustStockGate).
     tracking: { stock: true, lot: false, expiration: false, serial: false },
     availableLots: [],
     availableSerials: [],

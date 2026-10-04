@@ -1,5 +1,9 @@
+import {
+  clearMovementsNavContext,
+  readMovementsNavContext,
+} from "@/modules/inventory/application/services/movementsNavContext";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { InventoryMovementDisplayType } from "@/core/repositories";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
@@ -39,6 +43,7 @@ export const MOVEMENT_PERIOD_OPTIONS: Array<{ value: MovementPeriodFilter; label
 
 export function useInventoryMovements() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const repositories = useRepositories();
   const { currentBranch, branches: activeBranches, loading: branchLoading } = useActiveBranch();
   const activeBranchId = currentBranch?.id;
@@ -53,11 +58,14 @@ export function useInventoryMovements() {
   const [requestSearch, setRequestSearch] = useState("");
   const [period, setPeriodState] = useState<MovementPeriodFilter>("30d");
   const [type, setTypeState] = useState<MovementTypeFilter>("all");
-  const [branchId, setBranchIdState] = useState(() => searchParams.get("branchId") ?? "all");
-  const [productId, setProductIdState] = useState(() => searchParams.get("productId") ?? "");
-  const [filtersOpen, setFiltersOpenState] = useState(() =>
-    Boolean(searchParams.get("branchId") || searchParams.get("productId")),
-  );
+  const [branchId, setBranchIdState] = useState("all");
+  const [productId, setProductIdState] = useState("");
+  const [productName, setProductName] = useState("");
+  const [productSku, setProductSku] = useState("");
+  const [filtersOpen, setFiltersOpenState] = useState(false);
+  // El contexto (sessionStorage / params legacy) se hidrata una vez antes de la primera request.
+  const [contextReady, setContextReady] = useState(false);
+  const contextHydratedRef = useRef(false);
   const [page, setPageState] = useState(1);
   const [pageSize, setPageSizeState] = useState(20);
 
@@ -118,11 +126,38 @@ export function useInventoryMovements() {
   }, [applyRequest, requestParams]);
 
   useEffect(() => {
+    if (contextHydratedRef.current) return;
+    contextHydratedRef.current = true;
+    window.queueMicrotask(() => {
+      const legacyProductId = searchParams.get("productId");
+      const legacyBranchId = searchParams.get("branchId");
+      if (legacyProductId || legacyBranchId) {
+        // Compatibilidad con enlaces antiguos: se hidrata y la URL se limpia de inmediato.
+        if (legacyProductId) setProductIdState(legacyProductId);
+        if (legacyBranchId) setBranchIdState(legacyBranchId);
+        setFiltersOpenState(true);
+        router.replace("/inventario/movimientos");
+      } else {
+        const stored = readMovementsNavContext();
+        if (stored) {
+          setProductIdState(stored.productId);
+          setProductName(stored.productName);
+          setProductSku(stored.productSku ?? "");
+          if (stored.branchId) setBranchIdState(stored.branchId);
+          setFiltersOpenState(true);
+        }
+      }
+      setContextReady(true);
+    });
+  }, [router, searchParams]);
+
+  useEffect(() => {
+    if (!contextReady) return;
     void applyRequest(requestParams);
     return () => {
       requestIdRef.current += 1;
     };
-  }, [applyRequest, requestParams]);
+  }, [applyRequest, contextReady, requestParams]);
 
   useEffect(() => {
     if (!apiMode) return;
@@ -215,6 +250,11 @@ export function useInventoryMovements() {
   const setProductId = useCallback(
     (value: string) => {
       setProductIdState(value);
+      if (!value) {
+        setProductName("");
+        setProductSku("");
+        clearMovementsNavContext();
+      }
       resetPage();
       startApiRequest();
     },
@@ -258,7 +298,7 @@ export function useInventoryMovements() {
     rows: filteredRows,
     paginatedRows,
     kpis,
-    loading: branchLoading || loading,
+    loading: branchLoading || loading || !contextReady,
     error,
     apiMode,
     search,
@@ -266,6 +306,8 @@ export function useInventoryMovements() {
     type,
     branchId,
     productId,
+    productName,
+    productSku,
     filtersOpen,
     page: currentPage,
     pageSize,

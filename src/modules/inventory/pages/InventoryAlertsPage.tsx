@@ -13,6 +13,16 @@ import {
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { StorageLocation } from "@/core/entities";
+import type { AdjustmentLotOption, AdjustmentSerialOption } from "@/core/repositories";
+import type { InventoryAdjustmentLookupService } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
+import { useSerialBatchPrecheck } from "@/shared/hooks/useSerialBatchPrecheck";
+import { saveMovementsNavContext } from "@/modules/inventory/application/services/movementsNavContext";
+import { INVENTORY_STOCK_READ_PERMISSION } from "@/modules/inventory/application/services/serviceHelpers";
+import { TraceableCountFlow } from "@/modules/inventory/components/TraceableCountFlow";
+import type { InventoryOtherBranchesService } from "@/modules/inventory/application/services/InventoryOtherBranchesService";
+import type { OtherBranchAvailability } from "@/core/repositories";
+import type { InventoryCountService } from "@/modules/inventory/application/services/InventoryCountService";
+import type { ReconcileCountInput } from "@/core/repositories";
 import { getLocalCalendarDate } from "@/core/inventory/expirationDate";
 import {
   InventoryTransferReason,
@@ -96,6 +106,9 @@ export function InventoryAlertsPage() {
   const { showToast } = useToast();
   const { hasPermission } = useCurrentSession();
   const { hasCapability } = useEntitlement();
+  // Consultar existencias en otras sucursales es lectura de stock; traslados siguen aparte.
+  const canViewOtherBranches =
+    hasPermission(INVENTORY_STOCK_READ_PERMISSION) && hasCapability(SaasCapabilityKey.inventory);
   const canCreatePurchaseOrder =
     hasPermission("purchasing.orders.create") && hasCapability(SaasCapabilityKey.purchasing);
   const {
@@ -134,6 +147,10 @@ export function InventoryAlertsPage() {
     setPageSize,
     loadAlerts,
     loadProductRow,
+    adjustmentLookup,
+    countService,
+    otherBranchesService,
+    applyCount,
     canAdjustStock,
     canManageTransfers,
     adjustStock,
@@ -248,13 +265,15 @@ export function InventoryAlertsPage() {
   }
 
   function openMovementHistory(row: InventoryProductRow) {
-    router.push(
-      `/inventario/movimientos?${buildQueryString({
-        productId: row.productId,
-        branchId: row.branchId,
-        source: "inventory",
-      })}`,
-    );
+    // El contexto viaja por sessionStorage: la URL queda limpia (sin UUIDs).
+    saveMovementsNavContext({
+      productId: row.productId,
+      productName: row.productName,
+      productSku: row.sku,
+      branchId: row.branchId,
+      source: "inventory",
+    });
+    router.push("/inventario/movimientos");
   }
 
   function openPurchaseOrder(row: InventoryProductRow, source: "inventory" | "inventory-alert") {
@@ -391,7 +410,7 @@ export function InventoryAlertsPage() {
               totalItems={totalItems}
               totalPages={totalPages}
               canAdjustStock={canAdjustStock}
-              canManageTransfers={canManageTransfers}
+              canManageTransfers={canManageTransfers && !apiMode}
               compact={contextPanelExpanded}
               onAdjust={openAdjust}
               onOpen={selectRow}
@@ -412,7 +431,7 @@ export function InventoryAlertsPage() {
           row={selectedRow}
           canAdjustStock={canAdjustStock}
           canCreatePurchaseOrder={canCreatePurchaseOrder}
-          canManageTransfers={canManageTransfers}
+          canViewOtherBranches={canViewOtherBranches}
           desktopExpanded={contextPanelExpanded}
           onAdjust={() => selectedRow && canAdjustStock && openAdjust(selectedRow)}
           onCreateOrder={() => selectedRow && openPurchaseOrder(selectedRow, "inventory-alert")}
@@ -435,17 +454,30 @@ export function InventoryAlertsPage() {
       </section>
 
       {selectedRow && actionMode === "adjust" ? (
-        <AdjustStockModal
+        <AdjustStockGate
           busy={busy}
           locations={branchLocations}
-          open
+          lookup={adjustmentLookup}
+          countService={countService}
           row={selectedRow}
+          onApplyCount={async (input) => {
+            const { pdfFailed } = await applyCount(input);
+            setActionMode(null);
+            showToast({
+              title: pdfFailed
+                ? "Conteo aplicado, pero no se pudo generar el comprobante PDF."
+                : "Conteo físico aplicado correctamente.",
+              tone: pdfFailed ? "info" : "success",
+            });
+          }}
           onClose={() => setActionMode(null)}
           onSubmit={async (dto) => {
             const result = await adjustStock(dto);
             setActionMode(null);
             showToast({
-              title: `Ajuste ${result.adjustmentNumber} registrado correctamente.`,
+              title: result.adjustmentNumber
+                ? `Ajuste ${result.adjustmentNumber} registrado correctamente.`
+                : "Ajuste registrado correctamente.",
               tone: "success",
             });
           }}
@@ -454,7 +486,9 @@ export function InventoryAlertsPage() {
       {selectedRow && actionMode === "other-branches" ? (
         <OtherBranchesStockModal
           open
+          activeBranchId={branchId}
           row={selectedRow}
+          service={otherBranchesService}
           onClose={() => setActionMode(null)}
           canManageTransfers={canManageTransfers}
           onRequest={(providerBranchId) => openTransfer(selectedRow, providerBranchId)}
@@ -1251,7 +1285,7 @@ function ContextPanel({
   activeBranchName,
   alertTotalItems,
   canAdjustStock,
-  canManageTransfers,
+  canViewOtherBranches,
   desktopExpanded,
   alerts,
   canCreatePurchaseOrder,
@@ -1275,7 +1309,7 @@ function ContextPanel({
   activeBranchName: string;
   alertTotalItems: number;
   canAdjustStock: boolean;
-  canManageTransfers: boolean;
+  canViewOtherBranches: boolean;
   desktopExpanded: boolean;
   alerts: InventoryAlert[];
   canCreatePurchaseOrder: boolean;
@@ -1349,7 +1383,7 @@ function ContextPanel({
           row={row}
           canAdjustStock={canAdjustStock}
           canCreatePurchaseOrder={canCreatePurchaseOrder}
-          canManageTransfers={canManageTransfers}
+          canViewOtherBranches={canViewOtherBranches}
           onAdjust={onAdjust}
           onCreateOrder={onCreateOrder}
           onClose={onCloseProduct}
@@ -1504,7 +1538,7 @@ function ProductPanel({
   alerts,
   canAdjustStock,
   canCreatePurchaseOrder,
-  canManageTransfers,
+  canViewOtherBranches,
   row,
   onAdjust,
   onCreateOrder,
@@ -1517,7 +1551,7 @@ function ProductPanel({
   alerts: InventoryAlert[];
   canAdjustStock: boolean;
   canCreatePurchaseOrder: boolean;
-  canManageTransfers: boolean;
+  canViewOtherBranches: boolean;
   row: InventoryProductRow;
   onAdjust: () => void;
   onCreateOrder: () => void;
@@ -1663,7 +1697,7 @@ function ProductPanel({
             </Button>
           ) : null}
           <div className="grid gap-2 sm:grid-cols-2">
-          {canManageTransfers ? (
+          {canViewOtherBranches ? (
             <Button className="w-full" onClick={onOtherBranches} type="button" variant="secondary">
               Ver existencias en otras sucursales
             </Button>
@@ -1695,9 +1729,116 @@ function DetailTile({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
+/**
+ * API: el tracking real del producto se resuelve una sola vez al abrir el ajuste (sin N+1 en el
+ * listado). Mock: abre el modal directamente con la fila del read model.
+ */
+function AdjustStockGate({
+  busy,
+  locations,
+  lookup,
+  countService,
+  row,
+  onApplyCount,
+  onClose,
+  onSubmit,
+}: {
+  busy: boolean;
+  locations: StorageLocation[];
+  lookup: InventoryAdjustmentLookupService | null;
+  countService: InventoryCountService | null;
+  row: InventoryProductRow;
+  onApplyCount: (input: ReconcileCountInput) => Promise<void>;
+  onClose: () => void;
+  onSubmit: (dto: AdjustStockDto) => Promise<void>;
+}) {
+  const [resolved, setResolved] = useState<{
+    key: string;
+    tracking: InventoryProductRow["tracking"];
+  } | null>(null);
+  const [loadError, setLoadError] = useState<{ key: string; message: string } | null>(null);
+  const productId = row.productId;
+  const key = `${row.branchId}|${productId}`;
+
+  useEffect(() => {
+    if (!lookup) return;
+    let active = true;
+    lookup
+      .resolveTracking(productId)
+      .then((tracking) => {
+        if (active) setResolved({ key, tracking });
+      })
+      .catch((caughtError) => {
+        if (active) {
+          setLoadError({
+            key,
+            message:
+              caughtError instanceof Error
+                ? caughtError.message
+                : "No se pudo cargar la trazabilidad del producto.",
+          });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [lookup, key, productId]);
+
+  if (!lookup) {
+    return (
+      <AdjustStockModal
+        busy={busy}
+        locations={locations}
+        lookup={null}
+        countService={null}
+        onApplyCount={onApplyCount}
+        open
+        row={row}
+        onClose={onClose}
+        onSubmit={onSubmit}
+      />
+    );
+  }
+  if (resolved?.key === key) {
+    return (
+      <AdjustStockModal
+        busy={busy}
+        locations={locations}
+        lookup={lookup}
+        countService={countService}
+        onApplyCount={onApplyCount}
+        open
+        row={{ ...row, tracking: resolved.tracking, tracksExpiration: resolved.tracking.expiration }}
+        onClose={onClose}
+        onSubmit={onSubmit}
+      />
+    );
+  }
+  return (
+    <Modal
+      maxWidth="480px"
+      onClose={onClose}
+      open
+      subtitle={row.productName}
+      title="Registrar ajuste de inventario"
+    >
+      {loadError?.key === key ? (
+        <InlineAlert title={loadError.message} tone="danger" />
+      ) : (
+        <p className="text-sm font-semibold text-[var(--color-text-muted)]">
+          Cargando trazabilidad del producto...
+        </p>
+      )}
+    </Modal>
+  );
+}
+
 function AdjustStockModal({
   busy,
   locations,
+  lookup,
+  countService,
+  onApplyCount,
   open,
   row,
   onClose,
@@ -1705,6 +1846,9 @@ function AdjustStockModal({
 }: {
   busy: boolean;
   locations: StorageLocation[];
+  lookup: InventoryAdjustmentLookupService | null;
+  countService: InventoryCountService | null;
+  onApplyCount: (input: ReconcileCountInput) => Promise<void>;
   open: boolean;
   row: InventoryProductRow;
   onClose: () => void;
@@ -1723,9 +1867,10 @@ function AdjustStockModal({
     serialNumbersText: "",
   }));
   const [errors, setErrors] = useState<AdjustmentValidationErrors>({});
+  // API: el tope de salida es la existencia DISPONIBLE (sin reservas); mock: por ubicacion.
   const locationQuantity = useMemo(
-    () => row.locationQuantities[value.locationId] ?? 0,
-    [row.locationQuantities, value.locationId],
+    () => (lookup ? row.availableQuantity : (row.locationQuantities[value.locationId] ?? 0)),
+    [lookup, row.availableQuantity, row.locationQuantities, value.locationId],
   );
   const selectedUnit =
     row.adjustmentUnits.find((option) => option.unitId === value.unitId) ?? row.adjustmentUnits[0];
@@ -1740,16 +1885,136 @@ function AdjustStockModal({
   const traceQuantity = Math.abs(delta);
   const isEntry = delta > 0;
   const parsedSerials = parseSerialNumbers(value.serialNumbersText);
-  const availableLots = row.availableLots.filter(
-    (lot) => !value.locationId || lot.locationId === value.locationId,
-  );
+  const dynamicLookup = lookup !== null;
+  const repeatedSerials = findRepeatedSerialNumbers(parsedSerials);
+  const needsLotLookup = dynamicLookup && !isEntry && traceQuantity > 0 && row.tracking.lot;
+  const needsSerialLookup =
+    dynamicLookup &&
+    !isEntry &&
+    traceQuantity > 0 &&
+    row.tracking.serial &&
+    (!row.tracking.lot || Boolean(value.lotId));
+  const lotsKey = `${row.branchId}|${row.productId}|${value.locationId}`;
+  const serialsKey = `${lotsKey}|${value.lotId ?? ""}`;
+  const [lotsState, setLotsState] = useState<{
+    key: string;
+    items: AdjustmentLotOption[];
+    error?: string;
+  } | null>(null);
+  const [serialsState, setSerialsState] = useState<{
+    key: string;
+    items: AdjustmentSerialOption[];
+    error?: string;
+  } | null>(null);
+  const branchId = row.branchId;
+  const productId = row.productId;
+  const locationId = value.locationId;
+  const selectedLotId = value.lotId;
+
+  // Lotes existentes con disponibilidad real; se recargan al cambiar ubicacion y se ignoran las
+  // respuestas viejas (cleanup) para no mostrar datos de otra ubicacion.
+  useEffect(() => {
+    if (!lookup || !needsLotLookup) return;
+    let active = true;
+    lookup
+      .listLots({ branchId, productId, locationId: locationId || undefined })
+      .then((items) => {
+        if (active) setLotsState({ key: lotsKey, items });
+      })
+      .catch((caughtError) => {
+        if (active) {
+          setLotsState({
+            key: lotsKey,
+            items: [],
+            error: caughtError instanceof Error ? caughtError.message : "No se pudieron cargar los lotes.",
+          });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [branchId, locationId, lookup, lotsKey, needsLotLookup, productId]);
+
+  useEffect(() => {
+    if (!lookup || !needsSerialLookup) return;
+    let active = true;
+    lookup
+      .listSerials({
+        branchId,
+        productId,
+        locationId: locationId || undefined,
+        lotId: selectedLotId || undefined,
+      })
+      .then((items) => {
+        if (active) setSerialsState({ key: serialsKey, items });
+      })
+      .catch((caughtError) => {
+        if (active) {
+          setSerialsState({
+            key: serialsKey,
+            items: [],
+            error: caughtError instanceof Error ? caughtError.message : "No se pudieron cargar las series.",
+          });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [branchId, locationId, lookup, needsSerialLookup, productId, selectedLotId, serialsKey]);
+
+  const serialPrecheck = useSerialBatchPrecheck({
+    serials: parsedSerials,
+    enabled: dynamicLookup && row.tracking.serial && isEntry && traceQuantity > 0,
+    validate: (serials) =>
+      lookup
+        ? lookup.validateNewSerials({ productId, serialNumbers: serials })
+        : Promise.resolve({ duplicates: [] }),
+  });
+  const currentLots = lotsState?.key === lotsKey ? lotsState : null;
+  const currentSerials = serialsState?.key === serialsKey ? serialsState : null;
+  const lookupLoading =
+    (needsLotLookup && !currentLots) || (needsSerialLookup && !currentSerials);
+  const lookupError = (needsLotLookup && currentLots?.error) || (needsSerialLookup && currentSerials?.error) || null;
+  const availableLots = dynamicLookup
+    ? (currentLots?.items ?? []).map((lot) => ({
+        id: lot.lotId,
+        lotNumber: lot.lotNumber,
+        expirationDate: lot.expirationDate,
+        // Capacidad de salida = disponible (nunca la cantidad fisica).
+        quantity: lot.availableQuantity,
+        locationId: lot.locationId,
+      }))
+    : row.availableLots.filter(
+        (lot) => !value.locationId || lot.locationId === value.locationId,
+      );
+  if (dynamicLookup) {
+    // Orden FEFO solo informativo (vencimiento asc, luego lote); nunca se autoselecciona.
+    availableLots.sort(
+      (left, right) =>
+        (left.expirationDate ?? "9999-12-31").localeCompare(right.expirationDate ?? "9999-12-31") ||
+        left.lotNumber.localeCompare(right.lotNumber),
+    );
+  }
   const selectedLot = availableLots.find((lot) => lot.id === value.lotId);
-  const availableSerials = row.availableSerials.filter(
-    (serial) =>
-      (!value.locationId || serial.locationId === value.locationId) &&
-      (!value.lotId || serial.lotId === value.lotId),
-  );
+  const noLotsAvailable =
+    needsLotLookup && currentLots !== null && !currentLots.error && availableLots.length === 0;
+  const availableSerials = dynamicLookup
+    ? (currentSerials?.items ?? []).map((serial) => ({
+        serialNumber: serial.serialNumber,
+        lotId: serial.lotId,
+        locationId: serial.locationId,
+      }))
+    : row.availableSerials.filter(
+        (serial) =>
+          (!value.locationId || serial.locationId === value.locationId) &&
+          (!value.lotId || serial.lotId === value.lotId),
+      );
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Conteo de producto trazable (solo API): flujo separado de snapshot -> revision -> reconcile.
+  const traceableCount =
+    countService !== null &&
+    value.movementKind === "count" &&
+    (row.tracking.lot || row.tracking.expiration || row.tracking.serial);
   const adjustmentDto = toAdjustStockDto(value);
   const adjustmentValidationErrors = validateAdjustment(
     { ...adjustmentDto, quantity: canonicalInputQuantity },
@@ -1761,10 +2026,23 @@ function AdjustStockModal({
     selectedUnit?.unitAllowsDecimals ?? false,
   );
   if (adjustmentQuantityError) adjustmentValidationErrors.quantity = adjustmentQuantityError;
-  const adjustmentInvalid = hasValidationErrors(adjustmentValidationErrors);
+  if (dynamicLookup) {
+    if (isEntry && row.tracking.serial && traceQuantity > 0) {
+      if (repeatedSerials.length > 0) {
+        adjustmentValidationErrors.serialNumbers = `Series repetidas: ${repeatedSerials.join(", ")}.`;
+      } else if (serialPrecheck.remoteDuplicates.length > 0) {
+        adjustmentValidationErrors.serialNumbers = `Series ya registradas: ${serialPrecheck.remoteDuplicates.join(", ")}.`;
+      }
+    }
+    if (!isEntry && selectedLot && traceQuantity > selectedLot.quantity) {
+      adjustmentValidationErrors.lotId = "El lote no tiene suficientes unidades disponibles.";
+    }
+  }
+  const adjustmentInvalid = hasValidationErrors(adjustmentValidationErrors) || lookupLoading;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (traceableCount) return;
     setErrors(adjustmentValidationErrors);
     if (adjustmentInvalid) return;
     setSubmitError(null);
@@ -1777,7 +2055,21 @@ function AdjustStockModal({
     }
   }
 
-  function update(patch: Partial<EditableAdjustStockDto>) {
+  // No se permite capturar una salida superior a lo disponible (lote seleccionado o existencia).
+  function clampOutQuantity(rawPatch: Partial<EditableAdjustStockDto>) {
+    if (!dynamicLookup || typeof rawPatch.quantity !== "number") return rawPatch;
+    const kind = rawPatch.movementKind ?? value.movementKind;
+    if (kind !== "out" && kind !== "waste") return rawPatch;
+    const unit =
+      row.adjustmentUnits.find((option) => option.unitId === (rawPatch.unitId ?? value.unitId)) ??
+      row.adjustmentUnits[0];
+    const capacityBase = selectedLot ? selectedLot.quantity : row.availableQuantity;
+    const maxInput = Math.floor((capacityBase / (unit?.toBaseFactor ?? 1)) * 1000) / 1000;
+    return rawPatch.quantity > maxInput ? { ...rawPatch, quantity: maxInput } : rawPatch;
+  }
+
+  function update(rawPatch: Partial<EditableAdjustStockDto>) {
+    const patch = clampOutQuantity(rawPatch);
     const nextValue = { ...value, ...patch };
     const nextSelectedUnit =
       row.adjustmentUnits.find((option) => option.unitId === nextValue.unitId) ??
@@ -1787,7 +2079,7 @@ function AdjustStockModal({
     const nextValidationErrors = validateAdjustment(
       { ...toAdjustStockDto(nextValue), quantity: nextCanonicalQuantity },
       row,
-      row.locationQuantities[nextValue.locationId] ?? 0,
+      lookup ? row.availableQuantity : (row.locationQuantities[nextValue.locationId] ?? 0),
     );
     const nextQuantityError = getUnitQuantityInputError(
       nextValue.quantity,
@@ -1828,14 +2120,16 @@ function AdjustStockModal({
   return (
     <Modal
       footer={
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button onClick={onClose} type="button" variant="secondary">
-            Cancelar
-          </Button>
-          <Button disabled={busy || adjustmentInvalid} form="inventory-adjust-form" type="submit">
-            {busy ? "Registrando..." : "Confirmar ajuste"}
-          </Button>
-        </div>
+        traceableCount ? undefined : (
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button onClick={onClose} type="button" variant="secondary">
+              Cancelar
+            </Button>
+            <Button disabled={busy || adjustmentInvalid} form="inventory-adjust-form" type="submit">
+              {busy ? "Registrando..." : "Confirmar ajuste"}
+            </Button>
+          </div>
+        )
       }
       onClose={onClose}
       open={open}
@@ -1889,6 +2183,17 @@ function AdjustStockModal({
             </Select>
           </Field>
         </div>
+        {traceableCount && countService ? (
+          <TraceableCountFlow
+            busy={busy}
+            countService={countService}
+            locationId={value.locationId}
+            row={row}
+            onApply={onApplyCount}
+            onCancel={onClose}
+          />
+        ) : (
+          <>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field id="adjust-unit" label="Unidad">
             <Select
@@ -1905,7 +2210,7 @@ function AdjustStockModal({
           </Field>
           <Field
             id="adjust-quantity"
-            label="Cantidad"
+            label={value.movementKind === "count" ? "Existencia fisica contada" : "Cantidad"}
             error={errors.quantity ?? adjustmentValidationErrors.quantity}
           >
             <Input
@@ -1944,6 +2249,7 @@ function AdjustStockModal({
           ) : (
             <Field id="adjust-lot" label="Lote existente *" error={errors.lotId}>
               <Select
+                disabled={lookupLoading}
                 id="adjust-lot"
                 onChange={(event) => update({ lotId: event.target.value, serialNumbersText: "" })}
                 value={value.lotId ?? ""}
@@ -1951,11 +2257,16 @@ function AdjustStockModal({
                 <option value="">Seleccionar lote</option>
                 {availableLots.map((lot) => (
                   <option key={lot.id} value={lot.id}>
-                    {lot.lotNumber} - {lot.quantity} disponibles
-                    {lot.expirationDate ? ` - vence ${lot.expirationDate}` : ""}
+                    {lot.lotNumber} · {lot.quantity} disponibles
+                    {lot.expirationDate ? ` · vence ${formatLotDate(lot.expirationDate)}` : ""}
                   </option>
                 ))}
               </Select>
+              {noLotsAvailable ? (
+                <p className="mt-1 text-xs font-semibold text-[var(--color-danger)]">
+                  No hay lotes disponibles para este producto en la ubicacion seleccionada.
+                </p>
+              ) : null}
               {selectedLot && selectedLot.quantity < traceQuantity ? (
                 <p className="mt-1 text-xs font-semibold text-[var(--color-danger)]">
                   El lote no tiene suficientes unidades.
@@ -1995,32 +2306,31 @@ function AdjustStockModal({
                 value={value.serialNumbersText}
               />
             ) : (
-              <select
-                id="adjust-serials"
-                className="min-h-36 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm"
-                multiple
-                onChange={(event) =>
-                  update({
-                    serialNumbersText: [...event.target.selectedOptions]
-                      .map((option) => option.value)
-                      .join("\n"),
-                  })
-                }
-                value={parsedSerials}
-              >
-                {availableSerials.map((serial) => (
-                  <option key={serial.serialNumber} value={serial.serialNumber}>
-                    {serial.serialNumber}
-                  </option>
-                ))}
-              </select>
+              <SerialPicker
+                disabled={lookupLoading}
+                options={availableSerials.map((serial) => serial.serialNumber)}
+                required={traceQuantity}
+                selected={parsedSerials}
+                onChange={(next) => update({ serialNumbersText: next.join("\n") })}
+              />
             )}
             <p className="mt-1 text-sm font-semibold text-[var(--color-text-muted)]">
               Cantidad del ajuste: {traceQuantity} {row.unitName}. Seriales requeridos:{" "}
               {traceQuantity}. Registrados: {parsedSerials.length} / {traceQuantity}.
             </p>
+            {isEntry && dynamicLookup && serialPrecheck.unavailable ? (
+              <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
+                No se pudo validar los seriales en este momento; se validaran al confirmar.
+              </p>
+            ) : null}
           </Field>
         ) : null}
+        {lookupLoading ? (
+          <p className="text-sm font-semibold text-[var(--color-text-muted)]">
+            Cargando lotes y series disponibles...
+          </p>
+        ) : null}
+        {lookupError ? <InlineAlert title={lookupError} tone="danger" /> : null}
         <Field id="adjust-reason" label="Motivo *" error={errors.reason}>
           <textarea
             className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
@@ -2042,6 +2352,8 @@ function AdjustStockModal({
           <CharacterCount current={value.notes.length} maximum={TEXT_LIMITS.notes} />
         </Field>
         <AdjustmentSummary delta={delta} finalQuantity={finalQuantity} row={row} value={value} />
+          </>
+        )}
         {submitError ? <InlineAlert title={submitError} tone="danger" /> : null}
       </form>
     </Modal>
@@ -2087,13 +2399,17 @@ function AdjustmentSummary({
 
 function OtherBranchesStockModal({
   open,
+  activeBranchId,
   row,
+  service,
   canManageTransfers,
   onClose,
   onRequest,
 }: {
   open: boolean;
+  activeBranchId: string;
   row: InventoryProductRow;
+  service: InventoryOtherBranchesService | null;
   canManageTransfers: boolean;
   onClose: () => void;
   onRequest: (providerBranchId: string) => void;
@@ -2106,6 +2422,14 @@ function OtherBranchesStockModal({
       subtitle={row.productName}
       title="Existencias en otras sucursales"
     >
+      {service ? (
+        <ApiOtherBranchesList
+          activeBranchId={activeBranchId}
+          productId={row.productId}
+          service={service}
+          unitName={row.unitName}
+        />
+      ) : (
       <div className="space-y-3">
         {row.otherBranchStocks.length === 0 ? (
           <p className="rounded-md border border-[var(--color-border)] p-3 text-sm text-[var(--color-text-muted)]">
@@ -2138,7 +2462,82 @@ function OtherBranchesStockModal({
           ))
         )}
       </div>
+      )}
     </Modal>
+  );
+}
+
+/** API: una request por apertura; solo disponibilidad operacional (sin stock fisico/reservado). */
+function ApiOtherBranchesList({
+  activeBranchId,
+  productId,
+  service,
+  unitName,
+}: {
+  activeBranchId: string;
+  productId: string;
+  service: InventoryOtherBranchesService;
+  unitName: string;
+}) {
+  const [state, setState] = useState<
+    { status: "loading" } | { status: "error" } | { status: "success"; items: OtherBranchAvailability[] }
+  >({ status: "loading" });
+
+  useEffect(() => {
+    let active = true;
+    service
+      .execute({ productId, branchId: activeBranchId })
+      .then((items) => {
+        if (active) setState({ status: "success", items });
+      })
+      .catch(() => {
+        if (active) setState({ status: "error" });
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeBranchId, productId, service]);
+
+  if (state.status === "loading") {
+    return (
+      <p className="text-sm font-semibold text-[var(--color-text-muted)]">
+        Cargando existencias en otras sucursales...
+      </p>
+    );
+  }
+  if (state.status === "error") {
+    return (
+      <InlineAlert
+        title="No se pudieron cargar las existencias de otras sucursales."
+        tone="danger"
+      />
+    );
+  }
+  if (state.items.length === 0) {
+    return (
+      <p className="rounded-md border border-[var(--color-border)] p-3 text-sm text-[var(--color-text-muted)]">
+        No hay otras sucursales disponibles para consultar.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      <div className="hidden grid-cols-[minmax(0,1fr)_auto] gap-3 px-3 text-xs font-bold uppercase text-[var(--color-text-muted)] sm:grid">
+        <span>Sucursal</span>
+        <span>Disponible</span>
+      </div>
+      {state.items.map((stock) => (
+        <div
+          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-[var(--color-border)] p-3"
+          key={stock.branchId}
+        >
+          <p className="min-w-0 break-words font-bold text-[var(--color-title)]">{stock.branchName}</p>
+          <p className="text-sm font-semibold text-[var(--color-title)]">
+            {stock.availableQuantity} {unitName}
+          </p>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -2666,6 +3065,94 @@ function toAdjustStockDto(value: EditableAdjustStockDto): AdjustStockDto {
     quantity: toFiniteNumber(value.quantity),
     serialNumbers: parseSerialNumbers(value.serialNumbersText),
   };
+}
+
+function formatLotDate(value: string) {
+  const [year, month, day] = value.slice(0, 10).split("-");
+  return year && month && day ? `${day}/${month}/${year}` : value;
+}
+
+/** Seleccion de series existentes por click (sin Ctrl/Shift); tope = cantidad requerida. */
+function SerialPicker({
+  disabled,
+  options,
+  required,
+  selected,
+  onChange,
+}: {
+  disabled: boolean;
+  options: string[];
+  required: number;
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const normalized = query.trim().toLowerCase();
+  const visible = normalized
+    ? options.filter((serial) => serial.toLowerCase().includes(normalized))
+    : options;
+  const limitReached = selected.length >= required;
+
+  function toggle(serial: string) {
+    if (selected.includes(serial)) onChange(selected.filter((item) => item !== serial));
+    else if (!limitReached) onChange([...selected, serial]);
+  }
+
+  return (
+    <div className="space-y-2">
+      {options.length > 8 ? (
+        <Input
+          aria-label="Buscar serie"
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Buscar serie..."
+          value={query}
+        />
+      ) : null}
+      <div className="max-h-56 overflow-y-auto rounded-md border border-[var(--color-border)] bg-white">
+        {visible.length === 0 ? (
+          <p className="px-3 py-2 text-sm text-[var(--color-text-muted)]">
+            No hay series disponibles.
+          </p>
+        ) : (
+          visible.map((serial) => {
+            const checked = selected.includes(serial);
+            const blocked = !checked && limitReached;
+            return (
+              <label
+                className={cn(
+                  "flex cursor-pointer items-center gap-2 border-b border-[var(--color-border)] px-3 py-1.5 text-sm last:border-b-0",
+                  checked && "bg-blue-50 font-semibold",
+                  (blocked || disabled) && "cursor-not-allowed opacity-60",
+                )}
+                key={serial}
+              >
+                <input
+                  checked={checked}
+                  disabled={disabled || blocked}
+                  onChange={() => toggle(serial)}
+                  type="checkbox"
+                />
+                <span className="break-all">{serial}</span>
+              </label>
+            );
+          })
+        )}
+      </div>
+      <p className="text-sm font-semibold text-[var(--color-text-muted)]">
+        Seleccionados: {selected.length} / {required}
+      </p>
+    </div>
+  );
+}
+
+function findRepeatedSerialNumbers(serials: string[]) {
+  const seen = new Set<string>();
+  const repeated = new Set<string>();
+  serials.forEach((serial) => {
+    if (seen.has(serial)) repeated.add(serial);
+    seen.add(serial);
+  });
+  return [...repeated];
 }
 
 function parseSerialNumbers(value: string) {

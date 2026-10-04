@@ -98,6 +98,19 @@ export type InventoryStockSort =
   | "status,asc"
   | "status,desc";
 
+/** Disponibilidad operacional (quantity - reserved) de otra sucursal; NO existencia fisica. */
+export interface OtherBranchAvailability {
+  branchId: string;
+  branchName: string;
+  availableQuantity: number;
+}
+
+export interface GetOtherBranchesAvailabilityInput {
+  productId: string;
+  /** Sucursal activa: el backend la excluye y filtra por acceso. */
+  branchId: string;
+}
+
 export interface InventoryStockPageParams {
   branchId: string;
   search?: string;
@@ -335,6 +348,10 @@ export interface InventoryRepository {
   getMovements(productId?: string): Promise<InventoryMovement[]>;
   getMovementPage(params: InventoryMovementPageParams): Promise<InventoryMovementPageResult>;
   getStockPage(params: InventoryStockPageParams): Promise<InventoryStockPageResult>;
+  /** Solo modo API: una request on-demand a GET /inventory/stock/branches. */
+  getOtherBranchesAvailability(
+    input: GetOtherBranchesAvailabilityInput,
+  ): Promise<OtherBranchAvailability[]>;
   getInventoryAlertPage(params: InventoryAlertPageParams): Promise<InventoryAlertPageResult>;
   getLots(productId?: string): Promise<StockLot[]>;
   getSerialNumbers(productId?: string): Promise<SerialNumber[]>;

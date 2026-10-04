@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type {
   InventoryAlertPageResult,
+  OtherBranchAvailability,
   InventoryStockPageResult,
 } from "@/core/repositories";
 import { BackendRequestError } from "@/infrastructure/api/backendClient";
@@ -82,6 +83,25 @@ export function parseApiInventoryAlertPage(value: unknown): InventoryAlertPageRe
   const parsed = inventoryAlertPageSchema.safeParse(value);
   if (!parsed.success) throw invalidResponse("alertas");
   return parsed.data as unknown as InventoryAlertPageResult;
+}
+
+const otherBranchAvailabilitySchema = z.array(
+  z.object({
+    branchId: apiUuidSchema,
+    branchName: z.string(),
+    availableQuantity: finiteNumberSchema,
+  }),
+);
+
+/** Solo branchId, branchName y availableQuantity; nada de quantity/reserved inventados. */
+export function parseApiOtherBranchesAvailability(value: unknown): OtherBranchAvailability[] {
+  const parsed = otherBranchAvailabilitySchema.safeParse(value);
+  if (!parsed.success) throw invalidResponse("existencias por sucursal");
+  return parsed.data.map((item) => ({
+    branchId: item.branchId,
+    branchName: item.branchName,
+    availableQuantity: item.availableQuantity,
+  }));
 }
 
 function invalidResponse(resource: string) {

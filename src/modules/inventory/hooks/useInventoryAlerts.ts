@@ -20,13 +20,20 @@ import {
   isExpiringSoon,
   type GetInventoryAlertsParams,
 } from "@/modules/inventory/application/services/GetInventoryAlertsService";
-import { RegisterInventoryAdjustmentService } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
+import {
+  InventoryAdjustmentLookupService,
+  RegisterInventoryAdjustmentService,
+} from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
 import {
   ApproveTransferRequestService,
   CancelTransferRequestService,
   CreateTransferRequestService,
   RejectTransferRequestService,
 } from "@/modules/inventory/application/services/TransferRequestServices";
+import { InventoryOtherBranchesService } from "@/modules/inventory/application/services/InventoryOtherBranchesService";
+import { InventoryCountService } from "@/modules/inventory/application/services/InventoryCountService";
+import { downloadInventoryCountPdf } from "@/modules/inventory/application/services/InventoryCountPdfService";
+import type { ReconcileCountInput } from "@/core/repositories";
 import { CancelInventoryTransferService } from "@/modules/inventory/application/services/InventoryTransferServices";
 import {
   INVENTORY_ADJUSTMENT_CREATE_PERMISSION,
@@ -75,6 +82,19 @@ export function useInventoryAlerts() {
   const adjustmentService = useMemo(
     () => new RegisterInventoryAdjustmentService(repositories),
     [repositories],
+  );
+  // Lookups bajo demanda del modal de ajuste; solo existen en modo API (sin N+1 en el listado).
+  const adjustmentLookup = useMemo(
+    () => (apiMode ? new InventoryAdjustmentLookupService(repositories) : null),
+    [apiMode, repositories],
+  );
+  const otherBranchesService = useMemo(
+    () => (apiMode ? new InventoryOtherBranchesService(repositories) : null),
+    [apiMode, repositories],
+  );
+  const countService = useMemo(
+    () => (apiMode ? new InventoryCountService(repositories) : null),
+    [apiMode, repositories],
   );
   const transferServices = useMemo(
     () => ({
@@ -433,6 +453,26 @@ export function useInventoryAlerts() {
     }
   }
 
+  // Conteo fisico trazable: una sola reconciliacion; el PDF solo se genera DESPUES del exito y
+  // un fallo de PDF nunca invalida el conteo ya aplicado.
+  async function applyCount(input: ReconcileCountInput) {
+    if (!countService) throw new Error("El conteo fisico trazable requiere modo API.");
+    setBusy(true);
+    try {
+      const result = await countService.reconcile(input);
+      let pdfFailed = false;
+      try {
+        await downloadInventoryCountPdf(result);
+      } catch {
+        pdfFailed = true;
+      }
+      await reload();
+      return { result, pdfFailed };
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function requestTransfer(dto: TransferRequestDto) {
     setBusy(true);
     setError(null);
@@ -556,6 +596,10 @@ export function useInventoryAlerts() {
     reload,
     canAdjustStock,
     canManageTransfers,
+    adjustmentLookup,
+    countService,
+    otherBranchesService,
+    applyCount,
     adjustStock,
     requestTransfer,
     cancelTransfer,

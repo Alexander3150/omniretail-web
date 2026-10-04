@@ -255,6 +255,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
                   eventBus,
                 ),
               ),
+              eventBus,
             ),
             eventBus,
           ),

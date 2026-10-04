@@ -1,4 +1,5 @@
 import type {
+  GetOtherBranchesAvailabilityInput,
   InventoryAlertPageParams,
   InventoryRepository,
   InventoryStockPageParams,
@@ -6,6 +7,7 @@ import type {
 import { BackendRequestError, backendFetch } from "@/infrastructure/api/backendClient";
 import { assertApiUuid, assertOptionalApiUuid } from "@/infrastructure/api/uuid";
 import {
+  parseApiOtherBranchesAvailability,
   parseApiInventoryAlertPage,
   parseApiInventoryStockPage,
 } from "@/infrastructure/api/repositories/inventoryStockApi.schema";
@@ -28,10 +30,12 @@ export class ApiInventoryStockRepository {
   withInventoryDelegate(delegate: InventoryRepository): InventoryRepository {
     const getStockPage = this.getStockPage.bind(this);
     const getInventoryAlertPage = this.getInventoryAlertPage.bind(this);
+    const getOtherBranchesAvailability = this.getOtherBranchesAvailability.bind(this);
     return new Proxy(delegate, {
       get: (target, property) => {
         if (property === "getStockPage") return getStockPage;
         if (property === "getInventoryAlertPage") return getInventoryAlertPage;
+        if (property === "getOtherBranchesAvailability") return getOtherBranchesAvailability;
         const value = Reflect.get(target, property, target);
         return typeof value === "function" ? value.bind(target) : value;
       },
@@ -56,6 +60,16 @@ export class ApiInventoryStockRepository {
           size: params.pageSize,
           sort: params.sort ?? DEFAULT_STOCK_SORT,
         },
+      }),
+    );
+  }
+
+  async getOtherBranchesAvailability(input: GetOtherBranchesAvailabilityInput) {
+    assertApiUuid(input.productId, "productId");
+    assertApiUuid(input.branchId, "branchId");
+    return parseApiOtherBranchesAvailability(
+      await backendFetch<unknown>("/inventory/stock/branches", {
+        query: { productId: input.productId, branchId: input.branchId },
       }),
     );
   }

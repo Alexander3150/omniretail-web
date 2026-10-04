@@ -173,6 +173,8 @@ export function InventoryMovementsPage() {
     type,
     branchId,
     productId,
+    productName,
+    productSku,
     filtersOpen,
     page,
     pageSize,
@@ -204,8 +206,15 @@ export function InventoryMovementsPage() {
     "Periodo seleccionado";
   const selectedTypeLabel =
     movementTypeOptions.find((option) => option.value === type)?.label ?? "Tipo seleccionado";
+  // Nunca se muestra el UUID: nombre (y SKU) del contexto, o el de la fila; si no, un texto neutro.
+  const resolvedProductName =
+    productName || data.rows.find((row) => row.productId === productId)?.productName || "";
   const productFilterLabel = productId
-    ? (data.rows.find((row) => row.productId === productId)?.productName ?? productId)
+    ? resolvedProductName
+      ? productSku
+        ? `${resolvedProductName} · ${productSku}`
+        : resolvedProductName
+      : "Producto seleccionado"
     : "";
 
   async function handleExport() {

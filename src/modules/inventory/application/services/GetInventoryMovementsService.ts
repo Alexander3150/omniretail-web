@@ -1,3 +1,4 @@
+import { formatInventoryReference } from "@/modules/inventory/application/services/formatInventoryReference";
 import type { InventoryAdjustment, InventoryMovement } from "@/core/entities";
 import { InventoryAdjustmentType, InventoryMovementType } from "@/core/enums";
 import type {
@@ -247,7 +248,29 @@ function toApiPageParams(params: GetInventoryMovementsParams): InventoryMovement
   };
 }
 
+/**
+ * Ajustes manuales: el backend solo distingue in/out, pero persiste referenceType estructurado.
+ * Movimientos antiguos (referenceType null/otro) conservan Entrada/Salida.
+ */
+function resolveApiAdjustmentDisplay(movement: InventoryMovementListItem) {
+  if (movement.displayType !== "in" && movement.displayType !== "out") return null;
+  if (movement.referenceType === "manual_in") {
+    return { displayType: "manual_in" as const, label: "Entrada manual" };
+  }
+  if (movement.referenceType === "manual_out") {
+    return { displayType: "manual_out" as const, label: "Salida manual" };
+  }
+  if (movement.referenceType === "waste") {
+    return { displayType: "shrinkage" as const, label: "Merma" };
+  }
+  if (movement.referenceType === "count_correction") {
+    return { displayType: "inventory_adjustment" as const, label: "Conteo físico" };
+  }
+  return null;
+}
+
 function mapApiMovement(movement: InventoryMovementListItem): InventoryMovementRow {
+  const adjustmentDisplay = resolveApiAdjustmentDisplay(movement);
   return {
     id: movement.id,
     tenantId: movement.tenantId,
@@ -257,9 +280,9 @@ function mapApiMovement(movement: InventoryMovementListItem): InventoryMovementR
     productName: movement.productName ?? "Producto no disponible",
     sku: movement.sku ?? movement.productId,
     type: movement.type,
-    displayType: movement.displayType,
-    typeLabel: getMovementTypeLabel(movement.displayType),
-    typeTone: getMovementTypeTone(movement.displayType),
+    displayType: adjustmentDisplay?.displayType ?? movement.displayType,
+    typeLabel: adjustmentDisplay?.label ?? getMovementTypeLabel(movement.displayType),
+    typeTone: getMovementTypeTone(adjustmentDisplay?.displayType ?? movement.displayType),
     quantity: movement.quantity,
     signedQuantity: getApiSignedQuantity(movement),
     quantityBefore: movement.quantityBefore ?? undefined,
@@ -270,7 +293,10 @@ function mapApiMovement(movement: InventoryMovementListItem): InventoryMovementR
     locationLabel: getApiLocationLabel(movement),
     referenceType: movement.referenceType ?? undefined,
     referenceId: movement.referenceId ?? undefined,
-    referenceLabel: movement.referenceLabel ?? "-",
+    referenceLabel:
+      movement.referenceType === "count_correction"
+        ? formatInventoryReference(movement.referenceType, movement.referenceId, movement.referenceLabel)
+        : (movement.referenceLabel ?? "-"),
     performedByUserId: movement.performedByUserId ?? undefined,
     userLabel: movement.userLabel ?? "-",
     reason: movement.reason,

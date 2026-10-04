@@ -391,6 +391,9 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
     void _params;
     throw new Error("Server-side inventory alert pages are only available in API mode.");
   }
+  async getOtherBranchesAvailability(): Promise<never> {
+    throw new Error("Other-branch availability is only available in API mode.");
+  }
   async getLots(productId?: string) {
     return this.read((db) =>
       db.stockLots.filter((item) => !productId || item.productId === productId),
