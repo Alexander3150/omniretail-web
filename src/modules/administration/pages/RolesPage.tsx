@@ -13,6 +13,7 @@ import { PlusIcon } from "@/shared/components/icons";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
+import { TableSkeleton } from "@/shared/components/TableSkeleton";
 import { useToast } from "@/shared/components/Toast";
 
 type ModalState =
@@ -130,16 +131,7 @@ export function RolesPage() {
       ) : null}
 
       {loading ? (
-        <div
-          aria-live="polite"
-          className="flex min-h-48 items-center justify-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 text-sm font-medium text-[var(--color-text-muted)] shadow-sm"
-        >
-          <span
-            aria-hidden="true"
-            className="h-5 w-5 animate-spin rounded-full border-2 border-[var(--color-border)] border-t-[var(--color-structure)]"
-          />
-          Cargando roles...
-        </div>
+        <TableSkeleton columnsCount={4} label="Cargando roles" rowCount={3} />
       ) : (
         <section className="min-w-0">
           <RoleTable roles={roles} onSelect={openView} />

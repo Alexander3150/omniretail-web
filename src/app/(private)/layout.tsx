@@ -3,8 +3,8 @@ import { AuthorizedPrivateShell } from "@/modules/auth/components/AuthorizedPriv
 import { RequirePermission } from "@/modules/auth/components/RequirePermission";
 import { RequireSession } from "@/modules/auth/components/RequireSession";
 import { ScopedActiveBranchProvider } from "@/modules/auth/components/ScopedActiveBranchProvider";
+import { ScopedEntitlementProvider } from "@/modules/auth/components/ScopedEntitlementProvider";
 import { CurrentSessionProvider } from "@/modules/auth/providers/CurrentSessionProvider";
-import { EntitlementProvider } from "@/shared/providers/EntitlementProvider";
 import type { ReactNode } from "react";
 
 type PrivateLayoutProps = {
@@ -15,13 +15,13 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
   return (
     <CurrentSessionProvider>
       <RequireSession>
-        <EntitlementProvider>
+        <ScopedEntitlementProvider>
           <ScopedActiveBranchProvider>
             <AuthorizedPrivateShell navigationItems={navigationConfig}>
               <RequirePermission>{children}</RequirePermission>
             </AuthorizedPrivateShell>
           </ScopedActiveBranchProvider>
-        </EntitlementProvider>
+        </ScopedEntitlementProvider>
       </RequireSession>
     </CurrentSessionProvider>
   );

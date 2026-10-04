@@ -56,7 +56,18 @@ export function shouldRevalidateEntitlementsOnIdentityChanged(
  * llega acá SOLO como `tenant-subscription.changed`, que dispara un reload. Cancel/renew/billing
  * siguen fuera de scope.
  */
-export function EntitlementProvider({ children }: { children: ReactNode }) {
+export function EntitlementProvider({
+  children,
+  tenantId,
+}: {
+  children: ReactNode;
+  /**
+   * Tenant ya resuelto por el arbol autenticado (mismo patron que `ActiveBranchProvider`): evita
+   * re-resolver la sesion. `null` => sin entitlements, sin tocar la red. `undefined` (prop
+   * omitida) conserva la resolucion legacy via `resolveCurrentSessionSnapshot`.
+   */
+  tenantId?: string | null;
+}) {
   const repositories = useRepositories();
   const [entitlements, setEntitlements] = useState<TenantEntitlementsDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,6 +80,16 @@ export function EntitlementProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(undefined);
     try {
+      if (tenantId !== undefined) {
+        if (!tenantId) {
+          setEntitlements(null);
+          return;
+        }
+        const resolved = await new ResolveTenantEntitlementsService(repositories).execute(tenantId);
+        if (version !== reloadVersion.current) return;
+        setEntitlements(resolved);
+        return;
+      }
       const snapshot = await resolveCurrentSessionSnapshot(repositories);
       if (version !== reloadVersion.current) return;
       currentUserIdRef.current = snapshot.user?.id;
@@ -92,7 +113,7 @@ export function EntitlementProvider({ children }: { children: ReactNode }) {
     } finally {
       if (version === reloadVersion.current) setLoading(false);
     }
-  }, [repositories]);
+  }, [repositories, tenantId]);
 
   useEffect(() => {
     let active = true;

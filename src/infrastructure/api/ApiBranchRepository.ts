@@ -5,6 +5,7 @@ import type { PaginatedResult } from "@/core/types";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { type ApiBranch, toBranch, toBranchRequest } from "@/infrastructure/api/apiBranchMapper";
 import { BackendRequestError, backendFetch } from "@/infrastructure/api/backendClient";
+import { TtlCache } from "@/infrastructure/api/TtlCache";
 
 const BASE_PATH = "/administration/branches";
 /** Tamaño de pagina al recorrer el listado completo. */
@@ -16,13 +17,27 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
  * la tienda desde el JWT, asi que los metodos `*ByTenant`/`*Scoped` solo filtran el resultado por
  * `tenantId` para respetar el contrato: nunca se envia el tenantId al backend.
  *
+ * `getAll` y `getActive` se cachean 30s con deduplicacion en vuelo (cabecera y paginas de
+ * administracion los piden a la vez); `branch.changed`/`auth.changed` y las mutaciones propias
+ * invalidan la cache.
+ *
  * Los errores del backend (VALIDATION_ERROR, LIMIT_REACHED, BRANCH_CODE_EXISTS...) se propagan como
  * `BackendRequestError` con el mensaje descriptivo del ApiError.
  */
 export class ApiBranchRepository implements BranchRepository {
-  constructor(private readonly eventBus: DataEventBus) {}
+  private readonly allCache = new TtlCache<Branch[]>();
+  private readonly activeCache = new TtlCache<Branch[]>();
+
+  constructor(private readonly eventBus: DataEventBus) {
+    eventBus.subscribe("branch.changed", () => this.invalidateCache());
+    eventBus.subscribe("auth.changed", () => this.invalidateCache());
+  }
 
   async getAll(): Promise<Branch[]> {
+    return [...(await this.allCache.get(() => this.fetchAll()))];
+  }
+
+  private async fetchAll(): Promise<Branch[]> {
     const branches: Branch[] = [];
     for (let page = 1; ; page++) {
       const result = await backendFetch<PaginatedResult<ApiBranch>>(BASE_PATH, {
@@ -31,6 +46,11 @@ export class ApiBranchRepository implements BranchRepository {
       branches.push(...result.items.map(toBranch));
       if (page >= result.totalPages) return branches;
     }
+  }
+
+  private invalidateCache(): void {
+    this.allCache.invalidate();
+    this.activeCache.invalidate();
   }
 
   async getById(id: string): Promise<Branch | null> {
@@ -50,8 +70,10 @@ export class ApiBranchRepository implements BranchRepository {
   }
 
   async getActive(): Promise<Branch[]> {
-    const branches = await backendFetch<ApiBranch[]>(`${BASE_PATH}/active`);
-    return branches.map(toBranch);
+    const branches = await this.activeCache.get(async () =>
+      (await backendFetch<ApiBranch[]>(`${BASE_PATH}/active`)).map(toBranch),
+    );
+    return [...branches];
   }
 
   async getActiveByTenant(tenantId: string): Promise<Branch[]> {
@@ -70,6 +92,7 @@ export class ApiBranchRepository implements BranchRepository {
     const created = toBranch(
       await backendFetch<ApiBranch>(BASE_PATH, { method: "POST", body: toBranchRequest(input) }),
     );
+    this.invalidateCache();
     this.eventBus.emit("branch.changed", {
       entityId: created.id,
       tenantId: created.tenantId,
@@ -90,6 +113,7 @@ export class ApiBranchRepository implements BranchRepository {
         body: toBranchRequest({ ...current, ...input, status: input.status ?? current.status }),
       }),
     );
+    this.invalidateCache();
     this.eventBus.emit("branch.changed", {
       entityId: updated.id,
       tenantId: updated.tenantId,
