@@ -4,6 +4,7 @@ import type { PaginatedResult } from "@/core/types";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { type ApiRole, toRole, toRoleRequest } from "@/infrastructure/api/apiRoleMapper";
 import { BackendRequestError, backendFetch } from "@/infrastructure/api/backendClient";
+import { TtlCache } from "@/infrastructure/api/TtlCache";
 
 const BASE_PATH = "/administration/roles";
 /** Tamaño de pagina al recorrer el listado completo. */
@@ -13,12 +14,24 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 /**
  * RoleRepository de modo api contra `/api/backend/administration/roles`. El backend resuelve la
  * tienda desde el JWT, asi que `tenantId` solo filtra el resultado para respetar el contrato.
+ * `listByTenant` cachea el listado completo 30s con deduplicacion en vuelo; `role.changed`,
+ * `auth.changed` y las mutaciones propias invalidan la cache.
  * El backend tambien protege los roles `isSystem` (no se editan ni archivan).
  */
 export class ApiRoleRepository implements RoleRepository {
-  constructor(private readonly eventBus: DataEventBus) {}
+  private readonly listCache = new TtlCache<Role[]>();
+
+  constructor(private readonly eventBus: DataEventBus) {
+    eventBus.subscribe("role.changed", () => this.listCache.invalidate());
+    eventBus.subscribe("auth.changed", () => this.listCache.invalidate());
+  }
 
   async listByTenant(tenantId: string): Promise<Role[]> {
+    const roles = await this.listCache.get(() => this.fetchAll());
+    return roles.filter((role) => role.tenantId === tenantId);
+  }
+
+  private async fetchAll(): Promise<Role[]> {
     const roles: Role[] = [];
     for (let page = 1; ; page++) {
       const result = await backendFetch<PaginatedResult<ApiRole>>(BASE_PATH, {
@@ -26,7 +39,7 @@ export class ApiRoleRepository implements RoleRepository {
       });
       roles.push(...result.items.map(toRole));
       if (page >= result.totalPages) {
-        return roles.filter((role) => role.tenantId === tenantId);
+        return roles;
       }
     }
   }
@@ -83,6 +96,7 @@ export class ApiRoleRepository implements RoleRepository {
   }
 
   private emitChanged(role: Role, action: "created" | "updated" | "archived") {
+    this.listCache.invalidate();
     this.eventBus.emit("role.changed", { entityId: role.id, tenantId: role.tenantId, action });
   }
 }
