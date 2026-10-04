@@ -1,9 +1,23 @@
 import type { Supplier, SupplierProduct } from "@/core/entities";
-import type { OperationalSupplier, SupplierRepository } from "@/core/repositories";
+import type {
+  OperationalSupplierIncident,
+  OperationalSupplierIncidentPageParams,
+  OperationalSupplierProduct,
+  OperationalSupplierProductPageParams,
+  OperationalSupplier,
+  OperationalSupplierDetail,
+  OperationalSupplierPageParams,
+  OperationalSupplierSummary,
+  SupplierRepository,
+} from "@/core/repositories";
 import type { PaginatedResult } from "@/core/types";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import {
   type ApiSupplier,
+  parseOperationalSupplierIncidentPage,
+  parseOperationalSupplierProductPage,
+  parseOperationalSupplierDetail,
+  parseOperationalSupplierPage,
   parseOperationalSuppliers,
   toSupplier,
   toSupplierRequest,
@@ -55,6 +69,68 @@ export class ApiSupplierRepository implements SupplierRepository {
     return parseOperationalSuppliers(
       await backendFetch<unknown>("/purchasing/suppliers/active"),
     );
+  }
+
+  /** Listado informativo de Compras: paginado y filtrado en servidor, page base 1. */
+  async getOperationalPage(
+    params: OperationalSupplierPageParams,
+  ): Promise<PaginatedResult<OperationalSupplierSummary>> {
+    return parseOperationalSupplierPage(
+      await backendFetch<unknown>("/purchasing/suppliers", {
+        query: {
+          status: params.status,
+          search: params.search?.trim() || undefined,
+          page: params.page,
+          size: params.pageSize,
+        },
+      }),
+    );
+  }
+
+  async getOperationalProducts(
+    supplierId: string,
+    params: OperationalSupplierProductPageParams,
+  ): Promise<PaginatedResult<OperationalSupplierProduct>> {
+    assertSupplierId(supplierId);
+    return parseOperationalSupplierProductPage(
+      await backendFetch<unknown>(`/purchasing/suppliers/${supplierId}/products`, {
+        query: {
+          active: params.active,
+          search: params.search?.trim() || undefined,
+          page: params.page,
+          size: params.pageSize,
+        },
+      }),
+    );
+  }
+
+  async getOperationalIncidents(
+    supplierId: string,
+    params: OperationalSupplierIncidentPageParams,
+  ): Promise<PaginatedResult<OperationalSupplierIncident>> {
+    assertSupplierId(supplierId);
+    return parseOperationalSupplierIncidentPage(
+      await backendFetch<unknown>(`/purchasing/suppliers/${supplierId}/incidents`, {
+        query: {
+          status: params.status,
+          branchId: params.branchId,
+          page: params.page,
+          size: params.pageSize,
+        },
+      }),
+    );
+  }
+
+  async getOperationalById(id: string): Promise<OperationalSupplierDetail | null> {
+    if (!isApiUuid(id)) return null;
+    try {
+      return parseOperationalSupplierDetail(
+        await backendFetch<unknown>(`/purchasing/suppliers/${id}`),
+      );
+    } catch (error) {
+      if (error instanceof BackendRequestError && error.status === 404) return null;
+      throw error;
+    }
   }
 
   async listByTenant(tenantId: string): Promise<Supplier[]> {
@@ -113,5 +189,11 @@ export class ApiSupplierRepository implements SupplierRepository {
       tenantId: supplier.tenantId,
       action,
     });
+  }
+}
+
+function assertSupplierId(supplierId: string) {
+  if (!isApiUuid(supplierId)) {
+    throw new BackendRequestError("Proveedor invalido.", 400, "INVALID_SUPPLIER_ID");
   }
 }

@@ -1,6 +1,15 @@
 "use client";
 
 import {
+  getPurchaseOrderStatusLabel as getStatusLabel,
+  PurchaseOrderStatusBadge as OrderStatusBadge,
+} from "@/modules/purchasing/components/PurchaseOrderStatusBadge";
+import {
+  clearOrdersNavContext,
+  readOrdersNavContext,
+  saveOrdersNavContext,
+} from "@/modules/purchasing/application/services/purchaseOrdersNavContext";
+import {
   useEffect,
   useMemo,
   useRef,
@@ -11,7 +20,6 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import type { PurchaseOrderStatus } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { Button } from "@/shared/components/Button";
 import { InlineAlert } from "@/shared/components/InlineAlert";
@@ -68,10 +76,30 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
     action: PurchaseOrderAction;
   } | null>(null);
   const [suggestionsExpanded, setSuggestionsExpanded] = useState(false);
+  // Contexto temporal (sessionStorage) en lugar de ?orderId=<UUID>; el id solo vive en memoria.
+  const [contextOrderId, setContextOrderId] = useState<string | null>(null);
+  const activeOrderId = initialOrderId?.trim() || contextOrderId || undefined;
   const appliedOrderIdRef = useRef<string | null>(null);
   const locatingOrderIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    window.queueMicrotask(() => {
+      if (!active) return;
+      const legacyOrderId = initialOrderId?.trim();
+      if (legacyOrderId) {
+        // URL antigua con ?orderId=: se hidrata el contexto y el flujo existente limpia la URL.
+        saveOrdersNavContext({ orderId: legacyOrderId, orderNumber: "", source: "supplier" });
+        return;
+      }
+      const stored = readOrdersNavContext();
+      if (stored) setContextOrderId(stored.orderId);
+    });
+    return () => {
+      active = false;
+    };
+  }, [initialOrderId]);
   const directlyLocatedOrder = useMemo(() => {
-    const orderId = initialOrderId?.trim();
+    const orderId = activeOrderId;
     if (!orderId) return null;
     const candidates = detailOrder ? [...data.orders, detailOrder] : data.orders;
     return (
@@ -89,7 +117,7 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
     currentBranch?.tenantId,
     data.orders,
     detailOrder,
-    initialOrderId,
+    activeOrderId,
   ]);
   const visibleOrders = useMemo(
     () => (directlyLocatedOrder ? [directlyLocatedOrder] : paginatedOrders),
@@ -107,7 +135,7 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
       : "No se encontraron ordenes.";
 
   useEffect(() => {
-    const orderId = initialOrderId?.trim();
+    const orderId = activeOrderId;
     if (!orderId) {
       appliedOrderIdRef.current = null;
       locatingOrderIdRef.current = null;
@@ -157,7 +185,7 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
   }, [
     apiMode,
     directlyLocatedOrder,
-    initialOrderId,
+    activeOrderId,
     loadOrderById,
     loading,
     router,
@@ -165,9 +193,11 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
   ]);
 
   function clearOrderLocator() {
-    if (!initialOrderId) return;
+    if (!activeOrderId) return;
+    clearOrdersNavContext();
+    setContextOrderId(null);
     appliedOrderIdRef.current = null;
-    router.replace("/compras/ordenes", { scroll: false });
+    if (initialOrderId) router.replace("/compras/ordenes", { scroll: false });
   }
 
   function handleSearchChange(search: string) {
@@ -1043,25 +1073,6 @@ function ConfirmActionDialog({
   );
 }
 
-function OrderStatusBadge({ status }: { status: PurchaseOrderStatus }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex max-w-full items-center rounded-full px-2 py-1 text-xs font-bold",
-        status === "draft" && "bg-slate-100 text-slate-700",
-        status === "pending_approval" && "bg-amber-100 text-amber-800",
-        status === "approved" && "bg-blue-100 text-blue-800",
-        status === "sent" && "bg-indigo-100 text-indigo-800",
-        status === "partially_received" && "bg-sky-100 text-amber-800 ring-1 ring-amber-200",
-        status === "received" && "bg-emerald-100 text-emerald-800",
-        status === "cancelled" && "bg-rose-50 text-rose-700 ring-1 ring-rose-100",
-      )}
-    >
-      {getStatusLabel(status)}
-    </span>
-  );
-}
-
 function DetailItem({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="min-w-0">
@@ -1078,19 +1089,6 @@ function InlineItem({ label, value }: { label: string; value: string }) {
       <dd className="text-right font-bold text-[var(--color-title)]">{value}</dd>
     </div>
   );
-}
-
-function getStatusLabel(status: PurchaseOrderStatus) {
-  const labels: Record<PurchaseOrderStatus, string> = {
-    draft: "Borrador",
-    pending_approval: "Pendiente de aprobacion",
-    approved: "Aprobada",
-    sent: "Enviada",
-    partially_received: "Recepcion parcial",
-    received: "Recibida",
-    cancelled: "Cancelada",
-  };
-  return labels[status];
 }
 
 function formatCurrency(value: number) {

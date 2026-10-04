@@ -304,6 +304,14 @@ function apiSuppliersForEmployees(
     getById: async (id: string) => (await resolve()).getById(id),
     getActive: async () => (await resolve()).getActive(),
     getActiveByTenant: async (tenantId: string) => api.getActiveByTenant(tenantId),
+    // Lecturas operacionales de Compras: siempre API (sin fallback a mock), igual que
+    // getActiveByTenant; el backend las autoriza con permisos de compras.
+    getOperationalPage: async (params) => api.getOperationalPage(params),
+    getOperationalById: async (id: string) => api.getOperationalById(id),
+    getOperationalProducts: async (supplierId, params) =>
+      api.getOperationalProducts(supplierId, params),
+    getOperationalIncidents: async (supplierId, params) =>
+      api.getOperationalIncidents(supplierId, params),
     listByTenant: async (tenantId: string) => (await resolve(tenantId)).listByTenant(tenantId),
     getProductsBySupplier: async (supplierId: string) =>
       (await resolve()).getProductsBySupplier(supplierId),

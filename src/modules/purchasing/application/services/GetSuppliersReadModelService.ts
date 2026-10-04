@@ -16,7 +16,20 @@ import type {
   SuppliersReadModel,
 } from "@/modules/purchasing/application/dto/SupplierReadModel";
 import { buildIncidentListItems } from "@/modules/receiving/application/services/buildIncidentListItems";
-import { resolvePurchasingContext } from "@/modules/purchasing/application/services/serviceHelpers";
+import type {
+  OperationalSupplierDetail,
+  OperationalSupplierIncident,
+  OperationalSupplierIncidentPageParams,
+  OperationalSupplierProduct,
+  OperationalSupplierProductPageParams,
+  OperationalSupplierSummary,
+} from "@/core/repositories";
+import type { PaginatedResult } from "@/core/types";
+import type { SupplierPurchaseOrderReadModel } from "@/modules/purchasing/application/dto/SupplierReadModel";
+import {
+  ensureCanReadPurchaseOrders,
+  resolvePurchasingContext,
+} from "@/modules/purchasing/application/services/serviceHelpers";
 
 export class GetSuppliersReadModelService {
   constructor(private readonly repositories: RepositoryRegistry) {}
@@ -111,6 +124,74 @@ export class GetSuppliersReadModelService {
     return {
       suppliers: supplierItems.sort((left, right) => left.name.localeCompare(right.name)),
     };
+  }
+
+  /**
+   * API: listado informativo paginado en servidor (page base 1). Sin fetch-all, sin N+1 y sin
+   * lecturas de productos/usuarios/sucursales: solo GET /purchasing/suppliers.
+   */
+  async executeApiPage(params: {
+    status?: SupplierStatus;
+    search?: string;
+    page: number;
+    pageSize: number;
+  }): Promise<PaginatedResult<SupplierListItemReadModel>> {
+    const { permissions } = await resolvePurchasingContext(this.repositories);
+    ensureCanReadPurchaseOrders(permissions);
+    const result = await this.repositories.suppliers.getOperationalPage(params);
+    return { ...result, items: result.items.map((supplier) => toApiSupplierReadModel(supplier)) };
+  }
+
+  /** API: detalle bajo demanda al abrir el panel; nunca por cada fila. */
+  async getApiDetail(supplierId: string): Promise<SupplierListItemReadModel> {
+    const { permissions } = await resolvePurchasingContext(this.repositories);
+    ensureCanReadPurchaseOrders(permissions);
+    const detail = await this.repositories.suppliers.getOperationalById(supplierId);
+    if (!detail) throw new Error("Proveedor no encontrado.");
+    return toApiSupplierReadModel(detail);
+  }
+
+  /** API: productos del proveedor (on-demand al abrir la pestana; paginado en servidor). */
+  async getApiProducts(
+    supplierId: string,
+    params: OperationalSupplierProductPageParams,
+  ): Promise<PaginatedResult<OperationalSupplierProduct>> {
+    const { permissions } = await resolvePurchasingContext(this.repositories);
+    ensureCanReadPurchaseOrders(permissions);
+    return this.repositories.suppliers.getOperationalProducts(supplierId, params);
+  }
+
+  /** API: incidencias del proveedor (on-demand al abrir la pestana; paginado en servidor). */
+  async getApiIncidents(
+    supplierId: string,
+    params: OperationalSupplierIncidentPageParams,
+  ): Promise<PaginatedResult<OperationalSupplierIncident>> {
+    const { permissions } = await resolvePurchasingContext(this.repositories);
+    ensureCanReadPurchaseOrders(permissions);
+    return this.repositories.suppliers.getOperationalIncidents(supplierId, params);
+  }
+
+  /** API: ordenes recientes del proveedor (una pagina de GET /purchasing/orders?supplierId). */
+  async getApiPurchaseOrders(
+    supplierId: string,
+    branchId?: string,
+  ): Promise<SupplierPurchaseOrderReadModel[]> {
+    const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
+    ensureCanReadPurchaseOrders(permissions);
+    const page = await this.repositories.purchaseOrders.getPageScoped(tenantId, {
+      supplierId,
+      ...(branchId ? { branchId } : {}),
+      page: 1,
+      pageSize: 10,
+    });
+    return page.items.map((order) => ({
+      id: order.id,
+      number: order.number,
+      createdAt: order.createdAt,
+      expectedDate: order.expectedDate,
+      total: order.total,
+      status: order.status,
+    }));
   }
 
   private async toSupplierProductReadModel(
@@ -221,4 +302,33 @@ export class GetSuppliersReadModelService {
       }))
       .sort((left, right) => left.minQuantity - right.minQuantity);
   }
+}
+
+/** Solo datos reales del backend; condicion de pago, credito y moneda no existen y no se inventan. */
+function toApiSupplierReadModel(
+  supplier: OperationalSupplierSummary | OperationalSupplierDetail,
+): SupplierListItemReadModel {
+  const detail = supplier as Partial<OperationalSupplierDetail>;
+  return {
+    id: supplier.id,
+    name: supplier.name,
+    legalName: supplier.legalName,
+    taxId: supplier.taxId,
+    email: supplier.email,
+    phone: supplier.phone,
+    address: detail.address,
+    notes: detail.notes,
+    status: supplier.status,
+    archived: supplier.status === SupplierStatus.archived,
+    paymentConditionLabel: "",
+    creditDaysLabel: "",
+    currencyLabel: "",
+    deliveryLabel:
+      typeof supplier.leadTimeDays === "number" ? `${supplier.leadTimeDays} dias` : "Sin plazo",
+    searchText: "",
+    contacts: [],
+    products: [],
+    purchaseOrders: [],
+    incidents: [],
+  };
 }

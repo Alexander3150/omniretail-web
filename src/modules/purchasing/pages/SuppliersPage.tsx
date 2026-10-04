@@ -1,11 +1,20 @@
 "use client";
 
-import Link from "next/link";
-import { useMemo, useState, type ComponentType, type SVGProps } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, type ComponentType, type SVGProps } from "react";
+import type {
+  OperationalSupplierIncident,
+  OperationalSupplierIncidentPageParams,
+  OperationalSupplierProduct,
+  OperationalSupplierProductPageParams,
+} from "@/core/repositories";
+import type { PaginatedResult } from "@/core/types";
+import { RECEIPT_INCIDENT_TYPE_LABELS } from "@/modules/receiving/application/dto/ReceivingDocumentDetailDto";
 import type { ReceiptIncidentEvidence } from "@/core/entities";
 import { Button } from "@/shared/components/Button";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Input } from "@/shared/components/Input";
+import { Select } from "@/shared/components/Select";
 import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
 import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
@@ -15,8 +24,11 @@ import { cn } from "@/shared/utils/cn";
 import type {
   SupplierIncidentReadModel,
   SupplierListItemReadModel,
+  SupplierPurchaseOrderReadModel,
   SupplierStatusFilter,
 } from "@/modules/purchasing/application/dto/SupplierReadModel";
+import { PurchaseOrderStatusBadge } from "@/modules/purchasing/components/PurchaseOrderStatusBadge";
+import { saveOrdersNavContext } from "@/modules/purchasing/application/services/purchaseOrdersNavContext";
 import { useSuppliers } from "@/modules/purchasing/hooks/useSuppliers";
 import { IncidentDetailContent } from "@/modules/receiving/components/IncidentDetail";
 
@@ -31,34 +43,39 @@ const DETAIL_TABS: Array<{ id: SupplierDetailTab; label: string }> = [
   { id: "incidents", label: "Incidencias" },
 ];
 
-const DEFAULT_PAGE_SIZE: TablePageSize = 10;
-
 export function SuppliersPage() {
-  const { suppliers, filteredSuppliers, filters, loading, error, updateFilters } = useSuppliers();
+  const {
+    apiMode,
+    rows,
+    hasSuppliers,
+    filters,
+    page,
+    pageSize,
+    totalItems,
+    totalPages,
+    loading,
+    error,
+    updateFilters,
+    setPage,
+    setPageSize,
+    loadSupplierDetail,
+    loadSupplierOrders,
+    loadSupplierProducts,
+    loadSupplierIncidents,
+  } = useSuppliers();
   const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
   const [previewEvidence, setPreviewEvidence] = useState<ReceiptIncidentEvidence | null>(null);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<TablePageSize>(DEFAULT_PAGE_SIZE);
-  const totalPages = Math.max(1, Math.ceil(filteredSuppliers.length / pageSize));
-  const currentPage = Math.min(page, totalPages);
-  const paginatedSuppliers = useMemo(
-    () => filteredSuppliers.slice((currentPage - 1) * pageSize, currentPage * pageSize),
-    [currentPage, filteredSuppliers, pageSize],
-  );
-  const selectedSupplier = useMemo(
-    () => paginatedSuppliers.find((supplier) => supplier.id === selectedSupplierId) ?? null,
-    [paginatedSuppliers, selectedSupplierId],
-  );
-  const emptyMessage =
-    suppliers.length === 0 ? "No hay proveedores registrados." : "No se encontraron proveedores.";
+  const selectedSupplier = rows.find((supplier) => supplier.id === selectedSupplierId) ?? null;
+  const emptyMessage = hasSuppliers
+    ? "No se encontraron proveedores."
+    : "No hay proveedores registrados.";
+
   function handleSearchChange(search: string) {
-    setPage(1);
     setSelectedSupplierId(null);
     updateFilters({ search });
   }
 
   function handleStatusChange(status: SupplierStatusFilter) {
-    setPage(1);
     setSelectedSupplierId(null);
     updateFilters({ status });
   }
@@ -70,7 +87,6 @@ export function SuppliersPage() {
 
   function handlePageSizeChange(nextPageSize: TablePageSize) {
     setPageSize(nextPageSize);
-    setPage(1);
     setSelectedSupplierId(null);
   }
 
@@ -106,7 +122,7 @@ export function SuppliersPage() {
         className={cn(
           "grid min-w-0 overflow-hidden rounded-lg border border-[var(--color-border)] bg-white shadow-sm",
           selectedSupplier
-            ? "gap-0 xl:grid-cols-[minmax(0,1fr)_370px]"
+            ? "gap-0 xl:grid-cols-[minmax(0,1fr)_minmax(26rem,min(44%,36rem))]"
             : "xl:grid-cols-1",
         )}
       >
@@ -116,17 +132,19 @@ export function SuppliersPage() {
           ) : (
             <>
               <SuppliersTable
+                apiMode={apiMode}
+                compact={Boolean(selectedSupplier)}
                 emptyMessage={emptyMessage}
                 selectedSupplierId={selectedSupplierId}
-                suppliers={paginatedSuppliers}
+                suppliers={rows}
                 onSelect={setSelectedSupplierId}
               />
               <TablePagination
                 ariaLabel="Paginacion de proveedores"
                 itemLabel="proveedores"
-                page={currentPage}
+                page={page}
                 pageSize={pageSize}
-                totalItems={filteredSuppliers.length}
+                totalItems={totalItems}
                 onPageChange={changePage}
                 onPageSizeChange={handlePageSizeChange}
               />
@@ -137,6 +155,11 @@ export function SuppliersPage() {
         {selectedSupplier ? (
           <SupplierDetailPanel
             key={selectedSupplier.id}
+            apiMode={apiMode}
+            loadDetail={loadSupplierDetail}
+            loadOrders={loadSupplierOrders}
+            loadProducts={loadSupplierProducts}
+            loadIncidents={loadSupplierIncidents}
             supplier={selectedSupplier}
             onClose={() => setSelectedSupplierId(null)}
             onPreview={setPreviewEvidence}
@@ -163,39 +186,65 @@ export function SuppliersPage() {
 }
 
 function SuppliersTable({
+  apiMode,
+  compact,
   suppliers,
   selectedSupplierId,
   emptyMessage,
   onSelect,
 }: {
+  apiMode: boolean;
+  /** Con un proveedor abierto la tabla cede ancho al panel: solo Proveedor, NIT y Estado. */
+  compact: boolean;
   suppliers: SupplierListItemReadModel[];
   selectedSupplierId: string | null;
   emptyMessage: string;
   onSelect: (supplierId: string) => void;
 }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[760px] table-fixed border-collapse text-left text-sm">
+    <div className="overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <table
+        className={cn(
+          "w-full table-fixed border-collapse text-left text-sm",
+          !compact && "min-w-[760px]",
+        )}
+      >
         <colgroup>
-          <col className="w-[31%]" />
-          <col className="w-[14%]" />
-          <col className="w-[25%]" />
-          <col className="w-[15%]" />
-          <col className="w-[15%]" />
+          {compact ? (
+            <>
+              <col className="w-[50%]" />
+              <col className="w-[28%]" />
+              <col className="w-[22%]" />
+            </>
+          ) : (
+            <>
+              <col className="w-[31%]" />
+              <col className="w-[14%]" />
+              <col className="w-[25%]" />
+              <col className="w-[15%]" />
+              <col className="w-[15%]" />
+            </>
+          )}
         </colgroup>
         <thead className="bg-[var(--color-structure)] text-xs uppercase text-white">
           <tr>
             <th className="px-3 py-3 font-semibold">Proveedor</th>
             <th className="px-3 py-3 font-semibold">NIT</th>
-            <th className="px-3 py-3 font-semibold">Contacto</th>
-            <th className="px-3 py-3 font-semibold">Condicion</th>
-            <th className="px-3 py-3 font-semibold">Entrega</th>
+            {compact ? (
+              <th className="px-3 py-3 font-semibold">Estado</th>
+            ) : (
+              <>
+                <th className="px-3 py-3 font-semibold">Contacto</th>
+                <th className="px-3 py-3 font-semibold">{apiMode ? "Estado" : "Condicion"}</th>
+                <th className="px-3 py-3 font-semibold">Entrega</th>
+              </>
+            )}
           </tr>
         </thead>
         <tbody>
           {suppliers.length === 0 ? (
             <tr>
-              <td className="px-4 py-10 text-center text-[var(--color-text-muted)]" colSpan={5}>
+              <td className="px-4 py-10 text-center text-[var(--color-text-muted)]" colSpan={compact ? 3 : 5}>
                 <div className="mx-auto flex max-w-sm flex-col items-center gap-2">
                   <BuildingIcon className="h-6 w-6 text-[var(--color-structure)]" />
                   <p className="font-bold text-[var(--color-title)]">{emptyMessage}</p>
@@ -235,18 +284,39 @@ function SuppliersTable({
                   <td className="whitespace-nowrap px-3 py-3 font-medium text-[var(--color-text)]">
                     {supplier.taxId ?? "-"}
                   </td>
+                  {compact ? (
+                    <td className="px-3 py-3">
+                      <StatusBadge status={supplier.status} />
+                    </td>
+                  ) : (
+                    <>
                   <td className="px-3 py-3">
-                    <p className="truncate font-medium text-[var(--color-title)]" title={contact?.name ?? "Sin contacto"}>
-                      {contact?.name ?? "Sin contacto"}
-                    </p>
-                    <p className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]" title={formatContactLine(contact?.phone, contact?.email)}>
-                      {formatContactLine(contact?.phone, contact?.email)}
-                    </p>
+                    {apiMode ? (
+                      <>
+                        <p className="truncate font-medium text-[var(--color-title)]" title={supplier.email ?? "No definido"}>
+                          {supplier.email ?? "No definido"}
+                        </p>
+                        <p className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]" title={supplier.phone ?? "No definido"}>
+                          {supplier.phone ?? "No definido"}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="truncate font-medium text-[var(--color-title)]" title={contact?.name ?? "Sin contacto"}>
+                          {contact?.name ?? "Sin contacto"}
+                        </p>
+                        <p className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]" title={formatContactLine(contact?.phone, contact?.email)}>
+                          {formatContactLine(contact?.phone, contact?.email)}
+                        </p>
+                      </>
+                    )}
                   </td>
                   <td className="break-words px-3 py-3 leading-tight text-[var(--color-text)]">
-                    {supplier.paymentConditionLabel}
+                    {apiMode ? <StatusBadge status={supplier.status} /> : supplier.paymentConditionLabel}
                   </td>
-                  <td className="break-words px-3 py-3 leading-tight text-[var(--color-text)]">{supplier.deliveryLabel}</td>
+                  <td className="break-words px-3 py-3 leading-tight text-[var(--color-text)]">{formatDeliveryLabel(supplier.deliveryLabel)}</td>
+                    </>
+                  )}
                 </tr>
               );
             })
@@ -290,25 +360,68 @@ function StatusSegmentedFilter({
   );
 }
 
+type DetailState =
+  | { status: "loading" }
+  | { status: "error" }
+  | { status: "success"; detail: SupplierListItemReadModel };
+
 function SupplierDetailPanel({
-  supplier,
+  apiMode,
+  loadDetail,
+  loadOrders,
+  loadProducts,
+  loadIncidents,
+  supplier: listSupplier,
   onClose,
   onPreview,
 }: {
+  apiMode: boolean;
+  loadDetail: (supplierId: string) => Promise<SupplierListItemReadModel>;
+  loadOrders: (supplierId: string) => Promise<SupplierPurchaseOrderReadModel[]>;
+  loadProducts: (
+    supplierId: string,
+    params: OperationalSupplierProductPageParams,
+  ) => Promise<PaginatedResult<OperationalSupplierProduct>>;
+  loadIncidents: (
+    supplierId: string,
+    params: Omit<OperationalSupplierIncidentPageParams, "branchId">,
+  ) => Promise<PaginatedResult<OperationalSupplierIncident>>;
   supplier: SupplierListItemReadModel;
   onClose: () => void;
   onPreview: (evidence: ReceiptIncidentEvidence) => void;
 }) {
   const [activeTab, setActiveTab] = useState<SupplierDetailTab>("general");
+  const [detailState, setDetailState] = useState<DetailState>({ status: "loading" });
+  const listSupplierId = listSupplier.id;
+
+  // API: el detalle se pide una sola vez al abrir el panel (keyed por proveedor).
+  useEffect(() => {
+    if (!apiMode) return;
+    let active = true;
+    loadDetail(listSupplierId)
+      .then((detail) => {
+        if (active) setDetailState({ status: "success", detail });
+      })
+      .catch(() => {
+        if (active) setDetailState({ status: "error" });
+      });
+    return () => {
+      active = false;
+    };
+  }, [apiMode, listSupplierId, loadDetail]);
+
+  const supplier =
+    apiMode && detailState.status === "success" ? detailState.detail : listSupplier;
+  const tabs = DETAIL_TABS;
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
   const selectedIncident =
     supplier.incidents.find((incident) => incident.id === selectedIncidentId) ?? null;
   const counts: Record<SupplierDetailTab, number | null> = {
     general: null,
-    contacts: supplier.contacts.length,
-    products: supplier.products.length,
-    purchases: supplier.purchaseOrders.length,
-    incidents: supplier.incidents.length,
+    contacts: apiMode ? null : supplier.contacts.length,
+    products: apiMode ? null : supplier.products.length,
+    purchases: apiMode ? null : supplier.purchaseOrders.length,
+    incidents: apiMode ? null : supplier.incidents.length,
   };
 
   return (
@@ -353,14 +466,14 @@ function SupplierDetailPanel({
         </div>
       ) : (
         <div
-          className="flex gap-1 overflow-x-auto border-b border-[var(--color-border)] bg-white p-2 xl:grid xl:grid-cols-5 xl:overflow-visible"
+          className="grid grid-cols-[repeat(5,minmax(5.5rem,1fr))] gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden border-b border-[var(--color-border)] bg-white p-2"
           role="tablist"
         >
-          {DETAIL_TABS.map((tab) => (
+          {tabs.map((tab) => (
             <button
               aria-selected={activeTab === tab.id}
               className={cn(
-                "min-h-9 shrink-0 rounded-md border px-2 py-1.5 text-xs font-semibold transition xl:min-w-0",
+                "flex min-h-10 items-center justify-center rounded-md border px-2 py-1.5 text-center text-xs font-semibold leading-tight transition",
                 activeTab === tab.id
                   ? "border-blue-200 bg-blue-100 text-[var(--color-title)]"
                   : "border-[var(--color-border)] bg-white text-[var(--color-title)] hover:bg-[var(--color-app-background)]",
@@ -377,17 +490,44 @@ function SupplierDetailPanel({
         </div>
       )}
 
-      <div className="max-h-[70vh] overflow-y-auto p-4 xl:max-h-[calc(100vh-18rem)]">
+      <div className="max-h-[70vh] overflow-y-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden p-4 xl:max-h-[calc(100vh-18rem)]">
         {selectedIncident ? (
           <IncidentDetailContent incident={selectedIncident} onPreview={onPreview} />
         ) : (
           <>
-            {activeTab === "general" ? <GeneralTab supplier={supplier} /> : null}
-            {activeTab === "contacts" ? <ContactsTab supplier={supplier} /> : null}
-            {activeTab === "products" ? <ProductsTab supplier={supplier} /> : null}
-            {activeTab === "purchases" ? <PurchasesTab supplier={supplier} /> : null}
+            {apiMode && (activeTab === "general" || activeTab === "contacts") && detailState.status === "loading" ? (
+              <p className="text-sm font-semibold text-[var(--color-text-muted)]">
+                Cargando detalle del proveedor...
+              </p>
+            ) : null}
+            {apiMode && (activeTab === "general" || activeTab === "contacts") && detailState.status === "error" ? (
+              <InlineAlert title="No se pudo cargar el detalle del proveedor." tone="danger" />
+            ) : null}
+            {!apiMode || ((activeTab === "general" || activeTab === "contacts") && detailState.status === "success") ? (
+              <>
+                {activeTab === "general" ? <GeneralTab apiMode={apiMode} supplier={supplier} /> : null}
+                {activeTab === "contacts" ? (
+                  apiMode ? <ApiContactTab supplier={supplier} /> : <ContactsTab supplier={supplier} />
+                ) : null}
+                {activeTab === "products" && !apiMode ? <ProductsTab supplier={supplier} /> : null}
+              </>
+            ) : null}
+            {apiMode && activeTab === "products" ? (
+              <ApiProductsTab loadProducts={loadProducts} supplierId={listSupplierId} />
+            ) : null}
+            {activeTab === "purchases" ? (
+              apiMode ? (
+                <ApiPurchasesTab loadOrders={loadOrders} supplier={supplier} />
+              ) : (
+                <PurchasesTab supplier={supplier} />
+              )
+            ) : null}
             {activeTab === "incidents" ? (
-              <IncidentsTab supplier={supplier} onSelect={setSelectedIncidentId} />
+              apiMode ? (
+                <ApiIncidentsTab loadIncidents={loadIncidents} supplierId={listSupplierId} />
+              ) : (
+                <IncidentsTab supplier={supplier} onSelect={setSelectedIncidentId} />
+              )
             ) : null}
           </>
         )}
@@ -407,7 +547,13 @@ function SupplierDetailPanel({
   );
 }
 
-function GeneralTab({ supplier }: { supplier: SupplierListItemReadModel }) {
+function GeneralTab({
+  supplier,
+  apiMode,
+}: {
+  supplier: SupplierListItemReadModel;
+  apiMode: boolean;
+}) {
   return (
     <dl className="grid gap-x-6 gap-y-0 rounded-md bg-white sm:grid-cols-2">
       <DetailItem label="Nombre comercial" value={supplier.name} />
@@ -415,14 +561,405 @@ function GeneralTab({ supplier }: { supplier: SupplierListItemReadModel }) {
       <DetailItem label="NIT" value={supplier.taxId ?? "-"} />
       <DetailItem label="Telefono" value={supplier.phone ?? "-"} />
       <DetailItem label="Correo" value={supplier.email ?? "-"} />
-      <DetailItem label="Condicion de pago" value={supplier.paymentConditionLabel} />
-      <DetailItem label="Dias de credito" value={supplier.creditDaysLabel} />
-      <DetailItem label="Moneda" value={supplier.currencyLabel} />
-      <DetailItem label="Entrega estimada" value={supplier.deliveryLabel} />
+      {apiMode ? (
+        <DetailItem label="Estado" value={supplier.archived ? "Archivado" : supplier.status === "inactive" ? "Inactivo" : "Activo"} />
+      ) : (
+        <>
+          <DetailItem label="Condicion de pago" value={supplier.paymentConditionLabel} />
+          <DetailItem label="Dias de credito" value={supplier.creditDaysLabel} />
+          <DetailItem label="Moneda" value={supplier.currencyLabel} />
+        </>
+      )}
+      <DetailItem label="Entrega estimada" value={formatDeliveryLabel(supplier.deliveryLabel)} wide={apiMode} />
       <DetailItem label="Direccion" value={supplier.address ?? "-"} wide />
       <DetailItem label="Observaciones" value={supplier.notes ?? "-"} wide />
     </dl>
   );
+}
+
+const AMOUNT_FORMAT = new Intl.NumberFormat("es-GT", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+const SEARCH_DEBOUNCE_MS = 350;
+const TAB_PAGE_SIZE = 10;
+
+function MiniPager({
+  page,
+  totalPages,
+  totalItems,
+  onPageChange,
+}: {
+  page: number;
+  totalPages: number;
+  totalItems: number;
+  onPageChange: (page: number) => void;
+}) {
+  if (totalPages <= 1) {
+    return <p className="text-xs font-semibold text-[var(--color-text-muted)]">{totalItems} registros</p>;
+  }
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs font-semibold text-[var(--color-text-muted)]">
+      <span>
+        Pagina {page} de {totalPages} · {totalItems} registros
+      </span>
+      <span className="flex gap-1">
+        <Button disabled={page <= 1} onClick={() => onPageChange(page - 1)} type="button" variant="secondary">
+          Anterior
+        </Button>
+        <Button
+          disabled={page >= totalPages}
+          onClick={() => onPageChange(page + 1)}
+          type="button"
+          variant="secondary"
+        >
+          Siguiente
+        </Button>
+      </span>
+    </div>
+  );
+}
+
+type TabPageState<T> = { key: string; status: "success"; data: PaginatedResult<T> } | { key: string; status: "error" };
+
+/** API: productos on-demand al abrir la pestana; busqueda/filtro/paginacion en servidor (page base 1). */
+function ApiProductsTab({
+  supplierId,
+  loadProducts,
+}: {
+  supplierId: string;
+  loadProducts: (
+    supplierId: string,
+    params: OperationalSupplierProductPageParams,
+  ) => Promise<PaginatedResult<OperationalSupplierProduct>>;
+}) {
+  const [search, setSearch] = useState("");
+  const [requestSearch, setRequestSearch] = useState("");
+  const [activeFilter, setActiveFilter] = useState<"all" | "active" | "inactive">("all");
+  const [page, setPage] = useState(1);
+  const [state, setState] = useState<TabPageState<OperationalSupplierProduct> | null>(null);
+  const key = `${supplierId}|${requestSearch}|${activeFilter}|${page}`;
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setRequestSearch(search.trim());
+      setPage(1);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timeoutId);
+  }, [search]);
+
+  useEffect(() => {
+    let active = true;
+    loadProducts(supplierId, {
+      page,
+      pageSize: TAB_PAGE_SIZE,
+      ...(activeFilter === "all" ? {} : { active: activeFilter === "active" }),
+      ...(requestSearch ? { search: requestSearch } : {}),
+    })
+      .then((data) => {
+        if (active) setState({ key, status: "success", data });
+      })
+      .catch(() => {
+        if (active) setState({ key, status: "error" });
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeFilter, key, loadProducts, page, requestSearch, supplierId]);
+
+  const current = state?.key === key ? state : null;
+
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_9rem]">
+        <Input
+          aria-label="Buscar producto del proveedor"
+          maxLength={TEXT_LIMITS.search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Buscar por producto o SKU..."
+          type="search"
+          value={search}
+        />
+        <Select
+          aria-label="Estado del producto"
+          onChange={(event) => {
+            setActiveFilter(event.target.value as "all" | "active" | "inactive");
+            setPage(1);
+          }}
+          value={activeFilter}
+        >
+          <option value="all">Todos</option>
+          <option value="active">Activos</option>
+          <option value="inactive">Inactivos</option>
+        </Select>
+      </div>
+      {!current ? (
+        <p className="text-sm font-semibold text-[var(--color-text-muted)]">Cargando productos...</p>
+      ) : current.status === "error" ? (
+        <InlineAlert title="No se pudieron cargar los productos del proveedor." tone="danger" />
+      ) : current.data.items.length === 0 ? (
+        <EmptyPanel icon={PackageIcon} message="No hay productos asociados a este proveedor." />
+      ) : (
+        <>
+          {current.data.items.map((product) => (
+            <article className="rounded-md border border-[var(--color-border)] bg-white p-3" key={product.id}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="break-words font-bold text-[var(--color-title)]">{product.productName}</p>
+                  <p className="break-words text-xs text-[var(--color-text-muted)]">
+                    {product.productSku}
+                    {product.supplierSku ? ` | Cod. proveedor ${product.supplierSku}` : ""}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                  {product.preferred ? (
+                    <span className="rounded-md bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-800">
+                      Preferido
+                    </span>
+                  ) : null}
+                  <span
+                    className={cn(
+                      "rounded-md px-2 py-1 text-xs font-bold",
+                      product.active ? "bg-blue-100 text-blue-800" : "bg-slate-100 text-slate-700",
+                    )}
+                  >
+                    {product.active ? "Activo" : "Inactivo"}
+                  </span>
+                </div>
+              </div>
+              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-3 text-sm sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
+                <StackedItem
+                  label="Unidad de compra"
+                  value={`${product.purchaseUnitSymbol} (x${formatNumber(product.purchaseToBaseFactor)})`}
+                />
+                <StackedItem label="Ultimo costo" value={AMOUNT_FORMAT.format(product.lastCost)} />
+                <StackedItem label="Minimo" value={formatNumber(product.minimumOrderQuantity)} />
+                <StackedItem
+                  label="Entrega"
+                  value={typeof product.leadTimeDays === "number" ? formatDays(product.leadTimeDays) : "No definido"}
+                />
+              </dl>
+              <div className="mt-2 border-t border-[var(--color-border)] pt-2 text-sm">
+                {product.costTiers.length === 0 ? (
+                  <p className="text-[var(--color-text-muted)]">Sin tramos</p>
+                ) : (
+                  <details>
+                    <summary className="cursor-pointer text-xs font-bold uppercase text-[var(--color-text-muted)]">
+                      Tramos de precio ({product.costTiers.length})
+                    </summary>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {product.costTiers.map((tier) => (
+                        <span
+                          className="rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] px-2 py-1 text-xs font-semibold text-[var(--color-text)]"
+                          key={tier.minQuantity}
+                        >
+                          {formatNumber(tier.minQuantity)}+: {AMOUNT_FORMAT.format(tier.unitCost)}
+                        </span>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+            </article>
+          ))}
+          <MiniPager
+            onPageChange={setPage}
+            page={current.data.page}
+            totalItems={current.data.totalItems}
+            totalPages={current.data.totalPages}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+const INCIDENT_STATUS_LABELS: Record<string, string> = { open: "Abierta", resolved: "Resuelta" };
+
+function getIncidentTypeLabel(type: string) {
+  return (RECEIPT_INCIDENT_TYPE_LABELS as Record<string, string>)[type] ?? "Otro";
+}
+
+/** API: incidencias on-demand (sucursal activa); filtro de estado y paginacion en servidor. */
+function ApiIncidentsTab({
+  supplierId,
+  loadIncidents,
+}: {
+  supplierId: string;
+  loadIncidents: (
+    supplierId: string,
+    params: Omit<OperationalSupplierIncidentPageParams, "branchId">,
+  ) => Promise<PaginatedResult<OperationalSupplierIncident>>;
+}) {
+  const router = useRouter();
+  const [statusFilter, setStatusFilter] = useState<"all" | "open" | "resolved">("all");
+  const [page, setPage] = useState(1);
+  const [state, setState] = useState<TabPageState<OperationalSupplierIncident> | null>(null);
+  const key = `${supplierId}|${statusFilter}|${page}`;
+
+  useEffect(() => {
+    let active = true;
+    loadIncidents(supplierId, {
+      page,
+      pageSize: TAB_PAGE_SIZE,
+      ...(statusFilter === "all" ? {} : { status: statusFilter }),
+    })
+      .then((data) => {
+        if (active) setState({ key, status: "success", data });
+      })
+      .catch(() => {
+        if (active) setState({ key, status: "error" });
+      });
+    return () => {
+      active = false;
+    };
+  }, [key, loadIncidents, page, statusFilter, supplierId]);
+
+  const current = state?.key === key ? state : null;
+
+  function openOrder(incident: OperationalSupplierIncident) {
+    // El UUID viaja por sessionStorage; la URL queda limpia.
+    saveOrdersNavContext({
+      orderId: incident.purchaseOrderId,
+      orderNumber: incident.purchaseOrderNumber,
+      supplierId,
+      source: "supplier",
+    });
+    router.push("/compras/ordenes");
+  }
+
+  return (
+    <div className="space-y-3">
+      <Select
+        aria-label="Estado de la incidencia"
+        onChange={(event) => {
+          setStatusFilter(event.target.value as "all" | "open" | "resolved");
+          setPage(1);
+        }}
+        value={statusFilter}
+      >
+        <option value="all">Todas</option>
+        <option value="open">Abiertas</option>
+        <option value="resolved">Resueltas</option>
+      </Select>
+      {!current ? (
+        <p className="text-sm font-semibold text-[var(--color-text-muted)]">Cargando incidencias...</p>
+      ) : current.status === "error" ? (
+        <InlineAlert title="No se pudieron cargar las incidencias del proveedor." tone="danger" />
+      ) : current.data.items.length === 0 ? (
+        <EmptyPanel icon={AlertIcon} message="No hay incidencias registradas para este proveedor." />
+      ) : (
+        <>
+          {current.data.items.map((incident) => (
+            <article className="rounded-md border border-[var(--color-border)] bg-white p-3" key={incident.id}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-bold text-[var(--color-title)]">{getIncidentTypeLabel(incident.incidentType)}</p>
+                  <p className="text-xs text-[var(--color-text-muted)]">{formatDate(incident.createdAt)}</p>
+                </div>
+                <span
+                  className={cn(
+                    "shrink-0 rounded-md px-2 py-1 text-xs font-bold",
+                    incident.status === "open" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800",
+                  )}
+                >
+                  {INCIDENT_STATUS_LABELS[incident.status] ?? "Estado no disponible"}
+                </span>
+              </div>
+              <p className="mt-2 break-words text-sm font-semibold text-[var(--color-text)]">
+                {incident.productName
+                  ? `${incident.productName}${typeof incident.quantityAffected === "number" ? ` · ${formatNumber(incident.quantityAffected)} afectadas` : ""}`
+                  : "Incidencia general"}
+              </p>
+              <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-[var(--color-border)] pt-2 text-xs">
+                <StackedItem label="Recepcion" value={incident.receiptNumber} />
+                <div className="min-w-0">
+                  <dt className="text-[11px] font-bold uppercase text-[var(--color-text-muted)]">Orden de compra</dt>
+                  <dd className="mt-0.5">
+                    <button
+                      className="font-bold text-[var(--color-structure)] underline-offset-2 hover:underline"
+                      onClick={() => openOrder(incident)}
+                      type="button"
+                    >
+                      {incident.purchaseOrderNumber}
+                    </button>
+                  </dd>
+                </div>
+                {incident.resolvedAt ? (
+                  <StackedItem label="Resuelta el" value={formatDate(incident.resolvedAt)} />
+                ) : null}
+              </dl>
+              {incident.notes ? (
+                <p className="mt-1 whitespace-pre-wrap break-words text-sm text-[var(--color-text)]">{incident.notes}</p>
+              ) : null}
+
+            </article>
+          ))}
+          <MiniPager
+            onPageChange={setPage}
+            page={current.data.page}
+            totalItems={current.data.totalItems}
+            totalPages={current.data.totalPages}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+/** API: solo email y telefono reales; no existe un contacto con nombre en el backend. */
+function ApiContactTab({ supplier }: { supplier: SupplierListItemReadModel }) {
+  if (!supplier.email && !supplier.phone) {
+    return <EmptyPanel icon={UserIcon} message="Este proveedor no tiene datos de contacto registrados." />;
+  }
+  return (
+    <dl className="grid gap-x-6 gap-y-0 rounded-md bg-white sm:grid-cols-2">
+      <DetailItem label="Correo" value={supplier.email ?? "-"} />
+      <DetailItem label="Telefono" value={supplier.phone ?? "-"} />
+    </dl>
+  );
+}
+
+/** API: ordenes recientes cargadas on-demand al abrir la pestana (una sola pagina). */
+function ApiPurchasesTab({
+  supplier,
+  loadOrders,
+}: {
+  supplier: SupplierListItemReadModel;
+  loadOrders: (supplierId: string) => Promise<SupplierPurchaseOrderReadModel[]>;
+}) {
+  const [state, setState] = useState<
+    | { status: "loading" }
+    | { status: "error" }
+    | { status: "success"; orders: SupplierPurchaseOrderReadModel[] }
+  >({ status: "loading" });
+  const supplierId = supplier.id;
+
+  useEffect(() => {
+    let active = true;
+    loadOrders(supplierId)
+      .then((orders) => {
+        if (active) setState({ status: "success", orders });
+      })
+      .catch(() => {
+        if (active) setState({ status: "error" });
+      });
+    return () => {
+      active = false;
+    };
+  }, [loadOrders, supplierId]);
+
+  if (state.status === "loading") {
+    return (
+      <p className="text-sm font-semibold text-[var(--color-text-muted)]">
+        Cargando ordenes de compra...
+      </p>
+    );
+  }
+  if (state.status === "error") {
+    return <InlineAlert title="No se pudieron cargar las ordenes de compra." tone="danger" />;
+  }
+  return <PurchasesTab supplier={{ ...supplier, purchaseOrders: state.orders }} />;
 }
 
 function ContactsTab({ supplier }: { supplier: SupplierListItemReadModel }) {
@@ -491,7 +1028,7 @@ function ProductsTab({ supplier }: { supplier: SupplierListItemReadModel }) {
             <InlineItem label="Unidad" value={product.purchaseUnitLabel} />
             <InlineItem label="Minimo" value={formatNumber(product.minimumOrderQuantity)} />
             <InlineItem label="Costo" value={formatCurrency(product.lastCost)} />
-            <InlineItem label="Entrega" value={`${product.leadTimeDays} dias`} />
+            <InlineItem label="Entrega" value={formatDays(product.leadTimeDays)} />
           </dl>
           <div className="mt-2 border-t border-[var(--color-border)] pt-2">
             <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">
@@ -521,18 +1058,32 @@ function ProductsTab({ supplier }: { supplier: SupplierListItemReadModel }) {
 }
 
 function PurchasesTab({ supplier }: { supplier: SupplierListItemReadModel }) {
+  const router = useRouter();
   if (supplier.purchaseOrders.length === 0) {
     return <EmptyPanel icon={ClipboardIcon} message="No hay ordenes de compra asociadas." />;
+  }
+
+  function openOrder(order: SupplierListItemReadModel["purchaseOrders"][number]) {
+    // El UUID viaja por sessionStorage; la URL queda limpia (/compras/ordenes).
+    saveOrdersNavContext({
+      orderId: order.id,
+      orderNumber: order.number,
+      supplierId: supplier.id,
+      supplierName: supplier.name,
+      source: "supplier",
+    });
+    router.push("/compras/ordenes");
   }
 
   return (
     <div className="space-y-2">
       {supplier.purchaseOrders.map((order) => (
-        <Link
+        <button
           aria-label={`Ver orden de compra ${order.number} en ordenes`}
-          className="group block min-h-11 rounded-md border border-[var(--color-border)] bg-white px-3 py-2.5 transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/[0.03] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]"
-          href={`/compras/ordenes?orderId=${encodeURIComponent(order.id)}`}
+          className="group block min-h-11 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2.5 text-left transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary)]/[0.03] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]"
           key={order.id}
+          onClick={() => openOrder(order)}
+          type="button"
         >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -545,12 +1096,12 @@ function PurchasesTab({ supplier }: { supplier: SupplierListItemReadModel }) {
                 {order.expectedDate ? ` | Esperada ${formatDate(order.expectedDate)}` : ""}
               </p>
             </div>
-            <StatusBadge status={order.status} />
+            <PurchaseOrderStatusBadge status={order.status} />
           </div>
           <p className="mt-2 text-sm font-bold text-[var(--color-text)]">
             {formatCurrency(order.total)}
           </p>
-        </Link>
+        </button>
       ))}
     </div>
   );
@@ -683,6 +1234,27 @@ function DetailItem({ label, value, wide }: { label: string; value: string; wide
         {value}
       </dd>
     </div>
+  );
+}
+
+/** Dato con la etiqueta arriba y el valor debajo (tarjetas de producto). */
+function StackedItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[11px] font-bold uppercase text-[var(--color-text-muted)]">{label}</dt>
+      <dd className="mt-0.5 break-words font-bold text-[var(--color-title)]">{value}</dd>
+    </div>
+  );
+}
+
+function formatDays(days: number) {
+  return `${days} ${days === 1 ? "día" : "días"}`;
+}
+
+/** Corrige la gramatica visual de etiquetas "N dias" generadas por el read model. */
+function formatDeliveryLabel(label: string) {
+  return label.replace(/^(\d+) dias$/, (_match, days: string) =>
+    formatDays(Number(days)),
   );
 }
 
