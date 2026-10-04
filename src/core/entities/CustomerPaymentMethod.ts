@@ -6,7 +6,11 @@ export interface CustomerPaymentMethod {
   tenantId: string;
   customerId: string;
   type: PaymentMethod.card;
-  providerPaymentMethodId: string;
+  /**
+   * Token del proveedor de pagos. Opcional porque el backend nunca lo expone (no sale del
+   * servidor); solo el mock lo genera.
+   */
+  providerPaymentMethodId?: string;
   brand: string;
   issuingBank: string;
   last4: string;

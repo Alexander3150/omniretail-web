@@ -9,7 +9,7 @@ import {
   validatePaymentMethodForm,
   type PaymentMethodValidationErrors,
 } from "@/modules/customer/validation/paymentMethod.validation";
-import { CARD_BRANDS } from "@/config/card-brands";
+import { CARD_BRANDS, CARDHOLDER_NAME_MAX_LENGTH } from "@/config/card-brands";
 import { GUATEMALA_BANKS } from "@/config/guatemala-banks";
 import { Button } from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
@@ -364,7 +364,7 @@ export function MetodosPagoPage() {
             <Input
               disabled={busy}
               id="payment-cardholder"
-              maxLength={60}
+              maxLength={CARDHOLDER_NAME_MAX_LENGTH}
               onChange={(event) => updatePaymentMethod({ cardholderName: event.target.value })}
               value={form.cardholderName}
             />

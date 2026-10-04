@@ -5,6 +5,7 @@ import type {
   BankAccountRepository,
   BranchRepository,
   BusinessConfigRepository,
+  CustomerPaymentMethodRepository,
   CustomerRepository,
   PlanRepository,
   RoleRepository,
@@ -19,6 +20,7 @@ import { ApiAuthRepository } from "@/infrastructure/api/ApiAuthRepository";
 import { ApiBankAccountRepository } from "@/infrastructure/api/ApiBankAccountRepository";
 import { ApiBranchRepository } from "@/infrastructure/api/ApiBranchRepository";
 import { ApiBusinessConfigRepository } from "@/infrastructure/api/ApiBusinessConfigRepository";
+import { ApiCustomerPaymentMethodRepository } from "@/infrastructure/api/ApiCustomerPaymentMethodRepository";
 import { ApiCustomerRepository } from "@/infrastructure/api/ApiCustomerRepository";
 import { ApiPlanRepository } from "@/infrastructure/api/ApiPlanRepository";
 import { ApiRoleRepository } from "@/infrastructure/api/ApiRoleRepository";
@@ -119,6 +121,27 @@ function apiAddressesForCustomers(
     remove: async (tenantId, customerId, id) => (await resolve()).remove(tenantId, customerId, id),
     setDefault: async (tenantId, customerId, addressId) =>
       (await resolve()).setDefault(tenantId, customerId, addressId),
+  };
+}
+
+/** `/me/payment-methods` (tarjetas guardadas del cliente autenticado). */
+function apiPaymentMethodsForCustomers(
+  mock: CustomerPaymentMethodRepository,
+  api: CustomerPaymentMethodRepository,
+  currentSession: CurrentSessionClient,
+): CustomerPaymentMethodRepository {
+  const resolve = customerRouter(mock, api, currentSession);
+
+  return {
+    getByCustomer: async (tenantId, customerId) =>
+      (await resolve()).getByCustomer(tenantId, customerId),
+    getById: async (tenantId, customerId, id) => (await resolve()).getById(tenantId, customerId, id),
+    create: async (input) => (await resolve()).create(input),
+    update: async (tenantId, customerId, id, input) =>
+      (await resolve()).update(tenantId, customerId, id, input),
+    remove: async (tenantId, customerId, id) => (await resolve()).remove(tenantId, customerId, id),
+    setDefault: async (tenantId, customerId, paymentMethodId) =>
+      (await resolve()).setDefault(tenantId, customerId, paymentMethodId),
   };
 }
 
@@ -333,8 +356,8 @@ function apiBusinessConfigForEmployees(
  * Modo api: reemplaza `auth` por ApiAuthRepository y enruta al backend la administracion
  * (`branches`, `roles`, `users`, `tenantSubscriptions`, `plans`, `bankAccounts`, `suppliers`,
  * `businessConfig`) para empleados con el permiso de
- * cada endpoint (ver `employeeRouter`), y "Mi cuenta" (`customers`, `addresses`) solo para la sesion
- * de cliente (ver `customerRouter`). La identidad de la sesion actual (usuario, rol con
+ * cada endpoint (ver `employeeRouter`), y "Mi cuenta" (`customers`, `addresses`,
+ * `customerPaymentMethods`) solo para la sesion de cliente (ver `customerRouter`). La identidad de la sesion actual (usuario, rol con
  * permisos, tienda) sale de /auth/me. Cualquier otra lectura se delega al mock, asi los modulos no
  * migrados siguen igual.
  *
@@ -343,6 +366,12 @@ function apiBusinessConfigForEmployees(
  */
 export function withApiSession(repositories: RepositoryRegistry, eventBus: DataEventBus): RepositoryRegistry {
   const currentSession = new CurrentSessionClient();
+  // `savedPaymentMethods` es un alias de `customerPaymentMethods`: ambos apuntan al mismo objeto.
+  const customerPaymentMethods = apiPaymentMethodsForCustomers(
+    repositories.customerPaymentMethods,
+    new ApiCustomerPaymentMethodRepository(currentSession, eventBus),
+    currentSession,
+  );
 
   const tenants = withOverrides(repositories.tenants, {
     async getById(id: string): Promise<Tenant | null> {
@@ -393,5 +422,7 @@ export function withApiSession(repositories: RepositoryRegistry, eventBus: DataE
       new ApiAddressRepository(currentSession, eventBus),
       currentSession,
     ),
+    customerPaymentMethods,
+    savedPaymentMethods: customerPaymentMethods,
   };
 }

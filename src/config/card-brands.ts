@@ -21,3 +21,6 @@ export type CardBrand = (typeof CARD_BRANDS)[number];
  * estar en el pasado.
  */
 export const MAX_EXPIRATION_YEARS_AHEAD = 20;
+
+/** Largo maximo del nombre en la tarjeta: el mismo limite que aplica el backend. */
+export const CARDHOLDER_NAME_MAX_LENGTH = 60;
