@@ -139,10 +139,13 @@ export function LoginPage({ expectedUserType }: LoginPageProps) {
           {/* Solo existe porque este entorno de demostración no tiene un
               canal real de entrega (SMS/app/correo) -- nunca existiría en
               producción. Mismo criterio de transparencia dummy que ya se
-              usa en registro/recuperación de contraseña. */}
-          <p className="mt-3 rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
-            Código de verificación actual: <strong>{pendingChallenge.demoCodeMock}</strong>
-          </p>
+              usa en registro/recuperación de contraseña. En modo api no
+              viene: el código sale de la app autenticadora. */}
+          {pendingChallenge.demoCodeMock ? (
+            <p className="mt-3 rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
+              Código de verificación actual: <strong>{pendingChallenge.demoCodeMock}</strong>
+            </p>
+          ) : null}
 
           <form
             className="mt-6 space-y-4"

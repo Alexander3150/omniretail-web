@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { isApiMode } from "@/config/api-mode";
 import type { MfaMethod } from "@/core/entities";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
@@ -12,6 +13,9 @@ import { useDataEvent } from "@/shared/hooks/useDataEvent";
  * PR12; cada módulo tiene su propio hook para no acoplar customer a
  * modules/auth.
  */
+/** En modo api el backend solo soporta TOTP: "Correo" se muestra como "Próximamente". */
+const UNAVAILABLE_METHODS: readonly MfaMethod[] = isApiMode() ? ["email"] : [];
+
 export function useMfaEnrollment() {
   const repositories = useRepositories();
   const [status, setStatus] = useState<{ enabled: boolean; method: MfaMethod } | null>(null);
@@ -94,5 +98,13 @@ export function useMfaEnrollment() {
     [repositories, requireSessionId],
   );
 
-  return { status, loading, busy, begin, verify, disable };
+  return {
+    status,
+    loading,
+    busy,
+    begin,
+    verify,
+    disable,
+    unavailableMethods: UNAVAILABLE_METHODS,
+  };
 }

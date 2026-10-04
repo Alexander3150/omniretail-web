@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { type NextRequest, NextResponse } from "next/server";
 import { GENERIC_AUTH_ERROR_MESSAGE } from "@/config/auth-policy";
 
 /**
@@ -92,6 +93,59 @@ export async function forwardBackendError(response: Response): Promise<NextRespo
  */
 export async function relayPublicAuthPost(path: string, body: string): Promise<NextResponse> {
   const response = await callBackend(path, { method: "POST", body });
+  if (!response) return serviceUnavailable();
+  return forwardBackendError(response);
+}
+
+/** ApiError con la misma forma que el backend, para las respuestas que arma el propio Route Handler. */
+export function apiErrorResponse(
+  request: NextRequest,
+  status: 401 | 403,
+  error: string,
+  code: string,
+  message: string,
+): NextResponse {
+  return NextResponse.json(
+    { status, error, code, message, path: request.nextUrl.pathname, timestamp: new Date().toISOString() },
+    { status },
+  );
+}
+
+/** Mismo chequeo que el puente `/api/backend` para los metodos que modifican. */
+export function sameOriginOrForbidden(request: NextRequest): NextResponse | null {
+  if (request.headers.get("Origin") === request.nextUrl.origin) return null;
+  return apiErrorResponse(request, 403, "Forbidden", "FORBIDDEN", "Origen no permitido.");
+}
+
+/**
+ * Llamada con la sesion actual a un endpoint de `/auth/**` (el puente generico los bloquea): exige
+ * Origin en POST, usa el token de la cookie HttpOnly (sin cookie: 401) y reenvia status y cuerpo tal
+ * cual, sin tocar la cookie. Nunca se registra el cuerpo: puede llevar contraseñas o codigos.
+ */
+export async function relaySessionRequest(
+  request: NextRequest,
+  path: string,
+  method: "GET" | "POST",
+): Promise<NextResponse> {
+  if (method !== "GET") {
+    const forbidden = sameOriginOrForbidden(request);
+    if (forbidden) return forbidden;
+  }
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  if (!token) {
+    return apiErrorResponse(
+      request,
+      401,
+      "Unauthorized",
+      "UNAUTHORIZED",
+      "Tu sesión ya no es válida. Vuelve a iniciar sesión.",
+    );
+  }
+  const response = await callBackend(path, {
+    method,
+    token,
+    body: method === "GET" ? undefined : (await request.text()) || undefined,
+  });
   if (!response) return serviceUnavailable();
   return forwardBackendError(response);
 }

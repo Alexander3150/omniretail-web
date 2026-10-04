@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import QRCode from "qrcode";
 import type { MfaMethod } from "@/core/entities";
+import type { BeginMfaEnrollmentResult } from "@/core/repositories/AuthRepository";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { ShieldIcon } from "@/shared/components/icons";
@@ -15,21 +17,59 @@ export interface TwoFactorAuthSectionProps {
   status: { enabled: boolean; method: MfaMethod } | null;
   loading: boolean;
   busy: boolean;
-  onBegin: (method: MfaMethod) => Promise<{ demoCodeMock: string }>;
+  onBegin: (method: MfaMethod) => Promise<BeginMfaEnrollmentResult>;
   onVerify: (code: string) => Promise<{ recoveryCodes: string[] }>;
   onDisable: (currentPassword: string) => Promise<void>;
+  /** Metodos que se muestran deshabilitados como "Próximamente" (lo decide el modulo que lo usa). */
+  unavailableMethods?: readonly MfaMethod[];
 }
 
 type WizardStep =
   | { name: "idle" }
   | { name: "choose-method" }
-  | { name: "confirm-code"; method: MfaMethod; demoCodeMock: string }
+  | ({ name: "confirm-code"; method: MfaMethod } & BeginMfaEnrollmentResult)
   | { name: "recovery-codes"; codes: string[] };
 
 const METHOD_LABELS: Record<MfaMethod, string> = {
   totp: "Aplicación de autenticación (TOTP)",
   email: "Correo electrónico",
 };
+
+/**
+ * QR del `otpauth://` generado SOLO en el navegador (libreria local): el secreto nunca se envia a
+ * un servicio externo, ni se guarda o se registra.
+ */
+function EnrollmentQrCode({ uri }: { uri: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    QRCode.toDataURL(uri, { margin: 1, width: 192 })
+      .then((dataUrl) => {
+        if (active) setSrc(dataUrl);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [uri]);
+
+  if (failed) {
+    return (
+      <p className="text-sm text-[var(--color-text-muted)]">
+        No se pudo generar el código QR. Ingresa la clave manualmente.
+      </p>
+    );
+  }
+  if (!src) {
+    return <div aria-hidden="true" className="h-48 w-48 rounded-md bg-[var(--color-app-background)]" />;
+  }
+  // eslint-disable-next-line @next/next/no-img-element -- data URL generado en el navegador.
+  return <img alt="Código QR para la app autenticadora" className="h-48 w-48 rounded-md border border-[var(--color-border)] bg-white" src={src} />;
+}
 
 /**
  * Componente puramente presentacional (sin repositorios ni sesión propia,
@@ -47,6 +87,7 @@ export function TwoFactorAuthSection({
   onBegin,
   onVerify,
   onDisable,
+  unavailableMethods = [],
 }: TwoFactorAuthSectionProps) {
   const [step, setStep] = useState<WizardStep>({ name: "idle" });
   const [method, setMethod] = useState<MfaMethod>("totp");
@@ -59,8 +100,8 @@ export function TwoFactorAuthSection({
   async function handleBegin() {
     setError(undefined);
     try {
-      const { demoCodeMock } = await onBegin(method);
-      setStep({ name: "confirm-code", method, demoCodeMock });
+      const enrollment = await onBegin(method);
+      setStep({ name: "confirm-code", method, ...enrollment });
       setCode("");
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "No se pudo iniciar la activación.");
@@ -150,8 +191,17 @@ export function TwoFactorAuthSection({
               onChange={(event) => setMethod(event.target.value as MfaMethod)}
               value={method}
             >
-              <option value="totp">{METHOD_LABELS.totp}</option>
-              <option value="email">{METHOD_LABELS.email}</option>
+              {(["totp", "email"] as const).map((option) =>
+                unavailableMethods.includes(option) ? (
+                  <option disabled key={option} value={option}>
+                    {METHOD_LABELS[option]} (Próximamente)
+                  </option>
+                ) : (
+                  <option key={option} value={option}>
+                    {METHOD_LABELS[option]}
+                  </option>
+                ),
+              )}
             </Select>
           </FormField>
           <div className="flex gap-2">
@@ -170,13 +220,30 @@ export function TwoFactorAuthSection({
         </div>
       ) : step.name === "confirm-code" ? (
         <div className="space-y-3">
+          {step.otpauthUri ? (
+            <div className="space-y-3">
+              <p className="text-sm text-[var(--color-text)]">
+                Escanea este código QR con tu app autenticadora (por ejemplo, Google Authenticator) y
+                escribe el código de 6 dígitos que te muestra.
+              </p>
+              <EnrollmentQrCode key={step.otpauthUri} uri={step.otpauthUri} />
+              {step.secret ? (
+                <p className="text-sm text-[var(--color-text-muted)]">
+                  ¿No puedes escanearlo? Ingresa esta clave en la app:{" "}
+                  <strong className="break-all font-mono text-[var(--color-text)]">{step.secret}</strong>
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           {/* Solo existe porque este entorno de demostración no tiene un
               canal real de entrega -- nunca existiría en producción.
               Mismo criterio de transparencia dummy que el resto del
-              sistema. */}
-          <p className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
-            Código de verificación actual: <strong>{step.demoCodeMock}</strong>
-          </p>
+              sistema. En modo api no viene. */}
+          {step.demoCodeMock ? (
+            <p className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
+              Código de verificación actual: <strong>{step.demoCodeMock}</strong>
+            </p>
+          ) : null}
           <FormField id="mfa-confirm-code" label="Código de confirmación">
             <Input
               disabled={busy}
