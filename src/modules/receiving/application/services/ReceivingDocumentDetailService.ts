@@ -31,6 +31,7 @@ import {
 import type {
   ReceiptDraftInput,
   ReceiptDraftItemInput,
+  ReceiptDraftTrackingDetailInput,
   ReceiptIncidentRecord,
   ReceiptItemRecord,
   ReceiptRecord,
@@ -247,14 +248,26 @@ export class ReceivingDocumentDetailService {
         throw new ReceivingServiceError("La línea recibida no pertenece al borrador actual.");
       }
       const quantity = input.quantityAffected;
+      // La cantidad afectada es mercancia NO aceptada: se limita por lo pendiente de la orden
+      // (pedido - aceptado - otras incidencias abiertas), no por lo recibido. El backend decide.
+      const current = await this.getApiPurchaseOrderDocument(order);
+      const currentLine = current.lines.find(
+        (candidate) => candidate.goodsReceiptItemId === input.goodsReceiptItemId,
+      );
+      const capacity =
+        currentLine && !current.receiptHistoryIncomplete
+          ? getIncidentCapacity(currentLine, current.incidents)
+          : undefined;
       if (
         quantity === undefined ||
         !Number.isFinite(quantity) ||
         quantity <= 0 ||
-        quantity > item.line.receivedQuantity
+        (capacity !== undefined && quantity > capacity)
       ) {
         throw new ReceivingServiceError(
-          `La cantidad afectada debe estar entre 0 y ${item.line.receivedQuantity}.`,
+          capacity !== undefined
+            ? `La cantidad afectada debe estar entre 0 y ${capacity}.`
+            : "La cantidad afectada debe ser mayor a 0.",
         );
       }
       const units = await this.repositories.units.getAll();
@@ -285,6 +298,7 @@ export class ReceivingDocumentDetailService {
     documentId: string,
     receiptId: string,
     incidentId: string,
+    trackingDetails?: ReceiptDraftTrackingDetailInput[],
   ): Promise<ReceiptIncidentRecord> {
     const { tenantId, user, permissions } = await resolveReceivingContext(this.repositories);
     ensureCanManageReceivingIncidents(permissions);
@@ -305,7 +319,28 @@ export class ReceivingDocumentDetailService {
     if (!incidentPage.items.some((incident) => incident.id === incidentId)) {
       throw new ReceivingServiceError("La incidencia no pertenece al borrador actual.");
     }
-    return this.repositories.receipts.resolveIncidentScoped(tenantId, incidentId);
+    const incident = incidentPage.items.find((candidate) => candidate.id === incidentId);
+    if (incident?.status !== "open") {
+      throw new ReceivingServiceError("La incidencia ya está resuelta.");
+    }
+    if (incident.quantityAffected === undefined) {
+      return this.repositories.receipts.resolveIncidentScoped(tenantId, incidentId);
+    }
+    await this.repositories.receipts.resolveIncidentWithReplacementScoped({
+      tenantId,
+      receiptId: record.receipt.id,
+      incidentId,
+      replacementQuantity: incident.quantityAffected,
+      ...(trackingDetails && trackingDetails.length > 0 ? { trackingDetails } : {}),
+    });
+    return { ...incident, status: "resolved" as const };
+  }
+
+  /** Precheck UX en una sola request batch; no sustituye la validacion del backend. */
+  async validateSerials(productId: string, serialNumbers: string[]) {
+    const { permissions } = await resolveReceivingContext(this.repositories);
+    ensureCanReadReceiving(permissions);
+    return this.repositories.receipts.validateSerialNumbersScoped({ productId, serialNumbers });
   }
 
   private async confirmTransfer(input: ConfirmReceivingInput): Promise<Receipt> {
@@ -540,6 +575,10 @@ export class ReceivingDocumentDetailService {
     order: PurchaseOrder,
   ): Promise<ReceivingDocumentContent> {
     const tenantId = order.tenantId;
+    // Unica fuente humana operacional en modo API: el usuario de la sesion. Los historicos de otros
+    // usuarios no son resolvibles sin un contrato backend no administrativo (se muestran neutros).
+    const { user: sessionUser } = await resolveReceivingContext(this.repositories);
+    const apiUserNameById = new Map([[sessionUser.id, sessionUser.name]]);
     const productIds = [...new Set((order.items ?? []).map((item) => item.productId))];
     const [
       branches,
@@ -611,11 +650,18 @@ export class ReceivingDocumentDetailService {
         inProgressRecord.receipt.id,
         { page: 1, pageSize: 100 },
       );
-      apiIncidents = toApiIncidentRows(incidentPage.items, inProgressRecord);
+      apiIncidents = toApiIncidentRows(incidentPage.items, inProgressRecord, apiUserNameById);
       incidentListIncomplete = incidentPage.page < incidentPage.totalPages;
     }
-    const hasLineIncidents = apiIncidents.some((incident) => incident.goodsReceiptItemId);
-    const draftEditingLocked = hasLineIncidents || incidentListIncomplete;
+    // Proteccion por linea: cualquier incidencia (abierta o resuelta) fija ese GoodsReceiptItem.
+    // Solo si la lista esta incompleta no puede saberse que lineas estan protegidas y se bloquea
+    // todo el borrador (comportamiento conservador).
+    const protectedItemIds = new Set(
+      apiIncidents.flatMap((incident) =>
+        incident.goodsReceiptItemId ? [incident.goodsReceiptItemId] : [],
+      ),
+    );
+    const draftEditingLocked = incidentListIncomplete;
     const confirmedReceipts = orderReceipts.filter(
       (receipt) => receipt.status === ReceiptStatus.received,
     );
@@ -656,7 +702,11 @@ export class ReceivingDocumentDetailService {
             inProgressItem,
             confirmedLines: confirmedLines.filter((line) => line.productId === item.productId),
             settingsDefaultLocationId: settings.get(item.productId)?.defaultLocationId ?? undefined,
-          });
+          }).then((line) =>
+            inProgressItem && protectedItemIds.has(inProgressItem.line.id)
+              ? { ...line, incidentProtected: true }
+              : line,
+          );
         }),
       ),
       locations: toLocationOptions(locations, capabilities),
@@ -672,7 +722,7 @@ export class ReceivingDocumentDetailService {
             productById,
             unitById,
             locationNameById,
-            userNameById: new Map(),
+            userNameById: apiUserNameById,
             orderItems: order.items ?? [],
             orderNumber: order.number,
             orderedTotal: (order.items ?? []).reduce((sum, item) => sum + item.quantity, 0),
@@ -1190,6 +1240,9 @@ function getReceivingConfirmationFingerprint(
   });
 }
 
+// Nunca se muestra un UUID como nombre de responsable.
+const UNKNOWN_RESPONSIBLE_LABEL = "No disponible";
+
 function getApiIncidentTypeOptions() {
   return Object.entries(RECEIPT_INCIDENT_TYPE_LABELS).map(([id, name]) => ({ id, name }));
 }
@@ -1197,6 +1250,7 @@ function getApiIncidentTypeOptions() {
 function toApiIncidentRows(
   incidents: ReceiptIncidentRecord[],
   receipt: ReceiptRecord,
+  userNameById: Map<string, string>,
 ): ReceivingDocumentIncident[] {
   return incidents.map((incident) => {
     const item = incident.goodsReceiptItemId
@@ -1225,7 +1279,7 @@ function toApiIncidentRows(
       evidence: [],
       createdAt: incident.createdAt,
       createdByUserId: incident.createdByUserId,
-      createdByName: incident.createdByUserId,
+      createdByName: userNameById.get(incident.createdByUserId) ?? UNKNOWN_RESPONSIBLE_LABEL,
       receiptNumber: receipt.receipt.number,
       editable: false,
     };
@@ -1760,7 +1814,7 @@ function getLineStatus(
   return ReceiptLineStatus.pending;
 }
 
-function parseSerialNumbers(value: string) {
+export function parseSerialNumbers(value: string) {
   return value
     .split(/\r?\n|,/)
     .map((item) => item.trim())
@@ -1797,7 +1851,7 @@ function toIncidentRows(
         evidence: incident.evidence ?? [],
         createdAt: incident.createdAt,
         createdByUserId: incident.createdByUserId,
-        createdByName: userNameById.get(incident.createdByUserId) ?? incident.createdByUserId,
+        createdByName: userNameById.get(incident.createdByUserId) ?? UNKNOWN_RESPONSIBLE_LABEL,
         receiptNumber: receiptById.get(incident.receiptId)?.number ?? incident.receiptId,
         editable: incident.receiptId === inProgressReceiptId,
       };
@@ -1845,9 +1899,8 @@ function buildPreviousReceipts(input: {
       number: receipt.number,
       receivedAt: receipt.receivedAt ?? receipt.updatedAt,
       responsibleName:
-        (receipt.receivedByUserId && input.userNameById.get(receipt.receivedByUserId)) ??
-        receipt.receivedByUserId ??
-        "No disponible",
+        (receipt.receivedByUserId && input.userNameById.get(receipt.receivedByUserId)) ||
+        UNKNOWN_RESPONSIBLE_LABEL,
       statusLabel: receipt.status === ReceiptStatus.received ? "Recibida" : "Parcial",
       acceptedQuantity,
       incidentQuantity: receiptIncidents.reduce(
@@ -1901,9 +1954,30 @@ export function getRejectedNow(
   line: ReceivingDocumentLine,
   incidents: ReceivingDocumentIncident[],
 ) {
+  // Mock: borradores editables. API: solo incidencias OPEN (las resueltas ya no son mercancia
+  // afectada: se aceptaron como reemplazo).
   return incidents
-    .filter((incident) => incident.editable && incident.productId === line.productId)
+    .filter(
+      (incident) =>
+        incident.productId === line.productId && (incident.editable || incident.status === "open"),
+    )
     .reduce((sum, incident) => sum + (incident.quantityAffected ?? 0), 0);
+}
+
+/** Cantidad todavia asignable a incidencias: pedido - aceptado - ya afectado por incidencias OPEN. */
+export function getIncidentCapacity(
+  line: ReceivingDocumentLine,
+  incidents: ReceivingDocumentIncident[],
+) {
+  return Math.max(
+    0,
+    roundQuantity(
+      line.orderedQuantity -
+        line.acceptedPreviously -
+        toFiniteNumber(line.receivedNow) -
+        getRejectedNow(line, incidents),
+    ),
+  );
 }
 
 export function getAcceptedNow(line: ReceivingDocumentLine) {

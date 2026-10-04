@@ -81,6 +81,7 @@ export interface PurchaseOrdersReadModel {
   suppliers: Array<{ id: string; name: string }>;
   statuses: PurchaseOrderStatus[];
   suggestions: ReorderSuggestionReadModel[];
+  suggestionsNotice?: string;
   page: number;
   pageSize: number;
   totalItems: number;

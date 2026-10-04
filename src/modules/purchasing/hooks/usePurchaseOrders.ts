@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SaasCapabilityKey, type PurchaseOrderStatus } from "@/core/enums";
 import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
+import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import type {
   PurchaseOrderAction,
   PurchaseOrderRowReadModel,
@@ -55,6 +56,7 @@ const EMPTY_DATA: PurchaseOrdersReadModel = {
 export function usePurchaseOrders() {
   const repositories = useRepositories();
   const { hasCapability } = useEntitlement();
+  const { hasPermission } = useCurrentSession();
   const { currentBranch, loading: branchLoading } = useActiveBranch();
   const activeBranchId = currentBranch?.id;
   const activeBranchName = currentBranch?.name;
@@ -161,6 +163,8 @@ export function usePurchaseOrders() {
   useDataEvent("product.changed", reload);
 
   const canUsePurchasing = hasCapability(SaasCapabilityKey.purchasing);
+  const canCreatePurchaseOrders =
+    canUsePurchasing && hasPermission("purchasing.orders.create");
   const gatedData = useMemo<PurchaseOrdersReadModel>(
     () => ({ ...data, orders: applyCapabilityGating(data.orders, canUsePurchasing) }),
     [data, canUsePurchasing],
@@ -290,6 +294,7 @@ export function usePurchaseOrders() {
     loading: branchLoading || loading,
     error,
     mutationPending,
+    canCreatePurchaseOrders,
     updateFilters,
     setPage,
     setPageSize,

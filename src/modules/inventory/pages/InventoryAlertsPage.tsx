@@ -14,7 +14,12 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import type { StorageLocation } from "@/core/entities";
 import { getLocalCalendarDate } from "@/core/inventory/expirationDate";
-import { InventoryTransferReason, InventoryTransferRequestStatus } from "@/core/enums";
+import {
+  InventoryTransferReason,
+  InventoryTransferRequestStatus,
+  SaasCapabilityKey,
+} from "@/core/enums";
+import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { Button } from "@/shared/components/Button";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Input } from "@/shared/components/Input";
@@ -22,6 +27,7 @@ import { Modal } from "@/shared/components/Modal";
 import { Select } from "@/shared/components/Select";
 import { useToast } from "@/shared/components/Toast";
 import { cn } from "@/shared/utils/cn";
+import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import { QUANTITY_DECIMAL_PLACES, TEXT_LIMITS } from "@/shared/utils/inputLimits";
 import {
   hasAtMostDecimalPlaces,
@@ -88,6 +94,10 @@ export function InventoryAlertsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { showToast } = useToast();
+  const { hasPermission } = useCurrentSession();
+  const { hasCapability } = useEntitlement();
+  const canCreatePurchaseOrder =
+    hasPermission("purchasing.orders.create") && hasCapability(SaasCapabilityKey.purchasing);
   const {
     data,
     detailRow,
@@ -401,6 +411,7 @@ export function InventoryAlertsPage() {
           mode={panelMode}
           row={selectedRow}
           canAdjustStock={canAdjustStock}
+          canCreatePurchaseOrder={canCreatePurchaseOrder}
           canManageTransfers={canManageTransfers}
           desktopExpanded={contextPanelExpanded}
           onAdjust={() => selectedRow && canAdjustStock && openAdjust(selectedRow)}
@@ -1243,6 +1254,7 @@ function ContextPanel({
   canManageTransfers,
   desktopExpanded,
   alerts,
+  canCreatePurchaseOrder,
   mode,
   row,
   transferRequests,
@@ -1266,6 +1278,7 @@ function ContextPanel({
   canManageTransfers: boolean;
   desktopExpanded: boolean;
   alerts: InventoryAlert[];
+  canCreatePurchaseOrder: boolean;
   mode: AlertPanelMode;
   row: InventoryProductRow | null;
   transferRequests: InventoryTransferRequestRow[];
@@ -1335,6 +1348,7 @@ function ContextPanel({
           alerts={productAlerts}
           row={row}
           canAdjustStock={canAdjustStock}
+          canCreatePurchaseOrder={canCreatePurchaseOrder}
           canManageTransfers={canManageTransfers}
           onAdjust={onAdjust}
           onCreateOrder={onCreateOrder}
@@ -1489,6 +1503,7 @@ function ProductPanel({
   activeBranchName,
   alerts,
   canAdjustStock,
+  canCreatePurchaseOrder,
   canManageTransfers,
   row,
   onAdjust,
@@ -1501,6 +1516,7 @@ function ProductPanel({
   activeBranchName: string;
   alerts: InventoryAlert[];
   canAdjustStock: boolean;
+  canCreatePurchaseOrder: boolean;
   canManageTransfers: boolean;
   row: InventoryProductRow;
   onAdjust: () => void;
@@ -1658,9 +1674,11 @@ function ProductPanel({
           <Button className="w-full" onClick={onViewProductTransfers} type="button" variant="secondary">
             Ver solicitudes y traslados
           </Button>
-          <Button className="w-full" onClick={onCreateOrder} type="button" variant="secondary">
-            Crear orden de compra
-          </Button>
+          {canCreatePurchaseOrder ? (
+            <Button className="w-full" onClick={onCreateOrder} type="button" variant="secondary">
+              Crear orden de compra
+            </Button>
+          ) : null}
           </div>
         </div>
       </div>

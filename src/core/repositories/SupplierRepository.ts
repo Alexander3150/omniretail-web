@@ -1,10 +1,26 @@
 import type { Supplier, SupplierProduct } from "@/core/entities";
+import type { SupplierStatus } from "@/core/enums";
+
+/**
+ * Proyeccion operacional disponible para compras. Deliberadamente no incluye datos
+ * administrativos que `/purchasing/suppliers/active` no entrega.
+ */
+export interface OperationalSupplier {
+  id: string;
+  name: string;
+  leadTimeDays?: number;
+  status: SupplierStatus;
+}
+
 export interface SupplierRepository {
   getAll(): Promise<Supplier[]>;
   getById(id: string): Promise<Supplier | null>;
   getActive(): Promise<Supplier[]>;
-  /** Tenant-scoped read: only active suppliers belonging to `tenantId`. Use for any flow driven by UI input. */
-  getActiveByTenant(tenantId: string): Promise<Supplier[]>;
+  /**
+   * Operational read for active suppliers. API implementations are tenant-scoped by the
+   * authenticated session; `tenantId` remains as a local architectural scope and is not wire data.
+   */
+  getActiveByTenant(tenantId: string): Promise<OperationalSupplier[]>;
   /**
    * Tenant-scoped, todos los status (mismo patron que PurchaseOrderRepository/BranchRepository.
    * listByTenant) -- permission-hardening PR #98: GetPurchaseOrdersReadModelService usaba

@@ -23,11 +23,11 @@ export class ApiSupplierProductRepository implements SupplierProductRepository {
   constructor(private readonly eventBus: DataEventBus) {}
 
   async getByProduct(productId: string) {
-    return this.listAdmin({ productId, active: true });
+    return this.listOperational({ productId });
   }
 
   async getBySupplier(supplierId: string) {
-    return this.listAdmin({ supplierId, active: true });
+    return this.listOperational({ supplierId });
   }
 
   async getByProductForTenant(tenantId: string, productId: string) {

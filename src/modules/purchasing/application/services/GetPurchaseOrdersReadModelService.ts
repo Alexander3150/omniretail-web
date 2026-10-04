@@ -8,8 +8,10 @@ import type {
   Unit,
 } from "@/core/entities";
 import { PurchaseOrderStatus, ReceiptStatus } from "@/core/enums";
+import type { InventoryAlertListItem, OperationalSupplier } from "@/core/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { GetInventoryAlertsService } from "@/modules/inventory/application/services/GetInventoryAlertsService";
+import { INVENTORY_STOCK_READ_PERMISSION } from "@/modules/inventory/application/services/serviceHelpers";
 import type {
   PurchaseOrderLineReadModel,
   PurchaseOrderReceptionReadModel,
@@ -41,6 +43,12 @@ const PURCHASE_ORDER_STATUSES: PurchaseOrderStatus[] = [
   PurchaseOrderStatus.received,
   PurchaseOrderStatus.cancelled,
 ];
+const ACTIVE_REPLENISHMENT_STATUSES = new Set<PurchaseOrderStatus>([
+  PurchaseOrderStatus.pending_approval,
+  PurchaseOrderStatus.approved,
+  PurchaseOrderStatus.sent,
+  PurchaseOrderStatus.partially_received,
+]);
 
 export class GetPurchaseOrdersReadModelService {
   constructor(private readonly repositories: RepositoryRegistry) {}
@@ -83,13 +91,28 @@ export class GetPurchaseOrdersReadModelService {
     permissions: readonly string[],
     params: GetPurchaseOrdersParams,
   ): Promise<PurchaseOrdersReadModel> {
-    const page = await this.repositories.purchaseOrders.getPageScoped(tenantId, {
-      branchId: params.branchId,
-      supplierId: params.supplierId,
-      status: params.status,
-      page: params.page,
-      pageSize: params.pageSize,
-    });
+    const suppliersPromise = this.repositories.suppliers.getActiveByTenant(tenantId);
+    const [page, suppliers, suggestionResult] = await Promise.all([
+      this.repositories.purchaseOrders.getPageScoped(tenantId, {
+        branchId: params.branchId,
+        supplierId: params.supplierId,
+        status: params.status,
+        page: params.page,
+        pageSize: params.pageSize,
+      }),
+      suppliersPromise,
+      params.branchId && permissions.includes(INVENTORY_STOCK_READ_PERMISSION)
+        ? this.getApiReorderSuggestions(tenantId, params.branchId, suppliersPromise)
+        : Promise.resolve<{
+            suggestions: ReorderSuggestionReadModel[];
+            notice?: string;
+          }>({
+            suggestions: [],
+            ...(params.branchId
+              ? { notice: "No dispone de permisos para consultar sugerencias de inventario." }
+              : {}),
+          }),
+    ]);
     return {
       orders: page.items.map((order) =>
         toApiOrderReadModel(
@@ -99,13 +122,107 @@ export class GetPurchaseOrdersReadModelService {
           permissions,
         ),
       ),
-      suppliers: [],
+      suppliers: suppliers
+        .map((supplier) => ({ id: supplier.id, name: supplier.name }))
+        .sort((left, right) => left.name.localeCompare(right.name)),
       statuses: PURCHASE_ORDER_STATUSES,
-      suggestions: [],
+      suggestions: suggestionResult.suggestions,
+      suggestionsNotice: suggestionResult.notice,
       page: page.page,
       pageSize: page.pageSize,
       totalItems: page.totalItems,
       totalPages: page.totalPages,
+    };
+  }
+
+  private async getApiReorderSuggestions(
+    tenantId: string,
+    branchId: string,
+    suppliersPromise: Promise<OperationalSupplier[]>,
+  ): Promise<{ suggestions: ReorderSuggestionReadModel[]; notice?: string }> {
+    const activeStatuses = [...ACTIVE_REPLENISHMENT_STATUSES];
+    const orderPagesPromise = Promise.all(
+      activeStatuses.map((status) =>
+        this.repositories.purchaseOrders.getPageScoped(tenantId, {
+          branchId,
+          status,
+          page: 1,
+          pageSize: API_SUGGESTION_PAGE_SIZE,
+        }),
+      ),
+    );
+    const [alertsPage, suppliers, orderPages] = await Promise.all([
+      this.repositories.inventory.getInventoryAlertPage({
+        branchId,
+        page: 1,
+        pageSize: API_SUGGESTION_PAGE_SIZE,
+      }),
+      suppliersPromise,
+      orderPagesPromise,
+    ]);
+
+    if (orderPages.some((page) => page.totalPages > 1)) {
+      return {
+        suggestions: [],
+        notice:
+          "No se muestran cantidades de reposicion porque existen mas ordenes activas de las que pueden verificarse en una sola pagina.",
+      };
+    }
+
+    const orders = orderPages.flatMap((page) => page.items);
+    const candidates = alertsPage.items
+      .map((alert) => ({
+        alert,
+        remainingQuantity: Math.max(
+          0,
+          alert.suggestedReorder - getOpenPurchaseQuantity(orders, branchId, alert.productId),
+        ),
+      }))
+      .filter((candidate) => candidate.remainingQuantity > 0)
+      .slice(0, 5);
+    const supplierById = new Map(suppliers.map((supplier) => [supplier.id, supplier]));
+    const supplierProductsByCandidate = await Promise.all(
+      candidates.map((candidate) =>
+        this.repositories.supplierProducts.getByProductForTenant(
+          tenantId,
+          candidate.alert.productId,
+        ),
+      ),
+    );
+    const suggestions = candidates.map(({ alert, remainingQuantity }, index) => {
+      const associatedSupplierProducts = supplierProductsByCandidate[index].filter(
+        (item) =>
+          item.active &&
+          item.productId === alert.productId &&
+          supplierById.has(item.supplierId),
+      );
+      const preferredSupplierIds = [
+        ...new Set(
+          associatedSupplierProducts
+            .filter((item) => item.preferred)
+            .map((item) => item.supplierId),
+        ),
+      ];
+      const preferredSupplier =
+        preferredSupplierIds.length === 1
+          ? supplierById.get(preferredSupplierIds[0])
+          : undefined;
+      return toApiReorderSuggestion(
+        alert,
+        remainingQuantity,
+        new Set(associatedSupplierProducts.map((item) => item.supplierId)).size,
+        preferredSupplier,
+      );
+    });
+
+    return {
+      suggestions,
+      ...(alertsPage.totalPages > 1
+        ? {
+            notice:
+              "Las sugerencias visibles corresponden a la primera pagina de alertas de inventario.",
+          }
+        : {}),
     };
   }
 
@@ -297,6 +414,30 @@ function getOpenPurchaseQuantity(orders: PurchaseOrder[], branchId: string, prod
     .reduce((total, item) => total + item.quantity, 0);
 }
 
+const API_SUGGESTION_PAGE_SIZE = 100;
+
+function toApiReorderSuggestion(
+  alert: InventoryAlertListItem,
+  remainingQuantity: number,
+  associatedSupplierCount: number,
+  preferredSupplier?: OperationalSupplier,
+): ReorderSuggestionReadModel {
+  return {
+    id: `reorder-${alert.branchId}-${alert.productId}`,
+    productId: alert.productId,
+    branchId: alert.branchId,
+    productName: alert.productName,
+    sku: alert.sku,
+    currentStock: alert.quantity,
+    minStock: alert.minStock,
+    suggestedQuantity: remainingQuantity,
+    shortage: Math.max(0, alert.minStock - alert.availableQuantity),
+    preferredSupplierId: preferredSupplier?.id,
+    preferredSupplierName: preferredSupplier?.name ?? "Sin proveedor preferido",
+    associatedSupplierCount,
+  };
+}
+
 function defaultApiParams(branchId?: string): GetPurchaseOrdersParams {
   return {
     branchId,
@@ -400,12 +541,7 @@ function getApiReception(order: PurchaseOrder): PurchaseOrderReceptionReadModel 
 }
 
 function isActiveReplenishmentOrder(status: PurchaseOrderStatus) {
-  return (
-    status === PurchaseOrderStatus.pending_approval ||
-    status === PurchaseOrderStatus.approved ||
-    status === PurchaseOrderStatus.sent ||
-    status === PurchaseOrderStatus.partially_received
-  );
+  return ACTIVE_REPLENISHMENT_STATUSES.has(status);
 }
 
 function toLineReadModel(

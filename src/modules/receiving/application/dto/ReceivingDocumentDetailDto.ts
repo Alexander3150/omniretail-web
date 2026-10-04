@@ -80,6 +80,8 @@ export interface ReceivingDocumentLine {
   trackingDetails: ReceivingTrackingDetail[];
   notes: string;
   purchaseToBaseFactor: number;
+  /** Tiene alguna incidencia (abierta o resuelta): el backend conserva su GoodsReceiptItem. */
+  incidentProtected?: boolean;
 }
 
 export interface ReceivingTrackingDetail {

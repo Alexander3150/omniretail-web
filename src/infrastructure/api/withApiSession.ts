@@ -288,7 +288,10 @@ function apiBankAccountsForEmployees(
   };
 }
 
-/** `/administration/suppliers` exige `admin.suppliers.manage`. */
+/**
+ * Las mutaciones y lecturas administrativas conservan `admin.suppliers.manage`. La proyeccion
+ * activa usada por Purchasing es operacional y el backend la autoriza con permisos de compras.
+ */
 function apiSuppliersForEmployees(
   mock: SupplierRepository,
   api: SupplierRepository,
@@ -300,8 +303,7 @@ function apiSuppliersForEmployees(
     getAll: async () => (await resolve()).getAll(),
     getById: async (id: string) => (await resolve()).getById(id),
     getActive: async () => (await resolve()).getActive(),
-    getActiveByTenant: async (tenantId: string) =>
-      (await resolve(tenantId)).getActiveByTenant(tenantId),
+    getActiveByTenant: async (tenantId: string) => api.getActiveByTenant(tenantId),
     listByTenant: async (tenantId: string) => (await resolve(tenantId)).listByTenant(tenantId),
     getProductsBySupplier: async (supplierId: string) =>
       (await resolve()).getProductsBySupplier(supplierId),

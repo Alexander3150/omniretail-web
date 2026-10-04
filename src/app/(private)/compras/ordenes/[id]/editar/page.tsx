@@ -1,5 +1,10 @@
+import { Suspense } from "react";
 import { PurchaseOrderFormPage } from "@/modules/purchasing";
 
 export default function Page() {
-  return <PurchaseOrderFormPage mode="edit" />;
+  return (
+    <Suspense fallback={null}>
+      <PurchaseOrderFormPage mode="edit" />
+    </Suspense>
+  );
 }

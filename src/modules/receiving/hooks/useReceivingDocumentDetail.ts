@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReceiptIncidentEvidence } from "@/core/entities";
+import type { ReceiptDraftTrackingDetailInput } from "@/core/repositories";
 import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import type {
@@ -10,11 +11,13 @@ import type {
   ReceivingDocumentIncident,
   ReceivingDocumentDetailType,
   ReceivingDocumentLine,
+  ReceivingTrackingDetail,
 } from "@/modules/receiving/application/dto/ReceivingDocumentDetailDto";
+import { PurchaseOrderPdfService } from "@/modules/purchasing/application/services/PurchaseOrderPdfService";
 import { ReceivingDocumentDetailService } from "@/modules/receiving/application/services/ReceivingDocumentDetailService";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
-import type { NumericInputValue } from "@/shared/utils/numberInput";
+import { toFiniteNumber, type NumericInputValue } from "@/shared/utils/numberInput";
 
 export function useReceivingDocumentDetail(
   documentType: ReceivingDocumentDetailType,
@@ -104,15 +107,29 @@ export function useReceivingDocumentDetail(
   const updateLine = useCallback((lineId: string, patch: Partial<ReceivingDocumentLine>) => {
     updateDirty(true);
     setLines((current) =>
-      current.map((line) => (line.id === lineId ? recalculateLine({ ...line, ...patch }) : line)),
+      current.map((line) =>
+        // Una linea con incidencia (abierta o resuelta) queda inmutable: el backend la conserva.
+        line.id === lineId && !line.incidentProtected ? recalculateLine({ ...line, ...patch }) : line,
+      ),
     );
   }, [updateDirty]);
 
+  const apiMode = repositories.receivingDataSource === "api";
+
   const updateLineQuantity = useCallback(
     (lineId: string, value: NumericInputValue) => {
-      updateLine(lineId, { receivedNow: value });
+      updateDirty(true);
+      setLines((current) =>
+        current.map((line) => {
+          if (line.id !== lineId || line.incidentProtected) return line;
+          const next = { ...line, receivedNow: value };
+          return recalculateLine(
+            apiMode ? { ...next, trackingDetails: syncTrackingDetails(line, next) } : next,
+          );
+        }),
+      );
     },
-    [updateLine],
+    [apiMode, updateDirty],
   );
 
   const saveProgress = useCallback(async () => {
@@ -235,36 +252,80 @@ export function useReceivingDocumentDetail(
   );
 
   const createApiIncident = useCallback(
-    async (input: Omit<CreateReceivingIncidentInput, "documentId" | "receiptId">) => {
-      if (!detail?.document.receiptId) {
-        throw new Error("Guarda el borrador antes de registrar una incidencia.");
-      }
-      if (dirtyRef.current) {
-        throw new Error("Guarda los cambios del borrador antes de registrar la incidencia.");
-      }
+    async (
+      input: Omit<CreateReceivingIncidentInput, "documentId" | "receiptId" | "goodsReceiptItemId"> & {
+        /** PurchaseOrderItem estable; el GoodsReceiptItem real se resuelve tras persistir. */
+        sourceLineId: string;
+      },
+    ) => {
+      if (!detail) throw new Error("No se encontró la recepción.");
       if (incidentMutationPendingRef.current || mutationPendingRef.current) return;
       const mutationBranchId = activeBranchIdRef.current;
       incidentMutationPendingRef.current = true;
       setIncidentSaving(true);
       try {
+        let receiptId = detail.document.receiptId;
+        const { sourceLineId, ...incidentInput } = input;
+        let goodsReceiptItemId = lines.find((line) => line.sourceLineId === sourceLineId)
+          ?.goodsReceiptItemId;
+        let didSave = false;
+        if (dirtyRef.current || !receiptId) {
+          // Se usa el receipt devuelto por el guardado, nunca el estado de React (puede estar viejo).
+          const savedReceipt = await service.saveProgress({
+            documentType,
+            documentId,
+            lines,
+            incidents,
+          });
+          receiptId = savedReceipt.id;
+          didSave = true;
+        }
+        if (didSave || !goodsReceiptItemId) {
+          // El guardado reemplaza los items del borrador: se re-resuelve el GoodsReceiptItem real
+          // desde el receipt canonico por sourceLineId (nunca ids previos al PUT).
+          if (!mutationBranchId) throw new Error("Selecciona una sucursal activa.");
+          const fresh = await service.getDocument(documentType, documentId, mutationBranchId);
+          if (fresh.document.receiptId && fresh.document.receiptId !== receiptId) {
+            throw new Error("El borrador cambió; vuelve a intentar.");
+          }
+          goodsReceiptItemId = fresh.lines.find(
+            (line) => line.sourceLineId === sourceLineId,
+          )?.goodsReceiptItemId;
+        }
+        if (!goodsReceiptItemId) {
+          throw new Error(
+            "Este producto aún no tiene cantidad recibida; ingresa una cantidad aceptada para registrar la incidencia.",
+          );
+        }
         await service.createIncident({
           documentId,
-          receiptId: detail.document.receiptId,
-          ...input,
+          receiptId,
+          ...incidentInput,
+          goodsReceiptItemId,
         });
         if (activeBranchIdRef.current !== mutationBranchId) return;
         await reload();
+      } catch (caughtError) {
+        throw toFriendlyIncidentError(caughtError);
       } finally {
         incidentMutationPendingRef.current = false;
         setIncidentSaving(false);
       }
     },
-    [detail?.document.receiptId, documentId, reload, service],
+    [detail, documentId, documentType, incidents, lines, reload, service],
   );
 
+  const draftReceiptId = detail?.document.receiptId;
+  const branchName = detail?.document.branchName;
+  const pdfService = useMemo(() => new PurchaseOrderPdfService(repositories), [repositories]);
+  // Reporte final desde datos canonicos de la orden/recepciones confirmadas (sin API en el componente).
+  const downloadFinalReport = useCallback(
+    () => pdfService.downloadReceivingReport(documentId, { branchName }),
+    [branchName, documentId, pdfService],
+  );
   const resolveApiIncident = useCallback(
-    async (incidentId: string) => {
-      if (!detail?.document.receiptId) {
+    async (incidentId: string, trackingDetails?: ReceiptDraftTrackingDetailInput[]) => {
+      if (!draftReceiptId) {
         throw new Error("No se encontró el borrador asociado a la incidencia.");
       }
       if (incidentMutationPendingRef.current || mutationPendingRef.current) return;
@@ -272,18 +333,29 @@ export function useReceivingDocumentDetail(
       incidentMutationPendingRef.current = true;
       setIncidentSaving(true);
       try {
-        await service.resolveIncident(documentId, detail.document.receiptId, incidentId);
+        if (dirtyRef.current) {
+          // Resolver relee el receipt: se persisten antes los cambios locales para no perderlos.
+          await service.saveProgress({ documentType, documentId, lines, incidents });
+        }
+        await service.resolveIncident(
+          documentId,
+          draftReceiptId,
+          incidentId,
+          trackingDetails,
+        );
+        // Cantidades, incidencias y estado se releen del backend (fuente de verdad).
         if (activeBranchIdRef.current !== mutationBranchId) return;
         await reload();
+      } catch (caughtError) {
+        throw toFriendlyIncidentError(caughtError);
       } finally {
         incidentMutationPendingRef.current = false;
         setIncidentSaving(false);
       }
     },
-    [detail?.document.receiptId, documentId, reload, service],
+    [draftReceiptId, documentId, documentType, incidents, lines, reload, service],
   );
 
-  const apiMode = repositories.receivingDataSource === "api";
   const apiPurchaseOrder = apiMode && documentType === "purchase_order";
 
   return {
@@ -298,9 +370,10 @@ export function useReceivingDocumentDetail(
     error,
     apiMode,
     confirmAvailable: !apiMode || Boolean(apiPurchaseOrder && detail?.canConfirm),
+    // En API el draft puede no existir aun: la pagina lo persiste (Guardar avance) antes de abrir
+    // el formulario, nunca se crea una segunda recepcion porque saveApiDraft reutiliza el draft.
     incidentsAvailable:
-      !apiMode ||
-      Boolean(apiPurchaseOrder && detail?.canManageIncidents && detail.document.receiptId),
+      !apiMode || Boolean(apiPurchaseOrder && detail?.canManageIncidents),
     reload,
     updateLine,
     updateLineQuantity,
@@ -310,7 +383,63 @@ export function useReceivingDocumentDetail(
     removeIncident,
     createApiIncident,
     resolveApiIncident,
+    downloadFinalReport,
   };
+}
+
+/** Traduce errores de backend conocidos a mensajes entendibles; conserva el resto. */
+export function toFriendlyIncidentError(error: unknown): Error {
+  if (error instanceof BackendRequestError) {
+    if (error.code === "DUPLICATE_SERIAL") {
+      return new Error("Uno o más números de serie ya están registrados. Revisa los seriales.");
+    }
+    if (error.status === 409) {
+      return new Error("La información cambió. Actualiza la recepción e intenta nuevamente.");
+    }
+  }
+  return error instanceof Error ? error : new Error("No se pudo completar la operación.");
+}
+
+function toAcceptedBaseQuantity(line: ReceivingDocumentLine) {
+  const accepted = toFiniteNumber(line.receivedNow);
+  return Math.max(0, Number((accepted * line.purchaseToBaseFactor).toFixed(6)));
+}
+
+/**
+ * Mantiene el primer trackingDetail alineado con "Aceptado ahora" mientras el usuario no lo haya
+ * tocado (sin lote/vencimiento/series y con la cantidad base autogenerada). Una vez que existen
+ * varios detalles o el unico fue editado, la distribucion es del usuario y no se redistribuye.
+ */
+export function syncTrackingDetails(
+  previous: ReceivingDocumentLine,
+  next: ReceivingDocumentLine,
+): ReceivingTrackingDetail[] {
+  const details = next.trackingDetails;
+  if (!next.tracking.lot && !next.tracking.serial) return details;
+  if (typeof next.receivedNow !== "number" && next.receivedNow !== "") return details;
+  const nextBase = toAcceptedBaseQuantity(next);
+  if (details.length === 0) {
+    if (nextBase <= 0) return details;
+    return [
+      {
+        id: crypto.randomUUID(),
+        baseQuantity: nextBase,
+        lotNumber: "",
+        expirationDate: "",
+        serialNumbersText: "",
+      },
+    ];
+  }
+  const [only] = details;
+  if (details.length !== 1 || !only) return details;
+  const pristine =
+    !only.lotNumber &&
+    !only.expirationDate &&
+    !only.serialNumbersText &&
+    toFiniteNumber(only.baseQuantity) === toAcceptedBaseQuantity(previous);
+  if (!pristine) return details;
+  if (nextBase <= 0) return [];
+  return [{ ...only, baseQuantity: nextBase }];
 }
 
 function recalculateLine(line: ReceivingDocumentLine) {

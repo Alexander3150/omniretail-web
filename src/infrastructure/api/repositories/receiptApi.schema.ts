@@ -124,6 +124,28 @@ const createReceiptIncidentRequestSchema = z
     }
   });
 
+const serialValidationResponseSchema = z.object({
+  duplicates: z.array(z.string()),
+  repeatedInRequest: z.array(z.string()),
+});
+
+const resolveWithReplacementRequestSchema = z.object({
+  replacementQuantity: z.number().finite().positive(),
+  trackingDetails: z.array(draftItemSchema.shape.trackingDetails.element).optional(),
+});
+
+export function parseApiSerialValidation(value: unknown) {
+  const parsed = serialValidationResponseSchema.safeParse(value);
+  if (!parsed.success) throw invalidResponse("validación de seriales");
+  return parsed.data;
+}
+
+export function parseResolveWithReplacementRequest(value: unknown) {
+  const parsed = resolveWithReplacementRequestSchema.safeParse(value);
+  if (!parsed.success) throw invalidRequest();
+  return parsed.data;
+}
+
 export type ApiGoodsReceipt = z.infer<typeof goodsReceiptSchema>;
 export type ApiGoodsReceiptCreateRequest = z.infer<typeof createGoodsReceiptRequestSchema>;
 export type ApiGoodsReceiptUpdateRequest = z.infer<typeof updateGoodsReceiptRequestSchema>;

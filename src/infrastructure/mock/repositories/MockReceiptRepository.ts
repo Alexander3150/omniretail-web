@@ -598,6 +598,25 @@ export class MockReceiptRepository extends BaseMockRepository implements Receipt
     return result;
   }
 
+  async resolveIncidentWithReplacementScoped(
+    input: Parameters<ReceiptRepository["resolveIncidentWithReplacementScoped"]>[0],
+  ) {
+    await this.resolveIncidentScoped(input.tenantId, input.incidentId);
+  }
+
+  async validateSerialNumbersScoped(
+    input: Parameters<ReceiptRepository["validateSerialNumbersScoped"]>[0],
+  ) {
+    const seen = new Set<string>();
+    const repeatedInRequest = new Set<string>();
+    input.serialNumbers.forEach((serial) => {
+      const key = serial.trim();
+      if (seen.has(key)) repeatedInRequest.add(key);
+      seen.add(key);
+    });
+    return { duplicates: [], repeatedInRequest: [...repeatedInRequest] };
+  }
+
   async resolveIncidentScoped(tenantId: string, incidentId: string) {
     const result = this.store.mutate((db) => {
       const incident = db.receiptIncidents.find((item) => item.id === incidentId);

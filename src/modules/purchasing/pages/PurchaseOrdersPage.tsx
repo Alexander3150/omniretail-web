@@ -52,6 +52,7 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
     loading,
     error,
     mutationPending,
+    canCreatePurchaseOrders,
     updateFilters,
     setPage,
     setPageSize,
@@ -231,28 +232,10 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
       return;
     }
     if (action.id === "edit-draft") {
-      if (apiMode) {
-        showToast({
-          title: "Creacion de ordenes no disponible todavia",
-          description:
-            "La edicion se habilitara cuando se integre el catalogo operacional de proveedores.",
-          tone: "info",
-        });
-        return;
-      }
       router.push(`/compras/ordenes/${order.id}/editar`);
       return;
     }
     if (action.id === "continue-receiving" && action.enabled) {
-      if (apiMode) {
-        showToast({
-          title: "Recepcion no disponible todavia",
-          description:
-            "La integracion de recepciones con API se habilitara en una siguiente fase.",
-          tone: "info",
-        });
-        return;
-      }
       router.push(`/compras/recepciones/purchase_order/${order.id}`);
       return;
     }
@@ -361,7 +344,7 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
           title="Ordenes de compra"
           description="Consulta ordenes, recepcion, proveedores y necesidades de reposicion."
           actions={
-            !apiMode ? (
+            canCreatePurchaseOrders ? (
               <Button onClick={() => router.push("/compras/ordenes/nueva")} type="button">
                 <PlusIcon />
                 Nueva orden
@@ -371,22 +354,24 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
         />
       </div>
 
-      {!apiMode ? (
-        <ReorderSuggestions
-          expanded={suggestionsExpanded}
-          suggestions={data.suggestions}
-          onCreateOrder={openSuggestionOrder}
-          onToggle={() => setSuggestionsExpanded((current) => !current)}
-        />
-      ) : null}
+      <ReorderSuggestions
+        canCreateOrder={canCreatePurchaseOrders}
+        expanded={suggestionsExpanded}
+        notice={data.suggestionsNotice}
+        suggestions={data.suggestions}
+        onCreateOrder={openSuggestionOrder}
+        onToggle={() => setSuggestionsExpanded((current) => !current)}
+      />
 
       {error ? <InlineAlert title={error} tone="danger" /> : null}
 
       <section className="rounded-lg border border-[var(--color-border)] bg-white p-2.5 shadow-sm">
         <div
           className={cn(
-            "grid gap-3",
-            apiMode ? "xl:grid-cols-[220px]" : "xl:grid-cols-[minmax(0,1fr)_220px_220px]",
+            "grid gap-3 md:grid-cols-2",
+            apiMode
+              ? "xl:grid-cols-[220px_220px]"
+              : "xl:grid-cols-[minmax(0,1fr)_220px_220px]",
           )}
         >
           {!apiMode ? (
@@ -415,21 +400,19 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
               </option>
             ))}
           </Select>
-          {!apiMode ? (
-            <Select
-              aria-label="Proveedor"
-              className="h-10 rounded-md"
-              onChange={(event) => handleSupplierChange(event.target.value)}
-              value={filters.supplierId}
-            >
-              <option value="all">Todos los proveedores</option>
-              {data.suppliers.map((supplier) => (
-                <option key={supplier.id} value={supplier.id}>
-                  {supplier.name}
-                </option>
-              ))}
-            </Select>
-          ) : null}
+          <Select
+            aria-label="Proveedor"
+            className="h-10 rounded-md"
+            onChange={(event) => handleSupplierChange(event.target.value)}
+            value={filters.supplierId}
+          >
+            <option value="all">Todos los proveedores</option>
+            {data.suppliers.map((supplier) => (
+              <option key={supplier.id} value={supplier.id}>
+                {supplier.name}
+              </option>
+            ))}
+          </Select>
         </div>
       </section>
 
@@ -482,12 +465,16 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
 }
 
 function ReorderSuggestions({
+  canCreateOrder,
   expanded,
+  notice,
   suggestions,
   onCreateOrder,
   onToggle,
 }: {
+  canCreateOrder: boolean;
   expanded: boolean;
+  notice?: string;
   suggestions: ReorderSuggestionReadModel[];
   onCreateOrder: (suggestion: ReorderSuggestionReadModel) => void;
   onToggle: () => void;
@@ -520,6 +507,7 @@ function ReorderSuggestions({
 
       {expanded ? (
         <div className="space-y-2 border-t border-[var(--color-border)] px-4 py-3">
+          {notice ? <InlineAlert title={notice} tone="warning" /> : null}
           {suggestions.length === 0 ? (
             <p className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-4 py-3 text-sm font-medium text-[var(--color-text-muted)]">
               Sin sugerencias de reposicion por ahora.
@@ -527,7 +515,7 @@ function ReorderSuggestions({
           ) : (
             suggestions.map((suggestion) => (
               <article
-                className="grid gap-2 rounded-md border border-[var(--color-border)] px-3 py-2 sm:grid-cols-[minmax(0,1.6fr)_80px_80px_90px_90px_minmax(120px,0.9fr)_auto] sm:items-center"
+                className="grid gap-2 rounded-md border border-[var(--color-border)] px-3 py-2 xl:grid-cols-[minmax(0,1.6fr)_80px_80px_90px_90px_minmax(120px,0.9fr)_auto] xl:items-center"
                 key={suggestion.id}
               >
                 <div className="min-w-0">
@@ -556,14 +544,20 @@ function ReorderSuggestions({
                   </p>
                 </div>
                 <div className="flex justify-start sm:justify-end">
-                  <Button
-                    className="min-h-9 px-3 py-1.5"
-                    onClick={() => onCreateOrder(suggestion)}
-                    type="button"
-                    variant="secondary"
-                  >
-                    Crear orden
-                  </Button>
+                  {canCreateOrder ? (
+                    <Button
+                      className="min-h-9 px-3 py-1.5"
+                      onClick={() => onCreateOrder(suggestion)}
+                      type="button"
+                      variant="secondary"
+                    >
+                      Crear orden
+                    </Button>
+                  ) : (
+                    <span className="text-xs font-semibold text-[var(--color-text-muted)]">
+                      Solo consulta
+                    </span>
+                  )}
                 </div>
               </article>
             ))

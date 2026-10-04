@@ -1,5 +1,9 @@
 import type { Supplier } from "@/core/entities";
-import type { SupplierStatus } from "@/core/enums";
+import { SupplierStatus } from "@/core/enums";
+import type { OperationalSupplier } from "@/core/repositories";
+import { BackendRequestError } from "@/infrastructure/api/backendClient";
+import { isApiUuid } from "@/infrastructure/api/uuid";
+import { z } from "zod";
 
 /** SupplierResponse del backend (`/administration/suppliers`). */
 export interface ApiSupplier {
@@ -33,6 +37,15 @@ export interface ApiSupplierRequest {
   status: SupplierStatus;
 }
 
+const operationalSupplierSchema = z.object({
+  id: z.string().refine(isApiUuid, { message: "UUID de proveedor invalido." }),
+  name: z.string().min(1),
+  leadTimeDays: z.number().int().nonnegative().nullable(),
+  status: z.literal(SupplierStatus.active),
+});
+
+const operationalSupplierListSchema = z.array(operationalSupplierSchema);
+
 type SupplierInput = Omit<Supplier, "id" | "tenantId" | "createdAt" | "updatedAt" | "leadTimeDays">;
 
 export function toSupplier(supplier: ApiSupplier): Supplier {
@@ -65,4 +78,21 @@ export function toSupplierRequest(input: SupplierInput): ApiSupplierRequest {
     notes: input.notes,
     status: input.status,
   };
+}
+
+export function parseOperationalSuppliers(value: unknown): OperationalSupplier[] {
+  const parsed = operationalSupplierListSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new BackendRequestError(
+      "El backend devolvio proveedores operacionales invalidos.",
+      502,
+      "INVALID_BACKEND_RESPONSE",
+    );
+  }
+  return parsed.data.map((supplier) => ({
+    id: supplier.id,
+    name: supplier.name,
+    leadTimeDays: supplier.leadTimeDays ?? undefined,
+    status: supplier.status,
+  }));
 }

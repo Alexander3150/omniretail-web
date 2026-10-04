@@ -299,6 +299,9 @@ export class ReceivingDocumentsService {
     branchId: string,
     purchaseOrders: PurchaseOrder[],
   ) {
+    // Unica fuente operacional sin N+1: el usuario de la sesion; el resto se muestra "No disponible".
+    const { user: sessionUser } = await resolveReceivingContext(this.repositories);
+    const userNameById = new Map([[sessionUser.id, sessionUser.name]]);
     const uniqueOrders = [...new Map(purchaseOrders.map((order) => [order.id, order])).values()];
     const records = await Promise.all(
       uniqueOrders.map(async (order) => {
@@ -358,7 +361,7 @@ export class ReceivingDocumentsService {
       ),
       incidents: incidentPages
         .flatMap(({ order, record, page }) =>
-          page.items.map((incident) => toApiIncidentListItem(incident, record, order)),
+          page.items.map((incident) => toApiIncidentListItem(incident, record, order, userNameById)),
         )
         .sort((left, right) => right.date.localeCompare(left.date)),
       incidentListIncomplete: incidentPages.some(
@@ -376,6 +379,7 @@ function toApiIncidentListItem(
   incident: ReceiptIncidentRecord,
   receipt: ReceiptRecord,
   order: PurchaseOrder,
+  userNameById: Map<string, string>,
 ): IncidentListItemViewModel {
   const item = incident.goodsReceiptItemId
     ? receipt.items.find((candidate) => candidate.line.id === incident.goodsReceiptItemId)
@@ -398,7 +402,9 @@ function toApiIncidentListItem(
       : {}),
     observation: incident.notes,
     date: incident.createdAt,
-    responsibleName: incident.createdByUserId,
+    ...(userNameById.get(incident.createdByUserId)
+      ? { responsibleName: userNameById.get(incident.createdByUserId) }
+      : {}),
     evidence: [],
     status: incident.status,
     confirmed: receipt.receipt.status === ReceiptStatus.received,
@@ -411,6 +417,8 @@ const PURCHASE_ORDER_STREAMS: Record<ReceivingPurchaseOrderStream, PurchaseOrder
   approved: PurchaseOrderStatus.approved,
   sent: PurchaseOrderStatus.sent,
   partially_received: PurchaseOrderStatus.partially_received,
+  // Las ordenes completadas siguen siendo consultables: la vista "Recibidas" las necesita.
+  received: PurchaseOrderStatus.received,
 };
 
 export function nextReceivingStream(

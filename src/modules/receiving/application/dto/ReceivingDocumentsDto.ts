@@ -41,7 +41,11 @@ export interface ReceivingReadModel {
   pagination?: ReceivingPaginationState;
 }
 
-export type ReceivingPurchaseOrderStream = "approved" | "sent" | "partially_received";
+export type ReceivingPurchaseOrderStream =
+  | "approved"
+  | "sent"
+  | "partially_received"
+  | "received";
 
 export interface ReceivingPaginationStreamState {
   currentPage: number;

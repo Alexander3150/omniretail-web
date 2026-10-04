@@ -34,11 +34,11 @@ export interface PurchaseOrderEditorLine {
   minimumOrderQuantity: number;
   leadTimeDays?: number;
   tiers: Array<{ minQuantity: number; unitCost: number }>;
-  stockQuantity: number;
-  minStock: number;
+  stockQuantity?: number;
+  minStock?: number;
   reorderPoint?: number;
-  shortage: number;
-  suggestedReorder: number;
+  shortage?: number;
+  suggestedReorder?: number;
   availabilityLabel: string;
 }
 
@@ -57,11 +57,11 @@ export interface PurchaseOrderAvailableProduct {
   minimumOrderQuantity: number;
   leadTimeDays?: number;
   tiers: Array<{ minQuantity: number; unitCost: number }>;
-  stockQuantity: number;
-  minStock: number;
+  stockQuantity?: number;
+  minStock?: number;
   reorderPoint?: number;
-  shortage: number;
-  suggestedReorder: number;
+  shortage?: number;
+  suggestedReorder?: number;
   availabilityLabel: string;
   searchText: string;
 }
@@ -83,6 +83,7 @@ export interface PurchaseOrderPrefillContext {
   branchId?: string;
   supplierId?: string;
   suggestedQuantity?: number;
+  suggestedQuantityInvalid?: boolean;
   source?: PurchaseOrderPrefillSource;
 }
 

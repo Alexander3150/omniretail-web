@@ -5,11 +5,11 @@ import type {
   ProductInventorySettings,
   ProductSalesPriceTier,
   StorageLocation,
-  Supplier,
   SupplierCostTier,
   SupplierProduct,
   UnitConversion,
 } from "@/core/entities";
+import type { OperationalSupplier } from "@/core/repositories";
 import type { CreateProductDto } from "@/modules/catalog/application/dto/CreateProductDto";
 import type { ProductDetailViewModel } from "@/modules/catalog/types/catalog.types";
 import type { NumericInputValue } from "@/shared/utils/numberInput";
@@ -122,7 +122,7 @@ export interface ProductEditorData {
   attributeDefinitions?: AttributeDefinition[];
   attributes?: ProductAttributeEditorValue[];
   salesPriceTiers?: ProductSalesPriceTierEditorValue[];
-  suppliers: Supplier[];
+  suppliers: OperationalSupplier[];
   supplierProducts: SupplierProductEditorValue[];
   media: ProductMediaEditorValue[];
   promotionCount?: number;

@@ -147,6 +147,30 @@ export interface ReceiptRepository {
     tenantId: string,
     incidentId: string,
   ): Promise<ReceiptIncidentRecord>;
+  /** Resuelve la incidencia aceptando mercancia de reemplazo; el estado final se relee del backend. */
+  resolveIncidentWithReplacementScoped(
+    input: ResolveReceiptIncidentWithReplacementInput,
+  ): Promise<void>;
+  /** Precheck UX de seriales (una sola request batch); el backend sigue siendo la autoridad. */
+  validateSerialNumbersScoped(input: ValidateSerialNumbersInput): Promise<SerialValidationResult>;
+}
+
+export interface ResolveReceiptIncidentWithReplacementInput {
+  tenantId: string;
+  receiptId: string;
+  incidentId: string;
+  replacementQuantity: number;
+  trackingDetails?: ReceiptDraftTrackingDetailInput[];
+}
+
+export interface ValidateSerialNumbersInput {
+  productId: string;
+  serialNumbers: string[];
+}
+
+export interface SerialValidationResult {
+  duplicates: string[];
+  repeatedInRequest: string[];
 }
 
 export interface ConfirmReceiptInventoryInput {

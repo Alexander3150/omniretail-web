@@ -1,9 +1,10 @@
 import type { Supplier, SupplierProduct } from "@/core/entities";
-import type { SupplierRepository } from "@/core/repositories";
+import type { OperationalSupplier, SupplierRepository } from "@/core/repositories";
 import type { PaginatedResult } from "@/core/types";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import {
   type ApiSupplier,
+  parseOperationalSuppliers,
   toSupplier,
   toSupplierRequest,
 } from "@/infrastructure/api/apiSupplierMapper";
@@ -17,9 +18,8 @@ const PAGE_SIZE = 100;
 type SupplierInput = Omit<Supplier, "id" | "createdAt" | "updatedAt" | "leadTimeDays">;
 
 /**
- * SupplierRepository de modo api contra `/api/backend/administration/suppliers`. El backend
- * resuelve la tienda desde el JWT, asi que los metodos `*ByTenant` solo filtran el resultado por
- * `tenantId` para respetar el contrato.
+ * SupplierRepository de modo API. Las operaciones administrativas conservan
+ * `/administration/suppliers`; la seleccion operativa de Purchasing usa su endpoint dedicado.
  */
 export class ApiSupplierRepository implements SupplierRepository {
   constructor(private readonly eventBus: DataEventBus) {}
@@ -50,8 +50,11 @@ export class ApiSupplierRepository implements SupplierRepository {
     return suppliers.map(toSupplier);
   }
 
-  async getActiveByTenant(tenantId: string): Promise<Supplier[]> {
-    return (await this.getActive()).filter((supplier) => supplier.tenantId === tenantId);
+  async getActiveByTenant(tenantId: string): Promise<OperationalSupplier[]> {
+    void tenantId;
+    return parseOperationalSuppliers(
+      await backendFetch<unknown>("/purchasing/suppliers/active"),
+    );
   }
 
   async listByTenant(tenantId: string): Promise<Supplier[]> {

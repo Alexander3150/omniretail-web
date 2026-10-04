@@ -2,7 +2,6 @@
 
 import {
   useEffect,
-  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -31,6 +30,7 @@ import {
   TEXT_LIMITS,
 } from "@/shared/utils/inputLimits";
 import { SaasCapabilityKey } from "@/core/enums";
+import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import type { PurchaseOrderAvailableProduct } from "@/modules/purchasing/application/dto/PurchaseOrderEditorModel";
 import type {
@@ -50,13 +50,24 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { showToast } = useToast();
-  const prefillContext = useMemo(
-    () => (mode === "create" ? getPrefillContext(searchParams) : undefined),
-    [mode, searchParams],
+  // Los query params son solo transporte inicial: se consumen una vez al montar y luego la URL
+  // se limpia. El estado congelado evita que el editor se reinicie al perder los params.
+  const [prefillContext] = useState(() =>
+    mode === "create" ? getPrefillContext(searchParams) : undefined,
   );
   const editor = usePurchaseOrderEditor(mode === "edit" ? params.id : undefined, prefillContext);
+  const urlCleanedRef = useRef(false);
+  const { prefillApplied } = editor;
+  useEffect(() => {
+    if (!prefillContext || !prefillApplied || urlCleanedRef.current) return;
+    urlCleanedRef.current = true;
+    router.replace("/compras/ordenes/nueva", { scroll: false });
+  }, [prefillApplied, prefillContext, router]);
   const { hasCapability } = useEntitlement();
+  const { hasPermission } = useCurrentSession();
   const canUsePurchasing = hasCapability(SaasCapabilityKey.purchasing);
+  const canCreatePurchaseOrders =
+    canUsePurchasing && hasPermission("purchasing.orders.create");
   const [pendingSupplierId, setPendingSupplierId] = useState<string | null>(null);
   const returnPath = getReturnPath(prefillContext?.source);
   const hasInvalidPurchaseQuantity = editor.model.lines.some((line) =>
@@ -64,14 +75,30 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
   );
 
   async function handleSupplierChange(supplierId: string) {
-    const result = await editor.changeSupplier(supplierId);
-    if (result.requiresConfirmation) setPendingSupplierId(supplierId);
+    try {
+      const result = await editor.changeSupplier(supplierId);
+      if (result.requiresConfirmation) setPendingSupplierId(supplierId);
+    } catch (caughtError) {
+      showToast({
+        title: "No se pudo cargar el proveedor",
+        description: caughtError instanceof Error ? caughtError.message : undefined,
+        tone: "danger",
+      });
+    }
   }
 
   async function confirmSupplierChange() {
     if (!pendingSupplierId) return;
-    await editor.changeSupplier(pendingSupplierId, true);
-    setPendingSupplierId(null);
+    try {
+      await editor.changeSupplier(pendingSupplierId, true);
+      setPendingSupplierId(null);
+    } catch (caughtError) {
+      showToast({
+        title: "No se pudo cambiar el proveedor",
+        description: caughtError instanceof Error ? caughtError.message : undefined,
+        tone: "danger",
+      });
+    }
   }
 
   async function handleSaveDraft() {
@@ -109,17 +136,6 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
     }
   }
 
-  if (editor.blockedReason) {
-    return (
-      <div className="space-y-4">
-        <PageHeader title="Orden de compra" description={editor.blockedReason} />
-        <Button onClick={() => router.push("/compras/ordenes")} type="button" variant="secondary">
-          Volver
-        </Button>
-      </div>
-    );
-  }
-
   if (editor.loading) {
     return <p className="p-5 text-sm text-[var(--color-text-muted)]">Cargando orden...</p>;
   }
@@ -136,7 +152,7 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <div>
         <p className="mb-1 text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
           Compras
@@ -160,7 +176,7 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
         </p>
       ) : null}
 
-      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start">
         <div className="min-w-0 space-y-5">
           <section className="rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm">
             <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
@@ -180,6 +196,11 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
                     </option>
                   ))}
                 </Select>
+                {editor.suppliers.length === 0 ? (
+                  <p className="mt-1 text-xs font-semibold text-[var(--color-danger)]">
+                    No hay proveedores operacionales disponibles.
+                  </p>
+                ) : null}
               </label>
               <div>
                 <span className="text-xs font-bold uppercase text-[var(--color-text-muted)]">
@@ -481,7 +502,7 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
           </section>
         </div>
 
-        <aside className="h-fit rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm 2xl:sticky 2xl:top-5">
+        <aside className="h-fit min-w-0 rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm xl:sticky xl:top-5 xl:max-h-[calc(100dvh-3rem)] xl:overflow-y-auto">
           <h2 className="text-base font-bold text-[var(--color-title)]">Resumen</h2>
           <dl className="mt-3 space-y-3 text-sm">
             <SummaryItem label="Sucursal destino" value={editor.branchName} />
@@ -515,7 +536,7 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
               Volver
             </Button>
             <Button
-              disabled={editor.saving || !canUsePurchasing || hasInvalidPurchaseQuantity}
+              disabled={editor.saving || !canCreatePurchaseOrders || hasInvalidPurchaseQuantity}
               onClick={handleSaveDraft}
               type="button"
               variant="secondary"
@@ -523,7 +544,7 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
               {mode === "edit" ? "Guardar cambios" : "Guardar borrador"}
             </Button>
             <Button
-              disabled={editor.saving || !canUsePurchasing || hasInvalidPurchaseQuantity}
+              disabled={editor.saving || !canCreatePurchaseOrders || hasInvalidPurchaseQuantity}
               onClick={handleCreateOrder}
               type="button"
             >
@@ -554,21 +575,26 @@ function AvailableProductRow({
   onAdd: () => void;
 }) {
   return (
-    <article className="flex min-w-0 flex-col gap-3 rounded-md border border-[var(--color-border)] px-3 py-3 2xl:flex-row 2xl:items-center">
-      <div className="min-w-0 2xl:flex-[1.2]">
-        <p className="font-bold leading-5 text-[var(--color-title)]">{product.productName}</p>
+    <article className="flex min-w-0 flex-col gap-3 rounded-md border border-[var(--color-border)] px-3 py-3 xl:grid xl:grid-cols-[minmax(11rem,2fr)_minmax(3rem,.45fr)_minmax(4.5rem,.6fr)_minmax(4rem,.5fr)_minmax(4rem,.5fr)_minmax(5rem,.65fr)_minmax(3rem,.4fr)_7rem] xl:items-center xl:gap-x-3 xl:py-2">
+      <div className="min-w-0">
+        <p
+          className="line-clamp-2 break-words font-bold leading-5 text-[var(--color-title)]"
+          title={product.productName}
+        >
+          {product.productName}
+        </p>
         <p className="text-xs text-[var(--color-text-muted)]">
           {product.sku} · Prov. {product.supplierSku}
         </p>
       </div>
-      <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 text-sm md:grid-cols-3 xl:grid-cols-4 2xl:flex-[2] 2xl:grid-cols-6">
+      <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 text-sm md:grid-cols-3 xl:contents">
         <SmallField label="Unidad" value={product.unitLabel} />
         <SmallField label="Costo" value={formatCurrency(product.configuredCost)} />
         <SmallField label="Minimo" value={formatNumber(product.minimumOrderQuantity)} />
         <SmallField label="Entrega" value={formatLeadTime(product.leadTimeDays)} />
         <SmallField
           label="Stock"
-          value={`${formatNumber(product.stockQuantity)} · ${product.availabilityLabel}`}
+          value={`${formatOptionalNumber(product.stockQuantity)} · ${product.availabilityLabel}`}
         />
         <SmallField
           label="Escalas"
@@ -582,7 +608,7 @@ function AvailableProductRow({
         />
       </dl>
       <Button
-        className="min-h-10 w-full shrink-0 px-3 py-1.5 md:w-auto"
+        className="min-h-10 w-full shrink-0 px-3 py-1.5 md:w-auto xl:w-full"
         onClick={onAdd}
         type="button"
         variant="secondary"
@@ -793,16 +819,16 @@ function ProductInfoPopover({
         {line.sku} · Prov. {line.supplierSku}
       </p>
       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-        <SmallDescription label="Stock sucursal" value={formatNumber(line.stockQuantity)} />
-        <SmallDescription label="Minimo" value={formatNumber(line.minStock)} />
+        <SmallDescription label="Stock sucursal" value={formatOptionalNumber(line.stockQuantity)} />
+        <SmallDescription label="Minimo" value={formatOptionalNumber(line.minStock)} />
         <SmallDescription
           label="Reorder point"
           value={
             typeof line.reorderPoint === "number" ? formatNumber(line.reorderPoint) : "No definido"
           }
         />
-        <SmallDescription label="Sugerido" value={formatNumber(line.suggestedReorder)} />
-        <SmallDescription label="Faltante" value={formatNumber(line.shortage)} />
+        <SmallDescription label="Sugerido" value={formatOptionalNumber(line.suggestedReorder)} />
+        <SmallDescription label="Faltante" value={formatOptionalNumber(line.shortage)} />
         <SmallDescription label="Unidad" value={line.unitLabel} />
         <SmallDescription label="Minimo compra" value={formatNumber(line.minimumOrderQuantity)} />
         <SmallDescription label="Proveedor SKU" value={line.supplierSku} />
@@ -939,6 +965,9 @@ function getPurchaseQuantityUiError(line: PurchaseOrderEditorLine) {
   if (line.quantity > MAX_SAFE_INVENTORY_QUANTITY) {
     return "La cantidad no puede superar 999,999.99.";
   }
+  if (line.quantity < line.minimumOrderQuantity) {
+    return `La cantidad mínima de compra es ${formatNumber(line.minimumOrderQuantity)}.`;
+  }
   if (
     !line.unitAllowsDecimals &&
     !isQuantityCompatibleWithUnit(line.quantity, false)
@@ -958,12 +987,17 @@ function formatLeadTime(value?: number) {
   return typeof value === "number" ? `${formatNumber(value)} dias` : "No definido";
 }
 
+function formatOptionalNumber(value?: number) {
+  return typeof value === "number" ? formatNumber(value) : "No disponible";
+}
+
 function getPrefillContext(searchParams: { get: (name: string) => string | null }) {
   const productId = searchParams.get("productId") ?? undefined;
   const branchId = searchParams.get("branchId") ?? undefined;
   const supplierId = searchParams.get("supplierId") ?? undefined;
   const source = getPrefillSource(searchParams.get("source"));
-  const suggestedQuantity = getSuggestedQuantityParam(searchParams.get("suggestedQuantity"));
+  const suggestedQuantityValue = searchParams.get("suggestedQuantity");
+  const suggestedQuantity = getSuggestedQuantityParam(suggestedQuantityValue);
   if (!productId && !branchId && !supplierId && !source && !suggestedQuantity) return undefined;
   return {
     productId,
@@ -971,6 +1005,7 @@ function getPrefillContext(searchParams: { get: (name: string) => string | null 
     supplierId,
     source,
     suggestedQuantity,
+    suggestedQuantityInvalid: Boolean(suggestedQuantityValue && !suggestedQuantity),
   } satisfies PurchaseOrderPrefillContext;
 }
 
@@ -984,7 +1019,12 @@ function getPrefillSource(value: string | null): PurchaseOrderPrefillSource | un
 function getSuggestedQuantityParam(value: string | null) {
   if (!value) return undefined;
   const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+  return Number.isFinite(parsed) &&
+    parsed > 0 &&
+    parsed <= MAX_SAFE_INVENTORY_QUANTITY &&
+    hasAtMostDecimalPlaces(parsed, QUANTITY_DECIMAL_PLACES)
+    ? parsed
+    : undefined;
 }
 
 function getReturnPath(source?: PurchaseOrderPrefillSource) {

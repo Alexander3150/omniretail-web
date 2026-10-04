@@ -98,7 +98,7 @@ export function ReceivingPage() {
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
       <div>
         <p className="mb-1 text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
           Recepciones
@@ -427,10 +427,6 @@ function SelectedDocumentModal({
       footer={
         document ? (
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button className="w-full sm:w-auto" onClick={onClose} type="button" variant="ghost">
-              <XIcon />
-              Cerrar
-            </Button>
             <Button
               className="w-full sm:w-auto"
               href={getReceivingDocumentHref(document)}
@@ -926,15 +922,6 @@ function TrashIcon(props: SVGProps<SVGSVGElement>) {
       <path d="M19 6l-1 14H6L5 6" />
       <path d="M10 11v5" />
       <path d="M14 11v5" />
-    </Icon>
-  );
-}
-
-function XIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <Icon {...props}>
-      <path d="M18 6 6 18" />
-      <path d="m6 6 12 12" />
     </Icon>
   );
 }

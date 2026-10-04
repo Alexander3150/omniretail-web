@@ -7,6 +7,9 @@ import type {
   ReceiptPageParams,
   ReceiptRecord,
   ReceiptRepository,
+  ResolveReceiptIncidentWithReplacementInput,
+  SerialValidationResult,
+  ValidateSerialNumbersInput,
 } from "@/core/repositories";
 import { BackendRequestError, backendFetch } from "@/infrastructure/api/backendClient";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
@@ -16,6 +19,8 @@ import {
   parseApiGoodsReceiptPage,
   parseApiReceiptIncident,
   parseApiReceiptIncidentPage,
+  parseApiSerialValidation,
+  parseResolveWithReplacementRequest,
   parseGoodsReceiptCreateRequest,
   parseGoodsReceiptUpdateRequest,
   parseReceiptIncidentCreateRequest,
@@ -52,6 +57,9 @@ export class ApiReceiptRepository {
     const listIncidentsScoped = this.listIncidentsScoped.bind(this);
     const createIncidentScoped = this.createIncidentScoped.bind(this);
     const resolveIncidentScoped = this.resolveIncidentScoped.bind(this);
+    const resolveIncidentWithReplacementScoped =
+      this.resolveIncidentWithReplacementScoped.bind(this);
+    const validateSerialNumbersScoped = this.validateSerialNumbersScoped.bind(this);
     return new Proxy(delegate, {
       get: (target, property) => {
         if (property === "getPageScoped") return getPageScoped;
@@ -63,6 +71,10 @@ export class ApiReceiptRepository {
         if (property === "listIncidentsScoped") return listIncidentsScoped;
         if (property === "createIncidentScoped") return createIncidentScoped;
         if (property === "resolveIncidentScoped") return resolveIncidentScoped;
+        if (property === "resolveIncidentWithReplacementScoped") {
+          return resolveIncidentWithReplacementScoped;
+        }
+        if (property === "validateSerialNumbersScoped") return validateSerialNumbersScoped;
         if (UNSUPPORTED_LEGACY_OPERATIONS.has(property)) return unsupportedOperation;
         const value = Reflect.get(target, property, target);
         return typeof value === "function" ? value.bind(target) : value;
@@ -238,6 +250,47 @@ export class ApiReceiptRepository {
       action: "updated",
     });
     return incident;
+  }
+
+  async resolveIncidentWithReplacementScoped(input: ResolveReceiptIncidentWithReplacementInput) {
+    assertApiUuid(input.incidentId, "incidentId");
+    assertApiUuid(input.receiptId, "receiptId");
+    const body = parseResolveWithReplacementRequest({
+      replacementQuantity: input.replacementQuantity,
+      ...(input.trackingDetails && input.trackingDetails.length > 0
+        ? {
+            trackingDetails: input.trackingDetails.map((detail) => ({
+              baseQuantity: detail.baseQuantity,
+              lotNumber: detail.lotNumber?.trim() || null,
+              expirationDate: detail.expirationDate || null,
+              serialNumbers: detail.serialNumbers.map((serial) => serial.trim()).filter(Boolean),
+            })),
+          }
+        : {}),
+    });
+    // La respuesta no es fuente de verdad: el llamador relee el receipt e incidencias.
+    await backendFetch<unknown>(
+      `/purchasing/receipts/incidents/${input.incidentId}/resolve-with-replacement`,
+      { method: "POST", body },
+    );
+    this.eventBus.emit("receipt.changed", {
+      entityId: input.receiptId,
+      tenantId: input.tenantId,
+      incidentId: input.incidentId,
+      action: "updated",
+    });
+  }
+
+  async validateSerialNumbersScoped(
+    input: ValidateSerialNumbersInput,
+  ): Promise<SerialValidationResult> {
+    assertApiUuid(input.productId, "productId");
+    return parseApiSerialValidation(
+      await backendFetch<unknown>("/inventory/serials/validate", {
+        method: "POST",
+        body: { productId: input.productId, serialNumbers: input.serialNumbers },
+      }),
+    );
   }
 
   private emit(receipt: Receipt, action: "created" | "updated") {
