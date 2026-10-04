@@ -10,36 +10,57 @@ import {
 import type { ApiCurrentSession } from "@/infrastructure/api/apiCurrentSession";
 
 /**
- * Separa `expectedUserType` (solo lo usa este handler) del cuerpo que se reenvia al backend, que no
- * conoce ese campo. Un cuerpo que no es un objeto JSON se reenvia tal cual y el backend lo rechaza.
+ * Lee `expectedUserType` para la comprobacion con /auth/me. El cuerpo se reenvia completo: el backend
+ * tambien filtra por `expectedUserType` antes de abrir un desafio de MFA, asi una cuenta de otro tipo
+ * nunca llega al segundo paso (respondería distinto que una contraseña incorrecta). Un cuerpo que no
+ * es un objeto JSON se reenvia tal cual y el backend lo rechaza.
  */
-function splitLoginBody(raw: string): { expectedUserType?: string; backendBody: string } {
+function readExpectedUserType(raw: string): string | undefined {
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { backendBody: raw };
-    const { expectedUserType, ...credentials } = parsed as Record<string, unknown>;
-    return {
-      expectedUserType: typeof expectedUserType === "string" ? expectedUserType : undefined,
-      backendBody: JSON.stringify(credentials),
-    };
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+    const { expectedUserType } = parsed as Record<string, unknown>;
+    return typeof expectedUserType === "string" ? expectedUserType : undefined;
   } catch {
-    return { backendBody: raw };
+    return undefined;
   }
+}
+
+/** Respuesta del backend cuando el usuario tiene MFA activo: no trae token. */
+interface MfaChallengeBody {
+  mfaRequired: true;
+  challengeToken: string;
+  method: string;
+  expiresAt: string;
 }
 
 /**
  * Modo api: inicia sesion en el backend, valida el tipo de cuenta esperado y solo entonces guarda
  * el JWT en la cookie HttpOnly. Devuelve al cliente SOLO la sesion actual (respuesta de /auth/me),
  * nunca el token.
+ *
+ * Con MFA activo el backend no crea sesion: se responde `{ status: "mfa_required", challengeId,
+ * method }` SIN cookie, y la sesion se completa en `/api/auth/mfa/verify`.
  */
 export async function POST(request: Request) {
-  const { expectedUserType, backendBody } = splitLoginBody(await request.text());
+  const body = await request.text();
+  const expectedUserType = readExpectedUserType(body);
 
-  const loginResponse = await callBackend("/auth/login", { method: "POST", body: backendBody });
+  const loginResponse = await callBackend("/auth/login", { method: "POST", body });
   if (!loginResponse) return serviceUnavailable();
   if (!loginResponse.ok) return forwardBackendError(loginResponse);
 
-  const { token, expiresAt } = (await loginResponse.json()) as { token: string; expiresAt: string };
+  const loginBody = (await loginResponse.json()) as
+    | { token: string; expiresAt: string }
+    | MfaChallengeBody;
+  if ("mfaRequired" in loginBody && loginBody.mfaRequired) {
+    return NextResponse.json({
+      status: "mfa_required",
+      challengeId: loginBody.challengeToken,
+      method: loginBody.method,
+    });
+  }
+  const { token, expiresAt } = loginBody as { token: string; expiresAt: string };
 
   // En ninguna de las salidas tempranas se crea la cookie: si la revocacion best-effort falla, el
   // token solo queda en memoria de este handler y el navegador nunca queda autenticado.

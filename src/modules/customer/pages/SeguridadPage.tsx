@@ -187,6 +187,7 @@ export function SeguridadPage() {
         onDisable={mfaEnrollment.disable}
         onVerify={mfaEnrollment.verify}
         status={mfaEnrollment.status}
+        unavailableMethods={mfaEnrollment.unavailableMethods}
       />
     </div>
   );

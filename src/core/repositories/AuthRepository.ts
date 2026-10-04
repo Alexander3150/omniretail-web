@@ -80,10 +80,24 @@ export interface LoginInput {
  * rama mfa_required existe solo porque este entorno no tiene un canal
  * real de entrega (SMS/app autenticadora) -- mismo criterio de
  * transparencia dummy que RegisterCustomerResult.emailVerificationToken.
+ * Es opcional porque en modo api no existe: el codigo sale de la app
+ * autenticadora del usuario.
  */
 export type LoginResult =
   | { status: "authenticated"; session: Session }
-  | { status: "mfa_required"; challengeId: string; method: MfaMethod; demoCodeMock: string };
+  | { status: "mfa_required"; challengeId: string; method: MfaMethod; demoCodeMock?: string };
+
+/**
+ * Datos para registrar el segundo factor. Mock: `demoCodeMock` (transparencia
+ * dummy). Modo api (TOTP real): `secret` en Base32 y `otpauthUri` para el
+ * QR, que se genera solo en el navegador. El secreto nunca se guarda ni se
+ * registra en ningun lado.
+ */
+export interface BeginMfaEnrollmentResult {
+  demoCodeMock?: string;
+  secret?: string;
+  otpauthUri?: string;
+}
 
 /**
  * Lanzado por verifyMfaChallenge() cuando el desafío ya no se puede
@@ -196,7 +210,7 @@ export interface AuthRepository {
    * mostrarlo en pantalla -- transparencia dummy, mismo criterio que
    * registerCustomer.emailVerificationToken.
    */
-  beginMfaEnrollment(sessionId: string, method: MfaMethod): Promise<{ demoCodeMock: string }>;
+  beginMfaEnrollment(sessionId: string, method: MfaMethod): Promise<BeginMfaEnrollmentResult>;
   /**
    * Confirma el código mostrado por beginMfaEnrollment. Marca
    * verifiedAt/enabled=true y genera RECOVERY_CODES_COUNT RecoveryCode

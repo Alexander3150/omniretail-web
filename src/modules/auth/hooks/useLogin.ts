@@ -61,7 +61,8 @@ export function useLogin(expectedUserType: UserType) {
   const [pendingChallenge, setPendingChallenge] = useState<{
     challengeId: string;
     method: "totp" | "email";
-    demoCodeMock: string;
+    /** Solo en mock; en modo api el codigo sale de la app autenticadora. */
+    demoCodeMock?: string;
   } | null>(null);
   const [mfaCode, setMfaCodeState] = useState("");
 

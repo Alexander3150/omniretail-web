@@ -1,18 +1,20 @@
 import { PasswordPolicyError } from "@/config/auth-policy";
 import { publicStorefrontSlug } from "@/config/publicStorefront";
-import type { Session, User } from "@/core/entities";
+import type { MfaMethod, Session, User } from "@/core/entities";
 import { AccountStatus, UserStatus, UserType } from "@/core/enums";
-import type {
-  AuthRepository,
-  ChangePasswordInput,
-  EmployeeAuthSummary,
-  InviteEmployeeResult,
-  LoginInput,
-  LoginResult,
-  RegisterCustomerInput,
-  RegisterCustomerResult,
-  RequestPasswordResetInput,
-  ResetPasswordResult,
+import {
+  type AuthRepository,
+  type BeginMfaEnrollmentResult,
+  type ChangePasswordInput,
+  type EmployeeAuthSummary,
+  type InviteEmployeeResult,
+  type LoginInput,
+  type LoginResult,
+  MfaChallengeUnavailableError,
+  type RegisterCustomerInput,
+  type RegisterCustomerResult,
+  type RequestPasswordResetInput,
+  type ResetPasswordResult,
 } from "@/core/repositories/AuthRepository";
 import type { TenantRepository } from "@/core/repositories";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
@@ -29,6 +31,15 @@ const INVALID_LINK_ERROR = "Este enlace no es válido o ya expiró.";
 const INVALID_ACTIVATION_LINK = "Este enlace de activación no es válido o ya expiró.";
 const GENERIC_BRANCH_ERROR = "No se pudo cambiar la sucursal activa.";
 const GENERIC_CHANGE_PASSWORD_ERROR = "No se pudo cambiar la contraseña. Inténtalo nuevamente.";
+const GENERIC_MFA_CODE_ERROR = "El código no es correcto. Inténtalo de nuevo.";
+const GENERIC_MFA_ERROR = "No se pudo completar la verificación en dos pasos. Inténtalo nuevamente.";
+
+/** Respuesta de `/api/auth/login` cuando la cuenta tiene MFA activo (sin cookie todavia). */
+interface ApiMfaRequired {
+  status: "mfa_required";
+  challengeId: string;
+  method: MfaMethod;
+}
 
 interface ApiInviteEmployeeResult {
   userId: string;
@@ -45,6 +56,7 @@ interface ApiEmployeeAuthSummary {
 }
 
 interface ApiErrorBody {
+  code?: string;
   message?: string;
   fields?: { newPassword?: string; password?: string };
 }
@@ -148,10 +160,29 @@ export class ApiAuthRepository implements AuthRepository {
     });
     if (!response.ok) throw new Error(await errorMessage(response, GENERIC_LOGIN_ERROR));
 
-    const current = (await response.json()) as ApiCurrentSession;
-    this.currentSession.prime(current);
-    this.eventBus.emit("auth.changed", { entityId: current.session.id, action: "created" });
-    return { status: "authenticated", session: toSession(current) };
+    const body = (await response.json()) as ApiCurrentSession | ApiMfaRequired;
+    // Con MFA activo aun no hay sesion: el mismo formulario pide el codigo de la app.
+    if ("status" in body && body.status === "mfa_required") {
+      return { status: "mfa_required", challengeId: body.challengeId, method: body.method };
+    }
+    return { status: "authenticated", session: this.startSession(body as ApiCurrentSession) };
+  }
+
+  /**
+   * Segundo paso del login. Un codigo incorrecto deja el desafio vivo (Error con el mensaje del
+   * backend); un desafio vencido o agotado lanza MfaChallengeUnavailableError (volver al paso 1).
+   * Ambos llegan como 401: se distinguen por `code`.
+   */
+  async verifyMfaChallenge(challengeId: string, codeMock: string): Promise<Session> {
+    const response = await postJson("/api/auth/mfa/verify", { challengeToken: challengeId, code: codeMock });
+    if (!response.ok) {
+      const body = await readApiError(response);
+      if (body?.code === "MFA_CHALLENGE_UNAVAILABLE") {
+        throw new MfaChallengeUnavailableError(body.message || undefined);
+      }
+      throw new Error(body?.message || GENERIC_MFA_CODE_ERROR);
+    }
+    return this.startSession((await response.json()) as ApiCurrentSession);
   }
 
   async logout(sessionId: string): Promise<void> {
@@ -264,20 +295,41 @@ export class ApiAuthRepository implements AuthRepository {
     return { userType: result.userType as UserType, tenantSlug: result.tenantSlug ?? undefined };
   }
 
-  verifyMfaChallenge(): Promise<Session> {
-    return notAvailable();
+  /**
+   * Solo TOTP en modo api. Devuelve el secreto y el `otpauthUri` para el QR (se genera en el
+   * navegador); ninguno de los dos se guarda ni se registra. La sesion sale de la cookie: `sessionId`
+   * no se envia.
+   */
+  async beginMfaEnrollment(_sessionId: string, method: MfaMethod): Promise<BeginMfaEnrollmentResult> {
+    const response = await postJson("/api/auth/mfa/enrollment", { method });
+    if (!response.ok) throw await toError(response, GENERIC_MFA_ERROR);
+    const { secret, otpauthUri } = (await response.json()) as { secret: string; otpauthUri: string };
+    return { secret, otpauthUri };
   }
-  beginMfaEnrollment(): Promise<{ demoCodeMock: string }> {
-    return notAvailable();
+
+  /** Los codigos de recuperacion se devuelven una sola vez y no se guardan en ningun lado. */
+  async verifyMfaEnrollment(_sessionId: string, codeMock: string): Promise<{ recoveryCodes: string[] }> {
+    const response = await postJson("/api/auth/mfa/enrollment/verify", { code: codeMock });
+    if (!response.ok) throw await toError(response, GENERIC_MFA_ERROR);
+    const { recoveryCodes } = (await response.json()) as { recoveryCodes: string[] };
+    // "mfa.changed", no "auth.changed": igual que el mock (ver DataEventName).
+    this.eventBus.emit("mfa.changed", { action: "updated" });
+    return { recoveryCodes };
   }
-  verifyMfaEnrollment(): Promise<{ recoveryCodes: string[] }> {
-    return notAvailable();
+
+  /** `fields.currentPassword` llega como Error con su mensaje (ver `toError`). */
+  async disableMfa(_sessionId: string, currentPasswordMock: string): Promise<void> {
+    const response = await postJson("/api/auth/mfa/disable", { currentPassword: currentPasswordMock });
+    if (!response.ok) throw await toError(response, GENERIC_MFA_ERROR);
+    this.eventBus.emit("mfa.changed", { action: "updated" });
   }
-  disableMfa(): Promise<void> {
-    return notAvailable();
-  }
-  getMfaStatus(): ReturnType<AuthRepository["getMfaStatus"]> {
-    return notAvailable();
+
+  /** `null` si el usuario nunca inicio una activacion (el backend responde `method: null`). */
+  async getMfaStatus(): Promise<{ enabled: boolean; method: MfaMethod } | null> {
+    const response = await fetch("/api/auth/mfa", { credentials: "same-origin", cache: "no-store" });
+    if (!response.ok) throw await toError(response, GENERIC_MFA_ERROR);
+    const status = (await response.json()) as { enabled: boolean; method: MfaMethod | null };
+    return status.method ? { enabled: status.enabled, method: status.method } : null;
   }
   bootstrapEmployeeAccount(): ReturnType<AuthRepository["bootstrapEmployeeAccount"]> {
     return notAvailable();
@@ -313,14 +365,17 @@ export class ApiAuthRepository implements AuthRepository {
   }
 
   /**
-   * La cuenta sale del JWT de la cookie: `sessionId` no se envia, y `mfaCodeMock` tampoco (el
-   * backend aun no tiene MFA). `fields.newPassword` (politica o igual a la actual) llega como
-   * PasswordPolicyError; `fields.currentPassword` como Error con su mensaje (ver `toError`).
+   * La cuenta sale del JWT de la cookie: `sessionId` no se envia. `mfaCode` (app o recuperacion)
+   * solo viaja si viene: el backend lo exige cuando el MFA esta activo. `fields.newPassword`
+   * (politica o igual a la actual) llega como PasswordPolicyError; `fields.currentPassword` y
+   * `fields.mfaCode` como Error con su mensaje (ver `toError`).
    */
   async changePassword(input: ChangePasswordInput): Promise<void> {
+    const mfaCode = input.mfaCodeMock?.trim();
     const response = await postJson("/api/auth/password/change", {
       currentPassword: input.currentPasswordMock,
       newPassword: input.newPasswordMock,
+      ...(mfaCode ? { mfaCode } : {}),
     });
     if (!response.ok) throw await toError(response, GENERIC_CHANGE_PASSWORD_ERROR);
   }
@@ -400,6 +455,13 @@ export class ApiAuthRepository implements AuthRepository {
     } catch {
       return undefined;
     }
+  }
+
+  /** Sesion recien creada (login sin MFA o segundo paso): se usa como cache y se avisa a la app. */
+  private startSession(current: ApiCurrentSession): Session {
+    this.currentSession.prime(current);
+    this.eventBus.emit("auth.changed", { entityId: current.session.id, action: "created" });
+    return toSession(current);
   }
 
   private forgetLocalState(): void {
