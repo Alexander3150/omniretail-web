@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { Product, Promotion } from "@/core/entities";
 import {
   ProductStatus,
@@ -156,6 +156,9 @@ export function ProductForm({
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [editorError, setEditorError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ProductFormTab>("general");
+  // Guarda sincrona contra doble submit: `busy` llega por estado del padre y no cubre dos submits
+  // del mismo tick (doble Enter/click) antes de que React lo propague.
+  const submittingRef = useRef(false);
   const detail = editorData.detail;
   const { user } = useCurrentSession();
   const editorTenantId = detail?.product.tenantId ?? user?.tenantId;
@@ -167,6 +170,12 @@ export function ProductForm({
   const productInventorySettings = useProductInventorySettings();
   const { hasCapability } = useEntitlement();
   const isEdit = mode === "edit";
+  // El backend rechaza (409) atributos y precios por cantidad mientras el producto esta archivado;
+  // un Kit archivado solo admite componentes y multimedia, asi que esas secciones no se editan.
+  const isArchivedKit =
+    isEdit &&
+    detail?.product.productType === ProductType.kit &&
+    detail.product.status === ProductStatus.archived;
   const attributeLoadState = productAttributes.getState(
     editorTenantId,
     editorProductId,
@@ -327,7 +336,9 @@ export function ProductForm({
       !editorTenantId ||
       !editorData.access.canReadConversions ||
       value.productType === ProductType.kit ||
-      value.unitConversions !== undefined
+      value.unitConversions !== undefined ||
+      // Producto nuevo sin "Unidades y empaques": usa una sola unidad y no hay conversiones que leer.
+      (!isEdit && !options.businessCapabilities.supportsUnitsAndPackaging)
     ) {
       return;
     }
@@ -439,6 +450,17 @@ export function ProductForm({
         next.supplierProducts = [];
       }
     }
+    if (
+      patch.baseUnitId !== undefined &&
+      !isEdit &&
+      !options.businessCapabilities.supportsUnitsAndPackaging
+    ) {
+      // Producto nuevo con una sola unidad: inventario y venta siguen a la unidad minima.
+      next.inventoryUnitId = next.baseUnitId;
+      next.saleUnitId = next.baseUnitId;
+      next.inventoryToBaseFactor = 1;
+      next.saleToBaseFactor = 1;
+    }
     next.saleUnitId = resolveSaleUnitId(
       next.baseUnitId,
       next.saleUnitId,
@@ -485,6 +507,7 @@ export function ProductForm({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy || submittingRef.current) return;
     setHasSubmitted(true);
     setEditorError(null);
     const nextValue = applyCapabilityRulesToEditor(
@@ -502,11 +525,31 @@ export function ProductForm({
       routeToFirstError(nextErrors, nextEditorError, selectTab);
       return;
     }
-    await onSubmit(nextValue);
+    submittingRef.current = true;
+    try {
+      await onSubmit(nextValue);
+    } finally {
+      submittingRef.current = false;
+    }
   }
 
   return (
-    <form className="space-y-5" id="catalog-product-form" noValidate onSubmit={handleSubmit}>
+    <form
+      aria-busy={Boolean(busy)}
+      className="space-y-5"
+      id="catalog-product-form"
+      noValidate
+      onSubmit={handleSubmit}
+    >
+      {/* fieldset disabled bloquea inputs, selects, textareas y botones (tabs, multimedia,
+          relaciones) mientras se guarda; el contenido sigue visible y sin remontar. */}
+      <fieldset
+        className={cn(
+          "m-0 min-w-0 space-y-5 border-0 p-0 transition-opacity",
+          busy && "opacity-90",
+        )}
+        disabled={Boolean(busy)}
+      >
       <section className="rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 space-y-2">
@@ -525,13 +568,20 @@ export function ProductForm({
             </p>
           </div>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
-            <Button
-              className="w-full sm:w-auto"
-              href={detail ? `/catalogo/productos/${detail.product.id}` : "/catalogo/productos"}
-              variant="secondary"
-            >
-              {"<-"} Volver
-            </Button>
+            {busy ? (
+              // Un Link ignora `disabled`: durante el guardado se renderiza un boton inerte.
+              <Button className="w-full sm:w-auto" disabled type="button" variant="secondary">
+                {"<-"} Volver
+              </Button>
+            ) : (
+              <Button
+                className="w-full sm:w-auto"
+                href={detail ? `/catalogo/productos/${detail.product.id}` : "/catalogo/productos"}
+                variant="secondary"
+              >
+                {"<-"} Volver
+              </Button>
+            )}
             <Button
               className="w-full sm:w-auto"
               disabled={
@@ -545,8 +595,15 @@ export function ProductForm({
               form="catalog-product-form"
               type="submit"
             >
-              <CheckIcon />
-              {busy ? "Guardando..." : "Guardar producto"}
+              {busy ? (
+                <span
+                  aria-hidden="true"
+                  className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                />
+              ) : (
+                <CheckIcon />
+              )}
+              {busy ? "Guardando producto..." : "Guardar producto"}
             </Button>
           </div>
         </div>
@@ -632,7 +689,9 @@ export function ProductForm({
               loadState={attributeLoadState}
               onLoad={loadAttributes}
               onChange={(attributes) => updateValue({ attributes })}
+              archivedKit={isArchivedKit}
               readOnly={
+                isArchivedKit ||
                 !options.businessCapabilities.supportsProductAttributes ||
                 !editorData.access.canReadAttributes ||
                 !editorData.access.canUpdateProductRelations
@@ -646,7 +705,8 @@ export function ProductForm({
               loadState={salesPriceTiersLoadState}
               onLoadTiers={loadSalesPriceTiers}
               onChange={updateValue}
-              readOnlyTiers={!editorData.access.canUpdateProductRelations}
+              archivedKit={isArchivedKit}
+              readOnlyTiers={isArchivedKit || !editorData.access.canUpdateProductRelations}
               value={value}
             />
           ) : null}
@@ -771,6 +831,7 @@ export function ProductForm({
           ) : null}
         </aside>
       </div>
+      </fieldset>
 
       {editorError ? <FieldError>{editorError}</FieldError> : null}
       {error ? <FieldError>{error}</FieldError> : null}
@@ -979,7 +1040,10 @@ function UnitsTab({
   const unitsProtected = isExistingProduct && usesSingleUnit;
   const coreUnitsReadOnly = Boolean(readOnly && isExistingProduct);
   const conversionsLoaded = value.unitConversions !== undefined;
-  const controlsDisabled = unitsProtected || coreUnitsReadOnly || !conversionsLoaded;
+  // Un producto nuevo con una sola unidad no necesita conversiones: no se exige cargarlas.
+  const newSingleUnit = usesSingleUnit && !isExistingProduct;
+  const controlsDisabled =
+    unitsProtected || coreUnitsReadOnly || (!conversionsLoaded && !newSingleUnit);
   const needsInventoryConversion = value.baseUnitId !== value.inventoryUnitId;
   const needsSaleConversion = value.baseUnitId !== value.saleUnitId;
 
@@ -1000,7 +1064,7 @@ function UnitsTab({
           La configuracion de unidades y conversiones esta disponible en modo de solo lectura.
         </p>
       ) : null}
-      {canRead && !conversionsLoaded ? (
+      {canRead && !conversionsLoaded && !newSingleUnit ? (
         <div className="flex flex-col gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-[var(--color-text-muted)]">
             {loadState.status === "error"
@@ -1510,6 +1574,7 @@ function KitComponentsEditor({
 
 function AttributesTab({
   value,
+  archivedKit,
   readOnly,
   canRead,
   canCreateDefinitions,
@@ -1518,6 +1583,7 @@ function AttributesTab({
   onChange,
 }: {
   value?: ProductAttributeEditorValue[];
+  archivedKit?: boolean;
   readOnly?: boolean;
   canRead: boolean;
   canCreateDefinitions: boolean;
@@ -1534,7 +1600,9 @@ function AttributesTab({
     <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
       <SectionTitle
         description={
-          readOnly
+          archivedKit
+            ? "Un kit archivado no admite cambios de atributos. Restauralo para editarlos."
+            : readOnly
             ? "Los atributos existentes se conservan en modo de solo lectura por configuracion o permisos."
             : "Atributos descriptivos key/value persistidos por producto."
         }
@@ -1626,6 +1694,7 @@ function AttributesTab({
 
 function PricesTab({
   value,
+  archivedKit,
   errors,
   loadState,
   onLoadTiers,
@@ -1633,6 +1702,7 @@ function PricesTab({
   readOnlyTiers,
 }: {
   value: ProductEditorDto;
+  archivedKit?: boolean;
   errors: ProductValidationErrors;
   loadState: ProductSalesPriceTiersLoadState;
   onLoadTiers: () => void;
@@ -1694,7 +1764,9 @@ function PricesTab({
           <div>
             <h3 className="text-sm font-bold text-[var(--color-title)]">Precios por cantidad</h3>
             <p className="text-sm text-[var(--color-text-muted)]">
-              Precio unitario desde una cantidad minima.
+              {archivedKit
+                ? "Un kit archivado no admite cambios de precios por cantidad. Restauralo para editarlos."
+                : "Precio unitario desde una cantidad minima."}
             </p>
           </div>
           <Button

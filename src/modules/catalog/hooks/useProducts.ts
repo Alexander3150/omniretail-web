@@ -101,7 +101,14 @@ export function useProducts() {
   }, [page, pageSize, requestBranchId, requestFilters, service]);
 
   useDataEvent("product.changed", reload);
-  useDataEvent("promotion.changed", reload);
+  const reloadAfterPromotionChange = useCallback(
+    (payload?: { tenantId?: string }) => {
+      service.invalidatePromotions(payload?.tenantId);
+      void reload();
+    },
+    [reload, service],
+  );
+  useDataEvent("promotion.changed", reloadAfterPromotionChange);
 
   useEffect(() => {
     const requestId = requestIdRef.current + 1;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Product } from "@/core/entities";
 import { ProductType } from "@/core/enums";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
@@ -17,7 +17,6 @@ import { useProductFormOptions } from "@/modules/catalog/hooks/useProductFormOpt
 import { useProductMutations } from "@/modules/catalog/hooks/useProductMutations";
 import { useProductPermissions } from "@/modules/catalog/hooks/useProductPermissions";
 import { ProductEditorPartialSaveError } from "@/modules/catalog/application/services/ProductEditorPartialSaveError";
-import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 
 interface ProductFormPageProps {
   mode: "create" | "edit";
@@ -27,7 +26,6 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
   const params = useParams<{ id?: string }>();
   const productId = params.id ?? "";
   const router = useRouter();
-  const repositories = useRepositories();
   const { showToast } = useToast();
   const isEdit = mode === "edit";
   const { canCreate, canUpdate } = useProductPermissions();
@@ -42,9 +40,17 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [createdZeroStockProduct, setCreatedZeroStockProduct] = useState<Product | null>(null);
   const [canonicalReloadRevision, setCanonicalReloadRevision] = useState(0);
-  const inventoryAdjustmentEnabled = repositories.productDataSource === "mock";
+
+  // Solo precarga la ruta de Inventario para acortar la siguiente navegacion; no navega: eso
+  // sigue dependiendo de que el usuario elija "Agregar existencia inicial".
+  const hasCreatedZeroStockProduct = createdZeroStockProduct !== null;
+  useEffect(() => {
+    if (hasCreatedZeroStockProduct) router.prefetch("/inventario/alertas");
+  }, [hasCreatedZeroStockProduct, router]);
 
   async function submit(dto: ProductEditorDto) {
+    // Las mutaciones propias emiten eventos globales: no deben recargar (y desmontar) el editor.
+    editorState.setEventReloadsSuspended(true);
     try {
       const dtoWithActiveBranch = {
         ...dto,
@@ -92,6 +98,8 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
         description: caughtError instanceof Error ? caughtError.message : undefined,
         tone: "danger",
       });
+    } finally {
+      editorState.setEventReloadsSuspended(false);
     }
   }
 
@@ -120,7 +128,14 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
     return <AccessDeniedState />;
   }
 
-  if (branchLoading || optionsState.loading || editorState.loading) {
+  // El loader es solo para la carga INICIAL: con datos ya disponibles, una recarga de fondo
+  // no desmonta el formulario ni su borrador local. El remount deliberado del guardado parcial
+  // sigue dependiendo de canonicalReloadRevision (key del ProductForm).
+  if (
+    branchLoading ||
+    (optionsState.loading && !optionsState.options) ||
+    (editorState.loading && !editorState.data)
+  ) {
     return (
       <p className="rounded-md border border-[var(--color-border)] bg-white p-5 text-sm text-[var(--color-text-muted)]">
         Preparando formulario...
@@ -151,7 +166,7 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
 
   return (
     <>
-      <div className="mx-auto w-full min-w-0 max-w-7xl xl:[&>form>nav]:overflow-visible xl:[&>form>nav>div]:min-w-0 xl:[&>form>nav>div]:flex-wrap xl:[&>form>nav>div]:gap-1 xl:[&>form>nav_button]:min-w-0 xl:[&>form>nav_button]:flex-1 xl:[&>form>nav_button]:justify-center xl:[&>form>nav_button]:gap-1.5 xl:[&>form>nav_button]:px-2 xl:[&>form>nav_button]:text-[13px] xl:[&>form>nav_button]:leading-tight xl:[&>form>nav_button>span]:shrink-0">
+      <div className="mx-auto w-full min-w-0 max-w-7xl xl:[&>form>fieldset>nav]:overflow-visible xl:[&>form>fieldset>nav>div]:min-w-0 xl:[&>form>fieldset>nav>div]:flex-wrap xl:[&>form>fieldset>nav>div]:gap-1 xl:[&>form>fieldset>nav_button]:min-w-0 xl:[&>form>fieldset>nav_button]:flex-1 xl:[&>form>fieldset>nav_button]:justify-center xl:[&>form>fieldset>nav_button]:gap-1.5 xl:[&>form>fieldset>nav_button]:px-2 xl:[&>form>fieldset>nav_button]:text-[13px] xl:[&>form>fieldset>nav_button]:leading-tight xl:[&>form>fieldset>nav_button>span]:shrink-0">
         <ProductForm
           branchId={currentBranch.id}
           busy={mutations.busy}
@@ -175,23 +190,22 @@ export function ProductFormPage({ mode }: ProductFormPageProps) {
       <ConfirmDialog
         open={Boolean(createdZeroStockProduct)}
         title="Producto creado. Actualmente no tiene existencia."
-        message={
-          inventoryAdjustmentEnabled
-            ? `La existencia pertenece a la sucursal activa (${currentBranch.name}). Registra el inventario inicial con el flujo de ajuste para mantener sus validaciones de lote, serie y vencimiento.`
-            : "La existencia inicial debe registrarse desde el flujo de inventario cuando este disponible para Product API."
-        }
-        confirmLabel={inventoryAdjustmentEnabled ? "Agregar existencia inicial" : "Ver producto"}
+        message={`La existencia pertenece a la sucursal activa (${currentBranch.name}). Registra el inventario inicial con el flujo de ajuste para mantener sus validaciones de lote, serie y vencimiento.`}
+        confirmLabel="Agregar existencia inicial"
         onCancel={() => {
-          if (createdZeroStockProduct) router.push(`/catalogo/productos/${createdZeroStockProduct.id}`);
+          // Al navegar, el desmontaje de la pagina elimina el dialogo (sin cerrarlo antes).
+          if (createdZeroStockProduct) {
+            router.push(`/catalogo/productos/${createdZeroStockProduct.id}`);
+            return;
+          }
           setCreatedZeroStockProduct(null);
         }}
         onConfirm={() => {
           if (createdZeroStockProduct) {
             router.push(
-              inventoryAdjustmentEnabled
-                ? `/inventario/alertas?productId=${encodeURIComponent(createdZeroStockProduct.id)}&openAdjustment=1`
-                : `/catalogo/productos/${createdZeroStockProduct.id}`,
+              `/inventario/alertas?productId=${encodeURIComponent(createdZeroStockProduct.id)}&openAdjustment=1`,
             );
+            return;
           }
           setCreatedZeroStockProduct(null);
         }}

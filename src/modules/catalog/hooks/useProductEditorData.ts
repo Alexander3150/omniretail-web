@@ -11,6 +11,7 @@ export function useProductEditorData(productId?: string, branchId?: string, tena
   const repositories = useRepositories();
   const service = useMemo(() => new GetProductEditorDataService(repositories), [repositories]);
   const requestIdRef = useRef(0);
+  const eventReloadsSuspendedRef = useRef(false);
   const requestKey = `${productId ?? ""}:${branchId ?? ""}:${tenantId ?? ""}`;
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<ProductEditorData | null>(null);
@@ -65,29 +66,43 @@ export function useProductEditorData(productId?: string, branchId?: string, tena
     };
   }, [branchId, productId, requestKey, service, tenantId]);
 
+  // Recarga por eventos EXTERNOS. Durante la mutacion propia del editor se suspende para no
+  // desmontar el formulario con "Preparando formulario..." mientras el submit sigue en curso;
+  // la recarga explicita (guardado parcial) usa reload() directamente y no pasa por aqui.
+  const reloadFromEvent = useCallback(() => {
+    if (eventReloadsSuspendedRef.current) return;
+    void reload();
+  }, [reload]);
+  const setEventReloadsSuspended = useCallback((suspended: boolean) => {
+    eventReloadsSuspendedRef.current = suspended;
+  }, []);
+
+  // Un borrador nuevo (sin productId) no se recarga por eventos de productos persistidos.
   useDataEvent("product.changed", (payload) => {
-    if (!productId || !payload.productId || payload.productId === productId) reload();
+    if (productId && (!payload.productId || payload.productId === productId)) reloadFromEvent();
   });
   useDataEvent("unit-conversion.changed", (payload) => {
-    if (!productId || !payload.productId || payload.productId === productId) reload();
+    if (productId && (!payload.productId || payload.productId === productId)) reloadFromEvent();
   });
   useDataEvent("product-sales-price-tier.changed", (payload) => {
-    if (!productId || !payload.productId || payload.productId === productId) reload();
+    if (productId && (!payload.productId || payload.productId === productId)) reloadFromEvent();
   });
   useDataEvent("supplier-product.changed", (payload) => {
-    if (!productId || !payload.productId || payload.productId === productId) reload();
+    if (productId && (!payload.productId || payload.productId === productId)) reloadFromEvent();
   });
   useDataEvent("inventory.changed", (payload) => {
-    if (!branchId || !payload.branchId || payload.branchId === branchId) reload();
+    if (!branchId || !payload.branchId || payload.branchId === branchId) reloadFromEvent();
   });
-  useDataEvent("promotion.changed", reload);
+  useDataEvent("promotion.changed", reloadFromEvent);
 
   const hasCurrentData = loadedKey === requestKey;
 
   return {
     loading: loading || !hasCurrentData,
-    data: hasCurrentData && !loading ? data : null,
+    // Durante una recarga de fondo se conserva el ultimo dato valido (el formulario sigue montado).
+    data: hasCurrentData ? data : null,
     error: hasCurrentData ? error : null,
     reload,
+    setEventReloadsSuspended,
   };
 }

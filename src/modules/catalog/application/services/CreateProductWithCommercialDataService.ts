@@ -4,6 +4,7 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import type { ProductEditorDto } from "@/modules/catalog/application/dto/ProductEditorDto";
 import {
   syncApiEditorRelatedData,
+  syncApiProductMedia,
   syncEditorRelatedData,
   syncKitComponents,
   validateEditorProduct,
@@ -65,39 +66,68 @@ export class CreateProductWithCommercialDataService {
 
     const failedSections: ProductEditorFailedSection[] = [];
     const failureMessages: string[] = [];
+    const recordFailure = (section: ProductEditorFailedSection, error: unknown) => {
+      failedSections.push(section);
+      if (error instanceof Error && error.message) failureMessages.push(error.message);
+    };
+
+    // Un Kit nace archived: componentes -> restore -> resto de secciones. El backend rechaza
+    // atributos y precios por cantidad sobre un producto archivado, asi que van DESPUES del
+    // restore; la decision de restaurar depende solo de los componentes y del estado deseado.
+    let kitStillArchived = isApiKit;
     if (isApiKit) {
+      let componentsSaved = false;
       try {
         await syncKitComponents(this.repositories, product, normalizedDto);
+        componentsSaved = true;
       } catch (error) {
-        failedSections.push("kitComponents");
-        if (error instanceof Error && error.message) failureMessages.push(error.message);
+        recordFailure("kitComponents", error);
+      }
+      if (componentsSaved && desiredStatus === ProductStatus.published) {
+        try {
+          await this.repositories.products.restoreScoped(tenantId, product.id);
+          kitStillArchived = false;
+        } catch (error) {
+          recordFailure("restore", error);
+        }
       }
     }
-    const relatedResult = await syncApiEditorRelatedData(
-      this.repositories,
-      product,
-      normalizedDto,
-      {
-        permissions,
-        capabilities,
-        isNewProduct,
-        skipKitComponents: isApiKit,
-      },
-    );
-    failedSections.push(...relatedResult.failedSections);
-    failureMessages.push(...relatedResult.failureMessages);
 
-    if (
-      isApiKit &&
-      desiredStatus === ProductStatus.published &&
-      failedSections.length === 0
-    ) {
-      try {
-        await this.repositories.products.restoreScoped(tenantId, product.id);
-      } catch (error) {
-        failedSections.push("restore");
-        if (error instanceof Error && error.message) failureMessages.push(error.message);
+    if (kitStillArchived) {
+      // Kit que permanece archived: solo multimedia (permitida). Atributos y precios por cantidad
+      // no se intentan; si el usuario los capturo se informan como pendientes.
+      if (
+        normalizedDto.media.length > 0 &&
+        this.repositories.productMediaDataSource === "api"
+      ) {
+        try {
+          await syncApiProductMedia(this.repositories, product, normalizedDto.media);
+        } catch (error) {
+          recordFailure("media", error);
+        }
       }
+      const pendingMessage =
+        "Atributos y precios por cantidad requieren que el kit este publicado.";
+      if ((normalizedDto.attributes ?? []).length > 0) {
+        recordFailure("attributes", new Error(pendingMessage));
+      }
+      if ((normalizedDto.salesPriceTiers ?? []).some((tier) => tier.active)) {
+        recordFailure("priceTiers", new Error(pendingMessage));
+      }
+    } else {
+      const relatedResult = await syncApiEditorRelatedData(
+        this.repositories,
+        product,
+        normalizedDto,
+        {
+          permissions,
+          capabilities,
+          isNewProduct,
+          skipKitComponents: isApiKit,
+        },
+      );
+      failedSections.push(...relatedResult.failedSections);
+      failureMessages.push(...relatedResult.failureMessages);
     }
 
     if (failedSections.length > 0) {

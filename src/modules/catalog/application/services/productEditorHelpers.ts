@@ -344,6 +344,7 @@ export async function syncApiEditorRelatedData(
     }
   } else {
     if (
+      options.capabilities.supportsUnitsAndPackaging &&
       dto.unitConversions !== undefined &&
       hasPermission("catalog.units.read") &&
       hasPermission("catalog.units.manage")
@@ -471,11 +472,10 @@ async function syncUnitConversion(
   context: { capabilities: BusinessCapabilitiesConfig; isNewProduct: boolean },
 ) {
   if (dto.unitConversions === undefined) return;
-  // Producto existente + capacidad apagada: no se toca la tabla de conversiones en absoluto. La UI
-  // no puede producir un valor nuevo legitimo (el selector de unidad de venta queda deshabilitado),
-  // asi que la unica escritura segura es NO escribir, dejando la conversion historica intacta pase
-  // lo que pase con los factores del borrador (evita confiar en esos numeros).
-  if (!context.capabilities.supportsUnitsAndPackaging && !context.isNewProduct) return;
+  // Capacidad apagada: no se toca la tabla de conversiones en absoluto. Un producto nuevo usa una
+  // sola unidad (no hay equivalencias que crear) y uno existente conserva su conversion historica
+  // intacta pase lo que pase con los factores del borrador (evita confiar en esos numeros).
+  if (!context.capabilities.supportsUnitsAndPackaging) return;
 
   await repositories.units.replaceConversionsForProductScoped(product.tenantId, product.id, [
     ...(dto.inventoryUnitId === dto.baseUnitId

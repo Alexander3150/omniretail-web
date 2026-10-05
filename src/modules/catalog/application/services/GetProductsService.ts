@@ -45,6 +45,18 @@ export class GetProductsService {
 
   constructor(private readonly repositories: RepositoryRegistry) {}
 
+  /**
+   * Descarta las promociones activas cacheadas para que el siguiente `execute` las vuelva a pedir.
+   * Con `tenantId` solo invalida ese tenant; sin el, invalida todos (payload de evento sin tenant).
+   */
+  invalidatePromotions(tenantId?: string) {
+    if (tenantId) {
+      this.promotionsPromisesByTenant.delete(tenantId);
+      return;
+    }
+    this.promotionsPromisesByTenant.clear();
+  }
+
   async execute(params: GetProductsParams): Promise<PaginatedResult<ProductListItem>> {
     const { tenantId, permissions } = await resolveTenantContext(this.repositories);
     ensureCanReadProducts(permissions);
