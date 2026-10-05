@@ -7,6 +7,7 @@ import type {
   BusinessConfigRepository,
   CustomerPaymentMethodRepository,
   CustomerRepository,
+  EmailSenderConfigRepository,
   PlanRepository,
   RoleRepository,
   SupplierRepository,
@@ -22,6 +23,7 @@ import { ApiBranchRepository } from "@/infrastructure/api/ApiBranchRepository";
 import { ApiBusinessConfigRepository } from "@/infrastructure/api/ApiBusinessConfigRepository";
 import { ApiCustomerPaymentMethodRepository } from "@/infrastructure/api/ApiCustomerPaymentMethodRepository";
 import { ApiCustomerRepository } from "@/infrastructure/api/ApiCustomerRepository";
+import { ApiEmailSenderConfigRepository } from "@/infrastructure/api/ApiEmailSenderConfigRepository";
 import { ApiPlanRepository } from "@/infrastructure/api/ApiPlanRepository";
 import { ApiRoleRepository } from "@/infrastructure/api/ApiRoleRepository";
 import { ApiSupplierRepository } from "@/infrastructure/api/ApiSupplierRepository";
@@ -363,6 +365,30 @@ function apiBusinessConfigForEmployees(
 }
 
 /**
+ * `/administration/email-sender`: lectura exige `admin.email_config.read` y las mutaciones
+ * `admin.email_config.manage`. Sin esos permisos (o fuera de sesion de empleado) se usa el mock, que
+ * solo simula estado y nunca guarda la App Password.
+ */
+function apiEmailSenderForEmployees(
+  mock: EmailSenderConfigRepository,
+  api: EmailSenderConfigRepository,
+  currentSession: CurrentSessionClient,
+): EmailSenderConfigRepository {
+  const read = employeeRouter(mock, api, currentSession, [
+    "admin.email_config.read",
+    "admin.email_config.manage",
+  ]);
+  const manage = employeeRouter(mock, api, currentSession, ["admin.email_config.manage"]);
+
+  return {
+    get: async (tenantId: string) => (await read(tenantId)).get(tenantId),
+    save: async (tenantId, input) => (await manage(tenantId)).save(tenantId, input),
+    sendTest: async (tenantId, recipient) => (await manage(tenantId)).sendTest(tenantId, recipient),
+    disconnect: async (tenantId: string) => (await manage(tenantId)).disconnect(tenantId),
+  };
+}
+
+/**
  * Modo api: reemplaza `auth` por ApiAuthRepository y enruta al backend la administracion
  * (`branches`, `roles`, `users`, `tenantSubscriptions`, `plans`, `bankAccounts`, `suppliers`,
  * `businessConfig`) para empleados con el permiso de
@@ -420,6 +446,11 @@ export function withApiSession(repositories: RepositoryRegistry, eventBus: DataE
     businessConfig: apiBusinessConfigForEmployees(
       repositories.businessConfig,
       new ApiBusinessConfigRepository(eventBus),
+      currentSession,
+    ),
+    emailSender: apiEmailSenderForEmployees(
+      repositories.emailSender,
+      new ApiEmailSenderConfigRepository(eventBus),
       currentSession,
     ),
     customers: apiCustomersForCustomers(

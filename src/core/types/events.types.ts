@@ -13,6 +13,7 @@ export type DataEventName =
   | "branch.changed"
   | "role.changed"
   | "business-config.changed"
+  | "email-sender.changed"
   // Cambio de Plan del Tenant (feature/tenant-plan-selection) -- SEPARADO de
   // "business-config.changed": ese evento cubre la CONFIG OPERATIVA del negocio
   // (BusinessCapabilitiesConfig/EcommerceConfig) y este el DERECHO COMERCIAL
