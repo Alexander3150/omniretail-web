@@ -12,6 +12,10 @@ import { Modal } from "@/shared/components/Modal";
 import { PasswordInput } from "@/shared/components/PasswordInput";
 import { Select } from "@/shared/components/Select";
 import { StatusBadge } from "@/shared/components/StatusBadge";
+import { useCooldown } from "@/shared/hooks/useCooldown";
+
+/** Espera entre correos con codigo (la misma que aplica el backend). */
+const RESEND_COOLDOWN_SECONDS = 60;
 
 export interface TwoFactorAuthSectionProps {
   status: { enabled: boolean; method: MfaMethod } | null;
@@ -96,6 +100,11 @@ export function TwoFactorAuthSection({
   const [disablePasswordOpen, setDisablePasswordOpen] = useState(false);
   const [disablePassword, setDisablePassword] = useState("");
   const [disableError, setDisableError] = useState<string | undefined>();
+  const {
+    remaining: resendCooldownSeconds,
+    start: startResendCooldown,
+    reset: resetResendCooldown,
+  } = useCooldown(RESEND_COOLDOWN_SECONDS);
 
   async function handleBegin() {
     setError(undefined);
@@ -103,8 +112,24 @@ export function TwoFactorAuthSection({
       const enrollment = await onBegin(method);
       setStep({ name: "confirm-code", method, ...enrollment });
       setCode("");
+      // Con correo el codigo ya se envio: "Reenviar" espera 60 s.
+      if (method === "email") startResendCooldown();
+      else resetResendCooldown();
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "No se pudo iniciar la activación.");
+    }
+  }
+
+  /** Con correo, repetir la activacion reenvia el codigo (el anterior deja de servir). */
+  async function handleResend() {
+    if (step.name !== "confirm-code") return;
+    setError(undefined);
+    try {
+      const enrollment = await onBegin(step.method);
+      setStep({ name: "confirm-code", method: step.method, ...enrollment });
+      startResendCooldown();
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "No se pudo reenviar el código.");
     }
   }
 
@@ -235,6 +260,9 @@ export function TwoFactorAuthSection({
               ) : null}
             </div>
           ) : null}
+          {step.method === "email" ? (
+            <p className="text-sm text-[var(--color-text)]">Te enviamos un código a tu correo.</p>
+          ) : null}
           {/* Solo existe porque este entorno de demostración no tiene un
               canal real de entrega -- nunca existiría en producción.
               Mismo criterio de transparencia dummy que el resto del
@@ -258,6 +286,18 @@ export function TwoFactorAuthSection({
             <Button disabled={busy || !code.trim()} onClick={() => void handleVerify()} type="button">
               {busy ? "Confirmando..." : "Confirmar"}
             </Button>
+            {step.method === "email" ? (
+              <Button
+                disabled={busy || resendCooldownSeconds > 0}
+                onClick={() => void handleResend()}
+                type="button"
+                variant="secondary"
+              >
+                {resendCooldownSeconds > 0
+                  ? `Reenviar código (${resendCooldownSeconds} s)`
+                  : "Reenviar código"}
+              </Button>
+            ) : null}
             <Button
               disabled={busy}
               onClick={() => setStep({ name: "idle" })}

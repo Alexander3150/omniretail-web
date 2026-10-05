@@ -102,20 +102,24 @@ export function LoginPage({ expectedUserType }: LoginPageProps) {
     formError,
     isSubmitting,
     tenantLoading,
-    lockoutSecondsRemaining,
+    tooManyAttempts,
     submit,
     pendingChallenge,
     mfaCode,
     setMfaCode,
     submitMfaChallenge,
+    resendMfaCode,
+    resendCooldownSeconds,
     cancelMfaChallenge,
   } = useLogin(expectedUserType);
   const { showToast } = useToast();
   const routes = useOptionalStorefrontRoutes();
-  const isLockedOut = lockoutSecondsRemaining > 0;
-  const lockoutMinutes = Math.floor(lockoutSecondsRemaining / 60);
-  const lockoutSeconds = lockoutSecondsRemaining % 60;
-  const lockoutDisplay = `${lockoutMinutes}:${String(lockoutSeconds).padStart(2, "0")}`;
+
+  async function handleResendMfaCode() {
+    if (await resendMfaCode()) {
+      showToast({ title: "Te enviamos un código nuevo.", tone: "success" });
+    }
+  }
 
   function simulateGoogleLogin() {
     showToast({
@@ -133,7 +137,9 @@ export function LoginPage({ expectedUserType }: LoginPageProps) {
         <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-8 shadow-xl shadow-black/5">
           <h1 className="text-2xl font-bold text-[var(--color-title)]">Verificación en dos pasos</h1>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            Ingrese el código de verificación.
+            {pendingChallenge.method === "email"
+              ? "Te enviamos un código a tu correo."
+              : "Ingrese el código de verificación."}
           </p>
 
           {/* Solo existe porque este entorno de demostración no tiene un
@@ -172,6 +178,19 @@ export function LoginPage({ expectedUserType }: LoginPageProps) {
             <Button className="w-full" disabled={isSubmitting || !mfaCode.trim()} type="submit">
               {isSubmitting ? "Verificando..." : "Verificar"}
             </Button>
+            {pendingChallenge.method === "email" ? (
+              <Button
+                className="w-full"
+                disabled={isSubmitting || resendCooldownSeconds > 0}
+                onClick={() => void handleResendMfaCode()}
+                type="button"
+                variant="secondary"
+              >
+                {resendCooldownSeconds > 0
+                  ? `Reenviar código (${resendCooldownSeconds} s)`
+                  : "Reenviar código"}
+              </Button>
+            ) : null}
             <Button
               className="w-full"
               disabled={isSubmitting}
@@ -203,10 +222,13 @@ export function LoginPage({ expectedUserType }: LoginPageProps) {
             void submit();
           }}
         >
-          {isLockedOut ? (
-            <InlineAlert title="Demasiados intentos fallidos." tone="danger">
-              <p>Podrías intentarlo de nuevo en {lockoutDisplay}.</p>
-            </InlineAlert>
+          {/* Sin tiempo: la duracion del bloqueo es escalonada y la decide el
+              servidor. El formulario sigue habilitado. */}
+          {tooManyAttempts ? (
+            <InlineAlert
+              title="Demasiados intentos fallidos. Inténtalo de nuevo más tarde."
+              tone="danger"
+            />
           ) : formError ? (
             <InlineAlert title={formError} tone="danger" />
           ) : null}
@@ -214,7 +236,7 @@ export function LoginPage({ expectedUserType }: LoginPageProps) {
           <FormField error={fieldErrors.email} id="login-email" label="Correo electrónico">
             <Input
               autoComplete="email"
-              disabled={isSubmitting || isLockedOut}
+              disabled={isSubmitting}
               id="login-email"
               onChange={(event) => setEmail(event.target.value)}
               placeholder="tu@correo.com"
@@ -226,7 +248,7 @@ export function LoginPage({ expectedUserType }: LoginPageProps) {
           <FormField error={fieldErrors.password} id="login-password" label="Contraseña">
             <PasswordInput
               autoComplete="current-password"
-              disabled={isSubmitting || isLockedOut}
+              disabled={isSubmitting}
               id="login-password"
               onChange={(event) => setPassword(event.target.value)}
               value={password}
@@ -252,8 +274,8 @@ export function LoginPage({ expectedUserType }: LoginPageProps) {
             </Link>
           </div>
 
-          <Button className="w-full" disabled={isSubmitting || tenantLoading || isLockedOut} type="submit">
-            {isSubmitting ? "Ingresando..." : isLockedOut ? `Espera ${lockoutDisplay}` : "Iniciar sesión"}
+          <Button className="w-full" disabled={isSubmitting || tenantLoading} type="submit">
+            {isSubmitting ? "Ingresando..." : "Iniciar sesión"}
           </Button>
         </form>
 

@@ -296,15 +296,36 @@ export class ApiAuthRepository implements AuthRepository {
   }
 
   /**
-   * Solo TOTP en modo api. Devuelve el secreto y el `otpauthUri` para el QR (se genera en el
-   * navegador); ninguno de los dos se guarda ni se registra. La sesion sale de la cookie: `sessionId`
-   * no se envia.
+   * Reenvia el codigo por correo del segundo paso del login. Un desafio vencido o reemplazado lanza
+   * MfaChallengeUnavailableError; el limite de envios (429) y el metodo app (400) usan el mensaje del
+   * backend.
+   */
+  async resendMfaChallengeCode(challengeId: string): Promise<{ demoCodeMock?: string }> {
+    const response = await postJson("/api/auth/mfa/resend", { challengeToken: challengeId });
+    if (!response.ok) {
+      const body = await readApiError(response);
+      if (body?.code === "MFA_CHALLENGE_UNAVAILABLE") {
+        throw new MfaChallengeUnavailableError(body.message || undefined);
+      }
+      throw new Error(body?.message || GENERIC_MFA_ERROR);
+    }
+    return {};
+  }
+
+  /**
+   * TOTP: devuelve el secreto y el `otpauthUri` para el QR (se genera en el navegador); ninguno de
+   * los dos se guarda ni se registra. Correo: el backend envia el codigo y responde `secret` y
+   * `otpauthUri` en null; repetirlo reenvia el codigo. La sesion sale de la cookie: `sessionId` no se
+   * envia.
    */
   async beginMfaEnrollment(_sessionId: string, method: MfaMethod): Promise<BeginMfaEnrollmentResult> {
     const response = await postJson("/api/auth/mfa/enrollment", { method });
     if (!response.ok) throw await toError(response, GENERIC_MFA_ERROR);
-    const { secret, otpauthUri } = (await response.json()) as { secret: string; otpauthUri: string };
-    return { secret, otpauthUri };
+    const { secret, otpauthUri } = (await response.json()) as {
+      secret: string | null;
+      otpauthUri: string | null;
+    };
+    return { secret: secret ?? undefined, otpauthUri: otpauthUri ?? undefined };
   }
 
   /** Los codigos de recuperacion se devuelven una sola vez y no se guardan en ningun lado. */
@@ -322,6 +343,13 @@ export class ApiAuthRepository implements AuthRepository {
     const response = await postJson("/api/auth/mfa/disable", { currentPassword: currentPasswordMock });
     if (!response.ok) throw await toError(response, GENERIC_MFA_ERROR);
     this.eventBus.emit("mfa.changed", { action: "updated" });
+  }
+
+  /** Codigo por correo para el cambio de contraseña (solo con el MFA por correo activo). */
+  async requestMfaActionCode(): Promise<{ demoCodeMock?: string }> {
+    const response = await fetch("/api/auth/mfa/code", { method: "POST", credentials: "same-origin" });
+    if (!response.ok) throw await toError(response, GENERIC_MFA_ERROR);
+    return {};
   }
 
   /** `null` si el usuario nunca inicio una activacion (el backend responde `method: null`). */

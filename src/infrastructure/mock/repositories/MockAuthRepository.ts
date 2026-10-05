@@ -409,6 +409,33 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
     this.emit("auth.changed", { entityId: outcome.session.id, action: "created" });
     return outcome.session;
   }
+  /**
+   * El mock no envia correos: devuelve el mismo demoCodeMock del enrollment
+   * (no rotativo). Mismas reglas que el backend: solo con un desafio vivo y
+   * metodo `email`.
+   */
+  async resendMfaChallengeCode(challengeId: string) {
+    return this.read((db) => {
+      const now = new Date();
+      const challenge = db.mfaChallenges.find((item) => item.id === challengeId);
+      if (
+        !challenge ||
+        challenge.consumedAt ||
+        challenge.invalidatedAt ||
+        now >= new Date(challenge.expiresAt)
+      ) {
+        throw new MfaChallengeUnavailableError();
+      }
+      if (challenge.method !== "email") {
+        throw new Error("El código se genera en tu app autenticadora.");
+      }
+      const enrollment = db.mfaEnrollments.find(
+        (item) => item.userId === challenge.userId && item.enabled,
+      );
+      if (!enrollment) throw new MfaChallengeUnavailableError();
+      return { demoCodeMock: enrollment.demoCodeMock };
+    });
+  }
   async beginMfaEnrollment(sessionId: string, method: MfaMethod) {
     return this.store.mutate((db) => {
       const session = this.requireActiveSession(db, sessionId);
@@ -561,6 +588,19 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
       const enrollment = db.mfaEnrollments.find((item) => item.userId === session.userId);
       if (!enrollment) return null;
       return { enabled: enrollment.enabled, method: enrollment.method };
+    });
+  }
+  /** Solo con el MFA por correo activo; el mock devuelve el demoCodeMock en vez de enviarlo. */
+  async requestMfaActionCode(sessionId: string) {
+    return this.read((db) => {
+      const session = this.requireActiveSession(db, sessionId);
+      const enrollment = db.mfaEnrollments.find(
+        (item) => item.userId === session.userId && item.enabled && item.method === "email",
+      );
+      if (!enrollment) {
+        throw new Error("Tu verificación en dos pasos no usa códigos por correo.");
+      }
+      return { demoCodeMock: enrollment.demoCodeMock };
     });
   }
   async logout(sessionId: string) {

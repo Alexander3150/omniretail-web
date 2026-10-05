@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { getLockoutMinutesForOccurrence, LOGIN_ATTEMPT_RULES } from "@/config/auth-policy";
+import { LOGIN_ATTEMPT_RULES } from "@/config/auth-policy";
 import type { UserType } from "@/core/enums";
 import { MfaChallengeUnavailableError } from "@/core/repositories/AuthRepository";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
@@ -10,6 +10,7 @@ import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useOptionalPublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
 import type { LoginFormDto } from "@/modules/auth/application/dto/LoginFormDto";
 import { resolvePostLoginDestination } from "@/modules/auth/application/services/postLoginNavigation";
+import { useCooldown } from "@/shared/hooks/useCooldown";
 import {
   hasLoginValidationErrors,
   validateLoginForm,
@@ -20,12 +21,17 @@ import {
 // AuthRepository.login() aplica un bloqueo temporal -- se deriva de la
 // config real en vez de repetir el numero "5" aca, para que un cambio a
 // LOGIN_ATTEMPT_RULES no desincronice este contador del servidor.
+// La duracion del bloqueo es escalonada y la decide el servidor: aqui no
+// se muestra ningun tiempo.
 const LOCKOUT_ATTEMPT_NUMBER =
   LOGIN_ATTEMPT_RULES.find((rule) => rule.triggersLockout)?.attemptNumber ??
   LOGIN_ATTEMPT_RULES[LOGIN_ATTEMPT_RULES.length - 1].attemptNumber;
 
 // expectedUserType lo fija la ruta que renderiza el login (ver LoginFormDto);
 // nunca sale del estado del formulario.
+/** Espera entre correos con codigo: la misma que aplica el backend. */
+const MFA_RESEND_COOLDOWN_SECONDS = 60;
+
 export function useLogin(expectedUserType: UserType) {
   const repositories = useRepositories();
   const router = useRouter();
@@ -74,32 +80,20 @@ export function useLogin(expectedUserType: UserType) {
   // LOGIN_ATTEMPT_RULES ya haria del lado del servidor, usando valores
   // que ya son publicos en este mismo archivo de config. Nunca revela
   // si la cuenta escrita existe de verdad ni si el bloqueo real ocurrio.
-  const [, setConsecutiveFailures] = useState(0);
-  const [lockedUntil, setLockedUntil] = useState<number | null>(null);
-  const [lockoutSecondsRemaining, setLockoutSecondsRemaining] = useState(0);
+  // Al llegar al umbral solo se muestra un aviso generico sin tiempo: el
+  // formulario sigue habilitado y el servidor es la autoridad (sigue
+  // respondiendo el error generico mientras la cuenta este bloqueada).
+  const [consecutiveFailures, setConsecutiveFailures] = useState(0);
+  const tooManyAttempts = consecutiveFailures >= LOCKOUT_ATTEMPT_NUMBER;
 
-  useEffect(() => {
-    let active = true;
-    const tick = () => {
-      if (!active) return;
-      if (!lockedUntil) {
-        setLockoutSecondsRemaining(0);
-        return;
-      }
-      const remaining = Math.max(0, Math.ceil((lockedUntil - Date.now()) / 1000));
-      setLockoutSecondsRemaining(remaining);
-      if (remaining === 0) {
-        setLockedUntil(null);
-        setConsecutiveFailures(0);
-      }
-    };
-    window.queueMicrotask(tick);
-    const interval = window.setInterval(tick, 1000);
-    return () => {
-      active = false;
-      window.clearInterval(interval);
-    };
-  }, [lockedUntil]);
+  // "Reenviar código" (metodo email): deshabilitado 60 s al entrar al paso 2
+  // (el login ya envio el codigo) y despues de cada reenvio.
+  const {
+    remaining: resendCooldownSeconds,
+    active: resendCoolingDown,
+    start: startResendCooldown,
+    reset: resetResendCooldown,
+  } = useCooldown(MFA_RESEND_COOLDOWN_SECONDS);
 
   const clearFormError = useCallback(() => {
     setFormError(undefined);
@@ -166,7 +160,7 @@ export function useLogin(expectedUserType: UserType) {
   const submit = useCallback(async () => {
     setFormError(undefined);
 
-    if (tenantLoading || lockoutSecondsRemaining > 0) {
+    if (tenantLoading) {
       return;
     }
 
@@ -196,6 +190,9 @@ export function useLogin(expectedUserType: UserType) {
           method: result.method,
           demoCodeMock: result.demoCodeMock,
         });
+        setConsecutiveFailures(0);
+        if (result.method === "email") startResendCooldown();
+        else resetResendCooldown();
         return;
       }
 
@@ -204,13 +201,7 @@ export function useLogin(expectedUserType: UserType) {
       setFormError(
         caughtError instanceof Error ? caughtError.message : "No se pudo iniciar sesion.",
       );
-      setConsecutiveFailures((current) => {
-        const next = current + 1;
-        if (next >= LOCKOUT_ATTEMPT_NUMBER) {
-          setLockedUntil(Date.now() + getLockoutMinutesForOccurrence(1) * 60 * 1000);
-        }
-        return next;
-      });
+      setConsecutiveFailures((current) => current + 1);
     } finally {
       setIsSubmitting(false);
     }
@@ -218,10 +209,11 @@ export function useLogin(expectedUserType: UserType) {
     email,
     expectedUserType,
     finishLogin,
-    lockoutSecondsRemaining,
     password,
     rememberMe,
     repositories,
+    resetResendCooldown,
+    startResendCooldown,
     tenantId,
     tenantLoading,
   ]);
@@ -256,6 +248,34 @@ export function useLogin(expectedUserType: UserType) {
     }
   }, [finishLogin, mfaCode, pendingChallenge, repositories]);
 
+  /**
+   * Reenvia el codigo del metodo email. Devuelve true si se envio. Un desafio
+   * vencido o reemplazado vuelve al primer paso, igual que en la verificacion.
+   */
+  const resendMfaCode = useCallback(async () => {
+    if (!pendingChallenge || resendCoolingDown) return false;
+    setFormError(undefined);
+    try {
+      const { demoCodeMock } = await repositories.auth.resendMfaChallengeCode(
+        pendingChallenge.challengeId,
+      );
+      if (demoCodeMock) {
+        setPendingChallenge((current) => (current ? { ...current, demoCodeMock } : current));
+      }
+      startResendCooldown();
+      return true;
+    } catch (caughtError) {
+      setFormError(
+        caughtError instanceof Error ? caughtError.message : "No se pudo reenviar el código.",
+      );
+      if (caughtError instanceof MfaChallengeUnavailableError) {
+        setPendingChallenge(null);
+        setMfaCodeState("");
+      }
+      return false;
+    }
+  }, [pendingChallenge, repositories, resendCoolingDown, startResendCooldown]);
+
   const cancelMfaChallenge = useCallback(() => {
     setPendingChallenge(null);
     setMfaCodeState("");
@@ -274,12 +294,14 @@ export function useLogin(expectedUserType: UserType) {
     isSubmitting,
     tenantLoading,
     tenantError,
-    lockoutSecondsRemaining,
+    tooManyAttempts,
     submit,
     pendingChallenge,
     mfaCode,
     setMfaCode,
     submitMfaChallenge,
+    resendMfaCode,
+    resendCooldownSeconds,
     cancelMfaChallenge,
   };
 }

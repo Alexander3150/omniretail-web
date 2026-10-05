@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { isApiMode } from "@/config/api-mode";
 import type { MfaMethod } from "@/core/entities";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
@@ -13,8 +12,11 @@ import { useDataEvent } from "@/shared/hooks/useDataEvent";
  * PR12; cada módulo tiene su propio hook para no acoplar customer a
  * modules/auth.
  */
-/** En modo api el backend solo soporta TOTP: "Correo" se muestra como "Próximamente". */
-const UNAVAILABLE_METHODS: readonly MfaMethod[] = isApiMode() ? ["email"] : [];
+/**
+ * Metodos que el backend todavia no soporta (se muestran como "Próximamente"). Hoy TOTP y correo
+ * estan disponibles en ambos modos.
+ */
+const UNAVAILABLE_METHODS: readonly MfaMethod[] = [];
 
 export function useMfaEnrollment() {
   const repositories = useRepositories();
@@ -98,6 +100,15 @@ export function useMfaEnrollment() {
     [repositories, requireSessionId],
   );
 
+  /**
+   * Con el MFA por correo activo, envia un codigo para el cambio de contraseña. En mock devuelve el
+   * codigo de demostracion para mostrarlo en pantalla.
+   */
+  const sendActionCode = useCallback(async () => {
+    const sessionId = await requireSessionId();
+    return repositories.auth.requestMfaActionCode(sessionId);
+  }, [repositories, requireSessionId]);
+
   return {
     status,
     loading,
@@ -105,6 +116,7 @@ export function useMfaEnrollment() {
     begin,
     verify,
     disable,
+    sendActionCode,
     unavailableMethods: UNAVAILABLE_METHODS,
   };
 }
