@@ -8,6 +8,7 @@ import {
   type BusinessCapabilityKey,
   type BusinessTrackingKey,
 } from "@/modules/administration/components/BusinessConfigForm";
+import { EmailSenderSection } from "@/modules/administration/components/EmailSenderSection";
 import { useBusinessConfig } from "@/modules/administration/hooks/useBusinessConfig";
 import { enforceBusinessConfigCoherence } from "@/modules/administration/validation/businessConfig.validation";
 import { Button } from "@/shared/components/Button";
@@ -193,6 +194,8 @@ export function BusinessConfigPage() {
           No hay una configuración disponible para el negocio actual.
         </div>
       ) : null}
+
+      <EmailSenderSection />
     </div>
   );
 }

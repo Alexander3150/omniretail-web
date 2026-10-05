@@ -5,6 +5,13 @@ import type { PermissionDefinition } from "@/shared/types/permissions.types";
  * ni desde la pantalla ni desde ningun otro consumidor del service.
  */
 export const BUSINESS_CONFIG_MANAGE_PERMISSION = "admin.business_config.manage";
+/**
+ * El remitente de correo del tenant (Gmail + contraseña de aplicación) es tenant-wide y sensible:
+ * `read` solo muestra remitente/estado (nunca el secreto); `manage` cambia credenciales, envía
+ * pruebas y desconecta.
+ */
+export const EMAIL_CONFIG_READ_PERMISSION = "admin.email_config.read";
+export const EMAIL_CONFIG_MANAGE_PERMISSION = "admin.email_config.manage";
 export const CASH_READ_PERMISSION = "admin.cash.read";
 export const DASHBOARD_READ_PERMISSION = "admin.dashboard.read";
 export const REPORTS_READ_PERMISSION = "admin.reports.read";
@@ -61,6 +68,18 @@ export const administrationPermissions = [
     module: "administration",
     name: "Gestionar configuracion",
     description: "Permite modificar configuracion del negocio.",
+  },
+  {
+    key: EMAIL_CONFIG_READ_PERMISSION,
+    module: "administration",
+    name: "Leer correo remitente",
+    description: "Permite consultar el remitente de correo y su estado, sin ver credenciales.",
+  },
+  {
+    key: EMAIL_CONFIG_MANAGE_PERMISSION,
+    module: "administration",
+    name: "Gestionar correo remitente",
+    description: "Permite configurar, probar y desconectar el correo remitente del negocio.",
   },
   {
     key: "admin.suppliers.manage",

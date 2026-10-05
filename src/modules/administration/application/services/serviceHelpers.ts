@@ -12,6 +12,8 @@ import {
   BUSINESS_CONFIG_MANAGE_PERMISSION,
   CASH_READ_PERMISSION,
   DASHBOARD_READ_PERMISSION,
+  EMAIL_CONFIG_MANAGE_PERMISSION,
+  EMAIL_CONFIG_READ_PERMISSION,
   PLANS_MANAGE_PERMISSION,
   PLANS_READ_PERMISSION,
   REPORTS_EXPORT_PERMISSION,
@@ -37,6 +39,23 @@ export function ensureCanManageBusinessConfig(permissions: readonly string[]) {
   throw new AdministrationServiceError(
     "No dispone de permisos para modificar la configuración del negocio.",
   );
+}
+
+export function ensureCanReadEmailSender(permissions: readonly string[]) {
+  if (
+    permissions.includes(EMAIL_CONFIG_READ_PERMISSION) ||
+    permissions.includes(EMAIL_CONFIG_MANAGE_PERMISSION)
+  ) {
+    return;
+  }
+
+  throw new AdministrationServiceError("No dispone de permisos para consultar el correo remitente.");
+}
+
+export function ensureCanManageEmailSender(permissions: readonly string[]) {
+  if (permissions.includes(EMAIL_CONFIG_MANAGE_PERMISSION)) return;
+
+  throw new AdministrationServiceError("No dispone de permisos para gestionar el correo remitente.");
 }
 
 export function ensureCanReadCustomers(permissions: readonly string[]) {
