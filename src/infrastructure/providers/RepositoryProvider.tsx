@@ -53,6 +53,12 @@ import type {
 import { isApiMode } from "@/config/api-mode";
 import { withApiSession } from "@/infrastructure/api/withApiSession";
 import { withApiCatalogMasterData } from "@/infrastructure/api/withApiCatalogMasterData";
+import { withApiProducts } from "@/infrastructure/api/withApiProducts";
+import { withApiProductRelations } from "@/infrastructure/api/withApiProductRelations";
+import { withApiInventoryMovements } from "@/infrastructure/api/withApiInventoryMovements";
+import { withApiInventoryStock } from "@/infrastructure/api/withApiInventoryStock";
+import { withApiPurchaseOrders } from "@/infrastructure/api/withApiPurchaseOrders";
+import { withApiReceiving } from "@/infrastructure/api/withApiReceiving";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import {
@@ -106,6 +112,13 @@ import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapte
 import { IndexedDbCatalogImageAssetRepository } from "@/infrastructure/media/IndexedDbCatalogImageAssetRepository";
 
 export interface RepositoryRegistry {
+  productDataSource: "mock" | "api";
+  productRelationsDataSource: "mock" | "api";
+  productMediaDataSource: "mock" | "api";
+  inventoryMovementsDataSource: "mock" | "api";
+  inventoryStockDataSource: "mock" | "api";
+  purchaseOrdersDataSource: "mock" | "api";
+  receivingDataSource: "mock" | "api";
   tenants: TenantRepository;
   tenantOnboarding: TenantOnboardingRepository;
   businessConfig: BusinessConfigRepository;
@@ -170,6 +183,13 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     const eventBus = new DataEventBus();
     const customerPaymentMethods = new MockCustomerPaymentMethodRepository(store, eventBus);
     const mockRepositories: RepositoryRegistry = {
+      productDataSource: "mock",
+      productRelationsDataSource: "mock",
+      productMediaDataSource: "mock",
+      inventoryMovementsDataSource: "mock",
+      inventoryStockDataSource: "mock",
+      purchaseOrdersDataSource: "mock",
+      receivingDataSource: "mock",
       tenants: new MockTenantRepository(store, eventBus),
       tenantOnboarding: new MockTenantOnboardingRepository(store, eventBus),
       businessConfig: new MockBusinessConfigRepository(store, eventBus),
@@ -218,11 +238,29 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       notifications: new MockNotificationRepository(store, eventBus),
       auditLogs: new MockAuditLogRepository(store, eventBus),
     };
-    // Modo api: la sesion y los maestros migrados de Catalog usan el backend real. El adapter de
-    // ubicaciones delega al mock todas las operaciones de Inventory que no pertenecen al maestro.
+    // Modo api: la sesion, los maestros migrados de Catalog y Product core usan el backend real.
+    // El adapter de ubicaciones delega al mock operaciones de Inventory ajenas al maestro, pero
+    // los flujos Product API no lo consultan ni escriben UUID reales en relaciones mock.
     // Modo mock (default): exactamente los mismos repositorios de siempre.
     const repositories = isApiMode()
-      ? withApiCatalogMasterData(withApiSession(mockRepositories, eventBus), eventBus)
+      ? withApiReceiving(
+          withApiPurchaseOrders(
+            withApiInventoryStock(
+              withApiInventoryMovements(
+                withApiProductRelations(
+                  withApiProducts(
+                    withApiCatalogMasterData(withApiSession(mockRepositories, eventBus), eventBus),
+                    eventBus,
+                  ),
+                  eventBus,
+                ),
+              ),
+              eventBus,
+            ),
+            eventBus,
+          ),
+          eventBus,
+        )
       : mockRepositories;
     return {
       repositories,

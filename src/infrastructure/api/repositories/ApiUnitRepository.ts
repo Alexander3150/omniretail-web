@@ -9,15 +9,24 @@ import {
   type ApiUnitConversion,
 } from "@/infrastructure/api/repositories/catalogMasterDataApi";
 import { assertApiUuid, assertOptionalApiUuid } from "@/infrastructure/api/uuid";
+import {
+  apiUnitConversionSchema,
+  parseApi,
+} from "@/infrastructure/api/repositories/productRelationsApi.schema";
+import { z } from "zod";
 
 type UnitWrite = Omit<Unit, "id" | "createdAt" | "updatedAt">;
 type ConversionWrite = Omit<UnitConversion, "id" | "createdAt">;
+type ProductConversionWrite = Pick<UnitConversion, "fromUnitId" | "toUnitId" | "factor">;
+const apiProductUnitConversionsSchema = z.array(apiUnitConversionSchema);
 
 export class ApiUnitRepository implements UnitRepository {
   constructor(
-    private readonly productScopedDelegate: UnitRepository,
+    _productScopedDelegate: UnitRepository,
     private readonly eventBus: DataEventBus,
-  ) {}
+  ) {
+    void _productScopedDelegate;
+  }
 
   async getAll() {
     return this.listUnits();
@@ -57,11 +66,13 @@ export class ApiUnitRepository implements UnitRepository {
   }
 
   async getConversionsByProduct(productId: string) {
-    return this.productScopedDelegate.getConversionsByProduct(productId);
+    assertApiUuid(productId, "productId");
+    return this.listProductConversions(productId);
   }
 
-  async getConversionsByProductScoped(tenantId: string, productId: string) {
-    return this.productScopedDelegate.getConversionsByProductScoped(tenantId, productId);
+  async getConversionsByProductScoped(_tenantId: string, productId: string) {
+    void _tenantId;
+    return this.getConversionsByProduct(productId);
   }
 
   async getConversion(input: Parameters<UnitRepository["getConversion"]>[0]) {
@@ -147,7 +158,7 @@ export class ApiUnitRepository implements UnitRepository {
     productId: string,
     conversions: Parameters<UnitRepository["replaceConversionsForProduct"]>[1],
   ) {
-    return this.productScopedDelegate.replaceConversionsForProduct(productId, conversions);
+    return this.replaceProductConversions(productId, conversions);
   }
 
   async replaceConversionsForProductScoped(
@@ -155,11 +166,39 @@ export class ApiUnitRepository implements UnitRepository {
     productId: string,
     conversions: Parameters<UnitRepository["replaceConversionsForProductScoped"]>[2],
   ) {
-    return this.productScopedDelegate.replaceConversionsForProductScoped(
-      tenantId,
-      productId,
-      conversions,
-    );
+    void tenantId;
+    return this.replaceProductConversions(productId, conversions);
+  }
+
+  private async replaceProductConversions(
+    productId: string,
+    conversions: ProductConversionWrite[],
+  ) {
+    assertApiUuid(productId, "productId");
+    const items = parseApi(
+      apiProductUnitConversionsSchema,
+      await backendFetch<unknown>(`/catalog/products/${productId}/unit-conversions`, {
+        method: "PUT",
+        body: {
+          conversions: conversions.map((conversion) => ({
+            fromUnitId: conversion.fromUnitId,
+            toUnitId: conversion.toUnitId,
+            factor: conversion.factor,
+          })),
+        },
+      }),
+      "El backend devolvió conversiones de producto inválidas.",
+    ).map(toConversion);
+    this.eventBus.emit("unit-conversion.changed", { productId, action: "updated" });
+    return items;
+  }
+
+  private async listProductConversions(productId: string) {
+    return parseApi(
+      apiProductUnitConversionsSchema,
+      await backendFetch<unknown>(`/catalog/products/${productId}/unit-conversions`),
+      "El backend devolvió conversiones de producto inválidas.",
+    ).map(toConversion);
   }
 
   private async listUnits(status?: UnitStatus) {

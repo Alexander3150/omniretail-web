@@ -34,9 +34,11 @@ export function validateAdjustment(
   row: InventoryProductRow,
   locationQuantity: number,
   operationDate = getLocalCalendarDate(),
+  requiresLocation = true,
 ): AdjustmentValidationErrors {
   const errors: AdjustmentValidationErrors = {};
-  if (!dto.locationId) errors.locationId = "Selecciona una ubicacion.";
+  // Sin "Multiples ubicaciones" el ajuste va sin ubicacion: no se exige ni se inventa una.
+  if (requiresLocation && !dto.locationId) errors.locationId = "Selecciona una ubicacion.";
   if (!Number.isFinite(dto.quantity) || dto.quantity < 0) {
     errors.quantity = "Ingresa una cantidad valida.";
   } else if (dto.quantity > MAX_SAFE_INVENTORY_QUANTITY) {
@@ -53,7 +55,7 @@ export function validateAdjustment(
   } else if (dto.movementKind === "count" && row.quantity - dto.quantity > locationQuantity) {
     errors.quantity = "La correccion no puede descontar mas stock del disponible en la ubicacion.";
   } else if (dto.movementKind === "count" && dto.quantity === row.quantity) {
-    errors.quantity = "El conteo coincide con el stock actual.";
+    errors.quantity = "La existencia ya coincide con el conteo ingresado.";
   }
   if (!dto.reason.trim()) errors.reason = "El motivo es requerido.";
   else if (dto.reason.length > TEXT_LIMITS.reason)

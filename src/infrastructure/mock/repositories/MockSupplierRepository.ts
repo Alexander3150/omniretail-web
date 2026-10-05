@@ -12,6 +12,23 @@ export class MockSupplierRepository extends BaseMockRepository implements Suppli
   async getActive() {
     return this.read((db) => db.suppliers.filter((item) => item.status === "active"));
   }
+  // El listado operacional paginado solo existe en modo API; el mock usa su read model local.
+  async getOperationalPage(): Promise<never> {
+    throw new Error("Operational supplier pages are only available in API mode.");
+  }
+
+  async getOperationalProducts(): Promise<never> {
+    throw new Error("Operational supplier products are only available in API mode.");
+  }
+
+  async getOperationalIncidents(): Promise<never> {
+    throw new Error("Operational supplier incidents are only available in API mode.");
+  }
+
+  async getOperationalById(): Promise<never> {
+    throw new Error("Operational supplier detail is only available in API mode.");
+  }
+
   async getActiveByTenant(tenantId: string) {
     return this.read((db) =>
       db.suppliers.filter((item) => item.status === "active" && item.tenantId === tenantId),

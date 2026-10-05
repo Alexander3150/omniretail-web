@@ -1,11 +1,19 @@
 import {
   InventoryMovementType,
   PurchaseOrderStatus,
+  ReceiptLineStatus,
   ReceiptStatus,
   SerialStatus,
 } from "@/core/enums";
-import type { InventoryBalance, InventoryMovement, SerialNumber, StockLot } from "@/core/entities";
-import type { ReceiptRepository } from "@/core/repositories";
+import { isReceiptIncidentTypeCode } from "@/core/entities";
+import type {
+  InventoryBalance,
+  InventoryMovement,
+  ReceiptIncident,
+  SerialNumber,
+  StockLot,
+} from "@/core/entities";
+import type { ReceiptIncidentRecord, ReceiptRepository } from "@/core/repositories";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
 import { assertNewSerials } from "@/infrastructure/mock/repositories/serialNumberMutations";
 
@@ -18,6 +26,82 @@ export class MockReceiptRepository extends BaseMockRepository implements Receipt
   }
   async listByTenant(tenantId: string) {
     return this.read((db) => db.receipts.filter((item) => item.tenantId === tenantId));
+  }
+  async getPageScoped(
+    tenantId: string,
+    params: Parameters<ReceiptRepository["getPageScoped"]>[1],
+  ) {
+    const receipts = (await this.listByTenant(tenantId))
+      .filter((receipt) => !params.branchId || receipt.branchId === params.branchId)
+      .filter(
+        (receipt) =>
+          !params.purchaseOrderId || receipt.purchaseOrderId === params.purchaseOrderId,
+      )
+      .filter((receipt) => {
+        if (!params.status) return true;
+        if (params.status === "draft") return receipt.status === ReceiptStatus.in_progress;
+        return [ReceiptStatus.partial, ReceiptStatus.received].includes(receipt.status);
+      })
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    const start = (params.page - 1) * params.pageSize;
+    const pageReceipts = receipts.slice(start, start + params.pageSize);
+    return {
+      items: await Promise.all(
+        pageReceipts.map(async (receipt) => {
+          const record = await this.getRecordByIdScoped(tenantId, receipt.id);
+          if (!record) throw this.missing("Receipt", receipt.id);
+          return record;
+        }),
+      ),
+      page: params.page,
+      pageSize: params.pageSize,
+      totalItems: receipts.length,
+      totalPages: Math.ceil(receipts.length / params.pageSize),
+    };
+  }
+  async getRecordByIdScoped(tenantId: string, id: string) {
+    return this.read((db) => {
+      const receipt = db.receipts.find((item) => item.id === id && item.tenantId === tenantId);
+      if (!receipt) return null;
+      const order = receipt.purchaseOrderId
+        ? db.purchaseOrders.find((item) => item.id === receipt.purchaseOrderId)
+        : undefined;
+      const orderItems = db.purchaseOrderItems.filter(
+        (item) => item.purchaseOrderId === receipt.purchaseOrderId,
+      );
+      return {
+        receipt,
+        purchaseOrderNumber: order?.number,
+        items: db.receiptLines
+          .filter((line) => line.receiptId === receipt.id)
+          .map((line) => {
+            const orderItem = orderItems.find((item) => item.productId === line.productId);
+            const hasTracking = Boolean(
+              line.lotNumber || line.expirationDate || line.serialNumbers?.length,
+            );
+            return {
+              line,
+              purchaseOrderItemId: orderItem?.id,
+              productNameSnapshot: orderItem?.productNameSnapshot,
+              productSkuSnapshot: orderItem?.productSkuSnapshot,
+              unitId: orderItem?.unitId,
+              unitSymbolSnapshot: orderItem?.unitSymbolSnapshot,
+              purchaseToBaseFactor: orderItem?.purchaseToBaseFactor,
+              unitCost: orderItem?.unitCost,
+              trackingDetails: hasTracking
+                ? [
+                    {
+                      baseQuantity: line.inventoryQuantity ?? line.receivedQuantity,
+                      lotNumber: line.lotNumber,
+                      expirationDate: line.expirationDate,
+                      serialNumbers: line.serialNumbers ?? [],
+                    },
+                  ]
+                : [],
+            };
+          }),
+      };
+    });
   }
   async getByConfirmationId(tenantId: string, confirmationId: string) {
     return this.read(
@@ -336,6 +420,293 @@ export class MockReceiptRepository extends BaseMockRepository implements Receipt
     this.emit("receipt.changed", { entityId: receiptId, action: "updated" });
     return items;
   }
+  async createDraftScoped(input: Parameters<ReceiptRepository["createDraftScoped"]>[0]) {
+    const order = await this.read((db) => {
+      const stored = db.purchaseOrders.find(
+        (item) => item.id === input.purchaseOrderId && item.tenantId === input.tenantId,
+      );
+      if (!stored) return null;
+      return {
+        ...stored,
+        items: db.purchaseOrderItems.filter(
+          (item) => item.purchaseOrderId === input.purchaseOrderId,
+        ),
+      };
+    });
+    if (!order) throw this.missing("PurchaseOrder", input.purchaseOrderId);
+    const receipts = await this.listByTenant(input.tenantId);
+    const receipt = await this.create({
+      tenantId: input.tenantId,
+      branchId: order.branchId,
+      number: nextMockReceiptNumber(receipts),
+      purchaseOrderId: order.id,
+      supplierId: order.supplierId,
+      status: ReceiptStatus.in_progress,
+      notes: input.notes,
+    });
+    await this.replaceLines(receipt.id, toMockDraftLines(input.items, order.items));
+    const record = await this.getRecordByIdScoped(input.tenantId, receipt.id);
+    if (!record) throw this.missing("Receipt", receipt.id);
+    return record;
+  }
+  async updateDraftScoped(
+    id: string,
+    input: Parameters<ReceiptRepository["updateDraftScoped"]>[1],
+  ) {
+    const current = await this.getRecordByIdScoped(input.tenantId, id);
+    if (!current?.receipt.purchaseOrderId) throw this.missing("Receipt", id);
+    const orderItems = this.read((db) =>
+      db.purchaseOrderItems.filter(
+        (item) => item.purchaseOrderId === current.receipt.purchaseOrderId,
+      ),
+    );
+    await this.replaceLines(id, toMockDraftLines(input.items, orderItems));
+    await this.update(id, { notes: input.notes });
+    const record = await this.getRecordByIdScoped(input.tenantId, id);
+    if (!record) throw this.missing("Receipt", id);
+    return record;
+  }
+  async deleteDraftScoped(tenantId: string, id: string) {
+    this.store.mutate((db) => {
+      const receipt = db.receipts.find(
+        (item) => item.id === id && item.tenantId === tenantId,
+      );
+      if (!receipt) throw this.missing("Receipt", id);
+      if (receipt.status !== ReceiptStatus.in_progress) {
+        throw new Error(`Receipt is not a draft: ${id}`);
+      }
+      db.receipts = db.receipts.filter((item) => item.id !== id);
+      db.receiptLines = db.receiptLines.filter((line) => line.receiptId !== id);
+      db.receiptIncidents = db.receiptIncidents.filter((incident) => incident.receiptId !== id);
+    });
+    this.emit("receipt.changed", { entityId: id, tenantId, action: "deleted" });
+  }
+
+  async confirmDraftScoped(tenantId: string, id: string) {
+    const current = await this.getRecordByIdScoped(tenantId, id);
+    if (!current) throw this.missing("Receipt", id);
+    const incidents = (await this.getIncidents()).filter((item) => item.receiptId === id);
+    if (incidents.some((incident) => (incident.status ?? "open") === "open")) {
+      throw new Error("Receipt has open incidents");
+    }
+    await this.confirmReceiptInventory({
+      receiptId: id,
+      tenantId,
+      confirmationId: this.id("receipt-confirmation"),
+      confirmationFingerprint: `scoped:${id}`,
+      receivedByUserId: "mock-api-actor",
+      receivedAt: this.now(),
+      notes: current.receipt.notes,
+      lines: current.items.map((item) => item.line),
+      incidents: incidents.map((incident) => {
+        const productId = incident.receiptLineId
+          ? current.items.find((item) => item.line.id === incident.receiptLineId)?.line.productId
+          : undefined;
+        return {
+          ...(incident.id ? { id: incident.id } : {}),
+          ...(incident.createdAt ? { createdAt: incident.createdAt } : {}),
+          ...(productId ? { productId } : {}),
+          incidentTypeId: incident.incidentTypeId,
+          description: incident.description,
+          quantityAffected: incident.quantityAffected,
+          evidence: incident.evidence,
+          createdByUserId: incident.createdByUserId,
+        };
+      }),
+    });
+    const confirmed = await this.getRecordByIdScoped(tenantId, id);
+    if (!confirmed) throw this.missing("Receipt", id);
+    return confirmed;
+  }
+
+  async listIncidentsScoped(
+    tenantId: string,
+    receiptId: string,
+    params: Parameters<ReceiptRepository["listIncidentsScoped"]>[2],
+  ) {
+    return this.read((db) => {
+      const receipt = db.receipts.find(
+        (item) => item.id === receiptId && item.tenantId === tenantId,
+      );
+      if (!receipt) throw this.missing("Receipt", receiptId);
+      const incidents = db.receiptIncidents
+        .filter((item) => item.receiptId === receiptId)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+      const start = (params.page - 1) * params.pageSize;
+      return {
+        items: incidents
+          .slice(start, start + params.pageSize)
+          .map((incident) => toMockIncidentRecord(incident, receipt.branchId)),
+        page: params.page,
+        pageSize: params.pageSize,
+        totalItems: incidents.length,
+        totalPages: Math.ceil(incidents.length / params.pageSize),
+      };
+    });
+  }
+
+  async createIncidentScoped(
+    input: Parameters<ReceiptRepository["createIncidentScoped"]>[0],
+  ) {
+    const result = this.store.mutate((db) => {
+      const receipt = db.receipts.find(
+        (item) => item.id === input.receiptId && item.tenantId === input.tenantId,
+      );
+      if (!receipt) throw this.missing("Receipt", input.receiptId);
+      if (Boolean(input.goodsReceiptItemId) !== (input.quantityAffected !== undefined)) {
+        throw new Error("Receipt incident line and quantity must be provided together");
+      }
+      if (input.goodsReceiptItemId) {
+        const receiptLine = db.receiptLines.find(
+          (line) => line.id === input.goodsReceiptItemId && line.receiptId === receipt.id,
+        );
+        if (!receiptLine) throw this.missing("ReceiptLine", input.goodsReceiptItemId);
+        if (
+          input.quantityAffected === undefined ||
+          input.quantityAffected <= 0 ||
+          input.quantityAffected > receiptLine.receivedQuantity
+        ) {
+          throw new Error("Receipt incident quantity exceeds the received line quantity");
+        }
+      }
+      const now = this.now();
+      const incident: ReceiptIncident = {
+        id: this.id("receipt-incident"),
+        receiptId: receipt.id,
+        ...(input.goodsReceiptItemId ? { receiptLineId: input.goodsReceiptItemId } : {}),
+        incidentTypeId: input.incidentType,
+        description: input.notes.trim(),
+        ...(input.quantityAffected !== undefined
+          ? { quantityAffected: input.quantityAffected }
+          : {}),
+        evidence: [],
+        createdByUserId: "mock-api-actor",
+        createdAt: now,
+        status: "open",
+        updatedAt: now,
+      };
+      db.receiptIncidents.push(incident);
+      return toMockIncidentRecord(incident, receipt.branchId);
+    });
+    this.emit("receipt.changed", {
+      entityId: input.receiptId,
+      tenantId: input.tenantId,
+      branchId: result.branchId,
+      incidentId: result.id,
+      action: "updated",
+    });
+    return result;
+  }
+
+  async resolveIncidentWithReplacementScoped(
+    input: Parameters<ReceiptRepository["resolveIncidentWithReplacementScoped"]>[0],
+  ) {
+    await this.resolveIncidentScoped(input.tenantId, input.incidentId);
+  }
+
+  async validateSerialNumbersScoped(
+    input: Parameters<ReceiptRepository["validateSerialNumbersScoped"]>[0],
+  ) {
+    const seen = new Set<string>();
+    const repeatedInRequest = new Set<string>();
+    input.serialNumbers.forEach((serial) => {
+      const key = serial.trim();
+      if (seen.has(key)) repeatedInRequest.add(key);
+      seen.add(key);
+    });
+    return { duplicates: [], repeatedInRequest: [...repeatedInRequest] };
+  }
+
+  async resolveIncidentScoped(tenantId: string, incidentId: string) {
+    const result = this.store.mutate((db) => {
+      const incident = db.receiptIncidents.find((item) => item.id === incidentId);
+      const receipt = incident
+        ? db.receipts.find(
+            (item) => item.id === incident.receiptId && item.tenantId === tenantId,
+          )
+        : undefined;
+      if (!incident || !receipt) throw this.missing("ReceiptIncident", incidentId);
+      const now = this.now();
+      incident.status = "resolved";
+      incident.resolvedByUserId = "mock-api-actor";
+      incident.resolvedAt = now;
+      incident.updatedAt = now;
+      return toMockIncidentRecord(incident, receipt.branchId);
+    });
+    this.emit("receipt.changed", {
+      entityId: result.goodsReceiptId,
+      tenantId,
+      branchId: result.branchId,
+      incidentId,
+      action: "updated",
+    });
+    return result;
+  }
+}
+
+function toMockIncidentRecord(
+  incident: ReceiptIncident,
+  branchId: string,
+): ReceiptIncidentRecord {
+  return {
+    id: incident.id,
+    branchId,
+    goodsReceiptId: incident.receiptId,
+    ...(incident.receiptLineId ? { goodsReceiptItemId: incident.receiptLineId } : {}),
+    incidentType: isReceiptIncidentTypeCode(incident.incidentTypeId)
+      ? incident.incidentTypeId
+      : "other",
+    status: incident.status ?? "open",
+    ...(incident.quantityAffected !== undefined
+      ? { quantityAffected: incident.quantityAffected }
+      : {}),
+    notes: incident.description,
+    createdByUserId: incident.createdByUserId,
+    ...(incident.resolvedByUserId
+      ? { resolvedByUserId: incident.resolvedByUserId }
+      : {}),
+    ...(incident.resolvedAt ? { resolvedAt: incident.resolvedAt } : {}),
+    createdAt: incident.createdAt,
+    updatedAt: incident.updatedAt ?? incident.createdAt,
+  };
+}
+
+function nextMockReceiptNumber(receipts: Array<{ number: string }>) {
+  const next =
+    receipts.reduce((max, receipt) => {
+      const match = /^REC-(\d+)$/.exec(receipt.number);
+      return match ? Math.max(max, Number(match[1])) : max;
+    }, 0) + 1;
+  return `REC-${String(next).padStart(3, "0")}`;
+}
+
+function toMockDraftLines(
+  items: Parameters<ReceiptRepository["createDraftScoped"]>[0]["items"],
+  orderItems: Array<{
+    id: string;
+    productId: string;
+    quantity: number;
+  }>,
+) {
+  return items.map((item) => {
+    const orderItem = orderItems.find((candidate) => candidate.id === item.purchaseOrderItemId);
+    if (!orderItem) throw new Error(`PurchaseOrderItem not found: ${item.purchaseOrderItemId}`);
+    const detail = item.trackingDetails.length === 1 ? item.trackingDetails[0] : undefined;
+    return {
+      productId: orderItem.productId,
+      orderedQuantity: orderItem.quantity,
+      receivedQuantity: item.receivedQuantity,
+      inventoryQuantity: item.trackingDetails.reduce(
+        (sum, tracking) => sum + tracking.baseQuantity,
+        0,
+      ) || item.receivedQuantity,
+      status: ReceiptLineStatus.partial,
+      locationId: item.locationId,
+      lotNumber: detail?.lotNumber,
+      expirationDate: detail?.expirationDate,
+      serialNumbers: detail?.serialNumbers,
+    };
+  });
 }
 
 function findOrCreateBalance(

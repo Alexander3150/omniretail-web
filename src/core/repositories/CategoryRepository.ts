@@ -16,6 +16,8 @@ export interface CategoryRepository {
     id: string,
     input: Partial<Omit<Category, "id" | "tenantId" | "createdAt" | "updatedAt">>,
   ): Promise<Category>;
+  uploadImage(id: string, file: Blob): Promise<Category>;
+  removeImage(id: string): Promise<Category>;
   archive(id: string): Promise<Category>;
   archiveScoped(tenantId: string, id: string): Promise<Category>;
 }

@@ -8,7 +8,7 @@ export const MAX_PERCENTAGE = 100;
 export const QUANTITY_DECIMAL_PLACES = 3;
 export const MONEY_DECIMAL_PLACES = 2;
 export const PERCENTAGE_DECIMAL_PLACES = 2;
-export const CONVERSION_FACTOR_DECIMAL_PLACES = 4;
+export const CONVERSION_FACTOR_DECIMAL_PLACES = 6;
 
 export const TEXT_LIMITS = {
   sku: 50,

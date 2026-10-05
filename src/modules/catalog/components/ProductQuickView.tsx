@@ -12,20 +12,23 @@ import { formatCurrency } from "@/shared/utils/formatCurrency";
 import { cn } from "@/shared/utils/cn";
 import { formatTracking, productTypeLabels } from "@/modules/catalog/components/productLabels";
 import {
+  CheckIcon,
   GlobeIcon,
   MobileIcon,
   PencilIcon,
   PosIcon,
 } from "@/modules/catalog/components/CatalogIcons";
-import { useProductPermissions } from "@/modules/catalog/hooks/useProductPermissions";
 import { useProductQuickView } from "@/modules/catalog/hooks/useProductQuickView";
+import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 import type { ProductListItem, ProductQuickViewModel } from "@/modules/catalog/types/catalog.types";
 
 type QuickViewTab = "general" | "inventory" | "suppliers";
 
 interface ProductQuickViewProps {
+  canUpdate: boolean;
   product: ProductListItem | null;
   onClose: () => void;
+  onRestore: (product: ProductListItem) => void;
 }
 
 const tabs: { id: QuickViewTab; label: string }[] = [
@@ -34,12 +37,25 @@ const tabs: { id: QuickViewTab; label: string }[] = [
   { id: "suppliers", label: "Proveedores" },
 ];
 
-export function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
+export function ProductQuickView({
+  canUpdate,
+  product,
+  onClose,
+  onRestore,
+}: ProductQuickViewProps) {
   const router = useRouter();
-  const { canUpdate } = useProductPermissions();
+  const { currentBranch } = useActiveBranch();
+  const branchId = currentBranch?.id;
+  const branchTenantId = currentBranch?.tenantId;
+  const branchName = currentBranch?.name;
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [activeTab, setActiveTab] = useState<QuickViewTab>("general");
-  const { loading, data, error } = useProductQuickView(product?.id ?? null);
+  const { loading, data, error } = useProductQuickView(
+    product?.id ?? null,
+    branchId,
+    branchTenantId,
+    branchName,
+  );
   const open = Boolean(product);
 
   useEffect(() => {
@@ -138,18 +154,34 @@ export function ProductQuickView({ product, onClose }: ProductQuickViewProps) {
             </>
           )}
         </div>
-        {canUpdate ? (
+        {product && canUpdate ? (
           <footer className="border-t border-[var(--color-border)] px-4 py-4 sm:px-5">
-            <Button
-              className="w-full"
-              onClick={() => {
-                if (product) router.push(`/catalogo/productos/${product.id}/editar`);
-              }}
-              type="button"
-            >
-              <PencilIcon />
-              Editar
-            </Button>
+            {product.status === ProductStatus.published && canUpdate ? (
+              <Button
+                className="w-full"
+                onClick={() => {
+                  onClose();
+                  router.push(`/catalogo/productos/${product.id}/editar`);
+                }}
+                type="button"
+              >
+                <PencilIcon />
+                Editar producto
+              </Button>
+            ) : null}
+            {product.status === ProductStatus.archived && canUpdate ? (
+              <Button
+                className="w-full"
+                onClick={() => {
+                  onClose();
+                  onRestore(product);
+                }}
+                type="button"
+              >
+                <CheckIcon />
+                Restaurar producto
+              </Button>
+            ) : null}
           </footer>
         ) : null}
       </aside>
@@ -212,12 +244,49 @@ function QuickViewInventory({ detail }: { detail: ProductQuickViewModel }) {
     return <EmptyPanel message="Los servicios no utilizan control de inventario." />;
   }
 
+  if (detail.product.productType === ProductType.kit) {
+    return <EmptyPanel message="Los kits no administran inventario propio." />;
+  }
+
   if (!detail.product.tracking.stock) {
     return <EmptyPanel message="Este producto no utiliza control de stock." />;
   }
 
   if (!detail.inventory.length) {
-    return <EmptyPanel message="Sin inventario registrado para este producto." />;
+    if (detail.inventorySettings) {
+      return (
+        <article className="rounded-md border border-[var(--color-border)] bg-white p-4">
+          <div>
+            <h3 className="font-semibold text-[var(--color-title)]">
+              {detail.inventorySettings.branchName}
+            </h3>
+            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+              {detail.inventorySettings.defaultLocationName ?? "Sin ubicación predeterminada"}
+            </p>
+          </div>
+          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+            <DetailItem label="Mínimo" value={String(detail.inventorySettings.minStock)} />
+            <DetailItem
+              label="Punto de reorden"
+              value={String(detail.inventorySettings.reorderPoint ?? "-")}
+            />
+          </dl>
+          <p className="mt-4 text-sm text-[var(--color-text-muted)]">
+            La existencia y el reservado no están disponibles en esta integración.
+          </p>
+        </article>
+      );
+    }
+
+    return (
+      <EmptyPanel
+        message={
+          detail.inventorySettingsAvailable
+            ? "No hay configuración de inventario para este producto en la sucursal activa."
+            : "La configuración de inventario no está disponible para la sucursal activa o sus permisos."
+        }
+      />
+    );
   }
 
   return (
@@ -250,8 +319,16 @@ function QuickViewInventory({ detail }: { detail: ProductQuickViewModel }) {
 }
 
 function QuickViewSuppliers({ detail }: { detail: ProductQuickViewModel }) {
+  if (!detail.suppliersAvailable) {
+    return (
+      <EmptyPanel
+        message="La información de proveedores no está disponible con los permisos actuales."
+      />
+    );
+  }
+
   if (!detail.suppliers.length) {
-    return <EmptyPanel message="Sin proveedores asociados." />;
+    return <EmptyPanel message="No hay proveedores asociados a este producto." />;
   }
 
   return (
@@ -268,11 +345,16 @@ function QuickViewSuppliers({ detail }: { detail: ProductQuickViewModel }) {
                 {item.supplierProduct.supplierSku ?? "Sin código de proveedor"}
               </p>
             </div>
-            {item.supplierProduct.active ? (
+            <div className="flex flex-wrap justify-end gap-1.5">
+              {item.supplierProduct.preferred ? (
+                <span className="rounded-md bg-[var(--color-primary)]/10 px-2 py-1 text-xs font-semibold text-[var(--color-title)]">
+                  Preferido
+                </span>
+              ) : null}
               <span className="rounded-md bg-[var(--color-app-background)] px-2 py-1 text-xs font-semibold text-[var(--color-title)]">
-                Activo
+                {item.supplierProduct.active ? "Activo" : "Archivado"}
               </span>
-            ) : null}
+            </div>
           </div>
           <dl className="mt-4 grid gap-3 md:grid-cols-2">
             <DetailItem label="Unidad compra" value={item.purchaseUnitName ?? "-"} />

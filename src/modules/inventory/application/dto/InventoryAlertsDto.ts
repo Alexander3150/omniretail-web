@@ -8,6 +8,11 @@ import type {
   Unit,
 } from "@/core/entities";
 import type { InventoryTransferReason, InventoryTransferRequestStatus } from "@/core/enums";
+import type {
+  InventoryProductMode,
+  InventoryStockDisplayStatus,
+  InventoryStockProductType,
+} from "@/core/repositories";
 import type { ProductTrackingConfig } from "@/core/types/tracking.types";
 
 export type InventoryStatus = "normal" | "near_minimum" | "critical" | "out_of_stock";
@@ -15,6 +20,14 @@ export type AlertPanelMode = "alerts" | "product-detail";
 export type InventoryAlertType = "low_stock" | "expiration" | "available_elsewhere";
 
 export interface InventoryProductRow {
+  productType: InventoryStockProductType;
+  /**
+   * Autoridad sobre como se muestra y opera el producto: solo TRACKED tiene stock propio y admite
+   * ajustes, traslados y reposicion. NONE (servicio) y DERIVED_KIT no.
+   */
+  inventoryMode: InventoryProductMode;
+  /** Estado a mostrar; para TRACKED equivale a `status`, para servicio/kit es su propio estado. */
+  displayStatus: InventoryStockDisplayStatus;
   productId: string;
   tenantId: string;
   sku: string;
@@ -34,6 +47,12 @@ export interface InventoryProductRow {
   inventoryPresentationQuantity: number;
   inventoryPresentationAvailableQuantity: number;
   inventoryToBaseFactor: number;
+  /**
+   * Nombre de la presentacion (inventario/venta) configurada en el producto cuando el backend no
+   * trae su equivalencia a la unidad base: la fila queda en unidad base y no se inventa un factor.
+   */
+  inventoryConversionUnavailableUnitName?: string;
+  saleConversionUnavailableUnitName?: string;
   adjustmentUnits: InventoryAdjustmentUnitOption[];
   branchId: string;
   branchName: string;
@@ -49,12 +68,16 @@ export interface InventoryProductRow {
     locationId?: string;
   }>;
   availableSerials: Array<{ serialNumber: string; lotId?: string; locationId?: string }>;
+  // Solo significativos con inventoryMode TRACKED (y availableQuantity/quantity para DERIVED_KIT, la
+  // disponibilidad derivada). Para un servicio (NONE) valen 0 como relleno de tipo y NUNCA se
+  // muestran: la UI ramifica por inventoryMode para no presentar un "sin existencias" falso.
   quantity: number;
   reservedQuantity: number;
   availableQuantity: number;
   minStock: number;
   reorderPoint?: number;
-  status: InventoryStatus;
+  /** Estado FISICO; null para servicio y kit (usar `displayStatus`). */
+  status: InventoryStatus | null;
   statusLabel: string;
   tracksExpiration: boolean;
   nextExpirationDate?: string;
@@ -80,6 +103,7 @@ export interface InventoryAlert {
   message: string;
   tone: "warning" | "danger" | "info";
   suggestedReorder?: number;
+  row?: InventoryProductRow;
 }
 
 export interface InventoryKpis {
@@ -90,14 +114,21 @@ export interface InventoryKpis {
 }
 
 export interface InventoryAlertsData {
+  /** Capacidad "Multiples ubicaciones" del negocio; apagada, los ajustes no llevan ubicacion. */
+  supportsMultipleLocations: boolean;
   rows: InventoryProductRow[];
   alerts: InventoryAlert[];
+  alertTotalItems: number;
   transferRequests: InventoryTransferRequestRow[];
   kpis: InventoryKpis;
   visibility: InventoryAlertsVisibility;
   branches: Branch[];
   categories: Category[];
   locations: StorageLocation[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
 }
 
 export interface InventoryAlertsVisibility {

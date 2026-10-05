@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReceivingDocumentsService } from "@/modules/receiving/application/services/ReceivingDocumentsService";
 import type {
+  ReceivingIncidentRow,
+  ReceivingDocumentRow,
   ReceivingReadModel,
   ReceivingStatus,
   ReceivingTab,
@@ -38,18 +40,87 @@ export function useReceivingDocuments() {
   const [filters, setFilters] = useState<ReceivingFilters>(DEFAULT_FILTERS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [incrementalError, setIncrementalError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
+  const loadedBranchIdRef = useRef<string | undefined>(undefined);
+  const loadMoreRequestIdRef = useRef<number | null>(null);
 
   const reload = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
+    loadedBranchIdRef.current = activeBranchId;
+    loadMoreRequestIdRef.current = null;
+    setData(EMPTY_DATA);
+    setIncrementalError(null);
+    setLoadingMore(false);
     setLoading(true);
     setError(null);
     try {
-      setData(await service.execute(activeBranchId));
+      const nextData = await service.execute(activeBranchId);
+      if (
+        requestId !== requestIdRef.current ||
+        loadedBranchIdRef.current !== activeBranchId
+      ) {
+        return;
+      }
+      setData(nextData);
     } catch {
+      if (
+        requestId !== requestIdRef.current ||
+        loadedBranchIdRef.current !== activeBranchId
+      ) {
+        return;
+      }
       setError("No se pudieron cargar las recepciones.");
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [activeBranchId, service]);
+
+  const loadMore = useCallback(async () => {
+    const pagination = data.pagination;
+    if (
+      !activeBranchId ||
+      !pagination?.hasMore ||
+      loadMoreRequestIdRef.current !== null
+    ) {
+      return;
+    }
+
+    const requestId = ++requestIdRef.current;
+    loadMoreRequestIdRef.current = requestId;
+    setLoadingMore(true);
+    setIncrementalError(null);
+    try {
+      const nextData = await service.loadMore(activeBranchId, pagination);
+      if (
+        requestId !== requestIdRef.current ||
+        loadedBranchIdRef.current !== activeBranchId
+      ) {
+        return;
+      }
+      setData((current) => mergeReceivingReadModels(current, nextData));
+    } catch {
+      if (
+        requestId !== requestIdRef.current ||
+        loadedBranchIdRef.current !== activeBranchId
+      ) {
+        return;
+      }
+      setIncrementalError(
+        "No se pudieron cargar más recepciones. Intenta nuevamente.",
+      );
+    } finally {
+      if (loadMoreRequestIdRef.current === requestId) {
+        loadMoreRequestIdRef.current = null;
+      }
+      if (requestId === requestIdRef.current) {
+        setLoadingMore(false);
+      }
+    }
+  }, [activeBranchId, data.pagination, service]);
 
   useEffect(() => {
     let active = true;
@@ -67,7 +138,6 @@ export function useReceivingDocuments() {
   useDataEvent("receipt.changed", reload);
   useDataEvent("incident-type.changed", reload);
   useDataEvent("supplier.changed", reload);
-  useDataEvent("branch.changed", reload);
   useDataEvent("product.changed", reload);
 
   const filteredDocuments = useMemo(() => {
@@ -113,13 +183,77 @@ export function useReceivingDocuments() {
     filteredDocuments,
     currentBranch,
     loading: branchLoading || loading,
+    loadingMore,
     error,
+    incrementalError,
+    hasMore: data.pagination?.hasMore ?? false,
+    receiptHistoryIncomplete: data.pagination?.receiptHistoryIncomplete ?? false,
+    incidentManagementAvailable: repositories.receivingDataSource !== "api",
     updateFilters,
     createIncidentType,
     archiveIncidentType,
     deleteIncidentType,
+    loadMore,
     reload,
   };
+}
+
+export function mergeReceivingReadModels(
+  current: ReceivingReadModel,
+  next: ReceivingReadModel,
+): ReceivingReadModel {
+  if (shouldReplaceReceivingBranch(current.pagination?.branchId, next.pagination?.branchId)) {
+    return next;
+  }
+
+  return {
+    ...current,
+    documents: mergeReceivingDocuments(current.documents, next.documents),
+    incidents: mergeReceivingIncidents(current.incidents, next.incidents),
+    incidentListIncomplete:
+      Boolean(current.incidentListIncomplete) || Boolean(next.incidentListIncomplete),
+    pagination: next.pagination ?? current.pagination,
+  };
+}
+
+function mergeReceivingIncidents(
+  current: ReceivingIncidentRow[],
+  next: ReceivingIncidentRow[],
+): ReceivingIncidentRow[] {
+  const incidentsById = new Map(current.map((incident) => [incident.id, incident]));
+  next.forEach((incident) => {
+    const stored = incidentsById.get(incident.id);
+    if (!stored || incident.date >= stored.date) incidentsById.set(incident.id, incident);
+  });
+  return [...incidentsById.values()].sort((left, right) => right.date.localeCompare(left.date));
+}
+
+export function mergeReceivingDocuments(
+  current: ReceivingDocumentRow[],
+  next: ReceivingDocumentRow[],
+): ReceivingDocumentRow[] {
+  const documentsById = new Map<string, ReceivingDocumentRow>();
+  for (const document of current) {
+    documentsById.set(document.documentId, document);
+  }
+  for (const document of next) {
+    const stored = documentsById.get(document.documentId);
+    if (!stored || document.lastUpdatedAt >= stored.lastUpdatedAt) {
+      documentsById.set(document.documentId, document);
+    }
+  }
+  return [...documentsById.values()].sort((left, right) =>
+    right.lastUpdatedAt.localeCompare(left.lastUpdatedAt),
+  );
+}
+
+export function shouldReplaceReceivingBranch(
+  currentBranchId: string | undefined,
+  nextBranchId: string | undefined,
+): boolean {
+  return Boolean(
+    currentBranchId && nextBranchId && currentBranchId !== nextBranchId,
+  );
 }
 
 function normalize(value: string) {

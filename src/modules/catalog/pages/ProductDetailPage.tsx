@@ -36,6 +36,21 @@ export function ProductDetailPage() {
     }
   }
 
+  async function restoreProduct() {
+    if (!detail) return;
+    try {
+      await mutations.restore(detail.product.id);
+      showToast({ title: "Producto restaurado", tone: "success" });
+      reload();
+    } catch (caughtError) {
+      showToast({
+        title: "No se pudo restaurar",
+        description: caughtError instanceof Error ? caughtError.message : undefined,
+        tone: "danger",
+      });
+    }
+  }
+
   if (loading) {
     return (
       <p className="rounded-md border border-[var(--color-border)] bg-white p-5 text-sm text-[var(--color-text-muted)]">
@@ -62,12 +77,17 @@ export function ProductDetailPage() {
         actions={
           <>
             <Button href="/catalogo/productos">Volver</Button>
-            {canUpdate ? (
+            {canUpdate && detail.product.status === ProductStatus.published ? (
               <Button href={`/catalogo/productos/${detail.product.id}/editar`}>Editar</Button>
             ) : null}
             {canUpdate && detail.product.status === ProductStatus.published ? (
               <Button onClick={() => setConfirmArchive(true)} type="button">
                 Archivar
+              </Button>
+            ) : null}
+            {canUpdate && detail.product.status === ProductStatus.archived ? (
+              <Button onClick={restoreProduct} type="button">
+                Restaurar producto
               </Button>
             ) : null}
           </>

@@ -16,6 +16,34 @@ export class MockInventoryAdjustmentRepository
   extends BaseMockRepository
   implements InventoryAdjustmentRepository
 {
+  // El mock resuelve lotes/series desde las filas del read model; estos lookups son del modo API.
+  async listAvailableLots() {
+    return [];
+  }
+
+  async listAvailableSerials() {
+    return [];
+  }
+
+  async validateNewSerials(input: Parameters<InventoryAdjustmentRepository["validateNewSerials"]>[0]) {
+    const seen = new Set<string>();
+    const repeatedInRequest = new Set<string>();
+    input.serialNumbers.forEach((serial) => {
+      if (seen.has(serial)) repeatedInRequest.add(serial);
+      seen.add(serial);
+    });
+    return { duplicates: [], repeatedInRequest: [...repeatedInRequest] };
+  }
+
+  // El conteo fisico trazable solo existe en modo API; el mock conserva el ajuste anterior.
+  async getCountSnapshot(): Promise<never> {
+    throw new Error("El conteo fisico trazable no esta disponible en modo mock.");
+  }
+
+  async reconcileCount(): Promise<never> {
+    throw new Error("El conteo fisico trazable no esta disponible en modo mock.");
+  }
+
   async getById(id: string) {
     return this.read((db) => db.inventoryAdjustments.find((item) => item.id === id) ?? null);
   }

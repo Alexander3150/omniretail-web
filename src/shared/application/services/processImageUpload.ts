@@ -18,16 +18,48 @@ export interface ImageUploadCodec {
   ): Promise<{ blob: Blob; width: number; height: number }>;
 }
 
+const JPEG_SIGNATURE = [0xff, 0xd8, 0xff];
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const RIFF_SIGNATURE = [0x52, 0x49, 0x46, 0x46];
+const WEBP_SIGNATURE = [0x57, 0x45, 0x42, 0x50];
+
+function hasSignature(bytes: Uint8Array, signature: number[], offset = 0) {
+  return (
+    bytes.length >= offset + signature.length &&
+    signature.every((value, index) => bytes[offset + index] === value)
+  );
+}
+
+/**
+ * Tipo REAL de la imagen segun sus primeros bytes (el backend hace la misma comprobacion).
+ * File.type sale de la extension y puede mentir; nunca se usa para decidir el formato.
+ */
+export async function detectImageMimeType(
+  blob: Blob,
+): Promise<CatalogImageAsset["mimeType"] | null> {
+  const bytes = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+  if (hasSignature(bytes, JPEG_SIGNATURE)) return "image/jpeg";
+  if (hasSignature(bytes, PNG_SIGNATURE)) return "image/png";
+  if (hasSignature(bytes, RIFF_SIGNATURE) && hasSignature(bytes, WEBP_SIGNATURE, 8)) {
+    return "image/webp";
+  }
+  return null;
+}
+
 export async function processImageUpload(
-  input: Blob,
+  original: Blob,
   codec: ImageUploadCodec = browserImageUploadCodec,
 ): Promise<ImageUploadDraft> {
-  if (!ALLOWED_MIME_TYPES.has(input.type as CatalogImageAsset["mimeType"])) {
-    throw new Error("Formato no permitido. Usa JPEG, PNG o WebP.");
-  }
-  if (input.size <= 0 || input.size > IMAGE_UPLOAD_MAX_BYTES) {
+  if (original.size <= 0 || original.size > IMAGE_UPLOAD_MAX_BYTES) {
     throw new Error("La imagen debe pesar como maximo 5 MB.");
   }
+  const detectedType = await detectImageMimeType(original);
+  if (!detectedType) {
+    throw new Error("Formato no permitido. Usa JPEG, PNG o WebP.");
+  }
+  // Si el tipo declarado no coincide con los bytes, se normaliza al tipo real (no se rechaza).
+  const input =
+    original.type === detectedType ? original : new Blob([original], { type: detectedType });
 
   let processed: Awaited<ReturnType<ImageUploadCodec["decodeAndResize"]>>;
   try {

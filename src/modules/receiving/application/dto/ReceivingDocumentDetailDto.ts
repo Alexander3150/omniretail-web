@@ -1,8 +1,20 @@
-import type { ReceiptIncidentEvidence } from "@/core/entities";
+import type {
+  ReceiptIncidentApiStatus,
+  ReceiptIncidentEvidence,
+  ReceiptIncidentTypeCode,
+} from "@/core/entities";
 import type { ProductTrackingConfig } from "@/core/types/tracking.types";
 import type { NumericInputValue } from "@/shared/utils/numberInput";
 
 export type ReceivingDocumentDetailType = "purchase_order" | "transfer";
+
+export const RECEIPT_INCIDENT_TYPE_LABELS: Record<ReceiptIncidentTypeCode, string> = {
+  missing: "Faltante",
+  damaged: "Dañado",
+  wrong_item: "Producto incorrecto",
+  expired: "Vencido",
+  other: "Otro",
+};
 
 export interface ReceivingDocumentDetail {
   document: ReceivingDocumentHeader;
@@ -12,7 +24,15 @@ export interface ReceivingDocumentDetail {
   incidents: ReceivingDocumentIncident[];
   previousReceipts: ReceivingPreviousReceipt[];
   capabilities: ReceivingCapabilityFlags;
+  dataSource: "mock" | "api";
+  canConfirm: boolean;
+  canManageIncidents: boolean;
   readOnly: boolean;
+  /** Bloquea PUT sin impedir resolver incidencias ni confirmar el draft canónico. */
+  draftEditingLocked?: boolean;
+  incidentListIncomplete?: boolean;
+  /** La primera página no contiene todo el historial confirmado del backend. */
+  receiptHistoryIncomplete?: boolean;
 }
 
 export interface ReceivingDocumentHeader {
@@ -35,6 +55,8 @@ export interface ReceivingDocumentLine {
   id: string;
   sourceLineId: string;
   receiptLineId?: string;
+  /** UUID de GoodsReceiptItem; nunca confundir con sourceLineId (PurchaseOrderItem). */
+  goodsReceiptItemId?: string;
   productId: string;
   productName: string;
   sku: string;
@@ -43,6 +65,7 @@ export interface ReceivingDocumentLine {
   unitAllowsDecimals: boolean;
   baseUnitId: string;
   baseUnitName: string;
+  baseUnitAllowsDecimals: boolean;
   orderedQuantity: number;
   acceptedPreviously: number;
   receivedNow: NumericInputValue;
@@ -53,8 +76,20 @@ export interface ReceivingDocumentLine {
   lotNumber: string;
   expirationDate: string;
   serialNumbersText: string;
+  /** Fuente de verdad del editor 7A2 para Goods Receipt API. */
+  trackingDetails: ReceivingTrackingDetail[];
   notes: string;
   purchaseToBaseFactor: number;
+  /** Tiene alguna incidencia (abierta o resuelta): el backend conserva su GoodsReceiptItem. */
+  incidentProtected?: boolean;
+}
+
+export interface ReceivingTrackingDetail {
+  id: string;
+  baseQuantity: NumericInputValue;
+  lotNumber: string;
+  expirationDate: string;
+  serialNumbersText: string;
 }
 
 export interface ReceivingLocationOption {
@@ -72,10 +107,13 @@ export interface ReceivingDocumentIncident {
   id: string;
   receiptId: string;
   receiptLineId?: string;
+  goodsReceiptItemId?: string;
   productId?: string;
   productName: string;
   sku: string;
   incidentTypeId: string;
+  incidentType?: ReceiptIncidentTypeCode;
+  status?: ReceiptIncidentApiStatus;
   incidentTypeName: string;
   quantityAffected?: number;
   description: string;
@@ -135,4 +173,15 @@ export interface SaveReceivingProgressInput {
 
 export interface ConfirmReceivingInput extends SaveReceivingProgressInput {
   confirmationId: string;
+  /** El hook real siempre lo envía; opcional para comandos legacy/mock ya existentes. */
+  hasUnsavedChanges?: boolean;
+}
+
+export interface CreateReceivingIncidentInput {
+  documentId: string;
+  receiptId: string;
+  incidentType: ReceiptIncidentTypeCode;
+  goodsReceiptItemId?: string;
+  quantityAffected?: number;
+  notes: string;
 }

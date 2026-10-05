@@ -5,11 +5,11 @@ import type {
   ProductInventorySettings,
   ProductSalesPriceTier,
   StorageLocation,
-  Supplier,
   SupplierCostTier,
   SupplierProduct,
   UnitConversion,
 } from "@/core/entities";
+import type { OperationalSupplier } from "@/core/repositories";
 import type { CreateProductDto } from "@/modules/catalog/application/dto/CreateProductDto";
 import type { ProductDetailViewModel } from "@/modules/catalog/types/catalog.types";
 import type { NumericInputValue } from "@/shared/utils/numberInput";
@@ -58,7 +58,8 @@ export type SupplierProductEditorValue = Omit<
   lastCost: NumericInputValue;
   leadTimeDays: NumericInputValue;
   minimumOrderQuantity: NumericInputValue;
-  costTiers: SupplierCostTierEditorValue[];
+  /** undefined = todavia no cargados; [] = cargados y vacios. */
+  costTiers?: SupplierCostTierEditorValue[];
 };
 
 export type ProductMediaEditorValue = Pick<
@@ -85,28 +86,46 @@ export interface ProductEditorDto extends Omit<CreateProductDto, "primaryImageUr
   salePrice: NumericInputValue;
   inventoryToBaseFactor: NumericInputValue;
   saleToBaseFactor: NumericInputValue;
-  inventorySettings: ProductInventorySettingsEditorValue;
-  attributes: ProductAttributeEditorValue[];
-  salesPriceTiers: ProductSalesPriceTierEditorValue[];
+  /** undefined = conversiones todavia no cargadas; [] = cargadas y vacias. */
+  unitConversions?: UnitConversion[];
+  /** undefined = settings todavia no cargados. */
+  inventorySettings?: ProductInventorySettingsEditorValue;
+  /** undefined = todavia no cargados; [] = cargados y sin asignaciones. */
+  attributes?: ProductAttributeEditorValue[];
+  /** undefined = todavia no cargados; [] = cargados y sin tramos. */
+  salesPriceTiers?: ProductSalesPriceTierEditorValue[];
   supplierProducts: SupplierProductEditorValue[];
   media: ProductMediaEditorValue[];
   kitComponents: ProductKitComponentEditorValue[];
 }
 
 export interface ProductEditorData {
+  access: {
+    apiMode: boolean;
+    canUpdateProductRelations: boolean;
+    canReadConversions: boolean;
+    canManageConversions: boolean;
+    canReadAttributes: boolean;
+    canManageAttributes: boolean;
+    canManageSuppliers: boolean;
+    canReadInventorySettings: boolean;
+    canReadPromotions: boolean;
+    canManagePromotions: boolean;
+  };
   detail: ProductDetailViewModel | null;
-  unitConversion: UnitConversion | null;
-  unitConversions: UnitConversion[];
-  inventorySettings: ProductInventorySettings | null;
+  unitConversion?: UnitConversion | null;
+  unitConversions?: UnitConversion[];
+  inventorySettings?: ProductInventorySettings | null;
   storageLocations: StorageLocation[];
-  currentDefaultLocation: StorageLocation | null;
-  attributeDefinitions: AttributeDefinition[];
-  attributes: ProductAttributeEditorValue[];
-  salesPriceTiers: ProductSalesPriceTierEditorValue[];
-  suppliers: Supplier[];
+  branchLocations: StorageLocation[];
+  currentDefaultLocation?: StorageLocation | null;
+  attributeDefinitions?: AttributeDefinition[];
+  attributes?: ProductAttributeEditorValue[];
+  salesPriceTiers?: ProductSalesPriceTierEditorValue[];
+  suppliers: OperationalSupplier[];
   supplierProducts: SupplierProductEditorValue[];
   media: ProductMediaEditorValue[];
-  promotionCount: number;
+  promotionCount?: number;
   kitComponents: ProductKitComponentEditorValue[];
   kitEligibleProducts: Product[];
 }

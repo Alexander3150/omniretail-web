@@ -13,6 +13,9 @@ import { formatCurrency } from "@/shared/utils/formatCurrency";
 
 interface ProductTableProps {
   canUpdate: boolean;
+  inventoryAdjustmentEnabled: boolean;
+  priceHistoryEnabled: boolean;
+  promotionsEnabled: boolean;
   products: ProductListItem[];
   emptyMessage: string;
   onOpenQuickView: (product: ProductListItem) => void;
@@ -25,6 +28,9 @@ interface ProductTableProps {
 
 export function ProductTable({
   canUpdate,
+  inventoryAdjustmentEnabled,
+  priceHistoryEnabled,
+  promotionsEnabled,
   products,
   emptyMessage,
   onOpenQuickView,
@@ -89,13 +95,20 @@ export function ProductTable({
                           </span>
                           {product.productType === ProductType.physical &&
                           product.tracking.stock && product.availableQuantity === 0 ? (
-                            <a
-                              className="inline-flex rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900 hover:underline"
-                              href={`/inventario/alertas?productId=${encodeURIComponent(product.id)}&openAdjustment=1`}
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              Sin existencia · Agregar existencia
-                            </a>
+                            inventoryAdjustmentEnabled ? (
+                              <a
+                                className="inline-flex rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900 hover:underline"
+                                href={`/inventario/alertas?productId=${encodeURIComponent(product.id)}&openAdjustment=1`}
+                                onClick={(event) => event.stopPropagation()}
+                                onKeyDown={(event) => event.stopPropagation()}
+                              >
+                                Sin existencia · Agregar existencia
+                              </a>
+                            ) : (
+                              <span className="inline-flex rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900">
+                                Sin existencia
+                              </span>
+                            )
                           ) : null}
                         </div>
                         <p className="mt-1 text-xs text-[var(--color-text-muted)]">
@@ -155,6 +168,8 @@ export function ProductTable({
                   <td className="px-4 py-3">
                     <ProductActionsMenu
                       canUpdate={canUpdate}
+                      priceHistoryEnabled={priceHistoryEnabled}
+                      promotionsEnabled={promotionsEnabled}
                       onArchive={onArchive}
                       onPriceHistory={onPriceHistory}
                       onPromotion={onPromotion}

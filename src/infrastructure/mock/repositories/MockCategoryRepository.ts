@@ -1,4 +1,5 @@
 import { CategoryStatus } from "@/core/enums";
+import type { Category } from "@/core/entities";
 import type { CategoryRepository } from "@/core/repositories";
 import { normalizeCatalogImageSource } from "@/core/media/catalogImage";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
@@ -67,6 +68,19 @@ export class MockCategoryRepository extends BaseMockRepository implements Catego
       action: "status_changed",
     });
     return item;
+  }
+  async uploadImage(_id: string, _file: Blob): Promise<Category> {
+    void _id;
+    void _file;
+    throw new Error(
+      "El upload directo pertenece al adapter API; mock usa CatalogImageAssetRepository.",
+    );
+  }
+  async removeImage(_id: string): Promise<Category> {
+    void _id;
+    throw new Error(
+      "El borrado directo pertenece al adapter API; mock usa CatalogImageAssetRepository.",
+    );
   }
   async archive(id: string) {
     const item = this.store.mutate((db) =>

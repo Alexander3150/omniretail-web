@@ -1,6 +1,15 @@
 "use client";
 
 import {
+  getPurchaseOrderStatusLabel as getStatusLabel,
+  PurchaseOrderStatusBadge as OrderStatusBadge,
+} from "@/modules/purchasing/components/PurchaseOrderStatusBadge";
+import {
+  clearOrdersNavContext,
+  readOrdersNavContext,
+  saveOrdersNavContext,
+} from "@/modules/purchasing/application/services/purchaseOrdersNavContext";
+import {
   useEffect,
   useMemo,
   useRef,
@@ -11,7 +20,6 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import type { PurchaseOrderStatus } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { Button } from "@/shared/components/Button";
 import { InlineAlert } from "@/shared/components/InlineAlert";
@@ -34,25 +42,33 @@ import {
   PurchaseOrderPdfService,
 } from "@/modules/purchasing/application/services/PurchaseOrderPdfService";
 
-const DEFAULT_PAGE_SIZE: TablePageSize = 10;
-
 export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string }) {
   const router = useRouter();
   const repositories = useRepositories();
   const { showToast } = useToast();
   const {
+    apiMode,
     data,
+    detailOrder,
     filters,
-    filteredOrders,
+    paginatedOrders,
+    totalItems,
+    totalPages,
+    page,
+    pageSize,
     currentBranch,
     loading,
     error,
+    mutationPending,
+    canCreatePurchaseOrders,
     updateFilters,
+    setPage,
+    setPageSize,
+    loadOrderById,
     updateStatus,
   } = usePurchaseOrders();
   const pdfService = useMemo(() => new PurchaseOrderPdfService(repositories), [repositories]);
   const emailSimulationService = useMemo(() => new PurchaseOrderEmailSimulationService(), []);
-  const [page, setPage] = useState(1);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [openActionsOrderId, setOpenActionsOrderId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<{
@@ -60,48 +76,89 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
     action: PurchaseOrderAction;
   } | null>(null);
   const [suggestionsExpanded, setSuggestionsExpanded] = useState(false);
-  const [pageSize, setPageSize] = useState<TablePageSize>(DEFAULT_PAGE_SIZE);
+  // Contexto temporal (sessionStorage) en lugar de ?orderId=<UUID>; el id solo vive en memoria.
+  const [contextOrderId, setContextOrderId] = useState<string | null>(null);
+  const activeOrderId = initialOrderId?.trim() || contextOrderId || undefined;
   const appliedOrderIdRef = useRef<string | null>(null);
+  const locatingOrderIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    window.queueMicrotask(() => {
+      if (!active) return;
+      const legacyOrderId = initialOrderId?.trim();
+      if (legacyOrderId) {
+        // URL antigua con ?orderId=: se hidrata el contexto y el flujo existente limpia la URL.
+        saveOrdersNavContext({ orderId: legacyOrderId, orderNumber: "", source: "supplier" });
+        return;
+      }
+      const stored = readOrdersNavContext();
+      if (stored) setContextOrderId(stored.orderId);
+    });
+    return () => {
+      active = false;
+    };
+  }, [initialOrderId]);
   const directlyLocatedOrder = useMemo(() => {
-    const orderId = initialOrderId?.trim();
+    const orderId = activeOrderId;
     if (!orderId) return null;
+    const candidates = detailOrder ? [...data.orders, detailOrder] : data.orders;
     return (
-      data.orders.find(
+      candidates.find(
         (candidate) =>
           candidate.id === orderId &&
-          candidate.branchId === currentBranch?.id &&
-          candidate.tenantId === currentBranch?.tenantId,
+          (apiMode ||
+            (candidate.branchId === currentBranch?.id &&
+              candidate.tenantId === currentBranch?.tenantId)),
       ) ?? null
     );
-  }, [currentBranch?.id, currentBranch?.tenantId, data.orders, initialOrderId]);
+  }, [
+    apiMode,
+    currentBranch?.id,
+    currentBranch?.tenantId,
+    data.orders,
+    detailOrder,
+    activeOrderId,
+  ]);
   const visibleOrders = useMemo(
-    () => (directlyLocatedOrder ? [directlyLocatedOrder] : filteredOrders),
-    [directlyLocatedOrder, filteredOrders],
+    () => (directlyLocatedOrder ? [directlyLocatedOrder] : paginatedOrders),
+    [directlyLocatedOrder, paginatedOrders],
   );
-  const totalPages = Math.max(1, Math.ceil(visibleOrders.length / pageSize));
-  const currentPage = Math.min(page, totalPages);
-  const paginatedOrders = useMemo(
-    () => visibleOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize),
-    [currentPage, pageSize, visibleOrders],
-  );
+  const currentPage = directlyLocatedOrder ? 1 : Math.min(page, Math.max(1, totalPages));
+  const visibleTotalItems = directlyLocatedOrder ? 1 : totalItems;
   const selectedOrder = useMemo(
-    () => paginatedOrders.find((order) => order.id === selectedOrderId) ?? null,
-    [paginatedOrders, selectedOrderId],
+    () => visibleOrders.find((order) => order.id === selectedOrderId) ?? null,
+    [selectedOrderId, visibleOrders],
   );
   const emptyMessage =
-    data.orders.length === 0
+    (apiMode ? totalItems === 0 : data.orders.length === 0)
       ? "No hay ordenes de compra registradas."
       : "No se encontraron ordenes.";
 
   useEffect(() => {
-    const orderId = initialOrderId?.trim();
+    const orderId = activeOrderId;
     if (!orderId) {
       appliedOrderIdRef.current = null;
+      locatingOrderIdRef.current = null;
       return;
     }
     if (loading || appliedOrderIdRef.current === orderId) return;
 
     if (!directlyLocatedOrder) {
+      if (apiMode) {
+        if (locatingOrderIdRef.current === orderId) return;
+        locatingOrderIdRef.current = orderId;
+        let active = true;
+        void loadOrderById(orderId).then((locatedOrder) => {
+          if (!active) return;
+          if (!locatedOrder) {
+            appliedOrderIdRef.current = orderId;
+            router.replace("/compras/ordenes", { scroll: false });
+          }
+        });
+        return () => {
+          active = false;
+        };
+      }
       appliedOrderIdRef.current = orderId;
       router.replace("/compras/ordenes", { scroll: false });
       return;
@@ -111,29 +168,40 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
     window.queueMicrotask(() => {
       if (!active) return;
       appliedOrderIdRef.current = orderId;
-      setPage(1);
+      locatingOrderIdRef.current = null;
       setSelectedOrderId(null);
       setOpenActionsOrderId(null);
-      updateFilters({
-        search: directlyLocatedOrder.number,
-        status: "all",
-        supplierId: "all",
-      });
+      if (!apiMode) {
+        updateFilters({
+          search: directlyLocatedOrder.number,
+          status: "all",
+          supplierId: "all",
+        });
+      }
     });
     return () => {
       active = false;
     };
-  }, [directlyLocatedOrder, initialOrderId, loading, router, updateFilters]);
+  }, [
+    apiMode,
+    directlyLocatedOrder,
+    activeOrderId,
+    loadOrderById,
+    loading,
+    router,
+    updateFilters,
+  ]);
 
   function clearOrderLocator() {
-    if (!initialOrderId) return;
+    if (!activeOrderId) return;
+    clearOrdersNavContext();
+    setContextOrderId(null);
     appliedOrderIdRef.current = null;
-    router.replace("/compras/ordenes", { scroll: false });
+    if (initialOrderId) router.replace("/compras/ordenes", { scroll: false });
   }
 
   function handleSearchChange(search: string) {
     clearOrderLocator();
-    setPage(1);
     setSelectedOrderId(null);
     setOpenActionsOrderId(null);
     updateFilters({ search });
@@ -141,7 +209,6 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
 
   function handleStatusChange(status: PurchaseOrderStatusFilter) {
     clearOrderLocator();
-    setPage(1);
     setSelectedOrderId(null);
     setOpenActionsOrderId(null);
     updateFilters({ status });
@@ -149,7 +216,6 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
 
   function handleSupplierChange(supplierId: string) {
     clearOrderLocator();
-    setPage(1);
     setSelectedOrderId(null);
     setOpenActionsOrderId(null);
     updateFilters({ supplierId });
@@ -170,12 +236,11 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
   function changePage(nextPage: number) {
     setSelectedOrderId(null);
     setOpenActionsOrderId(null);
-    setPage(Math.min(Math.max(nextPage, 1), totalPages));
+    setPage(Math.min(Math.max(nextPage, 1), Math.max(1, totalPages)));
   }
 
   function handlePageSizeChange(nextPageSize: TablePageSize) {
     setPageSize(nextPageSize);
-    setPage(1);
     setSelectedOrderId(null);
     setOpenActionsOrderId(null);
   }
@@ -187,6 +252,15 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
 
   async function handleAction(order: PurchaseOrderRowReadModel, action: PurchaseOrderAction) {
     setOpenActionsOrderId(null);
+    if (mutationPending) return;
+    if (!action.enabled) {
+      showToast({
+        title: action.label,
+        description: action.unavailableReason ?? "Accion preparada para una siguiente feature.",
+        tone: "info",
+      });
+      return;
+    }
     if (action.id === "edit-draft") {
       router.push(`/compras/ordenes/${order.id}/editar`);
       return;
@@ -201,14 +275,6 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
     }
     if (action.id === "cancel" || action.id === "approve") {
       setPendingAction({ order, action });
-      return;
-    }
-    if (!action.enabled) {
-      showToast({
-        title: action.label,
-        description: action.unavailableReason ?? "Accion preparada para una siguiente feature.",
-        tone: "info",
-      });
       return;
     }
     if (!action.statusTarget) return;
@@ -226,11 +292,16 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
     }
   }
 
-  async function confirmPendingAction() {
-    if (!pendingAction?.action.statusTarget) return;
+  async function confirmPendingAction(cancellationReason?: string) {
+    if (!pendingAction?.action.statusTarget || mutationPending) return;
     try {
-      await updateStatus(pendingAction.order.id, pendingAction.action.statusTarget);
+      await updateStatus(
+        pendingAction.order.id,
+        pendingAction.action.statusTarget,
+        cancellationReason,
+      );
       setSelectedOrderId(null);
+      setPendingAction(null);
       if (pendingAction.action.id === "approve") {
         await handleApprovedOrder(pendingAction.order);
       } else {
@@ -242,8 +313,6 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
         description: caughtError instanceof Error ? caughtError.message : undefined,
         tone: "danger",
       });
-    } finally {
-      setPendingAction(null);
     }
   }
 
@@ -305,16 +374,20 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
           title="Ordenes de compra"
           description="Consulta ordenes, recepcion, proveedores y necesidades de reposicion."
           actions={
-            <Button onClick={() => router.push("/compras/ordenes/nueva")} type="button">
-              <PlusIcon />
-              Nueva orden
-            </Button>
+            canCreatePurchaseOrders ? (
+              <Button onClick={() => router.push("/compras/ordenes/nueva")} type="button">
+                <PlusIcon />
+                Nueva orden
+              </Button>
+            ) : undefined
           }
         />
       </div>
 
       <ReorderSuggestions
+        canCreateOrder={canCreatePurchaseOrders}
         expanded={suggestionsExpanded}
+        notice={data.suggestionsNotice}
         suggestions={data.suggestions}
         onCreateOrder={openSuggestionOrder}
         onToggle={() => setSuggestionsExpanded((current) => !current)}
@@ -323,16 +396,25 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
       {error ? <InlineAlert title={error} tone="danger" /> : null}
 
       <section className="rounded-lg border border-[var(--color-border)] bg-white p-2.5 shadow-sm">
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_220px_220px]">
-          <Input
-            aria-label="Buscar ordenes"
-            maxLength={TEXT_LIMITS.search}
-            className="h-10"
-            onChange={(event) => handleSearchChange(event.target.value)}
-            placeholder="Buscar por numero, proveedor o producto..."
-            type="search"
-            value={filters.search}
-          />
+        <div
+          className={cn(
+            "grid gap-3 md:grid-cols-2",
+            apiMode
+              ? "xl:grid-cols-[220px_220px]"
+              : "xl:grid-cols-[minmax(0,1fr)_220px_220px]",
+          )}
+        >
+          {!apiMode ? (
+            <Input
+              aria-label="Buscar ordenes"
+              maxLength={TEXT_LIMITS.search}
+              className="h-10"
+              onChange={(event) => handleSearchChange(event.target.value)}
+              placeholder="Buscar por numero, proveedor o producto..."
+              type="search"
+              value={filters.search}
+            />
+          ) : null}
           <Select
             aria-label="Estado"
             className="h-10 rounded-md"
@@ -372,7 +454,7 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
             <PurchaseOrdersTable
               emptyMessage={emptyMessage}
               openActionsOrderId={openActionsOrderId}
-              orders={paginatedOrders}
+              orders={visibleOrders}
               selectedOrderId={selectedOrderId}
               onActionsOpenChange={setOpenActionsOrderId}
               onAction={handleAction}
@@ -383,7 +465,7 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
               itemLabel="ordenes"
               page={currentPage}
               pageSize={pageSize}
-              totalItems={visibleOrders.length}
+              totalItems={visibleTotalItems}
               onPageChange={changePage}
               onPageSizeChange={handlePageSizeChange}
             />
@@ -403,6 +485,7 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
         <ConfirmActionDialog
           action={pendingAction.action}
           order={pendingAction.order}
+          submitting={mutationPending}
           onCancel={() => setPendingAction(null)}
           onConfirm={confirmPendingAction}
         />
@@ -412,12 +495,16 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
 }
 
 function ReorderSuggestions({
+  canCreateOrder,
   expanded,
+  notice,
   suggestions,
   onCreateOrder,
   onToggle,
 }: {
+  canCreateOrder: boolean;
   expanded: boolean;
+  notice?: string;
   suggestions: ReorderSuggestionReadModel[];
   onCreateOrder: (suggestion: ReorderSuggestionReadModel) => void;
   onToggle: () => void;
@@ -450,6 +537,7 @@ function ReorderSuggestions({
 
       {expanded ? (
         <div className="space-y-2 border-t border-[var(--color-border)] px-4 py-3">
+          {notice ? <InlineAlert title={notice} tone="warning" /> : null}
           {suggestions.length === 0 ? (
             <p className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-4 py-3 text-sm font-medium text-[var(--color-text-muted)]">
               Sin sugerencias de reposicion por ahora.
@@ -457,7 +545,7 @@ function ReorderSuggestions({
           ) : (
             suggestions.map((suggestion) => (
               <article
-                className="grid gap-2 rounded-md border border-[var(--color-border)] px-3 py-2 sm:grid-cols-[minmax(0,1.6fr)_80px_80px_90px_90px_minmax(120px,0.9fr)_auto] sm:items-center"
+                className="grid gap-2 rounded-md border border-[var(--color-border)] px-3 py-2 xl:grid-cols-[minmax(0,1.6fr)_80px_80px_90px_90px_minmax(120px,0.9fr)_auto] xl:items-center"
                 key={suggestion.id}
               >
                 <div className="min-w-0">
@@ -486,14 +574,20 @@ function ReorderSuggestions({
                   </p>
                 </div>
                 <div className="flex justify-start sm:justify-end">
-                  <Button
-                    className="min-h-9 px-3 py-1.5"
-                    onClick={() => onCreateOrder(suggestion)}
-                    type="button"
-                    variant="secondary"
-                  >
-                    Crear orden
-                  </Button>
+                  {canCreateOrder ? (
+                    <Button
+                      className="min-h-9 px-3 py-1.5"
+                      onClick={() => onCreateOrder(suggestion)}
+                      type="button"
+                      variant="secondary"
+                    >
+                      Crear orden
+                    </Button>
+                  ) : (
+                    <span className="text-xs font-semibold text-[var(--color-text-muted)]">
+                      Solo consulta
+                    </span>
+                  )}
                 </div>
               </article>
             ))
@@ -914,15 +1008,20 @@ function PurchaseOrderDrawer({
 function ConfirmActionDialog({
   order,
   action,
+  submitting,
   onCancel,
   onConfirm,
 }: {
   order: PurchaseOrderRowReadModel;
   action: PurchaseOrderAction;
+  submitting: boolean;
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: (cancellationReason?: string) => void;
 }) {
   const isCancel = action.id === "cancel";
+  const [cancellationReason, setCancellationReason] = useState("");
+  const trimmedReason = cancellationReason.trim();
+  const confirmDisabled = submitting || (isCancel && trimmedReason.length === 0);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-topbar)]/35 p-4">
       <div className="w-full max-w-md rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-xl">
@@ -937,35 +1036,40 @@ function ConfirmActionDialog({
             ? "Esta accion cambiara el estado de la orden a Cancelada."
             : "La orden pasara a Aprobada despues de recibir autorizacion externa."}
         </p>
+        {isCancel ? (
+          <label className="mt-4 block">
+            <span className="text-xs font-bold uppercase text-[var(--color-text-muted)]">
+              Motivo de cancelacion
+            </span>
+            <textarea
+              className="mt-1 min-h-24 w-full resize-y rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-structure)]/15 disabled:cursor-not-allowed disabled:bg-[var(--color-app-background)]"
+              disabled={submitting}
+              maxLength={500}
+              onChange={(event) => setCancellationReason(event.target.value)}
+              placeholder="Describe por que se cancela esta orden"
+              required
+              value={cancellationReason}
+            />
+            <span className="mt-1 block text-right text-xs text-[var(--color-text-muted)]">
+              {cancellationReason.length}/500
+            </span>
+          </label>
+        ) : null}
         <div className="mt-5 flex justify-end gap-2">
-          <Button onClick={onCancel} type="button" variant="secondary">
+          <Button disabled={submitting} onClick={onCancel} type="button" variant="secondary">
             Volver
           </Button>
-          <Button onClick={onConfirm} type="button" variant={isCancel ? "danger" : "primary"}>
-            {isCancel ? "Cancelar orden" : "Aprobar orden"}
+          <Button
+            disabled={confirmDisabled}
+            onClick={() => onConfirm(isCancel ? trimmedReason : undefined)}
+            type="button"
+            variant={isCancel ? "danger" : "primary"}
+          >
+            {submitting ? "Procesando..." : isCancel ? "Cancelar orden" : "Aprobar orden"}
           </Button>
         </div>
       </div>
     </div>
-  );
-}
-
-function OrderStatusBadge({ status }: { status: PurchaseOrderStatus }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex max-w-full items-center rounded-full px-2 py-1 text-xs font-bold",
-        status === "draft" && "bg-slate-100 text-slate-700",
-        status === "pending_approval" && "bg-amber-100 text-amber-800",
-        status === "approved" && "bg-blue-100 text-blue-800",
-        status === "sent" && "bg-indigo-100 text-indigo-800",
-        status === "partially_received" && "bg-sky-100 text-amber-800 ring-1 ring-amber-200",
-        status === "received" && "bg-emerald-100 text-emerald-800",
-        status === "cancelled" && "bg-rose-50 text-rose-700 ring-1 ring-rose-100",
-      )}
-    >
-      {getStatusLabel(status)}
-    </span>
   );
 }
 
@@ -987,19 +1091,6 @@ function InlineItem({ label, value }: { label: string; value: string }) {
   );
 }
 
-function getStatusLabel(status: PurchaseOrderStatus) {
-  const labels: Record<PurchaseOrderStatus, string> = {
-    draft: "Borrador",
-    pending_approval: "Pendiente de aprobacion",
-    approved: "Aprobada",
-    sent: "Enviada",
-    partially_received: "Recepcion parcial",
-    received: "Recibida",
-    cancelled: "Cancelada",
-  };
-  return labels[status];
-}
-
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("es-GT", {
     style: "currency",
@@ -1012,11 +1103,12 @@ function formatNumber(value: number) {
 }
 
 function formatDate(value: string) {
+  const dateValue = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value;
   return new Intl.DateTimeFormat("es-GT", {
     day: "numeric",
     month: "short",
     year: "numeric",
-  }).format(new Date(value));
+  }).format(new Date(dateValue));
 }
 
 function buildQueryString(params: Record<string, string | number | undefined>) {

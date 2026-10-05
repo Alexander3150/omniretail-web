@@ -24,6 +24,28 @@ export class MockPurchaseOrderRepository
         .map((order) => hydratePurchaseOrder(order, db)),
     );
   }
+  async getPageScoped(
+    tenantId: string,
+    params: Parameters<PurchaseOrderRepository["getPageScoped"]>[1],
+  ) {
+    const orders = await this.listByTenant(tenantId);
+    const filtered = orders
+      .filter((order) => !params.branchId || order.branchId === params.branchId)
+      .filter((order) => !params.supplierId || order.supplierId === params.supplierId)
+      .filter((order) => !params.status || order.status === params.status)
+      .sort((left, right) => {
+        const byDate = right.createdAt.localeCompare(left.createdAt);
+        return byDate || right.id.localeCompare(left.id);
+      });
+    const start = (params.page - 1) * params.pageSize;
+    return {
+      items: filtered.slice(start, start + params.pageSize),
+      page: params.page,
+      pageSize: params.pageSize,
+      totalItems: filtered.length,
+      totalPages: Math.ceil(filtered.length / params.pageSize),
+    };
+  }
   async getByIdScoped(tenantId: string, id: string) {
     return this.read((db) => {
       const order = db.purchaseOrders.find(
@@ -146,6 +168,36 @@ export class MockPurchaseOrderRepository
       );
       if (index < 0) throw this.missing("PurchaseOrder", id);
       const updated = { ...db.purchaseOrders[index], status, updatedAt: this.now() };
+      db.purchaseOrders[index] = updated;
+      return hydratePurchaseOrder(updated, db);
+    });
+    this.emit("purchase-order.changed", {
+      entityId: item.id,
+      tenantId: item.tenantId,
+      action: "status_changed",
+    });
+    return item;
+  }
+  async submitScoped(tenantId: string, id: string) {
+    return this.updateStatusScoped(tenantId, id, PurchaseOrderStatus.pending_approval);
+  }
+  async approveScoped(tenantId: string, id: string) {
+    return this.updateStatusScoped(tenantId, id, PurchaseOrderStatus.approved);
+  }
+  async cancelScoped(tenantId: string, id: string, reason: string) {
+    const item = this.store.mutate((db) => {
+      const index = db.purchaseOrders.findIndex(
+        (order) => order.id === id && order.tenantId === tenantId,
+      );
+      if (index < 0) throw this.missing("PurchaseOrder", id);
+      const now = this.now();
+      const updated = {
+        ...db.purchaseOrders[index],
+        status: PurchaseOrderStatus.cancelled,
+        cancellationReason: reason.trim(),
+        cancelledAt: now,
+        updatedAt: now,
+      };
       db.purchaseOrders[index] = updated;
       return hydratePurchaseOrder(updated, db);
     });

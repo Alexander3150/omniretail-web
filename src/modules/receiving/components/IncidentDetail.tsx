@@ -158,10 +158,8 @@ export function IncidentDetailContent({ incident, onPreview }: IncidentDetailCon
         </p>
       </DetailSection>
 
+      {incident.evidence.length > 0 ? (
       <DetailSection title={`Evidencias (${incident.evidence.length})`}>
-        {incident.evidence.length === 0 ? (
-          <p className="text-sm text-[var(--color-text-muted)]">No se registraron evidencias.</p>
-        ) : (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {incident.evidence.map((evidence) =>
               evidence.previewUrl ? (
@@ -190,8 +188,8 @@ export function IncidentDetailContent({ incident, onPreview }: IncidentDetailCon
               ),
             )}
           </div>
-        )}
       </DetailSection>
+      ) : null}
     </div>
   );
 }

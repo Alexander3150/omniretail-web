@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import type {
@@ -17,6 +17,7 @@ import {
   getPricingDetails,
   getTierCost,
   PurchaseOrderEditorService,
+  PurchaseOrderSubmissionError,
 } from "@/modules/purchasing/application/services/PurchaseOrderEditorService";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 import { toFiniteNumber, type NumericInputValue } from "@/shared/utils/numberInput";
@@ -43,14 +44,22 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
   );
   const [prefillNotice, setPrefillNotice] = useState<string | null>(null);
   const [prefillWarning, setPrefillWarning] = useState<string | null>(null);
+  const [prefillApplied, setPrefillApplied] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const productsRequestIdRef = useRef(0);
+  const saveInFlightRef = useRef(false);
+  const activeBranchIdRef = useRef(currentBranch?.id);
+  activeBranchIdRef.current = currentBranch?.id;
 
   const loadAvailableProducts = useCallback(
     async (supplierId: string) => {
-      if (!currentBranch?.tenantId) return [];
+      if (!currentBranch?.tenantId) return null;
+      const requestId = productsRequestIdRef.current + 1;
+      productsRequestIdRef.current = requestId;
       const products = await service.getAvailableProducts(supplierId, currentBranch?.id);
+      if (productsRequestIdRef.current !== requestId) return null;
       setAvailableProducts(products);
       return products;
     },
@@ -59,11 +68,20 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
 
   useEffect(() => {
     let active = true;
+    productsRequestIdRef.current += 1;
     async function load() {
-      if (!currentBranch?.tenantId) return;
+      if (!currentBranch?.tenantId) {
+        setError("Selecciona una sucursal activa para crear la orden.");
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       setError(null);
       try {
+        if (!orderId) {
+          setModel({ ...EMPTY_MODEL, baseDate: new Date().toISOString().slice(0, 10) });
+          setAvailableProducts([]);
+        }
         const activeSuppliers = await service.getActiveSuppliers();
         if (!active) return;
         if (orderId) {
@@ -81,7 +99,17 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
           if (!active) return;
           setPrefillResolution(resolution);
           setPrefillNotice(resolution?.notice ?? null);
-          setPrefillWarning(resolution?.warning ?? null);
+          const branchWarning =
+            prefill.branchId && prefill.branchId !== currentBranch?.id
+              ? "La sucursal del enlace no coincide con la sucursal activa. Se usara la sucursal activa."
+              : undefined;
+          const quantityWarning = prefill.suggestedQuantityInvalid
+            ? "La cantidad sugerida del enlace no es valida; se aplicara el minimo canonico del proveedor."
+            : undefined;
+          const warnings = [resolution?.warning, branchWarning, quantityWarning].filter(
+            (warning): warning is string => Boolean(warning),
+          );
+          setPrefillWarning(warnings.length > 0 ? warnings.join(" ") : null);
           setSuppliers(
             resolution
               ? activeSuppliers.filter((supplier) =>
@@ -92,7 +120,7 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
           if (resolution?.supplierId) {
             const products = await service.getAvailableProducts(
               resolution.supplierId,
-              prefill.branchId ?? currentBranch?.id,
+              currentBranch?.id,
             );
             if (!active) return;
             const lineProduct = products.find(
@@ -106,6 +134,8 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
                 getExpectedLeadTime(
                   lineProduct ? [createEditorLine(lineProduct, resolution.quantity)] : [],
                   products,
+                  activeSuppliers.find((supplier) => supplier.id === resolution.supplierId)
+                    ?.leadTimeDays,
                 ),
               ),
               lines: lineProduct ? [createEditorLine(lineProduct, resolution.quantity)] : [],
@@ -120,6 +150,7 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
             }));
             setAvailableProducts([]);
           }
+          setPrefillApplied(true);
         } else {
           setSuppliers(activeSuppliers);
         }
@@ -164,8 +195,13 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
     [model.supplierId, suppliers],
   );
   const expectedLeadTimeDays = useMemo(
-    () => getExpectedLeadTime(model.lines, availableProducts),
-    [availableProducts, model.lines],
+    () =>
+      getExpectedLeadTime(
+        model.lines,
+        availableProducts,
+        selectedSupplier?.leadTimeDays,
+      ),
+    [availableProducts, model.lines, selectedSupplier?.leadTimeDays],
   );
 
   const filteredProducts = useMemo(() => {
@@ -183,6 +219,7 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
         return { requiresConfirmation: true };
       }
       const products = await loadAvailableProducts(supplierId);
+      if (!products) return { requiresConfirmation: false };
       const prefillProduct =
         prefillResolution && model.lines.length === 0
           ? products.find((product) => product.productId === prefillResolution.productId)
@@ -194,13 +231,20 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
         ...current,
         supplierId,
         lines,
-        expectedDate: getExpectedDate(current.baseDate, getExpectedLeadTime(lines, products)),
+        expectedDate: getExpectedDate(
+          current.baseDate,
+          getExpectedLeadTime(
+            lines,
+            products,
+            suppliers.find((supplier) => supplier.id === supplierId)?.leadTimeDays,
+          ),
+        ),
       }));
       if (prefillProduct) setPrefillWarning(null);
       setProductSearch("");
       return { requiresConfirmation: false };
     },
-    [loadAvailableProducts, model.lines.length, prefillResolution],
+    [loadAvailableProducts, model.lines.length, prefillResolution, suppliers],
   );
 
   const addProduct = useCallback(
@@ -214,12 +258,16 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
           lines,
           expectedDate: getExpectedDate(
             current.baseDate,
-            getExpectedLeadTime(lines, availableProducts),
+            getExpectedLeadTime(
+              lines,
+              availableProducts,
+              suppliers.find((supplier) => supplier.id === current.supplierId)?.leadTimeDays,
+            ),
           ),
         };
       });
     },
-    [availableProducts],
+    [availableProducts, suppliers],
   );
 
   const removeLine = useCallback(
@@ -231,12 +279,16 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
           lines,
           expectedDate: getExpectedDate(
             current.baseDate,
-            getExpectedLeadTime(lines, availableProducts),
+            getExpectedLeadTime(
+              lines,
+              availableProducts,
+              suppliers.find((supplier) => supplier.id === current.supplierId)?.leadTimeDays,
+            ),
           ),
         };
       });
     },
-    [availableProducts],
+    [availableProducts, suppliers],
   );
 
   const updateLineQuantity = useCallback(
@@ -284,9 +336,12 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
   const saveDraft = useCallback(async () => {
     if (!model.supplierId) throw new Error("Selecciona un proveedor.");
     if (!currentBranch) throw new Error("Selecciona una sucursal destino.");
+    if (saveInFlightRef.current) throw new Error("Ya hay un guardado en curso.");
+    const savingBranchId = currentBranch.id;
+    saveInFlightRef.current = true;
     setSaving(true);
     try {
-      return await service.saveDraft({
+      const order = await service.saveDraft({
         orderId: model.id,
         branchId: currentBranch.id,
         supplierId: model.supplierId,
@@ -294,16 +349,24 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
         notes: model.notes,
         lines: model.lines,
       });
+      if (activeBranchIdRef.current === savingBranchId) {
+        setModel((current) => ({ ...current, id: order.id, status: order.status }));
+      }
+      return order;
     } finally {
+      saveInFlightRef.current = false;
       setSaving(false);
     }
   }, [currentBranch, model, service]);
 
   const createOrder = useCallback(async () => {
     if (!currentBranch) throw new Error("Selecciona una sucursal destino.");
+    if (saveInFlightRef.current) throw new Error("Ya hay un guardado en curso.");
+    const savingBranchId = currentBranch.id;
+    saveInFlightRef.current = true;
     setSaving(true);
     try {
-      return await service.createOrder({
+      const order = await service.createOrder({
         orderId: model.id,
         branchId: currentBranch.id,
         supplierId: model.supplierId,
@@ -311,7 +374,24 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
         notes: model.notes,
         lines: model.lines,
       });
+      if (activeBranchIdRef.current === savingBranchId) {
+        setModel((current) => ({ ...current, id: order.id, status: order.status }));
+      }
+      return order;
+    } catch (caughtError) {
+      if (
+        caughtError instanceof PurchaseOrderSubmissionError &&
+        activeBranchIdRef.current === savingBranchId
+      ) {
+        setModel((current) => ({
+          ...current,
+          id: caughtError.draft.id,
+          status: caughtError.draft.status,
+        }));
+      }
+      throw caughtError;
     } finally {
+      saveInFlightRef.current = false;
       setSaving(false);
     }
   }, [currentBranch, model, service]);
@@ -332,6 +412,7 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
     expectedLeadTimeDays,
     prefillNotice,
     prefillWarning,
+    prefillApplied,
     pricingByLineId,
     setProductSearch,
     changeSupplier,
@@ -383,17 +464,18 @@ function getInitialQuantity(
   product: PurchaseOrderAvailableProduct,
   requestedQuantity?: number,
 ): number {
-  if (
+  const requested =
     typeof requestedQuantity === "number" &&
-    Number.isSafeInteger(requestedQuantity) &&
+    Number.isFinite(requestedQuantity) &&
     requestedQuantity > 0
-  ) {
-    return requestedQuantity;
-  }
-  if (Number.isSafeInteger(product.minimumOrderQuantity) && product.minimumOrderQuantity > 0) {
-    return product.minimumOrderQuantity;
-  }
-  return 1;
+      ? requestedQuantity
+      : 0;
+  const minimum =
+    Number.isFinite(product.minimumOrderQuantity) && product.minimumOrderQuantity > 0
+      ? product.minimumOrderQuantity
+      : 0;
+  const quantity = Math.max(requested, minimum, 1);
+  return product.unitAllowsDecimals ? quantity : Math.ceil(quantity);
 }
 
 function normalize(value: string) {

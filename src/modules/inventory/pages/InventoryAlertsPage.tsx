@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -13,8 +14,25 @@ import {
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { StorageLocation } from "@/core/entities";
+import type { AdjustmentLotOption, AdjustmentSerialOption } from "@/core/repositories";
+import type { InventoryAdjustmentLookupService } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
+import { useSerialBatchPrecheck } from "@/shared/hooks/useSerialBatchPrecheck";
+import { saveMovementsNavContext } from "@/modules/inventory/application/services/movementsNavContext";
+import { INVENTORY_STOCK_READ_PERMISSION } from "@/modules/inventory/application/services/serviceHelpers";
+import { TraceableCountFlow } from "@/modules/inventory/components/TraceableCountFlow";
+import type { InventoryOtherBranchesService } from "@/modules/inventory/application/services/InventoryOtherBranchesService";
+import type { OtherBranchAvailability } from "@/core/repositories";
+import type { InventoryKitAvailability } from "@/core/repositories";
+import type { GetInventoryKitAvailabilityService } from "@/modules/inventory/application/services/GetInventoryKitAvailabilityService";
+import type { InventoryCountService } from "@/modules/inventory/application/services/InventoryCountService";
+import type { ReconcileCountInput } from "@/core/repositories";
 import { getLocalCalendarDate } from "@/core/inventory/expirationDate";
-import { InventoryTransferReason, InventoryTransferRequestStatus } from "@/core/enums";
+import {
+  InventoryTransferReason,
+  InventoryTransferRequestStatus,
+  SaasCapabilityKey,
+} from "@/core/enums";
+import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { Button } from "@/shared/components/Button";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Input } from "@/shared/components/Input";
@@ -22,6 +40,7 @@ import { Modal } from "@/shared/components/Modal";
 import { Select } from "@/shared/components/Select";
 import { useToast } from "@/shared/components/Toast";
 import { cn } from "@/shared/utils/cn";
+import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import { QUANTITY_DECIMAL_PLACES, TEXT_LIMITS } from "@/shared/utils/inputLimits";
 import {
   hasAtMostDecimalPlaces,
@@ -34,7 +53,6 @@ import type {
   AlertPanelMode,
   InventoryAlert,
   InventoryProductRow,
-  InventoryStatus,
   InventoryTransferRequestRow,
   TransferRequestDto,
 } from "@/modules/inventory/application/dto/InventoryAlertsDto";
@@ -74,7 +92,6 @@ const STATUS_OPTIONS: Array<{ value: InventoryStatusFilter; label: string }> = [
 ];
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100];
-const DEFAULT_PAGE_SIZE = 20;
 const VIEWED_TRANSFER_ALERTS_STORAGE_KEY = "omniretail:inventory:viewed-transfer-alerts:v1";
 
 const TRANSFER_REASONS: Array<{ value: InventoryTransferReason; label: string }> = [
@@ -89,10 +106,24 @@ export function InventoryAlertsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { showToast } = useToast();
+  const { hasPermission } = useCurrentSession();
+  const { hasCapability } = useEntitlement();
+  // Consultar existencias en otras sucursales es lectura de stock; traslados siguen aparte.
+  const canViewOtherBranches =
+    hasPermission(INVENTORY_STOCK_READ_PERMISSION) && hasCapability(SaasCapabilityKey.inventory);
+  const canCreatePurchaseOrder =
+    hasPermission("purchasing.orders.create") && hasCapability(SaasCapabilityKey.purchasing);
   const {
     data,
+    detailRow,
     kpis,
     rows,
+    paginatedRows,
+    totalItems,
+    totalPages,
+    page,
+    pageSize,
+    apiMode,
     branchId,
     currentBranchId,
     activeBranch,
@@ -114,6 +145,16 @@ export function InventoryAlertsPage() {
     setStatus,
     setKpiFilter,
     setFiltersOpen,
+    setPage,
+    setPageSize,
+    loadAlerts,
+    loadProductRow,
+    adjustmentLookup,
+    supportsMultipleLocations,
+    countService,
+    otherBranchesService,
+    kitAvailabilityService,
+    applyCount,
     canAdjustStock,
     canManageTransfers,
     adjustStock,
@@ -134,8 +175,6 @@ export function InventoryAlertsPage() {
     () => new Set(),
   );
   const [hasRestoredViewedTransferAlerts, setHasRestoredViewedTransferAlerts] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [, setClockTick] = useState(0);
   if (previousCurrentBranchId !== currentBranchId) {
     setPreviousCurrentBranchId(currentBranchId);
@@ -147,15 +186,16 @@ export function InventoryAlertsPage() {
   const selectedRow =
     rows.find((row) => row.productId === selectedProductId) ??
     data.rows.find((row) => row.productId === selectedProductId) ??
+    data.alerts.find((alert) => alert.productId === selectedProductId)?.row ??
+    (detailRow?.productId === selectedProductId ? detailRow : null) ??
     null;
   const selectedTransferRequest =
     data.transferRequests.find((request) => request.id === selectedTransferRequestId) ?? null;
   const branchLocations = locations.filter((location) => location.branchId === branchId);
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const currentPage = Math.min(page, totalPages);
-  const firstVisible = rows.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
-  const lastVisible = Math.min(currentPage * pageSize, rows.length);
-  const paginatedRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  // Solo un producto con stock propio (TRACKED) admite ajustes; servicio y kit no.
+  const canAdjustSelectedRow = canAdjustStock && selectedRow?.inventoryMode === "TRACKED";
+  const firstVisible = totalItems === 0 ? 0 : (page - 1) * pageSize + 1;
+  const lastVisible = Math.min((page - 1) * pageSize + paginatedRows.length, totalItems);
   const unreadAlertCount = hasRestoredViewedTransferAlerts
     ? data.transferRequests.filter(
         (request) => !viewedTransferAlertKeys.has(getTransferAlertKey(branchId, request)),
@@ -170,18 +210,33 @@ export function InventoryAlertsPage() {
   // Product creation hands off to this existing adjustment UI. It only
   // selects a product; RegisterInventoryAdjustmentService remains the sole
   // stock mutation boundary and retains all traceability validation.
+  // El handoff (?productId=&openAdjustment=1) es un trigger ONE-SHOT: al consumirlo se limpia la
+  // URL (replace), de modo que ningun refetch posterior (que cambia loadProductRow) lo repita.
+  const handoffConsumedRef = useRef<string | null>(null);
   useEffect(() => {
     const productId = searchParams.get("productId");
-    if (!productId || !data.rows.some((row) => row.productId === productId)) return;
-    window.queueMicrotask(() => {
+    if (!productId) return;
+    // Espera a sesion/sucursal para decidir con permisos reales (no consumir en falso).
+    if (loading) return;
+    const wantsAdjustment = searchParams.get("openAdjustment") === "1";
+    const handoffKey = `${productId}|${wantsAdjustment}`;
+    if (handoffConsumedRef.current === handoffKey) return;
+    let active = true;
+    void loadProductRow(productId).then((row) => {
+      if (!active || !row) return;
+      handoffConsumedRef.current = handoffKey;
       setSelectedProductId(productId);
       setPanelMode("product-detail");
       setContextPanelExpanded(true);
-      if (searchParams.get("openAdjustment") === "1" && canAdjustStock) {
+      if (wantsAdjustment && canAdjustStock && row.inventoryMode === "TRACKED") {
         setActionMode("adjust");
       }
+      router.replace("/inventario/alertas", { scroll: false });
     });
-  }, [canAdjustStock, data.rows, searchParams]);
+    return () => {
+      active = false;
+    };
+  }, [canAdjustStock, loadProductRow, loading, router, searchParams]);
 
   useEffect(() => {
     let active = true;
@@ -196,18 +251,21 @@ export function InventoryAlertsPage() {
   }, []);
 
   function selectRow(row: InventoryProductRow) {
+    void loadAlerts();
     setSelectedProductId(row.productId);
     setPanelMode("product-detail");
     setContextPanelExpanded(true);
   }
 
   function selectProduct(productId: string) {
+    void loadAlerts();
     setSelectedProductId(productId);
     setPanelMode("product-detail");
     setContextPanelExpanded(true);
   }
 
   function openAdjust(row?: InventoryProductRow) {
+    if (row && row.inventoryMode !== "TRACKED") return;
     if (row) selectRow(row);
     setActionMode("adjust");
   }
@@ -224,13 +282,15 @@ export function InventoryAlertsPage() {
   }
 
   function openMovementHistory(row: InventoryProductRow) {
-    router.push(
-      `/inventario/movimientos?${buildQueryString({
-        productId: row.productId,
-        branchId: row.branchId,
-        source: "inventory",
-      })}`,
-    );
+    // El contexto viaja por sessionStorage: la URL queda limpia (sin UUIDs).
+    saveMovementsNavContext({
+      productId: row.productId,
+      productName: row.productName,
+      productSku: row.sku,
+      branchId: row.branchId,
+      source: "inventory",
+    });
+    router.push("/inventario/movimientos");
   }
 
   function openPurchaseOrder(row: InventoryProductRow, source: "inventory" | "inventory-alert") {
@@ -280,8 +340,8 @@ export function InventoryAlertsPage() {
           <div className="grid gap-2 sm:flex sm:flex-wrap sm:justify-end">
             <Button
               className="w-full sm:w-auto"
-              disabled={!selectedRow || !canAdjustStock}
-              onClick={() => canAdjustStock && openAdjust(selectedRow ?? undefined)}
+              disabled={!canAdjustSelectedRow}
+              onClick={() => canAdjustSelectedRow && openAdjust(selectedRow ?? undefined)}
               type="button"
             >
               + Registrar ajuste
@@ -300,10 +360,10 @@ export function InventoryAlertsPage() {
         expiringSoon={kpis.expiringSoon}
         selectedFilter={kpiFilter}
         showExpiration={data.visibility.showExpirationFeatures}
+        lowStockFilterable={!apiMode}
         lowStock={kpis.lowStock}
         outOfStock={kpis.outOfStock}
         onFilterChange={(filter) => {
-          setPage(1);
           setKpiFilter(filter);
         }}
       />
@@ -329,28 +389,24 @@ export function InventoryAlertsPage() {
             status={status}
             unreadAlertCount={unreadAlertCount}
             onBranchChange={(value) => {
-              setPage(1);
               setBranchId(value);
               setPanelMode("alerts");
               setSelectedProductId(null);
             }}
             onCategoryChange={(value) => {
-              setPage(1);
               setCategoryId(value);
             }}
             onSearchChange={(value) => {
-              setPage(1);
               setSearch(value);
             }}
             onStatusChange={(value) => {
-              setPage(1);
               setStatus(value);
             }}
             onToggleFilters={() => {
-              setPage(1);
               setFiltersOpen((current) => !current);
             }}
             onOpenAlerts={() => {
+              void loadAlerts();
               setPanelMode("alerts");
               setContextPanelExpanded(true);
             }}
@@ -363,23 +419,20 @@ export function InventoryAlertsPage() {
             <InventoryTable
               firstVisible={firstVisible}
               lastVisible={lastVisible}
-              page={currentPage}
+              page={page}
               pageSize={pageSize}
               rows={paginatedRows}
               selectedProductId={selectedProductId}
               showExpiration={data.visibility.showExpirationFeatures}
-              totalItems={rows.length}
+              totalItems={totalItems}
               totalPages={totalPages}
               canAdjustStock={canAdjustStock}
-              canManageTransfers={canManageTransfers}
+              canManageTransfers={canManageTransfers && !apiMode}
               compact={contextPanelExpanded}
               onAdjust={openAdjust}
               onOpen={selectRow}
               onPageChange={setPage}
-              onPageSizeChange={(nextPageSize) => {
-                setPage(1);
-                setPageSize(nextPageSize);
-              }}
+              onPageSizeChange={setPageSize}
               onTransfer={openTransfer}
               onViewHistory={openMovementHistory}
             />
@@ -390,10 +443,13 @@ export function InventoryAlertsPage() {
           activeBranchName={activeBranch?.name ?? "Sucursal"}
           activeBranchId={branchId}
           alerts={data.alerts}
+          alertTotalItems={data.alertTotalItems}
           mode={panelMode}
           row={selectedRow}
           canAdjustStock={canAdjustStock}
-          canManageTransfers={canManageTransfers}
+          canCreatePurchaseOrder={canCreatePurchaseOrder}
+          canViewOtherBranches={canViewOtherBranches}
+          kitAvailabilityService={kitAvailabilityService}
           desktopExpanded={contextPanelExpanded}
           onAdjust={() => selectedRow && canAdjustStock && openAdjust(selectedRow)}
           onCreateOrder={() => selectedRow && openPurchaseOrder(selectedRow, "inventory-alert")}
@@ -415,18 +471,32 @@ export function InventoryAlertsPage() {
         />
       </section>
 
-      {selectedRow && actionMode === "adjust" ? (
-        <AdjustStockModal
+      {selectedRow && selectedRow.inventoryMode === "TRACKED" && actionMode === "adjust" ? (
+        <AdjustStockGate
           busy={busy}
           locations={branchLocations}
-          open
+          supportsMultipleLocations={supportsMultipleLocations}
+          lookup={adjustmentLookup}
+          countService={countService}
           row={selectedRow}
+          onApplyCount={async (input) => {
+            const { pdfFailed } = await applyCount(input);
+            setActionMode(null);
+            showToast({
+              title: pdfFailed
+                ? "Conteo aplicado, pero no se pudo generar el comprobante PDF."
+                : "Conteo físico aplicado correctamente.",
+              tone: pdfFailed ? "info" : "success",
+            });
+          }}
           onClose={() => setActionMode(null)}
           onSubmit={async (dto) => {
             const result = await adjustStock(dto);
             setActionMode(null);
             showToast({
-              title: `Ajuste ${result.adjustmentNumber} registrado correctamente.`,
+              title: result.adjustmentNumber
+                ? `Ajuste ${result.adjustmentNumber} registrado correctamente.`
+                : "Ajuste registrado correctamente.",
               tone: "success",
             });
           }}
@@ -435,7 +505,9 @@ export function InventoryAlertsPage() {
       {selectedRow && actionMode === "other-branches" ? (
         <OtherBranchesStockModal
           open
+          activeBranchId={branchId}
           row={selectedRow}
+          service={otherBranchesService}
           onClose={() => setActionMode(null)}
           canManageTransfers={canManageTransfers}
           onRequest={(providerBranchId) => openTransfer(selectedRow, providerBranchId)}
@@ -501,6 +573,7 @@ function KpiGrid({
   outOfStock,
   selectedFilter,
   showExpiration,
+  lowStockFilterable,
   onFilterChange,
 }: {
   activeProducts: number;
@@ -509,6 +582,7 @@ function KpiGrid({
   outOfStock: number;
   selectedFilter: InventoryKpiFilter;
   showExpiration: boolean;
+  lowStockFilterable: boolean;
   onFilterChange: (filter: InventoryKpiFilter) => void;
 }) {
   return (
@@ -532,6 +606,7 @@ function KpiGrid({
         filter="lowStock"
         icon="B"
         label="Stock bajo"
+        disabled={!lowStockFilterable}
         selected={selectedFilter === "lowStock"}
         tone="warning"
         value={lowStock}
@@ -569,6 +644,7 @@ function KpiCard({
   icon,
   label,
   selected,
+  disabled = false,
   tone = "info",
   value,
   onSelect,
@@ -578,6 +654,7 @@ function KpiCard({
   icon: string;
   label: string;
   selected: boolean;
+  disabled?: boolean;
   tone?: "info" | "warning" | "danger";
   value: number;
   onSelect: (filter: InventoryKpiFilter) => void;
@@ -591,7 +668,9 @@ function KpiCard({
         tone === "danger" && "border-red-200",
         tone === "info" && "border-[var(--color-border)]",
         selected && "border-[var(--color-structure)] ring-2 ring-[var(--color-primary)]/25",
+        disabled && "cursor-default hover:border-amber-200 hover:bg-white",
       )}
+      disabled={disabled}
       onClick={() => onSelect(selected ? "all" : filter)}
       type="button"
     >
@@ -841,38 +920,12 @@ function InventoryTable({
                       {row.sku}
                     </p>
                   </td>
-                  <td className="px-3 py-3 text-right">
-                    <p className="text-base font-bold text-[var(--color-title)]">
-                      {row.sellableQuantity} {row.saleUnitName}
-                    </p>
-                    {row.inventoryUnitId !== row.unitId ? (
-                      <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
-                        Equivale a {row.inventoryPresentationQuantity} {row.inventoryUnitName}
-                      </p>
-                    ) : null}
-                    <StockLevelBar row={row} />
-                  </td>
-                  <td className="px-3 py-3 text-right font-semibold text-[var(--color-text)]">
-                    {row.sellableReservedQuantity} {row.saleUnitName}
-                  </td>
-                  <td className="px-3 py-3 text-right font-bold text-[var(--color-title)]">
-                    <p>
-                      {row.sellableAvailableQuantity} {row.saleUnitName}
-                    </p>
-                    {row.inventoryUnitId !== row.saleUnitId ? (
-                      <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
-                        {row.inventoryPresentationAvailableQuantity} {row.inventoryUnitName}
-                      </p>
-                    ) : null}
-                  </td>
-                  <td className="hidden px-3 py-3 text-right font-semibold text-[var(--color-text)] md:table-cell">
-                    {row.minStock}
-                  </td>
+                  <StockCells row={row} />
                   <td className="hidden px-3 py-3 font-semibold text-[var(--color-text)] lg:table-cell">
                     {row.defaultLocationName}
                   </td>
                   <td className="px-3 py-3">
-                    <InventoryStatusBadge status={row.status} label={row.statusLabel} />
+                    <InventoryStatusBadge row={row} />
                   </td>
                   {showExpiration ? (
                     <td className="hidden px-3 py-3 text-[var(--color-text)] lg:table-cell">
@@ -880,7 +933,7 @@ function InventoryTable({
                     </td>
                   ) : null}
                   <td className="px-3 py-3">
-                    {!row.isDerivedKit ? (
+                    {row.inventoryMode === "TRACKED" ? (
                       <RowActionsMenu
                         row={row}
                         canAdjustStock={canAdjustStock}
@@ -984,6 +1037,84 @@ function InventoryTableFooter({
   );
 }
 
+/**
+ * Celdas Existencia / Reservado / Disponible / Nivel minimo. Solo un producto TRACKED muestra stock
+ * propio; servicio y kit no inventan existencias ni usan la barra de nivel fisico.
+ */
+function StockCells({ row }: { row: InventoryProductRow }) {
+  if (row.inventoryMode === "NONE") {
+    return (
+      <>
+        <td className="px-3 py-3 text-right font-semibold text-[var(--color-text-muted)]">—</td>
+        <td className="px-3 py-3 text-right font-semibold text-[var(--color-text-muted)]">—</td>
+        <td className="px-3 py-3 text-right font-semibold text-[var(--color-text-muted)]">—</td>
+        <td className="hidden px-3 py-3 text-right font-semibold text-[var(--color-text-muted)] md:table-cell">
+          —
+        </td>
+      </>
+    );
+  }
+  if (row.inventoryMode === "DERIVED_KIT") {
+    return (
+      <>
+        <td className="px-3 py-3 text-right text-base font-bold text-[var(--color-title)]">
+          {row.availableQuantity} Kit
+        </td>
+        <td className="px-3 py-3 text-right font-semibold text-[var(--color-text-muted)]">—</td>
+        <td className="px-3 py-3 text-right font-bold text-[var(--color-title)]">
+          {row.availableQuantity} Kit
+        </td>
+        <td className="hidden px-3 py-3 text-right font-semibold text-[var(--color-text-muted)] md:table-cell">
+          —
+        </td>
+      </>
+    );
+  }
+  return (
+    <>
+      <td className="px-3 py-3 text-right">
+        <p className="text-base font-bold text-[var(--color-title)]">
+          {formatStockQuantity(row.sellableQuantity)} {row.saleUnitName}
+        </p>
+        {row.inventoryUnitId !== row.unitId && row.inventoryUnitId !== row.saleUnitId ? (
+          <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
+            {formatStockQuantity(row.inventoryPresentationQuantity)} {row.inventoryUnitName}{" "}
+            inventario
+          </p>
+        ) : null}
+        <StockLevelBar row={row} />
+      </td>
+      <td className="px-3 py-3 text-right font-semibold text-[var(--color-text)]">
+        {formatStockQuantity(row.sellableReservedQuantity)} {row.saleUnitName}
+      </td>
+      <td className="px-3 py-3 text-right font-bold text-[var(--color-title)]">
+        <p>
+          {formatStockQuantity(row.sellableAvailableQuantity)} {row.saleUnitName}
+        </p>
+        {row.inventoryUnitId !== row.saleUnitId ? (
+          <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
+            {formatStockQuantity(row.inventoryPresentationAvailableQuantity)}{" "}
+            {row.inventoryUnitName} inventario
+          </p>
+        ) : null}
+      </td>
+      <td className="hidden px-3 py-3 text-right font-semibold text-[var(--color-text)] md:table-cell">
+        {row.minStock}
+      </td>
+    </>
+  );
+}
+
+const stockQuantityFormat = new Intl.NumberFormat("es-GT", {
+  maximumFractionDigits: QUANTITY_DECIMAL_PLACES,
+  useGrouping: false,
+});
+
+/** 2 -> "2", 1.5 -> "1.5"; sin ceros de relleno ni redondeo mas alla de la precision de cantidades. */
+function formatStockQuantity(value: number) {
+  return stockQuantityFormat.format(value);
+}
+
 function StockLevelBar({ row }: { row: InventoryProductRow }) {
   const target = Math.max(row.minStock || 0, row.availableQuantity || 0, 1);
   const percent = Math.min(100, Math.round((row.availableQuantity / target) * 100));
@@ -1025,15 +1156,32 @@ function ExpirationCell({ row }: { row: InventoryProductRow }) {
   );
 }
 
-function InventoryStatusBadge({ label, status }: { label: string; status: InventoryStatus }) {
+/** Badge por `displayStatus`: el estado fisico de un TRACKED no se mezcla con servicio ni kit. */
+function InventoryStatusBadge({
+  row,
+}: {
+  row: Pick<InventoryProductRow, "displayStatus" | "statusLabel">;
+}) {
+  const { displayStatus } = row;
+  const label =
+    displayStatus === "NOT_CONTROLLED"
+      ? "No controla inventario"
+      : displayStatus === "KIT_AVAILABLE"
+        ? "Disponible"
+        : displayStatus === "KIT_UNAVAILABLE"
+          ? "Sin disponibilidad"
+          : row.statusLabel;
   return (
     <span
       className={cn(
         "inline-flex rounded-md px-2 py-1 text-xs font-bold",
-        status === "normal" && "bg-emerald-100 text-emerald-800",
-        status === "near_minimum" && "bg-amber-100 text-amber-800",
-        status === "critical" && "bg-orange-100 text-orange-800",
-        status === "out_of_stock" && "bg-red-100 text-red-800",
+        displayStatus === "NORMAL" && "bg-emerald-100 text-emerald-800",
+        displayStatus === "NEAR_MINIMUM" && "bg-amber-100 text-amber-800",
+        displayStatus === "CRITICAL" && "bg-orange-100 text-orange-800",
+        displayStatus === "OUT_OF_STOCK" && "bg-red-100 text-red-800",
+        displayStatus === "NOT_CONTROLLED" && "bg-slate-100 text-slate-700",
+        displayStatus === "KIT_AVAILABLE" && "bg-emerald-100 text-emerald-800",
+        displayStatus === "KIT_UNAVAILABLE" && "bg-red-50 text-red-700",
       )}
     >
       {label}
@@ -1220,13 +1368,33 @@ function HistoryIcon() {
   );
 }
 
+function BranchesIcon() {
+  return (
+    <ActionMenuIcon>
+      <path d="M4 21V9l8-5 8 5v12M9 21v-6h6v6M9 11h.01M15 11h.01" />
+    </ActionMenuIcon>
+  );
+}
+
+function PurchaseOrderIcon() {
+  return (
+    <ActionMenuIcon>
+      <path d="M9 4h6v3H9zM8 5.5H6a1 1 0 0 0-1 1V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V6.5a1 1 0 0 0-1-1h-2" />
+      <path d="M9 12h6M9 16h4" />
+    </ActionMenuIcon>
+  );
+}
+
 function ContextPanel({
   activeBranchId,
   activeBranchName,
+  alertTotalItems,
   canAdjustStock,
-  canManageTransfers,
+  canViewOtherBranches,
+  kitAvailabilityService,
   desktopExpanded,
   alerts,
+  canCreatePurchaseOrder,
   mode,
   row,
   transferRequests,
@@ -1245,10 +1413,13 @@ function ContextPanel({
 }: {
   activeBranchId: string;
   activeBranchName: string;
+  alertTotalItems: number;
   canAdjustStock: boolean;
-  canManageTransfers: boolean;
+  canViewOtherBranches: boolean;
+  kitAvailabilityService: GetInventoryKitAvailabilityService | null;
   desktopExpanded: boolean;
   alerts: InventoryAlert[];
+  canCreatePurchaseOrder: boolean;
   mode: AlertPanelMode;
   row: InventoryProductRow | null;
   transferRequests: InventoryTransferRequestRow[];
@@ -1266,7 +1437,7 @@ function ContextPanel({
   onViewProductTransfers: () => void;
 }) {
   const productAlerts = row ? alerts.filter((alert) => alert.productId === row.productId) : [];
-  const totalAlerts = alerts.length + transferRequests.length;
+  const totalAlerts = alertTotalItems + transferRequests.length;
 
   const showProduct = mode === "product-detail" && Boolean(row);
 
@@ -1302,6 +1473,7 @@ function ContextPanel({
         <AlertsPanel
           activeBranchId={activeBranchId}
           alerts={alerts}
+          alertTotalItems={alertTotalItems}
           transferRequests={transferRequests}
           hasRestoredViewedTransferAlerts={hasRestoredViewedTransferAlerts}
           viewedTransferAlertKeys={viewedTransferAlertKeys}
@@ -1317,7 +1489,9 @@ function ContextPanel({
           alerts={productAlerts}
           row={row}
           canAdjustStock={canAdjustStock}
-          canManageTransfers={canManageTransfers}
+          canCreatePurchaseOrder={canCreatePurchaseOrder}
+          canViewOtherBranches={canViewOtherBranches}
+          kitAvailabilityService={kitAvailabilityService}
           onAdjust={onAdjust}
           onCreateOrder={onCreateOrder}
           onClose={onCloseProduct}
@@ -1334,6 +1508,7 @@ function ContextPanel({
 function AlertsPanel({
   activeBranchId,
   alerts,
+  alertTotalItems,
   transferRequests,
   hasRestoredViewedTransferAlerts,
   viewedTransferAlertKeys,
@@ -1343,6 +1518,7 @@ function AlertsPanel({
 }: {
   activeBranchId: string;
   alerts: InventoryAlert[];
+  alertTotalItems: number;
   transferRequests: InventoryTransferRequestRow[];
   hasRestoredViewedTransferAlerts: boolean;
   viewedTransferAlertKeys: Set<string>;
@@ -1357,6 +1533,8 @@ function AlertsPanel({
     hasRestoredViewedTransferAlerts,
     viewedTransferAlertKeys,
   );
+  const loadedAlertCount = alerts.length + transferRequests.length;
+  const totalAlertCount = alertTotalItems + transferRequests.length;
 
   return (
     <section>
@@ -1366,8 +1544,13 @@ function AlertsPanel({
             Alertas prioritarias
           </p>
           <h2 className="mt-1 text-base font-bold text-[var(--color-title)]">
-            Alertas {feedItems.length}
+            Alertas {totalAlertCount}
           </h2>
+          {loadedAlertCount < totalAlertCount ? (
+            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+              Mostrando {loadedAlertCount} alertas cargadas
+            </p>
+          ) : null}
         </div>
         <button
           aria-label="Cerrar panel de alertas"
@@ -1462,7 +1645,9 @@ function ProductPanel({
   activeBranchName,
   alerts,
   canAdjustStock,
-  canManageTransfers,
+  canCreatePurchaseOrder,
+  canViewOtherBranches,
+  kitAvailabilityService,
   row,
   onAdjust,
   onCreateOrder,
@@ -1474,7 +1659,9 @@ function ProductPanel({
   activeBranchName: string;
   alerts: InventoryAlert[];
   canAdjustStock: boolean;
-  canManageTransfers: boolean;
+  canCreatePurchaseOrder: boolean;
+  canViewOtherBranches: boolean;
+  kitAvailabilityService: GetInventoryKitAvailabilityService | null;
   row: InventoryProductRow;
   onAdjust: () => void;
   onCreateOrder: () => void;
@@ -1483,22 +1670,24 @@ function ProductPanel({
   onViewHistory: () => void;
   onViewProductTransfers: () => void;
 }) {
-  if (row.isDerivedKit) {
+  if (row.inventoryMode === "NONE") {
     return (
       <section>
         <header className="flex items-start justify-between gap-3 border-b border-[var(--color-border)] p-4">
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
-              Kit
+              Servicio
             </p>
-            <h2 className="mt-1 text-xl font-bold text-[var(--color-title)]">{row.productName}</h2>
+            <h2 className="mt-1 break-words text-xl font-bold text-[var(--color-title)]">
+              {row.productName}
+            </h2>
             <p className="mt-1 text-sm font-semibold uppercase text-[var(--color-text-muted)]">
               {row.sku}
             </p>
           </div>
           <button
-            aria-label="Cerrar detalle de kit"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-[var(--color-border)] text-lg font-bold"
+            aria-label="Cerrar detalle de servicio"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[var(--color-border)] text-lg font-bold"
             onClick={onClose}
             type="button"
           >
@@ -1507,41 +1696,424 @@ function ProductPanel({
         </header>
         <div className="space-y-4 p-4">
           <section className="rounded-lg border border-[var(--color-border)] bg-white p-4">
-            <div className="flex justify-between">
-              <p className="text-sm font-bold text-[var(--color-title)]">Disponibilidad derivada</p>
-              <InventoryStatusBadge label={row.statusLabel} status={row.status} />
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-bold text-[var(--color-title)]">Estado</p>
+              <InventoryStatusBadge row={row} />
             </div>
             <dl className="mt-4 grid gap-4 sm:grid-cols-2">
-              <DetailTile label="Disponible" value={`${row.quantity} Kit`} />
+              <DetailTile label="Tipo" value="Servicio" />
+              <DetailTile label="Existencia" value="No aplica" />
               <DetailTile label="Categoria" value={row.categoryName} />
               <DetailTile label="Sucursal" value={activeBranchName} />
-              <DetailTile label="Ubicacion" value="Calculado por componentes" />
             </dl>
             <p className="mt-4 rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text)]">
-              Disponibilidad calculada a partir de sus componentes.
+              Los servicios no controlan existencias de inventario.
             </p>
           </section>
         </div>
       </section>
     );
   }
+  if (row.inventoryMode === "DERIVED_KIT") {
+    return (
+      <KitProductPanel
+        activeBranchName={activeBranchName}
+        key={`${row.branchId}|${row.productId}`}
+        onClose={onClose}
+        row={row}
+        service={kitAvailabilityService}
+      />
+    );
+  }
+  return (
+    <PhysicalProductPanel
+      activeBranchName={activeBranchName}
+      alerts={alerts}
+      canAdjustStock={canAdjustStock}
+      canCreatePurchaseOrder={canCreatePurchaseOrder}
+      canViewOtherBranches={canViewOtherBranches}
+      // Al cambiar de producto/sucursal el panel se remonta: vuelve a "Informacion y existencias".
+      key={`${row.branchId}|${row.productId}`}
+      onAdjust={onAdjust}
+      onClose={onClose}
+      onCreateOrder={onCreateOrder}
+      onOtherBranches={onOtherBranches}
+      onViewHistory={onViewHistory}
+      onViewProductTransfers={onViewProductTransfers}
+      row={row}
+    />
+  );
+}
+
+type ProductPanelSection = "information" | "actions" | null;
+
+// Acciones compactas del panel fisico: filas de ancho completo (~40px) sin partir el texto.
+const PANEL_ACTION_CLASS =
+  "flex min-h-10 w-full items-center rounded-md border px-3 py-2 text-left text-[13px] font-semibold leading-tight transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]";
+// Secundarias en cuadricula 2x2: icono a la izquierda y acento azul suave (la primaria domina).
+const PANEL_SECONDARY_ACTION_CLASS =
+  "flex min-h-16 w-full items-center gap-2 rounded-lg border border-blue-200 bg-blue-50/40 px-2.5 py-2.5 text-left text-[12px] font-semibold leading-snug text-[var(--color-title)] transition hover:border-blue-300 hover:bg-blue-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)] [&>svg]:shrink-0 [&>svg]:text-[var(--color-structure)]";
+
+/** Variante compacta de DetailTile, solo para el panel fisico (Servicio y Kit no la usan). */
+function CompactTile({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[10px] font-semibold uppercase text-[var(--color-text-muted)]">{label}</dt>
+      <dd className="mt-0.5 break-words text-[13px] font-semibold leading-snug text-[var(--color-text)]">
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+/** Seccion de acordeon: encabezado con boton real (aria-expanded/aria-controls) y chevron. */
+function PanelAccordionSection({
+  children,
+  id,
+  onToggle,
+  open,
+  summary,
+  title,
+}: {
+  children: ReactNode;
+  id: string;
+  onToggle: () => void;
+  open: boolean;
+  summary?: ReactNode;
+  title: string;
+}) {
+  const headerId = `${id}-header`;
+  const panelId = `${id}-panel`;
+  return (
+    <section className="rounded-lg border border-[var(--color-border)] bg-white">
+      <h3>
+        <button
+          aria-controls={panelId}
+          aria-expanded={open}
+          className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition hover:bg-[var(--color-app-background)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-structure)]"
+          id={headerId}
+          onClick={onToggle}
+          type="button"
+        >
+          <span className="min-w-0">
+            <span className="block text-sm font-bold leading-tight text-[var(--color-title)]">
+              {title}
+            </span>
+            {summary ? (
+              <span className="mt-0.5 block text-[11px] font-semibold leading-tight text-[var(--color-text-muted)]">
+                {summary}
+              </span>
+            ) : null}
+          </span>
+          <svg
+            aria-hidden="true"
+            className={cn("h-3.5 w-3.5 shrink-0 transition-transform", open && "rotate-180")}
+            fill="none"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </button>
+      </h3>
+      <div
+        aria-labelledby={headerId}
+        className="border-t border-[var(--color-border)] p-3"
+        hidden={!open}
+        id={panelId}
+        role="region"
+      >
+        {children}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Producto fisico: encabezado fijo + acordeon de dos secciones (una abierta a la vez). Abre en
+ * "Informacion y existencias"; se remonta por producto, asi nunca conserva "Acciones" al cambiar.
+ */
+function PhysicalProductPanel({
+  activeBranchName,
+  alerts,
+  canAdjustStock,
+  canCreatePurchaseOrder,
+  canViewOtherBranches,
+  row,
+  onAdjust,
+  onClose,
+  onCreateOrder,
+  onOtherBranches,
+  onViewHistory,
+  onViewProductTransfers,
+}: {
+  activeBranchName: string;
+  alerts: InventoryAlert[];
+  canAdjustStock: boolean;
+  canCreatePurchaseOrder: boolean;
+  canViewOtherBranches: boolean;
+  row: InventoryProductRow;
+  onAdjust: () => void;
+  onClose: () => void;
+  onCreateOrder: () => void;
+  onOtherBranches: () => void;
+  onViewHistory: () => void;
+  onViewProductTransfers: () => void;
+}) {
+  const baseId = useId();
+  const [openSection, setOpenSection] = useState<ProductPanelSection>("information");
+  const toggle = (section: Exclude<ProductPanelSection, null>) =>
+    setOpenSection((current) => (current === section ? null : section));
+
+  return (
+    <section>
+      <header className="flex items-start justify-between gap-3 border-b border-[var(--color-border)] px-3 py-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+            Producto
+          </p>
+          <h2 className="mt-0.5 break-words text-base font-bold leading-tight text-[var(--color-title)]">
+            {row.productName}
+          </h2>
+          <p className="mt-0.5 text-xs font-semibold uppercase text-[var(--color-text-muted)]">
+            {row.sku}
+          </p>
+          <div className="mt-1.5 [&>span]:px-2 [&>span]:py-1 [&>span]:text-[11px]">
+            <InventoryStatusBadge row={row} />
+          </div>
+        </div>
+        <button
+          aria-label="Cerrar detalle de producto"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--color-border)] text-base font-bold text-[var(--color-title)] transition hover:bg-[var(--color-app-background)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]"
+          onClick={onClose}
+          type="button"
+        >
+          x
+        </button>
+      </header>
+      <div className="space-y-2 p-3">
+        <PanelAccordionSection
+          id={`${baseId}-information`}
+          onToggle={() => toggle("information")}
+          open={openSection === "information"}
+          summary={`${formatStockQuantity(row.sellableAvailableQuantity)} ${row.saleUnitName} disponibles`}
+          title="Información y existencias"
+        >
+          <h4 className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+            Existencias
+          </h4>
+          <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2.5">
+            <CompactTile
+              label="Existencia para venta"
+              value={`${formatStockQuantity(row.sellableQuantity)} ${row.saleUnitName}`}
+            />
+            <CompactTile
+              label="Reservado"
+              value={`${formatStockQuantity(row.sellableReservedQuantity)} ${row.saleUnitName}`}
+            />
+            <CompactTile
+              label="Disponible para venta"
+              value={`${formatStockQuantity(row.sellableAvailableQuantity)} ${row.saleUnitName}`}
+            />
+            <CompactTile label="Nivel minimo" value={String(row.minStock)} />
+            {row.inventoryUnitId !== row.unitId ? (
+              <>
+                <CompactTile
+                  label="Presentación inventario"
+                  value={`${formatStockQuantity(row.inventoryPresentationQuantity)} ${row.inventoryUnitName}`}
+                />
+                <CompactTile
+                  label="Equivalencia"
+                  value={`1 ${row.inventoryUnitName} = ${formatStockQuantity(row.inventoryToBaseFactor)} ${row.unitName}`}
+                />
+              </>
+            ) : null}
+            {row.inventoryConversionUnavailableUnitName ? (
+              <>
+                <CompactTile
+                  label="Presentación inventario"
+                  value={row.inventoryConversionUnavailableUnitName}
+                />
+                <CompactTile label="Equivalencia" value="No disponible" />
+              </>
+            ) : null}
+            {row.saleConversionUnavailableUnitName ? (
+              <>
+                <CompactTile label="Unidad de venta" value={row.saleConversionUnavailableUnitName} />
+                <CompactTile label="Equivalencia de venta" value="No disponible" />
+              </>
+            ) : null}
+          </dl>
+          <h4 className="mt-3 border-t border-[var(--color-border)] pt-3 text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+            Información del producto
+          </h4>
+          <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2.5">
+            <CompactTile label="Ubicacion" value={row.defaultLocationName} />
+            <CompactTile label="Categoria" value={row.categoryName} />
+            <CompactTile label="Unidad minima" value={row.unitName} />
+            <CompactTile label="Sucursal" value={activeBranchName} />
+          </dl>
+          <div className="mt-3 rounded-md border border-blue-100 bg-blue-50 px-2.5 py-2">
+            <p className="text-[10px] font-bold uppercase text-blue-800">Reposicion sugerida</p>
+            <p className="mt-0.5 text-xs font-semibold text-[var(--color-title)]">
+              {formatSuggestedReorder(row)}
+            </p>
+          </div>
+          <div className="mt-3 space-y-1.5 border-t border-[var(--color-border)] pt-3">
+            <h4 className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+              Alertas asociadas
+            </h4>
+            {alerts.length ? (
+              alerts.map((alert) => (
+                <p
+                  className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs leading-snug text-[var(--color-text)]"
+                  key={alert.id}
+                >
+                  {alert.message}
+                </p>
+              ))
+            ) : (
+              <p className="rounded-md border border-[var(--color-border)] px-2.5 py-1.5 text-xs text-[var(--color-text-muted)]">
+                Sin alertas asociadas.
+              </p>
+            )}
+          </div>
+        </PanelAccordionSection>
+        <PanelAccordionSection
+          id={`${baseId}-actions`}
+          onToggle={() => toggle("actions")}
+          open={openSection === "actions"}
+          title="Acciones"
+        >
+          <div className="space-y-1.5">
+            {canAdjustStock ? (
+              <button
+                className={cn(
+                  PANEL_ACTION_CLASS,
+                  "justify-center gap-2 border-[var(--color-primary)] bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)]",
+                )}
+                onClick={onAdjust}
+                type="button"
+              >
+                <AdjustIcon />
+                Ajustar existencias
+              </button>
+            ) : null}
+            <div className="grid grid-cols-1 gap-2 min-[340px]:grid-cols-2">
+              {canViewOtherBranches ? (
+                <button
+                  className={PANEL_SECONDARY_ACTION_CLASS}
+                  onClick={onOtherBranches}
+                  type="button"
+                >
+                  <BranchesIcon />
+                  <span className="min-w-0">Ver existencias en otras sucursales</span>
+                </button>
+              ) : null}
+              <button
+                className={PANEL_SECONDARY_ACTION_CLASS}
+                onClick={onViewHistory}
+                type="button"
+              >
+                <HistoryIcon />
+                <span className="min-w-0">Ver historial de movimientos</span>
+              </button>
+              <button
+                className={PANEL_SECONDARY_ACTION_CLASS}
+                onClick={onViewProductTransfers}
+                type="button"
+              >
+                <TransferIcon />
+                <span className="min-w-0">Ver solicitudes y traslados</span>
+              </button>
+              {canCreatePurchaseOrder ? (
+                <button
+                  className={PANEL_SECONDARY_ACTION_CLASS}
+                  onClick={onCreateOrder}
+                  type="button"
+                >
+                  <PurchaseOrderIcon />
+                  <span className="min-w-0">Crear orden de compra</span>
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </PanelAccordionSection>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Detalle de un Kit. La disponibilidad explicativa (componentes y limitantes) se pide SOLO al abrir
+ * este panel, una vez por kit/sucursal (y de nuevo si la disponibilidad del listado cambia). Un
+ * fallo del endpoint se queda aqui: el resumen de la fila sigue visible.
+ */
+function KitProductPanel({
+  activeBranchName,
+  row,
+  service,
+  onClose,
+}: {
+  activeBranchName: string;
+  row: InventoryProductRow;
+  service: GetInventoryKitAvailabilityService | null;
+  onClose: () => void;
+}) {
+  const kitProductId = row.productId;
+  const branchId = row.branchId;
+  const listAvailable = row.availableQuantity;
+  const key = `${branchId}|${kitProductId}`;
+  const [state, setState] = useState<{
+    key: string;
+    availability?: InventoryKitAvailability;
+    failed?: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!service) return;
+    // `active` descarta la respuesta de un kit/sucursal anterior o de un panel ya desmontado.
+    let active = true;
+    service
+      .execute({ kitProductId, branchId })
+      .then((availability) => {
+        if (active) setState({ key, availability });
+      })
+      .catch(() => {
+        if (active) setState({ key, failed: true });
+      });
+    return () => {
+      active = false;
+    };
+  }, [service, key, kitProductId, branchId, listAvailable]);
+
+  const current = state?.key === key ? state : null;
+  const availability = current?.availability;
+  // La lectura del detalle es la mas reciente: se prefiere a la de la fila, sin tocar la fila.
+  const availableKits = availability?.availableKits ?? listAvailable;
+  const components = availability?.components ?? [];
+  const limitingComponents = components.filter((component) => component.limiting);
+  const loading = Boolean(service) && !current;
+  const [detailOpen, setDetailOpen] = useState(false);
+
   return (
     <section>
       <header className="flex items-start justify-between gap-3 border-b border-[var(--color-border)] p-4">
-        <div className="min-w-0">
+        <div>
           <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
-            Producto
+            Kit
           </p>
-          <h2 className="mt-1 break-words text-xl font-bold text-[var(--color-title)]">
-            {row.productName}
-          </h2>
+          <h2 className="mt-1 text-xl font-bold text-[var(--color-title)]">{row.productName}</h2>
           <p className="mt-1 text-sm font-semibold uppercase text-[var(--color-text-muted)]">
             {row.sku}
           </p>
         </div>
         <button
-          aria-label="Cerrar detalle de producto"
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[var(--color-border)] text-lg font-bold text-[var(--color-title)] transition hover:bg-[var(--color-app-background)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]"
+          aria-label="Cerrar detalle de kit"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-[var(--color-border)] text-lg font-bold"
           onClick={onClose}
           type="button"
         >
@@ -1550,95 +2122,153 @@ function ProductPanel({
       </header>
       <div className="space-y-4 p-4">
         <section className="rounded-lg border border-[var(--color-border)] bg-white p-4">
-          <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] pb-3">
-            <p className="text-sm font-bold text-[var(--color-title)]">Estado</p>
-            <InventoryStatusBadge label={row.statusLabel} status={row.status} />
+          <div className="flex justify-between">
+            <p className="text-sm font-bold text-[var(--color-title)]">Disponibilidad derivada</p>
+            <InventoryStatusBadge
+              row={{
+                displayStatus: availableKits > 0 ? "KIT_AVAILABLE" : "KIT_UNAVAILABLE",
+                statusLabel: row.statusLabel,
+              }}
+            />
           </div>
-          <h3 className="mt-4 text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
-            Existencias
-          </h3>
-          <dl className="mt-3 grid gap-4 sm:grid-cols-2">
-            <DetailTile
-              label="Existencia para venta"
-              value={`${row.sellableQuantity} ${row.saleUnitName}`}
-            />
-            <DetailTile
-              label="Reservado"
-              value={`${row.sellableReservedQuantity} ${row.saleUnitName}`}
-            />
-            <DetailTile
-              label="Disponible para venta"
-              value={`${row.sellableAvailableQuantity} ${row.saleUnitName}`}
-            />
-            {row.inventoryUnitId !== row.saleUnitId ? (
-              <DetailTile
-                label="Equivalente de inventario"
-                value={`${row.inventoryPresentationAvailableQuantity} ${row.inventoryUnitName} · 1 = ${row.inventoryToBaseFactor} ${row.unitName}`}
-              />
-            ) : null}
-            <DetailTile label="Nivel minimo" value={String(row.minStock)} />
-          </dl>
-          <h3 className="mt-5 border-t border-[var(--color-border)] pt-4 text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
-            Información del producto
-          </h3>
-          <dl className="mt-3 grid gap-4 sm:grid-cols-2">
-            <DetailTile label="Ubicacion" value={row.defaultLocationName} />
+          <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+            <DetailTile label="Disponible" value={formatKitCount(availableKits)} />
             <DetailTile label="Categoria" value={row.categoryName} />
-            <DetailTile label="Unidad minima" value={row.unitName} />
             <DetailTile label="Sucursal" value={activeBranchName} />
+            <DetailTile label="Ubicacion" value="Calculado por componentes" />
           </dl>
-          <div className="mt-4 rounded-md border border-blue-100 bg-blue-50 px-3 py-2">
-            <p className="text-xs font-bold uppercase text-blue-800">Reposicion sugerida</p>
-            <p className="mt-1 text-sm font-semibold text-[var(--color-title)]">
-              {formatSuggestedReorder(row)}
-            </p>
-          </div>
-        </section>
-        <section className="space-y-2">
-          <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
-            Alertas asociadas
+          <p className="mt-4 rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text)]">
+            La disponibilidad se calcula a partir de sus componentes.
           </p>
-          {alerts.length ? (
-            alerts.map((alert) => (
-              <p
-                className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-[var(--color-text)]"
-                key={alert.id}
-              >
-                {alert.message}
-              </p>
-            ))
-          ) : (
-            <p className="rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
-              Sin alertas asociadas.
-            </p>
-          )}
         </section>
-        <div className="space-y-2">
-          {canAdjustStock ? (
-            <Button className="w-full" onClick={onAdjust} type="button">
-              Ajustar existencias
+
+        {service ? (
+          <section className="rounded-lg border border-[var(--color-border)] bg-white p-4">
+            <p className="text-sm text-[var(--color-text-muted)]">
+              Consulta qué componentes determinan cuántos Kits pueden formarse.
+            </p>
+            <Button
+              className="mt-3 w-full"
+              disabled={loading || !availability}
+              onClick={() => setDetailOpen(true)}
+              type="button"
+              variant="secondary"
+            >
+              {loading ? "Cargando detalle..." : "Ver detalle de disponibilidad"}
             </Button>
-          ) : null}
-          <div className="grid gap-2 sm:grid-cols-2">
-          {canManageTransfers ? (
-            <Button className="w-full" onClick={onOtherBranches} type="button" variant="secondary">
-              Ver existencias en otras sucursales
-            </Button>
-          ) : null}
-          <Button className="w-full" onClick={onViewHistory} type="button" variant="secondary">
-            Ver historial de movimientos
-          </Button>
-          <Button className="w-full" onClick={onViewProductTransfers} type="button" variant="secondary">
-            Ver solicitudes y traslados
-          </Button>
-          <Button className="w-full" onClick={onCreateOrder} type="button" variant="secondary">
-            Crear orden de compra
-          </Button>
-          </div>
-        </div>
+            {current?.failed ? (
+              <p className="mt-3 rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
+                No se pudo cargar el detalle de disponibilidad.
+              </p>
+            ) : null}
+          </section>
+        ) : null}
       </div>
+      {availability ? (
+        <Modal
+          maxWidth="960px"
+          onClose={() => setDetailOpen(false)}
+          open={detailOpen}
+          subtitle={`${row.productName} · ${row.sku}`}
+          title="Detalle de disponibilidad del Kit"
+        >
+          <div className="space-y-4">
+            <dl className="grid gap-4 sm:grid-cols-3">
+              <DetailTile
+                label="Disponibilidad derivada"
+                value={formatKitCount(availability.availableKits)}
+              />
+              <DetailTile
+                label="Estado"
+                value={
+                  <InventoryStatusBadge
+                    row={{
+                      displayStatus: availableKits > 0 ? "KIT_AVAILABLE" : "KIT_UNAVAILABLE",
+                      statusLabel: row.statusLabel,
+                    }}
+                  />
+                }
+              />
+              <DetailTile label="Sucursal" value={activeBranchName} />
+            </dl>
+            {components.length === 0 ? (
+              <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-4 text-center text-sm text-[var(--color-text-muted)]">
+                Este Kit no tiene componentes configurados.
+              </p>
+            ) : (
+              <>
+                <div className="rounded-md bg-[var(--color-app-background)] px-3 py-2">
+                  <p className="text-sm font-bold text-[var(--color-title)]">
+                    {limitingComponents.length === 1
+                      ? "Componente limitante"
+                      : "Componentes limitantes"}
+                  </p>
+                  <p className="mt-1 text-sm text-[var(--color-text)]">
+                    {limitingComponents.length === 1
+                      ? "La disponibilidad del Kit está limitada por este componente."
+                      : "Estos componentes limitan conjuntamente la disponibilidad del Kit."}
+                  </p>
+                </div>
+                <div className="overflow-x-auto rounded-md border border-[var(--color-border)]">
+                  <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+                    <thead className="bg-[var(--color-structure)] text-xs uppercase text-white">
+                      <tr>
+                        <th className="px-3 py-2.5 font-semibold">Componente</th>
+                        <th className="px-3 py-2.5 font-semibold">SKU</th>
+                        <th className="px-3 py-2.5 text-right font-semibold">Disponible</th>
+                        <th className="px-3 py-2.5 text-right font-semibold">Necesario por Kit</th>
+                        <th className="px-3 py-2.5 text-right font-semibold">Capacidad</th>
+                        <th className="px-3 py-2.5 font-semibold">Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {components.map((component) => (
+                        <tr
+                          className={cn(
+                            "border-t border-[var(--color-border)]",
+                            component.limiting && "bg-[var(--color-primary)]/10",
+                          )}
+                          key={component.componentProductId}
+                        >
+                          <td className="px-3 py-3 font-semibold text-[var(--color-title)]">
+                            {component.productName}
+                          </td>
+                          <td className="px-3 py-3 text-xs font-semibold uppercase text-[var(--color-text-muted)]">
+                            {component.sku}
+                          </td>
+                          <td className="px-3 py-3 text-right">{component.availableQuantity}</td>
+                          <td className="px-3 py-3 text-right">{component.quantityPerKit}</td>
+                          <td className="px-3 py-3 text-right font-semibold">
+                            {formatKitCount(component.kitCapacity)}
+                          </td>
+                          <td className="px-3 py-3">
+                            <span
+                              className={cn(
+                                "inline-flex rounded-md px-2 py-1 text-xs font-bold",
+                                component.limiting
+                                  ? "bg-amber-100 text-amber-800"
+                                  : "bg-slate-100 text-slate-700",
+                              )}
+                            >
+                              {component.limiting ? "Limitante" : "Normal"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        </Modal>
+      ) : null}
     </section>
   );
+}
+
+function formatKitCount(count: number) {
+  return `${count} ${count === 1 ? "Kit" : "Kits"}`;
 }
 
 function DetailTile({ label, value }: { label: string; value: ReactNode }) {
@@ -1650,9 +2280,121 @@ function DetailTile({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
+/**
+ * API: el tracking real del producto se resuelve una sola vez al abrir el ajuste (sin N+1 en el
+ * listado). Mock: abre el modal directamente con la fila del read model.
+ */
+function AdjustStockGate({
+  busy,
+  locations,
+  supportsMultipleLocations,
+  lookup,
+  countService,
+  row,
+  onApplyCount,
+  onClose,
+  onSubmit,
+}: {
+  busy: boolean;
+  locations: StorageLocation[];
+  supportsMultipleLocations: boolean;
+  lookup: InventoryAdjustmentLookupService | null;
+  countService: InventoryCountService | null;
+  row: InventoryProductRow;
+  onApplyCount: (input: ReconcileCountInput) => Promise<void>;
+  onClose: () => void;
+  onSubmit: (dto: AdjustStockDto) => Promise<void>;
+}) {
+  const [resolved, setResolved] = useState<{
+    key: string;
+    tracking: InventoryProductRow["tracking"];
+  } | null>(null);
+  const [loadError, setLoadError] = useState<{ key: string; message: string } | null>(null);
+  const productId = row.productId;
+  const key = `${row.branchId}|${productId}`;
+
+  useEffect(() => {
+    if (!lookup) return;
+    let active = true;
+    lookup
+      .resolveTracking(productId)
+      .then((tracking) => {
+        if (active) setResolved({ key, tracking });
+      })
+      .catch((caughtError) => {
+        if (active) {
+          setLoadError({
+            key,
+            message:
+              caughtError instanceof Error
+                ? caughtError.message
+                : "No se pudo cargar la trazabilidad del producto.",
+          });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [lookup, key, productId]);
+
+  if (!lookup) {
+    return (
+      <AdjustStockModal
+        busy={busy}
+        locations={locations}
+        supportsMultipleLocations={supportsMultipleLocations}
+        lookup={null}
+        countService={null}
+        onApplyCount={onApplyCount}
+        open
+        row={row}
+        onClose={onClose}
+        onSubmit={onSubmit}
+      />
+    );
+  }
+  if (resolved?.key === key) {
+    return (
+      <AdjustStockModal
+        busy={busy}
+        locations={locations}
+        supportsMultipleLocations={supportsMultipleLocations}
+        lookup={lookup}
+        countService={countService}
+        onApplyCount={onApplyCount}
+        open
+        row={{ ...row, tracking: resolved.tracking, tracksExpiration: resolved.tracking.expiration }}
+        onClose={onClose}
+        onSubmit={onSubmit}
+      />
+    );
+  }
+  return (
+    <Modal
+      maxWidth="480px"
+      onClose={onClose}
+      open
+      subtitle={row.productName}
+      title="Registrar ajuste de inventario"
+    >
+      {loadError?.key === key ? (
+        <InlineAlert title={loadError.message} tone="danger" />
+      ) : (
+        <p className="text-sm font-semibold text-[var(--color-text-muted)]">
+          Cargando trazabilidad del producto...
+        </p>
+      )}
+    </Modal>
+  );
+}
+
 function AdjustStockModal({
   busy,
   locations,
+  supportsMultipleLocations,
+  lookup,
+  countService,
+  onApplyCount,
   open,
   row,
   onClose,
@@ -1660,12 +2402,19 @@ function AdjustStockModal({
 }: {
   busy: boolean;
   locations: StorageLocation[];
+  supportsMultipleLocations: boolean;
+  lookup: InventoryAdjustmentLookupService | null;
+  countService: InventoryCountService | null;
+  onApplyCount: (input: ReconcileCountInput) => Promise<void>;
   open: boolean;
   row: InventoryProductRow;
   onClose: () => void;
   onSubmit: (dto: AdjustStockDto) => Promise<void>;
 }) {
-  const defaultLocationId = row.defaultLocationId || locations[0]?.id || "";
+  // Sin "Multiples ubicaciones" el ajuste va sin ubicacion: no se muestra selector ni se inventa una.
+  const defaultLocationId = supportsMultipleLocations
+    ? row.defaultLocationId || locations[0]?.id || ""
+    : "";
   const [value, setValue] = useState<EditableAdjustStockDto>(() => ({
     productId: row.productId,
     branchId: row.branchId,
@@ -1678,9 +2427,10 @@ function AdjustStockModal({
     serialNumbersText: "",
   }));
   const [errors, setErrors] = useState<AdjustmentValidationErrors>({});
+  // API: el tope de salida es la existencia DISPONIBLE (sin reservas); mock: por ubicacion.
   const locationQuantity = useMemo(
-    () => row.locationQuantities[value.locationId] ?? 0,
-    [row.locationQuantities, value.locationId],
+    () => (lookup ? row.availableQuantity : (row.locationQuantities[value.locationId] ?? 0)),
+    [lookup, row.availableQuantity, row.locationQuantities, value.locationId],
   );
   const selectedUnit =
     row.adjustmentUnits.find((option) => option.unitId === value.unitId) ?? row.adjustmentUnits[0];
@@ -1695,31 +2445,166 @@ function AdjustStockModal({
   const traceQuantity = Math.abs(delta);
   const isEntry = delta > 0;
   const parsedSerials = parseSerialNumbers(value.serialNumbersText);
-  const availableLots = row.availableLots.filter(
-    (lot) => !value.locationId || lot.locationId === value.locationId,
-  );
+  const dynamicLookup = lookup !== null;
+  const repeatedSerials = findRepeatedSerialNumbers(parsedSerials);
+  const needsLotLookup = dynamicLookup && !isEntry && traceQuantity > 0 && row.tracking.lot;
+  const needsSerialLookup =
+    dynamicLookup &&
+    !isEntry &&
+    traceQuantity > 0 &&
+    row.tracking.serial &&
+    (!row.tracking.lot || Boolean(value.lotId));
+  const lotsKey = `${row.branchId}|${row.productId}|${value.locationId}`;
+  const serialsKey = `${lotsKey}|${value.lotId ?? ""}`;
+  const [lotsState, setLotsState] = useState<{
+    key: string;
+    items: AdjustmentLotOption[];
+    error?: string;
+  } | null>(null);
+  const [serialsState, setSerialsState] = useState<{
+    key: string;
+    items: AdjustmentSerialOption[];
+    error?: string;
+  } | null>(null);
+  const branchId = row.branchId;
+  const productId = row.productId;
+  const locationId = value.locationId;
+  const selectedLotId = value.lotId;
+
+  // Lotes existentes con disponibilidad real; se recargan al cambiar ubicacion y se ignoran las
+  // respuestas viejas (cleanup) para no mostrar datos de otra ubicacion.
+  useEffect(() => {
+    if (!lookup || !needsLotLookup) return;
+    let active = true;
+    lookup
+      .listLots({ branchId, productId, locationId: locationId || undefined })
+      .then((items) => {
+        if (active) setLotsState({ key: lotsKey, items });
+      })
+      .catch((caughtError) => {
+        if (active) {
+          setLotsState({
+            key: lotsKey,
+            items: [],
+            error: caughtError instanceof Error ? caughtError.message : "No se pudieron cargar los lotes.",
+          });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [branchId, locationId, lookup, lotsKey, needsLotLookup, productId]);
+
+  useEffect(() => {
+    if (!lookup || !needsSerialLookup) return;
+    let active = true;
+    lookup
+      .listSerials({
+        branchId,
+        productId,
+        locationId: locationId || undefined,
+        lotId: selectedLotId || undefined,
+      })
+      .then((items) => {
+        if (active) setSerialsState({ key: serialsKey, items });
+      })
+      .catch((caughtError) => {
+        if (active) {
+          setSerialsState({
+            key: serialsKey,
+            items: [],
+            error: caughtError instanceof Error ? caughtError.message : "No se pudieron cargar las series.",
+          });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [branchId, locationId, lookup, needsSerialLookup, productId, selectedLotId, serialsKey]);
+
+  const serialPrecheck = useSerialBatchPrecheck({
+    serials: parsedSerials,
+    enabled: dynamicLookup && row.tracking.serial && isEntry && traceQuantity > 0,
+    validate: (serials) =>
+      lookup
+        ? lookup.validateNewSerials({ productId, serialNumbers: serials })
+        : Promise.resolve({ duplicates: [] }),
+  });
+  const currentLots = lotsState?.key === lotsKey ? lotsState : null;
+  const currentSerials = serialsState?.key === serialsKey ? serialsState : null;
+  const lookupLoading =
+    (needsLotLookup && !currentLots) || (needsSerialLookup && !currentSerials);
+  const lookupError = (needsLotLookup && currentLots?.error) || (needsSerialLookup && currentSerials?.error) || null;
+  const availableLots = dynamicLookup
+    ? (currentLots?.items ?? []).map((lot) => ({
+        id: lot.lotId,
+        lotNumber: lot.lotNumber,
+        expirationDate: lot.expirationDate,
+        // Capacidad de salida = disponible (nunca la cantidad fisica).
+        quantity: lot.availableQuantity,
+        locationId: lot.locationId,
+      }))
+    : row.availableLots.filter(
+        (lot) => !value.locationId || lot.locationId === value.locationId,
+      );
+  if (dynamicLookup) {
+    // Orden FEFO solo informativo (vencimiento asc, luego lote); nunca se autoselecciona.
+    availableLots.sort(
+      (left, right) =>
+        (left.expirationDate ?? "9999-12-31").localeCompare(right.expirationDate ?? "9999-12-31") ||
+        left.lotNumber.localeCompare(right.lotNumber),
+    );
+  }
   const selectedLot = availableLots.find((lot) => lot.id === value.lotId);
-  const availableSerials = row.availableSerials.filter(
-    (serial) =>
-      (!value.locationId || serial.locationId === value.locationId) &&
-      (!value.lotId || serial.lotId === value.lotId),
-  );
+  const noLotsAvailable =
+    needsLotLookup && currentLots !== null && !currentLots.error && availableLots.length === 0;
+  const availableSerials = dynamicLookup
+    ? (currentSerials?.items ?? []).map((serial) => ({
+        serialNumber: serial.serialNumber,
+        lotId: serial.lotId,
+        locationId: serial.locationId,
+      }))
+    : row.availableSerials.filter(
+        (serial) =>
+          (!value.locationId || serial.locationId === value.locationId) &&
+          (!value.lotId || serial.lotId === value.lotId),
+      );
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Conteo de producto trazable (solo API): flujo separado de snapshot -> revision -> reconcile.
+  const traceableCount =
+    countService !== null &&
+    value.movementKind === "count" &&
+    (row.tracking.lot || row.tracking.expiration || row.tracking.serial);
   const adjustmentDto = toAdjustStockDto(value);
   const adjustmentValidationErrors = validateAdjustment(
     { ...adjustmentDto, quantity: canonicalInputQuantity },
     row,
     locationQuantity,
+    undefined,
+    supportsMultipleLocations,
   );
   const adjustmentQuantityError = getUnitQuantityInputError(
     value.quantity,
     selectedUnit?.unitAllowsDecimals ?? false,
   );
   if (adjustmentQuantityError) adjustmentValidationErrors.quantity = adjustmentQuantityError;
-  const adjustmentInvalid = hasValidationErrors(adjustmentValidationErrors);
+  if (dynamicLookup) {
+    if (isEntry && row.tracking.serial && traceQuantity > 0) {
+      if (repeatedSerials.length > 0) {
+        adjustmentValidationErrors.serialNumbers = `Series repetidas: ${repeatedSerials.join(", ")}.`;
+      } else if (serialPrecheck.remoteDuplicates.length > 0) {
+        adjustmentValidationErrors.serialNumbers = `Series ya registradas: ${serialPrecheck.remoteDuplicates.join(", ")}.`;
+      }
+    }
+    if (!isEntry && selectedLot && traceQuantity > selectedLot.quantity) {
+      adjustmentValidationErrors.lotId = "El lote no tiene suficientes unidades disponibles.";
+    }
+  }
+  const adjustmentInvalid = hasValidationErrors(adjustmentValidationErrors) || lookupLoading;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (traceableCount) return;
     setErrors(adjustmentValidationErrors);
     if (adjustmentInvalid) return;
     setSubmitError(null);
@@ -1732,7 +2617,21 @@ function AdjustStockModal({
     }
   }
 
-  function update(patch: Partial<EditableAdjustStockDto>) {
+  // No se permite capturar una salida superior a lo disponible (lote seleccionado o existencia).
+  function clampOutQuantity(rawPatch: Partial<EditableAdjustStockDto>) {
+    if (!dynamicLookup || typeof rawPatch.quantity !== "number") return rawPatch;
+    const kind = rawPatch.movementKind ?? value.movementKind;
+    if (kind !== "out" && kind !== "waste") return rawPatch;
+    const unit =
+      row.adjustmentUnits.find((option) => option.unitId === (rawPatch.unitId ?? value.unitId)) ??
+      row.adjustmentUnits[0];
+    const capacityBase = selectedLot ? selectedLot.quantity : row.availableQuantity;
+    const maxInput = Math.floor((capacityBase / (unit?.toBaseFactor ?? 1)) * 1000) / 1000;
+    return rawPatch.quantity > maxInput ? { ...rawPatch, quantity: maxInput } : rawPatch;
+  }
+
+  function update(rawPatch: Partial<EditableAdjustStockDto>) {
+    const patch = clampOutQuantity(rawPatch);
     const nextValue = { ...value, ...patch };
     const nextSelectedUnit =
       row.adjustmentUnits.find((option) => option.unitId === nextValue.unitId) ??
@@ -1742,7 +2641,9 @@ function AdjustStockModal({
     const nextValidationErrors = validateAdjustment(
       { ...toAdjustStockDto(nextValue), quantity: nextCanonicalQuantity },
       row,
-      row.locationQuantities[nextValue.locationId] ?? 0,
+      lookup ? row.availableQuantity : (row.locationQuantities[nextValue.locationId] ?? 0),
+      undefined,
+      supportsMultipleLocations,
     );
     const nextQuantityError = getUnitQuantityInputError(
       nextValue.quantity,
@@ -1783,14 +2684,16 @@ function AdjustStockModal({
   return (
     <Modal
       footer={
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button onClick={onClose} type="button" variant="secondary">
-            Cancelar
-          </Button>
-          <Button disabled={busy || adjustmentInvalid} form="inventory-adjust-form" type="submit">
-            {busy ? "Registrando..." : "Confirmar ajuste"}
-          </Button>
-        </div>
+        traceableCount ? undefined : (
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button onClick={onClose} type="button" variant="secondary">
+              Cancelar
+            </Button>
+            <Button disabled={busy || adjustmentInvalid} form="inventory-adjust-form" type="submit">
+              {busy ? "Registrando..." : "Confirmar ajuste"}
+            </Button>
+          </div>
+        )
       }
       onClose={onClose}
       open={open}
@@ -1808,21 +2711,27 @@ function AdjustStockModal({
           <ReadonlyField label="Nivel minimo" value={String(row.minStock)} />
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field id="adjust-location" label="Ubicacion" error={errors.locationId}>
-            <Select
-              id="adjust-location"
-              onChange={(event) =>
-                update({ locationId: event.target.value, lotId: undefined, serialNumbersText: "" })
-              }
-              value={value.locationId}
-            >
-              {locations.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          {supportsMultipleLocations ? (
+            <Field id="adjust-location" label="Ubicacion" error={errors.locationId}>
+              <Select
+                id="adjust-location"
+                onChange={(event) =>
+                  update({
+                    locationId: event.target.value,
+                    lotId: undefined,
+                    serialNumbersText: "",
+                  })
+                }
+                value={value.locationId}
+              >
+                {locations.map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {location.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
           <Field id="adjust-kind" label="Tipo de ajuste">
             <Select
               id="adjust-kind"
@@ -1844,6 +2753,17 @@ function AdjustStockModal({
             </Select>
           </Field>
         </div>
+        {traceableCount && countService ? (
+          <TraceableCountFlow
+            busy={busy}
+            countService={countService}
+            locationId={value.locationId}
+            row={row}
+            onApply={onApplyCount}
+            onCancel={onClose}
+          />
+        ) : (
+          <>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field id="adjust-unit" label="Unidad">
             <Select
@@ -1860,7 +2780,7 @@ function AdjustStockModal({
           </Field>
           <Field
             id="adjust-quantity"
-            label="Cantidad"
+            label={value.movementKind === "count" ? "Existencia fisica contada" : "Cantidad"}
             error={errors.quantity ?? adjustmentValidationErrors.quantity}
           >
             <Input
@@ -1899,6 +2819,7 @@ function AdjustStockModal({
           ) : (
             <Field id="adjust-lot" label="Lote existente *" error={errors.lotId}>
               <Select
+                disabled={lookupLoading}
                 id="adjust-lot"
                 onChange={(event) => update({ lotId: event.target.value, serialNumbersText: "" })}
                 value={value.lotId ?? ""}
@@ -1906,11 +2827,16 @@ function AdjustStockModal({
                 <option value="">Seleccionar lote</option>
                 {availableLots.map((lot) => (
                   <option key={lot.id} value={lot.id}>
-                    {lot.lotNumber} - {lot.quantity} disponibles
-                    {lot.expirationDate ? ` - vence ${lot.expirationDate}` : ""}
+                    {lot.lotNumber} · {lot.quantity} disponibles
+                    {lot.expirationDate ? ` · vence ${formatLotDate(lot.expirationDate)}` : ""}
                   </option>
                 ))}
               </Select>
+              {noLotsAvailable ? (
+                <p className="mt-1 text-xs font-semibold text-[var(--color-danger)]">
+                  No hay lotes disponibles para este producto en la ubicacion seleccionada.
+                </p>
+              ) : null}
               {selectedLot && selectedLot.quantity < traceQuantity ? (
                 <p className="mt-1 text-xs font-semibold text-[var(--color-danger)]">
                   El lote no tiene suficientes unidades.
@@ -1950,32 +2876,31 @@ function AdjustStockModal({
                 value={value.serialNumbersText}
               />
             ) : (
-              <select
-                id="adjust-serials"
-                className="min-h-36 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm"
-                multiple
-                onChange={(event) =>
-                  update({
-                    serialNumbersText: [...event.target.selectedOptions]
-                      .map((option) => option.value)
-                      .join("\n"),
-                  })
-                }
-                value={parsedSerials}
-              >
-                {availableSerials.map((serial) => (
-                  <option key={serial.serialNumber} value={serial.serialNumber}>
-                    {serial.serialNumber}
-                  </option>
-                ))}
-              </select>
+              <SerialPicker
+                disabled={lookupLoading}
+                options={availableSerials.map((serial) => serial.serialNumber)}
+                required={traceQuantity}
+                selected={parsedSerials}
+                onChange={(next) => update({ serialNumbersText: next.join("\n") })}
+              />
             )}
             <p className="mt-1 text-sm font-semibold text-[var(--color-text-muted)]">
               Cantidad del ajuste: {traceQuantity} {row.unitName}. Seriales requeridos:{" "}
               {traceQuantity}. Registrados: {parsedSerials.length} / {traceQuantity}.
             </p>
+            {isEntry && dynamicLookup && serialPrecheck.unavailable ? (
+              <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
+                No se pudo validar los seriales en este momento; se validaran al confirmar.
+              </p>
+            ) : null}
           </Field>
         ) : null}
+        {lookupLoading ? (
+          <p className="text-sm font-semibold text-[var(--color-text-muted)]">
+            Cargando lotes y series disponibles...
+          </p>
+        ) : null}
+        {lookupError ? <InlineAlert title={lookupError} tone="danger" /> : null}
         <Field id="adjust-reason" label="Motivo *" error={errors.reason}>
           <textarea
             className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
@@ -1997,6 +2922,8 @@ function AdjustStockModal({
           <CharacterCount current={value.notes.length} maximum={TEXT_LIMITS.notes} />
         </Field>
         <AdjustmentSummary delta={delta} finalQuantity={finalQuantity} row={row} value={value} />
+          </>
+        )}
         {submitError ? <InlineAlert title={submitError} tone="danger" /> : null}
       </form>
     </Modal>
@@ -2042,13 +2969,17 @@ function AdjustmentSummary({
 
 function OtherBranchesStockModal({
   open,
+  activeBranchId,
   row,
+  service,
   canManageTransfers,
   onClose,
   onRequest,
 }: {
   open: boolean;
+  activeBranchId: string;
   row: InventoryProductRow;
+  service: InventoryOtherBranchesService | null;
   canManageTransfers: boolean;
   onClose: () => void;
   onRequest: (providerBranchId: string) => void;
@@ -2061,6 +2992,14 @@ function OtherBranchesStockModal({
       subtitle={row.productName}
       title="Existencias en otras sucursales"
     >
+      {service ? (
+        <ApiOtherBranchesList
+          activeBranchId={activeBranchId}
+          productId={row.productId}
+          service={service}
+          unitName={row.unitName}
+        />
+      ) : (
       <div className="space-y-3">
         {row.otherBranchStocks.length === 0 ? (
           <p className="rounded-md border border-[var(--color-border)] p-3 text-sm text-[var(--color-text-muted)]">
@@ -2093,7 +3032,82 @@ function OtherBranchesStockModal({
           ))
         )}
       </div>
+      )}
     </Modal>
+  );
+}
+
+/** API: una request por apertura; solo disponibilidad operacional (sin stock fisico/reservado). */
+function ApiOtherBranchesList({
+  activeBranchId,
+  productId,
+  service,
+  unitName,
+}: {
+  activeBranchId: string;
+  productId: string;
+  service: InventoryOtherBranchesService;
+  unitName: string;
+}) {
+  const [state, setState] = useState<
+    { status: "loading" } | { status: "error" } | { status: "success"; items: OtherBranchAvailability[] }
+  >({ status: "loading" });
+
+  useEffect(() => {
+    let active = true;
+    service
+      .execute({ productId, branchId: activeBranchId })
+      .then((items) => {
+        if (active) setState({ status: "success", items });
+      })
+      .catch(() => {
+        if (active) setState({ status: "error" });
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeBranchId, productId, service]);
+
+  if (state.status === "loading") {
+    return (
+      <p className="text-sm font-semibold text-[var(--color-text-muted)]">
+        Cargando existencias en otras sucursales...
+      </p>
+    );
+  }
+  if (state.status === "error") {
+    return (
+      <InlineAlert
+        title="No se pudieron cargar las existencias de otras sucursales."
+        tone="danger"
+      />
+    );
+  }
+  if (state.items.length === 0) {
+    return (
+      <p className="rounded-md border border-[var(--color-border)] p-3 text-sm text-[var(--color-text-muted)]">
+        No hay otras sucursales disponibles para consultar.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      <div className="hidden grid-cols-[minmax(0,1fr)_auto] gap-3 px-3 text-xs font-bold uppercase text-[var(--color-text-muted)] sm:grid">
+        <span>Sucursal</span>
+        <span>Disponible</span>
+      </div>
+      {state.items.map((stock) => (
+        <div
+          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-[var(--color-border)] p-3"
+          key={stock.branchId}
+        >
+          <p className="min-w-0 break-words font-bold text-[var(--color-title)]">{stock.branchName}</p>
+          <p className="text-sm font-semibold text-[var(--color-title)]">
+            {stock.availableQuantity} {unitName}
+          </p>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -2621,6 +3635,94 @@ function toAdjustStockDto(value: EditableAdjustStockDto): AdjustStockDto {
     quantity: toFiniteNumber(value.quantity),
     serialNumbers: parseSerialNumbers(value.serialNumbersText),
   };
+}
+
+function formatLotDate(value: string) {
+  const [year, month, day] = value.slice(0, 10).split("-");
+  return year && month && day ? `${day}/${month}/${year}` : value;
+}
+
+/** Seleccion de series existentes por click (sin Ctrl/Shift); tope = cantidad requerida. */
+function SerialPicker({
+  disabled,
+  options,
+  required,
+  selected,
+  onChange,
+}: {
+  disabled: boolean;
+  options: string[];
+  required: number;
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const normalized = query.trim().toLowerCase();
+  const visible = normalized
+    ? options.filter((serial) => serial.toLowerCase().includes(normalized))
+    : options;
+  const limitReached = selected.length >= required;
+
+  function toggle(serial: string) {
+    if (selected.includes(serial)) onChange(selected.filter((item) => item !== serial));
+    else if (!limitReached) onChange([...selected, serial]);
+  }
+
+  return (
+    <div className="space-y-2">
+      {options.length > 8 ? (
+        <Input
+          aria-label="Buscar serie"
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Buscar serie..."
+          value={query}
+        />
+      ) : null}
+      <div className="max-h-56 overflow-y-auto rounded-md border border-[var(--color-border)] bg-white">
+        {visible.length === 0 ? (
+          <p className="px-3 py-2 text-sm text-[var(--color-text-muted)]">
+            No hay series disponibles.
+          </p>
+        ) : (
+          visible.map((serial) => {
+            const checked = selected.includes(serial);
+            const blocked = !checked && limitReached;
+            return (
+              <label
+                className={cn(
+                  "flex cursor-pointer items-center gap-2 border-b border-[var(--color-border)] px-3 py-1.5 text-sm last:border-b-0",
+                  checked && "bg-blue-50 font-semibold",
+                  (blocked || disabled) && "cursor-not-allowed opacity-60",
+                )}
+                key={serial}
+              >
+                <input
+                  checked={checked}
+                  disabled={disabled || blocked}
+                  onChange={() => toggle(serial)}
+                  type="checkbox"
+                />
+                <span className="break-all">{serial}</span>
+              </label>
+            );
+          })
+        )}
+      </div>
+      <p className="text-sm font-semibold text-[var(--color-text-muted)]">
+        Seleccionados: {selected.length} / {required}
+      </p>
+    </div>
+  );
+}
+
+function findRepeatedSerialNumbers(serials: string[]) {
+  const seen = new Set<string>();
+  const repeated = new Set<string>();
+  serials.forEach((serial) => {
+    if (seen.has(serial)) repeated.add(serial);
+    seen.add(serial);
+  });
+  return [...repeated];
 }
 
 function parseSerialNumbers(value: string) {

@@ -6,7 +6,12 @@ import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { GetProductQuickViewService } from "@/modules/catalog/application/services/GetProductQuickViewService";
 import type { ProductQuickViewModel } from "@/modules/catalog/types/catalog.types";
 
-export function useProductQuickView(productId: string | null) {
+export function useProductQuickView(
+  productId: string | null,
+  branchId?: string,
+  branchTenantId?: string,
+  branchName?: string,
+) {
   const repositories = useRepositories();
   const service = useMemo(() => new GetProductQuickViewService(repositories), [repositories]);
   const [data, setData] = useState<ProductQuickViewModel | null>(null);
@@ -18,18 +23,23 @@ export function useProductQuickView(productId: string | null) {
     }
     setError(null);
     try {
-      setData(await service.execute(productId));
+      setData(
+        await service.execute(
+          productId,
+          createBranchContext(branchId, branchTenantId, branchName),
+        ),
+      );
     } catch {
       setError("No se pudo cargar la consulta rápida.");
     }
-  }, [productId, service]);
+  }, [branchId, branchName, branchTenantId, productId, service]);
 
   useEffect(() => {
     if (!productId) return;
 
     let active = true;
     service
-      .execute(productId)
+      .execute(productId, createBranchContext(branchId, branchTenantId, branchName))
       .then((nextData) => {
         if (!active) return;
         setData(nextData);
@@ -42,7 +52,7 @@ export function useProductQuickView(productId: string | null) {
     return () => {
       active = false;
     };
-  }, [productId, service]);
+  }, [branchId, branchName, branchTenantId, productId, service]);
 
   useDataEvent("product.changed", (payload) => {
     if (productId && (!payload.productId || payload.productId === productId)) reload();
@@ -60,4 +70,8 @@ export function useProductQuickView(productId: string | null) {
   const loading = Boolean(productId && !currentData && !error);
 
   return { loading, data: currentData, error, reload };
+}
+
+function createBranchContext(branchId?: string, tenantId?: string, name?: string) {
+  return branchId && tenantId && name ? { id: branchId, tenantId, name } : undefined;
 }

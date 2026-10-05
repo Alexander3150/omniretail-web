@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LocationStatus, SaasCapabilityKey } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
@@ -10,20 +10,31 @@ import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchP
 import type {
   AdjustStockDto,
   InventoryAlertsData,
+  InventoryKpis,
+  InventoryProductRow,
   InventoryStatus,
   TransferRequestDto,
 } from "@/modules/inventory/application/dto/InventoryAlertsDto";
 import {
   GetInventoryAlertsService,
   isExpiringSoon,
+  type GetInventoryAlertsParams,
 } from "@/modules/inventory/application/services/GetInventoryAlertsService";
-import { RegisterInventoryAdjustmentService } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
+import {
+  InventoryAdjustmentLookupService,
+  RegisterInventoryAdjustmentService,
+} from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
 import {
   ApproveTransferRequestService,
   CancelTransferRequestService,
   CreateTransferRequestService,
   RejectTransferRequestService,
 } from "@/modules/inventory/application/services/TransferRequestServices";
+import { GetInventoryKitAvailabilityService } from "@/modules/inventory/application/services/GetInventoryKitAvailabilityService";
+import { InventoryOtherBranchesService } from "@/modules/inventory/application/services/InventoryOtherBranchesService";
+import { InventoryCountService } from "@/modules/inventory/application/services/InventoryCountService";
+import { downloadInventoryCountPdf } from "@/modules/inventory/application/services/InventoryCountPdfService";
+import type { ReconcileCountInput } from "@/core/repositories";
 import { CancelInventoryTransferService } from "@/modules/inventory/application/services/InventoryTransferServices";
 import {
   INVENTORY_ADJUSTMENT_CREATE_PERMISSION,
@@ -34,11 +45,19 @@ import {
 export type InventoryStatusFilter = InventoryStatus | "all";
 export type InventoryKpiFilter = "all" | "active" | "lowStock" | "expiringSoon" | "outOfStock";
 
+const EMPTY_KPIS: InventoryKpis = {
+  activeProducts: 0,
+  lowStock: 0,
+  expiringSoon: 0,
+  outOfStock: 0,
+};
 const EMPTY_DATA: InventoryAlertsData = {
+  supportsMultipleLocations: true,
   rows: [],
   alerts: [],
+  alertTotalItems: 0,
   transferRequests: [],
-  kpis: { activeProducts: 0, lowStock: 0, expiringSoon: 0, outOfStock: 0 },
+  kpis: EMPTY_KPIS,
   visibility: {
     supportsExpiration: false,
     hasExpirationProducts: false,
@@ -47,17 +66,41 @@ const EMPTY_DATA: InventoryAlertsData = {
   branches: [],
   categories: [],
   locations: [],
+  page: 1,
+  pageSize: 20,
+  totalItems: 0,
+  totalPages: 0,
 };
+const SEARCH_DEBOUNCE_MS = 350;
+const DEFAULT_SORT = "productName,asc" as const;
 
 export function useInventoryAlerts() {
   const repositories = useRepositories();
   const { hasPermission, loading: sessionLoading } = useCurrentSession();
   const { hasCapability } = useEntitlement();
   const { currentBranch, branches: headerBranches, loading: branchLoading } = useActiveBranch();
+  const apiMode = repositories.inventoryStockDataSource === "api";
   const getService = useMemo(() => new GetInventoryAlertsService(repositories), [repositories]);
   const adjustmentService = useMemo(
     () => new RegisterInventoryAdjustmentService(repositories),
     [repositories],
+  );
+  // Lookups bajo demanda del modal de ajuste; solo existen en modo API (sin N+1 en el listado).
+  const adjustmentLookup = useMemo(
+    () => (apiMode ? new InventoryAdjustmentLookupService(repositories) : null),
+    [apiMode, repositories],
+  );
+  const kitAvailabilityService = useMemo(
+    () => (apiMode ? new GetInventoryKitAvailabilityService(repositories) : null),
+    [apiMode, repositories],
+  );
+  const otherBranchesService = useMemo(
+    () => (apiMode ? new InventoryOtherBranchesService(repositories) : null),
+    [apiMode, repositories],
+  );
+  const countService = useMemo(
+    () => (apiMode ? new InventoryCountService(repositories) : null),
+    [apiMode, repositories],
   );
   const transferServices = useMemo(
     () => ({
@@ -69,9 +112,15 @@ export function useInventoryAlerts() {
     [repositories],
   );
   const cancelInventoryTransferService = useMemo(
-    () => new CancelInventoryTransferService(repositories), [repositories],
+    () => new CancelInventoryTransferService(repositories),
+    [repositories],
   );
+  const requestIdRef = useRef(0);
+  const alertRequestIdRef = useRef(0);
+  const detailRequestIdRef = useRef(0);
+  const alertsLoadedBranchIdRef = useRef("");
   const [data, setData] = useState<InventoryAlertsData>(EMPTY_DATA);
+  const [detailRow, setDetailRow] = useState<InventoryProductRow | null>(null);
   const [branchId, setBranchIdState] = useState("");
   const currentBranchId = currentBranch?.id ?? "";
   const [previousCurrentBranchId, setPreviousCurrentBranchId] = useState(currentBranchId);
@@ -80,10 +129,13 @@ export function useInventoryAlerts() {
     setBranchIdState("");
   }
   const [search, setSearchState] = useState("");
+  const [requestSearch, setRequestSearch] = useState("");
   const [categoryId, setCategoryIdState] = useState("all");
   const [status, setStatusState] = useState<InventoryStatusFilter>("all");
   const [kpiFilter, setKpiFilterState] = useState<InventoryKpiFilter>("all");
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpenState] = useState(false);
+  const [page, setPageState] = useState(1);
+  const [pageSize, setPageSizeState] = useState(20);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,9 +143,10 @@ export function useInventoryAlerts() {
   const [loadedBranchId, setLoadedBranchId] = useState("");
   const effectiveBranchId =
     previousCurrentBranchId === currentBranchId ? branchId || currentBranchId : currentBranchId;
-  // UI action gating (feature/saas-entitlement-enforcement §7/§8): el permiso de Role sigue
-  // siendo obligatorio, la capability SaaS se suma -- nunca lo sustituye. El backend
-  // (RegisterInventoryAdjustmentService/TransferRequestServices) sigue siendo la autoridad final.
+  const effectiveBranchName =
+    headerBranches.find((branch) => branch.id === effectiveBranchId)?.name ??
+    currentBranch?.name ??
+    "Sucursal";
   const canAdjustStock =
     hasPermission(INVENTORY_ADJUSTMENT_CREATE_PERMISSION) &&
     hasCapability(SaasCapabilityKey.inventory);
@@ -101,49 +154,90 @@ export function useInventoryAlerts() {
     hasPermission(INVENTORY_TRANSFERS_MANAGE_PERMISSION) &&
     hasCapability(SaasCapabilityKey.inventory);
 
+  const apiRequestParams = useMemo<GetInventoryAlertsParams>(
+    () => ({
+      branchId: effectiveBranchId,
+      branchName: effectiveBranchName,
+      search: requestSearch.trim() || undefined,
+      categoryId: categoryId === "all" ? undefined : categoryId,
+      status: status === "all" ? undefined : status,
+      page,
+      pageSize,
+      sort: DEFAULT_SORT,
+    }),
+    [categoryId, effectiveBranchId, effectiveBranchName, page, pageSize, requestSearch, status],
+  );
+  const requestInput: string | GetInventoryAlertsParams = apiMode
+    ? apiRequestParams
+    : effectiveBranchId;
+
+  const applyRequest = useCallback(
+    (input: string | GetInventoryAlertsParams, requestedBranchId: string) => {
+      const requestId = ++requestIdRef.current;
+      return getService
+        .execute(input)
+        .then((nextData) => {
+          if (requestId !== requestIdRef.current) return;
+          if (apiMode && nextData.totalPages > 0 && nextData.page > nextData.totalPages) {
+            setPageState(nextData.totalPages);
+            return;
+          }
+          setData((current) => ({
+            ...nextData,
+            alerts:
+              apiMode && alertsLoadedBranchIdRef.current === requestedBranchId
+                ? current.alerts
+                : nextData.alerts,
+            alertTotalItems:
+              apiMode && alertsLoadedBranchIdRef.current === requestedBranchId
+                ? current.alertTotalItems
+                : nextData.alertTotalItems,
+          }));
+          setLoadedBranchId(requestedBranchId);
+          setLastUpdatedAt(new Date());
+          setError(null);
+        })
+        .catch(() => {
+          if (requestId === requestIdRef.current) {
+            setError("No se pudo cargar el inventario.");
+          }
+        })
+        .finally(() => {
+          if (requestId === requestIdRef.current) setLoading(false);
+        });
+    },
+    [apiMode, getService],
+  );
+
   const reload = useCallback(async () => {
     if (!effectiveBranchId || branchLoading || sessionLoading) return;
     setLoading(true);
     setError(null);
-    try {
-      const nextData = await getService.execute(effectiveBranchId);
-      setData(nextData);
-      setLoadedBranchId(effectiveBranchId);
-      setLastUpdatedAt(new Date());
-    } catch {
-      setError("No se pudo cargar el inventario.");
-    } finally {
-      setLoading(false);
-    }
-  }, [branchLoading, effectiveBranchId, getService, sessionLoading]);
+    await applyRequest(requestInput, effectiveBranchId);
+  }, [applyRequest, branchLoading, effectiveBranchId, requestInput, sessionLoading]);
 
   useEffect(() => {
-    let active = true;
-    if (!effectiveBranchId || branchLoading || sessionLoading) {
-      return () => {
-        active = false;
-      };
-    }
-    getService
-      .execute(effectiveBranchId)
-      .then((nextData) => {
-        if (!active) return;
-        setData(nextData);
-        setLoadedBranchId(effectiveBranchId);
-        setLastUpdatedAt(new Date());
-        setError(null);
-      })
-      .catch(() => {
-        if (active) setError("No se pudo cargar el inventario.");
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-
+    if (!effectiveBranchId || branchLoading || sessionLoading) return;
+    void applyRequest(requestInput, effectiveBranchId);
     return () => {
-      active = false;
+      requestIdRef.current += 1;
     };
-  }, [branchLoading, effectiveBranchId, getService, sessionLoading]);
+  }, [applyRequest, branchLoading, effectiveBranchId, requestInput, sessionLoading]);
+
+  useEffect(() => {
+    alertRequestIdRef.current += 1;
+    detailRequestIdRef.current += 1;
+    alertsLoadedBranchIdRef.current = "";
+  }, [effectiveBranchId]);
+
+  useEffect(() => {
+    if (!apiMode) return;
+    const timeoutId = window.setTimeout(() => {
+      setPageState(1);
+      setRequestSearch(search);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timeoutId);
+  }, [apiMode, search]);
 
   useDataEvent("inventory.changed", reload);
   useDataEvent("stock.changed", reload);
@@ -154,16 +248,23 @@ export function useInventoryAlerts() {
   useDataEvent("business-config.changed", reload);
 
   const effectiveKpiFilter: InventoryKpiFilter =
-    !data.visibility.showExpirationFeatures && kpiFilter === "expiringSoon" ? "all" : kpiFilter;
+    (!data.visibility.showExpirationFeatures && kpiFilter === "expiringSoon") ||
+    (apiMode && kpiFilter === "lowStock")
+      ? "all"
+      : kpiFilter;
   const baseFilteredRows = useMemo(
-    () => filterRows(data.rows, search, categoryId, status, "all"),
-    [categoryId, data.rows, search, status],
+    () =>
+      apiMode ? data.rows : filterRows(data.rows, search, categoryId, status, "all"),
+    [apiMode, categoryId, data.rows, search, status],
   );
   const filteredRows = useMemo(
-    () => filterRows(baseFilteredRows, "", "all", "all", effectiveKpiFilter),
-    [baseFilteredRows, effectiveKpiFilter],
+    () =>
+      apiMode
+        ? data.rows
+        : filterRows(baseFilteredRows, "", "all", "all", effectiveKpiFilter),
+    [apiMode, baseFilteredRows, data.rows, effectiveKpiFilter],
   );
-  const filteredKpis = useMemo(
+  const localKpis = useMemo(
     () => ({
       activeProducts: baseFilteredRows.length,
       lowStock: baseFilteredRows.filter(
@@ -178,34 +279,169 @@ export function useInventoryAlerts() {
     }),
     [baseFilteredRows, data.visibility.showExpirationFeatures],
   );
+  const kpis = apiMode ? data.kpis : localKpis;
+  const totalItems = apiMode ? data.totalItems : filteredRows.length;
+  const totalPages = apiMode
+    ? Math.max(1, data.totalPages)
+    : Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const currentPage = apiMode ? page : Math.min(page, totalPages);
+  const paginatedRows = apiMode
+    ? data.rows
+    : filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const activeBranch =
-    data.branches.find((branch) => branch.id === effectiveBranchId) ?? currentBranch;
+    headerBranches.find((branch) => branch.id === effectiveBranchId) ??
+    data.branches.find((branch) => branch.id === effectiveBranchId) ??
+    currentBranch;
   const activeLocations = data.locations.filter(
     (location) => location.status === LocationStatus.active,
   );
 
-  const setBranchId = useCallback((value: string) => {
+  const startApiRequest = useCallback(() => {
+    if (!apiMode) return;
+    requestIdRef.current += 1;
     setLoading(true);
-    setBranchIdState(value);
-    setSearchState("");
-    setCategoryIdState("all");
-    setStatusState("all");
-    setKpiFilterState("all");
-  }, []);
+    setError(null);
+  }, [apiMode]);
+  const resetPage = useCallback(() => setPageState(1), []);
+  const setBranchId = useCallback(
+    (value: string) => {
+      startApiRequest();
+      alertRequestIdRef.current += 1;
+      detailRequestIdRef.current += 1;
+      alertsLoadedBranchIdRef.current = "";
+      setBranchIdState(value);
+      setDetailRow(null);
+      setSearchState("");
+      setRequestSearch("");
+      setCategoryIdState("all");
+      setStatusState("all");
+      setKpiFilterState("all");
+      resetPage();
+    },
+    [resetPage, startApiRequest],
+  );
+  const setSearch = useCallback(
+    (value: string) => {
+      setSearchState(value);
+      if (!apiMode) resetPage();
+      startApiRequest();
+    },
+    [apiMode, resetPage, startApiRequest],
+  );
+  const setCategoryId = useCallback(
+    (value: string) => {
+      setCategoryIdState(value);
+      setKpiFilterState("all");
+      resetPage();
+      startApiRequest();
+    },
+    [resetPage, startApiRequest],
+  );
+  const setStatus = useCallback(
+    (value: InventoryStatusFilter) => {
+      setStatusState(value);
+      setKpiFilterState(value === "out_of_stock" ? "outOfStock" : "all");
+      resetPage();
+      startApiRequest();
+    },
+    [resetPage, startApiRequest],
+  );
+  const setKpiFilter = useCallback(
+    (value: InventoryKpiFilter) => {
+      if (apiMode) {
+        if (value === "lowStock" || value === "expiringSoon") return;
+        const nextStatus: InventoryStatusFilter =
+          value === "outOfStock" ? "out_of_stock" : "all";
+        setKpiFilterState(value);
+        setStatusState(nextStatus);
+        resetPage();
+        if (status !== nextStatus || page !== 1) startApiRequest();
+        return;
+      }
+      setKpiFilterState(value);
+      resetPage();
+      if (value === "lowStock") {
+        setStatusState((current) =>
+          current === "critical" || current === "near_minimum" || current === "all"
+            ? current
+            : "all",
+        );
+      }
+      if (value === "outOfStock") setStatusState("out_of_stock");
+      if (value === "active") setStatusState("all");
+    },
+    [apiMode, page, resetPage, startApiRequest, status],
+  );
+  const setPage = useCallback(
+    (value: number) => {
+      setPageState(value);
+      startApiRequest();
+    },
+    [startApiRequest],
+  );
+  const setPageSize = useCallback(
+    (value: number) => {
+      setPageSizeState(value);
+      resetPage();
+      startApiRequest();
+    },
+    [resetPage, startApiRequest],
+  );
+  const setFiltersOpen = useCallback(
+    (value: boolean | ((current: boolean) => boolean)) => setFiltersOpenState(value),
+    [],
+  );
 
-  const setSearch = useCallback((value: string) => setSearchState(value), []);
-  const setCategoryId = useCallback((value: string) => setCategoryIdState(value), []);
-  const setStatus = useCallback((value: InventoryStatusFilter) => setStatusState(value), []);
-  const setKpiFilter = useCallback((value: InventoryKpiFilter) => {
-    setKpiFilterState(value);
-    if (value === "lowStock") {
-      setStatusState((current) =>
-        current === "critical" || current === "near_minimum" || current === "all" ? current : "all",
-      );
+  const loadAlerts = useCallback(async () => {
+    if (!apiMode || !effectiveBranchId) return;
+    if (alertsLoadedBranchIdRef.current === effectiveBranchId) return;
+    const requestId = ++alertRequestIdRef.current;
+    try {
+      const alertPage = await getService.getApiAlerts({
+        branchId: effectiveBranchId,
+        branchName: effectiveBranchName,
+      });
+      if (requestId !== alertRequestIdRef.current) return;
+      alertsLoadedBranchIdRef.current = effectiveBranchId;
+      setData((current) => ({
+        ...current,
+        alerts: alertPage.items,
+        alertTotalItems: alertPage.totalItems,
+      }));
+    } catch {
+      if (requestId === alertRequestIdRef.current) {
+        setError("No se pudieron cargar las alertas de inventario.");
+      }
     }
-    if (value === "outOfStock") setStatusState("out_of_stock");
-    if (value === "active") setStatusState("all");
-  }, []);
+  }, [apiMode, effectiveBranchId, effectiveBranchName, getService]);
+
+  const loadProductRow = useCallback(
+    async (productId: string) => {
+      const existing =
+        data.rows.find((row) => row.productId === productId) ??
+        (detailRow?.productId === productId && detailRow.branchId === effectiveBranchId
+          ? detailRow
+          : undefined);
+      if (existing || !apiMode || !effectiveBranchId) return existing ?? null;
+      const requestId = ++detailRequestIdRef.current;
+      try {
+        const row = await getService.getApiProductRow({
+          branchId: effectiveBranchId,
+          branchName: effectiveBranchName,
+          productId,
+        });
+        if (requestId !== detailRequestIdRef.current) return null;
+        setDetailRow(row);
+        return row;
+      } catch {
+        if (requestId === detailRequestIdRef.current) {
+          setError("No se pudo cargar el detalle de inventario del producto.");
+        }
+        return null;
+      }
+    },
+    [apiMode, data.rows, detailRow, effectiveBranchId, effectiveBranchName, getService],
+  );
 
   async function adjustStock(dto: AdjustStockDto) {
     setBusy(true);
@@ -218,6 +454,26 @@ export function useInventoryAlerts() {
       const message = cleanInventoryError(caughtError, "No se pudo registrar el ajuste.");
       setError(message);
       throw caughtError;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Conteo fisico trazable: una sola reconciliacion; el PDF solo se genera DESPUES del exito y
+  // un fallo de PDF nunca invalida el conteo ya aplicado.
+  async function applyCount(input: ReconcileCountInput) {
+    if (!countService) throw new Error("El conteo fisico trazable requiere modo API.");
+    setBusy(true);
+    try {
+      const result = await countService.reconcile(input);
+      let pdfFailed = false;
+      try {
+        await downloadInventoryCountPdf(result);
+      } catch {
+        pdfFailed = true;
+      }
+      await reload();
+      return { result, pdfFailed };
     } finally {
       setBusy(false);
     }
@@ -240,7 +496,7 @@ export function useInventoryAlerts() {
   }
 
   async function cancelTransfer(transferId: string, reason: string, operationId: string) {
-    if (busy) throw new Error("Hay otra operación en curso.");
+    if (busy) throw new Error("Hay otra operacion en curso.");
     setBusy(true);
     setError(null);
     try {
@@ -305,14 +561,22 @@ export function useInventoryAlerts() {
 
   return {
     data,
-    kpis: filteredKpis,
+    detailRow,
+    kpis,
     rows: filteredRows,
+    paginatedRows,
+    totalItems,
+    totalPages,
+    page: currentPage,
+    pageSize,
+    apiMode,
     branchId: effectiveBranchId,
     currentBranchId,
     activeBranch,
-    branches: data.branches.length ? data.branches : headerBranches,
+    branches: apiMode ? headerBranches : data.branches.length ? data.branches : headerBranches,
     categories: data.categories,
     locations: activeLocations,
+    supportsMultipleLocations: data.supportsMultipleLocations,
     search,
     categoryId,
     status,
@@ -332,9 +596,18 @@ export function useInventoryAlerts() {
     setStatus,
     setKpiFilter,
     setFiltersOpen,
+    setPage,
+    setPageSize,
+    loadAlerts,
+    loadProductRow,
     reload,
     canAdjustStock,
     canManageTransfers,
+    adjustmentLookup,
+    countService,
+    otherBranchesService,
+    kitAvailabilityService,
+    applyCount,
     adjustStock,
     requestTransfer,
     cancelTransfer,

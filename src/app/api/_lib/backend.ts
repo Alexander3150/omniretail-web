@@ -29,14 +29,18 @@ export async function callBackend(
   init: {
     method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
     token?: string;
-    body?: string;
-    headers?: Record<string, string>;
+    body?: BodyInit;
+    contentType?: string;
+    headers?: { "Idempotency-Key"?: string };
   },
 ): Promise<Response | null> {
   const baseUrl = process.env.OMNIRETAIL_API_URL;
   if (!baseUrl) return null;
-  const headers: Record<string, string> = { Accept: "application/json", ...init.headers };
-  if (init.body !== undefined) headers["Content-Type"] = "application/json";
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (init.headers?.["Idempotency-Key"])
+    headers["Idempotency-Key"] = init.headers["Idempotency-Key"];
+  if (init.body !== undefined)
+    headers["Content-Type"] = init.contentType ?? "application/json";
   if (init.token) headers.Authorization = `Bearer ${init.token}`;
   try {
     return await fetch(`${baseUrl.replace(/\/+$/, "")}${path}`, {

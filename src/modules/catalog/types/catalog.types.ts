@@ -5,10 +5,10 @@ import type {
   InventoryBalance,
   Product,
   Promotion,
-  Supplier,
   SupplierProduct,
   Unit,
 } from "@/core/entities";
+import type { OperationalSupplier } from "@/core/repositories";
 import type { ProductStatus, ProductType } from "@/core/enums";
 import type { ProductChannels } from "@/core/entities/Product";
 import type { ProductTrackingConfig } from "@/core/types/tracking.types";
@@ -74,14 +74,25 @@ export interface ProductInventorySummaryItem {
   stockStatus: "Sin stock" | "Bajo" | "Disponible";
 }
 
+export interface ProductInventorySettingsSummary {
+  branchId: string;
+  branchName: string;
+  defaultLocationName?: string;
+  minStock: number;
+  reorderPoint?: number;
+}
+
 export interface ProductSupplierSummaryItem {
-  supplier: Supplier;
+  supplier: OperationalSupplier;
   supplierProduct: SupplierProduct;
   purchaseUnitName?: string;
 }
 
 export interface ProductQuickViewModel extends ProductDetailViewModel {
   inventory: ProductInventorySummaryItem[];
+  inventorySettings: ProductInventorySettingsSummary | null;
+  inventorySettingsAvailable: boolean;
   suppliers: ProductSupplierSummaryItem[];
+  suppliersAvailable: boolean;
   promotions: Promotion[];
 }

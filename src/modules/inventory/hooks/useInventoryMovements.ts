@@ -1,21 +1,38 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import {
+  clearMovementsNavContext,
+  readMovementsNavContext,
+} from "@/modules/inventory/application/services/movementsNavContext";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import type { InventoryMovementDisplayType } from "@/core/repositories";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
-import type {
-  InventoryMovementKpis,
-  InventoryMovementRow,
-  InventoryMovementsData,
-  MovementPeriodFilter,
-  MovementTypeFilter,
+import {
+  API_MOVEMENT_DISPLAY_TYPES,
+  type InventoryMovementKpis,
+  type InventoryMovementRow,
+  type InventoryMovementsData,
+  type MovementPeriodFilter,
+  type MovementTypeFilter,
 } from "@/modules/inventory/application/dto/InventoryMovementsDto";
-import { GetInventoryMovementsService } from "@/modules/inventory/application/services/GetInventoryMovementsService";
+import {
+  GetInventoryMovementsService,
+  type GetInventoryMovementsParams,
+} from "@/modules/inventory/application/services/GetInventoryMovementsService";
 
+const EMPTY_KPIS: InventoryMovementKpis = { incoming: 0, outgoing: 0, net: 0 };
 const EMPTY_DATA: InventoryMovementsData = {
   rows: [],
   branches: [],
+  page: 1,
+  pageSize: 20,
+  totalItems: 0,
+  totalPages: 0,
+  summary: EMPTY_KPIS,
 };
+const SEARCH_DEBOUNCE_MS = 350;
+const DEFAULT_SORT = "createdAt,desc" as const;
 
 export const MOVEMENT_PERIOD_OPTIONS: Array<{ value: MovementPeriodFilter; label: string }> = [
   { value: "7d", label: "Ultimos 7 dias" },
@@ -26,61 +43,130 @@ export const MOVEMENT_PERIOD_OPTIONS: Array<{ value: MovementPeriodFilter; label
 
 export function useInventoryMovements() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const repositories = useRepositories();
-  const { currentBranch, loading: branchLoading } = useActiveBranch();
+  const { currentBranch, branches: activeBranches, loading: branchLoading } = useActiveBranch();
   const activeBranchId = currentBranch?.id;
+  const apiMode = repositories.inventoryMovementsDataSource === "api";
+  const mockActiveBranchId = apiMode ? undefined : activeBranchId;
   const service = useMemo(() => new GetInventoryMovementsService(repositories), [repositories]);
+  const requestIdRef = useRef(0);
   const [data, setData] = useState<InventoryMovementsData>(EMPTY_DATA);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearchState] = useState("");
+  const [requestSearch, setRequestSearch] = useState("");
   const [period, setPeriodState] = useState<MovementPeriodFilter>("30d");
   const [type, setTypeState] = useState<MovementTypeFilter>("all");
-  const [branchId, setBranchIdState] = useState(() => searchParams.get("branchId") ?? "all");
-  const [productId, setProductIdState] = useState(() => searchParams.get("productId") ?? "");
-  const [filtersOpen, setFiltersOpenState] = useState(() =>
-    Boolean(searchParams.get("branchId") || searchParams.get("productId")),
-  );
+  const [branchId, setBranchIdState] = useState("all");
+  const [productId, setProductIdState] = useState("");
+  const [productName, setProductName] = useState("");
+  const [productSku, setProductSku] = useState("");
+  const [filtersOpen, setFiltersOpenState] = useState(false);
+  // El contexto (sessionStorage / params legacy) se hidrata una vez antes de la primera request.
+  const [contextReady, setContextReady] = useState(false);
+  const contextHydratedRef = useRef(false);
   const [page, setPageState] = useState(1);
   const [pageSize, setPageSizeState] = useState(20);
-  const resetPage = useCallback(() => setPageState(1), []);
+
+  const mockRequestParams = useMemo<GetInventoryMovementsParams>(
+    () => ({
+      activeBranchId: mockActiveBranchId,
+      page: 1,
+      pageSize: 100,
+      sort: DEFAULT_SORT,
+    }),
+    [mockActiveBranchId],
+  );
+  const apiRequestParams = useMemo<GetInventoryMovementsParams>(() => {
+    const range = getPeriodRange(period);
+    return {
+      branchId: branchId === "all" ? undefined : branchId,
+      productId: productId || undefined,
+      displayType: getApiDisplayType(type),
+      from: range.from,
+      to: range.to,
+      search: requestSearch.trim() || undefined,
+      page,
+      pageSize,
+      sort: DEFAULT_SORT,
+    };
+  }, [branchId, page, pageSize, period, productId, requestSearch, type]);
+  const requestParams = apiMode ? apiRequestParams : mockRequestParams;
+
+  const applyRequest = useCallback(
+    (params: GetInventoryMovementsParams) => {
+      const requestId = ++requestIdRef.current;
+      return service
+        .execute(params)
+        .then((nextData) => {
+          if (requestId !== requestIdRef.current) return;
+          if (apiMode && nextData.totalPages > 0 && nextData.page > nextData.totalPages) {
+            setPageState(nextData.totalPages);
+            return;
+          }
+          setData(nextData);
+        })
+        .catch(() => {
+          if (requestId === requestIdRef.current) {
+            setError("No se pudo cargar el historial de movimientos.");
+          }
+        })
+        .finally(() => {
+          if (requestId === requestIdRef.current) setLoading(false);
+        });
+    },
+    [apiMode, service],
+  );
 
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      const nextData = await service.execute(activeBranchId);
-      setData(nextData);
-    } catch {
-      setError("No se pudo cargar el historial de movimientos.");
-    } finally {
-      setLoading(false);
-    }
-  }, [activeBranchId, service]);
+    await applyRequest(requestParams);
+  }, [applyRequest, requestParams]);
 
   useEffect(() => {
-    let active = true;
+    if (contextHydratedRef.current) return;
+    contextHydratedRef.current = true;
     window.queueMicrotask(() => {
-      if (!active) return;
-      setLoading(true);
-      setError(null);
-      service
-        .execute(activeBranchId)
-        .then((nextData) => {
-          if (!active) return;
-          setData(nextData);
-        })
-        .catch(() => {
-          if (active) setError("No se pudo cargar el historial de movimientos.");
-        })
-        .finally(() => {
-          if (active) setLoading(false);
-        });
+      const legacyProductId = searchParams.get("productId");
+      const legacyBranchId = searchParams.get("branchId");
+      if (legacyProductId || legacyBranchId) {
+        // Compatibilidad con enlaces antiguos: se hidrata y la URL se limpia de inmediato.
+        if (legacyProductId) setProductIdState(legacyProductId);
+        if (legacyBranchId) setBranchIdState(legacyBranchId);
+        setFiltersOpenState(true);
+        router.replace("/inventario/movimientos");
+      } else {
+        const stored = readMovementsNavContext();
+        if (stored) {
+          setProductIdState(stored.productId);
+          setProductName(stored.productName);
+          setProductSku(stored.productSku ?? "");
+          if (stored.branchId) setBranchIdState(stored.branchId);
+          setFiltersOpenState(true);
+        }
+      }
+      setContextReady(true);
     });
+  }, [router, searchParams]);
+
+  useEffect(() => {
+    if (!contextReady) return;
+    void applyRequest(requestParams);
     return () => {
-      active = false;
+      requestIdRef.current += 1;
     };
-  }, [activeBranchId, service]);
+  }, [applyRequest, contextReady, requestParams]);
+
+  useEffect(() => {
+    if (!apiMode) return;
+    const timeoutId = window.setTimeout(() => {
+      setPageState(1);
+      setRequestSearch(search);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timeoutId);
+  }, [apiMode, search]);
 
   useDataEvent("inventory.changed", reload);
   useDataEvent("stock.changed", reload);
@@ -89,64 +175,98 @@ export function useInventoryMovements() {
   useDataEvent("inventory-transfer.changed", reload);
 
   const filteredRows = useMemo(
-    () => filterRows(data.rows, { search, period, type, branchId, productId }),
-    [branchId, data.rows, period, productId, search, type],
+    () =>
+      apiMode ? data.rows : filterRows(data.rows, { search, period, type, branchId, productId }),
+    [apiMode, branchId, data.rows, period, productId, search, type],
   );
-  const kpis = useMemo<InventoryMovementKpis>(() => {
-    const incoming = filteredRows
-      .filter((row) => row.signedQuantity > 0)
-      .reduce((total, row) => total + row.signedQuantity, 0);
-    const outgoing = filteredRows
-      .filter((row) => row.signedQuantity < 0)
-      .reduce((total, row) => total + Math.abs(row.signedQuantity), 0);
-    return { incoming, outgoing, net: incoming - outgoing };
-  }, [filteredRows]);
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
-  const currentPage = Math.min(page, totalPages);
-  const paginatedRows = filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const localKpis = useMemo(() => getMovementKpis(filteredRows), [filteredRows]);
+  const kpis = apiMode ? data.summary : localKpis;
+  const totalItems = apiMode ? data.totalItems : filteredRows.length;
+  const totalPages = apiMode
+    ? Math.max(1, data.totalPages)
+    : Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const currentPage = apiMode ? page : Math.min(page, totalPages);
+  const paginatedRows = apiMode
+    ? data.rows
+    : filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const displayData = useMemo<InventoryMovementsData>(
+    () => ({
+      ...data,
+      branches: apiMode
+        ? activeBranches
+            .map((branch) => ({ id: branch.id, name: branch.name }))
+            .sort((left, right) => left.name.localeCompare(right.name))
+        : data.branches,
+    }),
+    [activeBranches, apiMode, data],
+  );
 
-  const setPage = useCallback((value: number) => setPageState(value), []);
+  const startApiRequest = useCallback(() => {
+    if (!apiMode) return;
+    requestIdRef.current += 1;
+    setLoading(true);
+    setError(null);
+  }, [apiMode]);
+  const resetPage = useCallback(() => setPageState(1), []);
+  const setPage = useCallback(
+    (value: number) => {
+      startApiRequest();
+      setPageState(value);
+    },
+    [startApiRequest],
+  );
   const setSearch = useCallback(
     (value: string) => {
       setSearchState(value);
-      resetPage();
+      if (!apiMode) resetPage();
+      startApiRequest();
     },
-    [resetPage],
+    [apiMode, resetPage, startApiRequest],
   );
   const setPeriod = useCallback(
     (value: MovementPeriodFilter) => {
       setPeriodState(value);
       resetPage();
+      startApiRequest();
     },
-    [resetPage],
+    [resetPage, startApiRequest],
   );
   const setType = useCallback(
     (value: MovementTypeFilter) => {
       setTypeState(value);
       resetPage();
+      startApiRequest();
     },
-    [resetPage],
+    [resetPage, startApiRequest],
   );
   const setBranchId = useCallback(
     (value: string) => {
       setBranchIdState(value);
       resetPage();
+      startApiRequest();
     },
-    [resetPage],
+    [resetPage, startApiRequest],
   );
   const setProductId = useCallback(
     (value: string) => {
       setProductIdState(value);
+      if (!value) {
+        setProductName("");
+        setProductSku("");
+        clearMovementsNavContext();
+      }
       resetPage();
+      startApiRequest();
     },
-    [resetPage],
+    [resetPage, startApiRequest],
   );
   const setPageSize = useCallback(
     (value: number) => {
       setPageSizeState(value);
       resetPage();
+      startApiRequest();
     },
-    [resetPage],
+    [resetPage, startApiRequest],
   );
   const setFiltersOpen = useCallback(
     (value: boolean | ((current: boolean) => boolean)) => {
@@ -156,22 +276,44 @@ export function useInventoryMovements() {
     [resetPage],
   );
 
+  const loadExportData = useCallback(async () => {
+    if (!apiMode) return { rows: filteredRows, kpis: localKpis };
+    const range = getPeriodRange(period);
+    const exportData = await service.exportAll({
+      branchId: branchId === "all" ? undefined : branchId,
+      productId: productId || undefined,
+      displayType: getApiDisplayType(type),
+      from: range.from,
+      to: range.to,
+      search: search.trim() || undefined,
+      page: 1,
+      pageSize: 100,
+      sort: DEFAULT_SORT,
+    });
+    return { rows: exportData.rows, kpis: exportData.summary };
+  }, [apiMode, branchId, filteredRows, localKpis, period, productId, search, service, type]);
+
   return {
-    data,
+    data: displayData,
     rows: filteredRows,
     paginatedRows,
     kpis,
-    loading: branchLoading || loading,
+    loading: branchLoading || loading || !contextReady,
     error,
+    apiMode,
     search,
     period,
     type,
     branchId,
     productId,
+    productName,
+    productSku,
     filtersOpen,
     page: currentPage,
     pageSize,
+    totalItems,
     totalPages,
+    loadExportData,
     setSearch,
     setPeriod,
     setType,
@@ -180,6 +322,21 @@ export function useInventoryMovements() {
     setFiltersOpen,
     setPage,
     setPageSize,
+  };
+}
+
+function getApiDisplayType(type: MovementTypeFilter): InventoryMovementDisplayType | undefined {
+  if (type === "all") return undefined;
+  return API_MOVEMENT_DISPLAY_TYPES.find((candidate) => candidate === type);
+}
+
+function getPeriodRange(period: MovementPeriodFilter) {
+  if (period === "all") return { from: undefined, to: undefined };
+  const now = Date.now();
+  const days = period === "7d" ? 7 : period === "90d" ? 90 : 30;
+  return {
+    from: new Date(now - days * 24 * 60 * 60 * 1000).toISOString(),
+    to: new Date(now).toISOString(),
   };
 }
 
@@ -218,6 +375,16 @@ function filterRows(
       ].some((value) => (value ?? "").toLowerCase().includes(query));
     return matchesPeriod && matchesType && matchesBranch && matchesProduct && matchesSearch;
   });
+}
+
+function getMovementKpis(rows: InventoryMovementRow[]): InventoryMovementKpis {
+  const incoming = rows
+    .filter((row) => row.signedQuantity > 0)
+    .reduce((total, row) => total + row.signedQuantity, 0);
+  const outgoing = rows
+    .filter((row) => row.signedQuantity < 0)
+    .reduce((total, row) => total + Math.abs(row.signedQuantity), 0);
+  return { incoming, outgoing, net: incoming - outgoing };
 }
 
 function getPeriodThreshold(period: MovementPeriodFilter) {

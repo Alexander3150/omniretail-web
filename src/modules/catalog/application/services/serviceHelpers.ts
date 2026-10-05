@@ -9,6 +9,7 @@ import {
 import { ensureTenantCapability } from "@/shared/application/services/entitlementGuards";
 import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
 import { BackendRequestError } from "@/infrastructure/api/backendClient";
+import { ProductEditorPartialSaveError } from "@/modules/catalog/application/services/ProductEditorPartialSaveError";
 
 export class CatalogServiceError extends Error {
   constructor(message: string) {
@@ -97,9 +98,8 @@ export function ensureCanManageUnits(permissions: readonly string[]) {
  * `.manage` único): `catalog.products.read`, `.create`, `.update`. Tener `.create` o `.update`
  * implica poder leer (no tiene sentido poder crear/editar un producto que no podés consultar) --
  * mismo criterio que `.manage` implicando `.read` en Categorías/Ubicaciones/Unidades.
- * `.update` cubre editar, archivar, restaurar y promoción (§1/§7 del ticket): ninguna de esas
- * acciones tiene su propia key canónica hoy, y el ticket pide explícitamente no inventar una
- * nueva salvo que una acción real no pueda representarse con las 3 existentes.
+ * `.update` cubre editar, archivar y restaurar. Promociones usan los permisos backend
+ * `catalog.promotions.read/manage` y se validan por separado.
  */
 export function ensureCanReadProducts(permissions: readonly string[]) {
   if (
@@ -120,6 +120,16 @@ export function ensureCanCreateProducts(permissions: readonly string[]) {
 export function ensureCanUpdateProducts(permissions: readonly string[]) {
   if (permissions.includes("catalog.products.update")) return;
   throw new CatalogServiceError("No dispone de permisos para editar productos.");
+}
+
+export function ensureCanReadPromotions(permissions: readonly string[]) {
+  if (permissions.includes("catalog.promotions.read")) return;
+  throw new CatalogServiceError("No dispone de permisos para consultar promociones.");
+}
+
+export function ensureCanManagePromotions(permissions: readonly string[]) {
+  if (permissions.includes("catalog.promotions.manage")) return;
+  throw new CatalogServiceError("No dispone de permisos para gestionar promociones.");
 }
 
 export async function requireCapabilities(
@@ -205,6 +215,7 @@ export async function ensureTenantCanUseKits(
 }
 
 export function cleanError(error: unknown) {
+  if (error instanceof ProductEditorPartialSaveError) return error.message;
   if (error instanceof CatalogServiceError) return error.message;
   if (error instanceof BackendRequestError) return error.message;
   return "No se pudo completar la operacion. Intentalo de nuevo.";

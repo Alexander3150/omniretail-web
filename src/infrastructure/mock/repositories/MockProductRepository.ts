@@ -30,6 +30,27 @@ export class MockProductRepository extends BaseMockRepository implements Product
         null,
     );
   }
+  async getPageScoped(
+    tenantId: string,
+    params: Parameters<ProductRepository["getPageScoped"]>[1],
+  ) {
+    const products = await this.getByTenant(tenantId);
+    const [field = "name", direction = "asc"] = (params.sort ?? "name,asc").split(",");
+    const sorted = [...products].sort((left, right) => {
+      const leftValue = String(left[field as "name" | "sku" | "createdAt"]);
+      const rightValue = String(right[field as "name" | "sku" | "createdAt"]);
+      const comparison = leftValue.localeCompare(rightValue) || left.id.localeCompare(right.id);
+      return direction === "desc" ? -comparison : comparison;
+    });
+    const start = (params.page - 1) * params.pageSize;
+    return {
+      items: sorted.slice(start, start + params.pageSize),
+      page: params.page,
+      pageSize: params.pageSize,
+      totalItems: sorted.length,
+      totalPages: Math.ceil(sorted.length / params.pageSize),
+    };
+  }
   async getPublishedForEcommerce(tenantId: string) {
     const products = await this.getPublishedForChannel(SalesChannel.ecommerce);
     return products.filter((product) => product.tenantId === tenantId);
@@ -182,8 +203,27 @@ export class MockProductRepository extends BaseMockRepository implements Product
     if (!(await this.getByIdScoped(tenantId, id))) throw this.missing("Product", id);
     return this.update(id, input);
   }
+  async updatePrice(id: string, salePrice: number) {
+    return this.update(id, { salePrice });
+  }
   async archiveScoped(tenantId: string, id: string) {
     if (!(await this.getByIdScoped(tenantId, id))) throw this.missing("Product", id);
     return this.archive(id);
+  }
+  async restore(id: string) {
+    const product = this.store.mutate((db) =>
+      this.updateById(db.products, id, { status: ProductStatus.published }, "Product"),
+    );
+    this.emit("product.changed", {
+      entityId: product.id,
+      tenantId: product.tenantId,
+      productId: product.id,
+      action: "restored",
+    });
+    return product;
+  }
+  async restoreScoped(tenantId: string, id: string) {
+    if (!(await this.getByIdScoped(tenantId, id))) throw this.missing("Product", id);
+    return this.restore(id);
   }
 }

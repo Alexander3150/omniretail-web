@@ -1,5 +1,6 @@
 import type { PurchaseOrder, ReceiptIncidentEvidence, ReceiptLine } from "@/core/entities";
 import { PurchaseOrderStatus, ReceiptStatus } from "@/core/enums";
+import { RECEIPT_INCIDENT_TYPE_LABELS } from "@/modules/receiving/application/dto/ReceivingDocumentDetailDto";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import {
   ensureCanReadPurchaseOrders,
@@ -19,7 +20,7 @@ interface PdfLine {
   quantity: number;
   unitCost: number;
   subtotal: number;
-  receivedQuantity: number;
+  receivedQuantity?: number;
 }
 
 interface PdfReceiptLine {
@@ -93,9 +94,126 @@ export class PurchaseOrderPdfService {
     return generatePurchaseOrderPdf(data, false);
   }
 
-  async downloadReceivingReport(orderId: string) {
-    const data = await this.getPdfData(orderId);
+  async downloadReceivingReport(orderId: string, options?: { branchName?: string }) {
+    const data =
+      this.repositories.purchaseOrdersDataSource === "api"
+        ? await this.getApiReceivingPdfData(orderId, options)
+        : await this.getPdfData(orderId);
     await generateReceivingReportPdf(data, true);
+  }
+
+  /** API: recepciones confirmadas e incidencias canonicas (paginas acotadas, sin fetch-all). */
+  private async getApiReceivingPdfData(
+    orderId: string,
+    options?: { branchName?: string },
+  ): Promise<PdfData> {
+    const { tenantId, user, permissions } = await resolvePurchasingContext(this.repositories);
+    ensureCanReadPurchaseOrders(permissions);
+    const order = ensurePurchaseOrderBelongsToTenant(
+      await this.repositories.purchaseOrders.getByIdScoped(tenantId, orderId),
+      tenantId,
+    );
+    const confirmedPage = await this.repositories.receipts.getPageScoped(tenantId, {
+      branchId: order.branchId,
+      purchaseOrderId: order.id,
+      status: "confirmed",
+      page: 1,
+      pageSize: 100,
+    });
+    if (confirmedPage.page < confirmedPage.totalPages) {
+      throw new Error("El historial de recepciones es demasiado extenso para generar el reporte.");
+    }
+    if (confirmedPage.items.length === 0) {
+      throw new Error("La orden no tiene recepciones confirmadas.");
+    }
+    const records = [...confirmedPage.items].sort(
+      (left, right) =>
+        new Date(left.receipt.receivedAt ?? left.receipt.updatedAt).getTime() -
+        new Date(right.receipt.receivedAt ?? right.receipt.updatedAt).getTime(),
+    );
+    const incidentPages = await Promise.all(
+      records.map((record) =>
+        this.repositories.receipts.listIncidentsScoped(tenantId, record.receipt.id, {
+          page: 1,
+          pageSize: 100,
+        }),
+      ),
+    );
+    // Unica fuente humana operacional: el usuario de la sesion; el resto queda "No disponible".
+    const userNameById = new Map([[user.id, user.name]]);
+    const responsible = (userId?: string) =>
+      (userId && userNameById.get(userId)) || "No disponible";
+    const orderItemById = new Map((order.items ?? []).map((item) => [item.id, item]));
+    const orderedTotal = (order.items ?? []).reduce((sum, item) => sum + item.quantity, 0);
+    const acceptedByProductId = new Map<string, number>();
+    let acceptedAccumulated = 0;
+    const pdfIncidents: PdfIncident[] = [];
+
+    const receiptRows: PdfReceipt[] = records.map((record, index) => {
+      const incidents = incidentPages[index]?.items ?? [];
+      const acceptedQuantity = record.items.reduce((sum, item) => sum + item.line.receivedQuantity, 0);
+      acceptedAccumulated += acceptedQuantity;
+      incidents.forEach((incident) => {
+        const item = record.items.find((candidate) => candidate.line.id === incident.goodsReceiptItemId);
+        pdfIncidents.push({
+          productName: item?.productNameSnapshot ?? "Incidencia general",
+          typeName: RECEIPT_INCIDENT_TYPE_LABELS[incident.incidentType],
+          quantity: incident.quantityAffected ?? 0,
+          description: incident.notes,
+          receiptNumber: record.receipt.number,
+          createdAt: incident.createdAt,
+          responsibleName: responsible(incident.createdByUserId),
+          evidence: [],
+        });
+      });
+      return {
+        number: record.receipt.number,
+        receivedAt: record.receipt.receivedAt ?? record.receipt.updatedAt,
+        responsibleName: responsible(record.receipt.receivedByUserId),
+        statusLabel: acceptedAccumulated >= orderedTotal ? "Recibida" : "Parcial",
+        acceptedQuantity,
+        incidentQuantity: incidents
+          .filter((incident) => incident.status === "open")
+          .reduce((sum, incident) => sum + (incident.quantityAffected ?? 0), 0),
+        pendingAfter: Math.max(0, orderedTotal - acceptedAccumulated),
+        lines: record.items.map((item) => {
+          const orderItem = item.purchaseOrderItemId
+            ? orderItemById.get(item.purchaseOrderItemId)
+            : undefined;
+          const previousAccepted = acceptedByProductId.get(item.line.productId) ?? 0;
+          const orderedQuantity = orderItem?.quantity ?? 0;
+          acceptedByProductId.set(item.line.productId, previousAccepted + item.line.receivedQuantity);
+          return {
+            productName: item.productNameSnapshot ?? "Producto no disponible",
+            unitLabel: item.unitSymbolSnapshot ?? "Unidad",
+            orderedQuantity,
+            acceptedQuantity: item.line.receivedQuantity,
+            incidentQuantity: incidents
+              .filter(
+                (incident) =>
+                  incident.status === "open" && incident.goodsReceiptItemId === item.line.id,
+              )
+              .reduce((sum, incident) => sum + (incident.quantityAffected ?? 0), 0),
+            pendingAfter: Math.max(
+              0,
+              orderedQuantity - previousAccepted - item.line.receivedQuantity,
+            ),
+          };
+        }),
+      };
+    });
+
+    const base = toApiPurchaseOrderPdfData(order);
+    return {
+      ...base,
+      branchName: options?.branchName ?? base.branchName,
+      lines: base.lines.map((line) => ({
+        ...line,
+        receivedQuantity: acceptedByProductId.get(line.productId) ?? 0,
+      })),
+      receipts: receiptRows,
+      incidents: pdfIncidents,
+    };
   }
 
   async getSupplierEmail(orderId: string) {
@@ -105,6 +223,7 @@ export class PurchaseOrderPdfService {
       await this.repositories.purchaseOrders.getByIdScoped(tenantId, orderId),
       tenantId,
     );
+    if (this.repositories.purchaseOrdersDataSource === "api") return "";
     const supplier = await this.repositories.suppliers.getById(order.supplierId);
     return supplier?.email?.trim() || "";
   }
@@ -116,6 +235,9 @@ export class PurchaseOrderPdfService {
       await this.repositories.purchaseOrders.getByIdScoped(tenantId, orderId),
       tenantId,
     );
+    if (this.repositories.purchaseOrdersDataSource === "api") {
+      return toApiPurchaseOrderPdfData(order);
+    }
     const [
       tenant,
       supplier,
@@ -271,6 +393,32 @@ export class PurchaseOrderPdfService {
   }
 }
 
+function toApiPurchaseOrderPdfData(order: PurchaseOrder): PdfData {
+  return {
+    order,
+    tenantName: "OmniRetail",
+    supplierName: order.supplierNameSnapshot ?? "Proveedor no disponible",
+    supplierLegalName: "-",
+    supplierTaxId: "-",
+    supplierContact: "No incluido en la orden",
+    supplierEmail: "-",
+    branchName: "Sucursal no disponible",
+    branchAddress: "-",
+    lines: (order.items ?? []).map((item) => ({
+      productId: item.productId,
+      productName: item.productNameSnapshot ?? "Producto no disponible",
+      sku: item.productSkuSnapshot ?? item.productId,
+      supplierSku: item.supplierSkuSnapshot ?? "-",
+      unitLabel: item.unitSymbolSnapshot ?? item.unitId,
+      quantity: item.quantity,
+      unitCost: item.unitCost,
+      subtotal: item.subtotal,
+    })),
+    receipts: [],
+    incidents: [],
+  };
+}
+
 export class PurchaseOrderEmailSimulationService {
   async simulatePurchaseOrderSend(input: { orderNumber: string; supplierEmail?: string }) {
     if (!input.supplierEmail) {
@@ -375,7 +523,7 @@ export async function generatePurchaseOrderPdf(data: PdfData, download: boolean)
 export async function generateReceivingReportPdf(data: PdfData, download: boolean) {
   const doc = await createDocument();
   const ordered = data.lines.reduce((sum, line) => sum + line.quantity, 0);
-  const accepted = data.lines.reduce((sum, line) => sum + line.receivedQuantity, 0);
+  const accepted = data.lines.reduce((sum, line) => sum + (line.receivedQuantity ?? 0), 0);
   const pending = Math.max(0, ordered - accepted);
   const incidentQuantity = data.incidents.reduce((sum, incident) => sum + incident.quantity, 0);
   const progress = ordered > 0 ? Math.min(100, Math.round((accepted / ordered) * 100)) : 0;

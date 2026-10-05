@@ -373,6 +373,30 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
       db.inventoryMovements.filter((item) => !productId || item.productId === productId),
     );
   }
+  async getMovementPage(
+    _params: Parameters<InventoryRepository["getMovementPage"]>[0],
+  ): ReturnType<InventoryRepository["getMovementPage"]> {
+    void _params;
+    throw new Error("Server-side inventory movement pages are only available in API mode.");
+  }
+  async getStockPage(
+    _params: Parameters<InventoryRepository["getStockPage"]>[0],
+  ): ReturnType<InventoryRepository["getStockPage"]> {
+    void _params;
+    throw new Error("Server-side inventory stock pages are only available in API mode.");
+  }
+  async getInventoryAlertPage(
+    _params: Parameters<InventoryRepository["getInventoryAlertPage"]>[0],
+  ): ReturnType<InventoryRepository["getInventoryAlertPage"]> {
+    void _params;
+    throw new Error("Server-side inventory alert pages are only available in API mode.");
+  }
+  async getKitAvailability(): Promise<never> {
+    throw new Error("Kit availability details are only available in API mode.");
+  }
+  async getOtherBranchesAvailability(): Promise<never> {
+    throw new Error("Other-branch availability is only available in API mode.");
+  }
   async getLots(productId?: string) {
     return this.read((db) =>
       db.stockLots.filter((item) => !productId || item.productId === productId),

@@ -1,4 +1,5 @@
 import type { ISODateString } from "@/core/types/common.types";
+import type { SupplierCostTier } from "@/core/entities/SupplierCostTier";
 
 export interface SupplierProduct {
   id: string;
@@ -13,6 +14,8 @@ export interface SupplierProduct {
   minimumOrderQuantity: number;
   preferred: boolean;
   active: boolean;
+  /** Incluido por lecturas operacionales API; repositorios legacy pueden resolverlo aparte. */
+  costTiers?: SupplierCostTier[];
   createdAt: ISODateString;
   updatedAt: ISODateString;
 }

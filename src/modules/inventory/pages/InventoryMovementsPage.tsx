@@ -8,11 +8,12 @@ import { Select } from "@/shared/components/Select";
 import { cn } from "@/shared/utils/cn";
 import { formatNumber } from "@/shared/utils/formatNumber";
 import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
-import type {
-  InventoryMovementRow,
-  MovementDisplayType,
-  MovementPeriodFilter,
-  MovementTypeFilter,
+import {
+  API_MOVEMENT_DISPLAY_TYPES,
+  type InventoryMovementRow,
+  type MovementDisplayType,
+  type MovementPeriodFilter,
+  type MovementTypeFilter,
 } from "@/modules/inventory/application/dto/InventoryMovementsDto";
 import { exportInventoryMovementsXlsx } from "@/modules/inventory/application/services/exportInventoryMovementsXlsx";
 import {
@@ -152,11 +153,17 @@ const MOVEMENT_TYPE_OPTIONS: Array<{ value: MovementTypeFilter; label: string }>
     label: movementDisplayConfig[value].label,
   })),
 ];
+const API_MOVEMENT_TYPE_OPTIONS: Array<{ value: MovementTypeFilter; label: string }> = [
+  { value: "all", label: "Todos los tipos" },
+  ...API_MOVEMENT_DISPLAY_TYPES.map((value) => ({
+    value,
+    label: movementDisplayConfig[value].label,
+  })),
+];
 
 export function InventoryMovementsPage() {
   const {
     data,
-    rows,
     paginatedRows,
     kpis,
     loading,
@@ -166,10 +173,15 @@ export function InventoryMovementsPage() {
     type,
     branchId,
     productId,
+    productName,
+    productSku,
     filtersOpen,
     page,
     pageSize,
+    totalItems,
     totalPages,
+    apiMode,
+    loadExportData,
     setSearch,
     setPeriod,
     setType,
@@ -181,8 +193,10 @@ export function InventoryMovementsPage() {
   } = useInventoryMovements();
   const [selectedMovement, setSelectedMovement] = useState<InventoryMovementRow | null>(null);
   const [exporting, setExporting] = useState(false);
-  const firstVisible = rows.length === 0 ? 0 : (page - 1) * pageSize + 1;
-  const lastVisible = Math.min(page * pageSize, rows.length);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const movementTypeOptions = apiMode ? API_MOVEMENT_TYPE_OPTIONS : MOVEMENT_TYPE_OPTIONS;
+  const firstVisible = totalItems === 0 ? 0 : (page - 1) * pageSize + 1;
+  const lastVisible = Math.min((page - 1) * pageSize + paginatedRows.length, totalItems);
   const selectedBranchLabel =
     branchId === "all"
       ? "Todas las sucursales"
@@ -191,21 +205,32 @@ export function InventoryMovementsPage() {
     MOVEMENT_PERIOD_OPTIONS.find((option) => option.value === period)?.label ??
     "Periodo seleccionado";
   const selectedTypeLabel =
-    MOVEMENT_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? "Tipo seleccionado";
+    movementTypeOptions.find((option) => option.value === type)?.label ?? "Tipo seleccionado";
+  // Nunca se muestra el UUID: nombre (y SKU) del contexto, o el de la fila; si no, un texto neutro.
+  const resolvedProductName =
+    productName || data.rows.find((row) => row.productId === productId)?.productName || "";
   const productFilterLabel = productId
-    ? (data.rows.find((row) => row.productId === productId)?.productName ?? productId)
+    ? resolvedProductName
+      ? productSku
+        ? `${resolvedProductName} · ${productSku}`
+        : resolvedProductName
+      : "Producto seleccionado"
     : "";
 
   async function handleExport() {
     setExporting(true);
+    setExportError(null);
     try {
+      const exportData = await loadExportData();
       await exportInventoryMovementsXlsx({
-        rows,
-        kpis,
+        rows: exportData.rows,
+        kpis: exportData.kpis,
         periodLabel: selectedPeriodLabel,
         typeLabel: selectedTypeLabel,
         branchLabel: selectedBranchLabel,
       });
+    } catch {
+      setExportError("No se pudo exportar el historial de movimientos.");
     } finally {
       setExporting(false);
     }
@@ -238,6 +263,7 @@ export function InventoryMovementsPage() {
       </header>
 
       {error ? <InlineAlert title={error} tone="danger" /> : null}
+      {exportError ? <InlineAlert title={exportError} tone="danger" /> : null}
 
       <section className="max-w-full overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
         <MovementFilters
@@ -247,6 +273,7 @@ export function InventoryMovementsPage() {
           period={period}
           search={search}
           type={type}
+          typeOptions={movementTypeOptions}
           productFilterLabel={productFilterLabel}
           onBranchChange={setBranchId}
           onPeriodChange={setPeriod}
@@ -272,7 +299,7 @@ export function InventoryMovementsPage() {
           />
         )}
 
-        {rows.length > 0 ? (
+        {totalItems > 0 ? (
           <MovementTableFooter
             firstVisible={firstVisible}
             lastVisible={lastVisible}
@@ -280,7 +307,7 @@ export function InventoryMovementsPage() {
             onPageSizeChange={setPageSize}
             page={page}
             pageSize={pageSize}
-            totalItems={rows.length}
+            totalItems={totalItems}
             totalPages={totalPages}
           />
         ) : null}
@@ -368,6 +395,7 @@ function MovementFilters({
   period,
   search,
   type,
+  typeOptions,
   productFilterLabel,
   onBranchChange,
   onPeriodChange,
@@ -382,6 +410,7 @@ function MovementFilters({
   period: MovementPeriodFilter;
   search: string;
   type: MovementTypeFilter;
+  typeOptions: Array<{ value: MovementTypeFilter; label: string }>;
   productFilterLabel: string;
   onBranchChange: (value: string) => void;
   onPeriodChange: (value: MovementPeriodFilter) => void;
@@ -417,7 +446,7 @@ function MovementFilters({
           onChange={(event) => onTypeChange(event.target.value as MovementTypeFilter)}
           value={type}
         >
-          {MOVEMENT_TYPE_OPTIONS.map((option) => (
+          {typeOptions.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>

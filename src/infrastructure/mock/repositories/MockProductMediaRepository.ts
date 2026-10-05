@@ -1,3 +1,4 @@
+import type { ProductMedia } from "@/core/entities";
 import type { ProductMediaRepository } from "@/core/repositories";
 import { getProductMediaSource, selectPrimaryProductMedia } from "@/core/media/catalogImage";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
@@ -59,6 +60,17 @@ export class MockProductMediaRepository
     return media;
   }
 
+  async uploadForProduct(
+    _productId: string,
+    _input: Parameters<ProductMediaRepository["uploadForProduct"]>[1],
+  ): Promise<ProductMedia> {
+    void _productId;
+    void _input;
+    throw new Error(
+      "El upload directo pertenece al adapter API; mock usa CatalogImageAssetRepository.",
+    );
+  }
+
   async update(media: Parameters<ProductMediaRepository["update"]>[0]) {
     if (!getProductMediaSource(media)) throw new Error("La referencia multimedia no es segura.");
     const updated = this.store.mutate((db) => {
@@ -109,6 +121,14 @@ export class MockProductMediaRepository
       productId: removed.productId,
       action: "updated",
     });
+  }
+
+  async removeFromProduct(productId: string, mediaId: string) {
+    const media = await this.read((db) =>
+      db.productMedia.find((item) => item.id === mediaId && item.productId === productId),
+    );
+    if (!media) throw this.missing("ProductMedia", mediaId);
+    await this.remove(mediaId);
   }
 
   async setPrimary(productId: string, mediaId: string) {

@@ -121,6 +121,9 @@ function createHarness(
     rememberMe: false,
   };
   const repositories = {
+    productDataSource: "mock",
+    productRelationsDataSource: "mock",
+    productMediaDataSource: "mock",
     auth: {
       getCurrentSessionId: async () => session.id,
       getSession: async (sessionId: string) => (sessionId === session.id ? session : null),
@@ -407,9 +410,10 @@ async function verifyProcessingAndLegacyNormalization() {
     processImageUpload(new Blob(["<html/>"], { type: "text/html" }), neverCodec),
     /Formato no permitido/,
   );
+  // Bytes desconocidos se rechazan localmente aunque el tipo declarado sea valido.
   await assert.rejects(
     processImageUpload(new Blob(["not-an-image"], { type: "image/png" }), neverCodec),
-    /no contiene una imagen decodificable/,
+    /Formato no permitido/,
   );
   let preservePng = false;
   const validCodec: ImageUploadCodec = {
@@ -418,9 +422,28 @@ async function verifyProcessingAndLegacyNormalization() {
       return { blob, width: 800, height: 600 };
     },
   };
-  const processed = await processImageUpload(localDraft().blob, validCodec);
+  const pngSignature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0];
+  const processed = await processImageUpload(
+    new Blob([new Uint8Array(pngSignature)], { type: "image/png" }),
+    validCodec,
+  );
   assert.equal(preservePng, true);
   assert.equal(processed.mimeType, "image/png");
+  // Declarado image/jpeg (p. ej. .jpg) pero con bytes PNG: se normaliza a image/png.
+  const mislabeled = await processImageUpload(
+    new Blob([new Uint8Array(pngSignature)], { type: "image/jpeg" }),
+    validCodec,
+  );
+  assert.equal(mislabeled.mimeType, "image/png");
+  assert.equal(mislabeled.blob.type, "image/png");
+  // Declarado image/png pero con bytes WebP: se normaliza a image/webp.
+  const webpBytes = [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50];
+  const webp = await processImageUpload(
+    new Blob([new Uint8Array(webpBytes)], { type: "image/png" }),
+    validCodec,
+  );
+  assert.equal(webp.mimeType, "image/webp");
+  assert.equal(webp.blob.type, "image/webp");
 
   // L. Una base legacy sin `source` ni `Category.image` se hidrata sin reset destructivo.
   const storage = new MemoryStorageAdapter();
@@ -481,16 +504,41 @@ async function verifyRealProductServicesAndReload() {
   const inventoryUnitId = initial.store.getSnapshot().units.find((unit) => unit.id === "unit-box")?.id;
   assert.ok(baseUnitId);
   assert.ok(inventoryUnitId);
+  // unitConversions es lazy en el editor: `undefined` = seccion de unidades NO cargada/validada y
+  // `[]` = cargada y sin conversiones. productDto() la deja `undefined` (los casos de multimedia no
+  // cambian unidades); un DTO que SI cambia la configuracion de unidades debe declarar `[]`.
+  const packagedUnits = {
+    baseUnitId,
+    inventoryUnitId,
+    saleUnitId: baseUnitId,
+    inventoryToBaseFactor: 10,
+    saleToBaseFactor: 1,
+    media: [],
+  };
+
+  // T-negativo. Cambiar la presentacion con la seccion de unidades sin cargar se rechaza: esta
+  // proteccion de produccion no debe eliminarse para "arreglar" el harness.
+  await assert.rejects(
+    createService.execute(
+      productDto(initial.store, {
+        ...packagedUnits,
+        // Corto a proposito: TEXT_LIMITS.sku es 50 y un SKU invalido fallaria antes de llegar a la
+        // validacion de unidades que este caso quiere ejercitar.
+        sku: `PKG-U-${crypto.randomUUID()}`,
+        name: "Producto caja x10 sin unidades cargadas",
+        unitConversions: undefined,
+      }),
+    ),
+    /Abra la seccion de unidades para validar la configuracion de conversiones\./,
+  );
+
+  // T-positivo. Con la seccion cargada (`[]`) la presentacion Caja -> Unidad se crea y persiste.
   const packagedProduct = await createService.execute(
     productDto(initial.store, {
+      ...packagedUnits,
       sku: `PACKAGED-${crypto.randomUUID()}`,
       name: "Producto caja x10",
-      baseUnitId,
-      inventoryUnitId,
-      saleUnitId: baseUnitId,
-      inventoryToBaseFactor: 10,
-      saleToBaseFactor: 1,
-      media: [],
+      unitConversions: [],
     }),
   );
   assert.equal(packagedProduct.baseUnitId, baseUnitId);

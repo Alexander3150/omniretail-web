@@ -1,18 +1,95 @@
 import type { SupplierProduct } from "@/core/entities";
+import { ProductType } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { GetProductDetailService } from "@/modules/catalog/application/services/GetProductDetailService";
+import { resolveTenantContext } from "@/modules/catalog/application/services/serviceHelpers";
 import type {
   ProductInventorySummaryItem,
   ProductQuickViewModel,
   ProductSupplierSummaryItem,
 } from "@/modules/catalog/types/catalog.types";
 
+interface QuickViewBranchContext {
+  id: string;
+  tenantId: string;
+  name: string;
+}
+
 export class GetProductQuickViewService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async execute(productId: string): Promise<ProductQuickViewModel | null> {
+  async execute(
+    productId: string,
+    branch?: QuickViewBranchContext,
+  ): Promise<ProductQuickViewModel | null> {
     const detail = await new GetProductDetailService(this.repositories).execute(productId);
     if (!detail) return null;
+    if (this.repositories.productRelationsDataSource === "api") {
+      const { permissions } = await resolveTenantContext(this.repositories);
+      const tenantId = detail.product.tenantId;
+      const canReadInventory = permissions.includes("inventory.stock.read");
+      const canReadLocations =
+        permissions.includes("catalog.locations.read") ||
+        permissions.includes("catalog.locations.manage");
+      const canReadSuppliers = permissions.includes("admin.suppliers.manage");
+      const canReadUnits = permissions.includes("catalog.units.read");
+      const validBranch = branch?.tenantId === tenantId ? branch : undefined;
+      const inventoryApplies =
+        detail.product.productType === ProductType.physical && detail.product.tracking.stock;
+
+      const [inventorySettings, supplierProducts, suppliers, units] = await Promise.all([
+        inventoryApplies && validBranch && canReadInventory
+          ? this.repositories.inventory.getProductInventorySettings(productId, validBranch.id)
+          : Promise.resolve(null),
+        canReadSuppliers
+          ? this.repositories.supplierProducts
+              .getAllByProductForTenant(tenantId, productId)
+              .then((items) => items.filter((item) => item.active))
+          : Promise.resolve([]),
+        canReadSuppliers
+          ? this.repositories.suppliers.listByTenant(tenantId)
+          : Promise.resolve([]),
+        canReadSuppliers && canReadUnits
+          ? this.repositories.units.getActiveByTenant(tenantId)
+          : Promise.resolve([]),
+      ]);
+      const defaultLocation =
+        inventorySettings?.defaultLocationId && validBranch && canReadLocations
+          ? (
+              await this.repositories.inventory.getLocations(validBranch.id)
+            ).find((location) => location.id === inventorySettings.defaultLocationId)
+          : undefined;
+      const unitNames = new Map(units.map((unit) => [unit.id, unit.name]));
+
+      return {
+        ...detail,
+        inventory: [],
+        inventorySettings:
+          inventorySettings && validBranch
+            ? {
+                branchId: validBranch.id,
+                branchName: validBranch.name,
+                defaultLocationName: defaultLocation?.name,
+                minStock: inventorySettings.minStock,
+                reorderPoint: inventorySettings.reorderPoint,
+              }
+            : null,
+        inventorySettingsAvailable: Boolean(inventoryApplies && validBranch && canReadInventory),
+        suppliers: supplierProducts
+          .map<ProductSupplierSummaryItem | null>((supplierProduct) => {
+            const supplier = suppliers.find((item) => item.id === supplierProduct.supplierId);
+            if (!supplier) return null;
+            return {
+              supplier,
+              supplierProduct,
+              purchaseUnitName: unitNames.get(supplierProduct.purchaseUnitId),
+            };
+          })
+          .filter((item): item is ProductSupplierSummaryItem => Boolean(item)),
+        suppliersAvailable: canReadSuppliers,
+        promotions: [],
+      };
+    }
     const tenantId = detail.product.tenantId;
 
     const [balances, branches, locations, suppliers, units, promotions] = await Promise.all([
@@ -35,6 +112,8 @@ export class GetProductQuickViewService {
 
     return {
       ...detail,
+      inventorySettings: null,
+      inventorySettingsAvailable: true,
       inventory: balances
         .filter((balance) => balance.tenantId === tenantId)
         .map<ProductInventorySummaryItem>((balance) => ({
@@ -56,6 +135,7 @@ export class GetProductQuickViewService {
           };
         })
         .filter((item): item is ProductSupplierSummaryItem => Boolean(item)),
+      suppliersAvailable: true,
       promotions,
     };
   }

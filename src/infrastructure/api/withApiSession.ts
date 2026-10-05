@@ -288,7 +288,10 @@ function apiBankAccountsForEmployees(
   };
 }
 
-/** `/administration/suppliers` exige `admin.suppliers.manage`. */
+/**
+ * Las mutaciones y lecturas administrativas conservan `admin.suppliers.manage`. La proyeccion
+ * activa usada por Purchasing es operacional y el backend la autoriza con permisos de compras.
+ */
 function apiSuppliersForEmployees(
   mock: SupplierRepository,
   api: SupplierRepository,
@@ -300,8 +303,15 @@ function apiSuppliersForEmployees(
     getAll: async () => (await resolve()).getAll(),
     getById: async (id: string) => (await resolve()).getById(id),
     getActive: async () => (await resolve()).getActive(),
-    getActiveByTenant: async (tenantId: string) =>
-      (await resolve(tenantId)).getActiveByTenant(tenantId),
+    getActiveByTenant: async (tenantId: string) => api.getActiveByTenant(tenantId),
+    // Lecturas operacionales de Compras: siempre API (sin fallback a mock), igual que
+    // getActiveByTenant; el backend las autoriza con permisos de compras.
+    getOperationalPage: async (params) => api.getOperationalPage(params),
+    getOperationalById: async (id: string) => api.getOperationalById(id),
+    getOperationalProducts: async (supplierId, params) =>
+      api.getOperationalProducts(supplierId, params),
+    getOperationalIncidents: async (supplierId, params) =>
+      api.getOperationalIncidents(supplierId, params),
     listByTenant: async (tenantId: string) => (await resolve(tenantId)).listByTenant(tenantId),
     getProductsBySupplier: async (supplierId: string) =>
       (await resolve()).getProductsBySupplier(supplierId),

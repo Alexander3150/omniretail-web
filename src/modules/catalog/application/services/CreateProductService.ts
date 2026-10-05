@@ -3,6 +3,7 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import { normalizeSku } from "@/shared/utils/normalizeSku";
 import type { CreateProductDto } from "@/modules/catalog/application/dto/CreateProductDto";
 import { ProductMapper } from "@/modules/catalog/application/mappers/ProductMapper";
+import { ProductEditorPartialSaveError } from "@/modules/catalog/application/services/ProductEditorPartialSaveError";
 import {
   applyTrackingRules,
   hasValidationErrors,
@@ -25,7 +26,15 @@ export class CreateProductService {
   async execute(dto: CreateProductDto): Promise<Product> {
     const { tenantId, permissions } = await resolveTenantContext(this.repositories);
     ensureCanCreateProducts(permissions);
-
+    if (
+      this.repositories.productMediaDataSource === "api" &&
+      dto.primaryImageUrl?.trim() &&
+      !permissions.includes("catalog.products.update")
+    ) {
+      throw new CatalogServiceError(
+        "Guardar multimedia requiere permiso para actualizar productos.",
+      );
+    }
     const baseErrors = validateProductDto(dto);
     if (hasValidationErrors(baseErrors)) {
       throw new CatalogServiceError(
@@ -60,16 +69,26 @@ export class CreateProductService {
     );
 
     if (dto.primaryImageUrl?.trim()) {
-      await this.repositories.productMedia.add({
-        tenantId,
-        productId: product.id,
-        type: "image",
-        url: dto.primaryImageUrl.trim(),
-        alt: product.name,
-        isPrimary: true,
-        sortOrder: 1,
-        createdAt: new Date().toISOString(),
-      });
+      try {
+        await this.repositories.productMedia.add({
+          tenantId,
+          productId: product.id,
+          type: "image",
+          url: dto.primaryImageUrl.trim(),
+          source: { kind: "url", src: dto.primaryImageUrl.trim() },
+          alt: product.name,
+          isPrimary: true,
+          sortOrder: this.repositories.productMediaDataSource === "mock" ? 1 : 0,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        throw new ProductEditorPartialSaveError(
+          product.id,
+          true,
+          ["media"],
+          error instanceof Error ? [error.message] : [],
+        );
+      }
     }
 
     return product;

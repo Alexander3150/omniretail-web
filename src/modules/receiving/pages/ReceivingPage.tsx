@@ -35,11 +35,17 @@ export function ReceivingPage() {
     filters,
     filteredDocuments,
     loading,
+    loadingMore,
     error,
+    incrementalError,
+    hasMore,
+    receiptHistoryIncomplete,
+    incidentManagementAvailable,
     updateFilters,
     createIncidentType,
     archiveIncidentType,
     deleteIncidentType,
+    loadMore,
   } = useReceivingDocuments();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<TablePageSize>(DEFAULT_PAGE_SIZE);
@@ -100,7 +106,7 @@ export function ReceivingPage() {
         <PageHeader
           title="Recepciones"
           description="Consulta ordenes, avances de recepcion e incidencias operativas."
-          actions={
+          actions={incidentManagementAvailable ? (
             <Button
               onClick={() => setIncidentTypeModalOpen(true)}
               type="button"
@@ -109,11 +115,22 @@ export function ReceivingPage() {
               <AlertIcon />
               Tipos de incidencia
             </Button>
-          }
+          ) : undefined}
         />
       </div>
 
-      {error ? <InlineAlert title={error} tone="danger" /> : null}
+      {error ? (
+        <p className="rounded-md border border-[var(--color-danger)] bg-white px-4 py-3 text-sm font-medium text-[var(--color-danger)]">
+          {error}
+        </p>
+      ) : null}
+      {incrementalError ? <InlineAlert title={incrementalError} tone="danger" /> : null}
+      {receiptHistoryIncomplete ? (
+        <InlineAlert
+          title="El historial de recepciones está incompleto; se muestra únicamente la primera página disponible por orden."
+          tone="warning"
+        />
+      ) : null}
 
       <section className="rounded-lg border border-[var(--color-border)] bg-white p-3 shadow-sm">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
@@ -175,16 +192,36 @@ export function ReceivingPage() {
                 onPageChange={changePage}
                 onPageSizeChange={handlePageSizeChange}
               />
+              {hasMore ? (
+                <div className="flex justify-center border-t border-[var(--color-border)] p-4">
+                  <Button
+                    disabled={loadingMore}
+                    onClick={() => void loadMore()}
+                    type="button"
+                    variant="secondary"
+                  >
+                    {loadingMore ? "Cargando..." : "Cargar más"}
+                  </Button>
+                </div>
+              ) : null}
             </>
           )}
         </section>
       ) : (
-        <IncidentsPanel
-          incidents={data.incidents}
-          loading={loading}
-          selectedIncidentId={selectedIncidentId}
-          onSelect={setSelectedIncidentId}
-        />
+        <div className="space-y-3">
+          {data.incidentListIncomplete ? (
+            <InlineAlert
+              title="Algunas recepciones tienen más incidencias que la primera página cargada. Abre la recepción correspondiente para consultar su estado canónico antes de confirmar."
+              tone="warning"
+            />
+          ) : null}
+          <IncidentsPanel
+            incidents={data.incidents}
+            loading={loading}
+            selectedIncidentId={selectedIncidentId}
+            onSelect={setSelectedIncidentId}
+          />
+        </div>
       )}
 
       <SelectedDocumentModal
@@ -200,14 +237,16 @@ export function ReceivingPage() {
         />
       ) : null}
 
-      <IncidentTypesModal
-        incidentTypes={data.incidentTypes}
-        open={incidentTypeModalOpen}
-        onArchive={archiveIncidentType}
-        onClose={() => setIncidentTypeModalOpen(false)}
-        onCreate={createIncidentType}
-        onDelete={deleteIncidentType}
-      />
+      {incidentManagementAvailable ? (
+        <IncidentTypesModal
+          incidentTypes={data.incidentTypes}
+          open={incidentTypeModalOpen}
+          onArchive={archiveIncidentType}
+          onClose={() => setIncidentTypeModalOpen(false)}
+          onCreate={createIncidentType}
+          onDelete={deleteIncidentType}
+        />
+      ) : null}
       <Modal
         open={Boolean(previewEvidence)}
         title={previewEvidence?.name ?? "Evidencia"}
@@ -388,10 +427,6 @@ function SelectedDocumentModal({
       footer={
         document ? (
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button className="w-full sm:w-auto" onClick={onClose} type="button" variant="ghost">
-              <XIcon />
-              Cerrar
-            </Button>
             <Button
               className="w-full sm:w-auto"
               href={getReceivingDocumentHref(document)}
@@ -508,7 +543,21 @@ function IncidentsPanel({
                 </p>
               </div>
               <div className="min-w-0">
-                <p className="font-bold text-amber-800">{incident.typeName}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-bold text-amber-800">{incident.typeName}</p>
+                  {incident.status ? (
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-xs font-bold",
+                        incident.status === "open"
+                          ? "bg-amber-100 text-amber-800"
+                          : "bg-emerald-100 text-emerald-800",
+                      )}
+                    >
+                      {incident.status === "open" ? "Abierta" : "Resuelta"}
+                    </span>
+                  ) : null}
+                </div>
                 <p
                   className="mt-1 line-clamp-2 break-words text-sm text-[var(--color-text)]"
                   title={incident.observation}
@@ -873,15 +922,6 @@ function TrashIcon(props: SVGProps<SVGSVGElement>) {
       <path d="M19 6l-1 14H6L5 6" />
       <path d="M10 11v5" />
       <path d="M14 11v5" />
-    </Icon>
-  );
-}
-
-function XIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <Icon {...props}>
-      <path d="M18 6 6 18" />
-      <path d="m6 6 12 12" />
     </Icon>
   );
 }

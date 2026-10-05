@@ -16,6 +16,13 @@ para listar, leer por identidad y mutar. Un ID de otro tenant se resuelve como i
 mutaciones scoped no permiten cambiar `tenantId`. Las conversiones de unidad por producto se leen y
 reemplazan con el mismo scope del producto.
 
+`ProductRepository.getPageScoped` acepta paginacion, ordenamiento y los filtros server-side de
+Products (`search`, `status`, `productType`, `categoryId`, `channels`, `promotion`). Su resultado usa
+`ProductPageItem`, una proyeccion de lista que puede incluir `primaryImageUrl`; ese campo no forma
+parte de la entidad `Product` ni altera los contratos de detalle o escritura. En API, canales se
+serializan como un unico parametro separado por comas y no se envian valores `all`, busquedas en
+blanco ni arreglos vacios.
+
 `BranchRepository.getActiveByTenant` y `getByIdScoped` son los boundaries operativos de sucursal.
 `branchScope = all` significa todas las sucursales del tenant autenticado, nunca todas las globales;
 `selected` aplica `allowedBranchIds` solo despues de verificar que User, Role y Branch pertenecen al
@@ -34,7 +41,20 @@ Las fronteras de lectura y mutacion de Roles son tenant-scoped; no se expone un 
 La prohibicion de editar o archivar por completo un Role `isSystem` queda para los futuros
 application services de Roles y permisos; el contrato compartido ya impide corromper el flag.
 
-`ProductMediaRepository` es el contrato compartido para consultar y administrar referencias de imagenes de producto sin acoplar modulos a seeds, LocalStorage o assets fisicos. Acepta el `url` legacy y la fuente discriminada `url | mockAsset`; `isPrimary`, luego `sortOrder`, determina la seleccion publica entre fuentes validas.
+`ProductMediaRepository` es el contrato compartido para consultar y administrar referencias de
+imagenes de producto sin acoplar modulos a seeds, LocalStorage o assets fisicos. Acepta el `url`
+legacy y la fuente discriminada `url | mockAsset`; `isPrimary`, luego `sortOrder`, determina la
+seleccion publica entre fuentes validas. El contrato expone upload y borrado product-scoped porque
+Product Media API exige `productId + mediaId`; el adapter API nunca usa `mockAsset` ni IndexedDB,
+incorpora `tenantId` desde el Product autenticado y proyecta rutas administradas `/media/...` al
+proxy `/api/media/...`. El adapter mock conserva su almacenamiento de blobs y limpieza de
+referencias. La tabla administrativa no consulta media por fila: editor, detalle y Quick View la
+cargan on-demand hasta que exista primary media en el listado o un endpoint batch.
+
+`CategoryRepository.uploadImage` y `removeImage` son las operaciones dedicadas de imagen en modo
+API. `SaveCategoryService` guarda primero el core y reporta un fallo parcial tipado si la operacion
+multimedia posterior falla; modo mock conserva `CatalogImageAssetRepository` y su limpieza de
+referencias sin invocar esas operaciones API.
 
 `CatalogImageAssetRepository` persiste Blob y metadata (`id`, `tenantId`, MIME, bytes, dimensiones y fecha) fuera de `MockDatabaseStore`. `get` y `remove` exigen el tenant propietario. La implementacion frontend usa IndexedDB y los consumidores renderizan un `mockAsset` mediante Object URL temporal con revocacion al cambiar o desmontar.
 
@@ -42,9 +62,9 @@ application services de Roles y permisos; el contrato compartido ya impide corro
 
 `GetPublicStorefrontConfigService.execute()` es el read model público mínimo del Storefront. Resuelve internamente el tenant por slug y solo publica nombre, estado, reglas públicas, contacto configurado y sucursales retornadas por `BranchRepository.getActiveByTenantAndType(tenantId, BranchType.store)`. No expone identificadores internos de configuración ni reutiliza esa consulta para fulfillment o disponibilidad operacional; `defaultBranchId` puede seguir apuntando a una sucursal `main`.
 
-`PromotionRepository` es el contrato compartido para crear, editar y consultar promociones aplicables. La aplicabilidad debe considerar tenant, producto, fecha, canal y scope de sucursal; no basta con `status=active`. Los flujos privados de Catalog usan sus lecturas y actualizaciones tenant-scoped, y una promocion solo puede referenciar Products de su mismo tenant.
+`PromotionRepository` es el contrato compartido para crear, editar y consultar promociones aplicables. La aplicabilidad debe considerar tenant, producto, fecha, canal y scope de sucursal; no basta con `status=active`. Los flujos privados de Catalog usan sus lecturas y actualizaciones tenant-scoped, y una promocion solo puede referenciar Products de su mismo tenant. Finalizar y cancelar son operaciones explicitas (`endScoped`/`cancelScoped`); el adapter API no simula esos lifecycle transitions con un update generico.
 
-`ProductPriceHistoryRepository` es el contrato compartido para leer y registrar cambios de precio base de producto. El mock debe escribir historial cuando cambia `Product.salePrice` desde el flujo comun de `ProductRepository.update`.
+`ProductPriceHistoryRepository` es el contrato compartido para leer y registrar cambios de precio base de producto. El mock debe escribir historial cuando cambia `Product.salePrice` desde el flujo comun de `ProductRepository.update`. Products API actualiza el precio mediante `ProductRepository.updatePrice` y genera el historial en backend; su adapter de historial rechaza `record()` porque no existe ese endpoint.
 
 `Product.baseUnitId` representa la unidad minima indivisible/canonica. `InventoryBalance`, `InventoryMovement`, reservas, lotes y seriales usan exclusivamente esa unidad. `Product.inventoryUnitId` es una presentacion preferida de inventario (display/input) y no crea otra fuente de stock; los datos legados sin este campo usan `baseUnitId` sin reescalar cantidades. `Product.saleUnitId` representa la presentacion de venta. `UnitConversion.factor` se define en direccion `fromUnitId` (presentacion) -> `toUnitId` (`baseUnitId`), por lo que `cantidadPresentacion * factor = cantidadBase`. Las operaciones fallan si falta la conversion o si el factor no es finito y positivo.
 
@@ -132,7 +152,7 @@ de todas las lineas usa `returned` y solo una anulacion usa `cancelled`.
 
 `InventoryTransferRepository` administra la ejecucion fisica canonica del traslado entre sucursales mediante `InventoryTransfer` e `InventoryTransferItem`. El traslado fisico tiene `number` unico por tenant y anio, `sourceBranchId`, `destinationBranchId`, estado `preparing/inTransit/received/cancelled`, actores operativos opcionales y fechas de despacho/recepcion/cancelacion. `getByNumber` requiere `tenantId` porque el numero no es global. Los items soportan multiples productos y separan `requestedQuantity`, `dispatchedQuantity` y `receivedQuantity`; `requestedQuantity` debe ser mayor que 0, `dispatchedQuantity` no puede superar lo solicitado y `receivedQuantity` no puede superar lo despachado. El repositorio no modifica balances, no crea movimientos y no genera documentos; esas operaciones pertenecen a application services futuros.
 
-`SupplierProductRepository` administra la relacion producto-proveedor, incluyendo unidad de compra por proveedor, factor hacia unidad base, costo, minimo, lead time, preferred y `SupplierCostTier`. `SupplierProduct.leadTimeDays` es el dato especifico; el `Supplier.leadTimeDays` expuesto a consumidores agregados es una proyeccion read-only calculada como el maximo de las relaciones activas y queda `undefined` cuando no hay ninguna.
+`SupplierProductRepository` administra la relacion producto-proveedor, incluyendo unidad de compra por proveedor, factor hacia unidad base, costo, minimo, lead time, preferred y `SupplierCostTier`. `getByProductForTenant` y `getBySupplierForTenant` son lecturas operacionales activas y tenant-scoped; en API consumen el endpoint operacional sin paginacion administrativa y rechazan cualquier resultado fuera del tenant solicitado. `SupplierProduct.costTiers` es opcional para compatibilidad con repositorios legacy, pero las respuestas operacionales API lo incluyen para evitar una lectura adicional por relacion. La lectura `getAllByProductForTenant` conserva el camino administrativo e incluye relaciones archivadas exclusivamente para que una sincronizacion pueda reactivar la relacion canonica sin crear duplicados. `SupplierProduct.leadTimeDays` es el dato especifico; el `Supplier.leadTimeDays` expuesto a consumidores agregados es una proyeccion read-only calculada como el maximo de las relaciones activas y queda `undefined` cuando no hay ninguna.
 
 `CustomerPaymentMethodRepository` administra metodos de pago guardados del cliente. El contrato persiste solo datos seguros de referencia (`providerPaymentMethodId`, brand, last4, vencimiento, cardholderName, default y estado). No reemplaza `Payment`, que conserva el pago historico de una compra concreta.
 

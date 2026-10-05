@@ -29,7 +29,10 @@ import type { CreateProductDto } from "@/modules/catalog/application/dto/CreateP
 import { ArchiveProductService } from "@/modules/catalog/application/services/ArchiveProductService";
 import { CreateProductService } from "@/modules/catalog/application/services/CreateProductService";
 import { FinalizeProductPromotionService } from "@/modules/catalog/application/services/FinalizeProductPromotionService";
-import { GetProductsService } from "@/modules/catalog/application/services/GetProductsService";
+import {
+  GetProductsService,
+  type GetProductsParams,
+} from "@/modules/catalog/application/services/GetProductsService";
 import { SaveProductPromotionService } from "@/modules/catalog/application/services/SaveProductPromotionService";
 import { CatalogServiceError } from "@/modules/catalog/application/services/serviceHelpers";
 import { UpdateProductService } from "@/modules/catalog/application/services/UpdateProductService";
@@ -38,6 +41,19 @@ import { GetStorefrontPublishedProductService } from "@/modules/storefront/appli
 const TENANT_A = "tenant-demo";
 const TENANT_B = "tenant-products-hardening-b";
 const NOW = "2026-09-15T12:00:00.000Z";
+const PRODUCT_LIST_PARAMS: GetProductsParams = {
+  page: 1,
+  pageSize: 100,
+  sort: "name,asc",
+  filters: {
+    search: "",
+    status: "all",
+    productType: "all",
+    categoryId: "all",
+    channels: [],
+    promotion: "all",
+  },
+};
 
 class MemoryStorageAdapter extends LocalStorageAdapter {
   readonly values = new Map<string, string>();
@@ -168,6 +184,7 @@ function createProductsHarness(permissions: string[]) {
 
   const session = { id: "session-products-hardening", userId: testUser.id };
   const repositories = {
+    productDataSource: "mock",
     auth: {
       getCurrentSessionId: async () => session.id,
       getSession: async (sessionId: string) => (sessionId === session.id ? session : null),
@@ -205,15 +222,15 @@ function buildProductDto(overrides: Partial<CreateProductDto> = {}): CreateProdu
 // 1. read => list PASS
 async function verifyReadPermissionAllowsList() {
   const { repositories } = createProductsHarness(["catalog.products.read"]);
-  const products = await new GetProductsService(repositories).execute();
-  assert.ok(Array.isArray(products), "1: catalog.products.read debe poder listar productos");
+  const result = await new GetProductsService(repositories).execute(PRODUCT_LIST_PARAMS);
+  assert.ok(Array.isArray(result.items), "1: catalog.products.read debe poder listar productos");
 }
 
 // 2. sin read => backoffice read DENIED
 async function verifyNoPermissionDeniesRead() {
   const { repositories } = createProductsHarness([]);
   await assert.rejects(
-    new GetProductsService(repositories).execute(),
+    new GetProductsService(repositories).execute(PRODUCT_LIST_PARAMS),
     CatalogServiceError,
     "2: sin ningún permiso catalog.products.*, el listado debe fallar",
   );
@@ -321,6 +338,7 @@ function attachRoleToStore(store: MockDatabaseStore, permissions: string[]) {
   const eventBus = new DataEventBus();
   const session = { id: `session-${userId}`, userId };
   const repositories = {
+    productDataSource: "mock",
     auth: {
       getCurrentSessionId: async () => session.id,
       getSession: async (sessionId: string) => (sessionId === session.id ? session : null),
@@ -397,6 +415,14 @@ async function verifyCrossTenantMutationDenied() {
     CatalogServiceError,
     "9: archivar un producto de OTRO tenant debe ser DENIED",
   );
+  // Un ID inexistente y uno de otro tenant responden igual (sin filtrar existencia cross-tenant).
+  await assert.rejects(
+    new ArchiveProductService(repositories).execute("product-does-not-exist"),
+    (error: unknown) =>
+      error instanceof CatalogServiceError &&
+      error.message === "El producto solicitado no existe.",
+    "9: archivar un ID inexistente debe responder CatalogServiceError 'no existe'",
+  );
 }
 
 // 10. Storefront/public read no sufre regresión
@@ -405,6 +431,7 @@ async function verifyStorefrontReadUnaffected() {
   const store = new MockDatabaseStore(storage);
   const eventBus = new DataEventBus();
   const repositories = {
+    productDataSource: "mock",
     products: new MockProductRepository(store, eventBus),
     tenants: new MockTenantRepository(store, eventBus),
   } as unknown as RepositoryRegistry;

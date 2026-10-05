@@ -40,6 +40,7 @@ import {
   ensureUnitConfigUnchanged,
   requireCapabilities,
 } from "@/modules/catalog/application/services/serviceHelpers";
+import type { ProductEditorFailedSection } from "@/modules/catalog/application/services/ProductEditorPartialSaveError";
 
 export async function validateEditorProduct(
   repositories: RepositoryRegistry,
@@ -96,24 +97,41 @@ export async function validateEditorProduct(
     throw new CatalogServiceError("Cada componente del kit debe estar entre 0 y 9,999.");
   }
 
+  const unitConfigurationChanged = current
+    ? normalizedDto.baseUnitId !== current.baseUnitId ||
+      normalizedDto.inventoryUnitId !== (current.inventoryUnitId ?? current.baseUnitId) ||
+      normalizedDto.saleUnitId !== (current.saleUnitId ?? current.baseUnitId)
+    : normalizedDto.inventoryUnitId !== normalizedDto.baseUnitId ||
+      normalizedDto.saleUnitId !== normalizedDto.baseUnitId;
   if (
-    (normalizedDto.inventoryUnitId !== normalizedDto.baseUnitId &&
-      !isPositiveNumber(normalizedDto.inventoryToBaseFactor)) ||
-    (normalizedDto.saleUnitId !== normalizedDto.baseUnitId &&
-      !isPositiveNumber(normalizedDto.saleToBaseFactor))
+    normalizedDto.productType !== ProductType.kit &&
+    normalizedDto.unitConversions === undefined &&
+    unitConfigurationChanged
   ) {
     throw new CatalogServiceError(
-      "Cada presentacion debe equivaler a un multiplo positivo de la unidad base.",
+      "Abra la seccion de unidades para validar la configuracion de conversiones.",
     );
   }
-  if (
-    toFiniteNumber(normalizedDto.inventoryToBaseFactor) > MAX_SAFE_CONVERSION_FACTOR ||
-    toFiniteNumber(normalizedDto.saleToBaseFactor) > MAX_SAFE_CONVERSION_FACTOR
-  ) {
-    throw new CatalogServiceError("El factor de conversion no puede superar 999,999.99.");
+  if (normalizedDto.unitConversions !== undefined) {
+    if (
+      (normalizedDto.inventoryUnitId !== normalizedDto.baseUnitId &&
+        !isPositiveNumber(normalizedDto.inventoryToBaseFactor)) ||
+      (normalizedDto.saleUnitId !== normalizedDto.baseUnitId &&
+        !isPositiveNumber(normalizedDto.saleToBaseFactor))
+    ) {
+      throw new CatalogServiceError(
+        "Cada presentacion debe equivaler a un multiplo positivo de la unidad base.",
+      );
+    }
+    if (
+      toFiniteNumber(normalizedDto.inventoryToBaseFactor) > MAX_SAFE_CONVERSION_FACTOR ||
+      toFiniteNumber(normalizedDto.saleToBaseFactor) > MAX_SAFE_CONVERSION_FACTOR
+    ) {
+      throw new CatalogServiceError("El factor de conversion no puede superar 999,999.99.");
+    }
   }
   if (
-    normalizedDto.attributes.some(
+    (normalizedDto.attributes ?? []).some(
       (attribute) =>
         attribute.name.length > TEXT_LIMITS.attributeName ||
         attribute.value.length > TEXT_LIMITS.attributeValue,
@@ -122,6 +140,7 @@ export async function validateEditorProduct(
     throw new CatalogServiceError("Los atributos admiten 50 caracteres en nombre y 100 en valor.");
   }
   if (
+    normalizedDto.unitConversions !== undefined &&
     normalizedDto.inventoryUnitId === normalizedDto.saleUnitId &&
     normalizedDto.inventoryUnitId !== normalizedDto.baseUnitId &&
     toFiniteNumber(normalizedDto.inventoryToBaseFactor) !==
@@ -139,7 +158,10 @@ export async function validateEditorProduct(
   }
 
   assertUniquePositiveSalesTiers(normalizedDto.salesPriceTiers);
-  assertInventorySettings(normalizedDto);
+  assertInventorySettings(
+    normalizedDto,
+    !current || (!current.tracking.stock && normalizedDto.tracking.stock),
+  );
 
   const normalizedSku = normalizeSku(normalizedDto.sku);
   const duplicateSku = await repositories.products.getBySkuScoped(tenantId, normalizedSku);
@@ -170,24 +192,26 @@ export async function validateEditorProduct(
   ensureActiveUnit(saleUnit);
   if (!baseUnit) throw new CatalogServiceError("La unidad base no esta disponible.");
 
-  const conversionValues = [
-    ...(normalizedDto.inventoryUnitId === normalizedDto.baseUnitId
-      ? []
-      : [normalizedDto.inventoryToBaseFactor]),
-    ...(normalizedDto.saleUnitId === normalizedDto.baseUnitId
-      ? []
-      : [normalizedDto.saleToBaseFactor]),
-  ];
-  if (
-    conversionValues.some(
-      (factor) => !isConversionFactorCompatibleWithBaseUnit(factor, baseUnit.allowsDecimals),
-    )
-  ) {
-    throw new CatalogServiceError(
-      baseUnit.allowsDecimals
-        ? "El factor de conversion admite hasta 4 decimales."
-        : "La conversion debe producir una cantidad entera de la unidad base.",
-    );
+  if (normalizedDto.unitConversions !== undefined) {
+    const conversionValues = [
+      ...(normalizedDto.inventoryUnitId === normalizedDto.baseUnitId
+        ? []
+        : [normalizedDto.inventoryToBaseFactor]),
+      ...(normalizedDto.saleUnitId === normalizedDto.baseUnitId
+        ? []
+        : [normalizedDto.saleToBaseFactor]),
+    ];
+    if (
+      conversionValues.some(
+        (factor) => !isConversionFactorCompatibleWithBaseUnit(factor, baseUnit.allowsDecimals),
+      )
+    ) {
+      throw new CatalogServiceError(
+        baseUnit.allowsDecimals
+          ? "El factor de conversion admite hasta 6 decimales."
+          : "La conversion debe producir una cantidad entera de la unidad base.",
+      );
+    }
   }
   assertSupplierProducts(normalizedDto.supplierProducts, baseUnit.allowsDecimals);
 
@@ -270,17 +294,7 @@ export async function syncEditorRelatedData(
     syncInventorySettings(repositories, product, dto),
     syncUnitConversion(repositories, product, dto, context),
     syncAttributes(repositories, product, dto, context),
-    repositories.productSalesPriceTiers.replaceForProduct(
-      product.id,
-      dto.salesPriceTiers
-        .filter((tier) => tier.active)
-        .map((tier) => ({
-          tenantId: product.tenantId,
-          minQuantity: toFiniteNumber(tier.minQuantity),
-          unitPrice: toFiniteNumber(tier.unitPrice),
-          active: tier.active,
-        })),
-    ),
+    syncSalesPriceTiers(repositories, product, dto),
     product.productType === "kit"
       ? Promise.resolve([])
       : syncSupplierProducts(repositories, product, dto),
@@ -288,8 +302,142 @@ export async function syncEditorRelatedData(
   ]);
 }
 
-function assertInventorySettings(dto: ProductEditorDto) {
+export interface ApiEditorSyncOptions {
+  permissions: readonly string[];
+  capabilities: BusinessCapabilitiesConfig;
+  isNewProduct: boolean;
+  skipKitComponents?: boolean;
+}
+
+export interface ApiEditorSyncResult {
+  failedSections: ProductEditorFailedSection[];
+  failureMessages: string[];
+}
+
+/**
+ * Sincroniza cada replace API como una seccion observable. No usa Promise.all: supplier/cost tiers
+ * y las operaciones destructivas conservan su orden, y el caller puede informar exactamente que
+ * quedo pendiente sin fingir rollback.
+ */
+export async function syncApiEditorRelatedData(
+  repositories: RepositoryRegistry,
+  product: Product,
+  dto: ProductEditorDto,
+  options: ApiEditorSyncOptions,
+): Promise<ApiEditorSyncResult> {
+  const failed: ProductEditorFailedSection[] = [];
+  const failureMessages: string[] = [];
+  const hasPermission = (permission: string) => options.permissions.includes(permission);
+  const canUpdateProductRelations = hasPermission("catalog.products.update");
+  const run = async (section: ProductEditorFailedSection, operation: () => Promise<unknown>) => {
+    try {
+      await operation();
+    } catch (error) {
+      failed.push(section);
+      if (error instanceof Error && error.message) failureMessages.push(error.message);
+    }
+  };
+
+  if (product.productType === "kit") {
+    if (!options.skipKitComponents) {
+      await run("kitComponents", () => syncKitComponents(repositories, product, dto));
+    }
+  } else {
+    if (
+      options.capabilities.supportsUnitsAndPackaging &&
+      dto.unitConversions !== undefined &&
+      hasPermission("catalog.units.read") &&
+      hasPermission("catalog.units.manage")
+    ) {
+      await run("conversions", () =>
+        syncUnitConversion(repositories, product, dto, options),
+      );
+    }
+    if (hasPermission("admin.suppliers.manage")) {
+      await run("suppliers", () => syncSupplierProducts(repositories, product, dto));
+    }
+    if (
+      canUpdateProductRelations &&
+      product.productType === ProductType.physical &&
+      dto.tracking.stock &&
+      hasPermission("inventory.stock.read") &&
+      dto.inventorySettings?.branchId
+    ) {
+      await run("inventorySettings", () => syncInventorySettings(repositories, product, dto));
+    }
+  }
+
+  if (
+    dto.attributes !== undefined &&
+    canUpdateProductRelations &&
+    hasPermission("catalog.attributes.read")
+  ) {
+    await run("attributes", () =>
+      syncAttributes(
+        repositories,
+        product,
+        dto,
+        options,
+        hasPermission("catalog.attributes.manage"),
+      ),
+    );
+  }
+  if (canUpdateProductRelations && dto.salesPriceTiers !== undefined) {
+    await run("priceTiers", () => syncSalesPriceTiers(repositories, product, dto));
+  }
+  if (canUpdateProductRelations) {
+    if (repositories.productMediaDataSource === "api") {
+      await run("media", () => syncApiProductMedia(repositories, product, dto.media));
+    }
+  }
+
+  return { failedSections: failed, failureMessages };
+}
+
+export async function syncKitComponents(
+  repositories: RepositoryRegistry,
+  product: Product,
+  dto: ProductEditorDto,
+) {
+  return repositories.productKitComponents.replaceForKit(
+    product.tenantId,
+    product.id,
+    dto.kitComponents.map((component) => ({
+      componentProductId: component.componentProductId,
+      quantityPerKit: toFiniteNumber(component.quantityPerKit),
+    })),
+  );
+}
+
+async function syncSalesPriceTiers(
+  repositories: RepositoryRegistry,
+  product: Product,
+  dto: ProductEditorDto,
+) {
+  if (dto.salesPriceTiers === undefined) return;
+  return repositories.productSalesPriceTiers.replaceForProduct(
+    product.id,
+    dto.salesPriceTiers
+      .filter((tier) => tier.active)
+      .map((tier) => ({
+        tenantId: product.tenantId,
+        minQuantity: toFiniteNumber(tier.minQuantity),
+        unitPrice: toFiniteNumber(tier.unitPrice),
+        active: tier.active,
+      })),
+  );
+}
+
+function assertInventorySettings(dto: ProductEditorDto, required: boolean) {
   if (!dto.tracking.stock) return;
+  if (!dto.inventorySettings) {
+    if (required) {
+      throw new CatalogServiceError(
+        "Abra la seccion de inventario para configurar la ubicacion predeterminada.",
+      );
+    }
+    return;
+  }
   const minStock = toFiniteNumber(dto.inventorySettings.minStock);
   if (
     dto.inventorySettings.minStock === "" ||
@@ -306,7 +454,7 @@ async function syncInventorySettings(
   product: Product,
   dto: ProductEditorDto,
 ) {
-  if (!dto.tracking.stock || !dto.inventorySettings.branchId) return;
+  if (!dto.tracking.stock || !dto.inventorySettings?.branchId) return;
 
   await repositories.inventory.upsertProductInventorySettings({
     tenantId: product.tenantId,
@@ -323,11 +471,11 @@ async function syncUnitConversion(
   dto: ProductEditorDto,
   context: { capabilities: BusinessCapabilitiesConfig; isNewProduct: boolean },
 ) {
-  // Producto existente + capacidad apagada: no se toca la tabla de conversiones en absoluto. La UI
-  // no puede producir un valor nuevo legitimo (el selector de unidad de venta queda deshabilitado),
-  // asi que la unica escritura segura es NO escribir, dejando la conversion historica intacta pase
-  // lo que pase con los factores del borrador (evita confiar en esos numeros).
-  if (!context.capabilities.supportsUnitsAndPackaging && !context.isNewProduct) return;
+  if (dto.unitConversions === undefined) return;
+  // Capacidad apagada: no se toca la tabla de conversiones en absoluto. Un producto nuevo usa una
+  // sola unidad (no hay equivalencias que crear) y uno existente conserva su conversion historica
+  // intacta pase lo que pase con los factores del borrador (evita confiar en esos numeros).
+  if (!context.capabilities.supportsUnitsAndPackaging) return;
 
   await repositories.units.replaceConversionsForProductScoped(product.tenantId, product.id, [
     ...(dto.inventoryUnitId === dto.baseUnitId
@@ -356,7 +504,12 @@ async function syncAttributes(
   product: Product,
   dto: ProductEditorDto,
   context: { capabilities: BusinessCapabilitiesConfig; isNewProduct: boolean },
+  canCreateDefinitions = true,
 ) {
+  // undefined representa una seccion que nunca fue cargada: no consultar definitions ni reemplazar
+  // values evita interpretar "no cargado" como "eliminar todos".
+  if (dto.attributes === undefined) return;
+
   // Producto existente + capacidad apagada: la pestana de atributos queda oculta o de solo lectura
   // en la UI, asi que no hay una edicion legitima que sincronizar. No tocar la tabla de valores en
   // absoluto es mas seguro que confiar en `dto.attributes` para reconstruirla.
@@ -384,19 +537,24 @@ async function syncAttributes(
       definition =
         definitions.find(
           (item) =>
-            item.tenantId === product.tenantId &&
+            (item.tenantId === undefined || item.tenantId === product.tenantId) &&
             item.code === code &&
             item.dataType === "text" &&
             item.active,
-        ) ??
-        (await repositories.attributes.createDefinition({
-          tenantId: product.tenantId,
-          name,
-          code,
-          dataType: "text",
-          required: false,
-          active: true,
-        }));
+        ) ?? null;
+      if (!definition && !canCreateDefinitions) {
+        throw new CatalogServiceError(
+          "No dispone de permisos para crear la definicion de un atributo nuevo.",
+        );
+      }
+      definition ??= await repositories.attributes.createDefinition({
+        tenantId: product.tenantId,
+        name,
+        code,
+        dataType: "text",
+        required: false,
+        active: true,
+      });
       definitions.push(definition);
     }
 
@@ -414,7 +572,10 @@ async function syncSupplierProducts(
   product: Product,
   dto: ProductEditorDto,
 ) {
-  const current = await repositories.supplierProducts.getByProduct(product.id);
+  const current = await repositories.supplierProducts.getAllByProductForTenant(
+    product.tenantId,
+    product.id,
+  );
   const nextIds = new Set<string>();
 
   const normalizedSupplierProducts = normalizePreferredSupplier(dto.supplierProducts);
@@ -434,24 +595,29 @@ async function syncSupplierProducts(
       preferred: supplierProduct.preferred,
       active: true,
     };
-    const saved = supplierProduct.id
-      ? await repositories.supplierProducts.update(product.tenantId, supplierProduct.id, input)
+    const existing = supplierProduct.id
+      ? current.find((item) => item.id === supplierProduct.id)
+      : current.find((item) => item.supplierId === supplierProduct.supplierId);
+    const saved = existing
+      ? await repositories.supplierProducts.update(product.tenantId, existing.id, input)
       : await repositories.supplierProducts.create(input);
     nextIds.add(saved.id);
-    await repositories.supplierProducts.replaceCostTiers(
-      product.tenantId,
-      saved.id,
-      supplierProduct.costTiers.map((tier) => ({
-        tenantId: product.tenantId,
-        minQuantity: toFiniteNumber(tier.minQuantity),
-        unitCost: toFiniteNumber(tier.unitCost),
-      })),
-    );
+    if (supplierProduct.costTiers !== undefined) {
+      await repositories.supplierProducts.replaceCostTiers(
+        product.tenantId,
+        saved.id,
+        supplierProduct.costTiers.map((tier) => ({
+          tenantId: product.tenantId,
+          minQuantity: toFiniteNumber(tier.minQuantity),
+          unitCost: toFiniteNumber(tier.unitCost),
+        })),
+      );
+    }
   }
 
   await Promise.all(
     current
-      .filter((supplierProduct) => !nextIds.has(supplierProduct.id))
+      .filter((supplierProduct) => supplierProduct.active && !nextIds.has(supplierProduct.id))
       .map((supplierProduct) =>
         repositories.supplierProducts.archive(product.tenantId, supplierProduct.id),
       ),
@@ -562,6 +728,148 @@ export async function syncProductMedia(
   );
 }
 
+export async function syncApiProductMedia(
+  repositories: RepositoryRegistry,
+  product: Product,
+  mediaValues: ProductMediaEditorValue[],
+) {
+  if (mediaValues.length > 6) {
+    throw new CatalogServiceError("Se pueden guardar hasta 6 imágenes.");
+  }
+  if (mediaValues.some((media) => media.source?.kind === "mockAsset")) {
+    throw new CatalogServiceError("Una imagen mock no puede enviarse a Product Media API.");
+  }
+
+  const current = await repositories.productMedia.getByProduct(product.id, product.tenantId);
+  const candidates = mediaValues.filter(
+    (item) => item.pendingUpload || item.source || item.url.trim(),
+  );
+  const firstImageIndex = candidates.findIndex((item) => item.type === "image");
+  const hasPrimaryImage = candidates.some(
+    (item) => item.type === "image" && item.isPrimary,
+  );
+  const normalized = candidates.map((item, index) => ({
+    ...item,
+    url: editorMediaUrl(item),
+    isPrimary:
+      item.type === "image" && (hasPrimaryImage ? item.isPrimary : index === firstImageIndex),
+    sortOrder: index,
+  }));
+  const currentById = new Map(current.map((item) => [item.id, item]));
+  const currentPrimaryId = current.find(
+    (item) => item.type === "image" && item.isPrimary,
+  )?.id;
+  for (const media of normalized) {
+    if (media.id && !currentById.has(media.id)) {
+      throw new CatalogServiceError("Una referencia multimedia ya no pertenece al producto.");
+    }
+  }
+
+  const retainedIds = new Set(normalized.flatMap((item) => (item.id ? [item.id] : [])));
+  const removals = current.filter((item) => !retainedIds.has(item.id));
+  const resolvedIds = new Map<number, string>();
+
+  try {
+    for (const [index, media] of normalized.entries()) {
+      if (!media.id || media.pendingUpload) continue;
+      const existing = currentById.get(media.id);
+      if (!existing) continue;
+      if (existing.type !== media.type) {
+        throw new CatalogServiceError("El tipo de una multimedia existente no puede cambiarse.");
+      }
+      const nextAlt = media.alt?.trim() || undefined;
+      const existingAlt = existing.alt?.trim() || undefined;
+      const urlChanged = media.url !== existing.url;
+      if (
+        nextAlt !== existingAlt ||
+        media.sortOrder !== existing.sortOrder ||
+        urlChanged
+      ) {
+        await repositories.productMedia.update({
+          ...existing,
+          url: media.url,
+          source: media.url ? { kind: "url", src: media.url } : existing.source,
+          alt: nextAlt,
+          sortOrder: media.sortOrder,
+        });
+      }
+      resolvedIds.set(index, existing.id);
+    }
+
+    for (const media of removals) {
+      await repositories.productMedia.removeFromProduct(product.id, media.id);
+    }
+    let persistedCount = current.length - removals.length;
+
+    for (const [index, media] of normalized.entries()) {
+      if (!media.pendingUpload) continue;
+      const replacing = media.id ? currentById.get(media.id) : undefined;
+      let removedReplacementFirst = false;
+      if (!replacing && persistedCount >= 6) {
+        throw new CatalogServiceError(
+          "El producto ya alcanzó el límite de 6 elementos multimedia.",
+        );
+      }
+      if (replacing && persistedCount >= 6) {
+        await repositories.productMedia.removeFromProduct(product.id, replacing.id);
+        persistedCount -= 1;
+        removedReplacementFirst = true;
+      }
+      const uploaded = await repositories.productMedia.uploadForProduct(product.id, {
+        tenantId: product.tenantId,
+        file: media.pendingUpload.blob,
+        alt: media.alt?.trim() || product.name,
+        sortOrder: media.sortOrder,
+        isPrimary: media.isPrimary,
+      });
+      persistedCount += 1;
+      resolvedIds.set(index, uploaded.id);
+      if (replacing && !removedReplacementFirst) {
+        await repositories.productMedia.removeFromProduct(product.id, replacing.id);
+        persistedCount -= 1;
+      }
+    }
+
+    for (const [index, media] of normalized.entries()) {
+      if (media.id || media.pendingUpload) continue;
+      if (persistedCount >= 6) {
+        throw new CatalogServiceError(
+          "El producto ya alcanzó el límite de 6 elementos multimedia.",
+        );
+      }
+      const created = await repositories.productMedia.add({
+        tenantId: product.tenantId,
+        productId: product.id,
+        type: media.type,
+        url: media.url,
+        source: media.url ? { kind: "url", src: media.url } : undefined,
+        alt: media.alt?.trim() || product.name,
+        isPrimary: media.isPrimary,
+        sortOrder: media.sortOrder,
+        createdAt: new Date().toISOString(),
+      });
+      persistedCount += 1;
+      resolvedIds.set(index, created.id);
+    }
+
+    const primaryIndex = normalized.findIndex((item) => item.isPrimary);
+    const primaryId = primaryIndex >= 0 ? resolvedIds.get(primaryIndex) : undefined;
+    if (primaryId && primaryId !== currentPrimaryId) {
+      await repositories.productMedia.setPrimary(product.id, primaryId);
+    }
+
+    return repositories.productMedia.getByProduct(product.id, product.tenantId);
+  } catch (error) {
+    await repositories.productMedia.getByProduct(product.id, product.tenantId).catch(() => []);
+    throw error;
+  }
+}
+
+function editorMediaUrl(media: ProductMediaEditorValue) {
+  if (media.url.trim()) return media.url.trim();
+  return media.source?.kind === "url" ? media.source.src.trim() : "";
+}
+
 export async function removeAssetIfOrphaned(
   repositories: RepositoryRegistry,
   tenantId: string,
@@ -583,6 +891,7 @@ export async function removeAssetIfOrphaned(
 }
 
 function assertUniquePositiveSalesTiers(tiers: ProductEditorDto["salesPriceTiers"]) {
+  if (tiers === undefined) return;
   const quantities = new Set<number>();
   for (const tier of tiers) {
     const minQuantity = toFiniteNumber(tier.minQuantity);
@@ -633,7 +942,7 @@ function assertSupplierProducts(
     ) {
       throw new CatalogServiceError(
         baseUnitAllowsDecimals
-          ? "El contenido de compra admite hasta 4 decimales."
+          ? "El contenido de compra admite hasta 6 decimales."
           : "El contenido de compra debe producir unidades base enteras.",
       );
     }
@@ -659,7 +968,7 @@ function assertSupplierProducts(
       throw new CatalogServiceError("El plazo de entrega no puede superar 999,999 dias.");
     }
     const quantities = new Set<number>();
-    for (const tier of supplierProduct.costTiers) {
+    for (const tier of supplierProduct.costTiers ?? []) {
       const minQuantity = toFiniteNumber(tier.minQuantity);
       if (!isPositiveInteger(tier.minQuantity)) {
         throw new CatalogServiceError("La cantidad minima de costo debe ser mayor a 0.");

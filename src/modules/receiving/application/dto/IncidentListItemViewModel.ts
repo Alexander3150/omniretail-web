@@ -1,4 +1,4 @@
-import type { ReceiptIncidentEvidence } from "@/core/entities";
+import type { ReceiptIncidentApiStatus, ReceiptIncidentEvidence } from "@/core/entities";
 
 export interface IncidentListItemViewModel {
   id: string;
@@ -17,5 +17,6 @@ export interface IncidentListItemViewModel {
   date: string;
   responsibleName?: string;
   evidence: ReceiptIncidentEvidence[];
+  status?: ReceiptIncidentApiStatus;
   confirmed: boolean;
 }

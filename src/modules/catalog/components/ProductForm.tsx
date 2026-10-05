@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { Product, Promotion } from "@/core/entities";
 import {
   ProductStatus,
@@ -64,6 +64,26 @@ import {
 } from "@/modules/catalog/components/CatalogIcons";
 import { productTypeLabels } from "@/modules/catalog/components/productLabels";
 import { useProductPromotions } from "@/modules/catalog/hooks/useProductPromotions";
+import {
+  useProductAttributes,
+  type ProductAttributesLoadState,
+} from "@/modules/catalog/hooks/useProductAttributes";
+import {
+  useProductSalesPriceTiers,
+  type ProductSalesPriceTiersLoadState,
+} from "@/modules/catalog/hooks/useProductSalesPriceTiers";
+import {
+  useSupplierCostTiers,
+  type SupplierCostTierLoadState,
+} from "@/modules/catalog/hooks/useSupplierCostTiers";
+import {
+  useProductUnitConversions,
+  type ProductUnitConversionsLoadState,
+} from "@/modules/catalog/hooks/useProductUnitConversions";
+import {
+  useProductInventorySettings,
+  type ProductInventorySettingsLoadState,
+} from "@/modules/catalog/hooks/useProductInventorySettings";
 import type { ProductFormOptions } from "@/modules/catalog/types/catalog.types";
 import {
   applyCapabilityRulesToEditor,
@@ -79,6 +99,7 @@ import { validateProductFormPilot } from "@/modules/catalog/validation/productFo
 
 interface ProductFormProps {
   mode: "create" | "edit";
+  branchId: string;
   options: ProductFormOptions;
   editorData: ProductEditorData;
   busy?: boolean;
@@ -121,6 +142,7 @@ const promotionStatusLabels: Record<PromotionStatus, string> = {
 
 export function ProductForm({
   mode,
+  branchId,
   options,
   editorData,
   busy,
@@ -134,9 +156,49 @@ export function ProductForm({
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [editorError, setEditorError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ProductFormTab>("general");
+  // Guarda sincrona contra doble submit: `busy` llega por estado del padre y no cubre dos submits
+  // del mismo tick (doble Enter/click) antes de que React lo propague.
+  const submittingRef = useRef(false);
+  const detail = editorData.detail;
+  const { user } = useCurrentSession();
+  const editorTenantId = detail?.product.tenantId ?? user?.tenantId;
+  const editorProductId = detail?.product.id;
+  const productAttributes = useProductAttributes();
+  const productSalesPriceTiers = useProductSalesPriceTiers();
+  const supplierCostTiers = useSupplierCostTiers();
+  const productUnitConversions = useProductUnitConversions();
+  const productInventorySettings = useProductInventorySettings();
   const { hasCapability } = useEntitlement();
   const isEdit = mode === "edit";
-  const detail = editorData.detail;
+  // El backend rechaza (409) atributos y precios por cantidad mientras el producto esta archivado;
+  // un Kit archivado solo admite componentes y multimedia, asi que esas secciones no se editan.
+  const isArchivedKit =
+    isEdit &&
+    detail?.product.productType === ProductType.kit &&
+    detail.product.status === ProductStatus.archived;
+  const attributeLoadState = productAttributes.getState(
+    editorTenantId,
+    editorProductId,
+  );
+  const salesPriceTiersLoadState = productSalesPriceTiers.getState(
+    editorTenantId,
+    editorProductId,
+  );
+  const unitConversionsLoadState = productUnitConversions.getState(
+    editorTenantId,
+    editorProductId,
+  );
+  const inventorySettingsLoadState = productInventorySettings.getState(
+    editorTenantId,
+    editorProductId,
+    branchId,
+  );
+  const promotionState = useProductPromotions(editorProductId ?? null, {
+    enabled:
+      activeTab === "promotion" &&
+      editorData.access.canReadPromotions,
+    tenantId: editorTenantId,
+  });
   const categoryName =
     options.categories.find((category) => category.id === value.categoryId)?.name ??
     "Sin categoria";
@@ -166,19 +228,30 @@ export function ProductForm({
         channels: value.channels,
       }
     : null;
-  const showPromotionTab = Boolean(isEdit && editorData.promotionCount > 0 && promotionProduct);
+  const showPromotionTab = Boolean(
+    isEdit && editorData.access.canReadPromotions && promotionProduct,
+  );
+  const promotionCount =
+    promotionState.status === "loaded"
+      ? (promotionState.data?.promotions ?? []).filter(
+          (promotion) =>
+            promotion.status === PromotionStatus.active ||
+            promotion.status === PromotionStatus.scheduled,
+        ).length
+      : undefined;
   const tabs = [
     { id: "general", label: "Informacion general", icon: "I" },
     value.productType !== ProductType.kit ? { id: "units", label: "Unidades", icon: "U" } : null,
     { id: "tracking", label: "Inventario y trazabilidad", icon: "T" },
-    options.businessCapabilities.supportsProductAttributes || value.attributes.length > 0
-      ? { id: "attributes", label: "Atributos", icon: "A", count: value.attributes.length }
+    options.businessCapabilities.supportsProductAttributes ||
+    (isEdit && editorData.access.canReadAttributes)
+      ? { id: "attributes", label: "Atributos", icon: "A", count: value.attributes?.length }
       : null,
-    { id: "prices", label: "Precios", icon: "Q", count: value.salesPriceTiers.length },
+    { id: "prices", label: "Precios", icon: "Q", count: value.salesPriceTiers?.length },
     showPromotionTab
-      ? { id: "promotion", label: "Promocion", icon: "%", count: editorData.promotionCount }
+      ? { id: "promotion", label: "Promocion", icon: "%", count: promotionCount }
       : null,
-    value.productType !== ProductType.kit
+    value.productType !== ProductType.kit && editorData.access.canManageSuppliers
       ? { id: "suppliers", label: "Proveedores", icon: "P", count: value.supplierProducts.length }
       : null,
     { id: "media", label: "Multimedia", icon: "M", count: value.media.length },
@@ -199,6 +272,165 @@ export function ProductForm({
   const completedItems = preparationItems.filter((item) => item.complete).length;
   const completionPercentage = Math.round((completedItems / preparationItems.length) * 100);
 
+  function loadSalesPriceTiers() {
+    if (!editorTenantId || value.salesPriceTiers !== undefined) return;
+
+    void productSalesPriceTiers
+      .load(editorTenantId, editorProductId)
+      .then((salesPriceTiers) => {
+        setValue((current) =>
+          current.salesPriceTiers === undefined ? { ...current, salesPriceTiers } : current,
+        );
+      })
+      .catch(() => {
+        // El hook conserva el Error real y deja la consulta reintentable.
+      });
+  }
+
+  function loadAttributes() {
+    if (
+      !editorTenantId ||
+      !editorData.access.canReadAttributes ||
+      value.attributes !== undefined
+    ) {
+      return;
+    }
+    void productAttributes
+      .load(editorTenantId, editorProductId)
+      .then(({ attributes }) => {
+        setValue((current) =>
+          current.attributes === undefined ? { ...current, attributes } : current,
+        );
+      })
+      .catch(() => {
+        // El hook conserva el Error real y deja definitions/values fallidos reintentables.
+      });
+  }
+
+  function loadSupplierCostTiers(supplierProductId: string) {
+    const supplierProduct = value.supplierProducts.find(
+      (item) => item.id === supplierProductId,
+    );
+    if (!supplierProduct || supplierProduct.costTiers !== undefined) return;
+
+    void supplierCostTiers
+      .load(supplierProductId)
+      .then((costTiers) => {
+        setValue((current) => {
+          let changed = false;
+          const supplierProducts = current.supplierProducts.map((item) => {
+            if (item.id !== supplierProductId || item.costTiers !== undefined) return item;
+            changed = true;
+            return { ...item, costTiers };
+          });
+          return changed ? { ...current, supplierProducts } : current;
+        });
+      })
+      .catch(() => {
+        // El hook conserva el Error real y deja la entrada reintentable.
+      });
+  }
+
+  function loadUnitConversions() {
+    if (
+      !editorTenantId ||
+      !editorData.access.canReadConversions ||
+      value.productType === ProductType.kit ||
+      value.unitConversions !== undefined ||
+      // Producto nuevo sin "Unidades y empaques": usa una sola unidad y no hay conversiones que leer.
+      (!isEdit && !options.businessCapabilities.supportsUnitsAndPackaging)
+    ) {
+      return;
+    }
+
+    void productUnitConversions
+      .load(editorTenantId, editorProductId)
+      .then((unitConversions) => {
+        setValue((current) => {
+          if (
+            current.productType === ProductType.kit ||
+            current.unitConversions !== undefined
+          ) {
+            return current;
+          }
+          const factorFor = (unitId: string) =>
+            unitId === current.baseUnitId
+              ? 1
+              : (unitConversions.find(
+                  (conversion) =>
+                    conversion.fromUnitId === unitId &&
+                    conversion.toUnitId === current.baseUnitId,
+                )?.factor ?? "");
+          return {
+            ...current,
+            unitConversions,
+            inventoryToBaseFactor: factorFor(current.inventoryUnitId),
+            saleToBaseFactor: factorFor(current.saleUnitId),
+          };
+        });
+      })
+      .catch(() => {
+        // El hook conserva el Error real y deja la consulta reintentable.
+      });
+  }
+
+  function loadInventorySettings() {
+    if (
+      !editorTenantId ||
+      !branchId ||
+      !editorData.access.canReadInventorySettings ||
+      value.productType !== ProductType.physical ||
+      value.inventorySettings !== undefined
+    ) {
+      return;
+    }
+
+    void productInventorySettings
+      .load(editorTenantId, editorProductId, branchId)
+      .then((inventorySettings) => {
+        setValue((current) =>
+          current.productType === ProductType.physical &&
+          current.inventorySettings === undefined
+            ? {
+                ...current,
+                inventorySettings: {
+                  branchId,
+                  minStock: inventorySettings?.minStock ?? 0,
+                  defaultLocationId: inventorySettings?.defaultLocationId ?? "",
+                },
+              }
+            : current,
+        );
+      })
+      .catch(() => {
+        // El hook conserva el Error real y deja la consulta reintentable.
+      });
+  }
+
+  function selectTab(tab: ProductFormTab) {
+    setActiveTab(tab);
+    if (tab === "units") {
+      loadUnitConversions();
+      return;
+    }
+    if (tab === "tracking") {
+      loadInventorySettings();
+      return;
+    }
+    if (tab === "prices") {
+      loadSalesPriceTiers();
+      return;
+    }
+    if (tab === "attributes") {
+      loadAttributes();
+      return;
+    }
+    if (tab !== "suppliers") return;
+    value.supplierProducts.forEach((item) => {
+      if (item.id && item.costTiers === undefined) loadSupplierCostTiers(item.id);
+    });
+  }
+
   function updateValue(patch: Partial<ProductEditorDto>) {
     const next = { ...value, ...patch };
     if (patch.productType) {
@@ -217,6 +449,17 @@ export function ProductForm({
         }
         next.supplierProducts = [];
       }
+    }
+    if (
+      patch.baseUnitId !== undefined &&
+      !isEdit &&
+      !options.businessCapabilities.supportsUnitsAndPackaging
+    ) {
+      // Producto nuevo con una sola unidad: inventario y venta siguen a la unidad minima.
+      next.inventoryUnitId = next.baseUnitId;
+      next.saleUnitId = next.baseUnitId;
+      next.inventoryToBaseFactor = 1;
+      next.saleToBaseFactor = 1;
     }
     next.saleUnitId = resolveSaleUnitId(
       next.baseUnitId,
@@ -250,7 +493,7 @@ export function ProductForm({
         options.businessCapabilities,
         existingCapabilityContext,
       );
-      const validation = validateProductFormFields(validatedValue);
+      const validation = validateProductFormFields(validatedValue, !isEdit);
       const nextErrors = { ...current };
       for (const field of affectedFields) {
         if (!current[field] && !(hasSubmitted &&
@@ -264,6 +507,7 @@ export function ProductForm({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy || submittingRef.current) return;
     setHasSubmitted(true);
     setEditorError(null);
     const nextValue = applyCapabilityRulesToEditor(
@@ -272,20 +516,40 @@ export function ProductForm({
       existingCapabilityContext,
     );
     const pilotErrors = validateProductFormPilot(nextValue);
-    const nextErrors = validateProductFormFields(nextValue);
+    const nextErrors = validateProductFormFields(nextValue, !isEdit);
     const nextEditorError =
       pilotErrors.tracking ?? validateEditor(nextValue, editorData, options.units);
     setErrors(nextErrors);
     setEditorError(nextEditorError);
     if (hasValidationErrors(nextErrors) || nextEditorError) {
-      routeToFirstError(nextErrors, nextEditorError, setActiveTab);
+      routeToFirstError(nextErrors, nextEditorError, selectTab);
       return;
     }
-    await onSubmit(nextValue);
+    submittingRef.current = true;
+    try {
+      await onSubmit(nextValue);
+    } finally {
+      submittingRef.current = false;
+    }
   }
 
   return (
-    <form className="space-y-5" id="catalog-product-form" noValidate onSubmit={handleSubmit}>
+    <form
+      aria-busy={Boolean(busy)}
+      className="space-y-5"
+      id="catalog-product-form"
+      noValidate
+      onSubmit={handleSubmit}
+    >
+      {/* fieldset disabled bloquea inputs, selects, textareas y botones (tabs, multimedia,
+          relaciones) mientras se guarda; el contenido sigue visible y sin remontar. */}
+      <fieldset
+        className={cn(
+          "m-0 min-w-0 space-y-5 border-0 p-0 transition-opacity",
+          busy && "opacity-90",
+        )}
+        disabled={Boolean(busy)}
+      >
       <section className="rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 space-y-2">
@@ -304,13 +568,20 @@ export function ProductForm({
             </p>
           </div>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
-            <Button
-              className="w-full sm:w-auto"
-              href={detail ? `/catalogo/productos/${detail.product.id}` : "/catalogo/productos"}
-              variant="secondary"
-            >
-              {"<-"} Volver
-            </Button>
+            {busy ? (
+              // Un Link ignora `disabled`: durante el guardado se renderiza un boton inerte.
+              <Button className="w-full sm:w-auto" disabled type="button" variant="secondary">
+                {"<-"} Volver
+              </Button>
+            ) : (
+              <Button
+                className="w-full sm:w-auto"
+                href={detail ? `/catalogo/productos/${detail.product.id}` : "/catalogo/productos"}
+                variant="secondary"
+              >
+                {"<-"} Volver
+              </Button>
+            )}
             <Button
               className="w-full sm:w-auto"
               disabled={
@@ -324,8 +595,15 @@ export function ProductForm({
               form="catalog-product-form"
               type="submit"
             >
-              <CheckIcon />
-              {busy ? "Guardando..." : "Guardar producto"}
+              {busy ? (
+                <span
+                  aria-hidden="true"
+                  className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                />
+              ) : (
+                <CheckIcon />
+              )}
+              {busy ? "Guardando producto..." : "Guardar producto"}
             </Button>
           </div>
         </div>
@@ -346,7 +624,7 @@ export function ProductForm({
                   : "border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-app-background)] hover:text-[var(--color-title)]",
               )}
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => selectTab(tab.id)}
               type="button"
             >
               <span className="grid h-6 w-6 place-items-center rounded-md bg-white text-xs text-[var(--color-title)]">
@@ -376,10 +654,17 @@ export function ProductForm({
           ) : null}
           {activeTab === "units" ? (
             <UnitsTab
+              canRead={editorData.access.canReadConversions}
               capabilities={options.businessCapabilities}
               errors={errors}
               isExistingProduct={Boolean(existingCapabilityContext)}
+              loadState={unitConversionsLoadState}
+              onLoad={loadUnitConversions}
               onChange={updateValue}
+              readOnly={
+                !editorData.access.canReadConversions ||
+                !editorData.access.canManageConversions
+              }
               units={options.units}
               value={value}
             />
@@ -390,6 +675,8 @@ export function ProductForm({
               editorData={editorData}
               error={editorError}
               errors={errors}
+              loadState={inventorySettingsLoadState}
+              onLoad={loadInventorySettings}
               onChange={updateValue}
               units={options.units}
               value={value}
@@ -397,21 +684,45 @@ export function ProductForm({
           ) : null}
           {activeTab === "attributes" ? (
             <AttributesTab
+              canCreateDefinitions={editorData.access.canManageAttributes}
+              canRead={editorData.access.canReadAttributes}
+              loadState={attributeLoadState}
+              onLoad={loadAttributes}
               onChange={(attributes) => updateValue({ attributes })}
-              readOnly={!options.businessCapabilities.supportsProductAttributes}
+              archivedKit={isArchivedKit}
+              readOnly={
+                isArchivedKit ||
+                !options.businessCapabilities.supportsProductAttributes ||
+                !editorData.access.canReadAttributes ||
+                !editorData.access.canUpdateProductRelations
+              }
               value={value.attributes}
             />
           ) : null}
           {activeTab === "prices" ? (
-            <PricesTab errors={errors} onChange={updateValue} value={value} />
+            <PricesTab
+              errors={errors}
+              loadState={salesPriceTiersLoadState}
+              onLoadTiers={loadSalesPriceTiers}
+              onChange={updateValue}
+              archivedKit={isArchivedKit}
+              readOnlyTiers={isArchivedKit || !editorData.access.canUpdateProductRelations}
+              value={value}
+            />
           ) : null}
           {activeTab === "promotion" && promotionProduct ? (
-            <PromotionTab product={promotionProduct} />
+            <PromotionTab
+              canManage={editorData.access.canManagePromotions}
+              product={promotionProduct}
+              state={promotionState}
+            />
           ) : null}
           {activeTab === "suppliers" ? (
             <SuppliersTab
               baseUnitId={value.baseUnitId}
               baseUnitName={baseUnit?.name ?? "unidad de inventario"}
+              getCostTierState={supplierCostTiers.getState}
+              onLoadCostTiers={loadSupplierCostTiers}
               onChange={(supplierProducts) => updateValue({ supplierProducts })}
               suppliers={editorData.suppliers}
               units={options.units}
@@ -422,6 +733,7 @@ export function ProductForm({
             <MediaTab
               errors={errors}
               onChange={(media) => updateValue({ media })}
+              readOnly={!editorData.access.canUpdateProductRelations}
               value={value.media}
             />
           ) : null}
@@ -495,7 +807,13 @@ export function ProductForm({
               />
               <SummaryItem
                 label="Promocion"
-                value={showPromotionTab ? `${editorData.promotionCount} vigente` : "-"}
+                value={
+                  showPromotionTab
+                    ? promotionCount === undefined
+                      ? "Sin cargar"
+                      : `${promotionCount} vigente`
+                    : "-"
+                }
               />
             </dl>
           </section>
@@ -513,6 +831,7 @@ export function ProductForm({
           ) : null}
         </aside>
       </div>
+      </fieldset>
 
       {editorError ? <FieldError>{editorError}</FieldError> : null}
       {error ? <FieldError>{error}</FieldError> : null}
@@ -687,18 +1006,26 @@ function ChannelsControl({
 
 function UnitsTab({
   value,
+  canRead,
   capabilities,
   isExistingProduct,
   units,
   errors,
+  loadState,
+  onLoad,
   onChange,
+  readOnly,
 }: {
   value: ProductEditorDto;
+  canRead: boolean;
   capabilities: ProductFormOptions["businessCapabilities"];
   isExistingProduct: boolean;
   units: ProductFormOptions["units"];
   errors: ProductValidationErrors;
+  loadState: ProductUnitConversionsLoadState;
+  onLoad: () => void;
   onChange: (value: Partial<ProductEditorDto>) => void;
+  readOnly?: boolean;
 }) {
   const baseUnit = units.find((item) => item.id === value.baseUnitId);
   const inventoryUnit = units.find((item) => item.id === value.inventoryUnitId);
@@ -711,6 +1038,12 @@ function UnitsTab({
   // blocker, capacidad OFF no es una migracion destructiva de datos historicos.
   const usesSingleUnit = !capabilities.supportsUnitsAndPackaging;
   const unitsProtected = isExistingProduct && usesSingleUnit;
+  const coreUnitsReadOnly = Boolean(readOnly && isExistingProduct);
+  const conversionsLoaded = value.unitConversions !== undefined;
+  // Un producto nuevo con una sola unidad no necesita conversiones: no se exige cargarlas.
+  const newSingleUnit = usesSingleUnit && !isExistingProduct;
+  const controlsDisabled =
+    unitsProtected || coreUnitsReadOnly || (!conversionsLoaded && !newSingleUnit);
   const needsInventoryConversion = value.baseUnitId !== value.inventoryUnitId;
   const needsSaleConversion = value.baseUnitId !== value.saleUnitId;
 
@@ -726,12 +1059,26 @@ function UnitsTab({
         }
         title="Unidades"
       />
-      {unitsProtected ? (
+      {unitsProtected || readOnly ? (
         <p className="rounded-md border border-[var(--color-warning)] bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-text)]">
-          La configuracion de unidades de este producto (unidad de inventario, unidad de venta y
-          equivalencia) quedo de solo lectura porque el negocio desactivo &ldquo;Unidades y
-          empaques&rdquo;. No se borra ni se modifica al guardar otros campos.
+          La configuracion de unidades y conversiones esta disponible en modo de solo lectura.
         </p>
+      ) : null}
+      {canRead && !conversionsLoaded && !newSingleUnit ? (
+        <div className="flex flex-col gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-[var(--color-text-muted)]">
+            {loadState.status === "error"
+              ? loadState.error.message
+              : loadState.status === "loading"
+                ? "Cargando conversiones..."
+                : "Las conversiones todavia no se han cargado."}
+          </p>
+          {loadState.status !== "loading" ? (
+            <Button onClick={onLoad} type="button" variant="secondary">
+              {loadState.status === "error" ? "Reintentar" : "Cargar conversiones"}
+            </Button>
+          ) : null}
+        </div>
       ) : null}
       <div className="grid gap-4 md:grid-cols-3">
         <FormField
@@ -745,13 +1092,21 @@ function UnitsTab({
           }
         >
           <Select
-            disabled={unitsProtected}
+            disabled={controlsDisabled}
             id="baseUnitId"
             onChange={(event) =>
               onChange({
                 baseUnitId: event.target.value,
-                inventoryToBaseFactor: event.target.value === value.inventoryUnitId ? 1 : "",
-                saleToBaseFactor: event.target.value === value.saleUnitId ? 1 : "",
+                ...(readOnly
+                  ? {
+                      inventoryUnitId: event.target.value,
+                      saleUnitId: event.target.value,
+                    }
+                  : {}),
+                inventoryToBaseFactor:
+                  readOnly || event.target.value === value.inventoryUnitId ? 1 : "",
+                saleToBaseFactor:
+                  readOnly || event.target.value === value.saleUnitId ? 1 : "",
               })
             }
             value={value.baseUnitId}
@@ -766,7 +1121,7 @@ function UnitsTab({
         </FormField>
         <FormField id="inventoryUnitId" label="Presentacion de inventario *">
           <Select
-            disabled={usesSingleUnit}
+            disabled={usesSingleUnit || readOnly || !conversionsLoaded}
             id="inventoryUnitId"
             onChange={(event) =>
               onChange({
@@ -797,7 +1152,7 @@ function UnitsTab({
           }
         >
           <Select
-            disabled={usesSingleUnit}
+            disabled={usesSingleUnit || readOnly || !conversionsLoaded}
             id="saleUnitId"
             onChange={(event) =>
               onChange({
@@ -825,7 +1180,7 @@ function UnitsTab({
             >
               <div className="flex items-center gap-2">
                 <Input
-                  disabled={unitsProtected}
+                  disabled={unitsProtected || readOnly || !conversionsLoaded}
                   id="inventoryToBaseFactor"
                   inputMode="decimal"
                   maxLength={12}
@@ -848,7 +1203,7 @@ function UnitsTab({
             <FormField id="saleToBaseFactor" label={`1 ${saleUnit?.name ?? "venta"} equivale a`}>
               <div className="flex items-center gap-2">
                 <Input
-                  disabled={unitsProtected}
+                  disabled={unitsProtected || readOnly || !conversionsLoaded}
                   id="saleToBaseFactor"
                   inputMode="decimal"
                   maxLength={12}
@@ -885,7 +1240,9 @@ function TrackingTab({
   editorData,
   error,
   errors,
+  loadState,
   units,
+  onLoad,
   onChange,
 }: {
   value: ProductEditorDto;
@@ -893,16 +1250,26 @@ function TrackingTab({
   editorData: ProductEditorData;
   error: string | null;
   errors: ProductFormErrors;
+  loadState: ProductInventorySettingsLoadState;
   units: ProductFormOptions["units"];
+  onLoad: () => void;
   onChange: (value: Partial<ProductEditorDto>) => void;
 }) {
   const isService = value.productType === ProductType.service;
   const isKit = value.productType === ProductType.kit;
   const usesStock = !isService && !isKit && value.tracking.stock;
-  const currentDefaultLocation = editorData.currentDefaultLocation;
+  const inventorySettingsReadOnly =
+    !editorData.access.canReadInventorySettings ||
+    !editorData.access.canUpdateProductRelations;
+  const inventorySettings = value.inventorySettings;
+  const currentDefaultLocation = inventorySettings?.defaultLocationId
+    ? (editorData.branchLocations.find(
+        (location) => location.id === inventorySettings.defaultLocationId,
+      ) ?? null)
+    : null;
   const assignedArchivedDefaultLocation =
     currentDefaultLocation &&
-    currentDefaultLocation.id === value.inventorySettings.defaultLocationId &&
+    currentDefaultLocation.id === inventorySettings?.defaultLocationId &&
     !editorData.storageLocations.some((location) => location.id === currentDefaultLocation.id);
   const options = [
     {
@@ -945,9 +1312,10 @@ function TrackingTab({
     );
     onChange({
       tracking,
-      inventorySettings: tracking.stock
-        ? value.inventorySettings
-        : { ...value.inventorySettings, minStock: 0, defaultLocationId: "" },
+      inventorySettings:
+        !tracking.stock && inventorySettings
+          ? { ...inventorySettings, minStock: 0, defaultLocationId: "" }
+          : inventorySettings,
     });
   }
 
@@ -965,76 +1333,107 @@ function TrackingTab({
       {isKit ? (
         <KitComponentsEditor
           eligibleProducts={editorData.kitEligibleProducts}
+          readOnly={!editorData.access.canUpdateProductRelations}
           units={units}
           value={value.kitComponents}
           onChange={(kitComponents) => onChange({ kitComponents })}
         />
       ) : null}
-      {usesStock ? (
-        <div className="grid gap-4 md:grid-cols-2">
-          <FormField id="inventory-min-stock" label="Stock minimo">
-            <Input
-              id="inventory-min-stock"
-              inputMode="numeric"
-              maxLength={6}
-              onChange={(event) =>
-                onChange({
-                  inventorySettings: {
-                    ...value.inventorySettings,
-                    minStock: parseIntegerInput(event.target.value),
-                  },
-                })
-              }
-              type="text"
-              value={value.inventorySettings.minStock}
-            />
-            {error?.includes("stock minimo") ? (
-              <p className="mt-2 text-sm font-semibold text-[var(--color-danger)]">{error}</p>
-            ) : (
-              <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-                Valor operativo para la sucursal activa; no representa stock actual.
-              </p>
-            )}
-          </FormField>
-          <FormField id="default-location-id" label="Ubicacion predeterminada" error={errors.defaultLocationId}>
-            <Select
-              id="default-location-id"
-              onChange={(event) =>
-                onChange({
-                  inventorySettings: {
-                    ...value.inventorySettings,
-                    defaultLocationId: event.target.value,
-                  },
-                })
-              }
-              value={value.inventorySettings.defaultLocationId}
-            >
-              <option value="">Sin ubicacion predeterminada</option>
-              {assignedArchivedDefaultLocation ? (
-                <option disabled value={currentDefaultLocation.id}>
-                  {currentDefaultLocation.name} (archivada)
-                </option>
-              ) : null}
-              {editorData.storageLocations.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.name}
-                </option>
-              ))}
-            </Select>
-            {error?.includes("ubicacion") ? (
-              <p className="mt-2 text-sm font-semibold text-[var(--color-danger)]">{error}</p>
-            ) : assignedArchivedDefaultLocation ? (
-              <p className="mt-2 text-xs font-semibold text-[var(--color-danger)]">
-                La ubicacion asignada actualmente esta archivada. Elige una activa o deja el campo
-                sin ubicacion.
-              </p>
-            ) : (
-              <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-                Solo se muestran ubicaciones activas de la sucursal actual.
-              </p>
-            )}
-          </FormField>
+      {usesStock && inventorySettingsReadOnly ? (
+        <p className="rounded-md border border-[var(--color-warning)] bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-text)]">
+          La configuracion operativa de inventario esta disponible en modo de solo lectura.
+        </p>
+      ) : null}
+      {usesStock && editorData.access.canReadInventorySettings && !inventorySettings ? (
+        <div className="flex flex-col gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-[var(--color-text-muted)]">
+            {loadState.status === "error"
+              ? loadState.error.message
+              : loadState.status === "loading"
+                ? "Cargando configuracion de inventario..."
+                : "La configuracion de inventario todavia no se ha cargado."}
+          </p>
+          {loadState.status !== "loading" ? (
+            <Button onClick={onLoad} type="button" variant="secondary">
+              {loadState.status === "error" ? "Reintentar" : "Cargar configuracion"}
+            </Button>
+          ) : null}
         </div>
+      ) : null}
+      {usesStock && inventorySettings ? (
+        <>
+          {loadState.status === "loaded" && loadState.settings === null ? (
+            <p className="rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
+              No existe configuracion persistida para esta sucursal; se creara al guardar.
+            </p>
+          ) : null}
+          <div className="grid gap-4 md:grid-cols-2">
+            <FormField id="inventory-min-stock" label="Stock minimo">
+              <Input
+                disabled={inventorySettingsReadOnly}
+                id="inventory-min-stock"
+                inputMode="numeric"
+                maxLength={6}
+                onChange={(event) =>
+                  onChange({
+                    inventorySettings: {
+                      ...inventorySettings,
+                      minStock: parseIntegerInput(event.target.value),
+                    },
+                  })
+                }
+                type="text"
+                value={inventorySettings.minStock}
+              />
+              {error?.includes("stock minimo") ? (
+                <p className="mt-2 text-sm font-semibold text-[var(--color-danger)]">{error}</p>
+              ) : (
+                <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+                  Valor operativo para la sucursal activa; no representa stock actual.
+                </p>
+              )}
+            </FormField>
+            <FormField id="default-location-id" label="Ubicacion predeterminada" error={errors.defaultLocationId}>
+              <Select
+                disabled={inventorySettingsReadOnly}
+                id="default-location-id"
+                onChange={(event) =>
+                  onChange({
+                    inventorySettings: {
+                      ...inventorySettings,
+                      defaultLocationId: event.target.value,
+                    },
+                  })
+                }
+                value={inventorySettings.defaultLocationId}
+              >
+                <option value="">Sin ubicacion predeterminada</option>
+                {assignedArchivedDefaultLocation ? (
+                  <option disabled value={currentDefaultLocation.id}>
+                    {currentDefaultLocation.name} (archivada)
+                  </option>
+                ) : null}
+                {editorData.storageLocations.map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {location.name}
+                  </option>
+                ))}
+              </Select>
+              {error?.includes("ubicacion") ? (
+                <p className="mt-2 text-sm font-semibold text-[var(--color-danger)]">{error}</p>
+              ) : assignedArchivedDefaultLocation ? (
+                <p className="mt-2 text-xs font-semibold text-[var(--color-danger)]">
+                  La ubicacion asignada actualmente esta archivada. Elige una activa o deja el campo
+                  sin ubicacion.
+                </p>
+              ) : (
+                <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+                  Solo se muestran ubicaciones activas de la sucursal actual.
+                </p>
+              )}
+            </FormField>
+          </div>
+        </>
       ) : null}
       <div className="grid gap-3 md:grid-cols-2">
         {options.map((option) => {
@@ -1090,11 +1489,13 @@ function TrackingTab({
 
 function KitComponentsEditor({
   eligibleProducts,
+  readOnly,
   units,
   value,
   onChange,
 }: {
   eligibleProducts: ProductEditorData["kitEligibleProducts"];
+  readOnly?: boolean;
   units: ProductFormOptions["units"];
   value: ProductEditorDto["kitComponents"];
   onChange: (value: ProductEditorDto["kitComponents"]) => void;
@@ -1120,6 +1521,7 @@ function KitComponentsEditor({
               {product ? `${product.sku} — ${product.name}` : "Componente no disponible"}
             </div>
             <Input
+              disabled={readOnly}
               inputMode={unit?.allowsDecimals ? "decimal" : "numeric"}
               maxLength={7}
               type="text"
@@ -1143,6 +1545,7 @@ function KitComponentsEditor({
             <button
               className="rounded-md border border-[var(--color-danger)] px-3 text-sm font-semibold text-[var(--color-danger)]"
               type="button"
+              disabled={readOnly}
               onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}
             >
               Eliminar
@@ -1151,6 +1554,7 @@ function KitComponentsEditor({
         );
       })}
       <Select
+        disabled={readOnly}
         value=""
         onChange={(event) => {
           const componentProductId = event.target.value;
@@ -1170,14 +1574,25 @@ function KitComponentsEditor({
 
 function AttributesTab({
   value,
+  archivedKit,
   readOnly,
+  canRead,
+  canCreateDefinitions,
+  loadState,
+  onLoad,
   onChange,
 }: {
-  value: ProductAttributeEditorValue[];
+  value?: ProductAttributeEditorValue[];
+  archivedKit?: boolean;
   readOnly?: boolean;
+  canRead: boolean;
+  canCreateDefinitions: boolean;
+  loadState: ProductAttributesLoadState;
+  onLoad: () => void;
   onChange: (value: ProductAttributeEditorValue[]) => void;
 }) {
   function update(index: number, patch: Partial<ProductAttributeEditorValue>) {
+    if (!value) return;
     onChange(value.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)));
   }
 
@@ -1185,17 +1600,38 @@ function AttributesTab({
     <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
       <SectionTitle
         description={
-          readOnly
-            ? "El negocio desactivo los atributos de producto; los existentes se conservan de solo lectura."
+          archivedKit
+            ? "Un kit archivado no admite cambios de atributos. Restauralo para editarlos."
+            : readOnly
+            ? "Los atributos existentes se conservan en modo de solo lectura por configuracion o permisos."
             : "Atributos descriptivos key/value persistidos por producto."
         }
         title="Atributos"
       />
-      {readOnly ? (
+      {!canRead ? (
+        <p className="rounded-md border border-[var(--color-warning)] bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-text)]">
+          No dispone de permiso para consultar los atributos del producto.
+        </p>
+      ) : value === undefined ? (
+        <div className="flex flex-col gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-[var(--color-text-muted)]">
+            {loadState.status === "error"
+              ? loadState.error.message
+              : loadState.status === "loading"
+                ? "Cargando atributos..."
+                : "Los atributos todavia no se han cargado."}
+          </p>
+          {loadState.status !== "loading" ? (
+            <Button onClick={onLoad} type="button" variant="secondary">
+              {loadState.status === "error" ? "Reintentar" : "Cargar atributos"}
+            </Button>
+          ) : null}
+        </div>
+      ) : readOnly ? (
         <p className="rounded-md border border-[var(--color-warning)] bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-text)]">
           Estos atributos no se borran ni se modifican al guardar otros campos del producto.
         </p>
-      ) : (
+      ) : canCreateDefinitions ? (
         <div className="flex justify-end">
           <Button
             onClick={() => onChange([...value, { name: "", value: "" }])}
@@ -1206,8 +1642,13 @@ function AttributesTab({
             Agregar
           </Button>
         </div>
+      ) : (
+        <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-text)]">
+          Puede editar valores existentes. Crear definiciones nuevas requiere el permiso de
+          gestion de atributos.
+        </p>
       )}
-      {value.length ? (
+      {value === undefined || !canRead ? null : value.length ? (
         <div className="space-y-3">
           {value.map((attribute, index) => (
             <div
@@ -1216,7 +1657,9 @@ function AttributesTab({
             >
               <Input
                 aria-label="Nombre del atributo"
-                disabled={readOnly}
+                disabled={
+                  readOnly || Boolean(attribute.attributeDefinitionId) || !canCreateDefinitions
+                }
                 maxLength={TEXT_LIMITS.attributeName}
                 onChange={(event) => update(index, { name: event.target.value })}
                 placeholder="Nombre"
@@ -1251,24 +1694,47 @@ function AttributesTab({
 
 function PricesTab({
   value,
+  archivedKit,
   errors,
+  loadState,
+  onLoadTiers,
   onChange,
+  readOnlyTiers,
 }: {
   value: ProductEditorDto;
+  archivedKit?: boolean;
   errors: ProductValidationErrors;
+  loadState: ProductSalesPriceTiersLoadState;
+  onLoadTiers: () => void;
   onChange: (value: Partial<ProductEditorDto>) => void;
+  readOnlyTiers?: boolean;
 }) {
+  const salesPriceTiers = value.salesPriceTiers;
+
   function updateTier(index: number, patch: Partial<ProductSalesPriceTierEditorValue>) {
+    if (!salesPriceTiers) return;
     onChange({
-      salesPriceTiers: value.salesPriceTiers.map((tier, itemIndex) =>
+      salesPriceTiers: salesPriceTiers.map((tier, itemIndex) =>
         itemIndex === index ? { ...tier, ...patch } : tier,
       ),
     });
   }
 
-  const sortedTiers = [...value.salesPriceTiers].sort(
-    (left, right) => toFiniteNumber(left.minQuantity) - toFiniteNumber(right.minQuantity),
-  );
+  function removeTier(index: number) {
+    if (!salesPriceTiers) return;
+    onChange({
+      salesPriceTiers: salesPriceTiers.filter((_, itemIndex) => itemIndex !== index),
+    });
+  }
+
+  const sortedTiers = salesPriceTiers
+    ? salesPriceTiers
+        .map((tier, index) => ({ tier, index }))
+        .sort(
+          (left, right) =>
+            toFiniteNumber(left.tier.minQuantity) - toFiniteNumber(right.tier.minQuantity),
+        )
+    : undefined;
 
   return (
     <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
@@ -1298,14 +1764,17 @@ function PricesTab({
           <div>
             <h3 className="text-sm font-bold text-[var(--color-title)]">Precios por cantidad</h3>
             <p className="text-sm text-[var(--color-text-muted)]">
-              Precio unitario desde una cantidad minima.
+              {archivedKit
+                ? "Un kit archivado no admite cambios de precios por cantidad. Restauralo para editarlos."
+                : "Precio unitario desde una cantidad minima."}
             </p>
           </div>
           <Button
+            disabled={readOnlyTiers || salesPriceTiers === undefined}
             onClick={() =>
               onChange({
                 salesPriceTiers: [
-                  ...value.salesPriceTiers,
+                  ...(salesPriceTiers ?? []),
                   { minQuantity: 2, unitPrice: toFiniteNumber(value.salePrice), active: true },
                 ],
               })
@@ -1317,10 +1786,24 @@ function PricesTab({
             Agregar tramo
           </Button>
         </div>
-        {sortedTiers.length ? (
+        {sortedTiers === undefined ? (
+          <div className="flex flex-col gap-3 rounded-md bg-[var(--color-app-background)] p-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-[var(--color-text-muted)]">
+              {loadState.status === "error"
+                ? loadState.error.message
+                : loadState.status === "loading"
+                  ? "Cargando precios por cantidad..."
+                  : "Los precios por cantidad todavia no se han cargado."}
+            </p>
+            {loadState.status !== "loading" ? (
+              <Button onClick={onLoadTiers} type="button" variant="secondary">
+                {loadState.status === "error" ? "Reintentar" : "Cargar precios"}
+              </Button>
+            ) : null}
+          </div>
+        ) : sortedTiers.length ? (
           <div className="space-y-2">
-            {sortedTiers.map((tier) => {
-              const index = value.salesPriceTiers.indexOf(tier);
+            {sortedTiers.map(({ tier, index }) => {
               return (
                 <div
                   className="grid gap-3 rounded-md bg-[var(--color-app-background)] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
@@ -1328,6 +1811,7 @@ function PricesTab({
                 >
                   <Input
                     aria-label="Cantidad minima"
+                    disabled={readOnlyTiers}
                     inputMode="numeric"
                     maxLength={6}
                     onChange={(event) =>
@@ -1338,6 +1822,7 @@ function PricesTab({
                   />
                   <Input
                     aria-label="Precio unitario"
+                    disabled={readOnlyTiers}
                     inputMode="decimal"
                     maxLength={11}
                     onChange={(event) =>
@@ -1349,13 +1834,8 @@ function PricesTab({
                     value={tier.unitPrice}
                   />
                   <Button
-                    onClick={() =>
-                      onChange({
-                        salesPriceTiers: value.salesPriceTiers.filter(
-                          (_, itemIndex) => itemIndex !== index,
-                        ),
-                      })
-                    }
+                    disabled={readOnlyTiers}
+                    onClick={() => removeTier(index)}
                     type="button"
                     variant="danger"
                   >
@@ -1373,12 +1853,30 @@ function PricesTab({
   );
 }
 
-function PromotionTab({ product }: { product: PromotionProduct }) {
-  return <ProductPromotionWorkspace product={product} />;
+type ProductPromotionsState = ReturnType<typeof useProductPromotions>;
+
+function PromotionTab({
+  product,
+  canManage,
+  state,
+}: {
+  product: PromotionProduct;
+  canManage: boolean;
+  state: ProductPromotionsState;
+}) {
+  return <ProductPromotionWorkspace canManage={canManage} product={product} state={state} />;
 }
 
-function ProductPromotionWorkspace({ product }: { product: PromotionProduct }) {
-  const { data, error, finalize, loading, save } = useProductPromotions(product.id);
+function ProductPromotionWorkspace({
+  product,
+  canManage,
+  state,
+}: {
+  product: PromotionProduct;
+  canManage: boolean;
+  state: ProductPromotionsState;
+}) {
+  const { data, error, finalize, loading, reload, save } = state;
   const [mode, setMode] = useState<"view" | "form">("view");
   const [editingPromotion, setEditingPromotion] = useState<Promotion | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -1387,7 +1885,7 @@ function ProductPromotionWorkspace({ product }: { product: PromotionProduct }) {
     (promotion) =>
       promotion.status === PromotionStatus.active || promotion.status === PromotionStatus.scheduled,
   );
-  const readOnly = product.status === ProductStatus.archived;
+  const readOnly = product.status === ProductStatus.archived || !canManage;
   const showForm = !readOnly && mode === "form";
 
   async function handleSave(state: PromotionFormState) {
@@ -1442,7 +1940,12 @@ function ProductPromotionWorkspace({ product }: { product: PromotionProduct }) {
       {loading ? (
         <p className="text-sm text-[var(--color-text-muted)]">Cargando promociones...</p>
       ) : error ? (
-        <FieldError>{error}</FieldError>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <FieldError>{error}</FieldError>
+          <Button onClick={() => void reload()} type="button" variant="secondary">
+            Reintentar
+          </Button>
+        </div>
       ) : showForm ? (
         <PromotionEditor
           busy={busy}
@@ -1460,6 +1963,11 @@ function ProductPromotionWorkspace({ product }: { product: PromotionProduct }) {
         <PromotionOverview
           busy={busy}
           error={formError}
+          onCreate={() => {
+            setEditingPromotion(null);
+            setFormError(null);
+            setMode("form");
+          }}
           onEdit={(promotion) => {
             setEditingPromotion(promotion);
             setFormError(null);
@@ -1480,6 +1988,7 @@ function PromotionOverview({
   error,
   product,
   promotions,
+  onCreate,
   onEdit,
   onFinalize,
   readOnly,
@@ -1488,6 +1997,7 @@ function PromotionOverview({
   error: string | null;
   product: PromotionProduct;
   promotions: Promotion[];
+  onCreate: () => void;
   onEdit: (promotion: Promotion) => void;
   onFinalize: (promotion: Promotion) => void;
   readOnly?: boolean;
@@ -1497,9 +2007,17 @@ function PromotionOverview({
       {error ? <FieldError>{error}</FieldError> : null}
       {readOnly ? (
         <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 text-sm font-semibold text-[var(--color-text)]">
-          Restaura el producto para gestionar promociones.
+          La promocion esta disponible en modo de solo lectura. Para gestionarla se requiere un
+          producto activo y el permiso de promociones.
         </p>
-      ) : null}
+      ) : (
+        <div className="flex justify-end">
+          <Button onClick={onCreate} type="button" variant="secondary">
+            <PlusIcon />
+            Nueva promocion
+          </Button>
+        </div>
+      )}
       <div className="space-y-3">
         {promotions.map((promotion) => {
           const price = calculateEffectivePrice(product.salePrice, promotion);
@@ -1565,6 +2083,7 @@ function PromotionOverview({
             </article>
           );
         })}
+        {promotions.length === 0 ? <EmptyState text="No hay promociones activas." /> : null}
       </div>
     </div>
   );
@@ -1725,6 +2244,8 @@ function PromotionEditor({
 function SuppliersTab({
   baseUnitId,
   baseUnitName,
+  getCostTierState,
+  onLoadCostTiers,
   value,
   suppliers,
   units,
@@ -1732,6 +2253,8 @@ function SuppliersTab({
 }: {
   baseUnitId: string;
   baseUnitName: string;
+  getCostTierState: (supplierProductId: string) => SupplierCostTierLoadState;
+  onLoadCostTiers: (supplierProductId: string) => void;
   value: SupplierProductEditorValue[];
   suppliers: ProductEditorData["suppliers"];
   units: ProductFormOptions["units"];
@@ -1756,8 +2279,10 @@ function SuppliersTab({
     tierIndex: number,
     patch: Partial<SupplierCostTierEditorValue>,
   ) {
+    const costTiers = value[supplierIndex].costTiers;
+    if (!costTiers) return;
     updateSupplier(supplierIndex, {
-      costTiers: value[supplierIndex].costTiers.map((tier, itemIndex) =>
+      costTiers: costTiers.map((tier, itemIndex) =>
         itemIndex === tierIndex ? { ...tier, ...patch } : tier,
       ),
     });
@@ -1815,6 +2340,11 @@ function SuppliersTab({
             const supplier = suppliers.find((supplierItem) => supplierItem.id === item.supplierId);
             const purchaseUnit = units.find((unit) => unit.id === item.purchaseUnitId);
             const needsPurchaseConversion = item.purchaseUnitId !== baseUnitId;
+            const supplierProductId = item.id;
+            const costTiers = item.costTiers;
+            const costTierState: SupplierCostTierLoadState = supplierProductId
+              ? getCostTierState(supplierProductId)
+              : { status: "loaded", tiers: costTiers ?? [] };
             return (
               <article
                 className="space-y-4 rounded-md border border-[var(--color-border)] p-4"
@@ -1953,10 +2483,11 @@ function SuppliersTab({
                     </h4>
                     <Button
                       className="min-h-10 px-3 py-2"
+                      disabled={costTiers === undefined}
                       onClick={() =>
                         updateSupplier(index, {
                           costTiers: [
-                            ...item.costTiers,
+                            ...(costTiers ?? []),
                             { minQuantity: 1, unitCost: item.lastCost },
                           ],
                         })
@@ -1968,9 +2499,29 @@ function SuppliersTab({
                       Agregar costo
                     </Button>
                   </div>
-                  {item.costTiers.length ? (
+                  {costTiers === undefined ? (
+                    <div className="flex flex-col gap-2 rounded-md border border-[var(--color-border)] bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-sm text-[var(--color-text-muted)]">
+                        {costTierState.status === "error"
+                          ? costTierState.error.message
+                          : costTierState.status === "loading"
+                            ? "Cargando costos por volumen..."
+                            : "Los costos por volumen todavia no se han cargado."}
+                      </p>
+                      {supplierProductId && costTierState.status !== "loading" ? (
+                        <Button
+                          className="min-h-9 px-3 py-1.5"
+                          onClick={() => onLoadCostTiers(supplierProductId)}
+                          type="button"
+                          variant="secondary"
+                        >
+                          {costTierState.status === "error" ? "Reintentar" : "Cargar costos"}
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : costTiers.length ? (
                     <div className="space-y-2">
-                      {item.costTiers.map((tier, tierIndex) => (
+                      {costTiers.map((tier, tierIndex) => (
                         <div
                           className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
                           key={`${tier.id ?? "new"}-${tierIndex}`}
@@ -2007,7 +2558,7 @@ function SuppliersTab({
                           <Button
                             onClick={() =>
                               updateSupplier(index, {
-                                costTiers: item.costTiers.filter(
+                                costTiers: costTiers.filter(
                                   (_, itemIndex) => itemIndex !== tierIndex,
                                 ),
                               })
@@ -2039,10 +2590,12 @@ function MediaTab({
   value,
   errors,
   onChange,
+  readOnly,
 }: {
   value: ProductMediaEditorValue[];
   errors: ProductValidationErrors;
   onChange: (value: ProductMediaEditorValue[]) => void;
+  readOnly: boolean;
 }) {
   const primary = value.find((item) => item.isPrimary) ?? value[0];
   const { user } = useCurrentSession();
@@ -2118,13 +2671,18 @@ function MediaTab({
           )}
         </div>
         <div className="space-y-4">
-          <div className="flex justify-end">
+          <div className="flex items-center justify-end gap-3">
+            {readOnly ? (
+              <span className="text-sm text-[var(--color-text-muted)]">
+                Sin permiso para modificar multimedia.
+              </span>
+            ) : null}
             <label className="inline-flex min-h-10 cursor-pointer items-center justify-center rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-white">
               Seleccionar archivos
               <input
                 accept="image/jpeg,image/png,image/webp"
                 className="sr-only"
-                disabled={value.length >= 6}
+                disabled={readOnly || value.length >= 6}
                 multiple
                 onChange={(event) => {
                   void appendFiles(event.target.files);
@@ -2150,7 +2708,9 @@ function MediaTab({
                         ? "Archivo local listo para guardar"
                         : media.source?.kind === "mockAsset"
                           ? "Archivo local guardado"
-                          : "Imagen legacy"}
+                          : media.url.startsWith("/api/media/")
+                            ? "Archivo administrado"
+                            : "Imagen externa"}
                     </p>
                     <label className="block cursor-pointer text-xs font-semibold text-[var(--color-title)] underline">
                       {media.pendingUpload || media.source?.kind === "mockAsset"
@@ -2159,6 +2719,7 @@ function MediaTab({
                       <input
                         accept="image/jpeg,image/png,image/webp"
                         className="sr-only"
+                        disabled={readOnly}
                         onChange={(event) => {
                           void replaceFile(index, event.target.files?.[0]);
                           event.target.value = "";
@@ -2169,11 +2730,13 @@ function MediaTab({
                   </div>
                   <Input
                     aria-label="Texto alternativo"
+                    disabled={readOnly}
                     onChange={(event) => update(index, { alt: event.target.value })}
                     placeholder="Texto alternativo"
                     value={media.alt ?? ""}
                   />
                   <Button
+                    disabled={readOnly}
                     onClick={() => update(index, { isPrimary: true })}
                     type="button"
                     className="w-full sm:w-auto"
@@ -2182,6 +2745,7 @@ function MediaTab({
                     Principal
                   </Button>
                   <Button
+                    disabled={readOnly}
                     onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}
                     type="button"
                     className="w-full sm:w-auto"
@@ -2425,7 +2989,10 @@ function validatePromotionForm(state: PromotionFormState, salePrice: number) {
   return null;
 }
 
-function validateProductFormFields(value: ProductEditorDto): ProductFormErrors {
+function validateProductFormFields(
+  value: ProductEditorDto,
+  requireInventorySettings = false,
+): ProductFormErrors {
   const errors: ProductFormErrors = {
     ...validateProductFormPilot(value),
     ...validateProductDto({
@@ -2441,7 +3008,8 @@ function validateProductFormFields(value: ProductEditorDto): ProductFormErrors {
   if (
     value.productType === ProductType.physical &&
     value.tracking.stock &&
-    !value.inventorySettings.defaultLocationId
+    (requireInventorySettings || value.inventorySettings !== undefined) &&
+    !value.inventorySettings?.defaultLocationId
   ) {
     errors.defaultLocationId = "Seleccione una ubicación predeterminada.";
   }
@@ -2457,41 +3025,43 @@ function validateEditor(
   if (!hasAtMostDecimalPlaces(value.salePrice, MONEY_DECIMAL_PLACES)) {
     return "El precio de venta admite hasta 2 decimales.";
   }
-  if (
-    (value.baseUnitId !== value.inventoryUnitId &&
-      !isPositiveNumber(value.inventoryToBaseFactor)) ||
-    (value.baseUnitId !== value.saleUnitId && !isPositiveNumber(value.saleToBaseFactor))
-  ) {
-    return "Cada presentacion debe equivaler a un multiplo positivo de la unidad base.";
-  }
-  if (
-    toFiniteNumber(value.inventoryToBaseFactor) > MAX_SAFE_CONVERSION_FACTOR ||
-    toFiniteNumber(value.saleToBaseFactor) > MAX_SAFE_CONVERSION_FACTOR
-  ) {
-    return "El factor de conversion no puede superar 999,999.99.";
-  }
-  if (
-    !hasAtMostDecimalPlaces(
-      value.inventoryToBaseFactor,
-      CONVERSION_FACTOR_DECIMAL_PLACES,
-    ) ||
-    !hasAtMostDecimalPlaces(value.saleToBaseFactor, CONVERSION_FACTOR_DECIMAL_PLACES)
-  ) {
-    return "El factor de conversion admite hasta 4 decimales.";
-  }
   const baseUnit = units.find((unit) => unit.id === value.baseUnitId);
-  if (
-    baseUnit &&
-    [
-      ...(value.inventoryUnitId === value.baseUnitId ? [] : [value.inventoryToBaseFactor]),
-      ...(value.saleUnitId === value.baseUnitId ? [] : [value.saleToBaseFactor]),
-    ].some(
-      (factor) => !isConversionFactorCompatibleWithBaseUnit(factor, baseUnit.allowsDecimals),
-    )
-  ) {
-    return baseUnit.allowsDecimals
-      ? "El factor de conversion admite hasta 4 decimales."
-      : "La conversion debe producir una cantidad entera de la unidad base.";
+  if (value.unitConversions !== undefined) {
+    if (
+      (value.baseUnitId !== value.inventoryUnitId &&
+        !isPositiveNumber(value.inventoryToBaseFactor)) ||
+      (value.baseUnitId !== value.saleUnitId && !isPositiveNumber(value.saleToBaseFactor))
+    ) {
+      return "Cada presentacion debe equivaler a un multiplo positivo de la unidad base.";
+    }
+    if (
+      toFiniteNumber(value.inventoryToBaseFactor) > MAX_SAFE_CONVERSION_FACTOR ||
+      toFiniteNumber(value.saleToBaseFactor) > MAX_SAFE_CONVERSION_FACTOR
+    ) {
+      return "El factor de conversion no puede superar 999,999.99.";
+    }
+    if (
+      !hasAtMostDecimalPlaces(
+        value.inventoryToBaseFactor,
+        CONVERSION_FACTOR_DECIMAL_PLACES,
+      ) ||
+      !hasAtMostDecimalPlaces(value.saleToBaseFactor, CONVERSION_FACTOR_DECIMAL_PLACES)
+    ) {
+      return "El factor de conversion admite hasta 6 decimales.";
+    }
+    if (
+      baseUnit &&
+      [
+        ...(value.inventoryUnitId === value.baseUnitId ? [] : [value.inventoryToBaseFactor]),
+        ...(value.saleUnitId === value.baseUnitId ? [] : [value.saleToBaseFactor]),
+      ].some(
+        (factor) => !isConversionFactorCompatibleWithBaseUnit(factor, baseUnit.allowsDecimals),
+      )
+    ) {
+      return baseUnit.allowsDecimals
+        ? "El factor de conversion admite hasta 6 decimales."
+        : "La conversion debe producir una cantidad entera de la unidad base.";
+    }
   }
   if (
     value.kitComponents.some(
@@ -2504,7 +3074,7 @@ function validateEditor(
     return "Cada componente del kit debe estar entre 0 y 9,999.";
   }
   const salesQuantities = new Set<number>();
-  for (const tier of value.salesPriceTiers) {
+  for (const tier of value.salesPriceTiers ?? []) {
     const minQuantity = toFiniteNumber(tier.minQuantity);
     if (!isPositiveInteger(tier.minQuantity) || minQuantity <= 1) {
       return "La cantidad minima mayorista debe ser un entero mayor a 1.";
@@ -2532,7 +3102,7 @@ function validateEditor(
         CONVERSION_FACTOR_DECIMAL_PLACES,
       )
     )
-      return "El contenido de compra admite hasta 4 decimales.";
+      return "El contenido de compra admite hasta 6 decimales.";
     if (
       baseUnit &&
       !isConversionFactorCompatibleWithBaseUnit(
@@ -2541,7 +3111,7 @@ function validateEditor(
       )
     )
       return baseUnit.allowsDecimals
-        ? "El contenido de compra admite hasta 4 decimales."
+        ? "El contenido de compra admite hasta 6 decimales."
         : "El contenido de compra debe producir unidades base enteras.";
     if (toFiniteNumber(supplierProduct.lastCost, -1) < 0)
       return "El costo del proveedor debe ser mayor o igual a 0.";
@@ -2553,7 +3123,7 @@ function validateEditor(
       return "El pedido minimo debe ser un entero mayor a 0.";
     }
     const costQuantities = new Set<number>();
-    for (const tier of supplierProduct.costTiers) {
+    for (const tier of supplierProduct.costTiers ?? []) {
       const minQuantity = toFiniteNumber(tier.minQuantity);
       if (!isPositiveInteger(tier.minQuantity))
         return "La cantidad minima de costo debe ser un entero mayor a 0.";
@@ -2584,20 +3154,24 @@ function validateEditor(
   if (invalidMedia) return "Cada imagen debe iniciar con / o una URL http(s).";
   if (
     value.tracking.stock &&
+    value.inventorySettings !== undefined &&
     (value.inventorySettings.minStock === "" ||
       !Number.isSafeInteger(toFiniteNumber(value.inventorySettings.minStock)) ||
       toFiniteNumber(value.inventorySettings.minStock) < 0)
   ) {
     return "El stock minimo debe ser mayor o igual a 0.";
   }
-  if (toFiniteNumber(value.inventorySettings.minStock) > MAX_SAFE_INTEGER_COUNT) {
+  if (
+    value.inventorySettings !== undefined &&
+    toFiniteNumber(value.inventorySettings.minStock) > MAX_SAFE_INTEGER_COUNT
+  ) {
     return "El stock minimo no puede superar 999,999.";
   }
   if (
     value.tracking.stock &&
-    value.inventorySettings.defaultLocationId &&
+    value.inventorySettings?.defaultLocationId &&
     !editorData.storageLocations.some(
-      (location) => location.id === value.inventorySettings.defaultLocationId,
+      (location) => location.id === value.inventorySettings?.defaultLocationId,
     )
   ) {
     return "Selecciona una ubicacion predeterminada activa o deja el campo sin ubicacion.";
@@ -2671,21 +3245,9 @@ function buildInitialValue(
   editorData: ProductEditorData,
 ): ProductEditorDto {
   const detail = editorData.detail;
-  const inventorySettings = {
-    branchId: editorData.inventorySettings?.branchId ?? "",
-    minStock: editorData.inventorySettings?.minStock ?? 0,
-    defaultLocationId: editorData.inventorySettings?.defaultLocationId ?? "",
-  };
   if (detail) {
     const saleUnitId = detail.product.saleUnitId ?? detail.product.baseUnitId;
     const inventoryUnitId = detail.product.inventoryUnitId ?? detail.product.baseUnitId;
-    const factorFor = (unitId: string) =>
-      unitId === detail.product.baseUnitId
-        ? 1
-        : (editorData.unitConversions.find(
-            (conversion) =>
-              conversion.fromUnitId === unitId && conversion.toUnitId === detail.product.baseUnitId,
-          )?.factor ?? "");
     const editedDraft: ProductEditorDto = {
       sku: detail.product.sku,
       barcode: detail.product.barcode,
@@ -2697,14 +3259,15 @@ function buildInitialValue(
       baseUnitId: detail.product.baseUnitId,
       inventoryUnitId,
       saleUnitId,
-      inventoryToBaseFactor: factorFor(inventoryUnitId),
-      saleToBaseFactor: factorFor(saleUnitId),
+      inventoryToBaseFactor: inventoryUnitId === detail.product.baseUnitId ? 1 : "",
+      saleToBaseFactor: saleUnitId === detail.product.baseUnitId ? 1 : "",
+      unitConversions: undefined,
       salePrice: detail.product.salePrice,
       status: detail.product.status,
       // Se carga el tracking TAL CUAL esta persistido, sin recortar: applyCapabilityRulesToEditor
       // (abajo) recibe el snapshot de lo existente y decide que conservar, no esta funcion.
       tracking: detail.product.tracking,
-      inventorySettings,
+      inventorySettings: undefined,
       channels: detail.product.channels,
       attributes: editorData.attributes,
       salesPriceTiers: editorData.salesPriceTiers,
@@ -2733,13 +3296,14 @@ function buildInitialValue(
     saleUnitId: unitId,
     inventoryToBaseFactor: 1,
     saleToBaseFactor: 1,
+    unitConversions: undefined,
     salePrice: "",
     status: ProductStatus.published,
     tracking: getDefaultTracking(options.businessCapabilities, ProductType.physical),
-    inventorySettings,
+    inventorySettings: undefined,
     channels: { ecommerce: true, pos: true, mobileApp: false },
-    attributes: [],
-    salesPriceTiers: [],
+    attributes: undefined,
+    salesPriceTiers: undefined,
     supplierProducts: [],
     media: [],
     kitComponents: [],

@@ -1,7 +1,15 @@
-import type { Product, PurchaseOrder, PurchaseOrderItem, Unit, User } from "@/core/entities";
+import type {
+  Product,
+  PurchaseOrder,
+  PurchaseOrderItem,
+  SupplierProduct,
+  Unit,
+  User,
+} from "@/core/entities";
 import { PurchaseOrderStatus } from "@/core/enums";
 import type { PurchaseOrderItemInput } from "@/core/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import { INVENTORY_STOCK_READ_PERMISSION } from "@/modules/inventory/application/services/serviceHelpers";
 import {
   hasAtMostDecimalPlaces,
   isPositiveNumber,
@@ -34,6 +42,16 @@ import {
   resolvePurchasingContext,
 } from "@/modules/purchasing/application/services/serviceHelpers";
 
+export class PurchaseOrderSubmissionError extends PurchasingServiceError {
+  constructor(
+    message: string,
+    readonly draft: PurchaseOrder,
+  ) {
+    super(message);
+    this.name = "PurchaseOrderSubmissionError";
+  }
+}
+
 export class PurchaseOrderEditorService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
@@ -45,11 +63,6 @@ export class PurchaseOrderEditorService {
       .map((supplier) => ({
         id: supplier.id,
         name: supplier.name,
-        legalName: supplier.legalName,
-        taxId: supplier.taxId,
-        email: supplier.email,
-        phone: supplier.phone,
-        notes: supplier.notes,
         paymentTermsLabel: "No definido",
         currencyLabel: "No definida",
         leadTimeDays: supplier.leadTimeDays,
@@ -73,8 +86,18 @@ export class PurchaseOrderEditorService {
     if (order.status !== PurchaseOrderStatus.draft) {
       throw new PurchasingServiceError("Solo las ordenes en borrador se pueden editar.");
     }
+    if (branchId && order.branchId !== branchId) {
+      throw new PurchasingServiceError(
+        "La orden no pertenece a la sucursal activa. Cambia de sucursal para editarla.",
+      );
+    }
     const availableProducts = await this.getAvailableProducts(order.supplierId, branchId);
     const availableByProductId = new Map(availableProducts.map((item) => [item.productId, item]));
+    if ((order.items ?? []).some((item) => !availableByProductId.has(item.productId))) {
+      throw new PurchasingServiceError(
+        "La orden contiene productos que ya no estan disponibles con este proveedor.",
+      );
+    }
     const orderUnits = await Promise.all(
       (order.items ?? []).map((item) =>
         this.repositories.units.getByIdScoped(tenantId, item.unitId),
@@ -91,13 +114,16 @@ export class PurchaseOrderEditorService {
       expectedDate: toDateInputValue(order.expectedDate),
       notes: order.notes ?? "",
       status: order.status,
-      lines: (order.items ?? []).map((item) =>
-        toEditorLine(
+      lines: (order.items ?? []).map((item) => {
+        const availableProduct = availableByProductId.get(item.productId);
+        return toEditorLine(
           item,
-          availableByProductId.get(item.productId),
-          unitById.get(item.unitId)?.allowsDecimals ?? false,
-        ),
-      ),
+          availableProduct,
+          availableProduct?.unitAllowsDecimals ??
+            unitById.get(item.unitId)?.allowsDecimals ??
+            false,
+        );
+      }),
     };
   }
 
@@ -105,25 +131,46 @@ export class PurchaseOrderEditorService {
     supplierId: string,
     branchId?: string,
   ): Promise<PurchaseOrderAvailableProduct[]> {
-    const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
+    const { tenantId, user, permissions } = await resolvePurchasingContext(this.repositories);
     ensureCanCreatePurchaseOrders(permissions);
     if (!supplierId) return [];
     // El supplierId llega desde un dropdown en el cliente: no confiar en el valor sin verificar
     // que el proveedor exista y pertenezca al tenant activo antes de exponer su catálogo.
-    const supplier = await this.repositories.suppliers.getById(supplierId);
-    if (!supplier || supplier.tenantId !== tenantId) return [];
+    const activeSuppliers = await this.repositories.suppliers.getActiveByTenant(tenantId);
+    if (!activeSuppliers.some((supplier) => supplier.id === supplierId)) {
+      throw new PurchasingServiceError(
+        "El proveedor seleccionado no esta disponible para compras.",
+      );
+    }
     // branchId llega del contexto de la orden/cliente: no se usa para leer balances ni ajustes de
     // inventario a menos que la sucursal exista y pertenezca al tenant activo. Cubre tanto la
     // llamada directa (selector de sucursal) como getOrderForEdit, que enruta por acá.
-    const branch = branchId ? await this.repositories.branches.getById(branchId) : null;
-    const tenantBranchId = branch && branch.tenantId === tenantId ? branch.id : undefined;
-    const [supplierProducts, products, units, categories] = await Promise.all([
+    const tenantBranchId = branchId
+      ? (await ensureUserCanOperateBranch(this.repositories, user, branchId)).id
+      : undefined;
+    const [supplierProducts, units, categories] = await Promise.all([
       this.repositories.supplierProducts.getBySupplierForTenant(tenantId, supplierId),
-      this.repositories.products.getAll(),
       this.repositories.units.getByTenant(tenantId),
       this.repositories.categories.getAll(),
     ]);
-    const productById = new Map(products.map((product) => [product.id, product]));
+    if (supplierProducts.some((item) => item.supplierId !== supplierId)) {
+      throw new PurchasingServiceError(
+        "El catalogo operacional devolvio relaciones de otro proveedor.",
+      );
+    }
+    const products = await Promise.all(
+      supplierProducts.map((supplierProduct) =>
+        this.repositories.products.getById(supplierProduct.productId),
+      ),
+    );
+    if (products.some((product) => !product || product.tenantId !== tenantId)) {
+      throw new PurchasingServiceError(
+        "El catalogo operacional del proveedor contiene un producto no disponible.",
+      );
+    }
+    const productById = new Map(
+      products.flatMap((product) => (product ? ([[product.id, product]] as const) : [])),
+    );
     const unitById = new Map(units.map((unit) => [unit.id, unit]));
     const categoryById = new Map(categories.map((category) => [category.id, category]));
 
@@ -132,41 +179,39 @@ export class PurchaseOrderEditorService {
         .filter((supplierProduct) => supplierProduct.active)
         .map(async (supplierProduct) => {
           const product = productById.get(supplierProduct.productId);
+          if (!product) {
+            throw new PurchasingServiceError(
+              "El catalogo operacional del proveedor contiene un producto no disponible.",
+            );
+          }
           const unit = unitById.get(supplierProduct.purchaseUnitId);
-          const categoryName = product?.categoryId
+          if (!unit) {
+            throw new PurchasingServiceError(
+              `La unidad de compra de ${product.name} no esta disponible.`,
+            );
+          }
+          const categoryName = product.categoryId
             ? (categoryById.get(product.categoryId)?.name ?? "Sin categoria")
             : "Sin categoria";
-          const [tiers, balances, settings] = await Promise.all([
-            this.repositories.supplierProducts.getCostTiers(supplierProduct.id),
-            tenantBranchId
-              ? this.repositories.inventory.getBalanceByProduct(
-                  supplierProduct.productId,
-                  tenantBranchId,
-                )
-              : Promise.resolve([]),
-            tenantBranchId
-              ? this.repositories.inventory.getProductInventorySettings(
-                  supplierProduct.productId,
-                  tenantBranchId,
-                )
-              : Promise.resolve(null),
+          const [tiers, inventory] = await Promise.all([
+            supplierProduct.costTiers ??
+              this.repositories.supplierProducts.getCostTiers(supplierProduct.id),
+            this.getInventorySnapshot(
+              product,
+              tenantBranchId,
+              permissions.includes(INVENTORY_STOCK_READ_PERMISSION),
+            ),
           ]);
-          const stockQuantity = balances.reduce((sum, balance) => sum + balance.quantity, 0);
-          const minStock = settings?.minStock ?? 0;
-          const reorderPoint = settings?.reorderPoint;
-          const targetStock = reorderPoint ?? minStock;
-          const shortage = Math.max(0, minStock - stockQuantity);
-          const suggestedReorder = Math.max(0, targetStock - stockQuantity);
           return {
             id: supplierProduct.id,
             productId: supplierProduct.productId,
-            productName: product?.name ?? "Producto no disponible",
-            sku: product?.sku ?? supplierProduct.productId,
+            productName: product.name,
+            sku: product.sku,
             supplierSku: supplierProduct.supplierSku ?? "-",
             categoryName,
             unitId: supplierProduct.purchaseUnitId,
-            unitLabel: unit?.symbol ?? unit?.name ?? supplierProduct.purchaseUnitId,
-            unitAllowsDecimals: unit?.allowsDecimals ?? false,
+            unitLabel: unit.symbol ?? unit.name,
+            unitAllowsDecimals: unit.allowsDecimals,
             purchaseToBaseFactor: supplierProduct.purchaseToBaseFactor,
             configuredCost: supplierProduct.lastCost,
             minimumOrderQuantity: supplierProduct.minimumOrderQuantity,
@@ -175,13 +220,8 @@ export class PurchaseOrderEditorService {
               minQuantity: tier.minQuantity,
               unitCost: tier.unitCost,
             })),
-            stockQuantity,
-            minStock,
-            reorderPoint,
-            shortage,
-            suggestedReorder,
-            availabilityLabel: getAvailabilityLabel(stockQuantity, minStock),
-            searchText: [product?.name, product?.sku, supplierProduct.supplierSku, categoryName]
+            ...inventory,
+            searchText: [product.name, product.sku, supplierProduct.supplierSku, categoryName]
               .filter(Boolean)
               .join(" ")
               .toLowerCase(),
@@ -190,6 +230,51 @@ export class PurchaseOrderEditorService {
     );
 
     return rows.sort((left, right) => left.productName.localeCompare(right.productName));
+  }
+
+  private async getInventorySnapshot(
+    product: Product,
+    branchId: string | undefined,
+    canReadApiStock: boolean,
+  ) {
+    if (!branchId) return unavailableInventorySnapshot();
+    if (this.repositories.inventoryStockDataSource === "api") {
+      if (!canReadApiStock) return unavailableInventorySnapshot();
+      const page = await this.repositories.inventory.getStockPage({
+        branchId,
+        search: product.sku,
+        page: 1,
+        pageSize: 10,
+        sort: "productName,asc",
+      });
+      const item = page.items.find((candidate) => candidate.productId === product.id);
+      if (!item || item.inventoryMode !== "TRACKED") return unavailableInventorySnapshot();
+      return {
+        stockQuantity: item.quantity,
+        minStock: item.minStock,
+        reorderPoint: item.reorderPoint ?? undefined,
+        shortage: Math.max(0, item.minStock - item.availableQuantity),
+        suggestedReorder: item.suggestedReorder,
+        availabilityLabel: getAvailabilityLabel(item.availableQuantity, item.minStock),
+      };
+    }
+
+    const [balances, settings] = await Promise.all([
+      this.repositories.inventory.getBalanceByProduct(product.id, branchId),
+      this.repositories.inventory.getProductInventorySettings(product.id, branchId),
+    ]);
+    const stockQuantity = balances.reduce((sum, balance) => sum + balance.quantity, 0);
+    const minStock = settings?.minStock ?? 0;
+    const reorderPoint = settings?.reorderPoint;
+    const targetStock = reorderPoint ?? minStock;
+    return {
+      stockQuantity,
+      minStock,
+      reorderPoint,
+      shortage: Math.max(0, minStock - stockQuantity),
+      suggestedReorder: Math.max(0, targetStock - stockQuantity),
+      availabilityLabel: getAvailabilityLabel(stockQuantity, minStock),
+    };
   }
 
   async resolvePrefillContext(
@@ -216,25 +301,45 @@ export class PurchaseOrderEditorService {
       this.repositories.supplierProducts.getByProductForTenant(tenantId, product.id),
       this.repositories.suppliers.getActiveByTenant(tenantId),
     ]);
+    if (supplierProducts.some((item) => item.productId !== product.id)) {
+      throw new PurchasingServiceError(
+        "El catalogo operacional devolvio relaciones de otro producto.",
+      );
+    }
     const activeSupplierById = new Map(activeSuppliers.map((supplier) => [supplier.id, supplier]));
     const associatedSupplierProducts = supplierProducts.filter(
       (supplierProduct) =>
         supplierProduct.active && activeSupplierById.has(supplierProduct.supplierId),
     );
-    const allowedSupplierIds = associatedSupplierProducts.map(
-      (supplierProduct) => supplierProduct.supplierId,
-    );
+    const allowedSupplierIds = [
+      ...new Set(associatedSupplierProducts.map((supplierProduct) => supplierProduct.supplierId)),
+    ];
     const requestedSupplierId =
       context.supplierId && allowedSupplierIds.includes(context.supplierId)
         ? context.supplierId
         : undefined;
-    const preferredSupplierId = associatedSupplierProducts.find(
-      (item) => item.preferred,
-    )?.supplierId;
+    const preferredSupplierIds = [
+      ...new Set(
+        associatedSupplierProducts
+          .filter((item) => item.preferred)
+          .map((item) => item.supplierId),
+      ),
+    ];
+    const preferredSupplierId =
+      preferredSupplierIds.length === 1 ? preferredSupplierIds[0] : undefined;
     const supplierId = requestedSupplierId ?? preferredSupplierId;
-    const quantitySource =
-      associatedSupplierProducts.find((item) => item.supplierId === supplierId) ??
-      associatedSupplierProducts[0];
+    const quantitySource = supplierId
+      ? associatedSupplierProducts.find((item) => item.supplierId === supplierId)
+      : undefined;
+    const warnings: string[] = [];
+    if (context.supplierId && !requestedSupplierId) {
+      warnings.push("El proveedor indicado no está asociado de forma activa con el producto.");
+    }
+    if (allowedSupplierIds.length === 0) {
+      warnings.push("Este producto no tiene proveedores asociados.");
+    } else if (!supplierId) {
+      warnings.push("Selecciona un proveedor asociado para agregar el producto.");
+    }
 
     return {
       productId: product.id,
@@ -242,12 +347,7 @@ export class PurchaseOrderEditorService {
       quantity: getPrefillQuantity(context.suggestedQuantity, quantitySource?.minimumOrderQuantity),
       notice: getPrefillNotice(context.source),
       ...(supplierId ? { supplierId } : {}),
-      warning:
-        allowedSupplierIds.length === 0
-          ? "Este producto no tiene proveedores asociados."
-          : supplierId
-            ? undefined
-            : "Selecciona un proveedor asociado para agregar el producto.",
+      warning: warnings.length > 0 ? warnings.join(" ") : undefined,
     };
   }
 
@@ -259,12 +359,20 @@ export class PurchaseOrderEditorService {
     await ensureTenantCanUsePurchasing(this.repositories, tenantId);
     const authoritativeContext = await this.ensureSaveInputTenantSafe(tenantId, user, input);
     validateOrderQuantities(input.lines, authoritativeContext);
-    const payload = toPurchaseOrderPayload(input, PurchaseOrderStatus.draft, tenantId, actorUserId);
+    const payload = toPurchaseOrderPayload(input, tenantId, actorUserId);
     if (input.orderId) {
       const order = ensurePurchaseOrderBelongsToTenant(
         await this.repositories.purchaseOrders.getByIdScoped(tenantId, input.orderId),
         tenantId,
       );
+      if (order.status !== PurchaseOrderStatus.draft) {
+        throw new PurchasingServiceError("Solo las ordenes en borrador se pueden editar.");
+      }
+      if (order.branchId !== input.branchId) {
+        throw new PurchasingServiceError(
+          "La orden no pertenece a la sucursal activa. Cambia de sucursal para editarla.",
+        );
+      }
       return this.repositories.purchaseOrders.updateScoped(tenantId, order.id, payload);
     }
     return this.repositories.purchaseOrders.create(payload);
@@ -272,27 +380,16 @@ export class PurchaseOrderEditorService {
 
   async createOrder(input: SavePurchaseOrderInput): Promise<PurchaseOrder> {
     validateCompleteOrder(input);
-    const { tenantId, actorUserId, user, permissions } = await resolvePurchasingContext(
-      this.repositories,
-    );
-    ensureCanCreatePurchaseOrders(permissions);
-    await ensureTenantCanUsePurchasing(this.repositories, tenantId);
-    const authoritativeContext = await this.ensureSaveInputTenantSafe(tenantId, user, input);
-    validateOrderQuantities(input.lines, authoritativeContext);
-    const payload = toPurchaseOrderPayload(
-      input,
-      PurchaseOrderStatus.pending_approval,
-      tenantId,
-      actorUserId,
-    );
-    if (input.orderId) {
-      const order = ensurePurchaseOrderBelongsToTenant(
-        await this.repositories.purchaseOrders.getByIdScoped(tenantId, input.orderId),
-        tenantId,
+    const draft = await this.saveDraft(input);
+    try {
+      return await this.repositories.purchaseOrders.submitScoped(draft.tenantId, draft.id);
+    } catch (error) {
+      const detail = error instanceof Error ? ` ${error.message}` : "";
+      throw new PurchaseOrderSubmissionError(
+        `El borrador se guardo, pero no se pudo enviar a aprobacion.${detail}`,
+        draft,
       );
-      return this.repositories.purchaseOrders.updateScoped(tenantId, order.id, payload);
     }
-    return this.repositories.purchaseOrders.create(payload);
   }
 
   // supplierId/branchId/cada productId de las lineas llegan del cliente: la validacion de branch
@@ -306,43 +403,86 @@ export class PurchaseOrderEditorService {
     user: User,
     input: SavePurchaseOrderInput,
   ): Promise<AuthoritativePurchaseContext> {
-    const [supplier, , products, purchaseUnits] = await Promise.all([
-      this.repositories.suppliers.getById(input.supplierId),
+    const [activeSuppliers, , supplierProducts, products] = await Promise.all([
+      this.repositories.suppliers.getActiveByTenant(tenantId),
       ensureUserCanOperateBranch(this.repositories, user, input.branchId),
+      this.repositories.supplierProducts.getBySupplierForTenant(tenantId, input.supplierId),
       Promise.all(input.lines.map((line) => this.repositories.products.getById(line.productId))),
-      Promise.all(
-        input.lines.map((line) => this.repositories.units.getByIdScoped(tenantId, line.unitId)),
-      ),
     ]);
-    if (!supplier || supplier.tenantId !== tenantId) {
+    if (!activeSuppliers.some((supplier) => supplier.id === input.supplierId)) {
       throw new PurchasingServiceError(
         "El proveedor seleccionado no está disponible para este negocio.",
       );
     }
-    if (products.some((product) => !product || product.tenantId !== tenantId)) {
+    if (new Set(input.lines.map((line) => line.productId)).size !== input.lines.length) {
+      throw new PurchasingServiceError("No se puede repetir un producto en la orden.");
+    }
+    const resolvedProducts: Product[] = [];
+    for (const product of products) {
+      if (!product || product.tenantId !== tenantId) {
+        throw new PurchasingServiceError(
+          "Alguno de los productos no está disponible para este negocio.",
+        );
+      }
+      resolvedProducts.push(product);
+    }
+    const supplierProductByProductId = new Map<string, SupplierProduct>();
+    if (supplierProducts.some((item) => item.supplierId !== input.supplierId)) {
       throw new PurchasingServiceError(
-        "Alguno de los productos no está disponible para este negocio.",
+        "El catalogo operacional devolvio relaciones de otro proveedor.",
       );
     }
-    if (purchaseUnits.some((unit) => !unit)) {
+    for (const supplierProduct of supplierProducts.filter((item) => item.active)) {
+      if (supplierProductByProductId.has(supplierProduct.productId)) {
+        throw new PurchasingServiceError(
+          "El proveedor tiene más de una relación operacional para un producto.",
+        );
+      }
+      supplierProductByProductId.set(supplierProduct.productId, supplierProduct);
+    }
+    const selectedRelations = input.lines.map((line) =>
+      supplierProductByProductId.get(line.productId),
+    );
+    if (selectedRelations.some((relation) => !relation)) {
       throw new PurchasingServiceError(
-        "Alguna unidad de compra no está disponible para este negocio.",
+        "Alguno de los productos ya no está disponible con este proveedor.",
       );
     }
-    const resolvedProducts = products as Product[];
-    const resolvedPurchaseUnits = purchaseUnits as Unit[];
+    const purchaseUnits = await Promise.all(
+      selectedRelations.map((relation) =>
+        relation
+          ? this.repositories.units.getByIdScoped(tenantId, relation.purchaseUnitId)
+          : Promise.resolve(null),
+      ),
+    );
+    const resolvedPurchaseUnits: Unit[] = [];
+    for (const unit of purchaseUnits) {
+      if (!unit) {
+        throw new PurchasingServiceError(
+          "Alguna unidad de compra no está disponible para este negocio.",
+        );
+      }
+      resolvedPurchaseUnits.push(unit);
+    }
     const baseUnits = await Promise.all(
       resolvedProducts.map((product) =>
         this.repositories.units.getByIdScoped(tenantId, product.baseUnitId),
       ),
     );
-    if (baseUnits.some((unit) => !unit)) {
-      throw new PurchasingServiceError("Alguna unidad base no está disponible para este negocio.");
+    const resolvedBaseUnits: Unit[] = [];
+    for (const unit of baseUnits) {
+      if (!unit) {
+        throw new PurchasingServiceError(
+          "Alguna unidad base no está disponible para este negocio.",
+        );
+      }
+      resolvedBaseUnits.push(unit);
     }
     return {
       productById: new Map(resolvedProducts.map((product) => [product.id, product])),
       purchaseUnitById: new Map(resolvedPurchaseUnits.map((unit) => [unit.id, unit])),
-      baseUnitById: new Map((baseUnits as Unit[]).map((unit) => [unit.id, unit])),
+      baseUnitById: new Map(resolvedBaseUnits.map((unit) => [unit.id, unit])),
+      supplierProductByProductId,
     };
   }
 }
@@ -351,6 +491,7 @@ interface AuthoritativePurchaseContext {
   productById: Map<string, Product>;
   purchaseUnitById: Map<string, Unit>;
   baseUnitById: Map<string, Unit>;
+  supplierProductByProductId: Map<string, SupplierProduct>;
 }
 
 function validateOrderQuantities(
@@ -359,16 +500,35 @@ function validateOrderQuantities(
 ) {
   for (const line of lines) {
     const product = context.productById.get(line.productId);
-    const purchaseUnit = context.purchaseUnitById.get(line.unitId);
+    const supplierProduct = context.supplierProductByProductId.get(line.productId);
+    const purchaseUnit = supplierProduct
+      ? context.purchaseUnitById.get(supplierProduct.purchaseUnitId)
+      : undefined;
     const baseUnit = product ? context.baseUnitById.get(product.baseUnitId) : undefined;
-    if (!product || !purchaseUnit || !baseUnit) {
+    if (!product || !supplierProduct || !purchaseUnit || !baseUnit) {
       throw new PurchasingServiceError(
         "No se pudo validar la unidad de compra de uno de los productos.",
       );
     }
+    if (
+      line.unitId !== supplierProduct.purchaseUnitId ||
+      line.purchaseToBaseFactor !== supplierProduct.purchaseToBaseFactor
+    ) {
+      throw new PurchasingServiceError(
+        "La unidad o conversión de compra cambió. Recarga la orden antes de guardarla.",
+      );
+    }
+    if (
+      typeof line.quantity === "number" &&
+      line.quantity < supplierProduct.minimumOrderQuantity
+    ) {
+      throw new PurchasingServiceError(
+        `La cantidad mínima de compra para ${line.productName} es ${supplierProduct.minimumOrderQuantity}.`,
+      );
+    }
     assertValidPurchaseOrderQuantity({
       quantity: line.quantity,
-      purchaseToBaseFactor: line.purchaseToBaseFactor,
+      purchaseToBaseFactor: supplierProduct.purchaseToBaseFactor,
       purchaseUnitAllowsDecimals: purchaseUnit.allowsDecimals,
       baseUnitAllowsDecimals: baseUnit.allowsDecimals,
       serialTracked: product.tracking.serial,
@@ -501,18 +661,18 @@ export function getExpectedDate(baseDate: string, leadTimeDays?: number) {
 export function getExpectedLeadTime(
   lines: PurchaseOrderEditorLine[],
   products: PurchaseOrderAvailableProduct[],
+  supplierLeadTimeDays?: number,
 ) {
   const source = lines.length > 0 ? lines : products;
   const maxLeadTime = source.reduce<number | undefined>((current, item) => {
     if (typeof item.leadTimeDays !== "number") return current;
     return typeof current === "number" ? Math.max(current, item.leadTimeDays) : item.leadTimeDays;
   }, undefined);
-  return maxLeadTime;
+  return maxLeadTime ?? supplierLeadTimeDays;
 }
 
 function toPurchaseOrderPayload(
   input: SavePurchaseOrderInput,
-  status: PurchaseOrderStatus,
   tenantId: string,
   createdByUserId: string,
 ) {
@@ -531,7 +691,7 @@ function toPurchaseOrderPayload(
     tenantId,
     branchId: input.branchId,
     supplierId: input.supplierId,
-    status,
+    status: PurchaseOrderStatus.draft,
     expectedDate: input.expectedDate
       ? new Date(`${input.expectedDate}T00:00:00.000`).toISOString()
       : undefined,
@@ -587,10 +747,10 @@ function toEditorLine(
     productName: availableProduct?.productName ?? "Producto no disponible",
     sku: availableProduct?.sku ?? item.productId,
     supplierSku: availableProduct?.supplierSku ?? "-",
-    unitId: item.unitId,
+    unitId: availableProduct?.unitId ?? item.unitId,
     unitLabel: availableProduct?.unitLabel ?? item.unitId,
     unitAllowsDecimals,
-    purchaseToBaseFactor: item.purchaseToBaseFactor,
+    purchaseToBaseFactor: availableProduct?.purchaseToBaseFactor ?? item.purchaseToBaseFactor,
     quantity: item.quantity,
     baseCost: availableProduct?.configuredCost ?? item.unitCost,
     suggestedCost: availableProduct ? getTierCost(availableProduct, item.quantity) : item.unitCost,
@@ -600,11 +760,11 @@ function toEditorLine(
     minimumOrderQuantity: availableProduct?.minimumOrderQuantity ?? 1,
     leadTimeDays: availableProduct?.leadTimeDays,
     tiers: availableProduct?.tiers ?? [],
-    stockQuantity: availableProduct?.stockQuantity ?? 0,
-    minStock: availableProduct?.minStock ?? 0,
+    stockQuantity: availableProduct?.stockQuantity,
+    minStock: availableProduct?.minStock,
     reorderPoint: availableProduct?.reorderPoint,
-    shortage: availableProduct?.shortage ?? 0,
-    suggestedReorder: availableProduct?.suggestedReorder ?? 0,
+    shortage: availableProduct?.shortage,
+    suggestedReorder: availableProduct?.suggestedReorder,
     availabilityLabel: availableProduct?.availabilityLabel ?? "No definido",
   };
 }
@@ -615,21 +775,19 @@ function toDateInputValue(value?: string) {
 }
 
 function getPrefillQuantity(suggestedQuantity?: number, minimumOrderQuantity?: number): number {
-  if (
+  const requested =
     typeof suggestedQuantity === "number" &&
-    Number.isSafeInteger(suggestedQuantity) &&
+    Number.isFinite(suggestedQuantity) &&
     suggestedQuantity > 0
-  ) {
-    return suggestedQuantity;
-  }
-  if (
+      ? suggestedQuantity
+      : 0;
+  const minimum =
     typeof minimumOrderQuantity === "number" &&
-    Number.isSafeInteger(minimumOrderQuantity) &&
+    Number.isFinite(minimumOrderQuantity) &&
     minimumOrderQuantity > 0
-  ) {
-    return minimumOrderQuantity;
-  }
-  return 1;
+      ? minimumOrderQuantity
+      : 0;
+  return Math.max(requested, minimum, 1);
 }
 
 function getPrefillNotice(source?: PurchaseOrderPrefillContext["source"]) {
@@ -644,6 +802,12 @@ function getAvailabilityLabel(quantity: number, minStock: number) {
   if (minStock > 0 && quantity < minStock) return "Bajo minimo";
   if (minStock > 0 && quantity <= minStock * 1.25) return "Cerca del minimo";
   return "Disponible";
+}
+
+function unavailableInventorySnapshot() {
+  return {
+    availabilityLabel: "No disponible",
+  };
 }
 
 function getTierLabel(tiers: Array<{ minQuantity: number; unitCost: number }>, quantity: number) {

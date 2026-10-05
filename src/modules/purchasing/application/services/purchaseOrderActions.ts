@@ -82,13 +82,20 @@ export function getPurchaseOrderActions(
   }
   if (status === PurchaseOrderStatus.cancelled) return [];
 
-  if (status === PurchaseOrderStatus.approved || status === PurchaseOrderStatus.sent) {
+  if (status === PurchaseOrderStatus.approved) {
     return [
       { id: "continue-receiving", label: "Iniciar recepcion", enabled: true },
       withPermission(
         { id: "cancel", label: "Cancelar", statusTarget: PurchaseOrderStatus.cancelled },
         canApprove,
       ),
+      { id: "download-purchase-order-pdf", label: "Descargar orden de compra", enabled: true },
+    ];
+  }
+
+  if (status === PurchaseOrderStatus.sent) {
+    return [
+      { id: "continue-receiving", label: "Iniciar recepcion", enabled: true },
       { id: "download-purchase-order-pdf", label: "Descargar orden de compra", enabled: true },
     ];
   }

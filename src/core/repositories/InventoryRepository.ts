@@ -10,6 +10,281 @@ import type {
 } from "@/core/entities";
 import type { InventoryMovementType } from "@/core/enums";
 
+export type InventoryMovementDisplayType =
+  | "purchase_in"
+  | "sale"
+  | "return"
+  | "void"
+  | "dispatch"
+  | "in"
+  | "out"
+  | "transfer";
+
+export type InventoryMovementSort =
+  | "createdAt,asc"
+  | "createdAt,desc"
+  | "quantity,asc"
+  | "quantity,desc"
+  | "type,asc"
+  | "type,desc"
+  | "productId,asc"
+  | "productId,desc"
+  | "branchId,asc"
+  | "branchId,desc";
+
+export interface InventoryMovementPageParams {
+  branchId?: string;
+  productId?: string;
+  type?: InventoryMovementType;
+  from?: string;
+  to?: string;
+  search?: string;
+  displayType?: InventoryMovementDisplayType;
+  page: number;
+  pageSize: number;
+  sort?: InventoryMovementSort;
+}
+
+export interface InventoryMovementListItem {
+  id: string;
+  tenantId: string;
+  branchId: string;
+  branchName: string | null;
+  productId: string;
+  productName: string | null;
+  sku: string | null;
+  type: InventoryMovementType;
+  displayType: InventoryMovementDisplayType;
+  reason: string;
+  quantity: number;
+  quantityBefore: number | null;
+  quantityAfter: number | null;
+  fromLocationId: string | null;
+  fromLocationName: string | null;
+  toLocationId: string | null;
+  toLocationName: string | null;
+  referenceType: string | null;
+  referenceId: string | null;
+  referenceLabel: string | null;
+  performedByUserId: string | null;
+  userLabel: string | null;
+  createdAt: string;
+}
+
+export interface InventoryMovementPageResult {
+  items: InventoryMovementListItem[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+  summary: {
+    incoming: number;
+    outgoing: number;
+    net: number;
+  };
+}
+
+export type InventoryStockStatus = "out_of_stock" | "critical" | "near_minimum" | "normal";
+
+export type InventoryStockSort =
+  | "productName,asc"
+  | "productName,desc"
+  | "sku,asc"
+  | "sku,desc"
+  | "categoryName,asc"
+  | "categoryName,desc"
+  | "availableQuantity,asc"
+  | "availableQuantity,desc"
+  | "status,asc"
+  | "status,desc";
+
+/** Disponibilidad operacional (quantity - reserved) de otra sucursal; NO existencia fisica. */
+export interface OtherBranchAvailability {
+  branchId: string;
+  branchName: string;
+  availableQuantity: number;
+}
+
+/** Componente de un Kit con su aporte a la disponibilidad derivada (calculado por el backend). */
+export interface InventoryKitAvailabilityComponent {
+  componentProductId: string;
+  sku: string;
+  productName: string;
+  quantityPerKit: number;
+  availableQuantity: number;
+  kitCapacity: number;
+  /** true en TODOS los componentes cuya capacidad iguala la disponibilidad del Kit. */
+  limiting: boolean;
+}
+
+export interface InventoryKitAvailability {
+  kitProductId: string;
+  branchId: string;
+  availableKits: number;
+  components: InventoryKitAvailabilityComponent[];
+}
+
+export interface GetInventoryKitAvailabilityInput {
+  kitProductId: string;
+  branchId: string;
+}
+
+export interface GetOtherBranchesAvailabilityInput {
+  productId: string;
+  /** Sucursal activa: el backend la excluye y filtra por acceso. */
+  branchId: string;
+}
+
+/** Tipos de producto que GET /inventory/stock puede devolver (parametro `productTypes`). */
+export type InventoryStockProductType = "physical" | "service" | "kit";
+
+/** Como participa un producto en el inventario: stock propio, ninguno, o derivado de componentes. */
+export type InventoryProductMode = "TRACKED" | "NONE" | "DERIVED_KIT";
+
+export type InventoryStockDisplayStatus =
+  | "NORMAL"
+  | "NEAR_MINIMUM"
+  | "CRITICAL"
+  | "OUT_OF_STOCK"
+  | "NOT_CONTROLLED"
+  | "KIT_AVAILABLE"
+  | "KIT_UNAVAILABLE";
+
+export interface InventoryStockPageParams {
+  branchId: string;
+  search?: string;
+  categoryId?: string;
+  status?: InventoryStockStatus;
+  /** Sin este parametro el backend devuelve solo productos fisicos. */
+  productTypes?: InventoryStockProductType[];
+  page: number;
+  pageSize: number;
+  sort?: InventoryStockSort;
+}
+
+interface InventoryStockItemBase {
+  productId: string;
+  branchId: string;
+  sku: string;
+  productName: string;
+  categoryId: string;
+  categoryName: string;
+  baseUnitId: string;
+}
+
+/** Producto fisico con stock propio: unico caso con cantidades, minimos y estado fisico. */
+export interface TrackedInventoryStockItem extends InventoryStockItemBase {
+  productType: "physical";
+  inventoryMode: "TRACKED";
+  displayStatus: "NORMAL" | "NEAR_MINIMUM" | "CRITICAL" | "OUT_OF_STOCK";
+  /**
+   * Presentaciones del producto. Las cantidades de abajo siguen expresadas en UNIDAD BASE; el factor
+   * es "1 <unidad> = factor <base>" y es null si un dato historico no tiene equivalencia.
+   */
+  inventoryUnitId: string;
+  saleUnitId: string;
+  inventoryToBaseFactor: number | null;
+  saleToBaseFactor: number | null;
+  quantity: number;
+  reservedQuantity: number;
+  availableQuantity: number;
+  minStock: number;
+  reorderPoint: number | null;
+  defaultLocationId: string | null;
+  defaultLocationName: string | null;
+  status: InventoryStockStatus;
+  suggestedReorder: number;
+}
+
+/** Servicio: no controla inventario; el backend no envia ninguna cantidad. */
+export interface ServiceInventoryStockItem extends InventoryStockItemBase {
+  productType: "service";
+  inventoryMode: "NONE";
+  displayStatus: "NOT_CONTROLLED";
+  inventoryUnitId: null;
+  saleUnitId: null;
+  inventoryToBaseFactor: null;
+  saleToBaseFactor: null;
+  quantity: null;
+  reservedQuantity: null;
+  availableQuantity: null;
+  minStock: null;
+  reorderPoint: null;
+  defaultLocationId: null;
+  defaultLocationName: null;
+  status: null;
+  suggestedReorder: null;
+}
+
+/** Kit: solo `availableQuantity` (derivada de sus componentes); sin stock propio. */
+export interface DerivedKitInventoryStockItem extends InventoryStockItemBase {
+  productType: "kit";
+  inventoryMode: "DERIVED_KIT";
+  displayStatus: "KIT_AVAILABLE" | "KIT_UNAVAILABLE";
+  inventoryUnitId: null;
+  saleUnitId: null;
+  inventoryToBaseFactor: null;
+  saleToBaseFactor: null;
+  quantity: null;
+  reservedQuantity: null;
+  availableQuantity: number;
+  minStock: null;
+  reorderPoint: null;
+  defaultLocationId: null;
+  defaultLocationName: null;
+  status: null;
+  suggestedReorder: null;
+}
+
+export type InventoryStockListItem =
+  | TrackedInventoryStockItem
+  | ServiceInventoryStockItem
+  | DerivedKitInventoryStockItem;
+
+export interface InventoryStockPageResult {
+  items: InventoryStockListItem[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+  summary: {
+    activeProducts: number;
+    lowStock: number;
+    outOfStock: number;
+  };
+}
+
+export interface InventoryAlertPageParams {
+  branchId: string;
+  status?: Exclude<InventoryStockStatus, "normal">;
+  page: number;
+  pageSize: number;
+}
+
+export interface InventoryAlertListItem {
+  productId: string;
+  branchId: string;
+  sku: string;
+  productName: string;
+  baseUnitId: string;
+  quantity: number;
+  reservedQuantity: number;
+  availableQuantity: number;
+  minStock: number;
+  reorderPoint: number;
+  defaultLocationId: string | null;
+  status: Exclude<InventoryStockStatus, "normal">;
+  suggestedReorder: number;
+}
+
+export interface InventoryAlertPageResult {
+  items: InventoryAlertListItem[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+}
+
 export interface PickingInventoryLotAvailability {
   lotId: string;
   lotNumber: string;
@@ -172,6 +447,15 @@ export interface InventoryRepository {
   ): Promise<PickingFulfillmentItemTrace[]>;
   getBalanceByProduct(productId: string, branchId?: string): Promise<InventoryBalance[]>;
   getMovements(productId?: string): Promise<InventoryMovement[]>;
+  getMovementPage(params: InventoryMovementPageParams): Promise<InventoryMovementPageResult>;
+  getStockPage(params: InventoryStockPageParams): Promise<InventoryStockPageResult>;
+  /** Solo modo API: una request on-demand a GET /inventory/stock/branches. */
+  getOtherBranchesAvailability(
+    input: GetOtherBranchesAvailabilityInput,
+  ): Promise<OtherBranchAvailability[]>;
+  /** Solo modo API: explicacion on-demand de la disponibilidad derivada de un Kit. */
+  getKitAvailability(input: GetInventoryKitAvailabilityInput): Promise<InventoryKitAvailability>;
+  getInventoryAlertPage(params: InventoryAlertPageParams): Promise<InventoryAlertPageResult>;
   getLots(productId?: string): Promise<StockLot[]>;
   getSerialNumbers(productId?: string): Promise<SerialNumber[]>;
   getLocations(branchId?: string): Promise<StorageLocation[]>;

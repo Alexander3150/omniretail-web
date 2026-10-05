@@ -10,6 +10,7 @@ interface ProductToolbarProps {
   search: string;
   filtersOpen: boolean;
   activeFiltersCount: number;
+  filtersEnabled: boolean;
   onSearchChange: (value: string) => void;
   onToggleFilters: () => void;
 }
@@ -19,6 +20,7 @@ export function ProductToolbar({
   search,
   filtersOpen,
   activeFiltersCount,
+  filtersEnabled,
   onSearchChange,
   onToggleFilters,
 }: ProductToolbarProps) {
@@ -37,6 +39,7 @@ export function ProductToolbar({
           aria-label="Buscar productos"
           maxLength={TEXT_LIMITS.search}
           className="w-full md:w-96"
+          disabled={!filtersEnabled}
           onChange={(event) => onSearchChange(event.target.value)}
           placeholder="Buscar por nombre, SKU, marca o código de barras"
           value={search}
@@ -45,6 +48,7 @@ export function ProductToolbar({
           aria-controls="product-filters-panel"
           aria-expanded={filtersOpen}
           className="w-full md:w-auto"
+          disabled={!filtersEnabled}
           onClick={onToggleFilters}
           type="button"
           variant="secondary"

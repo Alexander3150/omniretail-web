@@ -1,14 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ProductStatus, ProductType } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
-import { useDataEvent } from "@/shared/hooks/useDataEvent";
-import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 import { GetProductsService } from "@/modules/catalog/application/services/GetProductsService";
 import type { ProductFiltersState, ProductListItem } from "@/modules/catalog/types/catalog.types";
+import { useDataEvent } from "@/shared/hooks/useDataEvent";
+import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 
 const DEFAULT_PAGE_SIZE = 10;
+const DEFAULT_SORT = "name,asc" as const;
+const SEARCH_DEBOUNCE_MS = 350;
 
 const initialFilters: ProductFiltersState = {
   search: "",
@@ -23,127 +25,219 @@ export function useProducts() {
   const repositories = useRepositories();
   const service = useMemo(() => new GetProductsService(repositories), [repositories]);
   const { currentBranch } = useActiveBranch();
+  const branchId = currentBranch?.id;
+  const requestBranchId = repositories.productDataSource === "mock" ? branchId : undefined;
+  const requestIdRef = useRef(0);
   const [loading, setLoading] = useState(true);
-  const [products, setProducts] = useState<ProductListItem[]>([]);
+  const [items, setItems] = useState<ProductListItem[]>([]);
   const [filters, setFilters] = useState<ProductFiltersState>(initialFilters);
-  const [page, setPage] = useState(1);
+  const filtersRef = useRef(initialFilters);
+  const requestedSearchRef = useRef(initialFilters.search);
+  const [requestSearch, setRequestSearch] = useState(initialFilters.search);
+  const [page, setPageState] = useState(1);
   const [pageSize, setPageSizeState] = useState(DEFAULT_PAGE_SIZE);
-  const [error, setError] = useState<string | null>(null);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [error, setError] = useState<Error | null>(null);
+  const filtersEnabled = true;
+  const searchInput = filters.search;
+  const filterStatus = filters.status;
+  const filterProductType = filters.productType;
+  const filterCategoryId = filters.categoryId;
+  const filterChannels = filters.channels;
+  const filterPromotion = filters.promotion;
+  const requestFilters = useMemo<ProductFiltersState>(
+    () => ({
+      search: requestSearch,
+      status: filterStatus,
+      productType: filterProductType,
+      categoryId: filterCategoryId,
+      channels: filterChannels,
+      promotion: filterPromotion,
+    }),
+    [
+      filterCategoryId,
+      filterChannels,
+      filterProductType,
+      filterPromotion,
+      filterStatus,
+      requestSearch,
+    ],
+  );
 
   const reload = useCallback(async () => {
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
     setLoading(true);
     setError(null);
     try {
-      setProducts(await service.execute(currentBranch?.id));
-    } catch {
-      setError("No se pudieron cargar los productos.");
+      const result = await service.execute({
+        branchId: requestBranchId,
+        page,
+        pageSize,
+        sort: DEFAULT_SORT,
+        filters: requestFilters,
+      });
+      if (requestIdRef.current !== requestId) return;
+      if (result.totalPages > 0 && result.page > result.totalPages) {
+        setPageState(result.totalPages);
+        return;
+      }
+      setItems(result.items);
+      setPageState(result.page);
+      setPageSizeState(result.pageSize);
+      setTotalItems(result.totalItems);
+      setTotalPages(result.totalPages);
+    } catch (caughtError) {
+      if (requestIdRef.current !== requestId) return;
+      setError(
+        caughtError instanceof Error
+          ? caughtError
+          : new Error("No se pudieron cargar los productos."),
+      );
     } finally {
-      setLoading(false);
+      if (requestIdRef.current === requestId) setLoading(false);
     }
-  }, [currentBranch, service]);
+  }, [page, pageSize, requestBranchId, requestFilters, service]);
 
   useDataEvent("product.changed", reload);
-  useDataEvent("promotion.changed", reload);
+  const reloadAfterPromotionChange = useCallback(
+    (payload?: { tenantId?: string }) => {
+      service.invalidatePromotions(payload?.tenantId);
+      void reload();
+    },
+    [reload, service],
+  );
+  useDataEvent("promotion.changed", reloadAfterPromotionChange);
 
   useEffect(() => {
-    let active = true;
-    service
-      .execute(currentBranch?.id)
-      .then((nextProducts) => {
-        if (!active) return;
-        setProducts(nextProducts);
-        setError(null);
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+
+    void service
+      .execute({
+        branchId: requestBranchId,
+        page,
+        pageSize,
+        sort: DEFAULT_SORT,
+        filters: requestFilters,
       })
-      .catch(() => {
-        if (active) setError("No se pudieron cargar los productos.");
+      .then((result) => {
+        if (requestIdRef.current !== requestId) return;
+        setError(null);
+        if (result.totalPages > 0 && result.page > result.totalPages) {
+          setPageState(result.totalPages);
+          return;
+        }
+        setItems(result.items);
+        setPageState(result.page);
+        setPageSizeState(result.pageSize);
+        setTotalItems(result.totalItems);
+        setTotalPages(result.totalPages);
+      })
+      .catch((caughtError: unknown) => {
+        if (requestIdRef.current !== requestId) return;
+        setError(
+          caughtError instanceof Error
+            ? caughtError
+            : new Error("No se pudieron cargar los productos."),
+        );
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (requestIdRef.current === requestId) setLoading(false);
       });
-    return () => {
-      active = false;
-    };
-  }, [currentBranch, service]);
+  }, [page, pageSize, requestBranchId, requestFilters, service]);
 
-  const filteredProducts = useMemo(() => filterProducts(products, filters), [filters, products]);
-  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
-  const currentPage = Math.min(page, totalPages);
-  const paginatedProducts = filteredProducts.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize,
-  );
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      const normalizedSearch = searchInput.trim();
+      if (requestedSearchRef.current === normalizedSearch) return;
+      requestedSearchRef.current = normalizedSearch;
+      setLoading(true);
+      setError(null);
+      setPageState(1);
+      setRequestSearch(normalizedSearch);
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [searchInput]);
 
   const updateFilters = useCallback((nextFilters: Partial<ProductFiltersState>) => {
-    setFilters((current) => ({ ...current, ...nextFilters }));
-    setPage(1);
+    const current = filtersRef.current;
+    const next = { ...current, ...nextFilters };
+    if (areProductFiltersEqual(current, next)) return;
+
+    const requestFilterChanged = didNonSearchFilterChange(current, next);
+    filtersRef.current = next;
+    setFilters(next);
+    if (!requestFilterChanged) return;
+
+    setLoading(true);
+    setError(null);
+    setPageState(1);
   }, []);
 
-  const clearFilters = useCallback(() => {
-    setFilters((current) => ({ ...initialFilters, search: current.search }));
-    setPage(1);
-  }, []);
+  const setPageSize = useCallback(
+    (nextPageSize: number) => {
+      if (nextPageSize === pageSize) return;
+      setLoading(true);
+      setError(null);
+      setPageSizeState(nextPageSize);
+      setPageState(1);
+    },
+    [pageSize],
+  );
 
-  const clearAllFilters = useCallback(() => {
-    setFilters(initialFilters);
-    setPage(1);
-  }, []);
-
-  const setPageSize = useCallback((nextPageSize: number) => {
-    setPageSizeState(nextPageSize);
-    setPage(1);
-  }, []);
+  const setPage = useCallback(
+    (nextPage: number) => {
+      if (nextPage === page) return;
+      setLoading(true);
+      setError(null);
+      setPageState(nextPage);
+    },
+    [page],
+  );
 
   return {
     loading,
     error,
-    products,
-    filteredProducts,
-    paginatedProducts,
+    items,
     filters,
-    page: currentPage,
+    filtersEnabled,
+    page,
     pageSize,
+    totalItems,
     totalPages,
     setPage,
     setPageSize,
     updateFilters,
-    clearFilters,
-    clearAllFilters,
     reload,
   };
 }
 
-function filterProducts(products: ProductListItem[], filters: ProductFiltersState) {
-  const query = filters.search.trim().toLowerCase();
-
-  return products.filter((product) => {
-    const matchesSearch =
-      !query ||
-      [product.name, product.sku, product.barcode, product.brand]
-        .filter(Boolean)
-        .some((value) => value?.toLowerCase().includes(query));
-    const matchesStatus = filters.status === "all" || product.status === filters.status;
-    const matchesType =
-      filters.productType === "all" || product.productType === filters.productType;
-    const matchesCategory =
-      filters.categoryId === "all" || product.categoryId === filters.categoryId;
-    const matchesChannel =
-      filters.channels.length === 0 ||
-      filters.channels.some((channel) => product.channels[channel]);
-    const matchesPromotion =
-      filters.promotion === "all" ||
-      (filters.promotion === "with" && product.hasActivePromotion) ||
-      (filters.promotion === "without" && !product.hasActivePromotion);
-
-    return (
-      matchesSearch &&
-      matchesStatus &&
-      matchesType &&
-      matchesCategory &&
-      matchesChannel &&
-      matchesPromotion
-    );
-  });
-}
-
 export const productStatusOptions = Object.values(ProductStatus);
 export const productTypeOptions = Object.values(ProductType);
+
+function areProductFiltersEqual(
+  left: ProductFiltersState,
+  right: ProductFiltersState,
+): boolean {
+  return (
+    left.search === right.search &&
+    !didNonSearchFilterChange(left, right)
+  );
+}
+
+function didNonSearchFilterChange(
+  left: ProductFiltersState,
+  right: ProductFiltersState,
+): boolean {
+  return (
+    left.status !== right.status ||
+    left.productType !== right.productType ||
+    left.categoryId !== right.categoryId ||
+    left.promotion !== right.promotion ||
+    left.channels.length !== right.channels.length ||
+    left.channels.some((channel, index) => channel !== right.channels[index])
+  );
+}

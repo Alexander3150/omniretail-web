@@ -15,7 +15,6 @@ import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { processImageUpload } from "@/shared/application/services/processImageUpload";
 import { CatalogImage } from "@/modules/catalog/components/CatalogImage";
 import { CategoryStatus } from "@/core/enums";
-import { isApiMode } from "@/config/api-mode";
 import { Button } from "@/shared/components/Button";
 import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
@@ -39,6 +38,7 @@ import {
   PlusIcon,
 } from "@/modules/catalog/components/CatalogIcons";
 import { useCategories } from "@/modules/catalog/hooks/useCategories";
+import { CategoryImagePartialSaveError } from "@/modules/catalog/application/services/CategoryImagePartialSaveError";
 import type { CategoryStatusFilter } from "@/modules/catalog/hooks/useCategories";
 import {
   buildDefaultCategoryDto,
@@ -49,7 +49,11 @@ import {
 } from "@/modules/catalog/validation/category.validation";
 
 type PanelMode = "detail" | "create" | "edit";
-type PanelState = { mode: PanelMode; category?: CategoryListItem } | null;
+type PanelState = {
+  mode: PanelMode;
+  category?: CategoryListItem;
+  categoryId?: string;
+} | null;
 
 export function CategoriesPage() {
   const router = useRouter();
@@ -79,23 +83,47 @@ export function CategoriesPage() {
   } = useCategories();
   const [panel, setPanel] = useState<PanelState>(null);
   const [archiveTarget, setArchiveTarget] = useState<CategoryListItem | null>(null);
-  const selectedCategory =
-    panel?.category && categories.find((category) => category.id === panel.category?.id);
+  const selectedCategoryId = panel?.categoryId ?? panel?.category?.id;
+  const selectedCategory = selectedCategoryId
+    ? categories.find((category) => category.id === selectedCategoryId)
+    : undefined;
   const panelCategory = selectedCategory ?? panel?.category;
   const firstVisible = filteredCategories.length === 0 ? 0 : (page - 1) * pageSize + 1;
   const lastVisible = Math.min(page * pageSize, filteredCategories.length);
 
   async function handleCreate(dto: CategoryEditorDto) {
-    const created = await create(dto);
-    if (created) setPanel({ mode: "detail", category: created });
-    showToast({ title: "Categoría creada", tone: "success" });
+    try {
+      const created = await create(dto);
+      if (created) setPanel({ mode: "detail", category: created });
+      showToast({ title: "Categoría creada", tone: "success" });
+    } catch (error) {
+      if (!(error instanceof CategoryImagePartialSaveError)) throw error;
+      setPanel({ mode: "edit", categoryId: error.categoryId });
+      showToast({
+        title: "Categoría guardada parcialmente",
+        description: error.message,
+        tone: "warning",
+        duration: 8000,
+      });
+    }
   }
 
   async function handleUpdate(dto: CategoryEditorDto) {
     if (!panelCategory) return;
-    const updated = await update(panelCategory.id, dto);
-    if (updated) setPanel({ mode: "detail", category: updated });
-    showToast({ title: "Categoría actualizada", tone: "success" });
+    try {
+      const updated = await update(panelCategory.id, dto);
+      if (updated) setPanel({ mode: "detail", category: updated });
+      showToast({ title: "Categoría actualizada", tone: "success" });
+    } catch (error) {
+      if (!(error instanceof CategoryImagePartialSaveError)) throw error;
+      setPanel({ mode: "edit", categoryId: error.categoryId });
+      showToast({
+        title: "Categoría guardada parcialmente",
+        description: error.message,
+        tone: "warning",
+        duration: 8000,
+      });
+    }
   }
 
   async function handleArchive() {
@@ -205,7 +233,7 @@ export function CategoriesPage() {
           ) : null}
         </div>
 
-        {panel ? (
+        {panel && (panel.mode === "create" || panelCategory) ? (
           <CategoryPanel
             allCategories={categories}
             busy={busy}
@@ -848,40 +876,38 @@ function CategoryForm({
           {value.description.length} / 500
         </p>
       </Field>
-      {!isApiMode() ? (
-        <Field id="category-image" label="Imagen">
-          <CategoryImagePreview dto={value} />
-          <div className="mt-2 flex flex-wrap gap-2">
-            <label className="inline-flex min-h-10 cursor-pointer items-center justify-center rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-white">
-              {value.image || value.pendingImage ? "Reemplazar imagen" : "Seleccionar imagen"}
-              <input
-                accept="image/jpeg,image/png,image/webp"
-                className="sr-only"
-                id="category-image"
-                onChange={(event) => {
-                  void selectImage(event.target.files?.[0]);
-                  event.target.value = "";
-                }}
-                type="file"
-              />
-            </label>
-            {value.image || value.pendingImage ? (
-              <Button
-                onClick={() =>
-                  update({ image: undefined, pendingImage: undefined, removeImage: true })
-                }
-                type="button"
-                variant="danger"
-              >
-                Eliminar imagen
-              </Button>
-            ) : null}
-          </div>
-          {imageError ? (
-            <p className="mt-2 text-sm text-[var(--color-danger)]">{imageError}</p>
+      <Field id="category-image" label="Imagen">
+        <CategoryImagePreview dto={value} />
+        <div className="mt-2 flex flex-wrap gap-2">
+          <label className="inline-flex min-h-10 cursor-pointer items-center justify-center rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-white">
+            {value.image || value.pendingImage ? "Reemplazar imagen" : "Seleccionar imagen"}
+            <input
+              accept="image/jpeg,image/png,image/webp"
+              className="sr-only"
+              id="category-image"
+              onChange={(event) => {
+                void selectImage(event.target.files?.[0]);
+                event.target.value = "";
+              }}
+              type="file"
+            />
+          </label>
+          {value.image || value.pendingImage ? (
+            <Button
+              onClick={() =>
+                update({ image: undefined, pendingImage: undefined, removeImage: true })
+              }
+              type="button"
+              variant="danger"
+            >
+              Eliminar imagen
+            </Button>
           ) : null}
-        </Field>
-      ) : null}
+        </div>
+        {imageError ? (
+          <p className="mt-2 text-sm text-[var(--color-danger)]">{imageError}</p>
+        ) : null}
+      </Field>
       <Field id="category-status" label="Estado">
         <Select
           id="category-status"
