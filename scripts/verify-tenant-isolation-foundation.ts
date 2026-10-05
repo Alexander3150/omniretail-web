@@ -20,6 +20,7 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/services/resolveCurrentSessionSnapshot";
 import { ArchiveProductService } from "@/modules/catalog/application/services/ArchiveProductService";
+import { CatalogServiceError } from "@/modules/catalog/application/services/serviceHelpers";
 import { GetCategoriesService } from "@/modules/catalog/application/services/GetCategoriesService";
 import { GetProductDetailService } from "@/modules/catalog/application/services/GetProductDetailService";
 import {
@@ -256,13 +257,13 @@ async function verifyCatalogIsolation(harness: ReturnType<typeof createHarness>)
   assert.equal(await new GetProductDetailService(repositories).execute(entities.productA.id), null);
   assert.equal(await repositories.categories.getByIdScoped(TENANT_B, entities.categoryA.id), null);
   assert.equal(await repositories.units.getByIdScoped(TENANT_B, entities.unitA.id), null);
-  // El tenant B no puede archivar un producto del tenant A: archiveScoped lo trata como inexistente
-  // ("Product not found: <id>", el contrato mock vigente), sin revelar datos del otro tenant.
+  // El tenant B no puede archivar un producto del tenant A: ArchiveProductService normaliza el
+  // "not found" del repository scoped a CatalogServiceError, sin revelar datos del otro tenant.
   await assert.rejects(
     new ArchiveProductService(repositories).execute(entities.productA.id),
     (error: unknown) => {
-      assert.ok(error instanceof Error);
-      assert.equal(error.message, `Product not found: ${entities.productA.id}`);
+      assert.ok(error instanceof CatalogServiceError);
+      assert.equal(error.message, "El producto solicitado no existe.");
       assert.ok(!error.message.includes(entities.productA.name));
       return true;
     },

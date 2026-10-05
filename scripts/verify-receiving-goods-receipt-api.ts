@@ -26,7 +26,7 @@ import {
   isReceiptHistoryIncomplete,
   persistApiDraftWithHistoryGuard,
   toBaseQuantity,
-  updateCanonicalSingleLotDraft,
+  updateCanonicalDraft,
 } from "@/modules/receiving/application/services/ReceivingDocumentDetailService";
 import { nextReceivingStream } from "@/modules/receiving/application/services/ReceivingDocumentsService";
 import { ReceivingServiceError } from "@/modules/receiving/application/services/serviceHelpers";
@@ -164,25 +164,70 @@ async function verifyMultiLotSafety() {
   assert.equal(mapped.items[0].trackingDetails[1].lotNumber, "LOTE-2");
   assert.equal(mapped.items[0].line.lotNumber, undefined);
 
+  // Contrato vigente (7A2): el editor conserva trackingDetails[], asi que un borrador multi-lote SI
+  // llega al PUT con todos sus detalles (7A1 lo bloqueaba; ya no).
   let putCalls = 0;
+  const payloads: Array<Omit<ReceiptDraftInput, "purchaseOrderId">> = [];
+  const multiLotInput: Omit<ReceiptDraftInput, "purchaseOrderId"> = {
+    tenantId: TENANT_ID,
+    items: [
+      {
+        ...draftInput(true).items[0],
+        trackingDetails: [
+          {
+            baseQuantity: 6,
+            lotNumber: " LOTE-1 ",
+            expirationDate: "2027-10-02",
+            serialNumbers: [],
+          },
+          {
+            baseQuantity: 4,
+            lotNumber: " LOTE-2 ",
+            expirationDate: "2027-11-02",
+            serialNumbers: [],
+          },
+        ],
+      },
+    ],
+  };
   const multiLotRepository = {
     getRecordByIdScoped: async () => mapped,
-    updateDraftScoped: async () => {
+    updateDraftScoped: async (
+      _id: string,
+      input: Omit<ReceiptDraftInput, "purchaseOrderId">,
+    ) => {
       putCalls += 1;
+      payloads.push(input);
       return mapped;
     },
   };
+  assert.doesNotThrow(() => assertSingleLotDraftEditable(mapped));
+  await updateCanonicalDraft(multiLotRepository, TENANT_ID, ORDER_ID, RECEIPT_ID, multiLotInput);
+  assert.equal(putCalls, 1, "un borrador multi-lote debe llegar al PUT");
+  assert.equal(payloads[0].items[0].trackingDetails.length, 2);
+  assert.deepEqual(
+    payloads[0].items[0].trackingDetails.map((detail) => detail.baseQuantity),
+    [6, 4],
+  );
+  // El request al backend conserva ambos lotes (y normaliza los espacios).
+  const request = toUpdateDraftRequest(multiLotInput);
+  assert.deepEqual(
+    request.items[0].trackingDetails.map((detail) => detail.lotNumber),
+    ["LOTE-1", "LOTE-2"],
+  );
+
+  // La validacion del registro canonico sigue vigente: otra orden no llega al PUT.
   await assert.rejects(
-    updateCanonicalSingleLotDraft(
+    updateCanonicalDraft(
       multiLotRepository,
       TENANT_ID,
-      ORDER_ID,
+      "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
       RECEIPT_ID,
-      { tenantId: TENANT_ID, items: draftInput(true).items },
+      multiLotInput,
     ),
     ReceivingServiceError,
   );
-  assert.equal(putCalls, 0, "un borrador multi-lote no debe llegar al PUT");
+  assert.equal(putCalls, 1, "un borrador de otra orden no debe llegar al PUT");
 
   const singleLot = mapApiReceipt(parseApiGoodsReceipt(API_RECEIPT), TENANT_ID);
   assert.doesNotThrow(() => assertSingleLotDraftEditable(singleLot));
@@ -193,14 +238,14 @@ async function verifyMultiLotSafety() {
       return singleLot;
     },
   };
-  await updateCanonicalSingleLotDraft(
+  await updateCanonicalDraft(
     singleLotRepository,
     TENANT_ID,
     ORDER_ID,
     RECEIPT_ID,
     { tenantId: TENANT_ID, items: draftInput(true).items },
   );
-  assert.equal(putCalls, 1, "un borrador single-lot debe conservar su PUT");
+  assert.equal(putCalls, 2, "un borrador single-lot debe conservar su PUT");
 }
 
 async function verifyIncompleteReceiptHistorySafety() {

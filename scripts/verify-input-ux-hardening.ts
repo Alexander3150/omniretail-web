@@ -119,7 +119,11 @@ assert.equal(
 assert.equal(isConversionFactorCompatibleWithBaseUnit(1.2, false), false);
 assert.equal(isConversionFactorCompatibleWithBaseUnit(10, false), true);
 assert.equal(isConversionFactorCompatibleWithBaseUnit(1.25, true), true);
-assert.equal(isConversionFactorCompatibleWithBaseUnit(1.23456, true), false);
+// Precision vigente de factores de conversion: CONVERSION_FACTOR_DECIMAL_PLACES = 6.
+assert.equal(isConversionFactorCompatibleWithBaseUnit(1.23456, true), true);
+assert.equal(isConversionFactorCompatibleWithBaseUnit(1.234567, true), true);
+assert.equal(isConversionFactorCompatibleWithBaseUnit(1.2345678, true), false);
+assert.equal(isConversionFactorCompatibleWithBaseUnit(1.234567, false), false);
 
 const validProduct = {
   sku: "SKU-1",
@@ -157,7 +161,7 @@ assert.equal(TEXT_LIMITS.unitSymbol, 10);
 assert.equal(QUANTITY_DECIMAL_PLACES, 3);
 assert.equal(MONEY_DECIMAL_PLACES, 2);
 assert.equal(PERCENTAGE_DECIMAL_PLACES, 2);
-assert.equal(CONVERSION_FACTOR_DECIMAL_PLACES, 4);
+assert.equal(CONVERSION_FACTOR_DECIMAL_PLACES, 6);
 assert.match(
   validateCategoryDto(
     {

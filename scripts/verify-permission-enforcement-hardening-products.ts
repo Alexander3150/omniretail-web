@@ -415,6 +415,14 @@ async function verifyCrossTenantMutationDenied() {
     CatalogServiceError,
     "9: archivar un producto de OTRO tenant debe ser DENIED",
   );
+  // Un ID inexistente y uno de otro tenant responden igual (sin filtrar existencia cross-tenant).
+  await assert.rejects(
+    new ArchiveProductService(repositories).execute("product-does-not-exist"),
+    (error: unknown) =>
+      error instanceof CatalogServiceError &&
+      error.message === "El producto solicitado no existe.",
+    "9: archivar un ID inexistente debe responder CatalogServiceError 'no existe'",
+  );
 }
 
 // 10. Storefront/public read no sufre regresión
