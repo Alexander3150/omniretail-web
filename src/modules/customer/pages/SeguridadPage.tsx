@@ -18,6 +18,10 @@ import { PageHeader } from "@/shared/components/PageHeader";
 import { PasswordInput } from "@/shared/components/PasswordInput";
 import { useToast } from "@/shared/components/Toast";
 import { TwoFactorAuthSection } from "@/shared/components/TwoFactorAuthSection";
+import { useCooldown } from "@/shared/hooks/useCooldown";
+
+/** Espera entre correos con codigo (la misma que aplica el backend). */
+const MFA_CODE_COOLDOWN_SECONDS = 60;
 
 const customerPasswordHint = getPasswordRequirementsMessage(CUSTOMER_PASSWORD_POLICY);
 
@@ -32,6 +36,33 @@ export function SeguridadPage() {
   const { busy, changePassword } = useChangePassword();
   const mfaEnrollment = useMfaEnrollment();
   const { showToast } = useToast();
+
+  // MFA por correo: el codigo del cambio de contraseña se pide por correo. "Enviar" espera 60 s
+  // entre envios (el mismo limite del backend). En mock se muestra el codigo de demostracion.
+  const {
+    remaining: codeCooldownSeconds,
+    start: startCodeCooldown,
+  } = useCooldown(MFA_CODE_COOLDOWN_SECONDS);
+  const [sendingCode, setSendingCode] = useState(false);
+  const [demoActionCode, setDemoActionCode] = useState<string | undefined>();
+
+  async function handleSendMfaCode() {
+    setSendingCode(true);
+    try {
+      const { demoCodeMock } = await mfaEnrollment.sendActionCode();
+      setDemoActionCode(demoCodeMock);
+      startCodeCooldown();
+      showToast({ title: "Te enviamos un código a tu correo.", tone: "success" });
+    } catch (caughtError) {
+      showToast({
+        title: "No se pudo enviar el código",
+        description: caughtError instanceof Error ? caughtError.message : "Inténtalo nuevamente.",
+        tone: "danger",
+      });
+    } finally {
+      setSendingCode(false);
+    }
+  }
   const [form, setForm] = useState<ChangePasswordFormDto>(EMPTY_FORM);
   const [fieldErrors, setFieldErrors] = useState<ChangePasswordValidationErrors>({});
 
@@ -164,14 +195,35 @@ export function SeguridadPage() {
 
         {mfaEnrollment.status?.enabled ? (
           <FormField id="security-mfa-code" label="Código de verificación en dos pasos">
-            <Input
-              disabled={busy}
-              id="security-mfa-code"
-              inputMode="numeric"
-              onChange={(event) => setForm((prev) => ({ ...prev, mfaCode: event.target.value }))}
-              placeholder="123456"
-              value={form.mfaCode}
-            />
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+              <div className="flex-1">
+                <Input
+                  disabled={busy}
+                  id="security-mfa-code"
+                  inputMode="numeric"
+                  onChange={(event) => setForm((prev) => ({ ...prev, mfaCode: event.target.value }))}
+                  placeholder="123456"
+                  value={form.mfaCode}
+                />
+              </div>
+              {mfaEnrollment.status.method === "email" ? (
+                <Button
+                  disabled={busy || sendingCode || codeCooldownSeconds > 0}
+                  onClick={() => void handleSendMfaCode()}
+                  type="button"
+                  variant="secondary"
+                >
+                  {codeCooldownSeconds > 0
+                    ? `Enviar código a mi correo (${codeCooldownSeconds} s)`
+                    : "Enviar código a mi correo"}
+                </Button>
+              ) : null}
+            </div>
+            {demoActionCode ? (
+              <p className="mt-2 rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
+                Código de verificación actual: <strong>{demoActionCode}</strong>
+              </p>
+            ) : null}
           </FormField>
         ) : null}
 

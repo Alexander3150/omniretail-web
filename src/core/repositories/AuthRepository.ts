@@ -203,6 +203,15 @@ export interface AuthRepository {
    */
   verifyMfaChallenge(challengeId: string, codeMock: string): Promise<Session>;
   /**
+   * Reenvia el codigo del segundo paso del login cuando el metodo es
+   * `email` (el de la app se genera en la app). Un desafio vencido, usado o
+   * reemplazado lanza MfaChallengeUnavailableError (volver al paso 1).
+   * Modo api: el codigo llega por correo y hay limite de envios (el backend
+   * responde con su mensaje si todavia no se puede). Mock: devuelve el mismo
+   * `demoCodeMock` (no rotativo), por transparencia dummy.
+   */
+  resendMfaChallengeCode(challengeId: string): Promise<{ demoCodeMock?: string }>;
+  /**
    * Inicia (o reinicia, si había un enrollment sin verificar) el
    * enrolamiento de MFA para la sesión actual: genera un nuevo
    * demoCodeMock y crea/reemplaza el MfaEnrollment con
@@ -235,6 +244,12 @@ export interface AuthRepository {
    * a partir de otro estado.
    */
   getMfaStatus(sessionId: string): Promise<{ enabled: boolean; method: MfaMethod } | null>;
+  /**
+   * Con el MFA por correo activo, envia un codigo para una accion sensible
+   * de la sesion (hoy: changePassword, como `mfaCodeMock`). Con el MFA por
+   * app o sin MFA activo, lanza un error. Mock: devuelve el `demoCodeMock`.
+   */
+  requestMfaActionCode(sessionId: string): Promise<{ demoCodeMock?: string }>;
   logout(sessionId: string): Promise<void>;
   getSession(sessionId: string): Promise<Session | null>;
   getCurrentSessionId(): Promise<string | null>;
