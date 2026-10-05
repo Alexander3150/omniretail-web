@@ -30,6 +30,7 @@ import {
   CreateTransferRequestService,
   RejectTransferRequestService,
 } from "@/modules/inventory/application/services/TransferRequestServices";
+import { GetInventoryKitAvailabilityService } from "@/modules/inventory/application/services/GetInventoryKitAvailabilityService";
 import { InventoryOtherBranchesService } from "@/modules/inventory/application/services/InventoryOtherBranchesService";
 import { InventoryCountService } from "@/modules/inventory/application/services/InventoryCountService";
 import { downloadInventoryCountPdf } from "@/modules/inventory/application/services/InventoryCountPdfService";
@@ -51,6 +52,7 @@ const EMPTY_KPIS: InventoryKpis = {
   outOfStock: 0,
 };
 const EMPTY_DATA: InventoryAlertsData = {
+  supportsMultipleLocations: true,
   rows: [],
   alerts: [],
   alertTotalItems: 0,
@@ -86,6 +88,10 @@ export function useInventoryAlerts() {
   // Lookups bajo demanda del modal de ajuste; solo existen en modo API (sin N+1 en el listado).
   const adjustmentLookup = useMemo(
     () => (apiMode ? new InventoryAdjustmentLookupService(repositories) : null),
+    [apiMode, repositories],
+  );
+  const kitAvailabilityService = useMemo(
+    () => (apiMode ? new GetInventoryKitAvailabilityService(repositories) : null),
     [apiMode, repositories],
   );
   const otherBranchesService = useMemo(
@@ -570,6 +576,7 @@ export function useInventoryAlerts() {
     branches: apiMode ? headerBranches : data.branches.length ? data.branches : headerBranches,
     categories: data.categories,
     locations: activeLocations,
+    supportsMultipleLocations: data.supportsMultipleLocations,
     search,
     categoryId,
     status,
@@ -599,6 +606,7 @@ export function useInventoryAlerts() {
     adjustmentLookup,
     countService,
     otherBranchesService,
+    kitAvailabilityService,
     applyCount,
     adjustStock,
     requestTransfer,

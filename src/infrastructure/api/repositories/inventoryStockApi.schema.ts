@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type {
   InventoryAlertPageResult,
+  InventoryKitAvailability,
   OtherBranchAvailability,
   InventoryStockPageResult,
 } from "@/core/repositories";
@@ -24,7 +25,9 @@ const inventoryAlertStatusSchema = z.enum([
   "near_minimum",
 ]);
 
-const inventoryStockItemSchema = z.object({
+// Producto fisico con stock propio. /inventory/alerts sigue siendo SOLO fisico: su schema parte de
+// este y no admite nulls ni otros tipos.
+const physicalStockItemSchema = z.object({
   productId: apiUuidSchema,
   branchId: apiUuidSchema,
   sku: z.string(),
@@ -43,13 +46,113 @@ const inventoryStockItemSchema = z.object({
   suggestedReorder: finiteNumberSchema,
 });
 
-const inventoryAlertItemSchema = inventoryStockItemSchema
+const inventoryAlertItemSchema = physicalStockItemSchema
   .omit({
     categoryId: true,
     categoryName: true,
     defaultLocationName: true,
   })
   .extend({ status: inventoryAlertStatusSchema });
+
+const nullableNumberSchema = finiteNumberSchema.nullable();
+const positiveFactorSchema = finiteNumberSchema.refine((value) => value > 0).nullable();
+const physicalDisplayStatuses = ["NORMAL", "NEAR_MINIMUM", "CRITICAL", "OUT_OF_STOCK"] as const;
+const kitDisplayStatuses = ["KIT_AVAILABLE", "KIT_UNAVAILABLE"] as const;
+// status fisico (snake_case minuscula) -> displayStatus (MAYUSCULA): se valida con un mapping
+// explicito, no comparando strings.
+const physicalDisplayStatusByStatus = {
+  normal: "NORMAL",
+  near_minimum: "NEAR_MINIMUM",
+  critical: "CRITICAL",
+  out_of_stock: "OUT_OF_STOCK",
+} as const;
+
+// Read model mixto de GET /inventory/stock (physical, service, kit). Cada modo exige su forma exacta
+// en superRefine para no aceptar un servicio con existencias ni un fisico sin ellas.
+const inventoryStockItemSchema = z
+  .object({
+    productId: apiUuidSchema,
+    branchId: apiUuidSchema,
+    sku: z.string(),
+    productName: z.string(),
+    categoryId: apiUuidSchema,
+    categoryName: z.string(),
+    baseUnitId: apiUuidSchema,
+    productType: z.enum(["physical", "service", "kit"]),
+    inventoryMode: z.enum(["TRACKED", "NONE", "DERIVED_KIT"]),
+    displayStatus: z.enum([...physicalDisplayStatuses, "NOT_CONTROLLED", ...kitDisplayStatuses]),
+    quantity: nullableNumberSchema,
+    reservedQuantity: nullableNumberSchema,
+    availableQuantity: nullableNumberSchema,
+    minStock: nullableNumberSchema,
+    reorderPoint: nullableNumberSchema,
+    defaultLocationId: nullableUuidSchema,
+    defaultLocationName: z.string().nullable(),
+    status: inventoryStockStatusSchema.nullable(),
+    suggestedReorder: nullableNumberSchema,
+    // Presentaciones (solo fisicos): ids UUID; factor positivo, o null si el dato historico no tiene
+    // equivalencia (no se rechaza el producto por eso).
+    inventoryUnitId: nullableUuidSchema.nullish(),
+    saleUnitId: nullableUuidSchema.nullish(),
+    inventoryToBaseFactor: positiveFactorSchema.nullish(),
+    saleToBaseFactor: positiveFactorSchema.nullish(),
+  })
+  .superRefine((item, context) => {
+    const fail = (message: string) => context.addIssue({ code: "custom", message });
+    const noPropertyStock =
+      item.inventoryUnitId == null &&
+      item.saleUnitId == null &&
+      item.inventoryToBaseFactor == null &&
+      item.saleToBaseFactor == null &&
+      item.quantity === null &&
+      item.reservedQuantity === null &&
+      item.minStock === null &&
+      item.reorderPoint === null &&
+      item.defaultLocationId === null &&
+      item.defaultLocationName === null &&
+      item.status === null &&
+      item.suggestedReorder === null;
+
+    if (item.inventoryMode === "TRACKED") {
+      // reorderPoint y la ubicacion predeterminada SI pueden ser null en un fisico real.
+      const complete =
+        item.inventoryUnitId != null &&
+        item.saleUnitId != null &&
+        item.quantity !== null &&
+        item.reservedQuantity !== null &&
+        item.availableQuantity !== null &&
+        item.minStock !== null &&
+        item.suggestedReorder !== null &&
+        item.status !== null;
+      if (item.productType !== "physical" || !complete) fail("TRACKED exige un fisico con stock.");
+      else if (
+        item.status === null ||
+        item.displayStatus !== physicalDisplayStatusByStatus[item.status]
+      ) {
+        fail("displayStatus no corresponde al estado fisico.");
+      }
+      return;
+    }
+    if (item.inventoryMode === "NONE") {
+      if (
+        item.productType !== "service" ||
+        item.displayStatus !== "NOT_CONTROLLED" ||
+        item.availableQuantity !== null ||
+        !noPropertyStock
+      ) {
+        fail("NONE exige un servicio sin ninguna cantidad.");
+      }
+      return;
+    }
+    if (
+      item.productType !== "kit" ||
+      !(kitDisplayStatuses as readonly string[]).includes(item.displayStatus) ||
+      item.availableQuantity === null ||
+      !noPropertyStock
+    ) {
+      fail("DERIVED_KIT exige un kit con solo disponibilidad derivada.");
+    }
+  });
 
 const pageMetadataSchema = {
   page: z.number().int().positive(),
@@ -75,7 +178,16 @@ const inventoryAlertPageSchema = z.object({
 
 export function parseApiInventoryStockPage(value: unknown): InventoryStockPageResult {
   const parsed = inventoryStockPageSchema.safeParse(value);
-  if (!parsed.success) throw invalidResponse("stock");
+  if (!parsed.success) {
+    // Solo rutas y mensajes de Zod (nunca los valores recibidos), y unicamente fuera de produccion.
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(
+        "Respuesta de /inventory/stock invalida:",
+        parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`),
+      );
+    }
+    throw invalidResponse("stock");
+  }
   return parsed.data as unknown as InventoryStockPageResult;
 }
 
@@ -83,6 +195,29 @@ export function parseApiInventoryAlertPage(value: unknown): InventoryAlertPageRe
   const parsed = inventoryAlertPageSchema.safeParse(value);
   if (!parsed.success) throw invalidResponse("alertas");
   return parsed.data as unknown as InventoryAlertPageResult;
+}
+
+const inventoryKitAvailabilitySchema = z.object({
+  kitProductId: apiUuidSchema,
+  branchId: apiUuidSchema,
+  availableKits: z.number().int().nonnegative(),
+  components: z.array(
+    z.object({
+      componentProductId: apiUuidSchema,
+      sku: z.string(),
+      productName: z.string(),
+      quantityPerKit: finiteNumberSchema.refine((value) => value > 0),
+      availableQuantity: finiteNumberSchema.refine((value) => value >= 0),
+      kitCapacity: z.number().int().nonnegative(),
+      limiting: z.boolean(),
+    }),
+  ),
+});
+
+export function parseApiInventoryKitAvailability(value: unknown): InventoryKitAvailability {
+  const parsed = inventoryKitAvailabilitySchema.safeParse(value);
+  if (!parsed.success) throw invalidResponse("disponibilidad de kit");
+  return parsed.data;
 }
 
 const otherBranchAvailabilitySchema = z.array(

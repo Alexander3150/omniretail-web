@@ -34,9 +34,11 @@ export function validateAdjustment(
   row: InventoryProductRow,
   locationQuantity: number,
   operationDate = getLocalCalendarDate(),
+  requiresLocation = true,
 ): AdjustmentValidationErrors {
   const errors: AdjustmentValidationErrors = {};
-  if (!dto.locationId) errors.locationId = "Selecciona una ubicacion.";
+  // Sin "Multiples ubicaciones" el ajuste va sin ubicacion: no se exige ni se inventa una.
+  if (requiresLocation && !dto.locationId) errors.locationId = "Selecciona una ubicacion.";
   if (!Number.isFinite(dto.quantity) || dto.quantity < 0) {
     errors.quantity = "Ingresa una cantidad valida.";
   } else if (dto.quantity > MAX_SAFE_INVENTORY_QUANTITY) {

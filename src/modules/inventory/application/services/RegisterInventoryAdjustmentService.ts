@@ -188,7 +188,12 @@ export class RegisterInventoryAdjustmentService {
     if (reason.length > TEXT_LIMITS.reason) {
       throw new InventoryServiceError("El motivo admite hasta 200 caracteres.");
     }
-    if (!dto.locationId) throw new InventoryServiceError("Selecciona una ubicacion.");
+    // Sin "Multiples ubicaciones" el ajuste va sin ubicacion (el backend admite locationId null);
+    // sin configuracion se asume ON y se conserva el requisito.
+    const usesLocations = businessCapabilities?.supportsMultipleLocations ?? true;
+    if (usesLocations && !dto.locationId) {
+      throw new InventoryServiceError("Selecciona una ubicacion.");
+    }
     if (dto.unitId !== product.baseUnitId) {
       throw new InventoryServiceError("El ajuste real solo admite la unidad base del producto.");
     }
@@ -204,6 +209,9 @@ export class RegisterInventoryAdjustmentService {
     });
     const stock = stockPage.items.find((item) => item.productId === dto.productId);
     if (!stock) throw new InventoryServiceError("No se pudo leer la existencia actual.");
+    if (stock.inventoryMode !== "TRACKED") {
+      throw new InventoryServiceError("Este producto no controla existencias propias.");
+    }
     const quantityBefore = stock.quantity;
     const quantityAfter = this.getQuantityAfter(dto, quantityBefore);
     const delta = Number((quantityAfter - quantityBefore).toFixed(3));
@@ -247,7 +255,7 @@ export class RegisterInventoryAdjustmentService {
       tenantId,
       branchId: dto.branchId,
       productId: dto.productId,
-      locationId: dto.locationId,
+      locationId: usesLocations ? dto.locationId || undefined : undefined,
       type: getInventoryAdjustmentType(dto.movementKind),
       reason,
       notes: dto.notes?.trim() || undefined,

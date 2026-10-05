@@ -248,11 +248,11 @@ export class PurchaseOrderEditorService {
         sort: "productName,asc",
       });
       const item = page.items.find((candidate) => candidate.productId === product.id);
-      if (!item) return unavailableInventorySnapshot();
+      if (!item || item.inventoryMode !== "TRACKED") return unavailableInventorySnapshot();
       return {
         stockQuantity: item.quantity,
         minStock: item.minStock,
-        reorderPoint: item.reorderPoint,
+        reorderPoint: item.reorderPoint ?? undefined,
         shortage: Math.max(0, item.minStock - item.availableQuantity),
         suggestedReorder: item.suggestedReorder,
         availabilityLabel: getAvailabilityLabel(item.availableQuantity, item.minStock),

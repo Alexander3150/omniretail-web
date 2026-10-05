@@ -1,4 +1,5 @@
 import type {
+  GetInventoryKitAvailabilityInput,
   GetOtherBranchesAvailabilityInput,
   InventoryAlertPageParams,
   InventoryRepository,
@@ -7,6 +8,7 @@ import type {
 import { BackendRequestError, backendFetch } from "@/infrastructure/api/backendClient";
 import { assertApiUuid, assertOptionalApiUuid } from "@/infrastructure/api/uuid";
 import {
+  parseApiInventoryKitAvailability,
   parseApiOtherBranchesAvailability,
   parseApiInventoryAlertPage,
   parseApiInventoryStockPage,
@@ -31,8 +33,10 @@ export class ApiInventoryStockRepository {
     const getStockPage = this.getStockPage.bind(this);
     const getInventoryAlertPage = this.getInventoryAlertPage.bind(this);
     const getOtherBranchesAvailability = this.getOtherBranchesAvailability.bind(this);
+    const getKitAvailability = this.getKitAvailability.bind(this);
     return new Proxy(delegate, {
       get: (target, property) => {
+        if (property === "getKitAvailability") return getKitAvailability;
         if (property === "getStockPage") return getStockPage;
         if (property === "getInventoryAlertPage") return getInventoryAlertPage;
         if (property === "getOtherBranchesAvailability") return getOtherBranchesAvailability;
@@ -56,10 +60,21 @@ export class ApiInventoryStockRepository {
           search: params.search?.trim() || undefined,
           categoryId: params.categoryId,
           status: params.status,
+          productTypes: params.productTypes?.length ? params.productTypes.join(",") : undefined,
           page: params.page,
           size: params.pageSize,
           sort: params.sort ?? DEFAULT_STOCK_SORT,
         },
+      }),
+    );
+  }
+
+  async getKitAvailability(input: GetInventoryKitAvailabilityInput) {
+    assertApiUuid(input.kitProductId, "kitProductId");
+    assertApiUuid(input.branchId, "branchId");
+    return parseApiInventoryKitAvailability(
+      await backendFetch<unknown>(`/inventory/stock/kits/${input.kitProductId}/availability`, {
+        query: { branchId: input.branchId },
       }),
     );
   }

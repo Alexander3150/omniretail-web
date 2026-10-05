@@ -105,23 +105,64 @@ export interface OtherBranchAvailability {
   availableQuantity: number;
 }
 
+/** Componente de un Kit con su aporte a la disponibilidad derivada (calculado por el backend). */
+export interface InventoryKitAvailabilityComponent {
+  componentProductId: string;
+  sku: string;
+  productName: string;
+  quantityPerKit: number;
+  availableQuantity: number;
+  kitCapacity: number;
+  /** true en TODOS los componentes cuya capacidad iguala la disponibilidad del Kit. */
+  limiting: boolean;
+}
+
+export interface InventoryKitAvailability {
+  kitProductId: string;
+  branchId: string;
+  availableKits: number;
+  components: InventoryKitAvailabilityComponent[];
+}
+
+export interface GetInventoryKitAvailabilityInput {
+  kitProductId: string;
+  branchId: string;
+}
+
 export interface GetOtherBranchesAvailabilityInput {
   productId: string;
   /** Sucursal activa: el backend la excluye y filtra por acceso. */
   branchId: string;
 }
 
+/** Tipos de producto que GET /inventory/stock puede devolver (parametro `productTypes`). */
+export type InventoryStockProductType = "physical" | "service" | "kit";
+
+/** Como participa un producto en el inventario: stock propio, ninguno, o derivado de componentes. */
+export type InventoryProductMode = "TRACKED" | "NONE" | "DERIVED_KIT";
+
+export type InventoryStockDisplayStatus =
+  | "NORMAL"
+  | "NEAR_MINIMUM"
+  | "CRITICAL"
+  | "OUT_OF_STOCK"
+  | "NOT_CONTROLLED"
+  | "KIT_AVAILABLE"
+  | "KIT_UNAVAILABLE";
+
 export interface InventoryStockPageParams {
   branchId: string;
   search?: string;
   categoryId?: string;
   status?: InventoryStockStatus;
+  /** Sin este parametro el backend devuelve solo productos fisicos. */
+  productTypes?: InventoryStockProductType[];
   page: number;
   pageSize: number;
   sort?: InventoryStockSort;
 }
 
-export interface InventoryStockListItem {
+interface InventoryStockItemBase {
   productId: string;
   branchId: string;
   sku: string;
@@ -129,16 +170,76 @@ export interface InventoryStockListItem {
   categoryId: string;
   categoryName: string;
   baseUnitId: string;
+}
+
+/** Producto fisico con stock propio: unico caso con cantidades, minimos y estado fisico. */
+export interface TrackedInventoryStockItem extends InventoryStockItemBase {
+  productType: "physical";
+  inventoryMode: "TRACKED";
+  displayStatus: "NORMAL" | "NEAR_MINIMUM" | "CRITICAL" | "OUT_OF_STOCK";
+  /**
+   * Presentaciones del producto. Las cantidades de abajo siguen expresadas en UNIDAD BASE; el factor
+   * es "1 <unidad> = factor <base>" y es null si un dato historico no tiene equivalencia.
+   */
+  inventoryUnitId: string;
+  saleUnitId: string;
+  inventoryToBaseFactor: number | null;
+  saleToBaseFactor: number | null;
   quantity: number;
   reservedQuantity: number;
   availableQuantity: number;
   minStock: number;
-  reorderPoint: number;
+  reorderPoint: number | null;
   defaultLocationId: string | null;
   defaultLocationName: string | null;
   status: InventoryStockStatus;
   suggestedReorder: number;
 }
+
+/** Servicio: no controla inventario; el backend no envia ninguna cantidad. */
+export interface ServiceInventoryStockItem extends InventoryStockItemBase {
+  productType: "service";
+  inventoryMode: "NONE";
+  displayStatus: "NOT_CONTROLLED";
+  inventoryUnitId: null;
+  saleUnitId: null;
+  inventoryToBaseFactor: null;
+  saleToBaseFactor: null;
+  quantity: null;
+  reservedQuantity: null;
+  availableQuantity: null;
+  minStock: null;
+  reorderPoint: null;
+  defaultLocationId: null;
+  defaultLocationName: null;
+  status: null;
+  suggestedReorder: null;
+}
+
+/** Kit: solo `availableQuantity` (derivada de sus componentes); sin stock propio. */
+export interface DerivedKitInventoryStockItem extends InventoryStockItemBase {
+  productType: "kit";
+  inventoryMode: "DERIVED_KIT";
+  displayStatus: "KIT_AVAILABLE" | "KIT_UNAVAILABLE";
+  inventoryUnitId: null;
+  saleUnitId: null;
+  inventoryToBaseFactor: null;
+  saleToBaseFactor: null;
+  quantity: null;
+  reservedQuantity: null;
+  availableQuantity: number;
+  minStock: null;
+  reorderPoint: null;
+  defaultLocationId: null;
+  defaultLocationName: null;
+  status: null;
+  suggestedReorder: null;
+}
+
+export type InventoryStockListItem =
+  | TrackedInventoryStockItem
+  | ServiceInventoryStockItem
+  | DerivedKitInventoryStockItem;
 
 export interface InventoryStockPageResult {
   items: InventoryStockListItem[];
@@ -352,6 +453,8 @@ export interface InventoryRepository {
   getOtherBranchesAvailability(
     input: GetOtherBranchesAvailabilityInput,
   ): Promise<OtherBranchAvailability[]>;
+  /** Solo modo API: explicacion on-demand de la disponibilidad derivada de un Kit. */
+  getKitAvailability(input: GetInventoryKitAvailabilityInput): Promise<InventoryKitAvailability>;
   getInventoryAlertPage(params: InventoryAlertPageParams): Promise<InventoryAlertPageResult>;
   getLots(productId?: string): Promise<StockLot[]>;
   getSerialNumbers(productId?: string): Promise<SerialNumber[]>;
