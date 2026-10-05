@@ -1,4 +1,5 @@
 import type { StorefrontDiscoveryDto, StorefrontDiscoveryProductDto } from "@/modules/storefront/application/dto/StorefrontDiscoveryDto";
+import { toSameOriginMediaUrl } from "@/infrastructure/api/mediaUrl";
 
 interface BackendProduct {
   id: string;
@@ -6,6 +7,8 @@ interface BackendProduct {
   name: string;
   description?: string;
   brand?: string;
+  primaryImageUrl?: string | null;
+  primaryImageAlt?: string | null;
   salePrice: number;
   basePrice?: number | null;
   effectivePrice?: number | null;
@@ -13,12 +16,20 @@ interface BackendProduct {
   promotionId?: string | null;
   categoryId: string;
   categoryName?: string | null;
+  categoryImageUrl?: string | null;
   saleUnitId?: string | null;
   saleUnitName?: string | null;
   /** Hay disponible en la sucursal que atiende el e-commerce (siempre true si no controla stock). */
   inStock?: boolean;
   /** Disponible (cantidad - reservado); `null` si el producto no controla inventario (servicios). */
   availableQuantity?: number | null;
+}
+
+function toImageSource(url?: string | null) {
+  const normalized = url?.trim();
+  return normalized
+    ? ({ kind: "url", src: toSameOriginMediaUrl(normalized) } as const)
+    : undefined;
 }
 
 /** `null` = stock ilimitado para la UI; `inStock: false` siempre se trata como agotado. */
@@ -36,6 +47,8 @@ function toProduct(product: BackendProduct): StorefrontDiscoveryProductDto {
     name: product.name,
     description: product.description,
     brand: product.brand,
+    imageSource: toImageSource(product.primaryImageUrl),
+    imageAlt: product.primaryImageAlt?.trim() || product.name,
     salePrice: Number(product.salePrice),
     basePrice: product.basePrice == null ? undefined : Number(product.basePrice),
     effectivePrice: product.effectivePrice == null ? undefined : Number(product.effectivePrice),
@@ -60,9 +73,19 @@ export class ApiStorefrontCatalogService {
   async list(tenantSlug: string): Promise<StorefrontDiscoveryDto> {
     const products = (await this.request(`/public/${encodeURIComponent(tenantSlug)}/products`)) as BackendProduct[];
     const mapped = products.map(toProduct);
-    const categories = [...new Map(mapped.map((product) => [product.categoryId, product.categoryName]))]
-      .filter(([, name]) => Boolean(name))
-      .map(([id, name]) => ({ id, name: name!, slug: id }));
+    const categories = [...new Map(
+      products
+        .filter((product) => Boolean(product.categoryName))
+        .map((product) => [
+          product.categoryId,
+          {
+            id: product.categoryId,
+            name: product.categoryName!,
+            slug: product.categoryId,
+            imageSource: toImageSource(product.categoryImageUrl),
+          },
+        ] as const),
+    ).values()];
     return { categories, products: mapped };
   }
 
