@@ -504,16 +504,41 @@ async function verifyRealProductServicesAndReload() {
   const inventoryUnitId = initial.store.getSnapshot().units.find((unit) => unit.id === "unit-box")?.id;
   assert.ok(baseUnitId);
   assert.ok(inventoryUnitId);
+  // unitConversions es lazy en el editor: `undefined` = seccion de unidades NO cargada/validada y
+  // `[]` = cargada y sin conversiones. productDto() la deja `undefined` (los casos de multimedia no
+  // cambian unidades); un DTO que SI cambia la configuracion de unidades debe declarar `[]`.
+  const packagedUnits = {
+    baseUnitId,
+    inventoryUnitId,
+    saleUnitId: baseUnitId,
+    inventoryToBaseFactor: 10,
+    saleToBaseFactor: 1,
+    media: [],
+  };
+
+  // T-negativo. Cambiar la presentacion con la seccion de unidades sin cargar se rechaza: esta
+  // proteccion de produccion no debe eliminarse para "arreglar" el harness.
+  await assert.rejects(
+    createService.execute(
+      productDto(initial.store, {
+        ...packagedUnits,
+        // Corto a proposito: TEXT_LIMITS.sku es 50 y un SKU invalido fallaria antes de llegar a la
+        // validacion de unidades que este caso quiere ejercitar.
+        sku: `PKG-U-${crypto.randomUUID()}`,
+        name: "Producto caja x10 sin unidades cargadas",
+        unitConversions: undefined,
+      }),
+    ),
+    /Abra la seccion de unidades para validar la configuracion de conversiones\./,
+  );
+
+  // T-positivo. Con la seccion cargada (`[]`) la presentacion Caja -> Unidad se crea y persiste.
   const packagedProduct = await createService.execute(
     productDto(initial.store, {
+      ...packagedUnits,
       sku: `PACKAGED-${crypto.randomUUID()}`,
       name: "Producto caja x10",
-      baseUnitId,
-      inventoryUnitId,
-      saleUnitId: baseUnitId,
-      inventoryToBaseFactor: 10,
-      saleToBaseFactor: 1,
-      media: [],
+      unitConversions: [],
     }),
   );
   assert.equal(packagedProduct.baseUnitId, baseUnitId);
