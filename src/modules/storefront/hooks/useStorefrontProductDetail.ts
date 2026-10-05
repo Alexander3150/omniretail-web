@@ -66,7 +66,9 @@ export function useStorefrontProductDetail(productId: string) {
                 updatedAt: new Date().toISOString(),
               },
               categoryName: apiProduct.categoryName,
-              media: [],
+              media: apiProduct.imageSource
+                ? [{ source: apiProduct.imageSource, alt: apiProduct.imageAlt }]
+                : [],
               attributes: [],
               availableQuantity: apiProduct.availableQuantity,
             }

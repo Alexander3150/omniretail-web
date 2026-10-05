@@ -92,6 +92,10 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
         : await publishedProductService.execute(tenantId, productId);
       if (!product) return false;
       if (isApiMode()) {
+        const media =
+          apiProduct?.imageSource?.kind === "url"
+            ? { imageUrl: apiProduct.imageSource.src, imageAlt: apiProduct.imageAlt }
+            : undefined;
         // La UI ya bloquea con el catalogo, pero este stock es el mas reciente del backend.
         const availableQuantity = apiProduct?.availableQuantity ?? null;
         const exceedsStock = (inCart: number) =>
@@ -109,11 +113,13 @@ export function StorefrontCartProvider({ children }: { children: ReactNode }) {
           if (exceedsStock(existing?.quantity ?? 0)) return current;
           if (existing) {
             return current.map((item) =>
-              item === existing ? withQuantityPrice(item, item.quantity + quantity) : item,
+              item === existing
+                ? withQuantityPrice({ ...item, ...media }, item.quantity + quantity)
+                : item,
             );
           }
           return [...current, withQuantityPrice({
-            ...createStorefrontCartItem(product),
+            ...createStorefrontCartItem(product, media),
             basePrice: product.salePrice,
             salesPriceTiers: [],
           }, quantity)];
