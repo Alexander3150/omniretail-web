@@ -120,6 +120,8 @@ export function ProductDetailPage({ productId }: { productId: string }) {
           <StorefrontCatalogImage
             alt={media[0]?.alt ?? product.name}
             className="h-72 w-full rounded-xl bg-slate-50 object-contain object-center p-5 md:h-[29rem]"
+            fetchPriority="high"
+            loading="eager"
             source={media[0]?.source}
           />
         </div>

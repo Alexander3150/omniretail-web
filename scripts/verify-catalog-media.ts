@@ -5,7 +5,7 @@ import type {
   ProductMedia,
   StoredCatalogImageAsset,
 } from "@/core/entities";
-import { CategoryStatus } from "@/core/enums";
+import { CategoryStatus, ProductType } from "@/core/enums";
 import {
   CATALOG_IMAGE_FALLBACK,
   getProductMediaSource,
@@ -109,6 +109,8 @@ function createHarness(
   const productMedia = new MockProductMediaRepository(store, eventBus);
   const products = new MockProductRepository(store, eventBus);
   const units = new MockUnitRepository(store, eventBus);
+  const branches = new MockBranchRepository(store, eventBus);
+  const inventory = new MockInventoryRepository(store, eventBus);
   const employee = store
     .getSnapshot()
     .users.find((user) => user.tenantId === TENANT_A && Boolean(user.roleId));
@@ -137,16 +139,27 @@ function createHarness(
     users: new MockUserRepository(store, eventBus),
     roles: new MockRoleRepository(store, eventBus),
     attributes: new MockAttributeRepository(store, eventBus),
-    branches: new MockBranchRepository(store, eventBus),
+    branches,
     businessConfig: new MockBusinessConfigRepository(store, eventBus),
-    inventory: new MockInventoryRepository(store, eventBus),
+    inventory,
     productKitComponents: new MockProductKitComponentRepository(store, eventBus),
     productSalesPriceTiers: new MockProductSalesPriceTierRepository(store, eventBus),
     promotions: new MockPromotionRepository(store, eventBus),
     supplierProducts: new MockSupplierProductRepository(store, eventBus),
     suppliers: new MockSupplierRepository(store, eventBus),
   } as unknown as RepositoryRegistry;
-  return { assets, categories, productMedia, products, repositories, storage, store };
+  return {
+    assets,
+    branches,
+    categories,
+    inventory,
+    productMedia,
+    products,
+    repositories,
+    storage,
+    store,
+    units,
+  };
 }
 
 function localDraft(type: "image/jpeg" | "image/png" | "image/webp" = "image/png") {
@@ -561,10 +574,86 @@ async function verifyRealProductServicesAndReload() {
   const detail = await new GetProductDetailService(initial.repositories).execute(created.id);
   assert.deepEqual(detail?.imageSource, { kind: "mockAsset", assetId: createdAssetId });
 
+  // Fixture KIT persistido. El seed demo EFECTIVO es hardwareCatalogSeed, que reemplaza los
+  // productos del seed legado y no trae ningun KIT ni componentes (`productKitComponents: []`), asi
+  // que el bloque "KIT existente" de mas abajo no puede depender del seed: se persiste un KIT real
+  // con dos componentes fisicos del tenant. La carga diferida del catalogo elegible no interviene.
+  const kitFixtureComponents = initial.store
+    .getSnapshot()
+    .products.filter(
+      (product) =>
+        product.tenantId === TENANT_A &&
+        product.productType === ProductType.physical &&
+        product.tracking.stock,
+    )
+    .slice(0, 2);
+  assert.equal(kitFixtureComponents.length, 2);
+  initial.store.mutate((db) => {
+    const timestamp = new Date().toISOString();
+    db.products.push({
+      ...testProduct(initial.store, "kit-fixture"),
+      name: "Kit fixture persistido",
+      productType: ProductType.kit,
+      tracking: { stock: false, lot: false, expiration: false, serial: false },
+    });
+    kitFixtureComponents.forEach((component, index) => {
+      db.productKitComponents.push({
+        id: `kit-fixture-component-${index}`,
+        tenantId: TENANT_A,
+        kitProductId: "kit-fixture",
+        componentProductId: component.id,
+        quantityPerKit: index + 1,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+    });
+  });
+
   // P. Un remount/refresh reconstruye repositories desde LocalStorage y conserva `source`.
   // El adapter de assets representa la IndexedDB durable del mismo navegador/origen.
   let reloaded = createHarness(initial.storage, initial.assets);
-  let editorData = await new GetProductEditorDataService(reloaded.repositories).execute(created.id);
+  let productCatalogReads = 0;
+  let locationReads = 0;
+  let categoryDetailReads = 0;
+  let unitDetailReads = 0;
+  const getProductsByTenant = reloaded.products.getByTenant.bind(reloaded.products);
+  const getLocations = reloaded.inventory.getLocations.bind(reloaded.inventory);
+  const getCategoryById = reloaded.categories.getByIdScoped.bind(reloaded.categories);
+  const getUnitById = reloaded.units.getByIdScoped.bind(reloaded.units);
+  reloaded.products.getByTenant = async (tenantId) => {
+    productCatalogReads += 1;
+    return getProductsByTenant(tenantId);
+  };
+  reloaded.inventory.getLocations = async (branchId) => {
+    locationReads += 1;
+    return getLocations(branchId);
+  };
+  reloaded.categories.getByIdScoped = async (tenantId, categoryId) => {
+    categoryDetailReads += 1;
+    return getCategoryById(tenantId, categoryId);
+  };
+  reloaded.units.getByIdScoped = async (tenantId, unitId) => {
+    unitDetailReads += 1;
+    return getUnitById(tenantId, unitId);
+  };
+
+  const editorService = new GetProductEditorDataService(reloaded.repositories);
+  // Un editor NEW no conoce aun el tipo elegido: tanto fisico como servicio abren sin catalogo
+  // KIT ni locations. Las lecturas solo existen en los metodos diferidos explicitos.
+  await editorService.execute();
+  await editorService.execute();
+  assert.equal(productCatalogReads, 0);
+  assert.equal(locationReads, 0);
+
+  const branch = reloaded.store
+    .getSnapshot()
+    .branches.find((candidate) => candidate.tenantId === TENANT_A);
+  assert.ok(branch);
+  let editorData = await editorService.execute(created.id);
+  assert.equal(productCatalogReads, 0);
+  assert.equal(locationReads, 0);
+  assert.equal(categoryDetailReads, 0);
+  assert.equal(unitDetailReads, 0);
   assert.equal(editorData.media[0]?.source?.kind, "mockAsset");
   assert.equal(
     editorData.media[0]?.source?.kind === "mockAsset"
@@ -573,6 +662,58 @@ async function verifyRealProductServicesAndReload() {
     createdAssetId,
   );
   assert.ok(await reloaded.assets.get(created.tenantId, createdAssetId));
+
+  // Dos aperturas concurrentes del selector KIT comparten la misma lectura in-flight.
+  await Promise.all([
+    editorService.getKitEligibleProducts(created.id),
+    editorService.getKitEligibleProducts(created.id),
+  ]);
+  assert.equal(productCatalogReads, 1);
+
+  // Un KIT existente conserva eagerly sus componentes persistidos, pero no carga locations.
+  const existingKit = reloaded.store
+    .getSnapshot()
+    .products.find(
+      (product) => product.tenantId === TENANT_A && product.productType === ProductType.kit,
+    );
+  assert.ok(existingKit);
+  const persistedKitComponents = await reloaded.repositories.productKitComponents.getByKitProduct(
+    existingKit.id,
+  );
+  const kitEditorData = await editorService.execute(existingKit.id);
+  assert.deepEqual(
+    kitEditorData.kitComponents,
+    persistedKitComponents.map((component) => ({
+      componentProductId: component.componentProductId,
+      quantityPerKit: component.quantityPerKit,
+    })),
+  );
+  assert.equal(productCatalogReads, 1);
+  assert.equal(locationReads, 0);
+
+  // Un EDIT no-KIT conserva sus supplier-products persistidos sin abrir tabs secundarios.
+  const supplierSnapshot = reloaded.store.getSnapshot();
+  const persistedSupplierProduct = supplierSnapshot.supplierProducts.find(
+    (item) =>
+      item.active &&
+      supplierSnapshot.products.some(
+        (product) =>
+          product.id === item.productId &&
+          product.tenantId === TENANT_A &&
+          product.productType !== ProductType.kit,
+      ),
+  );
+  assert.ok(persistedSupplierProduct);
+  const supplierEditorData = await editorService.execute(persistedSupplierProduct.productId);
+  assert.ok(
+    supplierEditorData.supplierProducts.some((item) => item.id === persistedSupplierProduct.id),
+  );
+  assert.equal(categoryDetailReads, 0);
+  assert.equal(unitDetailReads, 0);
+
+  // Locations se coalesce por branch y solo se leen mediante la entrada diferida.
+  await Promise.all([editorService.getLocations(branch.id), editorService.getLocations(branch.id)]);
+  assert.equal(locationReads, 1);
 
   // N. Editar a traves del service real conserva la media recargada y agrega otra fuente local.
   const addedDraft = localDraft("image/webp");

@@ -84,6 +84,11 @@ import {
   useProductInventorySettings,
   type ProductInventorySettingsLoadState,
 } from "@/modules/catalog/hooks/useProductInventorySettings";
+import {
+  useProductEditorKitEligibleProducts,
+  useProductEditorLocations,
+  type DeferredLoadState,
+} from "@/modules/catalog/hooks/useProductEditorDeferredData";
 import type { ProductFormOptions } from "@/modules/catalog/types/catalog.types";
 import {
   applyCapabilityRulesToEditor,
@@ -170,6 +175,29 @@ export function ProductForm({
   const productInventorySettings = useProductInventorySettings();
   const { hasCapability } = useEntitlement();
   const isEdit = mode === "edit";
+  const kitEligibleProductsState = useProductEditorKitEligibleProducts({
+    tenantId: editorTenantId,
+    productId: editorProductId,
+    enabled: activeTab === "tracking" && value.productType === ProductType.kit,
+  });
+  const locationsState = useProductEditorLocations({
+    tenantId: editorTenantId,
+    branchId,
+    enabled:
+      activeTab === "tracking" &&
+      value.productType === ProductType.physical &&
+      value.tracking.stock &&
+      editorData.access.canReadLocations,
+  });
+  const deferredEditorData = useMemo<ProductEditorData>(
+    () => ({
+      ...editorData,
+      kitEligibleProducts: kitEligibleProductsState.data ?? [],
+      branchLocations: locationsState.data?.branchLocations ?? [],
+      storageLocations: locationsState.data?.storageLocations ?? [],
+    }),
+    [editorData, kitEligibleProductsState.data, locationsState.data],
+  );
   // El backend rechaza (409) atributos y precios por cantidad mientras el producto esta archivado;
   // un Kit archivado solo admite componentes y multimedia, asi que esas secciones no se editan.
   const isArchivedKit =
@@ -518,7 +546,7 @@ export function ProductForm({
     const pilotErrors = validateProductFormPilot(nextValue);
     const nextErrors = validateProductFormFields(nextValue, !isEdit);
     const nextEditorError =
-      pilotErrors.tracking ?? validateEditor(nextValue, editorData, options.units);
+      pilotErrors.tracking ?? validateEditor(nextValue, deferredEditorData, options.units);
     setErrors(nextErrors);
     setEditorError(nextEditorError);
     if (hasValidationErrors(nextErrors) || nextEditorError) {
@@ -672,10 +700,12 @@ export function ProductForm({
           {activeTab === "tracking" ? (
             <TrackingTab
               capabilities={options.businessCapabilities}
-              editorData={editorData}
+              editorData={deferredEditorData}
               error={editorError}
               errors={errors}
+              kitEligibleProductsState={kitEligibleProductsState}
               loadState={inventorySettingsLoadState}
+              locationsState={locationsState}
               onLoad={loadInventorySettings}
               onChange={updateValue}
               units={options.units}
@@ -1240,7 +1270,9 @@ function TrackingTab({
   editorData,
   error,
   errors,
+  kitEligibleProductsState,
   loadState,
+  locationsState,
   units,
   onLoad,
   onChange,
@@ -1250,7 +1282,12 @@ function TrackingTab({
   editorData: ProductEditorData;
   error: string | null;
   errors: ProductFormErrors;
+  kitEligibleProductsState: DeferredLoadState<Product[]> & { retry: () => Promise<void> };
   loadState: ProductInventorySettingsLoadState;
+  locationsState: DeferredLoadState<{
+    branchLocations: ProductEditorData["branchLocations"];
+    storageLocations: ProductEditorData["storageLocations"];
+  }> & { retry: () => Promise<void> };
   units: ProductFormOptions["units"];
   onLoad: () => void;
   onChange: (value: Partial<ProductEditorDto>) => void;
@@ -1331,13 +1368,28 @@ function TrackingTab({
         </p>
       ) : null}
       {isKit ? (
-        <KitComponentsEditor
-          eligibleProducts={editorData.kitEligibleProducts}
-          readOnly={!editorData.access.canUpdateProductRelations}
-          units={units}
-          value={value.kitComponents}
-          onChange={(kitComponents) => onChange({ kitComponents })}
-        />
+        kitEligibleProductsState.status === "loaded" ? (
+          <KitComponentsEditor
+            eligibleProducts={kitEligibleProductsState.data}
+            readOnly={!editorData.access.canUpdateProductRelations}
+            units={units}
+            value={value.kitComponents}
+            onChange={(kitComponents) => onChange({ kitComponents })}
+          />
+        ) : (
+          <div className="flex flex-col gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-[var(--color-text-muted)]">
+              {kitEligibleProductsState.status === "error"
+                ? kitEligibleProductsState.error
+                : "Cargando productos elegibles para el kit..."}
+            </p>
+            {kitEligibleProductsState.status === "error" ? (
+              <Button onClick={() => void kitEligibleProductsState.retry()} type="button" variant="secondary">
+                Reintentar
+              </Button>
+            ) : null}
+          </div>
+        )
       ) : null}
       {usesStock && inventorySettingsReadOnly ? (
         <p className="rounded-md border border-[var(--color-warning)] bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-text)]">
@@ -1367,6 +1419,20 @@ function TrackingTab({
               No existe configuracion persistida para esta sucursal; se creara al guardar.
             </p>
           ) : null}
+          {editorData.access.canReadLocations && locationsState.status !== "loaded" ? (
+            <div className="flex flex-col gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] p-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-[var(--color-text-muted)]">
+                {locationsState.status === "error"
+                  ? locationsState.error
+                  : "Cargando ubicaciones de la sucursal..."}
+              </p>
+              {locationsState.status === "error" ? (
+                <Button onClick={() => void locationsState.retry()} type="button" variant="secondary">
+                  Reintentar
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
           <div className="grid gap-4 md:grid-cols-2">
             <FormField id="inventory-min-stock" label="Stock minimo">
               <Input
@@ -1395,7 +1461,11 @@ function TrackingTab({
             </FormField>
             <FormField id="default-location-id" label="Ubicacion predeterminada" error={errors.defaultLocationId}>
               <Select
-                disabled={inventorySettingsReadOnly}
+                disabled={
+                  inventorySettingsReadOnly ||
+                  !editorData.access.canReadLocations ||
+                  locationsState.status !== "loaded"
+                }
                 id="default-location-id"
                 onChange={(event) =>
                   onChange({
@@ -3169,6 +3239,7 @@ function validateEditor(
   }
   if (
     value.tracking.stock &&
+    editorData.access.canReadLocations &&
     value.inventorySettings?.defaultLocationId &&
     !editorData.storageLocations.some(
       (location) => location.id === value.inventorySettings?.defaultLocationId,

@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { Fragment, useCallback, useEffect, useMemo, useState, type SVGProps } from "react";
 import { SaasCapabilityKey } from "@/core/enums";
 import { useEntitlement } from "@/shared/hooks/useEntitlement";
@@ -13,18 +14,15 @@ import { Select } from "@/shared/components/Select";
 import { useToast } from "@/shared/components/Toast";
 import { cn } from "@/shared/utils/cn";
 import {
-  isQuantityCompatibleWithUnit,
   parseUnitQuantityInput,
   toFiniteNumber,
   type NumericInputValue,
 } from "@/shared/utils/numberInput";
 import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
 import {
-  isReceiptIncidentTypeCode,
   type ReceiptIncidentEvidence,
   type ReceiptIncidentTypeCode,
 } from "@/core/entities";
-import { RECEIPT_INCIDENT_NOTES_MAX_LENGTH } from "@/core/repositories/ReceiptRepository";
 import {
   EXPIRATION_BEFORE_ENTRY_MESSAGE,
   getLocalCalendarDate,
@@ -36,11 +34,9 @@ import type {
   ReceivingDocumentLine,
   ReceivingTrackingDetail,
   ReceivingPreviousReceipt,
-  ReceivingPreviousReceiptLine,
 } from "@/modules/receiving/application/dto/ReceivingDocumentDetailDto";
 import {
   getAcceptedNow,
-  getIncidentCapacity,
   getRejectedNow,
   parseSerialNumbers,
   toBaseQuantity,
@@ -61,6 +57,22 @@ interface ReceivingDocumentPageProps {
   documentType: ReceivingDocumentDetailType;
   documentId: string;
 }
+
+const ReceivingIncidentEditor = dynamic(
+  () =>
+    import("@/modules/receiving/components/ReceivingIncidentForms").then(
+      (module) => module.ReceivingIncidentEditor,
+    ),
+  { loading: () => <DeferredPanel label="Cargando editor de incidencia..." /> },
+);
+
+const ReceivingHistoryDialogs = dynamic(
+  () =>
+    import("@/modules/receiving/components/ReceivingHistoryDialogs").then(
+      (module) => module.ReceivingHistoryDialogs,
+    ),
+  { loading: () => <DeferredPanel label="Cargando detalle historico..." /> },
+);
 
 export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDocumentPageProps) {
   const { showToast } = useToast();
@@ -532,39 +544,45 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
               </div>
             </section>
           ) : apiMode ? (
-            <ApiIncidentForm
-              detail={detail}
-              lines={lines}
-              incidents={incidents}
-              lineBlocks={incidentLineBlocks}
-              saving={incidentSaving}
-              onCancel={() => setIncidentEditorOpen(false)}
-              onSave={handleCreateApiIncident}
+            <ReceivingIncidentEditor
+              formProps={{
+                detail,
+                lines,
+                incidents,
+                lineBlocks: incidentLineBlocks,
+                saving: incidentSaving,
+                onCancel: () => setIncidentEditorOpen(false),
+                onSave: handleCreateApiIncident,
+              }}
+              mode="api"
             />
           ) : (
-            <IncidentForm
+            <ReceivingIncidentEditor
+              formProps={{
+                detail,
+                incident: selectedIncident,
+                incidents,
+                lines,
+                onCancel: () => {
+                  setIncidentEditorOpen(false);
+                  setSelectedIncidentId(null);
+                },
+                onDelete: selectedIncident
+                  ? () => setDeleteIncidentId(selectedIncident.id)
+                  : undefined,
+                onPreview: setPreviewEvidence,
+                onSave: (input) => {
+                  saveIncident({ ...input, id: selectedIncident?.id });
+                  showToast({
+                    title: selectedIncident ? "Incidencia actualizada" : "Incidencia registrada",
+                    tone: "success",
+                  });
+                  setIncidentEditorOpen(false);
+                  setSelectedIncidentId(null);
+                },
+              }}
               key={selectedIncident?.id ?? "new-incident"}
-              detail={detail}
-              incident={selectedIncident}
-              incidents={incidents}
-              lines={lines}
-              onCancel={() => {
-                setIncidentEditorOpen(false);
-                setSelectedIncidentId(null);
-              }}
-              onDelete={
-                selectedIncident ? () => setDeleteIncidentId(selectedIncident.id) : undefined
-              }
-              onPreview={setPreviewEvidence}
-              onSave={(input) => {
-                saveIncident({ ...input, id: selectedIncident?.id });
-                showToast({
-                  title: selectedIncident ? "Incidencia actualizada" : "Incidencia registrada",
-                  tone: "success",
-                });
-                setIncidentEditorOpen(false);
-                setSelectedIncidentId(null);
-              }}
+              mode="local"
             />
           )}
         </aside>
@@ -588,26 +606,26 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
         }}
       />
 
-      <PreviousReceiptModal
-        documentNumber={detail.document.number}
-        receipt={selectedPreviousReceipt}
-        onClose={() => setSelectedPreviousReceiptId(null)}
-        onSelectIncident={(incident) => setSelectedHistoricalIncidentId(incident.id)}
-        onPreview={setPreviewEvidence}
-      />
-      <HistoricalIncidentModal
-        incident={selectedHistoricalIncident}
-        documentNumber={detail.document.number}
-        originName={detail.document.originName}
-        onClose={() => setSelectedHistoricalIncidentId(null)}
-        onPreview={setPreviewEvidence}
-        resolving={incidentSaving}
-        onResolve={
-          apiMode && detail.canManageIncidents && selectedHistoricalIncident?.status === "open"
-            ? () => startResolveIncident(selectedHistoricalIncident)
-            : undefined
-        }
-      />
+      {selectedPreviousReceipt || selectedHistoricalIncident || previewEvidence ? (
+        <ReceivingHistoryDialogs
+          documentNumber={detail.document.number}
+          evidence={previewEvidence}
+          incident={selectedHistoricalIncident}
+          originName={detail.document.originName}
+          receipt={selectedPreviousReceipt}
+          resolving={incidentSaving}
+          onCloseEvidence={() => setPreviewEvidence(null)}
+          onCloseIncident={() => setSelectedHistoricalIncidentId(null)}
+          onCloseReceipt={() => setSelectedPreviousReceiptId(null)}
+          onPreview={setPreviewEvidence}
+          onResolve={
+            apiMode && detail.canManageIncidents && selectedHistoricalIncident?.status === "open"
+              ? () => startResolveIncident(selectedHistoricalIncident)
+              : undefined
+          }
+          onSelectIncident={(incident) => setSelectedHistoricalIncidentId(incident.id)}
+        />
+      ) : null}
       {replacementIncident && replacementLine && requiresTracking(replacementLine) ? (
         <ReplacementModal
           key={replacementIncident.id}
@@ -633,7 +651,6 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
           if (replacementIncident) void handleResolveApiIncident(replacementIncident.id);
         }}
       />
-      <EvidencePreview evidence={previewEvidence} onClose={() => setPreviewEvidence(null)} />
     </div>
   );
 }
@@ -1361,429 +1378,6 @@ function TrackingFields({
   return <div className="space-y-2">{fields}</div>;
 }
 
-function ApiIncidentForm({
-  detail,
-  lines,
-  incidents,
-  lineBlocks,
-  saving,
-  onCancel,
-  onSave,
-}: {
-  detail: NonNullable<ReturnType<typeof useReceivingDocumentDetail>["detail"]>;
-  lines: ReceivingDocumentLine[];
-  incidents: ReceivingDocumentIncident[];
-  /** Motivo por linea (seriales invalidos/duplicados) que impide registrar incidencias en ella. */
-  lineBlocks: Record<string, string>;
-  saving: boolean;
-  onCancel: () => void;
-  onSave: (input: {
-    incidentType: ReceiptIncidentTypeCode;
-    sourceLineId: string;
-    quantityAffected: number;
-    notes: string;
-  }) => Promise<void>;
-}) {
-  // Solo las lineas con cantidad aceptada pueden materializarse como GoodsReceiptItem
-  // (receivedQuantity > 0 en el contrato del borrador). No depende de un receipt ya persistido.
-  const lineOptions = lines.filter((line) => toFiniteNumber(line.receivedNow) > 0);
-  const [sourceLineId, setSourceLineId] = useState(
-    (lineOptions.find((line) => !lineBlocks[line.id]) ?? lineOptions[0])?.sourceLineId ?? "",
-  );
-  const [incidentType, setIncidentType] = useState(detail.incidentTypes[0]?.id ?? "");
-  const [quantity, setQuantity] = useState<NumericInputValue>(1);
-  const [notes, setNotes] = useState("");
-  const selectedLine = lineOptions.find((line) => line.sourceLineId === sourceLineId);
-  const numericQuantity = toFiniteNumber(quantity);
-  // La cantidad afectada es mercancia NO aceptada: se limita por lo pendiente de la orden.
-  const capacity = selectedLine ? getIncidentCapacity(selectedLine, incidents) : 0;
-  const blockReason = selectedLine ? lineBlocks[selectedLine.id] : undefined;
-  const quantityError =
-    selectedLine && numericQuantity > capacity
-      ? `La cantidad supera lo pendiente de la orden (${formatNumber(capacity)}).`
-      : undefined;
-  const lineInvalid =
-    !selectedLine ||
-    Boolean(blockReason) ||
-    numericQuantity <= 0 ||
-    numericQuantity > capacity ||
-    !isQuantityCompatibleWithUnit(quantity, selectedLine.unitAllowsDecimals);
-  const invalid =
-    !isReceiptIncidentTypeCode(incidentType) ||
-    !notes.trim() ||
-    notes.length > RECEIPT_INCIDENT_NOTES_MAX_LENGTH ||
-    lineInvalid;
-
-  async function handleSave() {
-    if (invalid || !isReceiptIncidentTypeCode(incidentType)) return;
-    await onSave({ incidentType, sourceLineId, quantityAffected: numericQuantity, notes });
-  }
-
-  return (
-    <section className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-white shadow-sm">
-      <div className="flex items-center justify-between gap-3 bg-[var(--color-structure)] px-4 py-3 text-white">
-        <div>
-          <h2 className="text-sm font-bold">Registrar incidencia</h2>
-          <p className="text-xs font-semibold opacity-80">{detail.document.number}</p>
-        </div>
-        <button
-          aria-label="Volver al resumen"
-          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-bold hover:bg-white/10"
-          onClick={onCancel}
-          type="button"
-        >
-          <ArrowLeftIcon />
-          Resumen
-        </button>
-      </div>
-      <div className="space-y-3 p-4">
-        {lineOptions.length === 0 ? (
-          <InlineAlert
-            title="Ingresa una cantidad aceptada en al menos un producto para registrar una incidencia."
-            tone="warning"
-          />
-        ) : null}
-        <Field label="Producto afectado">
-          <Select
-            disabled={saving || lineOptions.length === 0}
-            onChange={(event) => setSourceLineId(event.target.value)}
-            value={sourceLineId}
-          >
-            {lineOptions.map((line) => (
-              <option
-                disabled={Boolean(lineBlocks[line.id])}
-                key={line.sourceLineId}
-                value={line.sourceLineId}
-              >
-                {line.productName} ({line.sku}) - {line.unitName}
-                {lineBlocks[line.id] ? " - revisa la trazabilidad" : ""}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Cantidad afectada">
-          <Input
-            disabled={saving}
-            inputMode={selectedLine?.unitAllowsDecimals ? "decimal" : "numeric"}
-            maxLength={12}
-            onChange={(event) =>
-              setQuantity(
-                parseUnitQuantityInput(
-                  event.target.value,
-                  selectedLine?.unitAllowsDecimals ?? false,
-                ),
-              )
-            }
-            type="text"
-            value={quantity}
-          />
-          <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
-            Máximo disponible para incidencia: {formatNumber(capacity)}
-          </p>
-          {quantityError ? (
-            <p className="mt-1 text-xs font-semibold text-[var(--color-danger)]">{quantityError}</p>
-          ) : null}
-          {blockReason ? (
-            <p className="mt-1 text-xs font-semibold text-[var(--color-danger)]">{blockReason}</p>
-          ) : null}
-        </Field>
-        <Field label="Tipo de incidencia">
-          <Select
-            disabled={saving}
-            onChange={(event) => setIncidentType(event.target.value)}
-            value={incidentType}
-          >
-            {detail.incidentTypes.map((type) => (
-              <option key={type.id} value={type.id}>{type.name}</option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Observación">
-          <textarea
-            className="min-h-28 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40 disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={saving}
-            maxLength={RECEIPT_INCIDENT_NOTES_MAX_LENGTH}
-            onChange={(event) => setNotes(event.target.value)}
-            value={notes}
-          />
-          <p className="text-right text-xs text-[var(--color-text-muted)]">
-            {notes.length} / {RECEIPT_INCIDENT_NOTES_MAX_LENGTH}
-          </p>
-        </Field>
-        <div className="grid grid-cols-2 gap-2 border-t border-[var(--color-border)] pt-3">
-          <Button disabled={saving} onClick={onCancel} type="button" variant="ghost">
-            Cancelar
-          </Button>
-          <Button disabled={saving || invalid} onClick={() => void handleSave()} type="button">
-            <SaveIcon />
-            Guardar incidencia
-          </Button>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function IncidentForm({
-  detail,
-  incident,
-  incidents,
-  lines,
-  onCancel,
-  onDelete,
-  onPreview,
-  onSave,
-}: {
-  detail: NonNullable<ReturnType<typeof useReceivingDocumentDetail>["detail"]>;
-  incident?: ReceivingDocumentIncident;
-  incidents: ReceivingDocumentIncident[];
-  lines: ReceivingDocumentLine[];
-  onCancel: () => void;
-  onDelete?: () => void;
-  onPreview: (evidence: ReceiptIncidentEvidence) => void;
-  onSave: (input: {
-    productId: string;
-    incidentTypeId: string;
-    quantityAffected: number;
-    description: string;
-    evidence: ReceiptIncidentEvidence[];
-  }) => void;
-}) {
-  const { showToast } = useToast();
-  const [productId, setProductId] = useState(incident?.productId ?? lines[0]?.productId ?? "");
-  const [incidentTypeId, setIncidentTypeId] = useState(
-    incident?.incidentTypeId ?? detail.incidentTypes[0]?.id ?? "",
-  );
-  const [quantity, setQuantity] = useState<NumericInputValue>(incident?.quantityAffected ?? 1);
-  const [description, setDescription] = useState(incident?.description ?? "");
-  const [evidence, setEvidence] = useState<ReceiptIncidentEvidence[]>(incident?.evidence ?? []);
-  const selectedLine = lines.find((line) => line.productId === productId);
-  const affectedByOtherIncidents = incidents
-    .filter((item) => item.editable && item.productId === productId && item.id !== incident?.id)
-    .reduce((sum, item) => sum + (item.quantityAffected ?? 0), 0);
-  const maximumQuantity = Math.max(
-    0,
-    (selectedLine?.orderedQuantity ?? 0) -
-      (selectedLine?.acceptedPreviously ?? 0) -
-      toFiniteNumber(selectedLine?.receivedNow ?? 0) -
-      affectedByOtherIncidents,
-  );
-  const incidentInvalid =
-    !productId ||
-    !incidentTypeId ||
-    !description.trim() ||
-    typeof quantity !== "number" ||
-    !Number.isFinite(quantity) ||
-    quantity <= 0 ||
-    quantity > maximumQuantity ||
-    !isQuantityCompatibleWithUnit(quantity, selectedLine?.unitAllowsDecimals ?? false);
-
-  async function handleFiles(files: FileList | null) {
-    if (!files) return;
-    const accepted = [...files].filter((file) => /^image\/(png|jpe?g|webp)$/i.test(file.type));
-    if (accepted.length !== files.length) {
-      showToast({ title: "Algunas imagenes no son compatibles", tone: "info" });
-    }
-    const mapped = await Promise.all(accepted.map(fileToEvidence));
-    setEvidence((current) => [...current, ...mapped]);
-  }
-
-  function handleSave() {
-    if (!productId || !incidentTypeId || !description.trim() || toFiniteNumber(quantity) <= 0) {
-      showToast({ title: "Completa la incidencia", tone: "danger" });
-      return;
-    }
-    if (toFiniteNumber(quantity) > maximumQuantity) {
-      showToast({
-        title: "Cantidad mayor a la disponible",
-        description: `Solo quedan ${formatNumber(maximumQuantity)} unidades disponibles para registrar entre aceptadas e incidencias.`,
-        tone: "danger",
-      });
-      return;
-    }
-    try {
-      onSave({
-        productId,
-        incidentTypeId,
-        quantityAffected: toFiniteNumber(quantity),
-        description,
-        evidence,
-      });
-    } catch (caughtError) {
-      showToast({
-        title: "No se pudo registrar la incidencia",
-        description: caughtError instanceof Error ? caughtError.message : undefined,
-        tone: "danger",
-      });
-    }
-  }
-
-  return (
-    <section className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-white shadow-sm">
-      <div className="flex items-center justify-between gap-3 bg-[var(--color-structure)] px-4 py-3 text-white">
-        <div>
-          <h2 className="text-sm font-bold">
-            {incident ? "Editar incidencia" : "Registrar incidencia"}
-          </h2>
-          <p className="text-xs font-semibold opacity-80">{detail.document.number}</p>
-        </div>
-        <button
-          aria-label="Volver al resumen"
-          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-bold hover:bg-white/10"
-          onClick={onCancel}
-          type="button"
-        >
-          <ArrowLeftIcon />
-          Resumen
-        </button>
-      </div>
-      <div className="space-y-3 p-4">
-        <Field label="Producto">
-          <Select value={productId} onChange={(event) => setProductId(event.target.value)}>
-            {lines.map((line) => (
-              <option key={line.productId} value={line.productId}>
-                {line.productName}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Tipo de incidencia">
-          <Select
-            value={incidentTypeId}
-            onChange={(event) => setIncidentTypeId(event.target.value)}
-          >
-            {detail.incidentTypes.map((type) => (
-              <option key={type.id} value={type.id}>
-                {type.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Cantidad">
-          <Input
-            inputMode={selectedLine?.unitAllowsDecimals ? "decimal" : "numeric"}
-            maxLength={12}
-            onChange={(event) =>
-              setQuantity(
-                parseUnitQuantityInput(
-                  event.target.value,
-                  selectedLine?.unitAllowsDecimals ?? false,
-                ),
-              )
-            }
-            type="text"
-            value={quantity}
-          />
-          <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
-            Disponible para incidencia: {formatNumber(maximumQuantity)}
-          </p>
-        </Field>
-        <Field label="Observacion">
-          <textarea
-            className="min-h-24 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
-            maxLength={TEXT_LIMITS.notes}
-            onChange={(event) => setDescription(event.target.value)}
-            value={description}
-          />
-          <p className="text-right text-xs text-[var(--color-text-muted)]">
-            {description.length} / {TEXT_LIMITS.notes}
-          </p>
-        </Field>
-        <Field label="Evidencia fotografica">
-          <label className="flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-[var(--color-primary)] bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-title)] hover:bg-blue-50">
-            <ImageIcon />
-            Agregar imagenes
-            <input
-              accept="image/png,image/jpeg,image/jpg,image/webp"
-              className="sr-only"
-              multiple
-              onChange={(event) => void handleFiles(event.target.files)}
-              type="file"
-            />
-          </label>
-          <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
-            {evidence.length} {evidence.length === 1 ? "evidencia" : "evidencias"}
-          </p>
-          {evidence.length > 0 ? (
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              {evidence.map((item) => (
-                <div
-                  className="relative min-w-0 overflow-hidden rounded-md border border-[var(--color-border)] bg-white"
-                  key={item.id}
-                >
-                  {item.previewUrl ? (
-                    <button className="block w-full" onClick={() => onPreview(item)} type="button">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        alt={item.name}
-                        className="aspect-[4/3] w-full object-cover"
-                        src={item.previewUrl}
-                      />
-                    </button>
-                  ) : null}
-                  <div className="min-w-0 p-2 pr-9">
-                    <p className="truncate text-xs font-semibold text-[var(--color-title)]">
-                      {item.name}
-                    </p>
-                    <p className="text-xs text-[var(--color-text-muted)]">
-                      {formatFileSize(item.size)}
-                    </p>
-                  </div>
-                  <button
-                    aria-label={`Quitar ${item.name}`}
-                    className="absolute bottom-1 right-1 rounded-md bg-white p-1.5 text-[var(--color-danger)] shadow-sm hover:bg-red-50"
-                    onClick={() =>
-                      setEvidence((current) => current.filter((file) => file.id !== item.id))
-                    }
-                    type="button"
-                  >
-                    <XIcon />
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </Field>
-        <div className="grid w-full min-w-0 gap-2 border-t border-[var(--color-border)] pt-3">
-          {onDelete ? (
-            <div className="flex min-w-0 justify-start">
-              <Button
-                className="w-full justify-center px-3 sm:w-auto"
-                onClick={onDelete}
-                type="button"
-                variant="danger"
-              >
-                <TrashIcon />
-                Quitar
-              </Button>
-            </div>
-          ) : null}
-          <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
-            <Button
-              className="w-full min-w-0 justify-center px-2"
-              onClick={onCancel}
-              type="button"
-              variant="ghost"
-            >
-              <XIcon />
-              Cancelar
-            </Button>
-            <Button
-              className="w-full min-w-0 justify-center px-2 text-center leading-tight whitespace-normal"
-              disabled={incidentInvalid}
-              onClick={handleSave}
-              type="button"
-            >
-              <SaveIcon />
-              {incident ? "Guardar cambios" : "Guardar incidencia"}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function IncidentsSection({
   incidents,
   selectedIncidentId,
@@ -1947,229 +1541,6 @@ function PreviousReceiptsSection({
   );
 }
 
-function PreviousReceiptModal({
-  documentNumber,
-  receipt,
-  onClose,
-  onSelectIncident,
-  onPreview,
-}: {
-  documentNumber: string;
-  receipt?: ReceivingPreviousReceipt;
-  onClose: () => void;
-  onSelectIncident: (incident: ReceivingDocumentIncident) => void;
-  onPreview: (evidence: ReceiptIncidentEvidence) => void;
-}) {
-  return (
-    <Modal
-      density="compact"
-      maxWidth="min(1080px, 94vw)"
-      open={Boolean(receipt)}
-      title={
-        receipt
-          ? `Detalle de ${getReceiptSequenceLabel(receipt.sequenceNumber).toLowerCase()}`
-          : "Detalle de recepcion"
-      }
-      subtitle={receipt ? `${documentNumber} · ${receipt.number} · solo lectura` : undefined}
-      onClose={onClose}
-      size="xl"
-    >
-      {receipt ? (
-        <div className="space-y-4">
-          <dl className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-            <DetailItem label="Documento origen" value={documentNumber} />
-            <DetailItem label="Fecha" value={formatDateTime(receipt.receivedAt)} />
-            <DetailItem label="Responsable" value={receipt.responsibleName} />
-            <DetailItem label="Aceptadas" value={formatNumber(receipt.acceptedQuantity)} />
-            <DetailItem label="Pendiente despues" value={formatNumber(receipt.pendingAfter)} />
-          </dl>
-          <HistoricalReceiptLinesTable lines={receipt.lines} />
-          {receipt.incidents.length > 0 ? (
-            <section>
-              <h3 className="font-bold text-[var(--color-title)]">Incidencias de esta recepcion</h3>
-              <div className="mt-2 grid gap-2 md:grid-cols-2">
-                {receipt.incidents.map((incident) => (
-                  <button
-                    className="w-full rounded-md border border-[var(--color-border)] p-3 text-left hover:border-[var(--color-primary)]"
-                    key={incident.id}
-                    onClick={() => onSelectIncident(incident)}
-                    type="button"
-                  >
-                    <p className="font-bold text-[var(--color-title)]">{incident.productName}</p>
-                    <p className="text-xs font-semibold text-[var(--color-text-muted)]">
-                      {incident.sku}
-                    </p>
-                    <p className="text-sm">
-                      {incident.incidentTypeName} - {formatNumber(incident.quantityAffected ?? 0)}{" "}
-                      afectadas
-                    </p>
-                    <p className="mt-1 text-sm text-[var(--color-text)]">{incident.description}</p>
-                    <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
-                      {formatDateTime(incident.createdAt)} · {incident.createdByName}
-                    </p>
-                    <EvidenceGallery evidence={incident.evidence} onPreview={onPreview} />
-                  </button>
-                ))}
-              </div>
-            </section>
-          ) : null}
-        </div>
-      ) : null}
-    </Modal>
-  );
-}
-
-function HistoricalReceiptLinesTable({ lines }: { lines: ReceivingPreviousReceiptLine[] }) {
-  return (
-    <section>
-      <h3 className="font-bold text-[var(--color-title)]">Productos de esta recepcion</h3>
-      <div className="mt-2 overflow-x-auto rounded-md border border-[var(--color-border)]">
-        <table className="w-full min-w-[940px] table-fixed border-collapse text-left text-sm">
-          <colgroup>
-            <col className="w-[170px]" />
-            <col className="w-[70px]" />
-            <col className="w-[85px]" />
-            <col className="w-[95px]" />
-            <col className="w-[95px]" />
-            <col className="w-[85px]" />
-            <col className="w-[130px]" />
-            <col className="w-[210px]" />
-          </colgroup>
-          <thead className="bg-[var(--color-structure)] text-[11px] uppercase text-white">
-            <tr>
-              <th className="px-2 py-2.5">Producto</th>
-              <th className="px-2 py-2.5">Unidad</th>
-              <th className="px-2 py-2.5 text-right">Pedido original</th>
-              <th className="px-2 py-2.5 text-right">Aceptado</th>
-              <th className="px-2 py-2.5 text-right">Incidencia</th>
-              <th className="px-2 py-2.5 text-right">Pendiente</th>
-              <th className="px-2 py-2.5">Ubicacion</th>
-              <th className="px-2 py-2.5">Trazabilidad</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lines.map((line) => (
-              <tr className="border-t border-[var(--color-border)] align-top" key={line.id}>
-                <td className="px-2 py-2.5">
-                  <p
-                    className="line-clamp-2 font-bold leading-5 text-[var(--color-title)]"
-                    title={line.productName}
-                  >
-                    {line.productName}
-                  </p>
-                  <p className="text-xs text-[var(--color-text-muted)]">{line.sku}</p>
-                </td>
-                <td className="px-2 py-2.5">{line.unitName}</td>
-                <td className="px-2 py-2.5 text-right font-semibold">
-                  {formatNumber(line.orderedQuantity)}
-                </td>
-                <td className="px-2 py-2.5 text-right font-bold text-emerald-700">
-                  {formatNumber(line.acceptedQuantity)}
-                </td>
-                <td className="px-2 py-2.5 text-right font-bold text-amber-700">
-                  {formatNumber(line.incidentQuantity)}
-                </td>
-                <td className="px-2 py-2.5 text-right font-bold text-[var(--color-title)]">
-                  {formatNumber(line.pendingAfter)}
-                </td>
-                <td className="px-2 py-2.5">
-                  <p className="truncate" title={line.locationName}>
-                    {line.locationName}
-                  </p>
-                </td>
-                <td className="px-2 py-2.5 text-xs leading-5 text-[var(--color-text)]">
-                  {line.lotNumber ? <p>Lote: {line.lotNumber}</p> : null}
-                  {line.expirationDate ? <p>Vence: {formatDate(line.expirationDate)}</p> : null}
-                  {line.serialNumbers.length > 0 ? (
-                    <p className="break-words">Seriales: {line.serialNumbers.join(", ")}</p>
-                  ) : null}
-                  {!line.lotNumber && !line.expirationDate && line.serialNumbers.length === 0
-                    ? "Sin trazabilidad"
-                    : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-function HistoricalIncidentModal({
-  incident,
-  documentNumber,
-  originName,
-  resolving,
-  onResolve,
-  onClose,
-  onPreview,
-}: {
-  incident?: ReceivingDocumentIncident;
-  documentNumber: string;
-  originName: string;
-  resolving: boolean;
-  onResolve?: () => void;
-  onClose: () => void;
-  onPreview: (evidence: ReceiptIncidentEvidence) => void;
-}) {
-  return (
-    <Modal
-      open={Boolean(incident)}
-      title="Detalle de incidencia"
-      subtitle={incident?.status ? `Estado: ${incident.status === "open" ? "Abierta" : "Resuelta"}` : "Registro historico - solo lectura"}
-      onClose={onClose}
-      size="lg"
-    >
-      {incident ? (
-        <div className="space-y-4">
-          <dl className="grid gap-3 sm:grid-cols-2">
-            <DetailItem label="Producto" value={incident.productName} />
-            <DetailItem label="SKU" value={incident.sku} />
-            <DetailItem label="Tipo" value={incident.incidentTypeName} />
-            <DetailItem
-              label="Cantidad afectada"
-              value={
-                incident.quantityAffected === undefined
-                  ? "Incidencia general"
-                  : formatNumber(incident.quantityAffected)
-              }
-            />
-            {incident.status ? (
-              <DetailItem
-                label="Estado"
-                value={incident.status === "open" ? "Abierta" : "Resuelta"}
-              />
-            ) : null}
-            <DetailItem label="Fecha" value={formatDateTime(incident.createdAt)} />
-            <DetailItem label="Responsable" value={incident.createdByName} />
-            <DetailItem label="Recepcion relacionada" value={incident.receiptNumber} />
-            <DetailItem label="Documento origen" value={documentNumber} />
-            <DetailItem label="Proveedor" value={originName} />
-          </dl>
-          <div>
-            <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">
-              Observacion
-            </p>
-            <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--color-text)]">
-              {incident.description}
-            </p>
-          </div>
-          <EvidenceGallery evidence={incident.evidence} onPreview={onPreview} />
-          {onResolve ? (
-            <div className="flex justify-end border-t border-[var(--color-border)] pt-3">
-              <Button disabled={resolving} onClick={onResolve} type="button">
-                <CheckIcon />
-                Resolver incidencia
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </Modal>
-  );
-}
-
 function requiresTracking(line: ReceivingDocumentLine) {
   return line.tracking.lot || line.tracking.expiration || line.tracking.serial;
 }
@@ -2306,65 +1677,6 @@ function ReplacementModal({
   );
 }
 
-function EvidenceGallery({
-  evidence,
-  onPreview,
-}: {
-  evidence: ReceiptIncidentEvidence[];
-  onPreview: (evidence: ReceiptIncidentEvidence) => void;
-}) {
-  if (evidence.length === 0) return null;
-  return (
-    <div className="mt-3 flex flex-wrap gap-2">
-      {evidence.map((item) =>
-        item.previewUrl ? (
-          <button
-            key={item.id}
-            onClick={(event) => {
-              event.stopPropagation();
-              onPreview(item);
-            }}
-            type="button"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              alt={item.name}
-              className="h-20 w-24 rounded-md border border-[var(--color-border)] object-cover"
-              src={item.previewUrl}
-            />
-          </button>
-        ) : null,
-      )}
-    </div>
-  );
-}
-
-function EvidencePreview({
-  evidence,
-  onClose,
-}: {
-  evidence: ReceiptIncidentEvidence | null;
-  onClose: () => void;
-}) {
-  return (
-    <Modal
-      open={Boolean(evidence)}
-      title={evidence?.name ?? "Evidencia"}
-      onClose={onClose}
-      size="xl"
-    >
-      {evidence?.previewUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          alt={evidence.name}
-          className="mx-auto max-h-[72dvh] max-w-full object-contain"
-          src={evidence.previewUrl}
-        />
-      ) : null}
-    </Modal>
-  );
-}
-
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
@@ -2373,6 +1685,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       </span>
       {children}
     </label>
+  );
+}
+
+function DeferredPanel({ label }: { label: string }) {
+  return (
+    <div className="rounded-md border border-[var(--color-border)] bg-white p-4 text-sm font-semibold text-[var(--color-text-muted)]">
+      {label}
+    </div>
   );
 }
 
@@ -2439,22 +1759,6 @@ function getSummary(
   );
 }
 
-function fileToEvidence(file: File): Promise<ReceiptIncidentEvidence> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () =>
-      resolve({
-        id: `${file.name}-${file.size}-${Date.now()}`,
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        previewUrl: typeof reader.result === "string" ? reader.result : undefined,
-      });
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
-
 function formatNumber(value: number) {
   return new Intl.NumberFormat("es-GT", { maximumFractionDigits: 2 }).format(value);
 }
@@ -2481,12 +1785,6 @@ function getReceiptSequenceLabel(sequenceNumber: number) {
   if (sequenceNumber === 1) return "Primera recepcion";
   if (sequenceNumber === 2) return "Segunda recepcion";
   return `Recepcion ${sequenceNumber}`;
-}
-
-function formatFileSize(value: number) {
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
-  return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function Icon({ children, className, ...props }: SVGProps<SVGSVGElement>) {
@@ -2570,16 +1868,6 @@ function TrashIcon(props: SVGProps<SVGSVGElement>) {
       <path d="m19 6-1 14H6L5 6" />
       <path d="M10 11v5" />
       <path d="M14 11v5" />
-    </Icon>
-  );
-}
-
-function ImageIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <Icon {...props}>
-      <rect height="16" rx="2" width="18" x="3" y="4" />
-      <circle cx="8.5" cy="9" r="1.5" />
-      <path d="m21 15-5-5L5 20" />
     </Icon>
   );
 }

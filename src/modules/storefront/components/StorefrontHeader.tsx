@@ -146,6 +146,8 @@ export function StorefrontHeader() {
                         <StorefrontCatalogImage
                           alt={product.imageAlt ?? product.name}
                           className="h-11 w-11 shrink-0 rounded-md border border-[var(--color-border)] bg-slate-50 object-contain p-1"
+                          decoding="async"
+                          loading="lazy"
                           source={product.imageSource}
                         />
                         <span className="min-w-0 flex-1">

@@ -2,6 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
+import type { ImgHTMLAttributes } from "react";
 import type { CatalogImageSource } from "@/core/entities";
 import { useCatalogImageUrl } from "@/infrastructure/media/useCatalogImageUrl";
 import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
@@ -9,13 +10,12 @@ import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProv
 export function StorefrontCatalogImage({
   source,
   alt,
-  className,
-}: {
+  ...imageProps
+}: Omit<ImgHTMLAttributes<HTMLImageElement>, "alt" | "src"> & {
   source?: CatalogImageSource;
   alt: string;
-  className?: string;
 }) {
   const { tenantId } = usePublicTenant();
   const src = useCatalogImageUrl(tenantId, source);
-  return <img alt={alt} className={className} src={src} />;
+  return <img {...imageProps} alt={alt} src={src} />;
 }

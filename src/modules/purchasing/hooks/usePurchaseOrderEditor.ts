@@ -20,6 +20,7 @@ import {
   PurchaseOrderSubmissionError,
 } from "@/modules/purchasing/application/services/PurchaseOrderEditorService";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
+import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { toFiniteNumber, type NumericInputValue } from "@/shared/utils/numberInput";
 
 const EMPTY_MODEL: PurchaseOrderEditorModel = {
@@ -58,12 +59,25 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
       if (!currentBranch?.tenantId) return null;
       const requestId = productsRequestIdRef.current + 1;
       productsRequestIdRef.current = requestId;
-      const products = await service.getAvailableProducts(supplierId, currentBranch?.id);
+      const load = await service.startAvailableProductsLoad(supplierId, currentBranch?.id);
       if (productsRequestIdRef.current !== requestId) return null;
-      setAvailableProducts(products);
-      return products;
+      setAvailableProducts(load.products);
+      void load.inventory.then((products) => {
+        queueMicrotask(() => {
+          if (productsRequestIdRef.current !== requestId) return;
+          setAvailableProducts(products);
+          setModel((current) => ({
+            ...current,
+            lines: current.lines.map((line) => {
+              const product = products.find((item) => item.productId === line.productId);
+              return product ? mergeLineInventory(line, product) : line;
+            }),
+          }));
+        });
+      });
+      return load.products;
     },
-    [currentBranch, service],
+    [currentBranch?.id, currentBranch?.tenantId, service],
   );
 
   useEffect(() => {
@@ -115,12 +129,9 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
               : activeSuppliers,
           );
           if (resolution?.supplierId) {
-            const products = await service.getAvailableProducts(
-              resolution.supplierId,
-              currentBranch?.id,
-            );
+            const products = await loadAvailableProducts(resolution.supplierId);
             if (!active) return;
-            const lineProduct = products.find(
+            const lineProduct = products?.find(
               (product) => product.productId === resolution.productId,
             );
             setModel((current) => ({
@@ -130,14 +141,14 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
                 current.baseDate,
                 getExpectedLeadTime(
                   lineProduct ? [createEditorLine(lineProduct, resolution.quantity)] : [],
-                  products,
+                  products ?? [],
                   activeSuppliers.find((supplier) => supplier.id === resolution.supplierId)
                     ?.leadTimeDays,
                 ),
               ),
               lines: lineProduct ? [createEditorLine(lineProduct, resolution.quantity)] : [],
             }));
-            setAvailableProducts(products);
+            setAvailableProducts(products ?? []);
           } else {
             setModel((current) => ({
               ...current,
@@ -164,8 +175,18 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
     void load();
     return () => {
       active = false;
+      productsRequestIdRef.current += 1;
     };
-  }, [currentBranch?.id, currentBranch?.tenantId, orderId, prefill, service]);
+  }, [currentBranch?.id, currentBranch?.tenantId, loadAvailableProducts, orderId, prefill, service]);
+
+  useDataEvent("supplier.changed", (payload) => {
+    if (
+      currentBranch?.tenantId &&
+      (!payload.tenantId || payload.tenantId === currentBranch.tenantId)
+    ) {
+      service.invalidateActiveSuppliers(currentBranch.tenantId);
+    }
+  });
 
   const linePricing = useMemo(
     () => model.lines.map((line) => ({ lineId: line.id, ...getPricingDetails(line) })),
@@ -448,6 +469,21 @@ function createEditorLine(
     minimumOrderQuantity: product.minimumOrderQuantity,
     leadTimeDays: product.leadTimeDays,
     tiers: product.tiers,
+    stockQuantity: product.stockQuantity,
+    minStock: product.minStock,
+    reorderPoint: product.reorderPoint,
+    shortage: product.shortage,
+    suggestedReorder: product.suggestedReorder,
+    availabilityLabel: product.availabilityLabel,
+  };
+}
+
+function mergeLineInventory(
+  line: PurchaseOrderEditorLine,
+  product: PurchaseOrderAvailableProduct,
+): PurchaseOrderEditorLine {
+  return {
+    ...line,
     stockQuantity: product.stockQuantity,
     minStock: product.minStock,
     reorderPoint: product.reorderPoint,

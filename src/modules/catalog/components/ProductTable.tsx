@@ -81,6 +81,8 @@ export function ProductTable({
                       <CatalogImage
                         alt={product.name}
                         className="h-11 w-11 rounded-md border border-[var(--color-border)] object-contain"
+                        decoding="async"
+                        loading="lazy"
                         source={product.imageSource}
                         tenantId={product.tenantId}
                       />

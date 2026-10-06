@@ -108,6 +108,7 @@ export interface ProductEditorData {
     canReadAttributes: boolean;
     canManageAttributes: boolean;
     canManageSuppliers: boolean;
+    canReadLocations: boolean;
     canReadInventorySettings: boolean;
     canReadPromotions: boolean;
     canManagePromotions: boolean;

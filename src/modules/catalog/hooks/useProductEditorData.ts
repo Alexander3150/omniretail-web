@@ -25,7 +25,7 @@ export function useProductEditorData(productId?: string, branchId?: string, tena
     setLoading(true);
     setError(null);
     try {
-      const nextData = await service.execute(productId, branchId);
+      const nextData = await service.execute(productId);
       if (requestIdRef.current !== requestId) return;
       setData(nextData);
       setLoadedKey(requestKey);
@@ -37,7 +37,7 @@ export function useProductEditorData(productId?: string, branchId?: string, tena
     } finally {
       if (requestIdRef.current === requestId) setLoading(false);
     }
-  }, [branchId, productId, requestKey, service, tenantId]);
+  }, [productId, requestKey, service, tenantId]);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -45,7 +45,7 @@ export function useProductEditorData(productId?: string, branchId?: string, tena
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
     service
-      .execute(productId, branchId)
+      .execute(productId)
       .then((nextData) => {
         if (!active || requestIdRef.current !== requestId) return;
         setData(nextData);

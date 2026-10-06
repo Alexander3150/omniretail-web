@@ -1,21 +1,27 @@
-import type { Product } from "@/core/entities";
+import type { Product, StorageLocation } from "@/core/entities";
 import { LocationStatus, ProductType } from "@/core/enums";
+import { getProductMediaSource, selectPrimaryProductMedia } from "@/core/media/catalogImage";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   ProductEditorData,
   ProductMediaEditorValue,
   SupplierProductEditorValue,
 } from "@/modules/catalog/application/dto/ProductEditorDto";
-import { GetProductDetailService } from "@/modules/catalog/application/services/GetProductDetailService";
 import {
   ensureCanReadProducts,
   resolveTenantContext,
 } from "@/modules/catalog/application/services/serviceHelpers";
 
 export class GetProductEditorDataService {
+  private readonly kitEligibleLoads = new Map<string, Promise<Product[]>>();
+  private readonly locationLoads = new Map<
+    string,
+    Promise<{ branchLocations: StorageLocation[]; storageLocations: StorageLocation[] }>
+  >();
+
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async execute(productId?: string, branchId?: string): Promise<ProductEditorData> {
+  async execute(productId?: string): Promise<ProductEditorData> {
     const { tenantId, permissions } = await resolveTenantContext(this.repositories);
     ensureCanReadProducts(permissions);
     const apiMode = this.repositories.productRelationsDataSource === "api";
@@ -28,65 +34,22 @@ export class GetProductEditorDataService {
       canReadAttributes: !apiMode || hasPermission("catalog.attributes.read"),
       canManageAttributes: !apiMode || hasPermission("catalog.attributes.manage"),
       canManageSuppliers: !apiMode || hasPermission("admin.suppliers.manage"),
+      canReadLocations:
+        !apiMode ||
+        hasPermission("catalog.locations.read") ||
+        hasPermission("catalog.locations.manage"),
       canReadInventorySettings: !apiMode || hasPermission("inventory.stock.read"),
       canReadPromotions: !apiMode || hasPermission("catalog.promotions.read"),
       canManagePromotions: !apiMode || hasPermission("catalog.promotions.manage"),
     };
-    const canReadLocations =
-      !apiMode ||
-      hasPermission("catalog.locations.read") ||
-      hasPermission("catalog.locations.manage");
-
-    // Product Detail inicia primero y reutiliza el contexto ya resuelto. Sus lecturas de Product,
-    // media, category y unit avanzan en paralelo con los masters independientes del editor.
+    // El editor necesita el Product scoped y su media para conservar todo el estado editable.
+    // Category y Unit no se muestran como entidades en el primer paint y no se leen aqui.
     const detailLoadPromise = productId
-      ? new GetProductDetailService(this.repositories).executeWithMedia(productId, {
-          tenantId,
-          permissions,
-        })
+      ? this.loadEditorDetailWithMedia(tenantId, productId)
       : Promise.resolve(null);
     const suppliersPromise = access.canManageSuppliers
       ? this.repositories.suppliers.getActiveByTenant(tenantId)
       : Promise.resolve([]);
-    const branchDataPromise = (
-      branchId
-        ? this.repositories.branches.getByIdScoped(tenantId, branchId)
-        : Promise.resolve(null)
-    ).then(async (branch) => {
-      // branchId solo habilita lecturas cuando la sucursal pertenece al tenant activo.
-      const tenantBranchId = branch && branch.tenantId === tenantId ? branch.id : undefined;
-      const branchLocations =
-        tenantBranchId && canReadLocations
-          ? await this.repositories.inventory.getLocations(tenantBranchId)
-          : [];
-      return {
-        tenantBranchId,
-        branchLocations,
-        activeStorageLocations: branchLocations.filter(
-          (location) =>
-            location.tenantId === tenantId && location.status === LocationStatus.active,
-        ),
-      };
-    });
-    const selectKitEligibleProducts = (products: Product[], excludeProductId?: string) =>
-      products.filter(
-        (product) =>
-          product.id !== excludeProductId &&
-          product.productType === ProductType.physical &&
-          product.tracking.stock,
-      );
-    const kitEligibleProductsPromise = productId
-      ? detailLoadPromise.then((detailLoad) =>
-          detailLoad?.detail.product.productType === ProductType.kit
-            ? this.repositories.products
-                .getByTenant(tenantId)
-                .then((products) => selectKitEligibleProducts(products, productId))
-            : [],
-        )
-      : this.repositories.products
-          .getByTenant(tenantId)
-          .then((products) => selectKitEligibleProducts(products));
-
     // Las relaciones dependen de un Product scoped valido, pero no de suppliers ni locations.
     // Comienzan apenas termina Product Detail mientras esos masters siguen cargando. Attributes,
     // price tiers, promotions, conversions e inventory settings quedan fuera y se hidratan al
@@ -132,14 +95,10 @@ export class GetProductEditorDataService {
     const [
       detailLoad,
       suppliers,
-      branchData,
-      kitEligibleProducts,
       relations,
     ] = await Promise.all([
       detailLoadPromise,
       suppliersPromise,
-      branchDataPromise,
-      kitEligibleProductsPromise,
       relationsPromise,
     ]);
 
@@ -150,8 +109,8 @@ export class GetProductEditorDataService {
         unitConversion: undefined,
         unitConversions: undefined,
         inventorySettings: undefined,
-        storageLocations: branchData.activeStorageLocations,
-        branchLocations: branchData.branchLocations,
+        storageLocations: [],
+        branchLocations: [],
         currentDefaultLocation: undefined,
         attributeDefinitions: undefined,
         attributes: undefined,
@@ -161,7 +120,7 @@ export class GetProductEditorDataService {
         media: [],
         promotionCount: undefined,
         kitComponents: [],
-        kitEligibleProducts,
+        kitEligibleProducts: [],
       };
     }
 
@@ -182,8 +141,8 @@ export class GetProductEditorDataService {
       unitConversion: undefined,
       unitConversions: undefined,
       inventorySettings: undefined,
-      storageLocations: branchData.activeStorageLocations,
-      branchLocations: branchData.branchLocations,
+      storageLocations: [],
+      branchLocations: [],
       currentDefaultLocation: undefined,
       attributeDefinitions: undefined,
       attributes: undefined,
@@ -196,7 +155,99 @@ export class GetProductEditorDataService {
         componentProductId: component.componentProductId,
         quantityPerKit: component.quantityPerKit,
       })),
-      kitEligibleProducts,
+      kitEligibleProducts: [],
+    };
+  }
+
+  async getKitEligibleProducts(excludeProductId?: string): Promise<Product[]> {
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanReadProducts(permissions);
+    const key = `${tenantId}:${excludeProductId ?? "new"}`;
+    const existing = this.kitEligibleLoads.get(key);
+    if (existing) return existing;
+
+    const load = this.repositories.products
+      .getByTenant(tenantId)
+      .then((products) =>
+        products.filter(
+          (product) =>
+            product.id !== excludeProductId &&
+            product.productType === ProductType.physical &&
+            product.tracking.stock,
+        ),
+      )
+      .catch((error) => {
+        this.kitEligibleLoads.delete(key);
+        throw error;
+      });
+    this.kitEligibleLoads.set(key, load);
+    return load;
+  }
+
+  invalidateKitEligibleProducts(tenantId?: string): void {
+    if (!tenantId) {
+      this.kitEligibleLoads.clear();
+      return;
+    }
+    for (const key of this.kitEligibleLoads.keys()) {
+      if (key.startsWith(`${tenantId}:`)) this.kitEligibleLoads.delete(key);
+    }
+  }
+
+  async getLocations(
+    branchId: string,
+  ): Promise<{ branchLocations: StorageLocation[]; storageLocations: StorageLocation[] }> {
+    const { tenantId, permissions } = await resolveTenantContext(this.repositories);
+    ensureCanReadProducts(permissions);
+    const apiMode = this.repositories.productRelationsDataSource === "api";
+    const canReadLocations =
+      !apiMode ||
+      permissions.includes("catalog.locations.read") ||
+      permissions.includes("catalog.locations.manage");
+    if (!canReadLocations) return { branchLocations: [], storageLocations: [] };
+
+    const key = `${tenantId}:${branchId}`;
+    const existing = this.locationLoads.get(key);
+    if (existing) return existing;
+
+    const load = this.repositories.branches
+      .getByIdScoped(tenantId, branchId)
+      .then(async (branch) => {
+        if (!branch || branch.tenantId !== tenantId) {
+          return { branchLocations: [], storageLocations: [] };
+        }
+        const branchLocations = await this.repositories.inventory.getLocations(branch.id);
+        return {
+          branchLocations,
+          storageLocations: branchLocations.filter(
+            (location) =>
+              location.tenantId === tenantId && location.status === LocationStatus.active,
+          ),
+        };
+      })
+      .catch((error) => {
+        this.locationLoads.delete(key);
+        throw error;
+      });
+    this.locationLoads.set(key, load);
+    return load;
+  }
+
+  private async loadEditorDetailWithMedia(tenantId: string, productId: string) {
+    const product = await this.repositories.products.getByIdScoped(tenantId, productId);
+    if (!product) return null;
+    const media = await this.repositories.productMedia.getByProduct(product.id, product.tenantId);
+    const primaryMedia = selectPrimaryProductMedia(
+      media.filter((item) => item.tenantId === product.tenantId),
+    );
+    return {
+      detail: {
+        product,
+        imageSource: primaryMedia ? (getProductMediaSource(primaryMedia) ?? undefined) : undefined,
+        category: null,
+        unit: null,
+      },
+      media,
     };
   }
 }

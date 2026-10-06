@@ -58,6 +58,8 @@ export function HomePage() {
               <StorefrontCatalogImage
                 alt={slide.title}
                 className="absolute inset-0 z-0 h-full w-full object-cover object-center"
+                fetchPriority="high"
+                loading="eager"
                 source={slide.imageSource}
               />
               <div
@@ -185,6 +187,8 @@ export function HomePage() {
                 <StorefrontCatalogImage
                   alt={category.name}
                   className="aspect-square w-full rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] object-cover p-3 shadow-sm transition duration-300 group-hover:-translate-y-1 group-hover:border-[var(--color-primary)] group-hover:shadow-md"
+                  decoding="async"
+                  loading="lazy"
                   source={category.imageSource}
                 />
                 <p className="mt-3 font-bold text-[var(--color-text)]">{category.name}</p>
