@@ -52,6 +52,11 @@ export class PurchaseOrderSubmissionError extends PurchasingServiceError {
   }
 }
 
+export interface PurchaseOrderEditLoadResult {
+  model: PurchaseOrderEditorModel;
+  availableProducts: PurchaseOrderAvailableProduct[];
+}
+
 export class PurchaseOrderEditorService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
@@ -74,7 +79,11 @@ export class PurchaseOrderEditorService {
       .sort((left, right) => left.name.localeCompare(right.name));
   }
 
-  async getOrderForEdit(id: string, branchId?: string): Promise<PurchaseOrderEditorModel> {
+  /**
+   * Devuelve el modelo editable Y los productos disponibles con los que se construyo, para que el
+   * caller no vuelva a pedir `getAvailableProducts` (misma consulta, mismo proveedor/sucursal).
+   */
+  async getOrderForEdit(id: string, branchId?: string): Promise<PurchaseOrderEditLoadResult> {
     const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
     ensureCanCreatePurchaseOrders(permissions);
     // El id llega desde la URL/estado del cliente: `getByIdScoped` trata una orden de otro
@@ -98,16 +107,9 @@ export class PurchaseOrderEditorService {
         "La orden contiene productos que ya no estan disponibles con este proveedor.",
       );
     }
-    const orderUnits = await Promise.all(
-      (order.items ?? []).map((item) =>
-        this.repositories.units.getByIdScoped(tenantId, item.unitId),
-      ),
-    );
-    const unitById = new Map(
-      orderUnits.flatMap((unit) => (unit ? ([[unit.id, unit]] as const) : [])),
-    );
-
-    return {
+    // Cada linea ya fue validada contra un availableProduct, que trae `unitAllowsDecimals` de la
+    // unidad de compra vigente: no hace falta leer las unidades de la orden una por una.
+    const model: PurchaseOrderEditorModel = {
       id: order.id,
       supplierId: order.supplierId,
       baseDate: toDateInputValue(order.createdAt),
@@ -116,15 +118,15 @@ export class PurchaseOrderEditorService {
       status: order.status,
       lines: (order.items ?? []).map((item) => {
         const availableProduct = availableByProductId.get(item.productId);
-        return toEditorLine(
-          item,
-          availableProduct,
-          availableProduct?.unitAllowsDecimals ??
-            unitById.get(item.unitId)?.allowsDecimals ??
-            false,
-        );
+        if (!availableProduct) {
+          throw new PurchasingServiceError(
+            "La orden contiene productos que ya no estan disponibles con este proveedor.",
+          );
+        }
+        return toEditorLine(item, availableProduct, availableProduct.unitAllowsDecimals);
       }),
     };
+    return { model, availableProducts };
   }
 
   async getAvailableProducts(

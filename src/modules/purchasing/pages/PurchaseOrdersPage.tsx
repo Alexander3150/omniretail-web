@@ -61,6 +61,7 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
     error,
     mutationPending,
     canCreatePurchaseOrders,
+    suggestions: reorderSuggestions,
     updateFilters,
     setPage,
     setPageSize,
@@ -75,7 +76,6 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
     order: PurchaseOrderRowReadModel;
     action: PurchaseOrderAction;
   } | null>(null);
-  const [suggestionsExpanded, setSuggestionsExpanded] = useState(false);
   // Contexto temporal (sessionStorage) en lugar de ?orderId=<UUID>; el id solo vive en memoria.
   const [contextOrderId, setContextOrderId] = useState<string | null>(null);
   const activeOrderId = initialOrderId?.trim() || contextOrderId || undefined;
@@ -386,11 +386,14 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
 
       <ReorderSuggestions
         canCreateOrder={canCreatePurchaseOrders}
-        expanded={suggestionsExpanded}
-        notice={data.suggestionsNotice}
-        suggestions={data.suggestions}
+        error={reorderSuggestions.error}
+        expanded={reorderSuggestions.expanded}
+        loaded={reorderSuggestions.loaded}
+        loading={reorderSuggestions.loading}
+        notice={reorderSuggestions.notice}
+        suggestions={reorderSuggestions.items}
         onCreateOrder={openSuggestionOrder}
-        onToggle={() => setSuggestionsExpanded((current) => !current)}
+        onToggle={reorderSuggestions.toggle}
       />
 
       {error ? <InlineAlert title={error} tone="danger" /> : null}
@@ -496,14 +499,20 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
 
 function ReorderSuggestions({
   canCreateOrder,
+  error,
   expanded,
+  loaded,
+  loading,
   notice,
   suggestions,
   onCreateOrder,
   onToggle,
 }: {
   canCreateOrder: boolean;
+  error?: string;
   expanded: boolean;
+  loaded: boolean;
+  loading: boolean;
   notice?: string;
   suggestions: ReorderSuggestionReadModel[];
   onCreateOrder: (suggestion: ReorderSuggestionReadModel) => void;
@@ -521,8 +530,9 @@ function ReorderSuggestions({
             Reposicion sugerida
           </h2>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-            {formatNumber(requiringPurchase)} requieren compra · {formatNumber(requiringCompletion)}{" "}
-            requieren completar compra · {formatNumber(inProgress)} en curso
+            {loaded
+              ? `${formatNumber(requiringPurchase)} requieren compra · ${formatNumber(requiringCompletion)} requieren completar compra · ${formatNumber(inProgress)} en curso`
+              : "Las necesidades de reposicion se calculan al abrir el panel."}
           </p>
         </div>
         <Button
@@ -537,8 +547,13 @@ function ReorderSuggestions({
 
       {expanded ? (
         <div className="space-y-2 border-t border-[var(--color-border)] px-4 py-3">
+          {error ? <InlineAlert title={error} tone="danger" /> : null}
           {notice ? <InlineAlert title={notice} tone="warning" /> : null}
-          {suggestions.length === 0 ? (
+          {loading && !loaded ? (
+            <p className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-4 py-3 text-sm font-medium text-[var(--color-text-muted)]">
+              Cargando sugerencias...
+            </p>
+          ) : suggestions.length === 0 && !error ? (
             <p className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] px-4 py-3 text-sm font-medium text-[var(--color-text-muted)]">
               Sin sugerencias de reposicion por ahora.
             </p>

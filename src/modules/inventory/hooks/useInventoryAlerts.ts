@@ -5,6 +5,7 @@ import { LocationStatus, SaasCapabilityKey } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
+import { createReloadCoalescer } from "@/shared/utils/reloadCoalescer";
 import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 import type {
@@ -216,6 +217,25 @@ export function useInventoryAlerts() {
     await applyRequest(requestInput, effectiveBranchId);
   }, [applyRequest, branchLoading, effectiveBranchId, requestInput, sessionLoading]);
 
+  // Coalescing LOCAL, solo para el stock: inventory.changed + stock.changed + el reload explicito
+  // de adjustStock/applyCount comparten una carga efectiva; una invalidacion durante el vuelo
+  // genera UNA recarga trailing. Transfers, product/category/business-config conservan `reload`.
+  // Un coalescer pertenece a un contexto (sucursal + filtros/pagina) y NO captura refs: la carga
+  // vigente se enlaza desde un efecto y se retira al cambiar de contexto, asi un coalescer viejo
+  // nunca ejecuta la carga del contexto nuevo.
+  const reloadContextKey = `${effectiveBranchId}|${JSON.stringify(requestInput)}`;
+  const reloadCoalescer = useMemo(
+    () => createReloadCoalescer(null, reloadContextKey),
+    [reloadContextKey],
+  );
+  useEffect(() => {
+    reloadCoalescer.setLoader(reload);
+    return () => reloadCoalescer.setLoader(null);
+  }, [reload, reloadCoalescer]);
+  const invalidateStockReload = useCallback(() => {
+    void reloadCoalescer.invalidate();
+  }, [reloadCoalescer]);
+
   useEffect(() => {
     if (!effectiveBranchId || branchLoading || sessionLoading) return;
     void applyRequest(requestInput, effectiveBranchId);
@@ -239,8 +259,8 @@ export function useInventoryAlerts() {
     return () => window.clearTimeout(timeoutId);
   }, [apiMode, search]);
 
-  useDataEvent("inventory.changed", reload);
-  useDataEvent("stock.changed", reload);
+  useDataEvent("inventory.changed", invalidateStockReload);
+  useDataEvent("stock.changed", invalidateStockReload);
   useDataEvent("inventory-transfer-request.changed", reload);
   useDataEvent("inventory-transfer.changed", reload);
   useDataEvent("product.changed", reload);
@@ -444,11 +464,12 @@ export function useInventoryAlerts() {
   );
 
   async function adjustStock(dto: AdjustStockDto) {
+    const versionBefore = reloadCoalescer.version();
     setBusy(true);
     setError(null);
     try {
       const result = await adjustmentService.execute(dto);
-      await reload();
+      await reloadCoalescer.reloadAfter(versionBefore);
       return result;
     } catch (caughtError) {
       const message = cleanInventoryError(caughtError, "No se pudo registrar el ajuste.");
@@ -463,6 +484,7 @@ export function useInventoryAlerts() {
   // un fallo de PDF nunca invalida el conteo ya aplicado.
   async function applyCount(input: ReconcileCountInput) {
     if (!countService) throw new Error("El conteo fisico trazable requiere modo API.");
+    const versionBefore = reloadCoalescer.version();
     setBusy(true);
     try {
       const result = await countService.reconcile(input);
@@ -472,7 +494,7 @@ export function useInventoryAlerts() {
       } catch {
         pdfFailed = true;
       }
-      await reload();
+      await reloadCoalescer.reloadAfter(versionBefore);
       return { result, pdfFailed };
     } finally {
       setBusy(false);

@@ -86,14 +86,11 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
         if (!active) return;
         if (orderId) {
           setSuppliers(activeSuppliers);
-          const order = await service.getOrderForEdit(orderId, currentBranch?.id);
-          const products = await service.getAvailableProducts(
-            order.supplierId,
-            currentBranch?.id,
-          );
+          // getOrderForEdit ya trae los productos disponibles con los que armo el modelo.
+          const loaded = await service.getOrderForEdit(orderId, currentBranch?.id);
           if (!active) return;
-          setModel(order);
-          setAvailableProducts(products);
+          setModel(loaded.model);
+          setAvailableProducts(loaded.availableProducts);
         } else if (prefill?.productId) {
           const resolution = await service.resolvePrefillContext(prefill);
           if (!active) return;

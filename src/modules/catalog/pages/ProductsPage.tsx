@@ -20,7 +20,6 @@ import {
   ChevronRightIcon,
   PlusIcon,
 } from "@/modules/catalog/components/CatalogIcons";
-import { useProductFormOptions } from "@/modules/catalog/hooks/useProductFormOptions";
 import { useProductMutations } from "@/modules/catalog/hooks/useProductMutations";
 import { useProductPermissions } from "@/modules/catalog/hooks/useProductPermissions";
 import { useProducts } from "@/modules/catalog/hooks/useProducts";
@@ -41,6 +40,7 @@ export function ProductsPage() {
     loading,
     error,
     items,
+    categories,
     filters,
     filtersEnabled,
     page,
@@ -51,7 +51,6 @@ export function ProductsPage() {
     setPageSize,
     updateFilters,
   } = useProducts();
-  const { options } = useProductFormOptions();
   const mutations = useProductMutations();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [quickViewProduct, setQuickViewProduct] = useState<ProductListItem | null>(null);
@@ -134,7 +133,7 @@ export function ProductsPage() {
       ) : null}
       {filtersOpen && filtersEnabled ? (
         <ProductFilters
-          categories={options?.categories ?? []}
+          categories={categories}
           filters={filters}
           onChange={updateFilters}
         />

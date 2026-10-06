@@ -3,6 +3,7 @@ import {
   BranchStatus,
   BranchType,
   BusinessPreset,
+  CategoryStatus,
   ProductStatus,
   ProductType,
   RoleStatus,
@@ -448,6 +449,76 @@ async function verifyStorefrontReadUnaffected() {
   assert.ok(result, "10: la lectura pública del storefront no debe verse afectada");
 }
 
+// 11. el listado expone las categorias ACTIVAS del tenant (sin pedir useProductFormOptions)
+async function verifyProductsListExposesActiveTenantCategories() {
+  const { repositories, store } = createProductsHarness(["catalog.products.read"]);
+  store.mutate((db) => {
+    db.categories.push({
+      id: "cat-archived-products-test",
+      tenantId: TENANT_A,
+      name: "Categoria archivada",
+      slug: "categoria-archivada",
+      status: CategoryStatus.archived,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+  });
+  const result = await new GetProductsService(repositories).execute(PRODUCT_LIST_PARAMS);
+  assert.ok(result.categories.length > 0, "11: el listado trae categorias para los filtros");
+  assert.ok(
+    result.categories.every(
+      (category) => category.tenantId === TENANT_A && category.status === CategoryStatus.active,
+    ),
+    "11: solo categorias activas del tenant actual",
+  );
+  assert.ok(
+    !result.categories.some((category) => category.id === "cat-archived-products-test"),
+    "11: una categoria archivada no aparece",
+  );
+  assert.ok(
+    !result.categories.some((category) => category.id === "cat-products-hardening-b"),
+    "11: una categoria de OTRO tenant no aparece",
+  );
+  const active = await repositories.categories.getActiveByTenant(TENANT_A);
+  assert.deepEqual(
+    result.categories.map((category) => category.id),
+    active.map((category) => category.id),
+    "11: mismo orden que getActiveByTenant",
+  );
+}
+
+// 12. category.changed invalida el cache de categorias del service (solo el tenant indicado)
+async function verifyCategoriesCacheInvalidation() {
+  const { repositories } = createProductsHarness(["catalog.products.read"]);
+  let categoryLoads = 0;
+  const countingCategories = new Proxy(repositories.categories, {
+    get(target, prop) {
+      const value = Reflect.get(target, prop);
+      if (typeof value !== "function") return value;
+      return (...args: unknown[]) => {
+        if (prop === "getByTenant") categoryLoads += 1;
+        return (value as (...a: unknown[]) => unknown).apply(target, args);
+      };
+    },
+  });
+  const apiService = new GetProductsService({
+    ...repositories,
+    productDataSource: "api",
+    categories: countingCategories,
+  } as unknown as RepositoryRegistry);
+
+  await apiService.execute(PRODUCT_LIST_PARAMS);
+  await apiService.execute(PRODUCT_LIST_PARAMS);
+  assert.equal(categoryLoads, 1, "12: sin invalidacion se reutiliza el cache de categorias");
+  apiService.invalidateCategories(TENANT_B);
+  await apiService.execute(PRODUCT_LIST_PARAMS);
+  assert.equal(categoryLoads, 1, "12: invalidar otro tenant no limpia el cache de este");
+  apiService.invalidateCategories(TENANT_A);
+  const result = await apiService.execute(PRODUCT_LIST_PARAMS);
+  assert.equal(categoryLoads, 2, "12: category.changed fuerza una nueva lectura");
+  assert.ok(result.categories.every((category) => category.status === CategoryStatus.active));
+}
+
 async function main() {
   await verifyReadPermissionAllowsList();
   console.log("1. catalog.products.read -> listado PASS: PASS");
@@ -463,6 +534,10 @@ async function main() {
   console.log("9. mutación cross-tenant DENIED: PASS");
   await verifyStorefrontReadUnaffected();
   console.log("10. lectura pública de Storefront sin regresión: PASS");
+  await verifyProductsListExposesActiveTenantCategories();
+  console.log("11. listado expone solo categorías activas del tenant: PASS");
+  await verifyCategoriesCacheInvalidation();
+  console.log("12. category.changed invalida el cache de categorías por tenant: PASS");
 }
 
 void main();

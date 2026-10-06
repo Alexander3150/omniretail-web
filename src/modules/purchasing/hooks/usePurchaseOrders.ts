@@ -10,11 +10,16 @@ import type {
   PurchaseOrderRowReadModel,
   PurchaseOrderStatusFilter,
   PurchaseOrdersReadModel,
+  ReorderSuggestionReadModel,
 } from "@/modules/purchasing/application/dto/PurchaseOrderReadModel";
 import {
   GetPurchaseOrdersReadModelService,
   type GetPurchaseOrdersParams,
 } from "@/modules/purchasing/application/services/GetPurchaseOrdersReadModelService";
+import {
+  ReorderSuggestionsLoader,
+  type ReorderSuggestionsSnapshot,
+} from "@/modules/purchasing/application/services/ReorderSuggestionsLoader";
 import { UpdatePurchaseOrderStatusService } from "@/modules/purchasing/application/services/UpdatePurchaseOrderStatusService";
 import type { TablePageSize } from "@/shared/components/TablePagination";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
@@ -29,6 +34,8 @@ const MUTATION_ACTION_IDS: ReadonlySet<PurchaseOrderAction["id"]> = new Set([
   "approve",
   "cancel",
 ]);
+
+const EMPTY_SUGGESTIONS: ReorderSuggestionReadModel[] = [];
 
 interface PurchaseOrderFilters {
   search: string;
@@ -161,6 +168,52 @@ export function usePurchaseOrders() {
   useDataEvent("supplier.changed", reload);
   useDataEvent("supplier-product.changed", reload);
   useDataEvent("product.changed", reload);
+
+  // --- Sugerencias de reposicion: carga perezosa, cache local al hook (tenant + sucursal) ---
+  // No dependen de la pagina ni de los filtros de ordenes. Solo se piden al expandir el panel; se
+  // reutilizan al reabrir y se marcan stale con los mismos eventos que ya refrescan la lista.
+  // La logica (cache por tenant+sucursal, stale, coalescing, trailing) vive en ReorderSuggestionsLoader.
+  const suggestionsKey = `${currentBranch?.tenantId ?? ""}|${activeBranchId ?? ""}`;
+  const [suggestionsExpanded, setSuggestionsExpanded] = useState(false);
+  const [suggestionsState, setSuggestionsState] = useState<ReorderSuggestionsSnapshot | null>(null);
+  const suggestionsLoader = useMemo(
+    () =>
+      new ReorderSuggestionsLoader(
+        (branchId) => service.loadReorderSuggestions(branchId),
+        setSuggestionsState,
+      ),
+    [service],
+  );
+  useEffect(() => {
+    suggestionsLoader.setContext(suggestionsKey, activeBranchId);
+  }, [activeBranchId, suggestionsKey, suggestionsLoader]);
+
+  const invalidateSuggestions = useCallback(() => suggestionsLoader.invalidate(), [suggestionsLoader]);
+  useDataEvent("purchase-order.changed", invalidateSuggestions);
+  useDataEvent("receipt.changed", invalidateSuggestions);
+  useDataEvent("inventory.changed", invalidateSuggestions);
+  useDataEvent("stock.changed", invalidateSuggestions);
+  useDataEvent("supplier.changed", invalidateSuggestions);
+  useDataEvent("supplier-product.changed", invalidateSuggestions);
+  useDataEvent("product.changed", invalidateSuggestions);
+
+  const toggleSuggestions = useCallback(() => {
+    const next = !suggestionsExpanded;
+    setSuggestionsExpanded(next);
+    suggestionsLoader.setExpanded(next);
+  }, [suggestionsExpanded, suggestionsLoader]);
+
+  const currentSuggestions =
+    suggestionsState?.key === suggestionsKey ? suggestionsState : null;
+  const suggestionsPanel = {
+    expanded: suggestionsExpanded,
+    loaded: currentSuggestions?.loaded ?? false,
+    loading: currentSuggestions?.loading ?? false,
+    items: currentSuggestions?.suggestions ?? EMPTY_SUGGESTIONS,
+    notice: currentSuggestions?.notice,
+    error: currentSuggestions?.error,
+    toggle: toggleSuggestions,
+  };
 
   const canUsePurchasing = hasCapability(SaasCapabilityKey.purchasing);
   const canCreatePurchaseOrders =
@@ -295,6 +348,7 @@ export function usePurchaseOrders() {
     error,
     mutationPending,
     canCreatePurchaseOrders,
+    suggestions: suggestionsPanel,
     updateFilters,
     setPage,
     setPageSize,
