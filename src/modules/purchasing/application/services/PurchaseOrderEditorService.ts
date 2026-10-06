@@ -57,26 +57,43 @@ export interface PurchaseOrderEditLoadResult {
   availableProducts: PurchaseOrderAvailableProduct[];
 }
 
+export interface PurchaseOrderAvailableProductsLoad {
+  products: PurchaseOrderAvailableProduct[];
+  inventory: Promise<PurchaseOrderAvailableProduct[]>;
+}
+
+type PurchaseOrderInventorySnapshot = Pick<
+  PurchaseOrderAvailableProduct,
+  "availabilityLabel"
+> &
+  Partial<
+    Pick<
+      PurchaseOrderAvailableProduct,
+      "stockQuantity" | "minStock" | "reorderPoint" | "shortage" | "suggestedReorder"
+    >
+  >;
+
+type PurchaseOrderInventoryLoadResult =
+  | { snapshot: PurchaseOrderInventorySnapshot }
+  | { error: unknown };
+
 export class PurchaseOrderEditorService {
+  private readonly activeSupplierLoads = new Map<
+    string,
+    Promise<PurchaseOrderEditorSupplier[]>
+  >();
+
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async getActiveSuppliers(): Promise<PurchaseOrderEditorSupplier[]> {
     const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
     ensureCanCreatePurchaseOrders(permissions);
-    const suppliers = await this.repositories.suppliers.getActiveByTenant(tenantId);
-    return suppliers
-      .map((supplier) => ({
-        id: supplier.id,
-        name: supplier.name,
-        paymentTermsLabel: "No definido",
-        currencyLabel: "No definida",
-        leadTimeDays: supplier.leadTimeDays,
-        leadTimeLabel:
-          typeof supplier.leadTimeDays === "number"
-            ? `${supplier.leadTimeDays} dias`
-            : "No definido",
-      }))
-      .sort((left, right) => left.name.localeCompare(right.name));
+    return this.getActiveSuppliersForTenant(tenantId);
+  }
+
+  invalidateActiveSuppliers(tenantId?: string): void {
+    if (tenantId) this.activeSupplierLoads.delete(tenantId);
+    else this.activeSupplierLoads.clear();
   }
 
   /**
@@ -133,12 +150,25 @@ export class PurchaseOrderEditorService {
     supplierId: string,
     branchId?: string,
   ): Promise<PurchaseOrderAvailableProduct[]> {
+    // EDIT conserva su validacion independiente; el cache de suppliers pertenece al flujo NEW.
+    const load = await this.startAvailableProductsLoad(supplierId, branchId, false, false);
+    return load.inventory;
+  }
+
+  async startAvailableProductsLoad(
+    supplierId: string,
+    branchId?: string,
+    reuseActiveSuppliers = true,
+    tolerateInventoryErrors = true,
+  ): Promise<PurchaseOrderAvailableProductsLoad> {
     const { tenantId, user, permissions } = await resolvePurchasingContext(this.repositories);
     ensureCanCreatePurchaseOrders(permissions);
-    if (!supplierId) return [];
+    if (!supplierId) return { products: [], inventory: Promise.resolve([]) };
     // El supplierId llega desde un dropdown en el cliente: no confiar en el valor sin verificar
     // que el proveedor exista y pertenezca al tenant activo antes de exponer su catálogo.
-    const activeSuppliers = await this.repositories.suppliers.getActiveByTenant(tenantId);
+    const activeSuppliers = reuseActiveSuppliers
+      ? await this.getActiveSuppliersForTenant(tenantId)
+      : await this.repositories.suppliers.getActiveByTenant(tenantId);
     if (!activeSuppliers.some((supplier) => supplier.id === supplierId)) {
       throw new PurchasingServiceError(
         "El proveedor seleccionado no esta disponible para compras.",
@@ -175,6 +205,10 @@ export class PurchaseOrderEditorService {
     );
     const unitById = new Map(units.map((unit) => [unit.id, unit]));
     const categoryById = new Map(categories.map((category) => [category.id, category]));
+    const inventoryByProductId = new Map<
+      string,
+      Promise<PurchaseOrderInventoryLoadResult>
+    >();
 
     const rows = await Promise.all(
       supplierProducts
@@ -195,15 +229,19 @@ export class PurchaseOrderEditorService {
           const categoryName = product.categoryId
             ? (categoryById.get(product.categoryId)?.name ?? "Sin categoria")
             : "Sin categoria";
-          const [tiers, inventory] = await Promise.all([
+          const inventory = this.getInventorySnapshot(
+            product,
+            tenantBranchId,
+            permissions.includes(INVENTORY_STOCK_READ_PERMISSION),
+          ).then(
+            (snapshot): PurchaseOrderInventoryLoadResult => ({ snapshot }),
+            (error): PurchaseOrderInventoryLoadResult => ({ error }),
+          );
+          inventoryByProductId.set(product.id, inventory);
+          const tiers = await (
             supplierProduct.costTiers ??
-              this.repositories.supplierProducts.getCostTiers(supplierProduct.id),
-            this.getInventorySnapshot(
-              product,
-              tenantBranchId,
-              permissions.includes(INVENTORY_STOCK_READ_PERMISSION),
-            ),
-          ]);
+            this.repositories.supplierProducts.getCostTiers(supplierProduct.id)
+          );
           return {
             id: supplierProduct.id,
             productId: supplierProduct.productId,
@@ -222,7 +260,7 @@ export class PurchaseOrderEditorService {
               minQuantity: tier.minQuantity,
               unitCost: tier.unitCost,
             })),
-            ...inventory,
+            ...unavailableInventorySnapshot("Cargando inventario..."),
             searchText: [product.name, product.sku, supplierProduct.supplierSku, categoryName]
               .filter(Boolean)
               .join(" ")
@@ -231,7 +269,50 @@ export class PurchaseOrderEditorService {
         }),
     );
 
-    return rows.sort((left, right) => left.productName.localeCompare(right.productName));
+    const availableProducts = rows.sort((left, right) =>
+      left.productName.localeCompare(right.productName),
+    );
+    const inventory = Promise.all(
+      availableProducts.map(async (product) => {
+        const result = await inventoryByProductId.get(product.productId)!;
+        if ("error" in result && !tolerateInventoryErrors) throw result.error;
+        return {
+          ...product,
+          ...("snapshot" in result ? result.snapshot : unavailableInventorySnapshot()),
+        };
+      }),
+    );
+    return { products: availableProducts, inventory };
+  }
+
+  private getActiveSuppliersForTenant(
+    tenantId: string,
+  ): Promise<PurchaseOrderEditorSupplier[]> {
+    const existing = this.activeSupplierLoads.get(tenantId);
+    if (existing) return existing;
+    const load = this.repositories.suppliers
+      .getActiveByTenant(tenantId)
+      .then((suppliers) =>
+        suppliers
+          .map((supplier) => ({
+            id: supplier.id,
+            name: supplier.name,
+            paymentTermsLabel: "No definido",
+            currencyLabel: "No definida",
+            leadTimeDays: supplier.leadTimeDays,
+            leadTimeLabel:
+              typeof supplier.leadTimeDays === "number"
+                ? `${supplier.leadTimeDays} dias`
+                : "No definido",
+          }))
+          .sort((left, right) => left.name.localeCompare(right.name)),
+      )
+      .catch((error) => {
+        this.activeSupplierLoads.delete(tenantId);
+        throw error;
+      });
+    this.activeSupplierLoads.set(tenantId, load);
+    return load;
   }
 
   private async getInventorySnapshot(
@@ -301,7 +382,7 @@ export class PurchaseOrderEditorService {
 
     const [supplierProducts, activeSuppliers] = await Promise.all([
       this.repositories.supplierProducts.getByProductForTenant(tenantId, product.id),
-      this.repositories.suppliers.getActiveByTenant(tenantId),
+      this.getActiveSuppliersForTenant(tenantId),
     ]);
     if (supplierProducts.some((item) => item.productId !== product.id)) {
       throw new PurchasingServiceError(
@@ -806,9 +887,9 @@ function getAvailabilityLabel(quantity: number, minStock: number) {
   return "Disponible";
 }
 
-function unavailableInventorySnapshot() {
+function unavailableInventorySnapshot(availabilityLabel = "No disponible") {
   return {
-    availabilityLabel: "No disponible",
+    availabilityLabel,
   };
 }
 

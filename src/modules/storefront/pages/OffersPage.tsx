@@ -106,6 +106,8 @@ export function OffersPage() {
                     <StorefrontCatalogImage
                       alt={item.imageAlt ?? item.name}
                       className="h-52 w-full object-contain object-center p-4 transition duration-300 group-hover:scale-[1.03]"
+                      decoding="async"
+                      loading="lazy"
                       source={item.imageSource}
                     />
                     <span className="absolute left-3 top-3 rounded-md bg-red-700 px-3 py-1 text-sm font-black text-white">

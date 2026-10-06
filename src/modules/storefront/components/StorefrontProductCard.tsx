@@ -53,6 +53,8 @@ export function StorefrontProductCard({
           <StorefrontCatalogImage
             alt={product.imageAlt ?? product.name}
             className={`${compact ? "h-40" : "h-48"} w-full bg-slate-50 object-contain object-center p-3 transition duration-500 group-hover:scale-[1.03]`}
+            decoding="async"
+            loading="lazy"
             source={product.imageSource}
           />
           {offer ? (
