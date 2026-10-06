@@ -414,6 +414,10 @@ export class MockAuthRepository extends BaseMockRepository implements AuthReposi
    * (no rotativo). Mismas reglas que el backend: solo con un desafio vivo y
    * metodo `email`.
    */
+  /** El mock no habla con Google: "Continuar con Google" no esta disponible. */
+  loginWithGoogle(): Promise<never> {
+    return Promise.reject(new Error("Inicio de sesión con Google no disponible."));
+  }
   async resendMfaChallengeCode(challengeId: string) {
     return this.read((db) => {
       const now = new Date();

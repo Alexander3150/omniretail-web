@@ -7,6 +7,7 @@ import {
   type BeginMfaEnrollmentResult,
   type ChangePasswordInput,
   type EmployeeAuthSummary,
+  type GoogleLoginInput,
   type InviteEmployeeResult,
   type LoginInput,
   type LoginResult,
@@ -31,6 +32,7 @@ const INVALID_LINK_ERROR = "Este enlace no es válido o ya expiró.";
 const INVALID_ACTIVATION_LINK = "Este enlace de activación no es válido o ya expiró.";
 const GENERIC_BRANCH_ERROR = "No se pudo cambiar la sucursal activa.";
 const GENERIC_CHANGE_PASSWORD_ERROR = "No se pudo cambiar la contraseña. Inténtalo nuevamente.";
+const GOOGLE_LOGIN_UNAVAILABLE = "Inicio de sesión con Google no disponible.";
 const GENERIC_MFA_CODE_ERROR = "El código no es correcto. Inténtalo de nuevo.";
 const GENERIC_MFA_ERROR = "No se pudo completar la verificación en dos pasos. Inténtalo nuevamente.";
 
@@ -160,12 +162,26 @@ export class ApiAuthRepository implements AuthRepository {
     });
     if (!response.ok) throw new Error(await errorMessage(response, GENERIC_LOGIN_ERROR));
 
-    const body = (await response.json()) as ApiCurrentSession | ApiMfaRequired;
-    // Con MFA activo aun no hay sesion: el mismo formulario pide el codigo de la app.
-    if ("status" in body && body.status === "mfa_required") {
-      return { status: "mfa_required", challengeId: body.challengeId, method: body.method };
-    }
-    return { status: "authenticated", session: this.startSession(body as ApiCurrentSession) };
+    return this.toLoginResult((await response.json()) as ApiCurrentSession | ApiMfaRequired);
+  }
+
+  /**
+   * "Continuar con Google": solo clientes (`expectedUserType` fijo en `customer`). El ID token solo
+   * pasa por memoria hacia el Route Handler; nunca se guarda ni se registra. Un 503 (Google no
+   * configurado o backend caido) muestra "no disponible"; cualquier otro error, el mensaje generico
+   * del login.
+   */
+  async loginWithGoogle(input: GoogleLoginInput): Promise<LoginResult> {
+    const response = await postJson("/api/auth/google", {
+      idToken: input.idToken,
+      tenantSlug: input.tenantSlug,
+      expectedUserType: UserType.customer,
+      rememberMe: input.rememberMe,
+      deviceLabel: input.deviceLabel,
+    });
+    if (response.status === 503) throw new Error(GOOGLE_LOGIN_UNAVAILABLE);
+    if (!response.ok) throw new Error(await errorMessage(response, GENERIC_LOGIN_ERROR));
+    return this.toLoginResult((await response.json()) as ApiCurrentSession | ApiMfaRequired);
   }
 
   /**
@@ -483,6 +499,14 @@ export class ApiAuthRepository implements AuthRepository {
     } catch {
       return undefined;
     }
+  }
+
+  /** Con MFA activo aun no hay sesion: el mismo formulario pide el codigo. */
+  private toLoginResult(body: ApiCurrentSession | ApiMfaRequired): LoginResult {
+    if ("status" in body && body.status === "mfa_required") {
+      return { status: "mfa_required", challengeId: body.challengeId, method: body.method };
+    }
+    return { status: "authenticated", session: this.startSession(body as ApiCurrentSession) };
   }
 
   /** Sesion recien creada (login sin MFA o segundo paso): se usa como cache y se avisa a la app. */

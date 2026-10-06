@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LOGIN_ATTEMPT_RULES } from "@/config/auth-policy";
 import type { UserType } from "@/core/enums";
-import { MfaChallengeUnavailableError } from "@/core/repositories/AuthRepository";
+import { type LoginResult, MfaChallengeUnavailableError } from "@/core/repositories/AuthRepository";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useOptionalPublicTenant } from "@/modules/storefront/providers/PublicTenantProvider";
@@ -157,6 +157,26 @@ export function useLogin(expectedUserType: UserType) {
     [router, searchParams, tenantSlug],
   );
 
+  // Compartido por submit() y loginWithGoogle(): con MFA activo el mismo
+  // formulario pasa al segundo paso (PR13, R-A16); si no, entra directo.
+  const handleLoginResult = useCallback(
+    async (result: LoginResult) => {
+      if (result.status === "mfa_required") {
+        setPendingChallenge({
+          challengeId: result.challengeId,
+          method: result.method,
+          demoCodeMock: result.demoCodeMock,
+        });
+        setConsecutiveFailures(0);
+        if (result.method === "email") startResendCooldown();
+        else resetResendCooldown();
+        return;
+      }
+      await finishLogin(repositories, result.session);
+    },
+    [finishLogin, repositories, resetResendCooldown, startResendCooldown],
+  );
+
   const submit = useCallback(async () => {
     setFormError(undefined);
 
@@ -182,21 +202,7 @@ export function useLogin(expectedUserType: UserType) {
         expectedUserType,
       });
 
-      if (result.status === "mfa_required") {
-        // PR13 (R-A16): contraseña correcta, pero la sesión todavía no
-        // existe -- el mismo formulario pasa a pedir el segundo factor.
-        setPendingChallenge({
-          challengeId: result.challengeId,
-          method: result.method,
-          demoCodeMock: result.demoCodeMock,
-        });
-        setConsecutiveFailures(0);
-        if (result.method === "email") startResendCooldown();
-        else resetResendCooldown();
-        return;
-      }
-
-      await finishLogin(repositories, result.session);
+      await handleLoginResult(result);
     } catch (caughtError) {
       setFormError(
         caughtError instanceof Error ? caughtError.message : "No se pudo iniciar sesion.",
@@ -208,15 +214,44 @@ export function useLogin(expectedUserType: UserType) {
   }, [
     email,
     expectedUserType,
-    finishLogin,
+    handleLoginResult,
     password,
     rememberMe,
     repositories,
-    resetResendCooldown,
-    startResendCooldown,
     tenantId,
     tenantLoading,
   ]);
+
+  /**
+   * "Continuar con Google" (solo login de la tienda, modo api). `credential` es el ID token de
+   * Google: solo se pasa en memoria al repositorio; nunca se guarda en estado, storage ni logs. Un
+   * fallo aqui no suma al contador de intentos con contraseña.
+   */
+  const loginWithGoogle = useCallback(
+    async (credential: string) => {
+      setFormError(undefined);
+      if (!tenantSlug) {
+        setFormError("No se pudo iniciar sesion.");
+        return;
+      }
+      setIsSubmitting(true);
+      try {
+        const result = await repositories.auth.loginWithGoogle({
+          idToken: credential,
+          tenantSlug,
+          rememberMe,
+        });
+        await handleLoginResult(result);
+      } catch (caughtError) {
+        setFormError(
+          caughtError instanceof Error ? caughtError.message : "No se pudo iniciar sesion.",
+        );
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [handleLoginResult, rememberMe, repositories, tenantSlug],
+  );
 
   const submitMfaChallenge = useCallback(async () => {
     if (!pendingChallenge || !mfaCode.trim()) {
@@ -296,6 +331,7 @@ export function useLogin(expectedUserType: UserType) {
     tenantError,
     tooManyAttempts,
     submit,
+    loginWithGoogle,
     pendingChallenge,
     mfaCode,
     setMfaCode,

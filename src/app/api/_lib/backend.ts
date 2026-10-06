@@ -153,3 +153,36 @@ export async function relaySessionRequest(
   if (!response) return serviceUnavailable();
   return forwardBackendError(response);
 }
+
+/**
+ * Abre la sesion en el navegador con el JWT recien emitido por el backend: lee /auth/me, comprueba el
+ * tipo de cuenta si se indica, guarda el JWT en la cookie HttpOnly y devuelve SOLO la sesion actual
+ * (nunca el token). Si /auth/me falla o el tipo no coincide, revoca la sesion y no crea la cookie; un
+ * tipo inesperado responde lo mismo que una contraseña incorrecta.
+ */
+export async function openSessionResponse(
+  token: string,
+  expiresAt: string,
+  expectedUserType?: string,
+): Promise<NextResponse> {
+  const meResponse = await callBackend("/auth/me", { method: "GET", token });
+  if (!meResponse || !meResponse.ok) {
+    await callBackend("/auth/logout", { method: "POST", token });
+    return meResponse ? forwardBackendError(meResponse) : serviceUnavailable();
+  }
+
+  const current = (await meResponse.json()) as { user: { type: string } };
+  if (expectedUserType && current.user.type !== expectedUserType) {
+    await callBackend("/auth/logout", { method: "POST", token });
+    return invalidCredentials();
+  }
+
+  (await cookies()).set(SESSION_COOKIE, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    secure: process.env.NODE_ENV === "production",
+    expires: new Date(expiresAt),
+  });
+  return NextResponse.json(current);
+}
