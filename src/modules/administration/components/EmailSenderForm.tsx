@@ -43,6 +43,49 @@ function formatDateTime(value?: string): string {
   return new Intl.DateTimeFormat("es-GT", { dateStyle: "short", timeStyle: "short" }).format(date);
 }
 
+const APP_PASSWORDS_URL = "https://myaccount.google.com/apppasswords";
+
+/** Guía para quien nunca generó una contraseña de aplicación de Google. */
+function AppPasswordGuide() {
+  return (
+    <details className="rounded-lg border border-[var(--color-border)] bg-[var(--color-app-background)] p-4 text-sm">
+      <summary className="cursor-pointer font-semibold text-[var(--color-title)]">
+        ¿Cómo obtengo la contraseña de aplicación?
+      </summary>
+      <ol className="mt-3 list-decimal space-y-2 pl-5 text-[var(--color-text)]">
+        <li>
+          Inicia sesión con la cuenta de Gmail que enviará los correos del negocio y activa la{" "}
+          <strong>verificación en 2 pasos</strong> (Cuenta de Google → Seguridad). Sin ella, Google no
+          permite crear contraseñas de aplicación.
+        </li>
+        <li>
+          Abre{" "}
+          <a
+            className="font-semibold text-[var(--color-structure)] underline"
+            href={APP_PASSWORDS_URL}
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            myaccount.google.com/apppasswords
+          </a>
+          .
+        </li>
+        <li>
+          Escribe un nombre, por ejemplo <strong>OmniRetail</strong>, y pulsa <strong>Crear</strong>.
+        </li>
+        <li>
+          Google muestra un código de 16 letras en 4 grupos. Cópialo y pégalo aquí: no se vuelve a
+          mostrar.
+        </li>
+      </ol>
+      <p className="mt-3 text-xs text-[var(--color-text-muted)]">
+        Si la opción no aparece, la cuenta no tiene la verificación en 2 pasos activa o su administrador
+        de Google Workspace la tiene bloqueada. No uses la contraseña normal de tu correo.
+      </p>
+    </details>
+  );
+}
+
 /**
  * La App Password es write-only: este formulario nunca la recibe del backend ni la muestra. El
  * padre lo remonta (`key`) tras guardar/desconectar, así el campo siempre vuelve vacío.
@@ -133,7 +176,7 @@ export function EmailSenderForm({
         {showPasswordField ? (
           <FormField
             error={fieldErrors.appPassword}
-            hint="Se genera en tu cuenta de Google (Seguridad → Contraseñas de aplicaciones). Se guarda cifrada y no se vuelve a mostrar."
+            hint="Es un código de 16 letras que genera Google, distinto de la contraseña de tu correo. Se guarda cifrada y no se vuelve a mostrar."
             id="email-sender-app-password"
             label="Contraseña de aplicación"
           >
@@ -151,6 +194,8 @@ export function EmailSenderForm({
             Credenciales guardadas. Por seguridad no se muestran.
           </p>
         ) : null}
+
+        {showPasswordField ? <AppPasswordGuide /> : null}
 
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
           <div>
