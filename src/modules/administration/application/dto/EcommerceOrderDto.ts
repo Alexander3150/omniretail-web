@@ -27,6 +27,7 @@ export interface EcommerceOrderDto {
   orderNumber: string;
   branchId: string;
   customerId: string | null;
+  customerName: string | null;
   guestCustomer: Record<string, unknown> | null;
   status: OrderStatus;
   deliveryMethod: DeliveryMethod;

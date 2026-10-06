@@ -109,6 +109,7 @@ export function EcommerceOrdersTable({
 }
 
 export function customerName(order: EcommerceOrderDto): string | null {
+  if (order.customerName?.trim()) return order.customerName;
   const guest = order.guestCustomer;
   if (!guest) return null;
   return stringField(guest, "fullName") ?? stringField(guest, "name") ?? stringField(guest, "email");
