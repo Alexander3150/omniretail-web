@@ -15,7 +15,7 @@ export const ADMIN_FIELD_LIMITS = {
   supplier: {
     name: 120,
     legalName: 160,
-    taxId: 20,
+    taxId: 10,
     email: 254,
     phone: 9,
     address: 180,

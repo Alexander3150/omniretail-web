@@ -26,7 +26,7 @@ export function validateSupplierInput(dto: SupplierInputDto) {
   }
   if (dto.taxId && dto.taxId.trim().length > LIMITS.taxId) {
     throw new AdministrationServiceError(
-      "La identificación tributaria no puede exceder 20 caracteres.",
+      "La identificación tributaria no puede exceder 10 caracteres.",
     );
   }
   if (dto.address && dto.address.trim().length > LIMITS.address) {
