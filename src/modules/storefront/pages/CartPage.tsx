@@ -13,13 +13,53 @@ export function CartPage() {
   const { items, subtotal, updateQuantity, removeProduct, clearCart } = useStorefrontCart();
   const { products } = useStorefrontDiscovery();
   const [unavailableQuantityModalOpen, setUnavailableQuantityModalOpen] = useState(false);
+  const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
+
+  const setQuantityInput = (productId: string, quantity: number) => {
+    setQuantityInputs((current) => ({ ...current, [productId]: String(quantity) }));
+  };
+
+  const availableFor = (productId: string) =>
+    products.find((product) => product.id === productId)?.availableQuantity;
+
   const increaseQuantity = (productId: string, quantity: number) => {
-    const availableQuantity = products.find((product) => product.id === productId)?.availableQuantity;
+    const availableQuantity = availableFor(productId);
     if (availableQuantity !== undefined && availableQuantity !== null && quantity >= availableQuantity) {
       setUnavailableQuantityModalOpen(true);
       return;
     }
-    updateQuantity(productId, quantity + 1);
+    const nextQuantity = quantity + 1;
+    updateQuantity(productId, nextQuantity);
+    setQuantityInput(productId, nextQuantity);
+  };
+
+  const changeQuantityInput = (
+    productId: string,
+    currentQuantity: number,
+    input: string,
+  ) => {
+    const digits = input.replace(/\D/g, "");
+    setQuantityInputs((current) => ({ ...current, [productId]: digits }));
+    if (!digits) return;
+
+    const nextQuantity = Number(digits);
+    if (!Number.isSafeInteger(nextQuantity) || nextQuantity < 1) return;
+
+    const availableQuantity = availableFor(productId);
+    if (availableQuantity !== undefined && availableQuantity !== null && nextQuantity > availableQuantity) {
+      setQuantityInput(productId, currentQuantity);
+      setUnavailableQuantityModalOpen(true);
+      return;
+    }
+    updateQuantity(productId, nextQuantity);
+  };
+
+  const commitQuantityInput = (productId: string, quantity: number) => {
+    const draft = quantityInputs[productId];
+    const nextQuantity = Number(draft);
+    if (!draft || !Number.isSafeInteger(nextQuantity) || nextQuantity < 1) {
+      setQuantityInput(productId, quantity);
+    }
   };
   const itemCount = items.reduce((total, item) => total + item.quantity, 0);
   if (items.length === 0)
@@ -108,13 +148,29 @@ export function CartPage() {
                 <div className="flex w-fit items-center rounded-xl border border-[var(--color-border)] bg-slate-50">
                   <button
                     aria-label={`Reducir cantidad de ${item.name}`}
-                    className="px-4 py-2 font-black"
-                    onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                    className="px-4 py-2 font-black disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={item.quantity <= 1}
+                    onClick={() => {
+                      const nextQuantity = item.quantity - 1;
+                      updateQuantity(item.productId, nextQuantity);
+                      setQuantityInput(item.productId, nextQuantity);
+                    }}
                     type="button"
                   >
                     −
                   </button>
-                  <span className="min-w-10 text-center font-bold">{item.quantity}</span>
+                  <input
+                    aria-label={`Cantidad de ${item.name}`}
+                    className="w-14 bg-transparent py-2 text-center font-bold outline-none focus:bg-white focus:ring-2 focus:ring-[var(--color-primary)]/35"
+                    inputMode="numeric"
+                    maxLength={6}
+                    onBlur={() => commitQuantityInput(item.productId, item.quantity)}
+                    onChange={(event) =>
+                      changeQuantityInput(item.productId, item.quantity, event.target.value)
+                    }
+                    type="text"
+                    value={quantityInputs[item.productId] ?? String(item.quantity)}
+                  />
                   <button
                     aria-label={`Aumentar cantidad de ${item.name}`}
                     className="px-4 py-2 font-black"

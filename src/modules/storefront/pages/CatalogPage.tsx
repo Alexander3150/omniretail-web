@@ -7,12 +7,17 @@ import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefront
 export function CatalogPage() {
   const { categories, products, loading, error, reload } = useStorefrontDiscovery();
   const search = useCatalogSearchFilter();
-  const selectedCategory = useCatalogCategoryFilter();
-  const activeCategory = categories.find((category) => category.id === selectedCategory);
+  const selectedCategoryIds = useCatalogCategoryFilter();
+  const selectedCategories = useMemo(
+    () => (selectedCategoryIds ? selectedCategoryIds.split(",") : []),
+    [selectedCategoryIds],
+  );
+  const activeCategories = categories.filter((category) => selectedCategories.includes(category.id));
   const filteredProducts = useMemo(() => {
     const normalized = search.trim().toLocaleLowerCase();
     return products.filter((product) => {
-      const matchesCategory = !selectedCategory || product.categoryId === selectedCategory;
+      const matchesCategory =
+        selectedCategories.length === 0 || selectedCategories.includes(product.categoryId);
       const matchesSearch =
         !normalized ||
         [product.name, product.sku, product.brand, product.description]
@@ -20,7 +25,7 @@ export function CatalogPage() {
           .some((value) => value!.toLocaleLowerCase().includes(normalized));
       return matchesCategory && matchesSearch;
     });
-  }, [products, search, selectedCategory]);
+  }, [products, search, selectedCategories]);
   if (loading)
     return (
       <main className="mx-auto max-w-7xl px-5 py-12">
@@ -68,10 +73,10 @@ export function CatalogPage() {
               <h2 className="text-xs font-black uppercase tracking-wider text-[var(--color-primary-hover)]">
                 Categoría
               </h2>
-              {selectedCategory ? (
+              {selectedCategories.length > 0 ? (
                 <button
                   className="text-xs font-bold text-[var(--color-title)] underline"
-                  onClick={() => updateCatalogCategoryFilter("")}
+                  onClick={() => updateCatalogCategoryFilter([])}
                   type="button"
                 >
                   Limpiar
@@ -89,11 +94,13 @@ export function CatalogPage() {
                     key={category.id}
                   >
                     <input
-                      checked={selectedCategory === category.id}
+                      checked={selectedCategories.includes(category.id)}
                       className="h-4 w-4 accent-[var(--color-primary-hover)]"
                       onChange={() =>
                         updateCatalogCategoryFilter(
-                          selectedCategory === category.id ? "" : category.id,
+                          selectedCategories.includes(category.id)
+                            ? selectedCategories.filter((id) => id !== category.id)
+                            : [...selectedCategories, category.id],
                         )
                       }
                       type="checkbox"
@@ -114,9 +121,9 @@ export function CatalogPage() {
               <p className="font-black text-[var(--color-text)]">
                 Mostrando {filteredProducts.length} de {products.length} productos
               </p>
-              {activeCategory ? (
+              {activeCategories.length > 0 ? (
                 <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                  Categoría: {activeCategory.name}
+                  Categorías: {activeCategories.map((category) => category.name).join(", ")}
                 </p>
               ) : null}
             </div>
@@ -143,7 +150,7 @@ function useCatalogCategoryFilter() {
       window.addEventListener("popstate", onStoreChange);
       return () => window.removeEventListener("popstate", onStoreChange);
     },
-    () => new URLSearchParams(window.location.search).get("categoria") ?? "",
+    () => new URLSearchParams(window.location.search).getAll("categoria").join(","),
     () => "",
   );
 }
@@ -164,10 +171,10 @@ function updateCatalogSearchFilter(search: string) {
   window.history.replaceState(null, "", url);
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
-function updateCatalogCategoryFilter(categoryId: string) {
+function updateCatalogCategoryFilter(categoryIds: string[]) {
   const url = new URL(window.location.href);
-  if (categoryId) url.searchParams.set("categoria", categoryId);
-  else url.searchParams.delete("categoria");
+  url.searchParams.delete("categoria");
+  categoryIds.forEach((categoryId) => url.searchParams.append("categoria", categoryId));
   window.history.replaceState(null, "", url);
   window.dispatchEvent(new PopStateEvent("popstate"));
 }

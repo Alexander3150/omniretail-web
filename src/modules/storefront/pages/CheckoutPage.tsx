@@ -19,11 +19,20 @@ import { usePublicTenant } from "@/modules/storefront/providers/PublicTenantProv
 import { useStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 import {
   DELIVERY_ADDRESS_LIMITS,
+  isValidDeliveryAddress,
+  isValidDeliveryNotificationEmail,
+  isValidRecipientName,
   sanitizeDeliveryAddress,
   sanitizeDeliveryNotificationEmail,
   sanitizeRecipientName,
 } from "@/config/delivery-address-policy";
-import { EMAIL_MAX_LENGTH } from "@/config/email-policy";
+import { EMAIL_MAX_LENGTH, validateEmail } from "@/config/email-policy";
+import {
+  detectStorefrontCardBrand,
+  getStorefrontCardNumberLengths,
+  getStorefrontCardSecurityCodeLength,
+  validateStorefrontCardNumber,
+} from "@/config/card-brands";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 
 const departments = Object.keys(municipalitiesByDepartment);
@@ -42,9 +51,23 @@ function formatCardExpiration(value: string) {
   return digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
 }
 
-function hasValidCardExpiration(value: string) {
+function getCardExpirationError(value: string): string | null {
   const match = /^(0[1-9]|1[0-2])\/\d{2}$/.exec(value);
-  return Boolean(match);
+  if (!match) return "Ingresa una fecha válida en formato MM/AA.";
+
+  const month = Number(match[1]);
+  const year = 2000 + Number(match[0].slice(-2));
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+
+  if (year < currentYear || (year === currentYear && month < currentMonth)) {
+    return "La tarjeta está vencida.";
+  }
+  if (year > currentYear + 20) {
+    return "Ingresa una fecha de vencimiento válida.";
+  }
+  return null;
 }
 
 const initialForm: StorefrontCheckoutFormDto = {
@@ -226,22 +249,49 @@ export function CheckoutPage() {
         </section>
       </main>
     );
+  const hasValidRecipientName = Boolean(form.fullName.trim()) && isValidRecipientName(form.fullName);
+  const hasValidEmail = !validateEmail(form.email) && isValidDeliveryNotificationEmail(form.email);
+  const emailError = form.email && !hasValidEmail ? "Ingresa un correo electrónico válido." : undefined;
+  const addressLine1Error =
+    form.addressLine1 && !isValidDeliveryAddress(form.addressLine1, "line1")
+      ? "Usa letras, números y , . # - /; sin signos repetidos."
+      : undefined;
+  const addressLine2Error =
+    form.addressLine2 && !isValidDeliveryAddress(form.addressLine2, "line2")
+      ? "Usa letras, números y , . # - /; sin signos repetidos."
+      : undefined;
+  const referencesError =
+    form.references && !isValidDeliveryAddress(form.references, "references")
+      ? "Usa letras, números y , . # - /; sin signos repetidos."
+      : undefined;
   const ready = Boolean(
-    form.fullName &&
-    form.email &&
+    hasValidRecipientName &&
+    hasValidEmail &&
     form.phone.replace(/\D/g, "").replace(/^502/, "").length === 8 &&
     form.addressLine1 &&
+    !addressLine1Error &&
+    !addressLine2Error &&
+    !referencesError &&
     form.city &&
     form.department,
   );
   const cardDigits = cardNumber.replace(/\D/g, "");
+  const cardBrand = detectStorefrontCardBrand(cardDigits);
+  const cardNumberError = validateStorefrontCardNumber(cardDigits);
+  const cardNumberComplete =
+    cardBrand !== null &&
+    getStorefrontCardNumberLengths(cardBrand).includes(cardDigits.length) &&
+    !cardNumberError;
+  const expectedSecurityCodeLength = getStorefrontCardSecurityCodeLength(cardBrand);
+  const cardExpirationError = cardExpiration ? getCardExpirationError(cardExpiration) : null;
   const paymentReady =
     selectedPaymentMethodId !== "new" ||
-    (cardDigits.length >= 13 &&
-      cardDigits.length <= 19 &&
+    (cardNumberComplete &&
       Boolean(form.cardholderName.trim()) &&
-      hasValidCardExpiration(cardExpiration) &&
-      /^\d{3,4}$/.test(cardSecurityCode));
+      isValidRecipientName(form.cardholderName) &&
+      Boolean(cardExpiration) &&
+      !cardExpirationError &&
+      cardSecurityCode.length === expectedSecurityCodeLength);
   const canSubmitOrder = ready && paymentReady;
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -251,27 +301,41 @@ export function CheckoutPage() {
         setPaymentError("Ingrese el número de tarjeta.");
         return;
       }
-      if (cardDigits.length < 13 || cardDigits.length > 19) {
-        setPaymentError("El número de tarjeta debe contener entre 13 y 19 dígitos.");
+      if (!cardNumberComplete) {
+        setPaymentError(
+          cardNumberError ?? "Completa un número de tarjeta Visa, Mastercard o American Express.",
+        );
         return;
       }
-      if (!hasValidCardExpiration(cardExpiration)) {
-        setPaymentError("Ingrese una fecha de vencimiento válida en formato MM/AA.");
+      if (!form.cardholderName.trim() || !isValidRecipientName(form.cardholderName)) {
+        setPaymentError("El nombre del titular solo permite letras, espacios, guiones y apóstrofes.");
         return;
       }
-      if (!/^\d{3,4}$/.test(cardSecurityCode)) {
-        setPaymentError("Ingrese un código de seguridad de 3 o 4 dígitos.");
+      if (!cardExpiration || cardExpirationError) {
+        setPaymentError(cardExpirationError ?? "Ingresa una fecha válida en formato MM/AA.");
+        return;
+      }
+      if (cardSecurityCode.length !== expectedSecurityCodeLength) {
+        setPaymentError(
+          `Ingresa un código de seguridad de ${expectedSecurityCodeLength} dígitos.`,
+        );
         return;
       }
     }
     setPaymentError(null);
     setCompletedByCurrentCheckout(true);
-    void submit({
+    const checkoutForm: StorefrontCheckoutFormDto = {
       ...form,
       cardLastFour:
         selectedPaymentMethodId === "new" ? cardDigits.slice(-4) : form.cardLastFour,
       phone: form.phone.replace(/\D/g, "").replace(/^502/, ""),
-    });
+    };
+    // El número completo, vencimiento y CVV solo viven en el estado de esta pantalla.
+    // La orden recibe únicamente los últimos cuatro dígitos; nunca se persiste ni registra el resto.
+    setCardNumber("");
+    setCardExpiration("");
+    setCardSecurityCode("");
+    void submit(checkoutForm);
   };
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-5 sm:py-10">
@@ -353,6 +417,11 @@ export function CheckoutPage() {
                 <div className="mt-5 grid gap-4 sm:grid-cols-2">
                   <Field
                     label="Nombre completo"
+                    error={
+                      form.fullName && !hasValidRecipientName
+                        ? "Usa solo letras, espacios, guiones y apóstrofes."
+                        : undefined
+                    }
                     maxLength={DELIVERY_ADDRESS_LIMITS.recipientName}
                     value={form.fullName}
                     onChange={(value) =>
@@ -360,7 +429,8 @@ export function CheckoutPage() {
                     }
                   />
                   <Field
-                    label="Correo electrónico (para notificaciones)"
+                    label="Correo electrónico"
+                    error={emailError}
                     maxLength={EMAIL_MAX_LENGTH}
                     type="email"
                     value={form.email}
@@ -377,6 +447,7 @@ export function CheckoutPage() {
                   />
                   <Field
                     label="Dirección"
+                    error={addressLine1Error}
                     maxLength={DELIVERY_ADDRESS_LIMITS.line1}
                     value={form.addressLine1}
                     onChange={(value) =>
@@ -385,6 +456,7 @@ export function CheckoutPage() {
                   />
                   <Field
                     label="Complemento"
+                    error={addressLine2Error}
                     maxLength={DELIVERY_ADDRESS_LIMITS.line2}
                     required={false}
                     value={form.addressLine2 ?? ""}
@@ -409,6 +481,7 @@ export function CheckoutPage() {
                   />
                   <Field
                     label="Referencias"
+                    error={referencesError}
                     maxLength={DELIVERY_ADDRESS_LIMITS.references}
                     required={false}
                     value={form.references ?? ""}
@@ -460,7 +533,7 @@ export function CheckoutPage() {
                       ◉ &nbsp; ▣ &nbsp; Tarjeta de crédito o débito
                     </p>
                     <span className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text-muted)]">
-                      Visa / Mastercard / AmEx
+                      {cardBrand ? `Marca: ${cardBrand === "American Express" ? "AmEx" : cardBrand}` : "Visa / Mastercard / AmEx"}
                     </span>
                   </div>
                   {savedCards.length > 0 ? (
@@ -516,20 +589,36 @@ export function CheckoutPage() {
                           inputMode="numeric"
                           maxLength={23}
                           onChange={(event) => {
-                            setCardNumber(formatCardNumber(event.target.value));
+                            const nextNumber = formatCardNumber(event.target.value);
+                            const nextBrand = detectStorefrontCardBrand(nextNumber.replace(/\D/g, ""));
+                            setCardNumber(nextNumber);
+                            if (getStorefrontCardSecurityCodeLength(nextBrand) === 3) {
+                              setCardSecurityCode((current) => current.slice(0, 3));
+                            }
                             setPaymentError(null);
                           }}
                           placeholder="4242 4242 4242 4242"
                           value={cardNumber}
                         />
+                        {cardNumberError ? (
+                          <span className="text-xs font-normal text-[var(--color-danger)]">
+                            {cardNumberError}
+                          </span>
+                        ) : null}
                       </label>
                       <div className="sm:col-span-2">
                         <Field
                           label="Nombre del titular"
                           autoComplete="cc-name"
+                          error={
+                            form.cardholderName && !isValidRecipientName(form.cardholderName)
+                              ? "Usa solo letras, espacios, guiones y apóstrofes."
+                              : undefined
+                          }
+                          maxLength={DELIVERY_ADDRESS_LIMITS.recipientName}
                           value={form.cardholderName}
                           onChange={(value) => {
-                            setForm({ ...form, cardholderName: value });
+                            setForm({ ...form, cardholderName: sanitizeRecipientName(value) });
                             setPaymentError(null);
                           }}
                         />
@@ -548,6 +637,11 @@ export function CheckoutPage() {
                           placeholder="MM/AA"
                           value={cardExpiration}
                         />
+                        {cardExpirationError ? (
+                          <span className="text-xs font-normal text-[var(--color-danger)]">
+                            {cardExpirationError}
+                          </span>
+                        ) : null}
                       </label>
                       <label className="grid gap-2 text-sm font-bold text-[var(--color-text)]">
                         Código de seguridad (CVV)
@@ -555,12 +649,12 @@ export function CheckoutPage() {
                           autoComplete="cc-csc"
                           className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-3 font-normal text-[var(--color-text)]"
                           inputMode="numeric"
-                          maxLength={4}
+                          maxLength={expectedSecurityCodeLength}
                           onChange={(event) => {
                             setCardSecurityCode(event.target.value.replace(/\D/g, "").slice(0, 4));
                             setPaymentError(null);
                           }}
-                          placeholder="•••"
+                          placeholder={expectedSecurityCodeLength === 4 ? "••••" : "•••"}
                           type="password"
                           value={cardSecurityCode}
                         />
@@ -670,6 +764,7 @@ function Field({
   autoComplete,
   inputMode,
   maxLength,
+  error,
   pattern,
   placeholder,
 }: {
@@ -681,6 +776,7 @@ function Field({
   autoComplete?: string;
   inputMode?: "numeric";
   maxLength?: number;
+  error?: string;
   pattern?: string;
   placeholder?: string;
 }) {
@@ -699,6 +795,7 @@ function Field({
         type={type}
         value={value}
       />
+      {error ? <span className="text-xs font-normal text-[var(--color-danger)]">{error}</span> : null}
     </label>
   );
 }
