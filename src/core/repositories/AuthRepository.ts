@@ -83,6 +83,20 @@ export interface LoginInput {
  * Es opcional porque en modo api no existe: el codigo sale de la app
  * autenticadora del usuario.
  */
+/**
+ * "Continuar con Google" (solo clientes de una tienda). `idToken` es la
+ * credencial que entrega Google Identity Services: solo viaja en memoria
+ * hacia el backend, que la verifica con Google; nunca se guarda ni se
+ * registra. La tienda se identifica por slug (como el registro), nunca por
+ * un id elegido por el caller.
+ */
+export interface GoogleLoginInput {
+  idToken: string;
+  tenantSlug: string;
+  rememberMe: boolean;
+  deviceLabel?: string;
+}
+
 export type LoginResult =
   | { status: "authenticated"; session: Session }
   | { status: "mfa_required"; challengeId: string; method: MfaMethod; demoCodeMock?: string };
@@ -188,6 +202,13 @@ export interface AuthRepository {
    * CAMBIO DE CONTRATO (PR13, antes: Promise<Session>). Ver LoginResult.
    */
   login(input: LoginInput): Promise<LoginResult>;
+  /**
+   * Inicio de sesion de un cliente con Google. Mismo resultado que login():
+   * la sesion, o el desafio de MFA si el cliente lo tiene activo. Si el
+   * correo de Google no existe en la tienda, el backend crea la cuenta de
+   * cliente. Error siempre generico, igual que login(). Mock: no disponible.
+   */
+  loginWithGoogle(input: GoogleLoginInput): Promise<LoginResult>;
   /**
    * Completa un login pausado por MFA (PR13). Igual que resetPassword/
    * activateEmployeeAccount: revalida todo antes de mutar (challenge

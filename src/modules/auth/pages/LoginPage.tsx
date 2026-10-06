@@ -2,7 +2,9 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import type { UserType } from "@/core/enums";
+import { getGoogleClientId } from "@/config/google-auth";
+import { UserType } from "@/core/enums";
+import { GoogleSignInButton } from "@/modules/auth/components/GoogleSignInButton";
 import { useLogin } from "@/modules/auth/hooks/useLogin";
 import { useOptionalStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
 import { BrandMark } from "@/shared/components/BrandMark";
@@ -104,6 +106,7 @@ export function LoginPage({ expectedUserType }: LoginPageProps) {
     tenantLoading,
     tooManyAttempts,
     submit,
+    loginWithGoogle,
     pendingChallenge,
     mfaCode,
     setMfaCode,
@@ -120,6 +123,12 @@ export function LoginPage({ expectedUserType }: LoginPageProps) {
       showToast({ title: "Te enviamos un código nuevo.", tone: "success" });
     }
   }
+
+  // "Continuar con Google" es solo para clientes de la tienda: el login de
+  // personal no lo muestra. Sin Client ID o en modo mock se ve el aviso
+  // "no disponible" de siempre.
+  const showGoogleLogin = expectedUserType === UserType.customer;
+  const googleClientId = showGoogleLogin ? getGoogleClientId() : "";
 
   function simulateGoogleLogin() {
     showToast({
@@ -279,21 +288,34 @@ export function LoginPage({ expectedUserType }: LoginPageProps) {
           </Button>
         </form>
 
-        <div className="mt-6 flex items-center gap-3 text-xs uppercase text-[var(--color-text-muted)]">
-          <span aria-hidden="true" className="h-px flex-1 bg-[var(--color-border)]" />
-          o continua con
-          <span aria-hidden="true" className="h-px flex-1 bg-[var(--color-border)]" />
-        </div>
+        {showGoogleLogin ? (
+          <>
+            <div className="mt-6 flex items-center gap-3 text-xs uppercase text-[var(--color-text-muted)]">
+              <span aria-hidden="true" className="h-px flex-1 bg-[var(--color-border)]" />
+              o continua con
+              <span aria-hidden="true" className="h-px flex-1 bg-[var(--color-border)]" />
+            </div>
 
-        <Button
-          className="mt-4 w-full"
-          onClick={simulateGoogleLogin}
-          type="button"
-          variant="secondary"
-        >
-          <GoogleIcon />
-          Google
-        </Button>
+            {googleClientId ? (
+              <div className="mt-4">
+                <GoogleSignInButton
+                  clientId={googleClientId}
+                  onCredential={(credential) => void loginWithGoogle(credential)}
+                />
+              </div>
+            ) : (
+              <Button
+                className="mt-4 w-full"
+                onClick={simulateGoogleLogin}
+                type="button"
+                variant="secondary"
+              >
+                <GoogleIcon />
+                Google
+              </Button>
+            )}
+          </>
+        ) : null}
 
         <p className="mt-6 text-center text-sm text-[var(--color-text-muted)]">
           ¿No tienes cuenta?{" "}
