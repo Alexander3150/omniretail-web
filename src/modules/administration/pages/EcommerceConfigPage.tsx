@@ -6,8 +6,10 @@ import type { EcommerceConfigInputDto } from "@/modules/administration/applicati
 import type { HeroBannerConfigInputDto } from "@/modules/administration/application/dto/HeroBannerConfigDto";
 import { EcommerceConfigForm } from "@/modules/administration/components/EcommerceConfigForm";
 import { HeroBannerConfigForm } from "@/modules/administration/components/HeroBannerConfigForm";
+import { StorefrontLinkCard } from "@/modules/administration/components/StorefrontLinkCard";
 import { useEcommerceConfig } from "@/modules/administration/hooks/useEcommerceConfig";
 import { useHeroBannerConfig } from "@/modules/administration/hooks/useHeroBannerConfig";
+import { useStorefrontSlug } from "@/modules/administration/hooks/useStorefrontSlug";
 import { isValidGuatemalaPhone } from "@/modules/administration/validation/adminFieldConstraints";
 import { Button } from "@/shared/components/Button";
 import { InlineAlert } from "@/shared/components/InlineAlert";
@@ -26,6 +28,7 @@ export function EcommerceConfigPage() {
     save: saveHeroBanner,
     saving: savingHeroBanner,
   } = useHeroBannerConfig();
+  const storefrontSlug = useStorefrontSlug();
   const { showToast } = useToast();
   const [value, setValue] = useState<EcommerceConfigInputDto | null>(null);
   const [fieldErrors, setFieldErrors] = useState<
@@ -174,6 +177,10 @@ export function EcommerceConfigPage() {
             Reintentar
           </Button>
         </InlineAlert>
+      ) : null}
+
+      {storefrontSlug && config ? (
+        <StorefrontLinkCard enabled={config.enabled} slug={storefrontSlug} />
       ) : null}
 
       {showInitialLoading ? (
