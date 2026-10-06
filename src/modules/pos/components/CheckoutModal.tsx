@@ -214,7 +214,7 @@ export function CheckoutModal({
               <FormField id="checkout-tax-id" label="NIT *" error={errors.taxId}>
                 <Input
                   id="checkout-tax-id"
-                  maxLength={30}
+                  maxLength={10}
                   onChange={(event) => onInvoiceDataChange({ taxId: event.target.value })}
                   value={checkout.invoiceData.taxId}
                 />
