@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Category } from "@/core/entities";
 import { ProductStatus, ProductType } from "@/core/enums";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { GetProductsService } from "@/modules/catalog/application/services/GetProductsService";
@@ -30,6 +31,8 @@ export function useProducts() {
   const requestIdRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<ProductListItem[]>([]);
+  // Categorias activas que GetProductsService ya carga para resolver nombres (alimentan los filtros).
+  const [categories, setCategories] = useState<Category[]>([]);
   const [filters, setFilters] = useState<ProductFiltersState>(initialFilters);
   const filtersRef = useRef(initialFilters);
   const requestedSearchRef = useRef(initialFilters.search);
@@ -84,6 +87,7 @@ export function useProducts() {
         return;
       }
       setItems(result.items);
+      setCategories(result.categories);
       setPageState(result.page);
       setPageSizeState(result.pageSize);
       setTotalItems(result.totalItems);
@@ -109,6 +113,15 @@ export function useProducts() {
     [reload, service],
   );
   useDataEvent("promotion.changed", reloadAfterPromotionChange);
+  // El cache de categorias del service se invalida antes de recargar (nombres y filtros al dia).
+  const reloadAfterCategoryChange = useCallback(
+    (payload?: { tenantId?: string }) => {
+      service.invalidateCategories(payload?.tenantId);
+      void reload();
+    },
+    [reload, service],
+  );
+  useDataEvent("category.changed", reloadAfterCategoryChange);
 
   useEffect(() => {
     const requestId = requestIdRef.current + 1;
@@ -130,6 +143,7 @@ export function useProducts() {
           return;
         }
         setItems(result.items);
+        setCategories(result.categories);
         setPageState(result.page);
         setPageSizeState(result.pageSize);
         setTotalItems(result.totalItems);
@@ -202,6 +216,7 @@ export function useProducts() {
     loading,
     error,
     items,
+    categories,
     filters,
     filtersEnabled,
     page,

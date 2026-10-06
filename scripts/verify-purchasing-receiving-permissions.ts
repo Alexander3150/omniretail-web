@@ -992,7 +992,130 @@ async function verifyAuthorizedRoleActionsRemainEnabled() {
   );
 }
 
+/**
+ * Envuelve un repository en un Proxy que cuenta llamadas (por metodo y en total) y delega sin
+ * cambiar comportamiento. Permite probar desde afuera cuantas lecturas hace un service.
+ */
+function spyOnMethods<T extends object>(target: T, names: string[]) {
+  const calls: Record<string, number> & { total: number } = { total: 0 };
+  for (const name of names) calls[name] = 0;
+  const proxy = new Proxy(target, {
+    get(object, prop) {
+      const value = Reflect.get(object, prop);
+      if (typeof value !== "function") return value;
+      return (...args: unknown[]) => {
+        calls.total += 1;
+        if (typeof prop === "string" && prop in calls) calls[prop] += 1;
+        return (value as (...a: unknown[]) => unknown).apply(object, args);
+      };
+    },
+  });
+  return { proxy, calls };
+}
+
+// F. Editar una orden carga los productos disponibles UNA sola vez y conserva sus datos
+async function verifyEditLoadsAvailableProductsOnce() {
+  const { createSession, store } = createHarness();
+  const purchaser = createSession(TENANT_A, ["purchasing.orders.create"], ["branch-centro"]);
+  const draft = await new PurchaseOrderEditorService(purchaser).saveDraft({
+    branchId: "branch-centro",
+    supplierId: "supplier-hardening-a",
+    expectedDate: "2026-10-01",
+    notes: "",
+    lines: [buildOrderLine({ purchaseToBaseFactor: 5 })],
+  });
+
+  const supplierProductsSpy = spyOnMethods(purchaser.supplierProducts, ["getBySupplierForTenant"]);
+  const unitsSpy = spyOnMethods(purchaser.units, ["getByIdScoped"]);
+  const spied = {
+    ...purchaser,
+    supplierProducts: supplierProductsSpy.proxy,
+    units: unitsSpy.proxy,
+  } as RepositoryRegistry;
+
+  const loaded = await new PurchaseOrderEditorService(spied).getOrderForEdit(
+    draft.id,
+    "branch-centro",
+  );
+  assert.equal(
+    supplierProductsSpy.calls.getBySupplierForTenant,
+    1,
+    "F: la edicion consulta el catalogo del proveedor una sola vez",
+  );
+  assert.equal(
+    unitsSpy.calls.getByIdScoped,
+    0,
+    "F: la edicion ya no lee las unidades de cada linea",
+  );
+
+  const line = loaded.model.lines[0];
+  const available = loaded.availableProducts.find((product) => product.productId === line.productId);
+  assert.ok(available, "F: la linea corresponde a un producto disponible devuelto junto al modelo");
+  assert.equal(line.unitAllowsDecimals, available.unitAllowsDecimals);
+  assert.equal(line.purchaseToBaseFactor, 5, "F: el factor de compra se conserva");
+  assert.equal(line.minimumOrderQuantity, available.minimumOrderQuantity);
+  assert.equal(line.leadTimeDays, available.leadTimeDays);
+  assert.deepEqual(line.tiers, available.tiers);
+
+  // La coleccion devuelta es la misma que entrega getAvailableProducts directo.
+  const direct = await new PurchaseOrderEditorService(purchaser).getAvailableProducts(
+    "supplier-hardening-a",
+    "branch-centro",
+  );
+  assert.deepEqual(
+    loaded.availableProducts.map((product) => product.productId),
+    direct.map((product) => product.productId),
+  );
+
+  // Fail-closed: si la linea ya no tiene producto operacional valido, la edicion sigue fallando.
+  store.mutate((db) => {
+    const supplierProduct = db.supplierProducts.find(
+      (item) => item.id === "supplier-product-hardening-a",
+    );
+    assert.ok(supplierProduct);
+    supplierProduct.active = false;
+  });
+  await assert.rejects(
+    new PurchaseOrderEditorService(purchaser).getOrderForEdit(draft.id, "branch-centro"),
+    PurchasingServiceError,
+    "F: una linea sin producto operacional valido sigue fallando (fail-closed)",
+  );
+}
+
+// G. La pagina de ordenes no carga sugerencias; se piden aparte (panel expandido)
+async function verifyOrdersPageDoesNotLoadSuggestions() {
+  const { createSession } = createHarness();
+  const reader = createSession(
+    TENANT_A,
+    ["purchasing.orders.read", "inventory.stock.read"],
+    ["branch-centro"],
+  );
+  const inventorySpy = spyOnMethods(reader.inventory, []);
+  const spied = { ...reader, inventory: inventorySpy.proxy } as RepositoryRegistry;
+  const service = new GetPurchaseOrdersReadModelService(spied);
+
+  const page = await service.execute("branch-centro");
+  assert.deepEqual(page.suggestions, [], "G: la pagina de ordenes no trae sugerencias");
+  assert.equal(
+    inventorySpy.calls.total,
+    0,
+    "G: cargar ordenes no consulta inventario (0 lecturas exclusivas de sugerencias)",
+  );
+
+  // Este harness no registra todos los repositories que usa el calculo mock de sugerencias
+  // (p. ej. transferencias), asi que solo se verifica que PEDIRLAS si consulta inventario.
+  await service.loadReorderSuggestions("branch-centro").catch(() => undefined);
+  assert.ok(inventorySpy.calls.total > 0, "G: las sugerencias se calculan al pedirlas");
+  assert.deepEqual(await service.loadReorderSuggestions(undefined), { suggestions: [] });
+}
+
 async function main() {
+  // F/G usan su propio harness y no dependen de ningun caso posterior: corren primero para que
+  // su cobertura no quede oculta si un caso previo del script falla.
+  await verifyEditLoadsAvailableProductsOnce();
+  console.log("F. editar orden: availableProducts una sola vez, datos y fail-closed: PASS");
+  await verifyOrdersPageDoesNotLoadSuggestions();
+  console.log("G. pagina de ordenes sin sugerencias; se cargan aparte: PASS");
   await verifyPurchaseOrdersListTenantIsolation();
   console.log("1. tenant A no lista ordenes de tenant B: PASS");
   await verifyPurchasingCrossTenantDetailDenied();

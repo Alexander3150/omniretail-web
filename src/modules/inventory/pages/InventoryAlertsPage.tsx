@@ -175,7 +175,6 @@ export function InventoryAlertsPage() {
     () => new Set(),
   );
   const [hasRestoredViewedTransferAlerts, setHasRestoredViewedTransferAlerts] = useState(false);
-  const [, setClockTick] = useState(0);
   if (previousCurrentBranchId !== currentBranchId) {
     setPreviousCurrentBranchId(currentBranchId);
     setPanelMode("alerts");
@@ -201,11 +200,6 @@ export function InventoryAlertsPage() {
         (request) => !viewedTransferAlertKeys.has(getTransferAlertKey(branchId, request)),
       ).length
     : 0;
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setClockTick((current) => current + 1), 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   // Product creation hands off to this existing adjustment UI. It only
   // selects a product; RegisterInventoryAdjustmentService remains the sole
@@ -347,9 +341,7 @@ export function InventoryAlertsPage() {
               + Registrar ajuste
             </Button>
           </div>
-          <p className="text-sm font-semibold text-[var(--color-text-muted)]">
-            {formatLastUpdated(lastUpdatedAt)}
-          </p>
+          <LastUpdatedLabel lastUpdatedAt={lastUpdatedAt} />
         </div>
       </header>
 
@@ -3448,6 +3440,20 @@ function ReadonlyField({ label, value }: { label: string; value: string }) {
       <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">{label}</p>
       <p className="mt-1 break-words text-sm font-semibold text-[var(--color-title)]">{value}</p>
     </div>
+  );
+}
+
+/** Etiqueta con su propio tick de 60 s: solo ella se vuelve a renderizar, no toda la pagina. */
+function LastUpdatedLabel({ lastUpdatedAt }: { lastUpdatedAt: Date | null }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setTick((current) => current + 1), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return (
+    <p className="text-sm font-semibold text-[var(--color-text-muted)]">
+      {formatLastUpdated(lastUpdatedAt)}
+    </p>
   );
 }
 

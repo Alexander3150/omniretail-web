@@ -61,11 +61,39 @@ export class GetPurchaseOrdersReadModelService {
       const params = typeof input === "object" ? input : defaultApiParams(input);
       return this.getApiPage(tenantId, permissions, params);
     }
-    return this.getMockData(
-      tenantId,
-      permissions,
-      typeof input === "string" ? input : input?.branchId,
-    );
+    return this.getMockData(tenantId, permissions);
+  }
+
+  /**
+   * Sugerencias de reposicion, separadas de la pagina de ordenes: solo se piden cuando el panel se
+   * expande (ver usePurchaseOrders). El resultado depende de tenant + sucursal, no de la pagina ni
+   * de los filtros de ordenes.
+   */
+  async loadReorderSuggestions(
+    branchId: string | undefined,
+  ): Promise<{ suggestions: ReorderSuggestionReadModel[]; notice?: string }> {
+    const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
+    ensureCanReadPurchaseOrders(permissions);
+    if (!branchId) return { suggestions: [] };
+
+    if (this.repositories.purchaseOrdersDataSource === "api") {
+      if (!permissions.includes(INVENTORY_STOCK_READ_PERMISSION)) {
+        return {
+          suggestions: [],
+          notice: "No dispone de permisos para consultar sugerencias de inventario.",
+        };
+      }
+      return this.getApiReorderSuggestions(
+        tenantId,
+        branchId,
+        this.repositories.suppliers.getActiveByTenant(tenantId),
+      );
+    }
+    const [suppliers, orders] = await Promise.all([
+      this.repositories.suppliers.listByTenant(tenantId),
+      this.repositories.purchaseOrders.listByTenant(tenantId),
+    ]);
+    return { suggestions: await this.getReorderSuggestions(branchId, suppliers, orders) };
   }
 
   async getById(
@@ -91,8 +119,7 @@ export class GetPurchaseOrdersReadModelService {
     permissions: readonly string[],
     params: GetPurchaseOrdersParams,
   ): Promise<PurchaseOrdersReadModel> {
-    const suppliersPromise = this.repositories.suppliers.getActiveByTenant(tenantId);
-    const [page, suppliers, suggestionResult] = await Promise.all([
+    const [page, suppliers] = await Promise.all([
       this.repositories.purchaseOrders.getPageScoped(tenantId, {
         branchId: params.branchId,
         supplierId: params.supplierId,
@@ -100,18 +127,7 @@ export class GetPurchaseOrdersReadModelService {
         page: params.page,
         pageSize: params.pageSize,
       }),
-      suppliersPromise,
-      params.branchId && permissions.includes(INVENTORY_STOCK_READ_PERMISSION)
-        ? this.getApiReorderSuggestions(tenantId, params.branchId, suppliersPromise)
-        : Promise.resolve<{
-            suggestions: ReorderSuggestionReadModel[];
-            notice?: string;
-          }>({
-            suggestions: [],
-            ...(params.branchId
-              ? { notice: "No dispone de permisos para consultar sugerencias de inventario." }
-              : {}),
-          }),
+      this.repositories.suppliers.getActiveByTenant(tenantId),
     ]);
     return {
       orders: page.items.map((order) =>
@@ -126,8 +142,8 @@ export class GetPurchaseOrdersReadModelService {
         .map((supplier) => ({ id: supplier.id, name: supplier.name }))
         .sort((left, right) => left.name.localeCompare(right.name)),
       statuses: PURCHASE_ORDER_STATUSES,
-      suggestions: suggestionResult.suggestions,
-      suggestionsNotice: suggestionResult.notice,
+      // Las sugerencias ya no viajan con la pagina: ver loadReorderSuggestions.
+      suggestions: [],
       page: page.page,
       pageSize: page.pageSize,
       totalItems: page.totalItems,
@@ -229,7 +245,6 @@ export class GetPurchaseOrdersReadModelService {
   private async getMockData(
     tenantId: string,
     permissions: readonly string[],
-    activeBranchId?: string,
   ): Promise<PurchaseOrdersReadModel> {
     const [orders, suppliers, products, units, branches, receipts] = await Promise.all([
       this.repositories.purchaseOrders.listByTenant(tenantId),
@@ -263,9 +278,6 @@ export class GetPurchaseOrdersReadModelService {
       .sort(
         (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
       );
-    const suggestions = activeBranchId
-      ? await this.getReorderSuggestions(activeBranchId, suppliers, orders)
-      : [];
 
     return {
       orders: mappedOrders,
@@ -273,7 +285,7 @@ export class GetPurchaseOrdersReadModelService {
         .map((supplier) => ({ id: supplier.id, name: supplier.name }))
         .sort((left, right) => left.name.localeCompare(right.name)),
       statuses: PURCHASE_ORDER_STATUSES,
-      suggestions,
+      suggestions: [],
       page: 1,
       pageSize: Math.max(1, mappedOrders.length),
       totalItems: mappedOrders.length,

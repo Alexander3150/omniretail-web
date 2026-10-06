@@ -1,5 +1,6 @@
-import type { Promotion } from "@/core/entities";
+import type { Category, Promotion } from "@/core/entities";
 import {
+  CategoryStatus,
   ProductStatus,
   ProductType,
   PromotionStatus,
@@ -29,6 +30,11 @@ export interface GetProductsParams extends ProductPageParams {
   filters: ProductFiltersState;
 }
 
+/** Pagina de productos + las categorias ACTIVAS del tenant (ya cargadas para resolver nombres). */
+export type GetProductsResult = PaginatedResult<ProductListItem> & {
+  categories: Category[];
+};
+
 export class GetProductsService {
   private readonly categoriesPromisesByTenant = new Map<
     string,
@@ -57,7 +63,16 @@ export class GetProductsService {
     this.promotionsPromisesByTenant.clear();
   }
 
-  async execute(params: GetProductsParams): Promise<PaginatedResult<ProductListItem>> {
+  /** Descarta las categorias cacheadas (category.changed): el siguiente `execute` las vuelve a pedir. */
+  invalidateCategories(tenantId?: string) {
+    if (tenantId) {
+      this.categoriesPromisesByTenant.delete(tenantId);
+      return;
+    }
+    this.categoriesPromisesByTenant.clear();
+  }
+
+  async execute(params: GetProductsParams): Promise<GetProductsResult> {
     const { tenantId, permissions } = await resolveTenantContext(this.repositories);
     ensureCanReadProducts(permissions);
 
@@ -96,6 +111,7 @@ export class GetProductsService {
 
     return {
       ...page,
+      categories: toActiveCategories(categories),
       items: page.items.map((product): ProductListItem => {
         const activePromotion =
           product.status === ProductStatus.published
@@ -240,6 +256,7 @@ export class GetProductsService {
     const page = Math.min(params.page, Math.max(1, totalPages));
     const start = (page - 1) * params.pageSize;
     return {
+      categories: toActiveCategories(categories),
       items: filtered.slice(start, start + params.pageSize),
       page,
       pageSize: params.pageSize,
@@ -268,6 +285,11 @@ export class GetProductsService {
     }
     return products;
   }
+}
+
+/** Solo categorias activas, en el orden en que las entrega el repository (alimenta los filtros). */
+function toActiveCategories(categories: Category[]): Category[] {
+  return categories.filter((category) => category.status === CategoryStatus.active);
 }
 
 function toApiPageParams(params: GetProductsParams): ProductPageParams {
