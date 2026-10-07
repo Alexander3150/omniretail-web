@@ -263,8 +263,9 @@ async function main() {
 
   const wrapped = withApiLogisticsPickingRead({} as RepositoryRegistry);
   assert.equal(wrapped.pickingReadDataSource, "api");
-  assert.equal(wrapped.pickingCommandsEnabled, false);
+  assert.equal(wrapped.pickingCommandsEnabled, true);
   assert.ok(wrapped.pickingRead instanceof ApiPickingRepository);
+  assert.ok(wrapped.pickingCommands instanceof ApiPickingRepository);
 
   assert.equal(
     isCurrentPickingRequest({

@@ -2,10 +2,12 @@ import { ApiPickingRepository } from "@/infrastructure/api/repositories/ApiPicki
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 
 export function withApiLogisticsPickingRead(repositories: RepositoryRegistry): RepositoryRegistry {
+  const pickingApi = new ApiPickingRepository();
   return {
     ...repositories,
     pickingReadDataSource: "api",
-    pickingCommandsEnabled: false,
-    pickingRead: new ApiPickingRepository(),
+    pickingCommandsEnabled: true,
+    pickingRead: pickingApi,
+    pickingCommands: pickingApi,
   };
 }

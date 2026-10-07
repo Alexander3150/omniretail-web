@@ -4,11 +4,21 @@ import type {
   PickingDetailLineDto,
   PickingIncidentDto,
 } from "@/modules/logistics/application/dto/PickingReadModelDto";
+import {
+  buildPickingPhysicalSelection,
+  buildPickingSerialReplacement,
+  getPickingCanonicalLocationIds,
+  getPickingLineUpdateAvailability,
+  getPickingLocationLots,
+  getPickingLocationSerials,
+  type PickingPhysicalSelectionResult,
+} from "@/modules/logistics/application/pickingPhysicalSelection";
 import { validatePickingLineUpdate } from "@/modules/logistics/validation/picking.validation";
 import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { Input } from "@/shared/components/Input";
+import { Select } from "@/shared/components/Select";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 
 interface PickingLineListProps {
@@ -19,7 +29,7 @@ interface PickingLineListProps {
   onUpdate: (
     line: PickingDetailLineDto,
     targetQuantity: number,
-    serialNumbers: string[],
+    physicalSelection: PickingPhysicalSelectionResult,
   ) => Promise<boolean>;
 }
 
@@ -56,6 +66,12 @@ interface PickingLineCardProps {
 
 function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: PickingLineCardProps) {
   const [targetText, setTargetText] = useState(String(line.pickedQuantity));
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(
+    line.location?.id ?? line.trackingSelections[0]?.locationId ?? null,
+  );
+  const [selectedLotId, setSelectedLotId] = useState<string | null>(
+    line.trackingSelections[0]?.lotId ?? null,
+  );
   const [selectedSerials, setSelectedSerials] = useState<string[]>([]);
   const [replacementSerials, setReplacementSerials] = useState<string[]>(line.serialNumbers);
   const [serialEntry, setSerialEntry] = useState("");
@@ -69,9 +85,11 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
     ? Math.max(targetQuantity - line.pickedQuantity, 0)
     : 0;
   const recommendedSerialCount = serialDelta > 0 ? serialDelta : line.remainingQuantity;
-  const recommendedSerialNumbers = getRecommendedSerialNumbers(line, recommendedSerialCount);
+  const canonicalLocationIds = new Set(getPickingCanonicalLocationIds(line));
+  const locationSerialNumbers = getPickingLocationSerials(line, selectedLocationId);
+  const recommendedSerialNumbers = locationSerialNumbers.slice(0, recommendedSerialCount);
   const recommendedSerialSet = new Set(recommendedSerialNumbers);
-  const alternativeSerialNumbers = line.availableSerialNumbers.filter(
+  const alternativeSerialNumbers = locationSerialNumbers.filter(
     (serial) => !recommendedSerialSet.has(serial),
   );
   const selectedLot = line.lot
@@ -83,7 +101,7 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
   );
   const replacementSerialOptions = [...new Set([
     ...line.serialNumbers,
-    ...line.availableSerialNumbers,
+    ...locationSerialNumbers,
   ])];
   const visibleReplacementSerialOptions = filterAvailableSerialNumbers(
     replacementSerialOptions,
@@ -91,19 +109,33 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
   );
   const lockedSerials = selectedSerials.length > 0 ? selectedSerials : line.serialNumbers;
   const serialControlsLocked = !editable || disabled;
+  const locationLots = getPickingLocationLots(line, selectedLocationId);
+  const traceable = line.tracking.lot || line.tracking.expiration || line.tracking.serial;
+  const updateAvailability = getPickingLineUpdateAvailability(line);
 
   const submit = async () => {
     const validationError = validatePickingLineUpdate(line, targetQuantity, selectedSerials);
     setError(validationError);
     if (validationError) return;
-    const saved = await onUpdate(line, targetQuantity, selectedSerials);
+    let physicalSelection: PickingPhysicalSelectionResult;
+    try {
+      physicalSelection = buildPickingPhysicalSelection(line, targetQuantity, {
+        locationId: selectedLocationId,
+        lotId: selectedLotId,
+        serialNumbers: selectedSerials,
+      });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "La seleccion fisica no es valida.");
+      return;
+    }
+    const saved = await onUpdate(line, targetQuantity, physicalSelection);
     if (!saved) return;
     setError(null);
   };
 
   const addScannedSerial = () => {
     const number = serialEntry.trim();
-    if (!line.availableSerialNumbers.includes(number) || selectedSerials.includes(number)) {
+    if (!locationSerialNumbers.includes(number) || selectedSerials.includes(number)) {
       setError("Selecciona una serie disponible para esta reserva.");
       return;
     }
@@ -125,7 +157,12 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
       setError("No puedes seleccionar una serie más de una vez.");
       return;
     }
-    if (await onUpdate(line, line.pickedQuantity, replacementSerials)) setError(null);
+    try {
+      const physicalSelection = buildPickingSerialReplacement(line, replacementSerials);
+      if (await onUpdate(line, line.pickedQuantity, physicalSelection)) setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "La seleccion fisica no es valida.");
+    }
   };
 
   return (
@@ -184,21 +221,77 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
         </div>
       ) : null}
 
-      {editable && !disabled && line.remainingQuantity > 0 ? (
+      {!updateAvailability.available ? (
+        <div className="mt-2.5">
+          <InlineAlert
+            description={updateAvailability.reason ?? "La trazabilidad de esta linea no esta disponible."}
+            title="Trazabilidad no disponible"
+            tone="warning"
+          />
+        </div>
+      ) : null}
+
+      {editable && !disabled && updateAvailability.available && line.remainingQuantity > 0 ? (
         <div className="mt-3 space-y-3 border-t border-[var(--color-border)] pt-3">
+          {traceable ? (
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              <FormField id={`location-${line.pickingLineId}`} label="Ubicacion fisica *">
+                <Select
+                  disabled={disabled || Boolean(line.location)}
+                  id={`location-${line.pickingLineId}`}
+                  onChange={(event) => {
+                    setSelectedLocationId(event.target.value || null);
+                    setSelectedLotId(null);
+                    setSelectedSerials([]);
+                    setError(null);
+                  }}
+                  value={selectedLocationId ?? ""}
+                >
+                  <option value="">Selecciona una ubicacion</option>
+                  {line.availableLocations.filter(
+                    (location) => location.id && canonicalLocationIds.has(location.id),
+                  ).map((location) => (
+                    <option key={location.id!} value={location.id!}>
+                      {location.code ?? "Sin codigo"} - {location.name ?? "Sin nombre"}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+              {line.tracking.lot ? (
+                <FormField id={`lot-${line.pickingLineId}`} label="Lote para el incremento *">
+                  <Select
+                    disabled={disabled || !selectedLocationId || line.tracking.serial}
+                    id={`lot-${line.pickingLineId}`}
+                    onChange={(event) => {
+                      setSelectedLotId(event.target.value || null);
+                      setError(null);
+                    }}
+                    value={selectedLotId ?? ""}
+                  >
+                    <option value="">Selecciona un lote</option>
+                    {locationLots.map((lot) => (
+                      <option key={lot.lotId} value={lot.lotId}>
+                        {lot.lotNumber}{lot.expirationDate ? ` - vence ${formatExpirationDate(lot.expirationDate)}` : ""}
+                      </option>
+                    ))}
+                  </Select>
+                </FormField>
+              ) : null}
+            </div>
+          ) : null}
           <div className="grid gap-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
             <FormField id={`target-${line.pickingLineId}`} label="Cantidad total recogida">
               <Input
                 disabled={disabled}
                 id={`target-${line.pickingLineId}`}
                 max={line.requiredQuantity}
-                min={line.pickedQuantity + 1}
+                min={line.pickedQuantity + 0.001}
                 onChange={(event) => {
                   setTargetText(event.target.value);
                   setSelectedSerials([]);
                   setError(null);
                 }}
-                step={1}
+                step={line.tracking.serial ? 1 : 0.001}
                 type="number"
                 value={targetText}
               />
@@ -361,7 +454,7 @@ function PickingLineCard({ disabled, editable, incidents, line, onUpdate }: Pick
           serials={lockedSerials}
         />
       ) : null}
-      {editable && !disabled && line.tracking.serial && line.pickedQuantity > 0 ? (
+      {editable && !disabled && updateAvailability.available && line.tracking.serial && line.pickedQuantity > 0 ? (
         <div className="mt-3 space-y-2 border-t border-[var(--color-border)] pt-3 text-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="font-semibold">Corregir series recogidas · {replacementSerials.length} / {line.pickedQuantity}</p>
@@ -473,66 +566,4 @@ export function filterAvailableSerialNumbers(serialNumbers: string[], search: st
   const normalizedSearch = search.trim().toLocaleLowerCase();
   if (!normalizedSearch) return serialNumbers;
   return serialNumbers.filter((serial) => serial.toLocaleLowerCase().includes(normalizedSearch));
-}
-
-interface SerialRecommendationCandidate {
-  serialNumber: string;
-  expirationAt: number | null;
-  locationKey: string;
-  ownReservedQuantity: number;
-}
-
-export function getRecommendedSerialNumbers(line: PickingDetailLineDto, count: number) {
-  if (!line.tracking.serial || count <= 0) return [];
-  const availableSerials = new Set(line.availableSerialNumbers);
-  const validLocationIds = new Set(
-    line.availableLocations
-      .filter((location) => location.usableQuantity > 0)
-      .map((location) => location.id),
-  );
-  const validLotIds = new Set(line.availableLots.map((lot) => lot.id));
-  const candidates: SerialRecommendationCandidate[] = [];
-
-  for (const location of line.inventory.locations) {
-    const locationId = location.locationId ?? null;
-    if (!validLocationIds.has(locationId) || location.usableQuantity <= 0) continue;
-    if (line.location && location.locationId !== line.location.id) continue;
-
-    for (const serial of location.serialNumbers) {
-      if (!availableSerials.has(serial.serialNumber)) continue;
-      if (line.lot && serial.lotId !== line.lot.id) continue;
-      if (serial.lotId && !validLotIds.has(serial.lotId)) continue;
-      const lot = serial.lotId
-        ? location.lots.find((candidate) => candidate.lotId === serial.lotId)
-        : undefined;
-      if (serial.lotId && !lot) continue;
-      const expirationAt = lot?.expirationDate
-        ? Date.parse(lot.expirationDate)
-        : Number.NaN;
-      candidates.push({
-        serialNumber: serial.serialNumber,
-        expirationAt: Number.isNaN(expirationAt) ? null : expirationAt,
-        locationKey: [location.locationCode, location.locationName, location.locationId]
-          .filter(Boolean)
-          .join("|") || "~",
-        ownReservedQuantity: location.ownReservedQuantity,
-      });
-    }
-  }
-
-  candidates.sort((left, right) => {
-    if (left.expirationAt !== null && right.expirationAt === null) return -1;
-    if (left.expirationAt === null && right.expirationAt !== null) return 1;
-    if (left.expirationAt !== null && right.expirationAt !== null) {
-      const expirationDifference = left.expirationAt - right.expirationAt;
-      if (expirationDifference !== 0) return expirationDifference;
-    }
-    const reservationDifference = right.ownReservedQuantity - left.ownReservedQuantity;
-    if (reservationDifference !== 0) return reservationDifference;
-    const locationDifference = left.locationKey.localeCompare(right.locationKey);
-    if (locationDifference !== 0) return locationDifference;
-    return left.serialNumber.localeCompare(right.serialNumber);
-  });
-
-  return [...new Set(candidates.map((candidate) => candidate.serialNumber))].slice(0, count);
 }

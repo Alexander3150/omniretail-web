@@ -13,8 +13,8 @@ export function validatePickingLineUpdate(
   targetQuantity: number,
   serialNumbers: string[],
 ): string | null {
-  if (!Number.isInteger(targetQuantity) || targetQuantity < 0) {
-    return "La cantidad debe ser un número entero válido.";
+  if (!Number.isFinite(targetQuantity) || targetQuantity < 0 || decimalPlaces(targetQuantity) > 3) {
+    return "La cantidad debe ser válida y usar como máximo 3 decimales.";
   }
   if (targetQuantity <= line.pickedQuantity) {
     return "La nueva cantidad debe aumentar el progreso actual.";
@@ -26,6 +26,9 @@ export function validatePickingLineUpdate(
     return "Esta línea no requiere números de serie.";
   }
   if (line.tracking.serial) {
+    if (!Number.isInteger(targetQuantity)) {
+      return "Los productos serializados requieren una cantidad entera.";
+    }
     const requiredSerials = targetQuantity - line.pickedQuantity;
     if (serialNumbers.length !== requiredSerials) {
       return `Selecciona exactamente ${requiredSerials} serie(s).`;
@@ -50,9 +53,9 @@ export function validatePickingIncident(values: PickingIncidentFormValues) {
   if (comment.length > 500) errors.comment = "Máximo 500 caracteres.";
   if (
     quantityAffected !== undefined &&
-    (!Number.isInteger(quantityAffected) || quantityAffected <= 0)
+    (!Number.isFinite(quantityAffected) || quantityAffected <= 0 || decimalPlaces(quantityAffected) > 3)
   ) {
-    errors.quantityAffected = "La cantidad debe ser un entero mayor que cero.";
+    errors.quantityAffected = "La cantidad debe ser mayor que cero y usar como máximo 3 decimales.";
   }
 
   return {
@@ -65,6 +68,12 @@ export function validatePickingIncident(values: PickingIncidentFormValues) {
       comment,
     },
   };
+}
+
+function decimalPlaces(value: number): number {
+  const text = value.toString().toLowerCase();
+  if (text.includes("e-")) return Number(text.split("e-")[1]);
+  return text.includes(".") ? text.split(".")[1].length : 0;
 }
 
 export function validateReleaseReason(value: string): string | null {

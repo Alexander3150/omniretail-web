@@ -1,5 +1,11 @@
 import { z } from "zod";
 import type { PickingDetailReadModel, PickingQueueReadModel } from "@/core/repositories";
+import type {
+  PickingCommandActionResult,
+  PickingIncidentReadModel,
+  PickingReadLine,
+  PickingReleaseReadModel,
+} from "@/core/repositories";
 import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import { isApiUuid } from "@/infrastructure/api/uuid";
 
@@ -174,6 +180,32 @@ const releaseSchema = z.object({
   releasedAt: instantSchema,
 });
 
+const actionSchema = z.object({
+  pickingOrderId: apiUuidSchema,
+  orderId: nullableUuidSchema,
+  status: z.enum(["pending", "assigned", "in_progress", "completed", "cancelled"]),
+  assignedUserId: nullableUuidSchema,
+  orderStatus: z
+    .enum([
+      "pending",
+      "confirmed",
+      "preparing",
+      "picking",
+      "packing",
+      "ready_for_pickup",
+      "ready_for_dispatch",
+      "dispatched",
+      "delivered",
+      "cancelled",
+    ])
+    .nullable(),
+  updatedAt: instantSchema,
+  idempotent: z.boolean(),
+  sourceType: z.enum(["order", "transfer"]),
+  sourceId: apiUuidSchema,
+  sourceReference: z.string().nullable(),
+});
+
 const detailSchema = queueItemSchema.safeExtend({
   completedAt: instantSchema.nullable(),
   lines: z.array(pickingLineSchema),
@@ -187,6 +219,22 @@ export function parseApiPickingQueue(value: unknown): PickingQueueReadModel[] {
 
 export function parseApiPickingDetail(value: unknown): PickingDetailReadModel {
   return parse(detailSchema, value, "detalle") as unknown as PickingDetailReadModel;
+}
+
+export function parseApiPickingAction(value: unknown): PickingCommandActionResult {
+  return parse(actionSchema, value, "accion") as unknown as PickingCommandActionResult;
+}
+
+export function parseApiPickingLine(value: unknown): PickingReadLine {
+  return parse(pickingLineSchema, value, "linea") as unknown as PickingReadLine;
+}
+
+export function parseApiPickingIncident(value: unknown): PickingIncidentReadModel {
+  return parse(incidentSchema, value, "incidencia") as unknown as PickingIncidentReadModel;
+}
+
+export function parseApiPickingRelease(value: unknown): PickingReleaseReadModel {
+  return parse(releaseSchema, value, "liberacion") as unknown as PickingReleaseReadModel;
 }
 
 function parse<TSchema extends z.ZodType>(schema: TSchema, value: unknown, resource: string) {

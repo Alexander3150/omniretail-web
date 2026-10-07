@@ -27,6 +27,7 @@ import { MockUserRepository } from "@/infrastructure/mock/repositories/MockUserR
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { LocalStorageAdapter } from "@/infrastructure/storage/LocalStorageAdapter";
 import { PickingApplicationService } from "@/modules/logistics/application/services/PickingApplicationService";
+import { getPickingLineUpdateAvailability } from "@/modules/logistics/application/pickingPhysicalSelection";
 import { PickingAuthorizationError } from "@/modules/logistics/application/services/PickingAuthorizationContext";
 
 const tenantId = "tenant-demo";
@@ -131,6 +132,9 @@ async function main() {
       location.lots.some((lot) => lot.serialNumbers.length > 0),
     ),
   );
+  assert.equal(getPickingLineUpdateAvailability(screws).available, true);
+  assert.equal(getPickingLineUpdateAvailability(lotTracked).available, true);
+  assert.equal(getPickingLineUpdateAvailability(lotSerialTracked).available, true);
 
   // C, D. Atomic concurrent assignment and same-actor idempotency.
   const assignmentRace = await Promise.allSettled([
