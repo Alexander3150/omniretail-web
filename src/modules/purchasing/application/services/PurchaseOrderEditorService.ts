@@ -9,6 +9,12 @@ import type {
 import { ProductType, PurchaseOrderStatus } from "@/core/enums";
 import type { PurchaseOrderItemInput } from "@/core/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import {
+  REFERENCE_DATA_TTL_MS,
+  getReferenceDataCache,
+  referenceDataKeys,
+  referenceDataPrefixes,
+} from "@/shared/utils/requestCache";
 import { INVENTORY_STOCK_READ_PERMISSION } from "@/modules/inventory/application/services/serviceHelpers";
 import {
   hasAtMostDecimalPlaces,
@@ -78,12 +84,11 @@ type PurchaseOrderInventoryLoadResult =
   | { error: unknown };
 
 export class PurchaseOrderEditorService {
-  private readonly activeSupplierLoads = new Map<
-    string,
-    Promise<PurchaseOrderEditorSupplier[]>
-  >();
+  private readonly referenceCache;
 
-  constructor(private readonly repositories: RepositoryRegistry) {}
+  constructor(private readonly repositories: RepositoryRegistry) {
+    this.referenceCache = getReferenceDataCache(repositories);
+  }
 
   async getActiveSuppliers(): Promise<PurchaseOrderEditorSupplier[]> {
     const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
@@ -92,8 +97,8 @@ export class PurchaseOrderEditorService {
   }
 
   invalidateActiveSuppliers(tenantId?: string): void {
-    if (tenantId) this.activeSupplierLoads.delete(tenantId);
-    else this.activeSupplierLoads.clear();
+    if (tenantId) this.referenceCache.invalidate(referenceDataKeys.activeSuppliers(tenantId));
+    else this.referenceCache.invalidatePrefix(referenceDataPrefixes.suppliers);
   }
 
   /**
@@ -182,8 +187,14 @@ export class PurchaseOrderEditorService {
       : undefined;
     const [supplierProducts, units, categories] = await Promise.all([
       this.repositories.supplierProducts.getBySupplierForTenant(tenantId, supplierId),
-      this.repositories.units.getByTenant(tenantId),
-      this.repositories.categories.getAll(),
+      this.referenceCache.getOrLoad(referenceDataKeys.units(tenantId), REFERENCE_DATA_TTL_MS, () =>
+        this.repositories.units.getByTenant(tenantId),
+      ),
+      this.referenceCache.getOrLoad(
+        referenceDataKeys.categories(tenantId),
+        REFERENCE_DATA_TTL_MS,
+        () => this.repositories.categories.getByTenant(tenantId),
+      ),
     ]);
     if (supplierProducts.some((item) => item.supplierId !== supplierId)) {
       throw new PurchasingServiceError(
@@ -287,10 +298,10 @@ export class PurchaseOrderEditorService {
   private getActiveSuppliersForTenant(
     tenantId: string,
   ): Promise<PurchaseOrderEditorSupplier[]> {
-    const existing = this.activeSupplierLoads.get(tenantId);
-    if (existing) return existing;
-    const load = this.repositories.suppliers
-      .getActiveByTenant(tenantId)
+    return this.referenceCache
+      .getOrLoad(referenceDataKeys.activeSuppliers(tenantId), REFERENCE_DATA_TTL_MS, () =>
+        this.repositories.suppliers.getActiveByTenant(tenantId),
+      )
       .then((suppliers) =>
         suppliers
           .map((supplier) => ({
@@ -305,13 +316,7 @@ export class PurchaseOrderEditorService {
                 : "No definido",
           }))
           .sort((left, right) => left.name.localeCompare(right.name)),
-      )
-      .catch((error) => {
-        this.activeSupplierLoads.delete(tenantId);
-        throw error;
-      });
-    this.activeSupplierLoads.set(tenantId, load);
-    return load;
+      );
   }
 
   /**

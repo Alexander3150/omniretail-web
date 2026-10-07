@@ -64,6 +64,7 @@ import { withApiPurchaseOrders } from "@/infrastructure/api/withApiPurchaseOrder
 import { withApiReceiving } from "@/infrastructure/api/withApiReceiving";
 import { withApiLogisticsPickingRead } from "@/infrastructure/api/withApiLogisticsPickingRead";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
+import { getReferenceDataCache, referenceDataPrefixes } from "@/shared/utils/requestCache";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import {
   MockAddressRepository,
@@ -280,6 +281,14 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
           ),
         )
       : mockRepositories;
+    // Datos de referencia cacheados: se descartan en cuanto cambia su fuente (el TTL cubre el resto).
+    const referenceCache = getReferenceDataCache(repositories);
+    eventBus.subscribe("category.changed", () =>
+      referenceCache.invalidatePrefix(referenceDataPrefixes.categories),
+    );
+    eventBus.subscribe("supplier.changed", () =>
+      referenceCache.invalidatePrefix(referenceDataPrefixes.suppliers),
+    );
     return {
       repositories,
       eventBus,

@@ -9,6 +9,12 @@ import type {
   ProductSupplierSummaryItem,
 } from "@/modules/catalog/types/catalog.types";
 
+import {
+  REFERENCE_DATA_TTL_MS,
+  getReferenceDataCache,
+  referenceDataKeys,
+} from "@/shared/utils/requestCache";
+
 interface QuickViewBranchContext {
   id: string;
   tenantId: string;
@@ -71,7 +77,11 @@ export class GetProductQuickViewService {
       const defaultLocation =
         inventorySettings?.defaultLocationId && validBranch && canReadLocations
           ? (
-              await this.repositories.inventory.getLocations(validBranch.id)
+              await getReferenceDataCache(this.repositories).getOrLoad(
+                referenceDataKeys.locations(tenantId, validBranch.id),
+                REFERENCE_DATA_TTL_MS,
+                () => this.repositories.inventory.getLocations(validBranch.id),
+              )
             ).find((location) => location.id === inventorySettings.defaultLocationId)
           : undefined;
       const unitNames = new Map(units.map((unit) => [unit.id, unit.name]));

@@ -2,6 +2,11 @@ import type { Product, StorageLocation } from "@/core/entities";
 import { LocationStatus, ProductType } from "@/core/enums";
 import { getProductMediaSource, selectPrimaryProductMedia } from "@/core/media/catalogImage";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import {
+  REFERENCE_DATA_TTL_MS,
+  getReferenceDataCache,
+  referenceDataKeys,
+} from "@/shared/utils/requestCache";
 import type {
   ProductEditorData,
   ProductMediaEditorValue,
@@ -19,7 +24,11 @@ export class GetProductEditorDataService {
     Promise<{ branchLocations: StorageLocation[]; storageLocations: StorageLocation[] }>
   >();
 
-  constructor(private readonly repositories: RepositoryRegistry) {}
+  private readonly referenceCache;
+
+  constructor(private readonly repositories: RepositoryRegistry) {
+    this.referenceCache = getReferenceDataCache(repositories);
+  }
 
   async execute(productId?: string): Promise<ProductEditorData> {
     const { tenantId, permissions } = await resolveTenantContext(this.repositories);
@@ -48,7 +57,11 @@ export class GetProductEditorDataService {
       ? this.loadEditorDetailWithMedia(tenantId, productId)
       : Promise.resolve(null);
     const suppliersPromise = access.canManageSuppliers
-      ? this.repositories.suppliers.getActiveByTenant(tenantId)
+      ? this.referenceCache.getOrLoad(
+          referenceDataKeys.activeSuppliers(tenantId),
+          REFERENCE_DATA_TTL_MS,
+          () => this.repositories.suppliers.getActiveByTenant(tenantId),
+        )
       : Promise.resolve([]);
     // Las relaciones dependen de un Product scoped valido, pero no de suppliers ni locations.
     // Comienzan apenas termina Product Detail mientras esos masters siguen cargando. Attributes,
@@ -216,7 +229,11 @@ export class GetProductEditorDataService {
         if (!branch || branch.tenantId !== tenantId) {
           return { branchLocations: [], storageLocations: [] };
         }
-        const branchLocations = await this.repositories.inventory.getLocations(branch.id);
+        const branchLocations = await this.referenceCache.getOrLoad(
+          referenceDataKeys.locations(tenantId, branch.id),
+          REFERENCE_DATA_TTL_MS,
+          () => this.repositories.inventory.getLocations(branch.id),
+        );
         return {
           branchLocations,
           storageLocations: branchLocations.filter(

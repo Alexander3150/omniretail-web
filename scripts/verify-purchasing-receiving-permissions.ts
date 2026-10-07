@@ -789,19 +789,15 @@ async function verifyAuthorizedFlowsPassAndSnapshotPreserved() {
     lines: detail.lines.map((line) => ({ ...line, receivedNow: line.orderedQuantity })),
     incidents: [],
   });
-  // NO se afirma ReceiptStatus.received a proposito: `MockReceiptRepository.
-  // confirmReceiptInventory` calcula `totalOrdered` desde `db.purchaseOrders.find(...).items`,
-  // pero esa tabla NUNCA tiene `items` poblado (viven en `db.purchaseOrderItems`, unidos solo
-  // por `hydratePurchaseOrder` en getAll/getById/etc, que este metodo no usa) -- por eso
-  // `totalOrdered` siempre da 0 y la recepcion NUNCA llega a "received", sin importar cuanto se
-  // acepte. Es un bug real y PREEXISTENTE en el modelo compartido de Purchasing/Receiving (fuera
-  // del scope de este PR -- ver output final, IMPORTANTES). Lo que este test SI verifica es que
-  // el flujo autorizado completo (crear -> aprobar -> ver detalle -> confirmar) no lanza y
-  // efectivamente mueve inventario.
+  // El flujo recibe TODA la cantidad ordenada (receivedNow = orderedQuantity en cada linea).
+  // `MockReceiptRepository.confirmReceiptInventory` calcula `totalOrdered` desde
+  // `db.purchaseOrderItems` (corregido en commits anteriores a PR5; antes leia `order.items`, que
+  // nunca estaba poblado y dejaba la recepcion siempre en "partial"). Con ese calculo correcto,
+  // recibir todo lo ordenado completa la recepcion: `received` es el resultado esperado.
   assert.equal(
     receipt.status,
-    ReceiptStatus.partial,
-    "10: confirmar debe completar sin lanzar (status real limitado por bug preexistente, ver comentario arriba)",
+    ReceiptStatus.received,
+    "10: confirmar la cantidad ordenada completa debe dejar la recepcion en received",
   );
 
   const balances = await receiver.inventory.getBalanceByProduct("prod-hammer", "branch-centro");

@@ -305,22 +305,27 @@ export class ReceivingDocumentsService {
     const uniqueOrders = [...new Map(purchaseOrders.map((order) => [order.id, order])).values()];
     const records = await Promise.all(
       uniqueOrders.map(async (order) => {
-        const [drafts, confirmed] = await Promise.all([
-          this.repositories.receipts.getPageScoped(tenantId, {
-            branchId,
-            purchaseOrderId: order.id,
-            status: "draft",
-            page: 1,
-            pageSize: RECEIPT_HISTORY_PAGE_SIZE,
-          }),
-          this.repositories.receipts.getPageScoped(tenantId, {
-            branchId,
-            purchaseOrderId: order.id,
-            status: "confirmed",
-            page: 1,
-            pageSize: RECEIPT_HISTORY_PAGE_SIZE,
-          }),
-        ]);
+        // Una sola lectura por orden (sin `status`): el backend devuelve borradores y confirmadas
+        // juntas y se separan en memoria por el estado real de cada recepcion. La pagina es
+        // compartida: si `page < totalPages` el historial queda marcado como incompleto (abajo).
+        const combined = await this.repositories.receipts.getPageScoped(tenantId, {
+          branchId,
+          purchaseOrderId: order.id,
+          page: 1,
+          pageSize: RECEIPT_HISTORY_PAGE_SIZE,
+        });
+        const drafts = {
+          ...combined,
+          items: combined.items.filter(
+            (record) => record.receipt.status === ReceiptStatus.in_progress,
+          ),
+        };
+        const confirmed = {
+          ...combined,
+          items: combined.items.filter(
+            (record) => record.receipt.status !== ReceiptStatus.in_progress,
+          ),
+        };
         return { order, drafts, confirmed };
       }),
     );
