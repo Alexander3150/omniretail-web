@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -12,12 +13,11 @@ import {
   type ReactNode,
   type SVGProps,
 } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { StorageLocation } from "@/core/entities";
 import type { AdjustmentLotOption, AdjustmentSerialOption } from "@/core/repositories";
 import type { InventoryAdjustmentLookupService } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
 import { useSerialBatchPrecheck } from "@/shared/hooks/useSerialBatchPrecheck";
-import { saveMovementsNavContext } from "@/modules/inventory/application/services/movementsNavContext";
 import { INVENTORY_STOCK_READ_PERMISSION } from "@/modules/inventory/application/services/serviceHelpers";
 import { TraceableCountFlow } from "@/modules/inventory/components/TraceableCountFlow";
 import type { InventoryOtherBranchesService } from "@/modules/inventory/application/services/InventoryOtherBranchesService";
@@ -104,6 +104,7 @@ const TRANSFER_REASONS: Array<{ value: InventoryTransferReason; label: string }>
 
 export function InventoryAlertsPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { showToast } = useToast();
   const { hasPermission } = useCurrentSession();
@@ -164,10 +165,18 @@ export function InventoryAlertsPage() {
     approveTransferRequest,
     rejectTransferRequest,
   } = useInventoryAlerts();
-  const [panelMode, setPanelMode] = useState<AlertPanelMode>("alerts");
-  const [contextPanelExpanded, setContextPanelExpanded] = useState<boolean>(false);
+  // El panel de contexto vive en la URL: ?panel=alerts | ?panel=product-detail&productId=<uuid>.
+  // Compatibilidad: ?productId=<uuid> (con o sin openAdjustment=1) se interpreta como product-detail.
+  const panelParam = searchParams.get("panel");
+  const productIdParam = searchParams.get("productId") || null;
+  const openAdjustmentParam = searchParams.get("openAdjustment");
+  const selectedProductId = productIdParam;
+  const panelMode: AlertPanelMode =
+    productIdParam && (panelParam === "product-detail" || !panelParam)
+      ? "product-detail"
+      : "alerts";
+  const contextPanelExpanded = Boolean(panelParam || productIdParam);
   const [previousCurrentBranchId, setPreviousCurrentBranchId] = useState(currentBranchId);
-  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [actionMode, setActionMode] = useState<ActionMode>(null);
   const [requestProviderBranchId, setRequestProviderBranchId] = useState<string | null>(null);
   const [selectedTransferRequestId, setSelectedTransferRequestId] = useState<string | null>(null);
@@ -177,11 +186,25 @@ export function InventoryAlertsPage() {
   const [hasRestoredViewedTransferAlerts, setHasRestoredViewedTransferAlerts] = useState(false);
   if (previousCurrentBranchId !== currentBranchId) {
     setPreviousCurrentBranchId(currentBranchId);
-    setPanelMode("alerts");
-    setSelectedProductId(null);
     setSelectedTransferRequestId(null);
     setActionMode(null);
   }
+  // Helpers locales de query params: solo se tocan los parametros indicados, los ajenos se preservan.
+  const buildUrl = useCallback(
+    (mutate: (params: URLSearchParams) => void) => {
+      const params = new URLSearchParams(searchParams.toString());
+      mutate(params);
+      const query = params.toString();
+      return query ? `${pathname}?${query}` : pathname;
+    },
+    [pathname, searchParams],
+  );
+  const navigatePanel = useCallback(
+    (mutate: (params: URLSearchParams) => void) => {
+      router.push(buildUrl(mutate), { scroll: false });
+    },
+    [buildUrl, router],
+  );
   const selectedRow =
     rows.find((row) => row.productId === selectedProductId) ??
     data.rows.find((row) => row.productId === selectedProductId) ??
@@ -204,33 +227,61 @@ export function InventoryAlertsPage() {
   // Product creation hands off to this existing adjustment UI. It only
   // selects a product; RegisterInventoryAdjustmentService remains the sole
   // stock mutation boundary and retains all traceability validation.
-  // El handoff (?productId=&openAdjustment=1) es un trigger ONE-SHOT: al consumirlo se limpia la
-  // URL (replace), de modo que ningun refetch posterior (que cambia loadProductRow) lo repita.
+  // Deep-link del panel: si el producto de ?productId= no esta en la pagina visible, se carga por id
+  // (loadProductRow reutiliza la fila cargada y solo pide lo que falta). Solo lee la URL.
+  useEffect(() => {
+    if (!productIdParam || loading) return;
+    void loadProductRow(productIdParam);
+  }, [loading, loadProductRow, productIdParam]);
+
+  // El handoff (?productId=&openAdjustment=1) es un trigger ONE-SHOT: al consumirlo se elimina SOLO
+  // openAdjustment (replace); panel, productId y otros parametros se preservan, asi ningun refetch
+  // posterior lo repite ni se crea una entrada artificial de historial.
   const handoffConsumedRef = useRef<string | null>(null);
   useEffect(() => {
-    const productId = searchParams.get("productId");
-    if (!productId) return;
+    if (!productIdParam || openAdjustmentParam !== "1") return;
     // Espera a sesion/sucursal para decidir con permisos reales (no consumir en falso).
     if (loading) return;
-    const wantsAdjustment = searchParams.get("openAdjustment") === "1";
-    const handoffKey = `${productId}|${wantsAdjustment}`;
-    if (handoffConsumedRef.current === handoffKey) return;
+    if (handoffConsumedRef.current === productIdParam) return;
     let active = true;
-    void loadProductRow(productId).then((row) => {
+    void loadProductRow(productIdParam).then((row) => {
       if (!active || !row) return;
-      handoffConsumedRef.current = handoffKey;
-      setSelectedProductId(productId);
-      setPanelMode("product-detail");
-      setContextPanelExpanded(true);
-      if (wantsAdjustment && canAdjustStock && row.inventoryMode === "TRACKED") {
+      handoffConsumedRef.current = productIdParam;
+      if (canAdjustStock && row.inventoryMode === "TRACKED") {
         setActionMode("adjust");
       }
-      router.replace("/inventario/alertas", { scroll: false });
+      router.replace(buildUrl((params) => params.delete("openAdjustment")), { scroll: false });
     });
     return () => {
       active = false;
     };
-  }, [canAdjustStock, loadProductRow, loading, router, searchParams]);
+  }, [
+    buildUrl,
+    canAdjustStock,
+    loadProductRow,
+    loading,
+    openAdjustmentParam,
+    productIdParam,
+    router,
+  ]);
+
+  // Cambiar la sucursal activa (cabecera) descarta la seleccion del panel: solo se quitan sus
+  // parametros. Un solo flujo URL: no hay efecto estado -> URL que se retroalimente.
+  const previousBranchForUrlRef = useRef(currentBranchId);
+  useEffect(() => {
+    const previous = previousBranchForUrlRef.current;
+    previousBranchForUrlRef.current = currentBranchId;
+    if (!previous || previous === currentBranchId) return;
+    if (!searchParams.has("panel") && !searchParams.has("productId")) return;
+    router.replace(
+      buildUrl((params) => {
+        params.delete("panel");
+        params.delete("productId");
+        params.delete("openAdjustment");
+      }),
+      { scroll: false },
+    );
+  }, [buildUrl, currentBranchId, router, searchParams]);
 
   useEffect(() => {
     let active = true;
@@ -244,18 +295,37 @@ export function InventoryAlertsPage() {
     };
   }, []);
 
-  function selectRow(row: InventoryProductRow) {
-    void loadAlerts();
-    setSelectedProductId(row.productId);
-    setPanelMode("product-detail");
-    setContextPanelExpanded(true);
-  }
-
   function selectProduct(productId: string) {
     void loadAlerts();
-    setSelectedProductId(productId);
-    setPanelMode("product-detail");
-    setContextPanelExpanded(true);
+    navigatePanel((params) => {
+      params.set("panel", "product-detail");
+      params.set("productId", productId);
+    });
+  }
+
+  function selectRow(row: InventoryProductRow) {
+    selectProduct(row.productId);
+  }
+
+  function openAlertsPanel() {
+    void loadAlerts();
+    navigatePanel((params) => {
+      params.set("panel", "alerts");
+      params.delete("productId");
+      params.delete("openAdjustment");
+    });
+  }
+
+  function closePanel() {
+    navigatePanel((params) => {
+      params.delete("panel");
+      params.delete("productId");
+      params.delete("openAdjustment");
+    });
+  }
+
+  function changePanelMode(mode: AlertPanelMode) {
+    if (mode === "alerts") openAlertsPanel();
   }
 
   function openAdjust(row?: InventoryProductRow) {
@@ -276,15 +346,9 @@ export function InventoryAlertsPage() {
   }
 
   function openMovementHistory(row: InventoryProductRow) {
-    // El contexto viaja por sessionStorage: la URL queda limpia (sin UUIDs).
-    saveMovementsNavContext({
-      productId: row.productId,
-      productName: row.productName,
-      productSku: row.sku,
-      branchId: row.branchId,
-      source: "inventory",
-    });
-    router.push("/inventario/movimientos");
+    // Contrato canonico: solo identidad/filtros (productId + branchId); nada de nombre ni SKU.
+    const params = new URLSearchParams({ productId: row.productId, branchId: row.branchId });
+    router.push(`/inventario/movimientos?${params.toString()}`);
   }
 
   function openPurchaseOrder(row: InventoryProductRow, source: "inventory" | "inventory-alert") {
@@ -382,8 +446,12 @@ export function InventoryAlertsPage() {
             unreadAlertCount={unreadAlertCount}
             onBranchChange={(value) => {
               setBranchId(value);
-              setPanelMode("alerts");
-              setSelectedProductId(null);
+              // Otra sucursal descarta el producto seleccionado: panel de alertas si estaba abierto.
+              navigatePanel((params) => {
+                if (params.has("panel") || params.has("productId")) params.set("panel", "alerts");
+                params.delete("productId");
+                params.delete("openAdjustment");
+              });
             }}
             onCategoryChange={(value) => {
               setCategoryId(value);
@@ -397,11 +465,7 @@ export function InventoryAlertsPage() {
             onToggleFilters={() => {
               setFiltersOpen((current) => !current);
             }}
-            onOpenAlerts={() => {
-              void loadAlerts();
-              setPanelMode("alerts");
-              setContextPanelExpanded(true);
-            }}
+            onOpenAlerts={openAlertsPanel}
           />
           {loading ? (
             <p className="border-t border-[var(--color-border)] p-5 text-sm text-[var(--color-text-muted)]">
@@ -448,13 +512,9 @@ export function InventoryAlertsPage() {
           onOtherBranches={() => selectedRow && openOtherBranches(selectedRow)}
           onViewHistory={() => selectedRow && openMovementHistory(selectedRow)}
           onViewProductTransfers={() => selectedRow && setActionMode("product-transfers")}
-          onCloseProduct={() => {
-            setSelectedProductId(null);
-            setPanelMode("alerts");
-            setContextPanelExpanded(false);
-          }}
-          onCollapse={() => setContextPanelExpanded(false)}
-          onModeChange={setPanelMode}
+          onCloseProduct={closePanel}
+          onCollapse={closePanel}
+          onModeChange={changePanelMode}
           onSelectProduct={selectProduct}
           onSelectTransferRequest={openTransferRequestDetail}
           transferRequests={data.transferRequests}

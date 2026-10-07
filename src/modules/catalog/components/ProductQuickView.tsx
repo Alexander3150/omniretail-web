@@ -20,15 +20,16 @@ import {
 } from "@/modules/catalog/components/CatalogIcons";
 import { useProductQuickView } from "@/modules/catalog/hooks/useProductQuickView";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
-import type { ProductListItem, ProductQuickViewModel } from "@/modules/catalog/types/catalog.types";
+import type { ProductQuickViewModel } from "@/modules/catalog/types/catalog.types";
 
 type QuickViewTab = "general" | "inventory" | "suppliers";
 
 interface ProductQuickViewProps {
   canUpdate: boolean;
-  product: ProductListItem | null;
+  /** Id del producto a consultar (viene de ?quickView=); el detalle se carga por id, no del listado. */
+  productId: string | null;
   onClose: () => void;
-  onRestore: (product: ProductListItem) => void;
+  onRestore: (product: { id: string }) => void;
 }
 
 const tabs: { id: QuickViewTab; label: string }[] = [
@@ -39,7 +40,7 @@ const tabs: { id: QuickViewTab; label: string }[] = [
 
 export function ProductQuickView({
   canUpdate,
-  product,
+  productId,
   onClose,
   onRestore,
 }: ProductQuickViewProps) {
@@ -51,17 +52,17 @@ export function ProductQuickView({
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [activeTab, setActiveTab] = useState<QuickViewTab>("general");
   const { loading, data, error } = useProductQuickView(
-    product?.id ?? null,
+    productId,
     branchId,
     branchTenantId,
     branchName,
   );
-  const open = Boolean(product);
+  const open = Boolean(productId);
 
   useEffect(() => {
     if (!open) return;
     closeButtonRef.current?.focus();
-  }, [open, product?.id]);
+  }, [open, productId]);
 
   useEffect(() => {
     if (!open) return;
@@ -77,8 +78,8 @@ export function ProductQuickView({
   if (!open) return null;
 
   const detail = data;
-  const title = detail?.product.name ?? product?.name ?? "Producto";
-  const sku = detail?.product.sku ?? product?.sku ?? "";
+  const title = detail?.product.name ?? "Producto";
+  const sku = detail?.product.sku ?? "";
 
   return (
     <div className="fixed inset-0 z-40" role="presentation">
@@ -154,27 +155,24 @@ export function ProductQuickView({
             </>
           )}
         </div>
-        {product && canUpdate ? (
+        {detail && canUpdate ? (
           <footer className="border-t border-[var(--color-border)] px-4 py-4 sm:px-5">
-            {product.status === ProductStatus.published && canUpdate ? (
+            {detail.product.status === ProductStatus.published ? (
               <Button
                 className="w-full"
-                onClick={() => {
-                  onClose();
-                  router.push(`/catalogo/productos/${product.id}/editar`);
-                }}
+                onClick={() => router.push(`/catalogo/productos/${detail.product.id}/editar`)}
                 type="button"
               >
                 <PencilIcon />
                 Editar producto
               </Button>
             ) : null}
-            {product.status === ProductStatus.archived && canUpdate ? (
+            {detail.product.status === ProductStatus.archived ? (
               <Button
                 className="w-full"
                 onClick={() => {
                   onClose();
-                  onRestore(product);
+                  onRestore({ id: detail.product.id });
                 }}
                 type="button"
               >

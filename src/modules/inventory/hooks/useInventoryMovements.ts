@@ -1,9 +1,5 @@
-import {
-  clearMovementsNavContext,
-  readMovementsNavContext,
-} from "@/modules/inventory/application/services/movementsNavContext";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { InventoryMovementDisplayType } from "@/core/repositories";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
@@ -44,6 +40,11 @@ export const MOVEMENT_PERIOD_OPTIONS: Array<{ value: MovementPeriodFilter; label
 export function useInventoryMovements() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const pathname = usePathname();
+  // Contrato canonico: /inventario/movimientos?productId=<uuid>&branchId=<uuid>. La URL es la fuente
+  // de verdad de ambos filtros (copiable, refresh, nueva pestana, Back/Forward).
+  const productId = searchParams.get("productId") ?? "";
+  const branchId = searchParams.get("branchId") || "all";
   const repositories = useRepositories();
   const { currentBranch, branches: activeBranches, loading: branchLoading } = useActiveBranch();
   const activeBranchId = currentBranch?.id;
@@ -58,16 +59,21 @@ export function useInventoryMovements() {
   const [requestSearch, setRequestSearch] = useState("");
   const [period, setPeriodState] = useState<MovementPeriodFilter>("30d");
   const [type, setTypeState] = useState<MovementTypeFilter>("all");
-  const [branchId, setBranchIdState] = useState("all");
-  const [productId, setProductIdState] = useState("");
-  const [productName, setProductName] = useState("");
-  const [productSku, setProductSku] = useState("");
-  const [filtersOpen, setFiltersOpenState] = useState(false);
-  // El contexto (sessionStorage / params legacy) se hidrata una vez antes de la primera request.
-  const [contextReady, setContextReady] = useState(false);
-  const contextHydratedRef = useRef(false);
+  // El panel de filtros abre de inicio si la URL ya trae un filtro de producto o sucursal.
+  const [filtersOpen, setFiltersOpenState] = useState(
+    () => Boolean(searchParams.get("productId") || searchParams.get("branchId")),
+  );
   const [page, setPageState] = useState(1);
   const [pageSize, setPageSizeState] = useState(20);
+  // Un cambio de filtros desde la URL (SPA, Back/Forward) reinicia la pagina y muestra "cargando".
+  const urlFiltersKey = `${productId}|${branchId}`;
+  const [previousUrlFiltersKey, setPreviousUrlFiltersKey] = useState(urlFiltersKey);
+  if (previousUrlFiltersKey !== urlFiltersKey) {
+    setPreviousUrlFiltersKey(urlFiltersKey);
+    setPageState(1);
+    setLoading(true);
+    setError(null);
+  }
 
   const mockRequestParams = useMemo<GetInventoryMovementsParams>(
     () => ({
@@ -126,38 +132,11 @@ export function useInventoryMovements() {
   }, [applyRequest, requestParams]);
 
   useEffect(() => {
-    if (contextHydratedRef.current) return;
-    contextHydratedRef.current = true;
-    window.queueMicrotask(() => {
-      const legacyProductId = searchParams.get("productId");
-      const legacyBranchId = searchParams.get("branchId");
-      if (legacyProductId || legacyBranchId) {
-        // Compatibilidad con enlaces antiguos: se hidrata y la URL se limpia de inmediato.
-        if (legacyProductId) setProductIdState(legacyProductId);
-        if (legacyBranchId) setBranchIdState(legacyBranchId);
-        setFiltersOpenState(true);
-        router.replace("/inventario/movimientos");
-      } else {
-        const stored = readMovementsNavContext();
-        if (stored) {
-          setProductIdState(stored.productId);
-          setProductName(stored.productName);
-          setProductSku(stored.productSku ?? "");
-          if (stored.branchId) setBranchIdState(stored.branchId);
-          setFiltersOpenState(true);
-        }
-      }
-      setContextReady(true);
-    });
-  }, [router, searchParams]);
-
-  useEffect(() => {
-    if (!contextReady) return;
     void applyRequest(requestParams);
     return () => {
       requestIdRef.current += 1;
     };
-  }, [applyRequest, contextReady, requestParams]);
+  }, [applyRequest, requestParams]);
 
   useEffect(() => {
     if (!apiMode) return;
@@ -173,6 +152,9 @@ export function useInventoryMovements() {
   useDataEvent("product.changed", reload);
   useDataEvent("branch.changed", reload);
   useDataEvent("inventory-transfer.changed", reload);
+
+  // El nombre/SKU del filtro de producto se resuelven desde las filas cargadas (no viajan en la URL).
+  const productRow = productId ? data.rows.find((row) => row.productId === productId) : undefined;
 
   const filteredRows = useMemo(
     () =>
@@ -239,26 +221,22 @@ export function useInventoryMovements() {
     },
     [resetPage, startApiRequest],
   );
-  const setBranchId = useCallback(
-    (value: string) => {
-      setBranchIdState(value);
-      resetPage();
-      startApiRequest();
+  // productId/branchId viven en la URL: el setter solo la actualiza (preservando otros parametros)
+  // y el filtro se deriva de ella; limpiar un filtro elimina unicamente su parametro.
+  const setUrlFilter = useCallback(
+    (name: "productId" | "branchId", value: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (value && value !== "all") params.set(name, value);
+      else params.delete(name);
+      const query = params.toString();
+      router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
     },
-    [resetPage, startApiRequest],
+    [pathname, router, searchParams],
   );
+  const setBranchId = useCallback((value: string) => setUrlFilter("branchId", value), [setUrlFilter]);
   const setProductId = useCallback(
-    (value: string) => {
-      setProductIdState(value);
-      if (!value) {
-        setProductName("");
-        setProductSku("");
-        clearMovementsNavContext();
-      }
-      resetPage();
-      startApiRequest();
-    },
-    [resetPage, startApiRequest],
+    (value: string) => setUrlFilter("productId", value),
+    [setUrlFilter],
   );
   const setPageSize = useCallback(
     (value: number) => {
@@ -298,7 +276,7 @@ export function useInventoryMovements() {
     rows: filteredRows,
     paginatedRows,
     kpis,
-    loading: branchLoading || loading || !contextReady,
+    loading: branchLoading || loading,
     error,
     apiMode,
     search,
@@ -306,8 +284,8 @@ export function useInventoryMovements() {
     type,
     branchId,
     productId,
-    productName,
-    productSku,
+    productName: productRow?.productName ?? "",
+    productSku: productRow?.sku ?? "",
     filtersOpen,
     page: currentPage,
     pageSize,
