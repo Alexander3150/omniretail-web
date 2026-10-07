@@ -254,6 +254,29 @@ export interface InventoryStockPageResult {
   };
 }
 
+/** Una sola lectura de existencias de varios productos de UNA sucursal (POST /inventory/stock/batch). */
+export interface GetInventoryStockBatchInput {
+  branchId: string;
+  /** Solo productos fisicos con control de stock; sin duplicados. */
+  productIds: string[];
+}
+
+export interface InventoryStockBatchItem {
+  productId: string;
+  quantity: number;
+  reservedQuantity: number;
+  availableQuantity: number;
+  minStock: number;
+  reorderPoint: number | null;
+  status: InventoryStockStatus;
+  suggestedReorder: number;
+}
+
+export interface InventoryStockBatchResult {
+  branchId: string;
+  items: InventoryStockBatchItem[];
+}
+
 export interface InventoryAlertPageParams {
   branchId: string;
   status?: Exclude<InventoryStockStatus, "normal">;
@@ -449,6 +472,8 @@ export interface InventoryRepository {
   getMovements(productId?: string): Promise<InventoryMovement[]>;
   getMovementPage(params: InventoryMovementPageParams): Promise<InventoryMovementPageResult>;
   getStockPage(params: InventoryStockPageParams): Promise<InventoryStockPageResult>;
+  /** Solo modo API: existencias de varios productos en una sola peticion. */
+  getStockBatch(input: GetInventoryStockBatchInput): Promise<InventoryStockBatchResult>;
   /** Solo modo API: una request on-demand a GET /inventory/stock/branches. */
   getOtherBranchesAvailability(
     input: GetOtherBranchesAvailabilityInput,

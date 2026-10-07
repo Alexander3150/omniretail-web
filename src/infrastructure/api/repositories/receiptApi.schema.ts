@@ -49,6 +49,10 @@ const goodsReceiptSchema = z.object({
   createdAt: instantSchema,
   updatedAt: instantSchema,
   items: z.array(goodsReceiptItemSchema),
+  // Agregados aditivos del backend: evitan sumar items o pedir incidencias solo para contarlas.
+  // Opcionales para tolerar un backend que todavia no los envie.
+  totalReceivedQuantity: finiteNumberSchema.nonnegative().optional(),
+  incidentCount: z.number().int().nonnegative().optional(),
 });
 
 const goodsReceiptPageSchema = z.object({

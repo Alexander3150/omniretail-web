@@ -327,8 +327,12 @@ export class ReceivingDocumentsService {
     const receiptContexts = records.flatMap(({ order, drafts, confirmed }) =>
       [...drafts.items, ...confirmed.items].map((record) => ({ order, record })),
     );
+    // incidentCount (agregado del backend) evita pedir las incidencias de un documento que no tiene
+    // ninguna; sin el campo (backend antiguo) se consulta como antes.
     const incidentPages = await Promise.all(
-      receiptContexts.map(async ({ order, record }) => ({
+      receiptContexts
+        .filter(({ record }) => record.receipt.incidentCount !== 0)
+        .map(async ({ order, record }) => ({
         order,
         record,
         page: await this.repositories.receipts.listIncidentsScoped(
@@ -353,10 +357,19 @@ export class ReceivingDocumentsService {
           order,
           order.supplierNameSnapshot ?? "Proveedor no disponible",
           drafts.items.map((record) => record.receipt),
-          confirmed.page < confirmed.totalPages
-            ? []
-            : confirmed.items.flatMap((record) => record.items.map((item) => item.line)),
+          [],
           productById,
+          // Historial incompleto: no se afirma ninguna cantidad (igual que antes). Si no, el
+          // agregado del backend por documento; sin el, la suma de sus lineas.
+          confirmed.page < confirmed.totalPages
+            ? 0
+            : confirmed.items.reduce(
+                (sum, record) =>
+                  sum +
+                  (record.receipt.totalReceivedQuantity ??
+                    record.items.reduce((lineSum, item) => lineSum + item.line.receivedQuantity, 0)),
+                0,
+              ),
         ),
       ),
       incidents: incidentPages
@@ -447,10 +460,13 @@ function toPurchaseOrderRow(
   receipts: Receipt[],
   receiptLines: ReceiptLine[],
   productById: Map<string, { name: string; sku: string }>,
+  /** Agregado autoritativo del backend (modo API); sin el se suman las lineas recibidas. */
+  receivedQuantityOverride?: number,
 ): ReceivingDocumentRow {
   const items = order.items ?? [];
   const requestedQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
-  const receivedQuantity = receiptLines.reduce((sum, line) => sum + line.receivedQuantity, 0);
+  const receivedQuantity =
+    receivedQuantityOverride ?? receiptLines.reduce((sum, line) => sum + line.receivedQuantity, 0);
   const status = getPurchaseOrderReceivingStatus(
     order,
     receipts,

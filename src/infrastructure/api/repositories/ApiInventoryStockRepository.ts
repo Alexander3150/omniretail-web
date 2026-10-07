@@ -1,5 +1,6 @@
 import type {
   GetInventoryKitAvailabilityInput,
+  GetInventoryStockBatchInput,
   GetOtherBranchesAvailabilityInput,
   InventoryAlertPageParams,
   InventoryRepository,
@@ -9,6 +10,7 @@ import { BackendRequestError, backendFetch } from "@/infrastructure/api/backendC
 import { assertApiUuid, assertOptionalApiUuid } from "@/infrastructure/api/uuid";
 import {
   parseApiInventoryKitAvailability,
+  parseApiInventoryStockBatch,
   parseApiOtherBranchesAvailability,
   parseApiInventoryAlertPage,
   parseApiInventoryStockPage,
@@ -34,9 +36,11 @@ export class ApiInventoryStockRepository {
     const getInventoryAlertPage = this.getInventoryAlertPage.bind(this);
     const getOtherBranchesAvailability = this.getOtherBranchesAvailability.bind(this);
     const getKitAvailability = this.getKitAvailability.bind(this);
+    const getStockBatch = this.getStockBatch.bind(this);
     return new Proxy(delegate, {
       get: (target, property) => {
         if (property === "getKitAvailability") return getKitAvailability;
+        if (property === "getStockBatch") return getStockBatch;
         if (property === "getStockPage") return getStockPage;
         if (property === "getInventoryAlertPage") return getInventoryAlertPage;
         if (property === "getOtherBranchesAvailability") return getOtherBranchesAvailability;
@@ -65,6 +69,17 @@ export class ApiInventoryStockRepository {
           size: params.pageSize,
           sort: params.sort ?? DEFAULT_STOCK_SORT,
         },
+      }),
+    );
+  }
+
+  async getStockBatch(input: GetInventoryStockBatchInput) {
+    assertApiUuid(input.branchId, "branchId");
+    input.productIds.forEach((productId) => assertApiUuid(productId, "productId"));
+    return parseApiInventoryStockBatch(
+      await backendFetch<unknown>("/inventory/stock/batch", {
+        method: "POST",
+        body: { branchId: input.branchId, productIds: input.productIds },
       }),
     );
   }

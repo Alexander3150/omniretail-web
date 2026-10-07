@@ -391,6 +391,9 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
     void _params;
     throw new Error("Server-side inventory alert pages are only available in API mode.");
   }
+  async getStockBatch(): Promise<never> {
+    throw new Error("Batch stock reads are only available in API mode.");
+  }
   async getKitAvailability(): Promise<never> {
     throw new Error("Kit availability details are only available in API mode.");
   }
