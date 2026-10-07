@@ -13,6 +13,7 @@ import { calculateEffectivePrice, resolveQuantityPrice } from "@/core/pricing";
 import { toBaseQuantity } from "@/core/units";
 import { validatePhoneNumber } from "@/config/contact-policy";
 import { normalizeEmail, validateEmail } from "@/config/email-policy";
+import { calculateStorefrontShipping } from "@/config/storefront-shipping-policy";
 import {
   DELIVERY_ADDRESS_LIMITS,
   isValidDeliveryAddress,
@@ -149,6 +150,9 @@ export class CreateStorefrontCheckoutService {
       (total, item) => total + item.discount * item.quantity,
       0,
     );
+    const netSubtotal = subtotal - discountTotal;
+    const shippingTotal = calculateStorefrontShipping(netSubtotal);
+    const orderTotal = netSubtotal + shippingTotal;
     const orderNumber = `WEB-${checkoutToken.slice(0, 10).toUpperCase()}`;
     const trackingToken = checkoutToken;
 
@@ -179,8 +183,8 @@ export class CreateStorefrontCheckoutService {
         },
         subtotal,
         discountTotal,
-        shippingTotal: 0,
-        total: subtotal,
+        shippingTotal,
+        total: orderTotal,
         trackingToken,
         idempotencyKey: checkoutIdentity,
       },
@@ -188,7 +192,7 @@ export class CreateStorefrontCheckoutService {
         tenantId,
         method: PaymentMethod.card,
         status: PaymentStatus.pending,
-        amount: subtotal,
+        amount: orderTotal,
         currency: "GTQ",
         reference: `CARD-SIMULATED-${form.cardLastFour}`,
       },
