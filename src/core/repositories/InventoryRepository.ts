@@ -447,8 +447,11 @@ export interface ConsumeInventoryReservationResult {
 
 export type UpsertProductInventorySettingsInput = Omit<
   ProductInventorySettings,
-  "id" | "createdAt" | "updatedAt"
->;
+  "id" | "createdAt" | "updatedAt" | "reorderPoint"
+> & {
+  /** undefined conserva el valor actual (API); null lo deja sin configurar; 0 es valido. */
+  reorderPoint?: number | null;
+};
 
 export interface InventoryRepository {
   getBalances(): Promise<InventoryBalance[]>;

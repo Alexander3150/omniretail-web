@@ -37,10 +37,25 @@ export class GetProductQuickViewService {
       const inventoryApplies =
         detail.product.productType === ProductType.physical && detail.product.tracking.stock;
 
-      const [inventorySettings, supplierProducts, suppliers, units] = await Promise.all([
-        inventoryApplies && validBranch && canReadInventory
+      const canReadStock = Boolean(inventoryApplies && validBranch && canReadInventory);
+
+      const [inventorySettings, stockRead, supplierProducts, suppliers, units] = await Promise.all([
+        canReadStock && validBranch
           ? this.repositories.inventory.getProductInventorySettings(productId, validBranch.id)
           : Promise.resolve(null),
+        // Degradacion parcial: solo la lectura de existencias se aisla; si falla, el resto del
+        // Quick View sigue siendo valido.
+        canReadStock && validBranch
+          ? this.repositories.inventory
+              .getStockBatch({ branchId: validBranch.id, productIds: [productId] })
+              .then(
+                (result) => ({
+                  failed: false,
+                  item: result.items.find((stock) => stock.productId === productId) ?? null,
+                }),
+                () => ({ failed: true, item: null }),
+              )
+          : Promise.resolve({ failed: false, item: null }),
         canReadSuppliers
           ? this.repositories.supplierProducts
               .getAllByProductForTenant(tenantId, productId)
@@ -74,7 +89,12 @@ export class GetProductQuickViewService {
                 reorderPoint: inventorySettings.reorderPoint,
               }
             : null,
-        inventorySettingsAvailable: Boolean(inventoryApplies && validBranch && canReadInventory),
+        inventorySettingsAvailable: canReadStock,
+        inventoryStock:
+          stockRead.item && validBranch
+            ? { branchId: validBranch.id, branchName: validBranch.name, item: stockRead.item }
+            : null,
+        inventoryStockFailed: stockRead.failed,
         suppliers: supplierProducts
           .map<ProductSupplierSummaryItem | null>((supplierProduct) => {
             const supplier = suppliers.find((item) => item.id === supplierProduct.supplierId);
@@ -114,6 +134,8 @@ export class GetProductQuickViewService {
       ...detail,
       inventorySettings: null,
       inventorySettingsAvailable: true,
+      inventoryStock: null,
+      inventoryStockFailed: false,
       inventory: balances
         .filter((balance) => balance.tenantId === tenantId)
         .map<ProductInventorySummaryItem>((balance) => ({

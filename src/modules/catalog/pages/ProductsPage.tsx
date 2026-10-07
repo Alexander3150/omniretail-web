@@ -158,7 +158,7 @@ export function ProductsPage() {
       />
       {!filtersEnabled ? (
         <InlineAlert
-          description="El backend actual solo admite paginacion y ordenamiento. La busqueda y los filtros globales se habilitaran cuando existan esos parametros en Products API."
+          description="La búsqueda avanzada y los filtros globales estarán disponibles próximamente. Por ahora, puedes usar la paginación para navegar por el catálogo."
           title="Filtros no disponibles temporalmente"
           tone="info"
         />

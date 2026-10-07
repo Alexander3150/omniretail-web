@@ -137,7 +137,10 @@ export class ApiLocationRepository {
         query: { branchId: input.branchId },
         body: {
           minStock: input.minStock,
-          reorderPoint: input.reorderPoint ?? current?.reorderPoint ?? null,
+          reorderPoint:
+            input.reorderPoint === undefined
+              ? (current?.reorderPoint ?? null)
+              : input.reorderPoint,
           defaultLocationId: input.defaultLocationId ?? null,
         },
       }),

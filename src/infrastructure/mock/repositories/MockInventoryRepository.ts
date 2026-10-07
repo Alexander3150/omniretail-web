@@ -501,7 +501,7 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
           ...current,
           ...input,
           defaultLocationId: input.defaultLocationId ?? undefined,
-          reorderPoint: input.reorderPoint,
+          reorderPoint: input.reorderPoint ?? undefined,
           updatedAt: now,
         };
         db.productInventorySettings[existingIndex] = updated;
@@ -511,6 +511,7 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
       const created: ProductInventorySettings = {
         ...input,
         id: this.id("product-inventory-settings"),
+        reorderPoint: input.reorderPoint ?? undefined,
         defaultLocationId: input.defaultLocationId ?? undefined,
         createdAt: now,
         updatedAt: now,
