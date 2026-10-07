@@ -2,6 +2,7 @@ import { DeliveryMethod, type PickingIncidentType, type PickingItemStatus } from
 import type { Order } from "@/core/entities";
 import type { UpdatePickingItemInput } from "@/core/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import type {
   PickingActionResultDto,
   PickingDetailDto,
@@ -11,6 +12,10 @@ import type {
   PickingQueueItemDto,
   PickingReleaseDto,
 } from "@/modules/logistics/application/dto/PickingReadModelDto";
+import {
+  toPickingDetailDto,
+  toPickingQueueItemDto,
+} from "@/modules/logistics/application/mappers/PickingApiMapper";
 import { resolveTrustedPickingContext } from "@/modules/logistics/application/services/PickingAuthorizationContext";
 
 const PICKING_READ = "logistics.picking.read";
@@ -25,6 +30,8 @@ type PickingRepositories = Pick<
   | "branches"
   | "customers"
   | "picking"
+  | "pickingRead"
+  | "pickingCommandsEnabled"
   | "orders"
   | "products"
   | "inventory"
@@ -57,13 +64,22 @@ export class PickingApplicationService {
   async getQueue(selectedBranchId: string): Promise<PickingQueueItemDto[]> {
     const context = await this.context(selectedBranchId, PICKING_READ);
     const scope = { tenantId: context.tenantId, branchId: context.branchId };
+    if (this.repositories.pickingRead) {
+      const queue = await this.repositories.pickingRead.getQueue(scope);
+      return queue.map(toPickingQueueItemDto);
+    }
     const pickingOrders = await this.repositories.picking.getQueue(scope);
     return Promise.all(
       pickingOrders.map(async (pickingOrder) => {
         if (pickingOrder.sourceType === "transfer") {
-          const transfer = await this.repositories.inventoryTransfers.getById(pickingOrder.sourceId!);
-          if (!transfer || transfer.transfer.tenantId !== context.tenantId ||
-            transfer.transfer.sourceBranchId !== context.branchId) {
+          const transfer = await this.repositories.inventoryTransfers.getById(
+            pickingOrder.sourceId!,
+          );
+          if (
+            !transfer ||
+            transfer.transfer.tenantId !== context.tenantId ||
+            transfer.transfer.sourceBranchId !== context.branchId
+          ) {
             throw new Error(`Transfer context conflict for PickingOrder: ${pickingOrder.id}`);
           }
           const [lines, destination] = await Promise.all([
@@ -73,18 +89,26 @@ export class PickingApplicationService {
           return {
             pickingOrderId: pickingOrder.id,
             orderReference: transfer.transfer.number,
-            customerName: destination?.tenantId === context.tenantId
-              ? destination.name : "Sucursal destino",
-            storePickupContact: null, deliveryMethod: "transfer" as const,
-            sourceType: "transfer" as const, sourceId: transfer.transfer.id,
-            branchId: pickingOrder.branchId, status: pickingOrder.status,
-            priority: pickingOrder.priority, assignedUserId: pickingOrder.assignedUserId ?? null,
-            progress: getProgress(lines), startedAt: pickingOrder.startedAt ?? null,
-            createdAt: pickingOrder.createdAt, updatedAt: pickingOrder.updatedAt,
+            customerName:
+              destination?.tenantId === context.tenantId ? destination.name : "Sucursal destino",
+            storePickupContact: null,
+            deliveryMethod: "transfer" as const,
+            sourceType: "transfer" as const,
+            sourceId: transfer.transfer.id,
+            branchId: pickingOrder.branchId,
+            status: pickingOrder.status,
+            priority: pickingOrder.priority,
+            assignedUserId: pickingOrder.assignedUserId ?? null,
+            progress: getProgress(lines),
+            startedAt: pickingOrder.startedAt ?? null,
+            createdAt: pickingOrder.createdAt,
+            updatedAt: pickingOrder.updatedAt,
           };
         }
         const [order, lines] = await Promise.all([
-          pickingOrder.orderId ? this.repositories.orders.getById(pickingOrder.orderId) : Promise.resolve(null),
+          pickingOrder.orderId
+            ? this.repositories.orders.getById(pickingOrder.orderId)
+            : Promise.resolve(null),
           this.repositories.picking.getItems(scope, pickingOrder.id),
         ]);
         if (!order || order.tenantId !== context.tenantId || order.branchId !== context.branchId) {
@@ -113,10 +137,16 @@ export class PickingApplicationService {
 
   async getDetail(selectedBranchId: string, pickingOrderId: string): Promise<PickingDetailDto> {
     const context = await this.context(selectedBranchId, PICKING_READ);
+    if (this.repositories.pickingRead) {
+      return toPickingDetailDto(
+        await this.repositories.pickingRead.getDetail(context, pickingOrderId),
+      );
+    }
     return this.buildDetail(context, pickingOrderId);
   }
 
   async assign(selectedBranchId: string, pickingOrderId: string): Promise<PickingActionResultDto> {
+    this.ensureCommandsAvailable();
     const context = await this.context(selectedBranchId, PICKING_START);
     const result = await this.repositories.picking.assign({
       ...context,
@@ -131,6 +161,7 @@ export class PickingApplicationService {
     pickingOrderId: string,
     reason: string,
   ): Promise<PickingReleaseDto> {
+    this.ensureCommandsAvailable();
     const context = await this.context(selectedBranchId, PICKING_START);
     const result = await this.repositories.picking.release({
       ...context,
@@ -146,6 +177,11 @@ export class PickingApplicationService {
     pickingOrderId: string,
   ): Promise<PickingReleaseDto[]> {
     const context = await this.context(selectedBranchId, PICKING_READ);
+    if (this.repositories.pickingRead) {
+      return toPickingDetailDto(
+        await this.repositories.pickingRead.getDetail(context, pickingOrderId),
+      ).releases;
+    }
     const releases = await this.repositories.picking.getReleaseHistory(context, pickingOrderId);
     return releases.map(toReleaseDto);
   }
@@ -154,6 +190,7 @@ export class PickingApplicationService {
     selectedBranchId: string,
     command: RegisterPickingIncidentCommand,
   ): Promise<PickingIncidentDto> {
+    this.ensureCommandsAvailable();
     const context = await this.context(selectedBranchId, PICKING_START);
     const incident = await this.repositories.picking.registerIncident({
       ...command,
@@ -169,6 +206,11 @@ export class PickingApplicationService {
     pickingOrderId: string,
   ): Promise<PickingIncidentDto[]> {
     const context = await this.context(selectedBranchId, PICKING_READ);
+    if (this.repositories.pickingRead) {
+      return toPickingDetailDto(
+        await this.repositories.pickingRead.getDetail(context, pickingOrderId),
+      ).incidents;
+    }
     const incidents = await this.repositories.picking.getIncidents(context, pickingOrderId);
     return incidents.map(toIncidentDto);
   }
@@ -178,6 +220,7 @@ export class PickingApplicationService {
     pickingOrderId: string,
     incidentId: string,
   ): Promise<PickingIncidentDto> {
+    this.ensureCommandsAvailable();
     const context = await this.context(selectedBranchId, PICKING_START);
     const incident = await this.repositories.picking.resolveIncident({
       ...context,
@@ -194,6 +237,20 @@ export class PickingApplicationService {
     productId: string,
   ) {
     const context = await this.context(selectedBranchId, PICKING_READ);
+    if (this.repositories.pickingRead) {
+      const detail = toPickingDetailDto(
+        await this.repositories.pickingRead.getDetail(context, pickingOrderId),
+      );
+      const line = detail.lines.find((item) => item.productId === productId);
+      if (!line) {
+        throw new BackendRequestError(
+          "El producto no pertenece al Picking solicitado.",
+          404,
+          "PICKING_LINE_NOT_FOUND",
+        );
+      }
+      return line.inventory;
+    }
     const pickingOrder = await this.requirePickingOrder(context, pickingOrderId);
     return this.repositories.inventory.getPickingAvailability({
       ...context,
@@ -206,6 +263,7 @@ export class PickingApplicationService {
   }
 
   async updateLine(selectedBranchId: string, command: PickingLineUpdateCommand) {
+    this.ensureCommandsAvailable();
     const context = await this.context(selectedBranchId, PICKING_START);
     await this.requirePickingOrder(context, command.pickingOrderId);
     const input: UpdatePickingItemInput = {
@@ -220,14 +278,21 @@ export class PickingApplicationService {
   }
 
   async complete(selectedBranchId: string, pickingOrderId: string) {
+    this.ensureCommandsAvailable();
     const context = await this.context(selectedBranchId, PICKING_COMPLETE);
     const pickingOrder = await this.requirePickingOrder(context, pickingOrderId);
     if (pickingOrder.sourceType === "transfer") {
       const result = await this.repositories.picking.complete({
-        ...context, pickingOrderId, actorUserId: context.actorUserId, sourceType: "transfer",
+        ...context,
+        pickingOrderId,
+        actorUserId: context.actorUserId,
+        sourceType: "transfer",
       });
-      return { ...toActionResult(result.pickingOrder, result.idempotent),
-        orderStatus: null, transferStatus: result.transfer.status };
+      return {
+        ...toActionResult(result.pickingOrder, result.idempotent),
+        orderStatus: null,
+        transferStatus: result.transfer.status,
+      };
     }
     const result = await this.repositories.picking.complete({
       ...context,
@@ -242,6 +307,15 @@ export class PickingApplicationService {
 
   private context(selectedBranchId: string, permission: string) {
     return resolveTrustedPickingContext(this.repositories, selectedBranchId, permission);
+  }
+
+  private ensureCommandsAvailable() {
+    if (this.repositories.pickingCommandsEnabled !== false) return;
+    throw new BackendRequestError(
+      "Picking se encuentra en modo de solo lectura mientras sus comandos se integran con el backend.",
+      409,
+      "PICKING_COMMANDS_NOT_AVAILABLE",
+    );
   }
 
   private async requirePickingOrder(
@@ -262,26 +336,34 @@ export class PickingApplicationService {
     const pickingOrder = await this.requirePickingOrder(scope, pickingOrderId);
     const [order, lines, locations, incidents, releases] = await Promise.all([
       pickingOrder.sourceType === "transfer" || !pickingOrder.orderId
-        ? Promise.resolve(null) : this.repositories.orders.getById(pickingOrder.orderId),
+        ? Promise.resolve(null)
+        : this.repositories.orders.getById(pickingOrder.orderId),
       this.repositories.picking.getItems(scope, pickingOrderId),
       this.repositories.inventory.getLocations(scope.branchId),
       this.repositories.picking.getIncidents(scope, pickingOrderId),
       this.repositories.picking.getReleaseHistory(scope, pickingOrderId),
     ]);
-    const transfer = pickingOrder.sourceType === "transfer"
-      ? await this.repositories.inventoryTransfers.getById(pickingOrder.sourceId!) : null;
+    const transfer =
+      pickingOrder.sourceType === "transfer"
+        ? await this.repositories.inventoryTransfers.getById(pickingOrder.sourceId!)
+        : null;
     if (transfer) {
-      if (transfer.transfer.tenantId !== scope.tenantId ||
-        transfer.transfer.sourceBranchId !== scope.branchId) {
+      if (
+        transfer.transfer.tenantId !== scope.tenantId ||
+        transfer.transfer.sourceBranchId !== scope.branchId
+      ) {
         throw new Error(`Transfer context conflict for PickingOrder: ${pickingOrderId}`);
       }
     } else if (!order || order.tenantId !== scope.tenantId || order.branchId !== scope.branchId) {
       throw new Error(`Fulfillment source conflict for PickingOrder: ${pickingOrderId}`);
     }
     const destination = transfer
-      ? await this.repositories.branches.getById(transfer.transfer.destinationBranchId) : null;
+      ? await this.repositories.branches.getById(transfer.transfer.destinationBranchId)
+      : null;
     const customerName = transfer
-      ? destination?.tenantId === scope.tenantId ? destination.name : "Sucursal destino"
+      ? destination?.tenantId === scope.tenantId
+        ? destination.name
+        : "Sucursal destino"
       : await this.resolveCustomerName(order!, scope.tenantId);
     const detailLines = await Promise.all(
       lines.map(async (line): Promise<PickingDetailLineDto> => {
@@ -337,6 +419,8 @@ export class PickingApplicationService {
           ),
           tracking: { ...product.tracking },
           inventory,
+          sourceLineId: line.orderItemId,
+          trackingSelections: [],
         };
       }),
     );

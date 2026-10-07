@@ -37,7 +37,7 @@ export interface PickingQueueItemDto {
 
 export interface PickingDetailLineDto {
   pickingLineId: string;
-  orderItemId: string;
+  orderItemId?: string;
   productId: string;
   sku: string;
   name: string;
@@ -64,6 +64,15 @@ export interface PickingDetailLineDto {
   availableSerialNumbers: string[];
   tracking: { stock: boolean; lot: boolean; expiration: boolean; serial: boolean };
   inventory: PickingInventoryAvailability;
+  sourceLineId: string;
+  trackingSelections: Array<{
+    locationId: string | null;
+    lotId: string | null;
+    lotNumber: string | null;
+    expirationDate: string | null;
+    quantity: number;
+    serialNumbers: string[];
+  }>;
 }
 
 export interface PickingIncidentDto {
