@@ -68,8 +68,8 @@ export function LogisticsPickingPage() {
               if (result) showToast({ title: "Incidencia resuelta", tone: "success" });
               return result;
             }}
-            onUpdateLine={async (line, targetQuantity, serialNumbers) => {
-              const result = await picking.updateLine(line, targetQuantity, serialNumbers);
+            onUpdateLine={async (line, targetQuantity, physicalSelection) => {
+              const result = await picking.updateLine(line, targetQuantity, physicalSelection);
               if (result) showToast({ title: "Progreso actualizado", description: `${line.name}: ${targetQuantity} de ${line.requiredQuantity}.`, tone: "success" });
               return result;
             }}

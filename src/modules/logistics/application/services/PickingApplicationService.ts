@@ -1,6 +1,10 @@
 import { DeliveryMethod, type PickingIncidentType, type PickingItemStatus } from "@/core/enums";
 import type { Order } from "@/core/entities";
-import type { UpdatePickingItemInput } from "@/core/repositories";
+import type {
+  PickingCommandActionResult,
+  PickingTrackingSelectionCommand,
+  UpdatePickingItemInput,
+} from "@/core/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import type {
@@ -31,6 +35,7 @@ type PickingRepositories = Pick<
   | "customers"
   | "picking"
   | "pickingRead"
+  | "pickingCommands"
   | "pickingCommandsEnabled"
   | "orders"
   | "products"
@@ -45,6 +50,7 @@ export type PickingLineUpdateCommand = {
   lotId?: string;
   serialNumbers?: string[];
   status?: PickingItemStatus;
+  trackingSelections?: PickingTrackingSelectionCommand[];
 } & (
   | { pickedQuantity: number; operationId: string }
   | { pickedQuantity?: undefined; operationId?: never }
@@ -148,6 +154,11 @@ export class PickingApplicationService {
   async assign(selectedBranchId: string, pickingOrderId: string): Promise<PickingActionResultDto> {
     this.ensureCommandsAvailable();
     const context = await this.context(selectedBranchId, PICKING_START);
+    if (this.repositories.pickingCommands) {
+      return toApiActionResult(
+        await this.repositories.pickingCommands.assign(context, pickingOrderId),
+      );
+    }
     const result = await this.repositories.picking.assign({
       ...context,
       pickingOrderId,
@@ -163,6 +174,11 @@ export class PickingApplicationService {
   ): Promise<PickingReleaseDto> {
     this.ensureCommandsAvailable();
     const context = await this.context(selectedBranchId, PICKING_START);
+    if (this.repositories.pickingCommands) {
+      return toReleaseDto(
+        await this.repositories.pickingCommands.release(context, pickingOrderId, reason),
+      );
+    }
     const result = await this.repositories.picking.release({
       ...context,
       pickingOrderId,
@@ -192,6 +208,18 @@ export class PickingApplicationService {
   ): Promise<PickingIncidentDto> {
     this.ensureCommandsAvailable();
     const context = await this.context(selectedBranchId, PICKING_START);
+    if (this.repositories.pickingCommands) {
+      return toIncidentDto(
+        await this.repositories.pickingCommands.createIncident(context, command.pickingOrderId, {
+          ...(command.pickingLineId ? { pickingLineId: command.pickingLineId } : {}),
+          type: command.type,
+          ...(command.quantityAffected !== undefined
+            ? { quantityAffected: command.quantityAffected }
+            : {}),
+          comment: command.comment,
+        }),
+      );
+    }
     const incident = await this.repositories.picking.registerIncident({
       ...command,
       tenantId: context.tenantId,
@@ -222,6 +250,15 @@ export class PickingApplicationService {
   ): Promise<PickingIncidentDto> {
     this.ensureCommandsAvailable();
     const context = await this.context(selectedBranchId, PICKING_START);
+    if (this.repositories.pickingCommands) {
+      return toIncidentDto(
+        await this.repositories.pickingCommands.resolveIncident(
+          context,
+          pickingOrderId,
+          incidentId,
+        ),
+      );
+    }
     const incident = await this.repositories.picking.resolveIncident({
       ...context,
       pickingOrderId,
@@ -265,6 +302,27 @@ export class PickingApplicationService {
   async updateLine(selectedBranchId: string, command: PickingLineUpdateCommand) {
     this.ensureCommandsAvailable();
     const context = await this.context(selectedBranchId, PICKING_START);
+    if (this.repositories.pickingCommands) {
+      if (command.pickedQuantity === undefined || !command.operationId) {
+        throw new BackendRequestError(
+          "El backend requiere cantidad y operationId para actualizar la línea.",
+          400,
+          "INVALID_PICKING_UPDATE",
+        );
+      }
+      await this.repositories.pickingCommands.updateItem(
+        context,
+        command.pickingOrderId,
+        command.pickingLineId,
+        {
+          pickedQuantity: command.pickedQuantity,
+          locationId: command.locationId ?? null,
+          operationId: command.operationId,
+          trackingSelections: command.trackingSelections ?? [],
+        },
+      );
+      return this.getDetail(selectedBranchId, command.pickingOrderId);
+    }
     await this.requirePickingOrder(context, command.pickingOrderId);
     const input: UpdatePickingItemInput = {
       ...command,
@@ -280,6 +338,13 @@ export class PickingApplicationService {
   async complete(selectedBranchId: string, pickingOrderId: string) {
     this.ensureCommandsAvailable();
     const context = await this.context(selectedBranchId, PICKING_COMPLETE);
+    if (this.repositories.pickingCommands) {
+      const result = await this.repositories.pickingCommands.complete(context, pickingOrderId);
+      return {
+        ...toApiActionResult(result),
+        orderStatus: result.orderStatus,
+      };
+    }
     const pickingOrder = await this.requirePickingOrder(context, pickingOrderId);
     if (pickingOrder.sourceType === "transfer") {
       const result = await this.repositories.picking.complete({
@@ -500,18 +565,29 @@ function toActionResult(
   };
 }
 
+function toApiActionResult(result: PickingCommandActionResult): PickingActionResultDto {
+  return {
+    pickingOrderId: result.pickingOrderId,
+    ...(result.orderId ? { orderId: result.orderId } : {}),
+    status: result.status,
+    assignedUserId: result.assignedUserId,
+    updatedAt: result.updatedAt,
+    idempotent: result.idempotent,
+  };
+}
+
 function toIncidentDto(incident: {
   id: string;
   pickingOrderId: string;
-  pickingLineId?: string;
+  pickingLineId?: string | null;
   type: PickingIncidentType;
-  quantityAffected?: number;
+  quantityAffected?: number | null;
   comment: string;
   status: PickingIncidentDto["status"];
   createdBy: string;
   createdAt: string;
-  resolvedBy?: string;
-  resolvedAt?: string;
+  resolvedBy?: string | null;
+  resolvedAt?: string | null;
 }): PickingIncidentDto {
   return {
     ...incident,

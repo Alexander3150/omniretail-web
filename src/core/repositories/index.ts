@@ -42,6 +42,7 @@ export type * from "./CashShiftRepository";
 export type * from "./CashMovementRepository";
 export type * from "./PickingRepository";
 export type * from "./PickingReadRepository";
+export type * from "./PickingCommandRepository";
 export type * from "./PackingRepository";
 export type * from "./DispatchRepository";
 export type * from "./StorePickupDeliveryRepository";

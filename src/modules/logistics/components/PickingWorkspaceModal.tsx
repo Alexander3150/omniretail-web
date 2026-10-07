@@ -4,6 +4,7 @@ import type {
   PickingDetailDto,
   PickingDetailLineDto,
 } from "@/modules/logistics/application/dto/PickingReadModelDto";
+import type { PickingPhysicalSelectionResult } from "@/modules/logistics/application/pickingPhysicalSelection";
 import { PickingIncidentPanel } from "@/modules/logistics/components/PickingIncidentPanel";
 import { PickingLineList } from "@/modules/logistics/components/PickingLineList";
 import type { PickingIncidentFormValues } from "@/modules/logistics/validation/picking.validation";
@@ -33,7 +34,7 @@ interface PickingWorkspaceProps {
   onUpdateLine: (
     line: PickingDetailLineDto,
     targetQuantity: number,
-    serialNumbers: string[],
+    physicalSelection: PickingPhysicalSelectionResult,
   ) => Promise<boolean>;
   submitting: boolean;
 }

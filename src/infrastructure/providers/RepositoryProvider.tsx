@@ -29,6 +29,7 @@ import type {
   PackingRepository,
   PickingRepository,
   PickingReadRepository,
+  PickingCommandRepository,
   PlanRepository,
   ProductMediaRepository,
   ProductKitComponentRepository,
@@ -167,6 +168,7 @@ export interface RepositoryRegistry {
   cashMovements: CashMovementRepository;
   picking: PickingRepository;
   pickingRead?: PickingReadRepository;
+  pickingCommands?: PickingCommandRepository;
   packings: PackingRepository;
   productMedia: ProductMediaRepository;
   catalogImageAssets: CatalogImageAssetRepository;
