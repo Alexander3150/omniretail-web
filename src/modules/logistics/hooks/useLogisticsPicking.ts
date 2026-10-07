@@ -17,6 +17,7 @@ import type { PickingIncidentFormValues } from "@/modules/logistics/validation/p
 import { validatePickingIncident } from "@/modules/logistics/validation/picking.validation";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
+import { isCurrentPickingRequest } from "@/modules/logistics/hooks/pickingRequestIdentity";
 
 export function useLogisticsPicking() {
   const repositories = useRepositories();
@@ -54,8 +55,9 @@ export function useLogisticsPicking() {
     canAccessBranch(currentBranch.id),
   );
   const canRead = hasPermission("logistics.picking.read");
-  const canStart = hasPermission("logistics.picking.start");
-  const canComplete = hasPermission("logistics.picking.complete");
+  const commandsReadOnly = repositories.pickingCommandsEnabled === false;
+  const canStart = !commandsReadOnly && hasPermission("logistics.picking.start");
+  const canComplete = !commandsReadOnly && hasPermission("logistics.picking.complete");
 
   const reload = useCallback(async () => {
     const sequence = ++loadSequenceRef.current;
@@ -69,7 +71,12 @@ export function useLogisticsPicking() {
     }
     try {
       const items = await service.getQueue(currentBranch.id);
-      if (sequence === loadSequenceRef.current && activeBranchIdRef.current === currentBranch.id) {
+      if (isCurrentPickingRequest({
+        sequence,
+        currentSequence: loadSequenceRef.current,
+        requestedBranchId: currentBranch.id,
+        activeBranchId: activeBranchIdRef.current,
+      })) {
         setQueue(items);
       }
     } catch (cause) {
@@ -87,11 +94,14 @@ export function useLogisticsPicking() {
     setWorkspaceError(null);
     try {
       const nextDetail = await service.getDetail(branchId, pickingOrderId);
-      if (
-        sequence === detailSequenceRef.current &&
-        activeBranchIdRef.current === branchId &&
-        selectedPickingOrderIdRef.current === pickingOrderId
-      ) {
+      if (isCurrentPickingRequest({
+        sequence,
+        currentSequence: detailSequenceRef.current,
+        requestedBranchId: branchId,
+        activeBranchId: activeBranchIdRef.current,
+        requestedPickingOrderId: pickingOrderId,
+        selectedPickingOrderId: selectedPickingOrderIdRef.current,
+      })) {
         setDetail(nextDetail);
       }
       return nextDetail;
@@ -358,6 +368,7 @@ export function useLogisticsPicking() {
     canRead,
     canStart,
     canComplete,
+    commandsReadOnly,
     queue: filteredQueue,
     search,
     setSearch,

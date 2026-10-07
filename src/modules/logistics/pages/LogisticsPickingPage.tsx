@@ -37,6 +37,7 @@ export function LogisticsPickingPage() {
           <PickingWorkspace
             canComplete={picking.canComplete}
             canStart={picking.canStart}
+            commandsReadOnly={picking.commandsReadOnly}
             currentUserId={picking.currentUserId}
             detail={picking.detail}
             error={picking.workspaceError}
