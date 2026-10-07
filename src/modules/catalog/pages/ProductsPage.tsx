@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useState } from "react";
 import { ProductStatus } from "@/core/enums";
 import { Button } from "@/shared/components/Button";
 import { AccessDeniedState } from "@/shared/components/AccessDeniedState";
@@ -23,11 +24,18 @@ import {
 import { useProductMutations } from "@/modules/catalog/hooks/useProductMutations";
 import { useProductPermissions } from "@/modules/catalog/hooks/useProductPermissions";
 import { useProducts } from "@/modules/catalog/hooks/useProducts";
-import type { ProductListItem } from "@/modules/catalog/types/catalog.types";
+import type { ProductFiltersState, ProductListItem } from "@/modules/catalog/types/catalog.types";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 
 export function ProductsPage() {
   const repositories = useRepositories();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  // La URL es la fuente de verdad de la categoria (?categoryId=) y del Quick View (?quickView=).
+  const categoryIdParam = searchParams.get("categoryId");
+  const categoryId = categoryIdParam ? categoryIdParam : "all";
+  const quickViewId = searchParams.get("quickView") || null;
   const { showToast } = useToast();
   const {
     canRead,
@@ -50,10 +58,9 @@ export function ProductsPage() {
     setPage,
     setPageSize,
     updateFilters,
-  } = useProducts();
+  } = useProducts(categoryId);
   const mutations = useProductMutations();
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [quickViewProduct, setQuickViewProduct] = useState<ProductListItem | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<ProductListItem | null>(null);
   const [promotionTarget, setPromotionTarget] = useState<ProductListItem | null>(null);
   const [priceHistoryTarget, setPriceHistoryTarget] = useState<ProductListItem | null>(null);
@@ -76,7 +83,7 @@ export function ProductsPage() {
     }
   }
 
-  async function restoreProduct(product: ProductListItem) {
+  async function restoreProduct(product: { id: string }) {
     try {
       await mutations.restore(product.id);
       showToast({ title: "Producto restaurado", tone: "success" });
@@ -94,10 +101,35 @@ export function ProductsPage() {
       ? "Aun no hay productos registrados."
       : "No hay productos que coincidan con los filtros.";
 
-  useEffect(() => {
-    const categoryId = new URLSearchParams(window.location.search).get("categoryId");
-    if (categoryId) updateFilters({ categoryId });
-  }, [updateFilters]);
+  // Construye la URL actual con cambios SOLO en los parametros indicados (los ajenos se preservan).
+  function buildUrl(mutate: (params: URLSearchParams) => void) {
+    const params = new URLSearchParams(searchParams.toString());
+    mutate(params);
+    const query = params.toString();
+    return query ? `${pathname}?${query}` : pathname;
+  }
+
+  function openQuickView(product: { id: string }) {
+    router.push(buildUrl((params) => params.set("quickView", product.id)));
+  }
+
+  function closeQuickView() {
+    router.replace(buildUrl((params) => params.delete("quickView")), { scroll: false });
+  }
+
+  // La categoria vive en la URL: el selector solo escribe la URL y el filtro se deriva de ella.
+  function handleFiltersChange(patch: Partial<ProductFiltersState>) {
+    const { categoryId: nextCategoryId, ...rest } = patch;
+    if (Object.keys(rest).length > 0) updateFilters(rest);
+    if (nextCategoryId === undefined) return;
+    router.replace(
+      buildUrl((params) => {
+        if (nextCategoryId && nextCategoryId !== "all") params.set("categoryId", nextCategoryId);
+        else params.delete("categoryId");
+      }),
+      { scroll: false },
+    );
+  }
 
   if (!loading && !canRead) {
     return (
@@ -135,7 +167,7 @@ export function ProductsPage() {
         <ProductFilters
           categories={categories}
           filters={filters}
-          onChange={updateFilters}
+          onChange={handleFiltersChange}
         />
       ) : null}
       {error ? <InlineAlert title={error.message} tone="danger" /> : null}
@@ -166,7 +198,7 @@ export function ProductsPage() {
               ) : null
             }
             onArchive={setArchiveTarget}
-            onOpenQuickView={setQuickViewProduct}
+            onOpenQuickView={openQuickView}
             onPriceHistory={setPriceHistoryTarget}
             onPromotion={setPromotionTarget}
             onRestore={restoreProduct}
@@ -184,8 +216,8 @@ export function ProductsPage() {
       )}
       <ProductQuickView
         canUpdate={canUpdate}
-        product={quickViewProduct}
-        onClose={() => setQuickViewProduct(null)}
+        productId={quickViewId}
+        onClose={closeQuickView}
         onRestore={restoreProduct}
       />
       <ProductPromotionDialog

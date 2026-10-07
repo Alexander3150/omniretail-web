@@ -22,7 +22,11 @@ const initialFilters: ProductFiltersState = {
   promotion: "all",
 };
 
-export function useProducts() {
+/**
+ * `controlledCategoryId` (opcional): categoria que gobierna la URL (?categoryId=). Cuando se pasa,
+ * es la UNICA fuente de verdad del filtro de categoria: el estado interno se ignora para ese campo.
+ */
+export function useProducts(controlledCategoryId?: string) {
   const repositories = useRepositories();
   const service = useMemo(() => new GetProductsService(repositories), [repositories]);
   const { currentBranch } = useActiveBranch();
@@ -46,7 +50,16 @@ export function useProducts() {
   const searchInput = filters.search;
   const filterStatus = filters.status;
   const filterProductType = filters.productType;
-  const filterCategoryId = filters.categoryId;
+  const filterCategoryId = controlledCategoryId ?? filters.categoryId;
+  // Un cambio de categoria desde la URL (SPA, Back/Forward) reinicia la pagina y muestra "cargando".
+  const [previousControlledCategoryId, setPreviousControlledCategoryId] =
+    useState(controlledCategoryId);
+  if (previousControlledCategoryId !== controlledCategoryId) {
+    setPreviousControlledCategoryId(controlledCategoryId);
+    setLoading(true);
+    setError(null);
+    setPageState(1);
+  }
   const filterChannels = filters.channels;
   const filterPromotion = filters.promotion;
   const requestFilters = useMemo<ProductFiltersState>(
@@ -66,6 +79,11 @@ export function useProducts() {
       filterStatus,
       requestSearch,
     ],
+  );
+
+  const displayFilters = useMemo<ProductFiltersState>(
+    () => ({ ...filters, categoryId: filterCategoryId }),
+    [filters, filterCategoryId],
   );
 
   const reload = useCallback(async () => {
@@ -217,7 +235,7 @@ export function useProducts() {
     error,
     items,
     categories,
-    filters,
+    filters: displayFilters,
     filtersEnabled,
     page,
     pageSize,
