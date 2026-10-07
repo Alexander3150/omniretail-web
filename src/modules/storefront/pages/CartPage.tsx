@@ -7,10 +7,16 @@ import { useStorefrontCart } from "@/modules/storefront/providers/StorefrontCart
 import { useStorefrontDiscovery } from "@/modules/storefront/hooks/useStorefrontDiscovery";
 import { StorefrontUnavailableQuantityModal } from "@/modules/storefront/components/StorefrontUnavailableQuantityModal";
 import { useStorefrontRoutes } from "@/modules/storefront/hooks/useStorefrontRoutes";
+import {
+  calculateStorefrontShipping,
+  STOREFRONT_FREE_SHIPPING_THRESHOLD,
+} from "@/config/storefront-shipping-policy";
 
 export function CartPage() {
   const routes = useStorefrontRoutes();
   const { items, subtotal, updateQuantity, removeProduct, clearCart } = useStorefrontCart();
+  const shippingTotal = calculateStorefrontShipping(subtotal);
+  const total = subtotal + shippingTotal;
   const { products } = useStorefrontDiscovery();
   const [unavailableQuantityModalOpen, setUnavailableQuantityModalOpen] = useState(false);
   const increaseQuantity = (productId: string, quantity: number) => {
@@ -158,14 +164,22 @@ export function CartPage() {
               </span>
               <span className="font-bold text-[var(--color-text)]">Q{subtotal.toFixed(2)}</span>
             </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[var(--color-text-muted)]">Envío</span>
+              <span className="font-bold text-[var(--color-text)]">
+                {shippingTotal === 0 ? "Gratis" : `Q${shippingTotal.toFixed(2)}`}
+              </span>
+            </div>
             <p className="text-sm text-[var(--color-text-muted)]">
-              Los descuentos por volumen se mostrarán cuando estén aplicados en el pedido.
+              {shippingTotal === 0
+                ? "Tu compra tiene envío gratis."
+                : `Envío gratis desde Q${STOREFRONT_FREE_SHIPPING_THRESHOLD.toFixed(2)}.`}
             </p>
           </div>
           <div className="mt-4 flex items-end justify-between">
             <span className="font-black text-[var(--color-text)]">Total estimado</span>
             <span className="text-3xl font-black tracking-tight text-[var(--color-title)]">
-              Q{subtotal.toFixed(2)}
+              Q{total.toFixed(2)}
             </span>
           </div>
           <Link
