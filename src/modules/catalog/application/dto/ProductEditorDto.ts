@@ -73,6 +73,8 @@ export type ProductMediaEditorValue = Pick<
 export interface ProductInventorySettingsEditorValue {
   branchId: string;
   minStock: NumericInputValue;
+  /** "" o ausente = sin punto de reorden configurado; 0 es un valor valido. */
+  reorderPoint?: NumericInputValue;
   defaultLocationId: string;
 }
 

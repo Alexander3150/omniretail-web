@@ -26,6 +26,11 @@ import {
 } from "@/core/inventory/stockAvailability";
 import { fromBaseQuantity, resolveUnitConversion } from "@/core/units";
 import { canUserOperateBranch } from "@/core/scopes/userBranchAccess";
+import {
+  REFERENCE_DATA_TTL_MS,
+  getReferenceDataCache,
+  referenceDataKeys,
+} from "@/shared/utils/requestCache";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   InventoryAlert,
@@ -47,14 +52,11 @@ const NEAR_MINIMUM_RATIO = 1.25;
 const TRANSFER_RESPONSE_ALERT_DAYS = 14;
 
 export class GetInventoryAlertsService {
-  private readonly categoriesByTenant = new Map<
-    string,
-    Promise<InventoryAlertsData["categories"]>
-  >();
-  private readonly unitsByTenant = new Map<string, Promise<Unit[]>>();
-  private readonly locationsByBranch = new Map<string, Promise<StorageLocation[]>>();
+  private readonly referenceCache;
 
-  constructor(private readonly repositories: RepositoryRegistry) {}
+  constructor(private readonly repositories: RepositoryRegistry) {
+    this.referenceCache = getReferenceDataCache(repositories);
+  }
 
   async execute(input: string | GetInventoryAlertsParams): Promise<InventoryAlertsData> {
     if (typeof input === "string") return this.getMockData(input);
@@ -133,7 +135,10 @@ export class GetInventoryAlertsService {
         branchId: params.branchId,
         search: params.search,
         categoryId: params.categoryId,
-        status: params.status,
+        // "low_stock" es solo de UI: viaja como lowStock=true y nunca junto a un status.
+        ...(params.status === "low_stock"
+          ? { lowStock: true }
+          : { status: params.status }),
         productTypes: INVENTORY_PRODUCT_TYPES,
         page: params.page,
         pageSize: params.pageSize,
@@ -174,14 +179,18 @@ export class GetInventoryAlertsService {
   }
 
   private getCategories(tenantId: string) {
-    return this.getOrCreatePromise(this.categoriesByTenant, tenantId, () =>
-      this.repositories.categories.getAll(),
+    return this.referenceCache.getOrLoad(
+      referenceDataKeys.categories(tenantId),
+      REFERENCE_DATA_TTL_MS,
+      () => this.repositories.categories.getByTenant(tenantId),
     );
   }
 
   private getUnits(tenantId: string) {
-    return this.getOrCreatePromise(this.unitsByTenant, tenantId, () =>
-      this.repositories.units.getAll(),
+    return this.referenceCache.getOrLoad(
+      referenceDataKeys.units(tenantId),
+      REFERENCE_DATA_TTL_MS,
+      () => this.repositories.units.getByTenant(tenantId),
     );
   }
 
@@ -196,31 +205,18 @@ export class GetInventoryAlertsService {
     const supportsMultipleLocations = capabilities?.supportsMultipleLocations ?? true;
     if (!supportsMultipleLocations) {
       // Al volver a ON se piden las ubicaciones actuales, no las cacheadas de antes del cambio.
-      this.locationsByBranch.delete(branchId);
+      this.referenceCache.invalidate(referenceDataKeys.locations(tenantId, branchId));
       return { supportsMultipleLocations, locations: [] as StorageLocation[] };
     }
-    return { supportsMultipleLocations, locations: await this.getLocations(branchId) };
+    return { supportsMultipleLocations, locations: await this.getLocations(tenantId, branchId) };
   }
 
-  private getLocations(branchId: string) {
-    return this.getOrCreatePromise(this.locationsByBranch, branchId, () =>
-      this.repositories.inventory.getLocations(branchId),
+  private getLocations(tenantId: string, branchId: string) {
+    return this.referenceCache.getOrLoad(
+      referenceDataKeys.locations(tenantId, branchId),
+      REFERENCE_DATA_TTL_MS,
+      () => this.repositories.inventory.getLocations(branchId),
     );
-  }
-
-  private getOrCreatePromise<T>(
-    cache: Map<string, Promise<T>>,
-    key: string,
-    load: () => Promise<T>,
-  ) {
-    const cached = cache.get(key);
-    if (cached) return cached;
-    const pending = load();
-    cache.set(key, pending);
-    void pending.catch(() => {
-      if (cache.get(key) === pending) cache.delete(key);
-    });
-    return pending;
   }
 
   private async getMockData(branchId: string): Promise<InventoryAlertsData> {
@@ -393,7 +389,8 @@ export interface GetInventoryAlertsParams {
   branchName: string;
   search?: string;
   categoryId?: string;
-  status?: InventoryStatus;
+  /** `low_stock`: agregado de UI (near_minimum + critical); el backend lo recibe como lowStock=true. */
+  status?: InventoryStatus | "low_stock";
   page: number;
   pageSize: number;
   sort?: InventoryStockSort;

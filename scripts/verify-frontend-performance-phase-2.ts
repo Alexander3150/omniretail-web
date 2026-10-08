@@ -61,9 +61,31 @@ const newCatalogLoad = between(
   "private getActiveSuppliersForTenant(",
 );
 assert.match(newCatalogLoad, /Cargando inventario/);
-assert.match(newCatalogLoad, /inventoryByProductId/);
+// El stock del flujo NEW ya no pasa por un mapa propio: una sola carga logica (startInventorySnapshots,
+// stock batch en modo API) y el resultado se asocia a cada producto por productId.
+assert.match(newCatalogLoad, /this\.startInventorySnapshots\(/);
+assert.match(newCatalogLoad, /results\.get\(product\.productId\)/);
+const inventorySnapshots = between(
+  purchaseOrderService,
+  "private async startInventorySnapshots(",
+  "private async getMockInventorySnapshot(",
+);
+assert.equal(
+  inventorySnapshots.match(/getStockBatch\(/g)?.length,
+  1,
+  "El stock de la orden nueva debe leerse con una sola llamada batch.",
+);
+assert.match(inventorySnapshots, /productIds: eligibleIds/);
+assert.match(
+  inventorySnapshots,
+  /product\.productType === ProductType\.physical && product\.tracking\.stock/,
+);
+// La rama API (desde la seleccion de elegibles) no tiene fallback N+1 por producto.
+const apiStockBranch = inventorySnapshots.slice(inventorySnapshots.indexOf("const eligibleIds"));
+assert.doesNotMatch(apiStockBranch, /getBalanceByProduct|getProductInventorySettings|getStockPage/);
+assert.doesNotMatch(apiStockBranch, /\.map\(\s*async/);
 assert.match(newCatalogLoad, /return \{ products: availableProducts, inventory \}/);
-assert.match(purchaseOrderService, /activeSupplierLoads\.get\(tenantId\)/);
+assert.match(purchaseOrderService, /referenceDataKeys\.activeSuppliers\(tenantId\)/);
 const authoritativeSave = between(
   purchaseOrderService,
   "private async ensureSaveInputTenantSafe(",

@@ -16,6 +16,9 @@ export interface Receipt {
   receivedByUserId?: string;
   receivedAt?: ISODateString;
   notes?: string;
+  /** Agregados del listado API (GoodsReceiptResponse); ausentes en modo mock/backends antiguos. */
+  totalReceivedQuantity?: number;
+  incidentCount?: number;
   createdAt: ISODateString;
   updatedAt: ISODateString;
 }

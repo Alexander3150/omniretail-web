@@ -424,6 +424,7 @@ export function ProductForm({
                 inventorySettings: {
                   branchId,
                   minStock: inventorySettings?.minStock ?? 0,
+                  reorderPoint: inventorySettings?.reorderPoint ?? "",
                   defaultLocationId: inventorySettings?.defaultLocationId ?? "",
                 },
               }
@@ -1082,10 +1083,10 @@ function UnitsTab({
       <SectionTitle
         description={
           unitsProtected
-            ? "El negocio opera con una unica unidad para productos nuevos; la configuracion de unidades de este producto quedo protegida mientras la capacidad este desactivada."
+            ? "El negocio opera con una única unidad para productos nuevos; la configuración de unidades de este producto queda protegida mientras esta función esté desactivada."
             : usesSingleUnit
-              ? "El negocio opera con una unica unidad por producto."
-              : "Define como se cuenta el producto y como se presenta en inventario y venta."
+              ? "El negocio opera con una única unidad por producto."
+              : "Define cómo se cuenta el producto y cómo se presenta en inventario y venta."
         }
         title="Unidades"
       />
@@ -1101,7 +1102,7 @@ function UnitsTab({
               ? loadState.error.message
               : loadState.status === "loading"
                 ? "Cargando conversiones..."
-                : "Las conversiones todavia no se han cargado."}
+                : "Las conversiones todavía no se han cargado."}
           </p>
           {loadState.status !== "loading" ? (
             <Button onClick={onLoad} type="button" variant="secondary">
@@ -1118,7 +1119,7 @@ function UnitsTab({
           hint={
             unitsProtected
               ? "Protegida mientras la capacidad este desactivada."
-              : "Es la unidad mas pequena con la que se controla el producto."
+              : "Es la unidad más pequeña con la que se controla el producto."
           }
         >
           <Select
@@ -1149,7 +1150,7 @@ function UnitsTab({
             ))}
           </Select>
         </FormField>
-        <FormField id="inventoryUnitId" label="Presentacion de inventario *">
+        <FormField id="inventoryUnitId" label="Presentación de inventario *">
           <Select
             disabled={usesSingleUnit || readOnly || !conversionsLoaded}
             id="inventoryUnitId"
@@ -1175,7 +1176,7 @@ function UnitsTab({
           error={errors.saleUnitId}
           hint={
             unitsProtected
-              ? "Se conserva la configuracion previa; el negocio ya no permite editarla."
+              ? "Se conserva la configuración previa; el negocio ya no permite editarla."
               : usesSingleUnit
                 ? "Sigue a la unidad de inventario porque el negocio no maneja unidades y empaques."
                 : undefined
@@ -1206,7 +1207,7 @@ function UnitsTab({
           {needsInventoryConversion ? (
             <FormField
               id="inventoryToBaseFactor"
-              label={`1 ${inventoryUnit?.name ?? "presentacion"} equivale a`}
+              label={`1 ${inventoryUnit?.name ?? "presentación"} equivale a`}
             >
               <div className="flex items-center gap-2">
                 <Input
@@ -1257,7 +1258,7 @@ function UnitsTab({
         <p className="rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text)]">
           {usesSingleUnit
             ? "El negocio no maneja unidades y empaques: la venta usa la unidad de inventario y no se habilitan equivalencias ni presentaciones distintas."
-            : "Las presentaciones usan la unidad base; no se requiere conversion adicional."}
+            : "Todas las presentaciones utilizan la unidad de medida principal, por lo que no es necesario configurar conversiones."}
         </p>
       )}
     </section>
@@ -1312,7 +1313,7 @@ function TrackingTab({
     {
       key: "stock",
       label: "Control de stock",
-      description: "Activa movimientos y disponibilidad.",
+      description: "Permite registrar movimientos y consultar las existencias de este producto.",
       enabled: capabilities.supportsInventory,
     },
     {
@@ -1329,7 +1330,7 @@ function TrackingTab({
     },
     {
       key: "serial",
-      label: "Numero de serie",
+      label: "Número de serie",
       description: "Seguimiento individual por unidad.",
       enabled: capabilities.supportsSerials,
     },
@@ -1351,15 +1352,66 @@ function TrackingTab({
       tracking,
       inventorySettings:
         !tracking.stock && inventorySettings
-          ? { ...inventorySettings, minStock: 0, defaultLocationId: "" }
+          ? { ...inventorySettings, minStock: 0, reorderPoint: "", defaultLocationId: "" }
           : inventorySettings,
     });
+  }
+
+  // Con la configuracion visible, "Control de stock" comparte fila con la ubicacion predeterminada.
+  const stockOptionInSettingsRow = Boolean(usesStock && inventorySettings);
+
+  function renderOption(option: (typeof options)[number], fillRow = false) {
+    const disabled = isService || isKit || !option.enabled;
+    if (!option.enabled && !value.tracking[option.key]) return null;
+    const active = value.tracking[option.key];
+    return (
+      <button
+        aria-pressed={active}
+        className={cn(
+          "rounded-md border p-4 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)] disabled:cursor-not-allowed disabled:opacity-60",
+          fillRow && "h-full",
+          active
+            ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10"
+            : "border-[var(--color-border)] bg-white hover:border-[var(--color-structure)]",
+        )}
+        disabled={disabled}
+        key={option.key}
+        onClick={() => toggle(option.key, !active)}
+        type="button"
+      >
+        <span className="flex items-start justify-between gap-3">
+          <span>
+            <span className="block text-sm font-bold text-[var(--color-title)]">
+              {option.label}
+            </span>
+            <span className="mt-1 block text-sm text-[var(--color-text-muted)]">
+              {option.description}
+            </span>
+          </span>
+          <span
+            className={cn(
+              "mt-0.5 h-5 w-9 shrink-0 rounded-full border p-0.5 transition",
+              active
+                ? "border-[var(--color-primary)] bg-[var(--color-primary)]"
+                : "border-[var(--color-border)] bg-white",
+            )}
+          >
+            <span
+              className={cn(
+                "block h-3.5 w-3.5 rounded-full bg-white transition",
+                active ? "translate-x-4" : "translate-x-0 bg-[var(--color-text-muted)]",
+              )}
+            />
+          </span>
+        </span>
+      </button>
+    );
   }
 
   return (
     <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
       <SectionTitle
-        description="Reglas de inventario segun tipo de producto y capacidades del negocio."
+        description="Reglas de inventario según el tipo de producto y las funciones del negocio."
         title="Inventario y trazabilidad"
       />
       {isService ? (
@@ -1393,7 +1445,7 @@ function TrackingTab({
       ) : null}
       {usesStock && inventorySettingsReadOnly ? (
         <p className="rounded-md border border-[var(--color-warning)] bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-text)]">
-          La configuracion operativa de inventario esta disponible en modo de solo lectura.
+          La configuración de inventario está disponible solo para consulta.
         </p>
       ) : null}
       {usesStock && editorData.access.canReadInventorySettings && !inventorySettings ? (
@@ -1402,12 +1454,12 @@ function TrackingTab({
             {loadState.status === "error"
               ? loadState.error.message
               : loadState.status === "loading"
-                ? "Cargando configuracion de inventario..."
-                : "La configuracion de inventario todavia no se ha cargado."}
+                ? "Cargando configuración de inventario..."
+                : "La configuración de inventario todavía no se ha cargado."}
           </p>
           {loadState.status !== "loading" ? (
             <Button onClick={onLoad} type="button" variant="secondary">
-              {loadState.status === "error" ? "Reintentar" : "Cargar configuracion"}
+              {loadState.status === "error" ? "Reintentar" : "Cargar configuración"}
             </Button>
           ) : null}
         </div>
@@ -1416,7 +1468,7 @@ function TrackingTab({
         <>
           {loadState.status === "loaded" && loadState.settings === null ? (
             <p className="rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
-              No existe configuracion persistida para esta sucursal; se creara al guardar.
+              La configuración de inventario para esta sucursal se creará automáticamente al guardar el producto.
             </p>
           ) : null}
           {editorData.access.canReadLocations && locationsState.status !== "loaded" ? (
@@ -1434,7 +1486,7 @@ function TrackingTab({
             </div>
           ) : null}
           <div className="grid gap-4 md:grid-cols-2">
-            <FormField id="inventory-min-stock" label="Stock minimo">
+            <FormField id="inventory-min-stock" label="Stock mínimo">
               <Input
                 disabled={inventorySettingsReadOnly}
                 id="inventory-min-stock"
@@ -1455,11 +1507,32 @@ function TrackingTab({
                 <p className="mt-2 text-sm font-semibold text-[var(--color-danger)]">{error}</p>
               ) : (
                 <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-                  Valor operativo para la sucursal activa; no representa stock actual.
+                  Define la cantidad mínima que deseas mantener en esta sucursal. No representa las existencias actuales.
                 </p>
               )}
             </FormField>
-            <FormField id="default-location-id" label="Ubicacion predeterminada" error={errors.defaultLocationId}>
+            <FormField id="inventory-reorder-point" label="Punto de reorden">
+              <Input
+                disabled={inventorySettingsReadOnly}
+                id="inventory-reorder-point"
+                inputMode="numeric"
+                maxLength={6}
+                onChange={(event) =>
+                  onChange({
+                    inventorySettings: {
+                      ...inventorySettings,
+                      reorderPoint: parseIntegerInput(event.target.value),
+                    },
+                  })
+                }
+                type="text"
+                value={inventorySettings.reorderPoint ?? ""}
+              />
+              <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+                Cuando las existencias disponibles lleguen a esta cantidad, el sistema podrá sugerir reabastecimiento.
+              </p>
+            </FormField>
+            <FormField id="default-location-id" label="Ubicación predeterminada" error={errors.defaultLocationId}>
               <Select
                 disabled={
                   inventorySettingsReadOnly ||
@@ -1477,7 +1550,7 @@ function TrackingTab({
                 }
                 value={inventorySettings.defaultLocationId}
               >
-                <option value="">Sin ubicacion predeterminada</option>
+                <option value="">Sin ubicación predeterminada</option>
                 {assignedArchivedDefaultLocation ? (
                   <option disabled value={currentDefaultLocation.id}>
                     {currentDefaultLocation.name} (archivada)
@@ -1502,56 +1575,14 @@ function TrackingTab({
                 </p>
               )}
             </FormField>
+            {renderOption(options[0], true)}
           </div>
         </>
       ) : null}
       <div className="grid gap-3 md:grid-cols-2">
-        {options.map((option) => {
-          const disabled = isService || isKit || !option.enabled;
-          if (!option.enabled && !value.tracking[option.key]) return null;
-          const active = value.tracking[option.key];
-          return (
-            <button
-              aria-pressed={active}
-              className={cn(
-                "rounded-md border p-4 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)] disabled:cursor-not-allowed disabled:opacity-60",
-                active
-                  ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10"
-                  : "border-[var(--color-border)] bg-white hover:border-[var(--color-structure)]",
-              )}
-              disabled={disabled}
-              key={option.key}
-              onClick={() => toggle(option.key, !active)}
-              type="button"
-            >
-              <span className="flex items-start justify-between gap-3">
-                <span>
-                  <span className="block text-sm font-bold text-[var(--color-title)]">
-                    {option.label}
-                  </span>
-                  <span className="mt-1 block text-sm text-[var(--color-text-muted)]">
-                    {option.description}
-                  </span>
-                </span>
-                <span
-                  className={cn(
-                    "mt-0.5 h-5 w-9 rounded-full border p-0.5 transition",
-                    active
-                      ? "border-[var(--color-primary)] bg-[var(--color-primary)]"
-                      : "border-[var(--color-border)] bg-white",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "block h-3.5 w-3.5 rounded-full bg-white transition",
-                      active ? "translate-x-4" : "translate-x-0 bg-[var(--color-text-muted)]",
-                    )}
-                  />
-                </span>
-              </span>
-            </button>
-          );
-        })}
+        {options
+          .filter((option) => !(stockOptionInSettingsRow && option.key === "stock"))
+          .map((option) => renderOption(option))}
       </div>
     </section>
   );
@@ -1671,10 +1702,10 @@ function AttributesTab({
       <SectionTitle
         description={
           archivedKit
-            ? "Un kit archivado no admite cambios de atributos. Restauralo para editarlos."
+            ? "Un kit archivado no admite cambios de atributos. Restáuralo para editarlos."
             : readOnly
-            ? "Los atributos existentes se conservan en modo de solo lectura por configuracion o permisos."
-            : "Atributos descriptivos key/value persistidos por producto."
+            ? "Los atributos existentes se conservan solo para consulta por la configuración del negocio o tus permisos."
+            : "Agrega características del producto, como color, material, tamaño o presentación."
         }
         title="Atributos"
       />
@@ -1689,7 +1720,7 @@ function AttributesTab({
               ? loadState.error.message
               : loadState.status === "loading"
                 ? "Cargando atributos..."
-                : "Los atributos todavia no se han cargado."}
+                : "Los atributos todavía no se han cargado."}
           </p>
           {loadState.status !== "loading" ? (
             <Button onClick={onLoad} type="button" variant="secondary">
@@ -2683,7 +2714,7 @@ function MediaTab({
     if (!files?.length) return;
     setUploadError(null);
     if (value.length + files.length > 6) {
-      setUploadError("Puedes guardar hasta 6 imagenes por producto.");
+      setUploadError("Puedes guardar hasta 6 imágenes por producto.");
       return;
     }
     try {
@@ -2722,7 +2753,7 @@ function MediaTab({
   return (
     <section className="space-y-5 rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
       <SectionTitle
-        description="Hasta 6 imagenes JPEG, PNG o WebP. Los archivos locales se optimizan y guardan fuera de LocalStorage."
+        description="Agrega hasta 6 imágenes en formato JPEG, PNG o WebP. Las imágenes se optimizan automáticamente al subirlas."
         title="Multimedia"
       />
       <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
@@ -3220,7 +3251,7 @@ function validateEditor(
           media.url.trim().startsWith("https://")
         )),
   );
-  if (value.media.length > 6) return "Puedes guardar hasta 6 imagenes por producto.";
+  if (value.media.length > 6) return "Puedes guardar hasta 6 imágenes por producto.";
   if (invalidMedia) return "Cada imagen debe iniciar con / o una URL http(s).";
   if (
     value.tracking.stock &&
@@ -3283,7 +3314,9 @@ function routeToFirstError(
                 editorError.includes("compra") ||
                 editorError.includes("costo")
               ? "suppliers"
-              : editorError.includes("imagen") || editorError.includes("multimedia")
+              : editorError.includes("imagen") ||
+              editorError.includes("imágenes") ||
+              editorError.includes("multimedia")
                 ? "media"
                 : "general",
     );

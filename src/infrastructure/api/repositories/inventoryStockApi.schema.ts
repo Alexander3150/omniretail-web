@@ -2,6 +2,7 @@ import { z } from "zod";
 import type {
   InventoryAlertPageResult,
   InventoryKitAvailability,
+  InventoryStockBatchResult,
   OtherBranchAvailability,
   InventoryStockPageResult,
 } from "@/core/repositories";
@@ -195,6 +196,29 @@ export function parseApiInventoryAlertPage(value: unknown): InventoryAlertPageRe
   const parsed = inventoryAlertPageSchema.safeParse(value);
   if (!parsed.success) throw invalidResponse("alertas");
   return parsed.data as unknown as InventoryAlertPageResult;
+}
+
+// POST /inventory/stock/batch: solo fisicos con stock; nada nullable salvo reorderPoint.
+const inventoryStockBatchSchema = z.object({
+  branchId: apiUuidSchema,
+  items: z.array(
+    z.object({
+      productId: apiUuidSchema,
+      quantity: finiteNumberSchema,
+      reservedQuantity: finiteNumberSchema,
+      availableQuantity: finiteNumberSchema,
+      minStock: finiteNumberSchema,
+      reorderPoint: nullableNumberSchema,
+      status: inventoryStockStatusSchema,
+      suggestedReorder: finiteNumberSchema,
+    }),
+  ),
+});
+
+export function parseApiInventoryStockBatch(value: unknown): InventoryStockBatchResult {
+  const parsed = inventoryStockBatchSchema.safeParse(value);
+  if (!parsed.success) throw invalidResponse("stock por lote");
+  return parsed.data;
 }
 
 const inventoryKitAvailabilitySchema = z.object({

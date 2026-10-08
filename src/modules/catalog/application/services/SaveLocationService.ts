@@ -7,17 +7,22 @@ import {
   ensureCanManageLocations,
   resolveTenantContext,
 } from "@/modules/catalog/application/services/serviceHelpers";
+import { getReferenceDataCache, referenceDataPrefixes } from "@/shared/utils/requestCache";
 import { normalizeLocationCode } from "@/modules/catalog/validation/location.validation";
 
 export class SaveLocationService {
-  constructor(private readonly repositories: RepositoryRegistry) {}
+  private readonly referenceCache;
+
+  constructor(private readonly repositories: RepositoryRegistry) {
+    this.referenceCache = getReferenceDataCache(repositories);
+  }
 
   async create(dto: LocationEditorDto): Promise<StorageLocation> {
     const { tenantId, permissions } = await resolveTenantContext(this.repositories);
     ensureCanManageLocations(permissions);
     if (!tenantId) throw new CatalogServiceError("No se pudo resolver el negocio activo.");
 
-    return this.repositories.inventory.createLocation({
+    const saved = await this.repositories.inventory.createLocation({
       tenantId,
       branchId: dto.branchId,
       parentId: dto.parentId || undefined,
@@ -27,12 +32,14 @@ export class SaveLocationService {
       description: cleanDescription(dto.description),
       status: dto.status,
     });
+    this.referenceCache.invalidatePrefix(referenceDataPrefixes.locations);
+    return saved;
   }
 
   async update(locationId: string, dto: LocationEditorDto): Promise<StorageLocation> {
     const { permissions } = await resolveTenantContext(this.repositories);
     ensureCanManageLocations(permissions);
-    return this.repositories.inventory.updateLocation(locationId, {
+    const saved = await this.repositories.inventory.updateLocation(locationId, {
       branchId: dto.branchId,
       parentId: dto.parentId || undefined,
       code: resolveCode(dto),
@@ -40,22 +47,28 @@ export class SaveLocationService {
       description: cleanDescription(dto.description),
       status: dto.status,
     });
+    this.referenceCache.invalidatePrefix(referenceDataPrefixes.locations);
+    return saved;
   }
 
   async archive(locationId: string): Promise<StorageLocation> {
     const { permissions } = await resolveTenantContext(this.repositories);
     ensureCanManageLocations(permissions);
-    return this.repositories.inventory.updateLocation(locationId, {
+    const saved = await this.repositories.inventory.updateLocation(locationId, {
       status: LocationStatus.archived,
     });
+    this.referenceCache.invalidatePrefix(referenceDataPrefixes.locations);
+    return saved;
   }
 
   async restore(locationId: string): Promise<StorageLocation> {
     const { permissions } = await resolveTenantContext(this.repositories);
     ensureCanManageLocations(permissions);
-    return this.repositories.inventory.updateLocation(locationId, {
+    const saved = await this.repositories.inventory.updateLocation(locationId, {
       status: LocationStatus.active,
     });
+    this.referenceCache.invalidatePrefix(referenceDataPrefixes.locations);
+    return saved;
   }
 }
 

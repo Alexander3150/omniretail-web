@@ -155,6 +155,8 @@ export interface InventoryStockPageParams {
   search?: string;
   categoryId?: string;
   status?: InventoryStockStatus;
+  /** critical + near_minimum en una sola consulta paginada. Incompatible con `status`. */
+  lowStock?: boolean;
   /** Sin este parametro el backend devuelve solo productos fisicos. */
   productTypes?: InventoryStockProductType[];
   page: number;
@@ -252,6 +254,29 @@ export interface InventoryStockPageResult {
     lowStock: number;
     outOfStock: number;
   };
+}
+
+/** Una sola lectura de existencias de varios productos de UNA sucursal (POST /inventory/stock/batch). */
+export interface GetInventoryStockBatchInput {
+  branchId: string;
+  /** Solo productos fisicos con control de stock; sin duplicados. */
+  productIds: string[];
+}
+
+export interface InventoryStockBatchItem {
+  productId: string;
+  quantity: number;
+  reservedQuantity: number;
+  availableQuantity: number;
+  minStock: number;
+  reorderPoint: number | null;
+  status: InventoryStockStatus;
+  suggestedReorder: number;
+}
+
+export interface InventoryStockBatchResult {
+  branchId: string;
+  items: InventoryStockBatchItem[];
 }
 
 export interface InventoryAlertPageParams {
@@ -424,8 +449,11 @@ export interface ConsumeInventoryReservationResult {
 
 export type UpsertProductInventorySettingsInput = Omit<
   ProductInventorySettings,
-  "id" | "createdAt" | "updatedAt"
->;
+  "id" | "createdAt" | "updatedAt" | "reorderPoint"
+> & {
+  /** undefined conserva el valor actual (API); null lo deja sin configurar; 0 es valido. */
+  reorderPoint?: number | null;
+};
 
 export interface InventoryRepository {
   getBalances(): Promise<InventoryBalance[]>;
@@ -449,6 +477,8 @@ export interface InventoryRepository {
   getMovements(productId?: string): Promise<InventoryMovement[]>;
   getMovementPage(params: InventoryMovementPageParams): Promise<InventoryMovementPageResult>;
   getStockPage(params: InventoryStockPageParams): Promise<InventoryStockPageResult>;
+  /** Solo modo API: existencias de varios productos en una sola peticion. */
+  getStockBatch(input: GetInventoryStockBatchInput): Promise<InventoryStockBatchResult>;
   /** Solo modo API: una request on-demand a GET /inventory/stock/branches. */
   getOtherBranchesAvailability(
     input: GetOtherBranchesAvailabilityInput,

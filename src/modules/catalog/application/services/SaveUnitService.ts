@@ -7,16 +7,21 @@ import {
   ensureCanManageUnits,
   resolveTenantContext,
 } from "@/modules/catalog/application/services/serviceHelpers";
+import { getReferenceDataCache, referenceDataPrefixes } from "@/shared/utils/requestCache";
 
 export class SaveUnitService {
-  constructor(private readonly repositories: RepositoryRegistry) {}
+  private readonly referenceCache;
+
+  constructor(private readonly repositories: RepositoryRegistry) {
+    this.referenceCache = getReferenceDataCache(repositories);
+  }
 
   async create(dto: UnitEditorDto): Promise<Unit> {
     const { tenantId, permissions } = await resolveTenantContext(this.repositories);
     ensureCanManageUnits(permissions);
     if (!tenantId) throw new CatalogServiceError("No se pudo resolver el negocio activo.");
 
-    return this.repositories.units.create({
+    const saved = await this.repositories.units.create({
       tenantId,
       code: buildUnitCode(dto.symbol, dto.name),
       name: dto.name.trim(),
@@ -25,34 +30,42 @@ export class SaveUnitService {
       allowsDecimals: dto.allowsDecimals,
       status: dto.status,
     });
+    this.referenceCache.invalidatePrefix(referenceDataPrefixes.units);
+    return saved;
   }
 
   async update(unitId: string, dto: UnitEditorDto): Promise<Unit> {
     const { tenantId, permissions } = await resolveTenantContext(this.repositories);
     ensureCanManageUnits(permissions);
-    return this.repositories.units.updateScoped(tenantId, unitId, {
+    const saved = await this.repositories.units.updateScoped(tenantId, unitId, {
       name: dto.name.trim(),
       symbol: dto.symbol.trim(),
       category: dto.category,
       allowsDecimals: dto.allowsDecimals,
       status: dto.status,
     });
+    this.referenceCache.invalidatePrefix(referenceDataPrefixes.units);
+    return saved;
   }
 
   async archive(unitId: string): Promise<Unit> {
     const { tenantId, permissions } = await resolveTenantContext(this.repositories);
     ensureCanManageUnits(permissions);
-    return this.repositories.units.updateScoped(tenantId, unitId, {
+    const saved = await this.repositories.units.updateScoped(tenantId, unitId, {
       status: UnitStatus.archived,
     });
+    this.referenceCache.invalidatePrefix(referenceDataPrefixes.units);
+    return saved;
   }
 
   async restore(unitId: string): Promise<Unit> {
     const { tenantId, permissions } = await resolveTenantContext(this.repositories);
     ensureCanManageUnits(permissions);
-    return this.repositories.units.updateScoped(tenantId, unitId, {
+    const saved = await this.repositories.units.updateScoped(tenantId, unitId, {
       status: UnitStatus.active,
     });
+    this.referenceCache.invalidatePrefix(referenceDataPrefixes.units);
+    return saved;
   }
 }
 

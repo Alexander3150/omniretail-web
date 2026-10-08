@@ -34,6 +34,8 @@ export function useProducts(controlledCategoryId?: string) {
   const requestBranchId = repositories.productDataSource === "mock" ? branchId : undefined;
   const requestIdRef = useRef(0);
   const [loading, setLoading] = useState(true);
+  // true una vez que llego la primera respuesta: desde ahi las recargas conservan las filas previas.
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [items, setItems] = useState<ProductListItem[]>([]);
   // Categorias activas que GetProductsService ya carga para resolver nombres (alimentan los filtros).
   const [categories, setCategories] = useState<Category[]>([]);
@@ -105,6 +107,7 @@ export function useProducts(controlledCategoryId?: string) {
         return;
       }
       setItems(result.items);
+      setHasLoaded(true);
       setCategories(result.categories);
       setPageState(result.page);
       setPageSizeState(result.pageSize);
@@ -161,6 +164,7 @@ export function useProducts(controlledCategoryId?: string) {
           return;
         }
         setItems(result.items);
+        setHasLoaded(true);
         setCategories(result.categories);
         setPageState(result.page);
         setPageSizeState(result.pageSize);
@@ -232,6 +236,10 @@ export function useProducts(controlledCategoryId?: string) {
 
   return {
     loading,
+    /** Primera carga (sin filas previas): se muestra el estado de carga completo. */
+    initialLoading: loading && !hasLoaded,
+    /** Recarga con filas previas: se conservan, atenuadas y sin acciones, hasta la nueva respuesta. */
+    refreshing: loading && hasLoaded,
     error,
     items,
     categories,

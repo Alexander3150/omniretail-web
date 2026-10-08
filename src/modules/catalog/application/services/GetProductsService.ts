@@ -22,6 +22,12 @@ import type {
   ProductListItem,
 } from "@/modules/catalog/types/catalog.types";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
+import {
+  REFERENCE_DATA_TTL_MS,
+  getReferenceDataCache,
+  referenceDataKeys,
+  referenceDataPrefixes,
+} from "@/shared/utils/requestCache";
 
 const MOCK_FETCH_PAGE_SIZE = 100;
 
@@ -36,20 +42,16 @@ export type GetProductsResult = PaginatedResult<ProductListItem> & {
 };
 
 export class GetProductsService {
-  private readonly categoriesPromisesByTenant = new Map<
-    string,
-    ReturnType<RepositoryRegistry["categories"]["getByTenant"]>
-  >();
-  private readonly unitsPromisesByTenant = new Map<
-    string,
-    ReturnType<RepositoryRegistry["units"]["getByTenant"]>
-  >();
   private readonly promotionsPromisesByTenant = new Map<
     string,
     ReturnType<RepositoryRegistry["promotions"]["getActiveByTenant"]>
   >();
 
-  constructor(private readonly repositories: RepositoryRegistry) {}
+  private readonly referenceCache;
+
+  constructor(private readonly repositories: RepositoryRegistry) {
+    this.referenceCache = getReferenceDataCache(repositories);
+  }
 
   /**
    * Descarta las promociones activas cacheadas para que el siguiente `execute` las vuelva a pedir.
@@ -66,10 +68,10 @@ export class GetProductsService {
   /** Descarta las categorias cacheadas (category.changed): el siguiente `execute` las vuelve a pedir. */
   invalidateCategories(tenantId?: string) {
     if (tenantId) {
-      this.categoriesPromisesByTenant.delete(tenantId);
+      this.referenceCache.invalidate(referenceDataKeys.categories(tenantId));
       return;
     }
-    this.categoriesPromisesByTenant.clear();
+    this.referenceCache.invalidatePrefix(referenceDataPrefixes.categories);
   }
 
   async execute(params: GetProductsParams): Promise<GetProductsResult> {
@@ -93,10 +95,12 @@ export class GetProductsService {
   ) {
     const [page, categories, units, promotions] = await Promise.all([
       this.repositories.products.getPageScoped(tenantId, toApiPageParams(params)),
-      this.getOrCreateTenantPromise(this.categoriesPromisesByTenant, tenantId, () =>
-        this.repositories.categories.getByTenant(tenantId),
+      this.referenceCache.getOrLoad(
+        referenceDataKeys.categories(tenantId),
+        REFERENCE_DATA_TTL_MS,
+        () => this.repositories.categories.getByTenant(tenantId),
       ),
-      this.getOrCreateTenantPromise(this.unitsPromisesByTenant, tenantId, () =>
+      this.referenceCache.getOrLoad(referenceDataKeys.units(tenantId), REFERENCE_DATA_TTL_MS, () =>
         this.repositories.units.getByTenant(tenantId),
       ),
       canReadPromotions

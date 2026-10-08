@@ -6,9 +6,15 @@ import type {
   Unit,
   User,
 } from "@/core/entities";
-import { PurchaseOrderStatus } from "@/core/enums";
+import { ProductType, PurchaseOrderStatus } from "@/core/enums";
 import type { PurchaseOrderItemInput } from "@/core/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import {
+  REFERENCE_DATA_TTL_MS,
+  getReferenceDataCache,
+  referenceDataKeys,
+  referenceDataPrefixes,
+} from "@/shared/utils/requestCache";
 import { INVENTORY_STOCK_READ_PERMISSION } from "@/modules/inventory/application/services/serviceHelpers";
 import {
   hasAtMostDecimalPlaces,
@@ -78,12 +84,11 @@ type PurchaseOrderInventoryLoadResult =
   | { error: unknown };
 
 export class PurchaseOrderEditorService {
-  private readonly activeSupplierLoads = new Map<
-    string,
-    Promise<PurchaseOrderEditorSupplier[]>
-  >();
+  private readonly referenceCache;
 
-  constructor(private readonly repositories: RepositoryRegistry) {}
+  constructor(private readonly repositories: RepositoryRegistry) {
+    this.referenceCache = getReferenceDataCache(repositories);
+  }
 
   async getActiveSuppliers(): Promise<PurchaseOrderEditorSupplier[]> {
     const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
@@ -92,8 +97,8 @@ export class PurchaseOrderEditorService {
   }
 
   invalidateActiveSuppliers(tenantId?: string): void {
-    if (tenantId) this.activeSupplierLoads.delete(tenantId);
-    else this.activeSupplierLoads.clear();
+    if (tenantId) this.referenceCache.invalidate(referenceDataKeys.activeSuppliers(tenantId));
+    else this.referenceCache.invalidatePrefix(referenceDataPrefixes.suppliers);
   }
 
   /**
@@ -182,8 +187,14 @@ export class PurchaseOrderEditorService {
       : undefined;
     const [supplierProducts, units, categories] = await Promise.all([
       this.repositories.supplierProducts.getBySupplierForTenant(tenantId, supplierId),
-      this.repositories.units.getByTenant(tenantId),
-      this.repositories.categories.getAll(),
+      this.referenceCache.getOrLoad(referenceDataKeys.units(tenantId), REFERENCE_DATA_TTL_MS, () =>
+        this.repositories.units.getByTenant(tenantId),
+      ),
+      this.referenceCache.getOrLoad(
+        referenceDataKeys.categories(tenantId),
+        REFERENCE_DATA_TTL_MS,
+        () => this.repositories.categories.getByTenant(tenantId),
+      ),
     ]);
     if (supplierProducts.some((item) => item.supplierId !== supplierId)) {
       throw new PurchasingServiceError(
@@ -205,10 +216,18 @@ export class PurchaseOrderEditorService {
     );
     const unitById = new Map(units.map((unit) => [unit.id, unit]));
     const categoryById = new Map(categories.map((category) => [category.id, category]));
-    const inventoryByProductId = new Map<
-      string,
-      Promise<PurchaseOrderInventoryLoadResult>
-    >();
+    // Una sola lectura de existencias por carga logica (API: POST stock batch), iniciada en cuanto
+    // se conocen los productos y en paralelo con la resolucion de tiers.
+    const inventoryLoad = this.startInventorySnapshots(
+      supplierProducts
+        .filter((supplierProduct) => supplierProduct.active)
+        .flatMap((supplierProduct) => {
+          const product = productById.get(supplierProduct.productId);
+          return product ? [product] : [];
+        }),
+      tenantBranchId,
+      permissions.includes(INVENTORY_STOCK_READ_PERMISSION),
+    );
 
     const rows = await Promise.all(
       supplierProducts
@@ -229,15 +248,6 @@ export class PurchaseOrderEditorService {
           const categoryName = product.categoryId
             ? (categoryById.get(product.categoryId)?.name ?? "Sin categoria")
             : "Sin categoria";
-          const inventory = this.getInventorySnapshot(
-            product,
-            tenantBranchId,
-            permissions.includes(INVENTORY_STOCK_READ_PERMISSION),
-          ).then(
-            (snapshot): PurchaseOrderInventoryLoadResult => ({ snapshot }),
-            (error): PurchaseOrderInventoryLoadResult => ({ error }),
-          );
-          inventoryByProductId.set(product.id, inventory);
           const tiers = await (
             supplierProduct.costTiers ??
             this.repositories.supplierProducts.getCostTiers(supplierProduct.id)
@@ -272,13 +282,13 @@ export class PurchaseOrderEditorService {
     const availableProducts = rows.sort((left, right) =>
       left.productName.localeCompare(right.productName),
     );
-    const inventory = Promise.all(
-      availableProducts.map(async (product) => {
-        const result = await inventoryByProductId.get(product.productId)!;
-        if ("error" in result && !tolerateInventoryErrors) throw result.error;
+    const inventory = inventoryLoad.then((results) =>
+      availableProducts.map((product) => {
+        const result = results.get(product.productId);
+        if (result && "error" in result && !tolerateInventoryErrors) throw result.error;
         return {
           ...product,
-          ...("snapshot" in result ? result.snapshot : unavailableInventorySnapshot()),
+          ...(result && "snapshot" in result ? result.snapshot : unavailableInventorySnapshot()),
         };
       }),
     );
@@ -288,10 +298,10 @@ export class PurchaseOrderEditorService {
   private getActiveSuppliersForTenant(
     tenantId: string,
   ): Promise<PurchaseOrderEditorSupplier[]> {
-    const existing = this.activeSupplierLoads.get(tenantId);
-    if (existing) return existing;
-    const load = this.repositories.suppliers
-      .getActiveByTenant(tenantId)
+    return this.referenceCache
+      .getOrLoad(referenceDataKeys.activeSuppliers(tenantId), REFERENCE_DATA_TTL_MS, () =>
+        this.repositories.suppliers.getActiveByTenant(tenantId),
+      )
       .then((suppliers) =>
         suppliers
           .map((supplier) => ({
@@ -306,42 +316,85 @@ export class PurchaseOrderEditorService {
                 : "No definido",
           }))
           .sort((left, right) => left.name.localeCompare(right.name)),
-      )
-      .catch((error) => {
-        this.activeSupplierLoads.delete(tenantId);
-        throw error;
-      });
-    this.activeSupplierLoads.set(tenantId, load);
-    return load;
+      );
   }
 
-  private async getInventorySnapshot(
-    product: Product,
+  /**
+   * Existencias de los productos de la carga, indexadas por productId (no depende del orden del
+   * backend). API: UNA sola llamada batch con los ids unicos de productos fisicos con control de
+   * stock; sin sucursal, sin permiso o sin ids elegibles no hay peticion. Un error del batch se
+   * reporta igual para todos los productos (no hay fallback a lecturas individuales).
+   */
+  private async startInventorySnapshots(
+    products: Product[],
     branchId: string | undefined,
     canReadApiStock: boolean,
-  ) {
-    if (!branchId) return unavailableInventorySnapshot();
-    if (this.repositories.inventoryStockDataSource === "api") {
-      if (!canReadApiStock) return unavailableInventorySnapshot();
-      const page = await this.repositories.inventory.getStockPage({
-        branchId,
-        search: product.sku,
-        page: 1,
-        pageSize: 10,
-        sort: "productName,asc",
-      });
-      const item = page.items.find((candidate) => candidate.productId === product.id);
-      if (!item || item.inventoryMode !== "TRACKED") return unavailableInventorySnapshot();
-      return {
-        stockQuantity: item.quantity,
-        minStock: item.minStock,
-        reorderPoint: item.reorderPoint ?? undefined,
-        shortage: Math.max(0, item.minStock - item.availableQuantity),
-        suggestedReorder: item.suggestedReorder,
-        availabilityLabel: getAvailabilityLabel(item.availableQuantity, item.minStock),
-      };
+  ): Promise<Map<string, PurchaseOrderInventoryLoadResult>> {
+    const results = new Map<string, PurchaseOrderInventoryLoadResult>();
+    const uniqueProducts = [...new Map(products.map((product) => [product.id, product])).values()];
+    if (!branchId) {
+      uniqueProducts.forEach((product) =>
+        results.set(product.id, { snapshot: unavailableInventorySnapshot() }),
+      );
+      return results;
     }
 
+    if (this.repositories.inventoryStockDataSource !== "api") {
+      await Promise.all(
+        uniqueProducts.map(async (product) => {
+          results.set(
+            product.id,
+            await this.getMockInventorySnapshot(product, branchId).then(
+              (snapshot): PurchaseOrderInventoryLoadResult => ({ snapshot }),
+              (error): PurchaseOrderInventoryLoadResult => ({ error }),
+            ),
+          );
+        }),
+      );
+      return results;
+    }
+
+    // Servicios, kits y productos sin control de stock no tienen existencias propias: conservan la
+    // semantica previa ("no disponible") sin viajar al batch.
+    const eligibleIds = canReadApiStock
+      ? uniqueProducts
+          .filter((product) => product.productType === ProductType.physical && product.tracking.stock)
+          .map((product) => product.id)
+      : [];
+    uniqueProducts.forEach((product) =>
+      results.set(product.id, { snapshot: unavailableInventorySnapshot() }),
+    );
+    if (eligibleIds.length === 0) return results;
+
+    try {
+      const batch = await this.repositories.inventory.getStockBatch({
+        branchId,
+        productIds: eligibleIds,
+      });
+      if (batch.branchId !== branchId) {
+        throw new PurchasingServiceError("El inventario devuelto no corresponde a la sucursal.");
+      }
+      for (const item of batch.items) {
+        if (!eligibleIds.includes(item.productId)) continue;
+        results.set(item.productId, {
+          snapshot: {
+            stockQuantity: item.quantity,
+            minStock: item.minStock,
+            reorderPoint: item.reorderPoint ?? undefined,
+            shortage: Math.max(0, item.minStock - item.availableQuantity),
+            // Valor autoritativo del backend (misma formula que antes: objetivo - disponible).
+            suggestedReorder: item.suggestedReorder,
+            availabilityLabel: getAvailabilityLabel(item.availableQuantity, item.minStock),
+          },
+        });
+      }
+    } catch (error) {
+      eligibleIds.forEach((productId) => results.set(productId, { error }));
+    }
+    return results;
+  }
+
+  private async getMockInventorySnapshot(product: Product, branchId: string) {
     const [balances, settings] = await Promise.all([
       this.repositories.inventory.getBalanceByProduct(product.id, branchId),
       this.repositories.inventory.getProductInventorySettings(product.id, branchId),

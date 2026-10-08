@@ -38,6 +38,10 @@ OrderRepository, PickingRepository, DispatchRepository, InventoryRepository
 
 - `/logistica/despachos` consume la cola scoped de `DispatchApplicationService` para pedidos domiciliarios `ready_for_dispatch`.
 - Packing persiste checklist, peso/bultos y evidencia de etiqueta; no consume inventario.
+- En modo API, Packing consume exclusivamente `PackingReadRepository` y `PackingCommandRepository`; no reconstruye respuestas reales con repositorios mock. El backend exige checklist, peso, bultos, etiqueta y registro de impresion tambien para `store_pickup`.
+- El coordinador de mutaciones API vive en el layout privado y queda aislado por sesion+usuario+tenant: sobrevive navegacion interna, pero nunca se comparte tras logout/login. Conserva identidades ante red, timeout, 5xx o respuestas ambiguas; elimina las de 4xx definitivos y retiene como maximo 64 identidades inciertas por sesion con politica LRU. Superado ese limite, el reintento mas antiguo deja de conservar su `operationId`.
+- El registro de impresion acredita que el frontend abrio el flujo del navegador y llamo al endpoint autoritativo; no permite demostrar que una impresora fisica produjo la etiqueta.
+- El handover `ready_for_pickup -> delivered` no forma parte de este incremento. En modo API permanece no disponible y nunca delega UUID reales a `StorePickupDeliveryRepository` mock; su integracion futura pertenece al flujo de Despachos y al permiso `logistics.dispatch.confirm`.
 - La confirmacion persiste Dispatch y materializa sus Packages desde la Packing finalizada en una sola transaccion.
 - El Trace es read-only y se obtiene de `GetLogisticsItemTraceService` sobre evidencia canonica de Picking e InventoryMovement.
 
