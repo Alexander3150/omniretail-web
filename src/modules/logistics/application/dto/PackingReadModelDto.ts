@@ -39,6 +39,16 @@ export interface PackingPreparedContentDto {
   name: string;
   quantity: number;
   serialNumbers: string[];
+  trackingSelections: PackingTraceSelectionDto[];
+}
+
+export interface PackingTraceSelectionDto {
+  locationId: string | null;
+  lotId: string | null;
+  lotNumber: string | null;
+  expirationDate: string | null;
+  quantity: number;
+  serialNumbers: string[];
 }
 
 export interface SavePackingPreparationCommand {

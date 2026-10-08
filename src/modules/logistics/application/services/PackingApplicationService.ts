@@ -1,6 +1,7 @@
 import type { InventoryTransfer, Order, Packing } from "@/core/entities";
 import { DeliveryMethod, OrderStatus, PackingStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import type {
   ConfirmStorePickupDeliveryCommand,
   ConfirmStorePickupDeliveryResultDto,
@@ -13,6 +14,10 @@ import type {
   RegisterPackingLabelPrintCommand,
   SavePackingPreparationCommand,
 } from "@/modules/logistics/application/dto/PackingReadModelDto";
+import {
+  toPackingDetailDto,
+  toPackingQueueItemDto,
+} from "@/modules/logistics/application/mappers/PackingApiMapper";
 import { resolveTrustedPackingContext } from "@/modules/logistics/application/services/PackingAuthorizationContext";
 
 const PACKING_READ = "logistics.packing.read";
@@ -28,6 +33,9 @@ type PackingRepositories = Pick<
   | "customers"
   | "orders"
   | "packings"
+  | "packingRead"
+  | "packingCommands"
+  | "packingDataSource"
   | "picking"
   | "products"
   | "storePickupDeliveries"
@@ -39,6 +47,11 @@ export class PackingApplicationService {
 
   async getQueue(selectedBranchId: string): Promise<PackingQueueItemDto[]> {
     const context = await this.context(selectedBranchId, PACKING_READ);
+    this.ensureApiRepository(this.repositories.packingRead, "lectura");
+    if (this.repositories.packingRead) {
+      const queue = await this.repositories.packingRead.getQueue(context);
+      return queue.map(toPackingQueueItemDto);
+    }
     const [activePackings, branchOrders] = await Promise.all([
       this.repositories.packings.getQueue(context),
       this.repositories.orders.listByBranch(context.tenantId, context.branchId),
@@ -78,6 +91,12 @@ export class PackingApplicationService {
 
   async getDetail(selectedBranchId: string, packingId: string): Promise<PackingDetailDto> {
     const context = await this.context(selectedBranchId, PACKING_READ);
+    this.ensureApiRepository(this.repositories.packingRead, "lectura");
+    if (this.repositories.packingRead) {
+      return toPackingDetailDto(
+        await this.repositories.packingRead.getDetail(context, packingId),
+      );
+    }
     const candidate = await this.repositories.packings.getById(context, packingId);
     if (candidate?.sourceType === "transfer") {
       const transfer = await this.requireTransfer(context, candidate);
@@ -95,6 +114,15 @@ export class PackingApplicationService {
     command: SavePackingPreparationCommand,
   ): Promise<PackingActionResultDto> {
     const context = await this.context(selectedBranchId, PACKING_PREPARE);
+    this.ensureApiRepository(this.repositories.packingCommands, "comandos");
+    if (this.repositories.packingCommands) {
+      const result = await this.repositories.packingCommands.savePreparation(
+        context,
+        command.packingId,
+        command,
+      );
+      return { packing: toPackingDetailDto(result.packing), idempotent: result.idempotent };
+    }
     const result = await this.repositories.packings.savePreparation({ ...command, ...context });
     return this.toActionResult(context, result.packing, result.idempotent);
   }
@@ -104,6 +132,15 @@ export class PackingApplicationService {
     command: GeneratePackingLabelCommand,
   ): Promise<PackingActionResultDto> {
     const context = await this.context(selectedBranchId, PACKING_PREPARE);
+    this.ensureApiRepository(this.repositories.packingCommands, "comandos");
+    if (this.repositories.packingCommands) {
+      const result = await this.repositories.packingCommands.generateLabel(
+        context,
+        command.packingId,
+        command,
+      );
+      return { packing: toPackingDetailDto(result.packing), idempotent: result.idempotent };
+    }
     const result = await this.repositories.packings.generateLabel({ ...command, ...context });
     return this.toActionResult(context, result.packing, result.idempotent);
   }
@@ -113,6 +150,15 @@ export class PackingApplicationService {
     command: RegisterPackingLabelPrintCommand,
   ): Promise<PackingActionResultDto> {
     const context = await this.context(selectedBranchId, PACKING_PREPARE);
+    this.ensureApiRepository(this.repositories.packingCommands, "comandos");
+    if (this.repositories.packingCommands) {
+      const result = await this.repositories.packingCommands.registerLabelPrint(
+        context,
+        command.packingId,
+        command,
+      );
+      return { packing: toPackingDetailDto(result.packing), idempotent: result.idempotent };
+    }
     const result = await this.repositories.packings.registerLabelPrint({ ...command, ...context });
     return this.toActionResult(context, result.packing, result.idempotent);
   }
@@ -122,6 +168,20 @@ export class PackingApplicationService {
     command: FinalizePackingCommand,
   ): Promise<FinalizePackingResultDto> {
     const context = await this.context(selectedBranchId, PACKING_FINALIZE);
+    this.ensureApiRepository(this.repositories.packingCommands, "comandos");
+    if (this.repositories.packingCommands) {
+      const result = await this.repositories.packingCommands.finalize(
+        context,
+        command.packingId,
+        command,
+      );
+      return {
+        packing: toPackingDetailDto(result.packing),
+        idempotent: result.idempotent,
+        orderStatus: result.orderStatus,
+        ...(result.transferStatus ? { transferStatus: result.transferStatus } : {}),
+      };
+    }
     const packing = await this.repositories.packings.getById(context, command.packingId);
     if (packing?.sourceType === "transfer") {
       const result = await this.repositories.packings.finalize({
@@ -141,6 +201,13 @@ export class PackingApplicationService {
     selectedBranchId: string,
     command: ConfirmStorePickupDeliveryCommand,
   ): Promise<ConfirmStorePickupDeliveryResultDto> {
+    if (this.repositories.packingDataSource === "api") {
+      throw new BackendRequestError(
+        "La entrega al cliente se integrara en el incremento de Despachos.",
+        409,
+        "STORE_PICKUP_HANDOVER_NOT_AVAILABLE",
+      );
+    }
     const context = await this.context(selectedBranchId, PACKING_FINALIZE);
     const { packing, order } = await this.requireDetail(context, command.packingId);
     if (
@@ -166,6 +233,15 @@ export class PackingApplicationService {
 
   private context(selectedBranchId: string, permission: string) {
     return resolveTrustedPackingContext(this.repositories, selectedBranchId, permission);
+  }
+
+  private ensureApiRepository(repository: unknown, capability: string): void {
+    if (this.repositories.packingDataSource !== "api" || repository) return;
+    throw new BackendRequestError(
+      `El repositorio API de ${capability} de Packing no esta configurado.`,
+      500,
+      "PACKING_API_NOT_CONFIGURED",
+    );
   }
 
   private async requireDetail(
@@ -314,6 +390,7 @@ export class PackingApplicationService {
           name: product?.name ?? "Producto no disponible",
           quantity: item.pickedQuantity,
           serialNumbers: [...(item.serialNumbers ?? [])],
+          trackingSelections: [],
         };
       });
   }

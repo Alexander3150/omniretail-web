@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { DeliveryMethod, OrderStatus } from "@/core/enums";
 import type { DataEventPayload } from "@/core/types/events.types";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
+import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import type {
   PackingActionResultDto,
   PackingDetailDto,
@@ -14,9 +15,18 @@ import { PackingApplicationService } from "@/modules/logistics/application/servi
 import type { PackingPreparationValidationResult } from "@/modules/logistics/validation/packing.validation";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
+import {
+  createPackingOperationFingerprint,
+  isCurrentPackingRequest,
+  isPackingVersionCurrentOrNewer,
+  resolvePackingMutationSnapshot,
+  shouldRetainPackingOperationIdentity,
+} from "@/modules/logistics/hooks/packingRequestIdentity";
+import { usePackingMutationCoordinator } from "@/modules/logistics/providers/PackingMutationCoordinatorProvider";
 
 export function useLogisticsPacking() {
   const repositories = useRepositories();
+  const mutationCoordinator = usePackingMutationCoordinator();
   const { currentBranch, loading: branchLoading } = useActiveBranch();
   const { user, canAccessBranch, hasPermission, loading: sessionLoading, error: sessionError } = useCurrentSession();
   const service = useMemo(() => new PackingApplicationService(repositories), [repositories]);
@@ -38,8 +48,8 @@ export function useLogisticsPacking() {
   const loadSequenceRef = useRef(0);
   const detailSequenceRef = useRef(0);
   const mutationSequenceRef = useRef(0);
-  const mutationLockRef = useRef(false);
-  const pendingOperationIdsRef = useRef(new Map<string, string>());
+  const detailRef = useRef<PackingDetailDto | null>(null);
+  const apiPacking = repositories.packingDataSource === "api";
 
   const hasBranchAccess = Boolean(
     user && currentBranch && user.tenantId === currentBranch.tenantId && canAccessBranch(currentBranch.id),
@@ -60,7 +70,12 @@ export function useLogisticsPacking() {
     }
     try {
       const items = await service.getQueue(currentBranch.id);
-      if (sequence === loadSequenceRef.current && activeBranchIdRef.current === currentBranch.id) {
+      if (isCurrentPackingRequest({
+        sequence,
+        currentSequence: loadSequenceRef.current,
+        requestedBranchId: currentBranch.id,
+        activeBranchId: activeBranchIdRef.current,
+      })) {
         setQueue(items);
       }
     } catch (cause) {
@@ -78,11 +93,15 @@ export function useLogisticsPacking() {
     setWorkspaceError(null);
     try {
       const result = await service.getDetail(branchId, packingId);
-      if (
-        sequence === detailSequenceRef.current &&
-        activeBranchIdRef.current === branchId &&
-        selectedPackingIdRef.current === packingId
-      ) {
+      if (isCurrentPackingRequest({
+        sequence,
+        currentSequence: detailSequenceRef.current,
+        requestedBranchId: branchId,
+        activeBranchId: activeBranchIdRef.current,
+        requestedPackingId: packingId,
+        selectedPackingId: selectedPackingIdRef.current,
+      })) {
+        detailRef.current = result;
         setDetail(result);
       }
       return result;
@@ -104,48 +123,54 @@ export function useLogisticsPacking() {
     return () => { active = false; };
   }, [reload]);
 
-  useEffect(() => {
-    let active = true;
+  useLayoutEffect(() => {
     const branchId = currentBranch?.id ?? null;
     activeBranchIdRef.current = branchId;
     if (workspaceBranchIdRef.current && workspaceBranchIdRef.current !== branchId) {
       detailSequenceRef.current += 1;
       mutationSequenceRef.current += 1;
-      mutationLockRef.current = false;
     }
+  }, [currentBranch?.id]);
+
+  useEffect(() => {
+    let active = true;
+    const branchId = currentBranch?.id ?? null;
     window.queueMicrotask(() => {
       if (!active || !workspaceBranchIdRef.current || workspaceBranchIdRef.current === branchId) return;
       workspaceBranchIdRef.current = null;
       selectedPackingIdRef.current = null;
-      pendingOperationIdsRef.current.clear();
       setSelectedPackingId(null);
+      detailRef.current = null;
       setDetail(null);
       setWorkspaceError(null);
       setCompletion(null);
       setDetailLoading(false);
-      setSubmitting(false);
     });
     return () => { active = false; };
   }, [currentBranch?.id]);
 
   const selectPacking = useCallback(async (packingId: string) => {
-    if (!currentBranch || !hasBranchAccess || !canRead || mutationLockRef.current) return;
+    if (
+      !currentBranch || !hasBranchAccess || !canRead ||
+      mutationCoordinator.isRequestInFlight()
+    ) return;
     workspaceBranchIdRef.current = currentBranch.id;
     selectedPackingIdRef.current = packingId;
     setSelectedPackingId(packingId);
+    detailRef.current = null;
     setDetail(null);
     setWorkspaceError(null);
     setCompletion(null);
     await loadDetail(currentBranch.id, packingId);
-  }, [canRead, currentBranch, hasBranchAccess, loadDetail]);
+  }, [canRead, currentBranch, hasBranchAccess, loadDetail, mutationCoordinator]);
 
   const clearSelection = useCallback(() => {
     detailSequenceRef.current += 1;
     mutationSequenceRef.current += 1;
     workspaceBranchIdRef.current = null;
     selectedPackingIdRef.current = null;
-    pendingOperationIdsRef.current.clear();
     setSelectedPackingId(null);
+    detailRef.current = null;
     setDetail(null);
     setWorkspaceError(null);
     setDetailLoading(false);
@@ -162,14 +187,19 @@ export function useLogisticsPacking() {
       operationId: string;
     }) => Promise<Result>,
   ) => {
-    if (!allowed || !currentBranch || !detail || mutationLockRef.current) return null;
-    mutationLockRef.current = true;
+    if (!allowed || !currentBranch || !detail) return null;
+    const mutationToken = mutationCoordinator.beginRequest();
+    if (mutationToken === null) return null;
     const sequence = ++mutationSequenceRef.current;
     const branchId = currentBranch.id;
     const packingId = detail.packingId;
-    const operationKey = `${actionKey}:${packingId}:${detail.version}`;
-    const operationId = pendingOperationIdsRef.current.get(operationKey) ?? crypto.randomUUID();
-    pendingOperationIdsRef.current.set(operationKey, operationId);
+    const operationKey = createPackingOperationFingerprint({
+      action: actionKey,
+      branchId,
+      packingId,
+      expectedVersion: detail.version,
+    });
+    const operationId = mutationCoordinator.getOrCreateOperationId(operationKey);
     setSubmitting(true);
     setWorkspaceError(null);
     try {
@@ -179,39 +209,94 @@ export function useLogisticsPacking() {
         expectedVersion: detail.version,
         operationId,
       });
-      pendingOperationIdsRef.current.delete(operationKey);
-      if (
-        sequence !== mutationSequenceRef.current ||
-        activeBranchIdRef.current !== branchId ||
-        selectedPackingIdRef.current !== packingId
-      ) return null;
-      setDetail(result.packing);
+      mutationCoordinator.markOperationDefinitive(operationKey);
+      if (!isCurrentPackingRequest({
+        sequence,
+        currentSequence: mutationSequenceRef.current,
+        requestedBranchId: branchId,
+        activeBranchId: activeBranchIdRef.current,
+        requestedPackingId: packingId,
+        selectedPackingId: selectedPackingIdRef.current,
+      })) return null;
+      const authoritative = await resolvePackingMutationSnapshot({
+        packing: result.packing,
+        idempotent: result.idempotent,
+        readCurrent: () => service.getDetail(branchId, packingId),
+      });
+      if (!isCurrentPackingRequest({
+        sequence,
+        currentSequence: mutationSequenceRef.current,
+        requestedBranchId: branchId,
+        activeBranchId: activeBranchIdRef.current,
+        requestedPackingId: packingId,
+        selectedPackingId: selectedPackingIdRef.current,
+      })) return null;
+      if (isPackingVersionCurrentOrNewer(detailRef.current?.version, authoritative.version)) {
+        detailRef.current = authoritative;
+        setDetail(authoritative);
+      }
       await reload();
-      return result;
+      if (!isCurrentPackingRequest({
+        sequence,
+        currentSequence: mutationSequenceRef.current,
+        requestedBranchId: branchId,
+        activeBranchId: activeBranchIdRef.current,
+        requestedPackingId: packingId,
+        selectedPackingId: selectedPackingIdRef.current,
+      })) return null;
+      return {
+        ...result,
+        packing: authoritative,
+        ...("orderStatus" in result ? { orderStatus: authoritative.orderStatus } : {}),
+      };
     } catch (cause) {
+      if (!shouldRetainPackingOperationIdentity(cause)) {
+        mutationCoordinator.markOperationDefinitive(operationKey);
+      }
+      if (cause instanceof BackendRequestError && cause.code === "PACKING_VERSION_CONFLICT") {
+        try {
+          const authoritative = await service.getDetail(branchId, packingId);
+          if (isCurrentPackingRequest({
+            sequence,
+            currentSequence: mutationSequenceRef.current,
+            requestedBranchId: branchId,
+            activeBranchId: activeBranchIdRef.current,
+            requestedPackingId: packingId,
+            selectedPackingId: selectedPackingIdRef.current,
+          }) && isPackingVersionCurrentOrNewer(detailRef.current?.version, authoritative.version)) {
+            detailRef.current = authoritative;
+            setDetail(authoritative);
+          }
+        } catch {
+          // Se conserva el conflicto original; una recarga manual puede reintentar el read-back.
+        }
+      }
       if (activeBranchIdRef.current === branchId && selectedPackingIdRef.current === packingId) {
         setWorkspaceError(toMessage(cause, fallbackError));
       }
       return null;
     } finally {
-      if (sequence === mutationSequenceRef.current) {
-        mutationLockRef.current = false;
-        setSubmitting(false);
-      }
+      if (mutationCoordinator.finishRequest(mutationToken)) setSubmitting(false);
     }
-  }, [currentBranch, detail, reload]);
+  }, [currentBranch, detail, mutationCoordinator, reload, service]);
 
   const savePreparation = useCallback(async (
     validation: PackingPreparationValidationResult,
   ) => {
-    if (!validation.valid || !currentBranch || !detail || !canPrepare || mutationLockRef.current) return false;
-    mutationLockRef.current = true;
+    if (!validation.valid || !currentBranch || !detail || !canPrepare) return false;
+    const mutationToken = mutationCoordinator.beginRequest();
+    if (mutationToken === null) return false;
     const sequence = ++mutationSequenceRef.current;
     const branchId = currentBranch.id;
     const packingId = detail.packingId;
-    const fingerprint = `${packingId}:${detail.version}:${JSON.stringify(validation.values)}`;
-    const operationId = pendingOperationIdsRef.current.get(fingerprint) ?? crypto.randomUUID();
-    pendingOperationIdsRef.current.set(fingerprint, operationId);
+    const fingerprint = createPackingOperationFingerprint({
+      action: "save-preparation",
+      branchId,
+      packingId,
+      expectedVersion: detail.version,
+      payload: validation.values,
+    });
+    const operationId = mutationCoordinator.getOrCreateOperationId(fingerprint);
     setSubmitting(true);
     setWorkspaceError(null);
     try {
@@ -221,27 +306,72 @@ export function useLogisticsPacking() {
         expectedVersion: detail.version,
         ...validation.values,
       });
-      pendingOperationIdsRef.current.delete(fingerprint);
-      if (
-        sequence !== mutationSequenceRef.current ||
-        activeBranchIdRef.current !== branchId ||
-        selectedPackingIdRef.current !== packingId
-      ) return false;
-      setDetail(result.packing);
+      mutationCoordinator.markOperationDefinitive(fingerprint);
+      if (!isCurrentPackingRequest({
+        sequence,
+        currentSequence: mutationSequenceRef.current,
+        requestedBranchId: branchId,
+        activeBranchId: activeBranchIdRef.current,
+        requestedPackingId: packingId,
+        selectedPackingId: selectedPackingIdRef.current,
+      })) return false;
+      const authoritative = await resolvePackingMutationSnapshot({
+        packing: result.packing,
+        idempotent: result.idempotent,
+        readCurrent: () => service.getDetail(branchId, packingId),
+      });
+      if (!isCurrentPackingRequest({
+        sequence,
+        currentSequence: mutationSequenceRef.current,
+        requestedBranchId: branchId,
+        activeBranchId: activeBranchIdRef.current,
+        requestedPackingId: packingId,
+        selectedPackingId: selectedPackingIdRef.current,
+      })) return false;
+      if (isPackingVersionCurrentOrNewer(detailRef.current?.version, authoritative.version)) {
+        detailRef.current = authoritative;
+        setDetail(authoritative);
+      }
       await reload();
+      if (!isCurrentPackingRequest({
+        sequence,
+        currentSequence: mutationSequenceRef.current,
+        requestedBranchId: branchId,
+        activeBranchId: activeBranchIdRef.current,
+        requestedPackingId: packingId,
+        selectedPackingId: selectedPackingIdRef.current,
+      })) return false;
       return true;
     } catch (cause) {
+      if (!shouldRetainPackingOperationIdentity(cause)) {
+        mutationCoordinator.markOperationDefinitive(fingerprint);
+      }
+      if (cause instanceof BackendRequestError && cause.code === "PACKING_VERSION_CONFLICT") {
+        try {
+          const authoritative = await service.getDetail(branchId, packingId);
+          if (isCurrentPackingRequest({
+            sequence,
+            currentSequence: mutationSequenceRef.current,
+            requestedBranchId: branchId,
+            activeBranchId: activeBranchIdRef.current,
+            requestedPackingId: packingId,
+            selectedPackingId: selectedPackingIdRef.current,
+          }) && isPackingVersionCurrentOrNewer(detailRef.current?.version, authoritative.version)) {
+            detailRef.current = authoritative;
+            setDetail(authoritative);
+          }
+        } catch {
+          // Se conserva el conflicto original; una recarga manual puede reintentar el read-back.
+        }
+      }
       if (activeBranchIdRef.current === branchId && selectedPackingIdRef.current === packingId) {
         setWorkspaceError(toMessage(cause, "No se pudo guardar la preparación."));
       }
       return false;
     } finally {
-      if (sequence === mutationSequenceRef.current) {
-        mutationLockRef.current = false;
-        setSubmitting(false);
-      }
+      if (mutationCoordinator.finishRequest(mutationToken)) setSubmitting(false);
     }
-  }, [canPrepare, currentBranch, detail, reload, service]);
+  }, [canPrepare, currentBranch, detail, mutationCoordinator, reload, service]);
 
   const generateLabel = useCallback(async () => {
     const result = await executeMutation(
@@ -269,6 +399,7 @@ export function useLogisticsPacking() {
   }, [canPrepare, detail?.labelGenerationId, executeMutation, service]);
 
   const finalize = useCallback(async () => {
+    const branchId = currentBranch?.id;
     const orderReference = detail?.orderReference;
     const deliveryMethod = detail?.deliveryMethod;
     const result = await executeMutation(
@@ -277,44 +408,56 @@ export function useLogisticsPacking() {
       "No se pudo finalizar el empaque.",
       ({ branchId, ...command }) => service.finalize(branchId, command),
     );
-    if (!result || !orderReference) return false;
-    if (deliveryMethod === DeliveryMethod.store_pickup) {
+    if (!result || !orderReference || !branchId) return false;
+    if (deliveryMethod === DeliveryMethod.store_pickup && !apiPacking) {
       setCompletion(null);
       return true;
     }
     detailSequenceRef.current += 1;
     workspaceBranchIdRef.current = null;
     selectedPackingIdRef.current = null;
-    pendingOperationIdsRef.current.clear();
     setSelectedPackingId(null);
+    detailRef.current = null;
     setDetail(null);
     setWorkspaceError(null);
     setCompletion({ orderReference, orderStatus: result.orderStatus,
       sourceType: deliveryMethod === "transfer" ? "transfer" : undefined });
     await reload();
+    if (activeBranchIdRef.current !== branchId) {
+      setCompletion(null);
+      return false;
+    }
     return true;
-  }, [canFinalize, detail?.deliveryMethod, detail?.orderReference, executeMutation, reload, service]);
+  }, [apiPacking, canFinalize, currentBranch?.id, detail?.deliveryMethod, detail?.orderReference, executeMutation, reload, service]);
 
   const confirmStorePickupDelivery = useCallback(async () => {
+    if (apiPacking) {
+      setWorkspaceError("La entrega al cliente se integrara en el incremento de Despachos.");
+      return false;
+    }
     if (
       !canFinalize ||
       !currentBranch ||
       !detail ||
-      detail.deliveryMethod !== DeliveryMethod.store_pickup ||
-      mutationLockRef.current
+      detail.deliveryMethod !== DeliveryMethod.store_pickup
     ) return false;
-    mutationLockRef.current = true;
+    const mutationToken = mutationCoordinator.beginRequest();
+    if (mutationToken === null) return false;
     const sequence = ++mutationSequenceRef.current;
     const branchId = currentBranch.id;
     const packingId = detail.packingId;
-    const operationKey = `confirm-store-pickup:${packingId}`;
-    const operationId = pendingOperationIdsRef.current.get(operationKey) ?? crypto.randomUUID();
-    pendingOperationIdsRef.current.set(operationKey, operationId);
+    const operationKey = createPackingOperationFingerprint({
+      action: "confirm-store-pickup",
+      branchId,
+      packingId,
+      expectedVersion: detail.version,
+    });
+    const operationId = mutationCoordinator.getOrCreateOperationId(operationKey);
     setSubmitting(true);
     setWorkspaceError(null);
     try {
       const result = await service.confirmStorePickupDelivery(branchId, { packingId, operationId });
-      pendingOperationIdsRef.current.delete(operationKey);
+      mutationCoordinator.markOperationDefinitive(operationKey);
       if (
         sequence !== mutationSequenceRef.current ||
         activeBranchIdRef.current !== branchId ||
@@ -324,30 +467,37 @@ export function useLogisticsPacking() {
       workspaceBranchIdRef.current = null;
       selectedPackingIdRef.current = null;
       setSelectedPackingId(null);
+      detailRef.current = null;
       setDetail(null);
       setWorkspaceError(null);
       setCompletion({ orderReference: detail.orderReference, orderStatus: result.orderStatus });
       await reload();
+      if (
+        sequence !== mutationSequenceRef.current ||
+        activeBranchIdRef.current !== branchId
+      ) return false;
       return true;
     } catch (cause) {
+      if (!shouldRetainPackingOperationIdentity(cause)) {
+        mutationCoordinator.markOperationDefinitive(operationKey);
+      }
       if (activeBranchIdRef.current === branchId && selectedPackingIdRef.current === packingId) {
         setWorkspaceError(toMessage(cause, "No se pudo confirmar la entrega al cliente."));
       }
       return false;
     } finally {
-      if (sequence === mutationSequenceRef.current) {
-        mutationLockRef.current = false;
-        setSubmitting(false);
-      }
+      if (mutationCoordinator.finishRequest(mutationToken)) setSubmitting(false);
     }
-  }, [canFinalize, currentBranch, detail, reload, service]);
+  }, [apiPacking, canFinalize, currentBranch, detail, mutationCoordinator, reload, service]);
 
   const handleEvent = useCallback((payload: DataEventPayload) => {
     if (!currentBranch || payload.tenantId !== currentBranch.tenantId || payload.branchId !== currentBranch.id) return;
     void reload();
     const packingId = selectedPackingIdRef.current;
-    if (packingId && !mutationLockRef.current) void loadDetail(currentBranch.id, packingId);
-  }, [currentBranch, loadDetail, reload]);
+    if (packingId && !mutationCoordinator.isRequestInFlight()) {
+      void loadDetail(currentBranch.id, packingId);
+    }
+  }, [currentBranch, loadDetail, mutationCoordinator, reload]);
   useDataEvent("packing.changed", handleEvent);
   useDataEvent("order.changed", handleEvent);
 
@@ -359,6 +509,8 @@ export function useLogisticsPacking() {
     canRead,
     canPrepare,
     canFinalize,
+    apiPacking,
+    handoverAvailable: !apiPacking,
     queue: filteredQueue,
     search,
     setSearch,

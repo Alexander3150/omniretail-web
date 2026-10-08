@@ -44,9 +44,11 @@ export function LogisticsPackingDispatchPage() {
           </section>
 
           <PackingWorkspace
+            apiPacking={packing.apiPacking}
             canFinalize={packing.canFinalize}
             canPrepare={packing.canPrepare}
             completion={packing.completion}
+            handoverAvailable={packing.handoverAvailable}
             detail={packing.detail}
             error={packing.workspaceError}
             loading={packing.detailLoading}

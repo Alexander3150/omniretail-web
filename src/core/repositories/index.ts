@@ -44,6 +44,8 @@ export type * from "./PickingRepository";
 export type * from "./PickingReadRepository";
 export type * from "./PickingCommandRepository";
 export type * from "./PackingRepository";
+export type * from "./PackingReadRepository";
+export type * from "./PackingCommandRepository";
 export type * from "./DispatchRepository";
 export type * from "./StorePickupDeliveryRepository";
 export type * from "./NotificationRepository";
