@@ -1,5 +1,7 @@
+import { isApiMode } from "@/config/api-mode";
 import { RoleStatus } from "@/core/enums";
 import { canUserAccessBranch } from "@/core/scopes/userBranchAccess";
+import { backendFetch } from "@/infrastructure/api/backendClient";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { CashShiftDto } from "@/modules/administration/application/dto/CashShiftDto";
 import { toCashShiftDto } from "@/modules/administration/application/mappers/CashShiftMapper";
@@ -21,6 +23,10 @@ export class GetCashShiftsService {
     ensureCanReadCash(permissions);
     ensureCashTenant(tenantId);
     ensureCashActor(actorUserId);
+
+    if (isApiMode()) {
+      return backendFetch<CashShiftDto[]>("/administration/cash-shifts");
+    }
 
     const actor = await this.repositories.users.getById(actorUserId);
     if (!actor || actor.tenantId !== tenantId) {
