@@ -104,29 +104,45 @@ export function ActiveBranchProvider({
     [activeBranchId, canAccessBranch, repositories.auth],
   );
 
+  // Si la lista de sucursales no se puede leer (p. ej. 403 por falta de permiso), el selector debe
+  // salir de "Cargando sucursal" y mostrar "Sin sucursales" en vez de quedarse cargando.
+  const clearBranches = useCallback(() => {
+    setBranches([]);
+    setActiveBranchId(null);
+    setLoading(false);
+  }, []);
+
   const reloadBranches = useCallback(async () => {
     if (!tenantId) {
-      applyBranches([]);
+      await applyBranches([]);
       return;
     }
-    const activeBranches = await repositories.branches.getActiveByTenant(tenantId);
-    await applyBranches(activeBranches);
-  }, [applyBranches, repositories, tenantId]);
+    try {
+      const activeBranches = await repositories.branches.getActiveByTenant(tenantId);
+      await applyBranches(activeBranches);
+    } catch {
+      clearBranches();
+    }
+  }, [applyBranches, clearBranches, repositories, tenantId]);
 
   useEffect(() => {
     let active = true;
     const request = tenantId
       ? repositories.branches.getActiveByTenant(tenantId)
       : Promise.resolve([]);
-    request.then(async (activeBranches) => {
-      if (!active) return;
-      await applyBranches(activeBranches);
-    });
+    request
+      .then(async (activeBranches) => {
+        if (!active) return;
+        await applyBranches(activeBranches);
+      })
+      .catch(() => {
+        if (active) clearBranches();
+      });
 
     return () => {
       active = false;
     };
-  }, [applyBranches, repositories, tenantId]);
+  }, [applyBranches, clearBranches, repositories, tenantId]);
 
   useDataEvent("branch.changed", reloadBranches);
 

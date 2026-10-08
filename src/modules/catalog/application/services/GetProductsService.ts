@@ -79,30 +79,47 @@ export class GetProductsService {
     ensureCanReadProducts(permissions);
 
     if (this.repositories.productDataSource === "api") {
-      return this.getApiPage(
-        tenantId,
-        params,
-        permissions.includes("catalog.promotions.read"),
-      );
+      return this.getApiPage(tenantId, params, {
+        canReadPromotions: permissions.includes("catalog.promotions.read"),
+        canReadCategories:
+          permissions.includes("catalog.categories.read") ||
+          permissions.includes("catalog.categories.manage"),
+        canReadUnits:
+          permissions.includes("catalog.units.read") ||
+          permissions.includes("catalog.units.manage"),
+      });
     }
     return this.getMockPage(tenantId, params);
   }
 
+  /**
+   * Categorias, unidades y promociones son datos auxiliares: sin el permiso correspondiente el
+   * backend responde 403 y tumbaria tambien el listado de productos (p. ej. rol Inventario, que
+   * solo tiene permisos de producto). Sin permiso se usan listas vacias y los nombres caen a
+   * "Sin categoria"/"Sin unidad".
+   */
   private async getApiPage(
     tenantId: string,
     params: GetProductsParams,
-    canReadPromotions: boolean,
+    access: { canReadPromotions: boolean; canReadCategories: boolean; canReadUnits: boolean },
   ) {
+    const { canReadPromotions, canReadCategories, canReadUnits } = access;
     const [page, categories, units, promotions] = await Promise.all([
       this.repositories.products.getPageScoped(tenantId, toApiPageParams(params)),
-      this.referenceCache.getOrLoad(
-        referenceDataKeys.categories(tenantId),
-        REFERENCE_DATA_TTL_MS,
-        () => this.repositories.categories.getByTenant(tenantId),
-      ),
-      this.referenceCache.getOrLoad(referenceDataKeys.units(tenantId), REFERENCE_DATA_TTL_MS, () =>
-        this.repositories.units.getByTenant(tenantId),
-      ),
+      canReadCategories
+        ? this.referenceCache.getOrLoad(
+            referenceDataKeys.categories(tenantId),
+            REFERENCE_DATA_TTL_MS,
+            () => this.repositories.categories.getByTenant(tenantId),
+          )
+        : Promise.resolve([]),
+      canReadUnits
+        ? this.referenceCache.getOrLoad(
+            referenceDataKeys.units(tenantId),
+            REFERENCE_DATA_TTL_MS,
+            () => this.repositories.units.getByTenant(tenantId),
+          )
+        : Promise.resolve([]),
       canReadPromotions
         ? this.getOrCreateTenantPromise(this.promotionsPromisesByTenant, tenantId, () =>
             this.repositories.promotions.getActiveByTenant(tenantId),
