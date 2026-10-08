@@ -113,22 +113,19 @@ export function useEcommerceConfig() {
 
   const save = useCallback(
     async (dto: EcommerceConfigInputDto): Promise<EcommerceConfigDto> => {
+      // `error` es solo para fallos de carga (su boton "Reintentar" recarga). Un fallo de guardado
+      // se relanza y lo muestra el formulario, para no repetir el mismo mensaje en varios banners.
       if (!tenantId) {
-        const message = "No se pudo resolver la sesión actual.";
-        setError(message);
-        throw new Error(message);
+        throw new Error("No se pudo resolver la sesión actual.");
       }
 
       setSaving(true);
-      setError(null);
       try {
         const savedConfig = await saveService.execute(dto);
         setConfig(savedConfig);
         return savedConfig;
       } catch (caughtError) {
-        const message = cleanError(caughtError);
-        setError(message);
-        throw new Error(message);
+        throw new Error(cleanError(caughtError));
       } finally {
         setSaving(false);
       }

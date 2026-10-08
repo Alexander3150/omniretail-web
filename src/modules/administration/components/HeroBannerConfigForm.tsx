@@ -1,6 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 import { useState } from "react";
 import { BusinessPreset } from "@/core/enums";
+import { isSafeCatalogImageUrl } from "@/core/media/catalogImage";
 import { heroBannerDefaultsConfig, heroBannerPresetLabels } from "@/config/hero-banner-defaults";
 import { useBlobPreviewUrl, useCatalogImageUrl } from "@/infrastructure/media/useCatalogImageUrl";
 import type {
@@ -148,6 +149,18 @@ export function HeroBannerConfigForm({
             index={index}
             key={index}
             onChangeDescription={(description) => updateSlide(index, { description })}
+            onChangeImageUrl={(src) =>
+              updateSlide(
+                index,
+                src
+                  ? { image: { kind: "url", src }, pendingImage: undefined, removeImage: false }
+                  : {
+                      image: undefined,
+                      pendingImage: undefined,
+                      removeImage: Boolean(value.slides[index]?.image),
+                    },
+              )
+            }
             onChangeTitle={(title) => updateSlide(index, { title })}
             onRemoveImage={() =>
               updateSlide(index, { image: undefined, pendingImage: undefined, removeImage: true })
@@ -167,6 +180,7 @@ export function HeroBannerConfigForm({
 function HeroBannerSlideFields({
   index,
   onChangeDescription,
+  onChangeImageUrl,
   onChangeTitle,
   onRemoveImage,
   onSelectImage,
@@ -177,6 +191,8 @@ function HeroBannerSlideFields({
 }: {
   index: number;
   onChangeDescription: (description: string) => void;
+  /** Recibe la URL ya validada, o `""` para quitar la imagen. */
+  onChangeImageUrl: (src: string) => void;
   onChangeTitle: (title: string) => void;
   onRemoveImage: () => void;
   onSelectImage: (file: File | undefined) => void;
@@ -189,6 +205,21 @@ function HeroBannerSlideFields({
   const persistedUrl = useCatalogImageUrl(tenantId, slide.removeImage ? undefined : slide.image, "");
   const previewUrl = previewBlobUrl ?? persistedUrl;
   const hasImage = Boolean(slide.pendingImage || (slide.image && !slide.removeImage));
+  // El backend solo guarda URLs. Mientras el texto no sea una URL valida queda como borrador y no
+  // llega al formulario ni al guardado.
+  const [imageUrlDraft, setImageUrlDraft] = useState<string | null>(null);
+  const currentImageUrl =
+    slide.image?.kind === "url" && !slide.removeImage && !slide.pendingImage ? slide.image.src : "";
+
+  function changeImageUrl(raw: string) {
+    const trimmed = raw.trim();
+    if (trimmed && !isSafeCatalogImageUrl(trimmed)) {
+      setImageUrlDraft(raw);
+      return;
+    }
+    setImageUrlDraft(null);
+    onChangeImageUrl(trimmed);
+  }
 
   return (
     <div className="flex min-w-0 flex-col space-y-4 overflow-hidden rounded-xl bg-slate-50 p-4 shadow-sm">
@@ -227,6 +258,26 @@ function HeroBannerSlideFields({
           ) : null}
         </div>
         {uploadError ? <p className="mt-2 text-sm text-[var(--color-danger)]">{uploadError}</p> : null}
+        <label
+          className="mb-1 mt-3 block text-xs font-semibold text-[var(--color-text-muted)]"
+          htmlFor={`hero-banner-image-url-${index}`}
+        >
+          O use una URL pública
+        </label>
+        <Input
+          disabled={saving}
+          id={`hero-banner-image-url-${index}`}
+          inputMode="url"
+          onChange={(event) => changeImageUrl(event.target.value)}
+          placeholder="https://..."
+          type="url"
+          value={imageUrlDraft ?? currentImageUrl}
+        />
+        {imageUrlDraft !== null ? (
+          <p className="mt-1 text-xs text-[var(--color-danger)]">
+            Ingrese una URL válida que comience con http:// o https://.
+          </p>
+        ) : null}
       </FormField>
       <FormField id={`hero-banner-title-${index}`} label="Título">
         <Input

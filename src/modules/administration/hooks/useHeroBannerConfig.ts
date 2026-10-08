@@ -108,16 +108,14 @@ export function useHeroBannerConfig() {
 
   const save = useCallback(
     async (dto: HeroBannerConfigInputDto): Promise<HeroBannerConfigDto> => {
+      // Ver useEcommerceConfig.save: el error de guardado lo muestra el formulario, no `error`.
       setSaving(true);
-      setError(null);
       try {
         const savedConfig = await saveService.execute(dto);
         setConfig(savedConfig);
         return savedConfig;
       } catch (caughtError) {
-        const message = cleanError(caughtError);
-        setError(message);
-        throw new Error(message);
+        throw new Error(cleanError(caughtError));
       } finally {
         setSaving(false);
       }
