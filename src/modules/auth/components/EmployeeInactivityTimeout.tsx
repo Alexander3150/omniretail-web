@@ -18,8 +18,8 @@ export function EmployeeInactivityTimeout() {
   const { user } = useCurrentSession();
   const repositories = useRepositories();
   const router = useRouter();
-  const lastActivityAtRef = useRef(Date.now());
-  const timeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const lastActivityAtRef = useRef(0);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closingRef = useRef(false);
 
   const closeSession = useCallback(async () => {
@@ -42,13 +42,13 @@ export function EmployeeInactivityTimeout() {
 
   const scheduleTimeout = useCallback(() => {
     if (timeoutRef.current) {
-      window.clearTimeout(timeoutRef.current);
+      clearTimeout(timeoutRef.current);
     }
 
     const elapsed = Date.now() - lastActivityAtRef.current;
     const remaining = Math.max(0, EMPLOYEE_INACTIVITY_TIMEOUT_MS - elapsed);
 
-    timeoutRef.current = window.setTimeout(() => {
+    timeoutRef.current = setTimeout(() => {
       void closeSession();
     }, remaining);
   }, [closeSession]);
@@ -77,7 +77,7 @@ export function EmployeeInactivityTimeout() {
 
     return () => {
       if (timeoutRef.current) {
-        window.clearTimeout(timeoutRef.current);
+        clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
       }
       for (const eventName of activityEvents) {
