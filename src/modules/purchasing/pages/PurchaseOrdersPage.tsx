@@ -37,10 +37,7 @@ import type {
   ReorderSuggestionReadModel,
 } from "@/modules/purchasing/application/dto/PurchaseOrderReadModel";
 import { usePurchaseOrders } from "@/modules/purchasing/hooks/usePurchaseOrders";
-import {
-  PurchaseOrderEmailSimulationService,
-  PurchaseOrderPdfService,
-} from "@/modules/purchasing/application/services/PurchaseOrderPdfService";
+import { PurchaseOrderPdfService } from "@/modules/purchasing/application/services/PurchaseOrderPdfService";
 
 export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string }) {
   const router = useRouter();
@@ -69,7 +66,6 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
     updateStatus,
   } = usePurchaseOrders();
   const pdfService = useMemo(() => new PurchaseOrderPdfService(repositories), [repositories]);
-  const emailSimulationService = useMemo(() => new PurchaseOrderEmailSimulationService(), []);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [openActionsOrderId, setOpenActionsOrderId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<{
@@ -303,7 +299,13 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
       setSelectedOrderId(null);
       setPendingAction(null);
       if (pendingAction.action.id === "approve") {
-        await handleApprovedOrder(pendingAction.order);
+        // El backend envia el correo (con PDF) de forma asincrona; el exito de la aprobacion no
+        // depende ni informa de la entrega SMTP.
+        showToast({
+          title: `Orden ${pendingAction.order.number} aprobada correctamente`,
+          description: "El proveedor será notificado automáticamente si tiene un correo configurado.",
+          tone: "success",
+        });
       } else {
         showToast({ title: "Orden actualizada", tone: "success" });
       }
@@ -332,34 +334,6 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
         title: "No se pudo generar el PDF",
         description: caughtError instanceof Error ? caughtError.message : undefined,
         tone: "danger",
-      });
-    }
-  }
-
-  async function handleApprovedOrder(order: PurchaseOrderRowReadModel) {
-    showToast({ title: `Orden ${order.number} aprobada`, tone: "success" });
-    try {
-      const document = await pdfService.generatePurchaseOrderDocument(order.id);
-      const supplierEmail = await pdfService.getSupplierEmail(order.id);
-      const result = await emailSimulationService.simulatePurchaseOrderSend({
-        orderNumber: order.number,
-        supplierEmail,
-      });
-      showToast({
-        title: result.sent ? "Orden de compra preparada" : "Orden aprobada",
-        description: result.sent
-          ? `PDF preparado: ${document.filename}`
-          : result.message,
-        tone: result.sent ? "success" : "warning",
-      });
-    } catch (caughtError) {
-      showToast({
-        title: "Orden aprobada",
-        description:
-          caughtError instanceof Error
-            ? `No se pudo preparar el PDF: ${caughtError.message}`
-            : "No se pudo preparar el PDF.",
-        tone: "warning",
       });
     }
   }

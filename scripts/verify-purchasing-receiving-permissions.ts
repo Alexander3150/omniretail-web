@@ -845,10 +845,24 @@ async function verifyPurchaseOrderPdfReceiptsTenantIsolation() {
 
   const { proxy, calls } = wrapReceiptsWithSpy(purchaserA.receipts);
   const pdfRepositories = { ...purchaserA, receipts: proxy } as RepositoryRegistry;
-  const document = await new PurchaseOrderPdfService(
-    pdfRepositories,
-  ).generatePurchaseOrderDocument(orderA.id);
-  assert.ok(document.arrayBuffer, "B (fixture): la generacion del PDF debe completar sin lanzar");
+  // Flujo publico real de descarga (downloadPurchaseOrder). En Node, `doc.save` escribiria el PDF
+  // en el cwd; jsPDF define `save` por instancia dentro del constructor (no en el prototype), asi
+  // que se sobrescribe con su mecanismo documentado de plugins (`jsPDF.API`), que el constructor
+  // aplica sobre cada instancia nueva. No es parte de lo que se prueba: solo evita escribir a disco.
+  const { jsPDF } = await import("jspdf");
+  const pdfPlugins = jsPDF.API as unknown as Record<string, unknown>;
+  const hadSave = Object.prototype.hasOwnProperty.call(pdfPlugins, "save");
+  const originalSave = pdfPlugins.save;
+  pdfPlugins.save = function save(this: unknown) {
+    return this;
+  };
+  try {
+    // Debe completar sin lanzar; que haya pasado por getPdfData lo prueban las aserciones de abajo.
+    await new PurchaseOrderPdfService(pdfRepositories).downloadPurchaseOrder(orderA.id);
+  } finally {
+    if (hadSave) pdfPlugins.save = originalSave;
+    else delete pdfPlugins.save;
+  }
   assert.equal(
     calls.getAll,
     0,
