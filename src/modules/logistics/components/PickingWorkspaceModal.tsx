@@ -4,6 +4,7 @@ import type {
   PickingDetailDto,
   PickingDetailLineDto,
 } from "@/modules/logistics/application/dto/PickingReadModelDto";
+import type { PickingPhysicalSelectionResult } from "@/modules/logistics/application/pickingPhysicalSelection";
 import { PickingIncidentPanel } from "@/modules/logistics/components/PickingIncidentPanel";
 import { PickingLineList } from "@/modules/logistics/components/PickingLineList";
 import type { PickingIncidentFormValues } from "@/modules/logistics/validation/picking.validation";
@@ -19,6 +20,7 @@ import { StatusBadge } from "@/shared/components/StatusBadge";
 interface PickingWorkspaceProps {
   canComplete: boolean;
   canStart: boolean;
+  commandsReadOnly: boolean;
   currentUserId: string | null;
   detail: PickingDetailDto | null;
   error: string | null;
@@ -32,7 +34,7 @@ interface PickingWorkspaceProps {
   onUpdateLine: (
     line: PickingDetailLineDto,
     targetQuantity: number,
-    serialNumbers: string[],
+    physicalSelection: PickingPhysicalSelectionResult,
   ) => Promise<boolean>;
   submitting: boolean;
 }
@@ -156,7 +158,8 @@ export function PickingWorkspace(props: PickingWorkspaceProps) {
                 </InlineAlert>
               ) : null}
               {assignedToOther ? <InlineAlert description="Otro operador tiene asignado este picking. Puedes consultar el detalle, pero no editarlo." title="Picking asignado" tone="warning" /> : null}
-              {!props.canStart ? <InlineAlert description="Tu rol no posee logistics.picking.start. El detalle está disponible únicamente para consulta." title="Acciones restringidas" tone="warning" /> : null}
+              {props.commandsReadOnly ? <InlineAlert description="Las acciones de Picking permanecen bloqueadas hasta integrar sus comandos con el backend." title="Modo de solo lectura" tone="info" /> : null}
+              {!props.commandsReadOnly && !props.canStart ? <InlineAlert description="Tu rol no posee logistics.picking.start. El detalle está disponible únicamente para consulta." title="Acciones restringidas" tone="warning" /> : null}
 
               <PickingLineList
                 disabled={props.submitting}

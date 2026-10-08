@@ -10,6 +10,10 @@ import type {
   PickingQueueItemDto,
 } from "@/modules/logistics/application/dto/PickingReadModelDto";
 import {
+  getPickingLineUpdateAvailability,
+  type PickingPhysicalSelectionResult,
+} from "@/modules/logistics/application/pickingPhysicalSelection";
+import {
   PickingApplicationService,
   type RegisterPickingIncidentCommand,
 } from "@/modules/logistics/application/services/PickingApplicationService";
@@ -17,6 +21,12 @@ import type { PickingIncidentFormValues } from "@/modules/logistics/validation/p
 import { validatePickingIncident } from "@/modules/logistics/validation/picking.validation";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
+import {
+  canonicalizePickingTrackingSelections,
+  createPickingUpdateFingerprint,
+  getOrCreatePickingOperationId,
+  isCurrentPickingRequest,
+} from "@/modules/logistics/hooks/pickingRequestIdentity";
 
 export function useLogisticsPicking() {
   const repositories = useRepositories();
@@ -54,8 +64,9 @@ export function useLogisticsPicking() {
     canAccessBranch(currentBranch.id),
   );
   const canRead = hasPermission("logistics.picking.read");
-  const canStart = hasPermission("logistics.picking.start");
-  const canComplete = hasPermission("logistics.picking.complete");
+  const commandsReadOnly = repositories.pickingCommandsEnabled === false;
+  const canStart = !commandsReadOnly && hasPermission("logistics.picking.start");
+  const canComplete = !commandsReadOnly && hasPermission("logistics.picking.complete");
 
   const reload = useCallback(async () => {
     const sequence = ++loadSequenceRef.current;
@@ -69,7 +80,12 @@ export function useLogisticsPicking() {
     }
     try {
       const items = await service.getQueue(currentBranch.id);
-      if (sequence === loadSequenceRef.current && activeBranchIdRef.current === currentBranch.id) {
+      if (isCurrentPickingRequest({
+        sequence,
+        currentSequence: loadSequenceRef.current,
+        requestedBranchId: currentBranch.id,
+        activeBranchId: activeBranchIdRef.current,
+      })) {
         setQueue(items);
       }
     } catch (cause) {
@@ -87,11 +103,14 @@ export function useLogisticsPicking() {
     setWorkspaceError(null);
     try {
       const nextDetail = await service.getDetail(branchId, pickingOrderId);
-      if (
-        sequence === detailSequenceRef.current &&
-        activeBranchIdRef.current === branchId &&
-        selectedPickingOrderIdRef.current === pickingOrderId
-      ) {
+      if (isCurrentPickingRequest({
+        sequence,
+        currentSequence: detailSequenceRef.current,
+        requestedBranchId: branchId,
+        activeBranchId: activeBranchIdRef.current,
+        requestedPickingOrderId: pickingOrderId,
+        selectedPickingOrderId: selectedPickingOrderIdRef.current,
+      })) {
         setDetail(nextDetail);
       }
       return nextDetail;
@@ -203,31 +222,49 @@ export function useLogisticsPicking() {
   const updateLine = useCallback(async (
     line: PickingDetailLineDto,
     targetQuantity: number,
-    serialNumbers: string[],
+    physicalSelection: PickingPhysicalSelectionResult,
   ) => {
     if (!currentBranch || !detail || !canStart) return false;
-    const sequence = beginMutation();
-    if (sequence === null) return false;
+    const availability = getPickingLineUpdateAvailability(line);
+    if (!availability.available) {
+      setWorkspaceError(availability.reason);
+      return false;
+    }
     const branchId = currentBranch.id;
     const pickingOrderId = detail.pickingOrderId;
-    const normalizedSerialNumbers = line.tracking.serial
-      ? normalizePickingSerialNumbers(serialNumbers)
-      : [];
-    const fingerprint = `${pickingOrderId}:${line.pickingLineId}:${targetQuantity}:${normalizedSerialNumbers.join(",")}`;
-    const operationId = pendingOperationIdsRef.current.get(fingerprint) ?? crypto.randomUUID();
-    pendingOperationIdsRef.current.set(fingerprint, operationId);
+    const normalizedSelections = canonicalizePickingTrackingSelections(
+      physicalSelection.trackingSelections,
+    );
+    const fingerprint = createPickingUpdateFingerprint({
+      pickingOrderId,
+      pickingLineId: line.pickingLineId,
+      targetQuantity,
+      locationId: physicalSelection.locationId,
+      trackingSelections: normalizedSelections,
+    });
+    const sequence = beginMutation();
+    if (sequence === null) return false;
+    const operationId = getOrCreatePickingOperationId(
+      pendingOperationIdsRef.current,
+      fingerprint,
+    );
     try {
-      await service.updateLine(branchId, {
+      const updatedDetail = await service.updateLine(branchId, {
         pickingOrderId,
         pickingLineId: line.pickingLineId,
         pickedQuantity: targetQuantity,
         operationId,
-        serialNumbers: line.tracking.serial ? normalizedSerialNumbers : undefined,
+        locationId: physicalSelection.locationId ?? undefined,
+        lotId: normalizedSelections[0]?.lotId ?? undefined,
+        serialNumbers: line.tracking.serial
+          ? normalizedSelections.flatMap((selection) => selection.serialNumbers)
+          : undefined,
+        trackingSelections: normalizedSelections,
       });
-      await service.getInventoryAvailability(branchId, pickingOrderId, line.productId);
       pendingOperationIdsRef.current.delete(fingerprint);
       if (!canApplyMutationResult(branchId, pickingOrderId)) return false;
-      await Promise.all([loadDetail(branchId, pickingOrderId), reload()]);
+      setDetail(updatedDetail);
+      await reload();
       return true;
     } catch (cause) {
       if (canApplyMutationResult(branchId, pickingOrderId)) {
@@ -237,7 +274,7 @@ export function useLogisticsPicking() {
     } finally {
       finishMutation(sequence);
     }
-  }, [beginMutation, canApplyMutationResult, canStart, currentBranch, detail, finishMutation, loadDetail, reload, service]);
+  }, [beginMutation, canApplyMutationResult, canStart, currentBranch, detail, finishMutation, reload, service]);
 
   const registerIncident = useCallback(async (values: PickingIncidentFormValues) => {
     if (!currentBranch || !detail || !canStart) return false;
@@ -358,6 +395,7 @@ export function useLogisticsPicking() {
     canRead,
     canStart,
     canComplete,
+    commandsReadOnly,
     queue: filteredQueue,
     search,
     setSearch,
