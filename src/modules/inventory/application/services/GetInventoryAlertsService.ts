@@ -135,7 +135,10 @@ export class GetInventoryAlertsService {
         branchId: params.branchId,
         search: params.search,
         categoryId: params.categoryId,
-        status: params.status,
+        // "low_stock" es solo de UI: viaja como lowStock=true y nunca junto a un status.
+        ...(params.status === "low_stock"
+          ? { lowStock: true }
+          : { status: params.status }),
         productTypes: INVENTORY_PRODUCT_TYPES,
         page: params.page,
         pageSize: params.pageSize,
@@ -386,7 +389,8 @@ export interface GetInventoryAlertsParams {
   branchName: string;
   search?: string;
   categoryId?: string;
-  status?: InventoryStatus;
+  /** `low_stock`: agregado de UI (near_minimum + critical); el backend lo recibe como lowStock=true. */
+  status?: InventoryStatus | "low_stock";
   page: number;
   pageSize: number;
   sort?: InventoryStockSort;

@@ -155,6 +155,8 @@ export interface InventoryStockPageParams {
   search?: string;
   categoryId?: string;
   status?: InventoryStockStatus;
+  /** critical + near_minimum en una sola consulta paginada. Incompatible con `status`. */
+  lowStock?: boolean;
   /** Sin este parametro el backend devuelve solo productos fisicos. */
   productTypes?: InventoryStockProductType[];
   page: number;

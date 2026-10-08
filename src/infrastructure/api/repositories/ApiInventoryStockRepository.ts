@@ -57,6 +57,13 @@ export class ApiInventoryStockRepository {
     if (params.sort && !ALLOWED_STOCK_SORTS.has(params.sort)) {
       throw new BackendRequestError("Ordenamiento de stock no permitido.", 400, "INVALID_SORT");
     }
+    if (params.lowStock && params.status) {
+      throw new BackendRequestError(
+        "lowStock no puede combinarse con un estado explicito.",
+        400,
+        "INVENTORY_STOCK_FILTERS_INCOMPATIBLE",
+      );
+    }
     return parseApiInventoryStockPage(
       await backendFetch<unknown>("/inventory/stock", {
         query: {
@@ -64,6 +71,7 @@ export class ApiInventoryStockRepository {
           search: params.search?.trim() || undefined,
           categoryId: params.categoryId,
           status: params.status,
+          lowStock: params.lowStock ? true : undefined,
           productTypes: params.productTypes?.length ? params.productTypes.join(",") : undefined,
           page: params.page,
           size: params.pageSize,
