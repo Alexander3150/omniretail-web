@@ -451,8 +451,13 @@ export class ApiAuthRepository implements AuthRepository {
     );
   }
 
+  /**
+   * En modo api el backend revoca las sesiones por si mismo al cambiar estado, rol o sucursales
+   * (UserService -> SessionRevoker), asi que no hay nada que hacer desde el cliente. El contrato es
+   * idempotente: resolver sin error evita abortar una edicion que ya se confirmo en el servidor.
+   */
   revokeAllSessionsByUserId(): Promise<void> {
-    return notAvailable();
+    return Promise.resolve();
   }
 
   /**

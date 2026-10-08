@@ -100,8 +100,16 @@ export class UpdateEmployeeService {
       status: normalizedInput.status,
     });
 
+    // El PUT ya se confirmo: un fallo al revocar sesiones no debe abortar el resto (auditoria) ni
+    // reportar la edicion como fallida.
+    let sessionsRevoked = false;
     if (securitySensitive) {
-      await this.repositories.auth.revokeAllSessionsByUserId(tenantId, employeeId);
+      try {
+        await this.repositories.auth.revokeAllSessionsByUserId(tenantId, employeeId);
+        sessionsRevoked = true;
+      } catch {
+        sessionsRevoked = false;
+      }
     }
 
     // Una sola entrada de auditoría por edición (no una por cada campo tocado): la metadata deja
@@ -119,7 +127,7 @@ export class UpdateEmployeeService {
         employeeCodeChanged,
         roleChanged,
         branchesChanged,
-        sessionsRevoked: securitySensitive,
+        sessionsRevoked,
         previousStatus: current.status,
         status: updated.status,
         previousRoleId: current.roleId,
