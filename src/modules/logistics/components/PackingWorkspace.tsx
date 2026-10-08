@@ -13,6 +13,7 @@ import { Input } from "@/shared/components/Input";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 
 interface PackingWorkspaceProps {
+  apiPacking: boolean;
   canFinalize: boolean;
   canPrepare: boolean;
   completion: { orderReference: string; orderStatus: OrderStatus | null;
@@ -27,6 +28,7 @@ interface PackingWorkspaceProps {
   onRegisterLabelPrint: () => Promise<boolean>;
   onConfirmStorePickupDelivery: () => Promise<boolean>;
   onSave: (values: ReturnType<typeof validatePackingPreparation>) => Promise<boolean>;
+  handoverAvailable: boolean;
 }
 
 const checklistLabels = {
@@ -50,17 +52,18 @@ export function PackingWorkspace(props: PackingWorkspaceProps) {
 
 function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDetailDto }) {
   const { detail } = props;
-  const homeDelivery = detail.deliveryMethod !== DeliveryMethod.store_pickup;
+  const storePickup = detail.deliveryMethod === DeliveryMethod.store_pickup;
+  const shipmentWorkflow = !storePickup || props.apiPacking;
   const mutable = detail.status === PackingStatus.in_progress;
   const visibleChecklistLabels = {
     ...checklistLabels,
-    packageProtectionChecked: homeDelivery
+    packageProtectionChecked: !storePickup
       ? checklistLabels.packageProtectionChecked
       : "Productos protegidos/preparados.",
-    documentIncludedChecked: homeDelivery
+    documentIncludedChecked: !storePickup
       ? checklistLabels.documentIncludedChecked
       : "Ticket o factura agregado.",
-    recipientVerifiedChecked: homeDelivery
+    recipientVerifiedChecked: !storePickup
       ? checklistLabels.recipientVerifiedChecked
       : "Datos del pedido/cliente verificados.",
   };
@@ -70,19 +73,25 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
     packageCount: detail.packageCount === null ? "" : String(detail.packageCount),
   });
   const [errors, setErrors] = useState<Partial<Record<"totalWeight" | "packageCount", string>>>({});
-  const currentValidation = validatePackingPreparation(detail.deliveryMethod, values);
+  const currentValidation = validatePackingPreparation(detail.deliveryMethod, values, {
+    requireShipmentData: shipmentWorkflow,
+    backendPrecision: props.apiPacking,
+  });
   const isDirty =
     Object.entries(detail.checklist).some(([key, checked]) =>
       values.checklist[key as keyof typeof values.checklist] !== checked,
     ) ||
-    (homeDelivery && (
+    (shipmentWorkflow && (
       !currentValidation.valid ||
       (currentValidation.values.totalWeight ?? null) !== detail.totalWeight ||
       (currentValidation.values.packageCount ?? null) !== detail.packageCount
     ));
 
   const save = async () => {
-    const validation = validatePackingPreparation(detail.deliveryMethod, values);
+    const validation = validatePackingPreparation(detail.deliveryMethod, values, {
+      requireShipmentData: shipmentWorkflow,
+      backendPrecision: props.apiPacking,
+    });
     setErrors(validation.errors);
     if (!validation.valid) return;
     await props.onSave(validation);
@@ -93,7 +102,10 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
     setValues(nextValues);
     setErrors((current) => {
       if (!current[field]) return current;
-      const validation = validatePackingPreparation(detail.deliveryMethod, nextValues);
+      const validation = validatePackingPreparation(detail.deliveryMethod, nextValues, {
+        requireShipmentData: shipmentWorkflow,
+        backendPrecision: props.apiPacking,
+      });
       return { ...current, [field]: validation.errors[field] };
     });
   };
@@ -116,7 +128,7 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
               <p className="mt-1 text-sm text-[var(--color-text-muted)]">{detail.customerName}</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <StatusBadge status={detail.deliveryMethod === "transfer" ? "Traslado entre sucursales" : homeDelivery ? "Envío a domicilio" : "Retiro en tienda/bodega"} tone={homeDelivery ? "info" : "warning"} />
+              <StatusBadge status={detail.deliveryMethod === "transfer" ? "Traslado entre sucursales" : !storePickup ? "Envío a domicilio" : "Retiro en tienda/bodega"} tone={!storePickup ? "info" : "warning"} />
               <StatusBadge status={detail.status === PackingStatus.in_progress ? "En preparación" : "Finalizado"} tone={detail.status === PackingStatus.in_progress ? "info" : "success"} />
             </div>
           </div>
@@ -146,7 +158,7 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
             </div>
           </section>
 
-          {homeDelivery ? (
+          {shipmentWorkflow ? (
             <section className="grid gap-2.5 border-t border-[var(--color-border)] pt-4 sm:grid-cols-2">
               <FormField error={errors.totalWeight} hint="Será obligatorio antes de finalizar el empaque." id="packing-weight" label="Peso total (kg)">
                 <Input
@@ -155,7 +167,7 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
                   min="0.01"
                   onChange={(event) => updatePreparationValue("totalWeight", event.target.value)}
                   placeholder="0.00"
-                  step="0.01"
+                  step={props.apiPacking ? "0.001" : "0.01"}
                   type="number"
                   value={values.totalWeight}
                 />
@@ -185,8 +197,9 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
         </div>
       </section>
 
-      {homeDelivery ? (
+      {shipmentWorkflow ? (
         <HomeDeliveryResult
+          apiPacking={props.apiPacking}
           canFinalize={props.canFinalize}
           canPrepare={props.canPrepare}
           detail={detail}
@@ -203,6 +216,7 @@ function PackingPreparation(props: PackingWorkspaceProps & { detail: PackingDeta
           isDirty={isDirty}
           onConfirmDelivery={props.onConfirmStorePickupDelivery}
           onFinalize={props.onFinalize}
+          handoverAvailable={props.handoverAvailable}
           submitting={props.submitting}
         />
       )}
@@ -237,6 +251,22 @@ function PreparedContents({ detail }: { detail: PackingDetailDto }) {
                     {item.serialNumbers.join(", ")}
                   </p>
                 ) : null}
+                {item.trackingSelections.length > 0 ? (
+                  <div className="mt-2 space-y-1 text-xs text-[var(--color-text-muted)]">
+                    {item.trackingSelections.map((selection, index) => (
+                      <p
+                        key={`${selection.locationId ?? "sin-ubicacion"}:${selection.lotId ?? "sin-lote"}:${index}`}
+                      >
+                        {selection.lotNumber ? `Lote ${selection.lotNumber}` : "Sin lote"}
+                        {selection.expirationDate ? ` · vence ${selection.expirationDate}` : ""}
+                        {` · cantidad ${selection.quantity}`}
+                        {selection.serialNumbers.length > 0
+                          ? ` · series ${selection.serialNumbers.join(", ")}`
+                          : ""}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
               </div>
               <p className="text-sm font-semibold tabular-nums text-[var(--color-title)]">
                 Cantidad: {item.quantity}
@@ -250,6 +280,7 @@ function PreparedContents({ detail }: { detail: PackingDetailDto }) {
 }
 
 interface HomeDeliveryResultProps {
+  apiPacking: boolean;
   canFinalize: boolean;
   canPrepare: boolean;
   detail: PackingDetailDto;
@@ -271,8 +302,10 @@ function HomeDeliveryResult(props: HomeDeliveryResultProps) {
     detail.packageCount !== null && Number.isInteger(detail.packageCount) && detail.packageCount >= 1;
   const labelReady = Boolean(detail.labelGenerationId && detail.labelCode && detail.labelGeneratedAt);
   const printRegistered = Boolean(detail.labelPrintedAt);
-  const canGenerate = checklistComplete && measurementsComplete && !props.isDirty;
-  const canPrint = labelReady && !props.isDirty;
+  const mutable = detail.status === PackingStatus.in_progress;
+  const storePickup = detail.deliveryMethod === DeliveryMethod.store_pickup;
+  const canGenerate = mutable && checklistComplete && measurementsComplete && !props.isDirty;
+  const canPrint = labelReady && !props.isDirty && (mutable || !props.apiPacking);
   const canFinalize = canGenerate && labelReady && printRegistered && props.canFinalize;
 
   const print = async () => {
@@ -290,7 +323,7 @@ function HomeDeliveryResult(props: HomeDeliveryResultProps) {
       <section className="rounded-xl border border-[var(--color-border)] bg-white shadow-sm">
         <header className="border-b border-[var(--color-border)] p-3.5 sm:p-4">
           <h2 className="text-lg font-bold text-[var(--color-title)]">Resultado y etiqueta</h2>
-          <p className="mt-1 text-sm text-[var(--color-text-muted)]">{detail.deliveryMethod === "transfer" ? "Vista de preparación del traslado entre sucursales." : "Vista de preparación para envío a domicilio."}</p>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">{detail.deliveryMethod === "transfer" ? "Vista de preparación del traslado entre sucursales." : storePickup ? "El backend requiere etiqueta para completar este retiro en tienda." : "Vista de preparación para envío a domicilio."}</p>
         </header>
         <div className="space-y-4 p-4 sm:p-5">
           <section className="rounded-lg bg-[var(--color-app-background)] p-4">
@@ -304,13 +337,15 @@ function HomeDeliveryResult(props: HomeDeliveryResultProps) {
               </dl>
             ) : detail.deliveryMethod === "transfer"
               ? <p className="mt-2 text-sm">Destino: {detail.customerName}</p>
+              : storePickup
+                ? <p className="mt-2 text-sm">Retira: {detail.storePickupContact?.recipientName ?? detail.customerName}{detail.storePickupContact?.recipientPhone ? ` · ${detail.storePickupContact.recipientPhone}` : ""}</p>
               : <InlineAlert description="La Order no contiene una dirección de entrega." title="Dirección no disponible" tone="warning" />}
           </section>
 
           {labelReady ? <section className="rounded-lg border-2 border-[var(--color-structure)] p-5">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--color-text-muted)]">OmniRetail · Etiqueta</p>
-              <StatusBadge status={!labelReady ? "Pendiente" : printRegistered ? "Impresa" : "Generada"} tone={!labelReady ? "warning" : printRegistered ? "success" : "info"} />
+              <StatusBadge status={!labelReady ? "Pendiente" : printRegistered ? props.apiPacking ? "Impresión registrada" : "Impresa" : "Generada"} tone={!labelReady ? "warning" : printRegistered ? "success" : "info"} />
             </div>
             <p className="mt-3 break-words text-2xl font-bold text-[var(--color-title)]">{detail.orderReference}</p>
             <div className="mt-4 space-y-3 text-sm">
@@ -337,6 +372,7 @@ function HomeDeliveryResult(props: HomeDeliveryResultProps) {
           {props.isDirty ? <InlineAlert description="Guarda los cambios de checklist, peso o bultos antes de operar la etiqueta." title="Cambios sin guardar" tone="warning" /> : null}
           {!canGenerate && !props.isDirty ? <InlineAlert description="Completa y guarda el checklist, un peso mayor que cero y al menos un bulto." title="Preparación incompleta" tone="info" /> : null}
           {printError ? <InlineAlert description={printError} title="No se pudo imprimir" /> : null}
+          {props.apiPacking && printRegistered ? <InlineAlert description="El sistema registró la apertura del flujo de impresión. Verifica por separado que la etiqueta haya salido físicamente." title="Registro de impresión" tone="info" /> : null}
           {!props.canPrepare ? <InlineAlert description="Tu rol no posee logistics.packing.prepare para generar o imprimir etiquetas." title="Acciones restringidas" tone="warning" /> : null}
           {!props.canFinalize ? <InlineAlert description="Tu rol no posee logistics.packing.finalize." title="Finalización restringida" tone="warning" /> : null}
 
@@ -359,6 +395,8 @@ function HomeDeliveryResult(props: HomeDeliveryResultProps) {
         confirmLabel={props.submitting ? "Finalizando..." : "Finalizar"}
         message={detail.deliveryMethod === "transfer"
           ? "El traslado quedará listo para confirmar su salida física desde la sucursal origen."
+          : storePickup
+            ? "El pedido quedará listo para retiro. La entrega al cliente se gestionará en Despachos."
           : "El pedido quedará listo para despacho. La guía y el despacho se gestionarán posteriormente."}
         onCancel={() => { if (!props.submitting) setFinalizeConfirmationOpen(false); }}
         onConfirm={async () => {
@@ -380,6 +418,7 @@ interface StorePickupResultProps {
   submitting: boolean;
   onConfirmDelivery: () => Promise<boolean>;
   onFinalize: () => Promise<boolean>;
+  handoverAvailable: boolean;
 }
 
 function StorePickupResult(props: StorePickupResultProps) {
@@ -422,9 +461,9 @@ function StorePickupResult(props: StorePickupResultProps) {
           {!props.canFinalize ? <InlineAlert description="Tu rol no posee logistics.packing.finalize." title="Acciones restringidas" tone="warning" /> : null}
 
           {readyForPickup ? (
-            <Button className="w-full" disabled={!props.canFinalize || props.submitting} onClick={() => setDeliveryConfirmationOpen(true)} type="button">
+            props.handoverAvailable ? <Button className="w-full" disabled={!props.canFinalize || props.submitting} onClick={() => setDeliveryConfirmationOpen(true)} type="button">
               Confirmar entrega
-            </Button>
+            </Button> : <InlineAlert description="La confirmación de entrega se integrará en el incremento de Despachos." title="Entrega no disponible" tone="info" />
           ) : (
             <Button className="w-full" disabled={!canFinalizePreparation || props.submitting} onClick={() => setFinalizeConfirmationOpen(true)} type="button">
               Finalizar preparación
@@ -480,6 +519,7 @@ function PackingCompletion({ completion }: { completion: {
   orderReference: string; orderStatus: OrderStatus | null; sourceType?: "transfer";
 } }) {
   const delivered = completion.orderStatus === OrderStatus.delivered;
+  const readyForPickup = completion.orderStatus === OrderStatus.ready_for_pickup;
   const transfer = completion.sourceType === "transfer";
   return (
     <section className="flex min-h-72 items-center justify-center rounded-xl border border-[var(--color-border)] bg-white p-6 text-center shadow-sm">
@@ -492,15 +532,18 @@ function PackingCompletion({ completion }: { completion: {
             ? `${completion.orderReference} salió de la cola de empaque y está listo para confirmar su salida física.`
             : delivered
             ? `${completion.orderReference} fue entregado al cliente y ya no tiene acciones pendientes.`
-            : `${completion.orderReference} salió de la cola activa de empaque y quedó listo para despacho.`}
+            : readyForPickup
+              ? `${completion.orderReference} salió de la cola activa de empaque y quedó listo para retiro.`
+              : `${completion.orderReference} salió de la cola activa de empaque y quedó listo para despacho.`}
         </p>
-        {!delivered && !transfer ? <p className="mt-4 text-xs text-[var(--color-text-muted)]">La guía y la confirmación de despacho se realizarán en una etapa posterior.</p> : null}
+        {readyForPickup ? <p className="mt-4 text-xs text-[var(--color-text-muted)]">La confirmación de entrega al cliente se integrará en el incremento de Despachos.</p> : null}
+        {!delivered && !transfer && !readyForPickup ? <p className="mt-4 text-xs text-[var(--color-text-muted)]">La guía y la confirmación de despacho se realizarán en una etapa posterior.</p> : null}
       </div>
     </section>
   );
 }
 
-function printPackingLabel(detail: PackingDetailDto): boolean {
+export function printPackingLabel(detail: PackingDetailDto): boolean {
   const printWindow = window.open("", "_blank", "width=760,height=680");
   if (!printWindow) return false;
   const address = detail.deliveryAddress;
@@ -525,7 +568,12 @@ function printPackingLabel(detail: PackingDetailDto): boolean {
   document.head.append(style);
 
   const main = document.createElement("main");
-  appendText(document, main, "p", detail.deliveryMethod === "transfer" ? "OMNIRETAIL · TRASLADO" : "OMNIRETAIL · DESPACHO", "brand");
+  const labelKind = detail.deliveryMethod === "transfer"
+    ? "OMNIRETAIL · TRASLADO"
+    : detail.deliveryMethod === DeliveryMethod.store_pickup
+      ? "OMNIRETAIL · RETIRO"
+      : "OMNIRETAIL · DESPACHO";
+  appendText(document, main, "p", labelKind, "brand");
   appendText(document, main, "h1", detail.orderReference);
   const list = document.createElement("dl");
   appendLabelField(document, list, detail.deliveryMethod === "transfer" ? "Sucursal destino" : "Destinatario", address?.recipientName ?? detail.customerName);

@@ -18,6 +18,7 @@ import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/servic
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 
 interface CurrentSessionContextValue {
+  sessionId: string | null;
   user: User | null;
   role: Role | null;
   permissions: string[];
@@ -73,6 +74,7 @@ export function shouldRevalidateSessionOnIdentityChanged(
 
 export function CurrentSessionProvider({ children }: { children: ReactNode }) {
   const repositories = useRepositories();
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<Role | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,6 +95,7 @@ export function CurrentSessionProvider({ children }: { children: ReactNode }) {
       // una lectura iniciada con la sesion anterior nunca sobreescribe
       // el resultado de un login/logout posterior.
       if (version !== reloadVersion.current) return;
+      setSessionId(snapshot.sessionId);
       setUser(snapshot.user);
       setRole(snapshot.role);
       setError(snapshot.error);
@@ -101,6 +104,7 @@ export function CurrentSessionProvider({ children }: { children: ReactNode }) {
       currentSessionIdRef.current = snapshot.sessionId ?? undefined;
     } catch {
       if (version !== reloadVersion.current) return;
+      setSessionId(null);
       setUser(null);
       setRole(null);
       setError("No se pudo cargar la sesion actual.");
@@ -158,6 +162,7 @@ export function CurrentSessionProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<CurrentSessionContextValue>(
     () => ({
+      sessionId,
       user,
       role,
       permissions,
@@ -168,7 +173,7 @@ export function CurrentSessionProvider({ children }: { children: ReactNode }) {
       isDemo: false,
       error,
     }),
-    [error, loading, permissionSet, permissions, role, user],
+    [error, loading, permissionSet, permissions, role, sessionId, user],
   );
 
   return <CurrentSessionContext.Provider value={value}>{children}</CurrentSessionContext.Provider>;

@@ -244,7 +244,7 @@ async function verifyRichTrace(
   traceService: GetLogisticsItemTraceService,
 ) {
   store.transact((db) => {
-    const template = db.products[0];
+    const template = db.products.find((product) => product.id === "prod-screws");
     assert.ok(template);
     db.products.push({
       ...template,
@@ -259,8 +259,8 @@ async function verifyRichTrace(
       { id: "packing-trace-balance-b", tenantId, branchId, productId: "packing-trace-lot-product", locationId: "loc-centro-b", quantity: 4, reservedQuantity: 0, updatedAt: "2026-09-14T00:00:00.000Z" },
     );
     db.stockLots.push(
-      { id: "packing-trace-lot-a", tenantId, branchId, productId: "packing-trace-lot-product", locationId: "loc-centro-a", lotNumber: "PACK-LOT-A", expirationDate: "2026-10-01", quantity: 6, createdAt: "2026-09-14T00:00:00.000Z" },
-      { id: "packing-trace-lot-b", tenantId, branchId, productId: "packing-trace-lot-product", locationId: "loc-centro-b", lotNumber: "PACK-LOT-B", expirationDate: "2026-12-01", quantity: 4, createdAt: "2026-09-14T00:00:00.000Z" },
+      { id: "packing-trace-lot-a", tenantId, branchId, productId: "packing-trace-lot-product", locationId: "loc-centro-a", lotNumber: "PACK-LOT-A", expirationDate: "2030-10-01", quantity: 6, createdAt: "2026-09-14T00:00:00.000Z" },
+      { id: "packing-trace-lot-b", tenantId, branchId, productId: "packing-trace-lot-product", locationId: "loc-centro-b", lotNumber: "PACK-LOT-B", expirationDate: "2030-12-01", quantity: 4, createdAt: "2026-09-14T00:00:00.000Z" },
     );
   });
 
@@ -275,7 +275,7 @@ async function verifyRichTrace(
   assert.equal(lotTrace[0]?.allocations.length, 2);
   assert.deepEqual(lotTrace[0]?.allocations.map((item) => item.location?.id).sort(), ["loc-centro-a", "loc-centro-b"]);
   assert.deepEqual(lotTrace[0]?.allocations.map((item) => item.lot?.number).sort(), ["PACK-LOT-A", "PACK-LOT-B"]);
-  assert.deepEqual(lotTrace[0]?.allocations.map((item) => item.lot?.expiresAt).sort(), ["2026-10-01", "2026-12-01"]);
+  assert.deepEqual(lotTrace[0]?.allocations.map((item) => item.lot?.expiresAt).sort(), ["2030-10-01", "2030-12-01"]);
 
   const serialOrder = await orders.create({
     ...orderInput("rich-serial", TransportMode.own_fleet, DeliveryMethod.home_delivery),
