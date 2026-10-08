@@ -391,6 +391,9 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
     void _params;
     throw new Error("Server-side inventory alert pages are only available in API mode.");
   }
+  async getStockBatch(): Promise<never> {
+    throw new Error("Batch stock reads are only available in API mode.");
+  }
   async getKitAvailability(): Promise<never> {
     throw new Error("Kit availability details are only available in API mode.");
   }
@@ -498,7 +501,7 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
           ...current,
           ...input,
           defaultLocationId: input.defaultLocationId ?? undefined,
-          reorderPoint: input.reorderPoint,
+          reorderPoint: input.reorderPoint ?? undefined,
           updatedAt: now,
         };
         db.productInventorySettings[existingIndex] = updated;
@@ -508,6 +511,7 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
       const created: ProductInventorySettings = {
         ...input,
         id: this.id("product-inventory-settings"),
+        reorderPoint: input.reorderPoint ?? undefined,
         defaultLocationId: input.defaultLocationId ?? undefined,
         createdAt: now,
         updatedAt: now,

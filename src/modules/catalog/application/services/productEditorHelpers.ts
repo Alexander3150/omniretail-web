@@ -461,6 +461,13 @@ async function syncInventorySettings(
     productId: product.id,
     branchId: dto.inventorySettings.branchId,
     minStock: toFiniteNumber(dto.inventorySettings.minStock),
+    // undefined (campo no cargado) conserva el valor actual; "" lo deja sin configurar (null).
+    reorderPoint:
+      dto.inventorySettings.reorderPoint === undefined
+        ? undefined
+        : dto.inventorySettings.reorderPoint === ""
+          ? null
+          : toFiniteNumber(dto.inventorySettings.reorderPoint),
     defaultLocationId: dto.inventorySettings.defaultLocationId || undefined,
   });
 }

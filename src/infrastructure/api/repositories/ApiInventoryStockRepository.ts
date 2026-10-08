@@ -1,5 +1,6 @@
 import type {
   GetInventoryKitAvailabilityInput,
+  GetInventoryStockBatchInput,
   GetOtherBranchesAvailabilityInput,
   InventoryAlertPageParams,
   InventoryRepository,
@@ -9,6 +10,7 @@ import { BackendRequestError, backendFetch } from "@/infrastructure/api/backendC
 import { assertApiUuid, assertOptionalApiUuid } from "@/infrastructure/api/uuid";
 import {
   parseApiInventoryKitAvailability,
+  parseApiInventoryStockBatch,
   parseApiOtherBranchesAvailability,
   parseApiInventoryAlertPage,
   parseApiInventoryStockPage,
@@ -34,9 +36,11 @@ export class ApiInventoryStockRepository {
     const getInventoryAlertPage = this.getInventoryAlertPage.bind(this);
     const getOtherBranchesAvailability = this.getOtherBranchesAvailability.bind(this);
     const getKitAvailability = this.getKitAvailability.bind(this);
+    const getStockBatch = this.getStockBatch.bind(this);
     return new Proxy(delegate, {
       get: (target, property) => {
         if (property === "getKitAvailability") return getKitAvailability;
+        if (property === "getStockBatch") return getStockBatch;
         if (property === "getStockPage") return getStockPage;
         if (property === "getInventoryAlertPage") return getInventoryAlertPage;
         if (property === "getOtherBranchesAvailability") return getOtherBranchesAvailability;
@@ -53,6 +57,13 @@ export class ApiInventoryStockRepository {
     if (params.sort && !ALLOWED_STOCK_SORTS.has(params.sort)) {
       throw new BackendRequestError("Ordenamiento de stock no permitido.", 400, "INVALID_SORT");
     }
+    if (params.lowStock && params.status) {
+      throw new BackendRequestError(
+        "lowStock no puede combinarse con un estado explicito.",
+        400,
+        "INVENTORY_STOCK_FILTERS_INCOMPATIBLE",
+      );
+    }
     return parseApiInventoryStockPage(
       await backendFetch<unknown>("/inventory/stock", {
         query: {
@@ -60,11 +71,23 @@ export class ApiInventoryStockRepository {
           search: params.search?.trim() || undefined,
           categoryId: params.categoryId,
           status: params.status,
+          lowStock: params.lowStock ? true : undefined,
           productTypes: params.productTypes?.length ? params.productTypes.join(",") : undefined,
           page: params.page,
           size: params.pageSize,
           sort: params.sort ?? DEFAULT_STOCK_SORT,
         },
+      }),
+    );
+  }
+
+  async getStockBatch(input: GetInventoryStockBatchInput) {
+    assertApiUuid(input.branchId, "branchId");
+    input.productIds.forEach((productId) => assertApiUuid(productId, "productId"));
+    return parseApiInventoryStockBatch(
+      await backendFetch<unknown>("/inventory/stock/batch", {
+        method: "POST",
+        body: { branchId: input.branchId, productIds: input.productIds },
       }),
     );
   }

@@ -18,6 +18,7 @@ import {
   PencilIcon,
   PosIcon,
 } from "@/modules/catalog/components/CatalogIcons";
+import type { InventoryStockStatus } from "@/core/repositories";
 import { useProductQuickView } from "@/modules/catalog/hooks/useProductQuickView";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 import type { ProductQuickViewModel } from "@/modules/catalog/types/catalog.types";
@@ -150,7 +151,7 @@ export function ProductQuickView({
           ) : (
             <>
               {activeTab === "general" ? <QuickViewGeneral detail={detail} /> : null}
-              {activeTab === "inventory" ? <QuickViewInventory detail={detail} /> : null}
+              {activeTab === "inventory" ? <QuickViewInventory activeBranchId={branchId} detail={detail} /> : null}
               {activeTab === "suppliers" ? <QuickViewSuppliers detail={detail} /> : null}
             </>
           )}
@@ -237,7 +238,20 @@ function QuickViewGeneral({ detail }: { detail: ProductQuickViewModel }) {
   );
 }
 
-function QuickViewInventory({ detail }: { detail: ProductQuickViewModel }) {
+const stockStatusLabels: Record<InventoryStockStatus, string> = {
+  normal: "Normal",
+  near_minimum: "Cerca del mínimo",
+  critical: "Crítico",
+  out_of_stock: "Sin existencias",
+};
+
+function QuickViewInventory({
+  detail,
+  activeBranchId,
+}: {
+  detail: ProductQuickViewModel;
+  activeBranchId?: string;
+}) {
   if (detail.product.productType === ProductType.service) {
     return <EmptyPanel message="Los servicios no utilizan control de inventario." />;
   }
@@ -247,33 +261,71 @@ function QuickViewInventory({ detail }: { detail: ProductQuickViewModel }) {
   }
 
   if (!detail.product.tracking.stock) {
-    return <EmptyPanel message="Este producto no utiliza control de stock." />;
+    return <EmptyPanel message="Este producto no controla existencias." />;
+  }
+
+  if (!activeBranchId && !detail.inventory.length) {
+    return <EmptyPanel message="Selecciona una sucursal para consultar las existencias." />;
   }
 
   if (!detail.inventory.length) {
-    if (detail.inventorySettings) {
+    const loadedBranchId = detail.inventoryStock?.branchId ?? detail.inventorySettings?.branchId;
+    if (loadedBranchId && loadedBranchId !== activeBranchId) {
+      // Respuesta de otra sucursal mientras llega la nueva: no se muestra como existencia actual.
+      return <p className="text-sm text-[var(--color-text-muted)]">Cargando consulta rápida...</p>;
+    }
+
+    if (detail.inventoryStock || detail.inventorySettings) {
+      const stock = detail.inventoryStock;
+      const settings = detail.inventorySettings;
+      const minStock = stock ? stock.item.minStock : settings?.minStock;
+      const reorderPoint = stock ? stock.item.reorderPoint : settings?.reorderPoint;
       return (
         <article className="rounded-md border border-[var(--color-border)] bg-white p-4">
           <div>
             <h3 className="font-semibold text-[var(--color-title)]">
-              {detail.inventorySettings.branchName}
+              {stock?.branchName ?? settings?.branchName}
             </h3>
-            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-              {detail.inventorySettings.defaultLocationName ?? "Sin ubicación predeterminada"}
-            </p>
+            {settings ? (
+              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                {settings.defaultLocationName ?? "Sin ubicación predeterminada"}
+              </p>
+            ) : null}
           </div>
-          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-            <DetailItem label="Mínimo" value={String(detail.inventorySettings.minStock)} />
+          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+            {stock ? (
+              <>
+                <DetailItem label="Existencia" value={String(stock.item.quantity)} />
+                <DetailItem label="Reservado" value={String(stock.item.reservedQuantity)} />
+                <DetailItem label="Disponible" value={String(stock.item.availableQuantity)} />
+              </>
+            ) : null}
+            {minStock !== undefined && minStock !== null ? (
+              <DetailItem label="Mínimo" value={String(minStock)} />
+            ) : null}
             <DetailItem
               label="Punto de reorden"
-              value={String(detail.inventorySettings.reorderPoint ?? "-")}
+              value={
+                reorderPoint === undefined || reorderPoint === null
+                  ? "No configurado"
+                  : String(reorderPoint)
+              }
             />
+            {stock ? (
+              <DetailItem label="Estado" value={stockStatusLabels[stock.item.status]} />
+            ) : null}
           </dl>
-          <p className="mt-4 text-sm text-[var(--color-text-muted)]">
-            La existencia y el reservado no están disponibles en esta integración.
-          </p>
+          {detail.inventoryStockFailed ? (
+            <p className="mt-4 text-sm text-[var(--color-text-muted)]">
+              No se pudo cargar la información de inventario.
+            </p>
+          ) : null}
         </article>
       );
+    }
+
+    if (detail.inventoryStockFailed) {
+      return <EmptyPanel message="No se pudo cargar la información de inventario." />;
     }
 
     return (

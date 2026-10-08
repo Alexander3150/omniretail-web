@@ -46,6 +46,8 @@ export function ProductsPage() {
   } = useProductPermissions();
   const {
     loading,
+    initialLoading,
+    refreshing,
     error,
     items,
     categories,
@@ -158,7 +160,7 @@ export function ProductsPage() {
       />
       {!filtersEnabled ? (
         <InlineAlert
-          description="El backend actual solo admite paginacion y ordenamiento. La busqueda y los filtros globales se habilitaran cuando existan esos parametros en Products API."
+          description="La búsqueda avanzada y los filtros globales estarán disponibles próximamente. Por ahora, puedes usar la paginación para navegar por el catálogo."
           title="Filtros no disponibles temporalmente"
           tone="info"
         />
@@ -171,12 +173,17 @@ export function ProductsPage() {
         />
       ) : null}
       {error ? <InlineAlert title={error.message} tone="danger" /> : null}
-      {loading ? (
+      {initialLoading ? (
         <p className="rounded-md border border-[var(--color-border)] bg-white p-5 text-sm text-[var(--color-text-muted)]">
           Cargando productos...
         </p>
       ) : (
         <>
+          {refreshing ? (
+            <p className="text-xs font-semibold text-[var(--color-text-muted)]" role="status">
+              Actualizando productos...
+            </p>
+          ) : null}
           <ProductTable
             canUpdate={canUpdate}
             inventoryAdjustmentEnabled={repositories.productDataSource === "mock"}
@@ -203,8 +210,9 @@ export function ProductsPage() {
             onPromotion={setPromotionTarget}
             onRestore={restoreProduct}
             products={items}
+            refreshing={refreshing}
           />
-          {totalItems === 0 && canCreate ? (
+          {totalItems === 0 && canCreate && !refreshing ? (
             <div className="flex justify-center">
               <Button href="/catalogo/productos/nuevo">
                 <PlusIcon />

@@ -334,6 +334,10 @@ export function mapApiReceipt(api: ApiGoodsReceipt, tenantId: string): ReceiptRe
     receivedByUserId: api.receivedByUserId ?? undefined,
     receivedAt: api.receivedAt ?? undefined,
     notes: api.notes ?? undefined,
+    ...(api.totalReceivedQuantity !== undefined
+      ? { totalReceivedQuantity: api.totalReceivedQuantity }
+      : {}),
+    ...(api.incidentCount !== undefined ? { incidentCount: api.incidentCount } : {}),
     createdAt: api.createdAt,
     updatedAt: api.updatedAt,
   };

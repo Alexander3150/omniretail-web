@@ -24,6 +24,8 @@ interface ProductTableProps {
   onArchive: (product: ProductListItem) => void;
   onRestore: (product: ProductListItem) => void;
   footer?: ReactNode;
+  /** Filas previas mientras llega la nueva pagina/filtro: atenuadas y sin interaccion. */
+  refreshing?: boolean;
 }
 
 export function ProductTable({
@@ -39,10 +41,15 @@ export function ProductTable({
   onArchive,
   onRestore,
   footer,
+  refreshing = false,
 }: ProductTableProps) {
   return (
     <div className="max-w-full overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-sm">
-      <div className="overflow-x-auto">
+      <div
+        aria-busy={refreshing}
+        className={cn("overflow-x-auto transition-opacity", refreshing && "opacity-60")}
+        inert={refreshing}
+      >
         <table className="w-full min-w-[640px] border-collapse text-left text-sm lg:min-w-[920px]">
           <thead className="bg-[var(--color-structure)] text-xs uppercase text-white">
             <tr>

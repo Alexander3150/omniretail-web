@@ -305,30 +305,39 @@ export class ReceivingDocumentsService {
     const uniqueOrders = [...new Map(purchaseOrders.map((order) => [order.id, order])).values()];
     const records = await Promise.all(
       uniqueOrders.map(async (order) => {
-        const [drafts, confirmed] = await Promise.all([
-          this.repositories.receipts.getPageScoped(tenantId, {
-            branchId,
-            purchaseOrderId: order.id,
-            status: "draft",
-            page: 1,
-            pageSize: RECEIPT_HISTORY_PAGE_SIZE,
-          }),
-          this.repositories.receipts.getPageScoped(tenantId, {
-            branchId,
-            purchaseOrderId: order.id,
-            status: "confirmed",
-            page: 1,
-            pageSize: RECEIPT_HISTORY_PAGE_SIZE,
-          }),
-        ]);
+        // Una sola lectura por orden (sin `status`): el backend devuelve borradores y confirmadas
+        // juntas y se separan en memoria por el estado real de cada recepcion. La pagina es
+        // compartida: si `page < totalPages` el historial queda marcado como incompleto (abajo).
+        const combined = await this.repositories.receipts.getPageScoped(tenantId, {
+          branchId,
+          purchaseOrderId: order.id,
+          page: 1,
+          pageSize: RECEIPT_HISTORY_PAGE_SIZE,
+        });
+        const drafts = {
+          ...combined,
+          items: combined.items.filter(
+            (record) => record.receipt.status === ReceiptStatus.in_progress,
+          ),
+        };
+        const confirmed = {
+          ...combined,
+          items: combined.items.filter(
+            (record) => record.receipt.status !== ReceiptStatus.in_progress,
+          ),
+        };
         return { order, drafts, confirmed };
       }),
     );
     const receiptContexts = records.flatMap(({ order, drafts, confirmed }) =>
       [...drafts.items, ...confirmed.items].map((record) => ({ order, record })),
     );
+    // incidentCount (agregado del backend) evita pedir las incidencias de un documento que no tiene
+    // ninguna; sin el campo (backend antiguo) se consulta como antes.
     const incidentPages = await Promise.all(
-      receiptContexts.map(async ({ order, record }) => ({
+      receiptContexts
+        .filter(({ record }) => record.receipt.incidentCount !== 0)
+        .map(async ({ order, record }) => ({
         order,
         record,
         page: await this.repositories.receipts.listIncidentsScoped(
@@ -353,10 +362,19 @@ export class ReceivingDocumentsService {
           order,
           order.supplierNameSnapshot ?? "Proveedor no disponible",
           drafts.items.map((record) => record.receipt),
-          confirmed.page < confirmed.totalPages
-            ? []
-            : confirmed.items.flatMap((record) => record.items.map((item) => item.line)),
+          [],
           productById,
+          // Historial incompleto: no se afirma ninguna cantidad (igual que antes). Si no, el
+          // agregado del backend por documento; sin el, la suma de sus lineas.
+          confirmed.page < confirmed.totalPages
+            ? 0
+            : confirmed.items.reduce(
+                (sum, record) =>
+                  sum +
+                  (record.receipt.totalReceivedQuantity ??
+                    record.items.reduce((lineSum, item) => lineSum + item.line.receivedQuantity, 0)),
+                0,
+              ),
         ),
       ),
       incidents: incidentPages
@@ -447,10 +465,13 @@ function toPurchaseOrderRow(
   receipts: Receipt[],
   receiptLines: ReceiptLine[],
   productById: Map<string, { name: string; sku: string }>,
+  /** Agregado autoritativo del backend (modo API); sin el se suman las lineas recibidas. */
+  receivedQuantityOverride?: number,
 ): ReceivingDocumentRow {
   const items = order.items ?? [];
   const requestedQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
-  const receivedQuantity = receiptLines.reduce((sum, line) => sum + line.receivedQuantity, 0);
+  const receivedQuantity =
+    receivedQuantityOverride ?? receiptLines.reduce((sum, line) => sum + line.receivedQuantity, 0);
   const status = getPurchaseOrderReceivingStatus(
     order,
     receipts,

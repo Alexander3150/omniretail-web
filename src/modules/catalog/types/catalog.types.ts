@@ -8,7 +8,7 @@ import type {
   SupplierProduct,
   Unit,
 } from "@/core/entities";
-import type { OperationalSupplier } from "@/core/repositories";
+import type { InventoryStockBatchItem, OperationalSupplier } from "@/core/repositories";
 import type { ProductStatus, ProductType } from "@/core/enums";
 import type { ProductChannels } from "@/core/entities/Product";
 import type { ProductTrackingConfig } from "@/core/types/tracking.types";
@@ -82,6 +82,12 @@ export interface ProductInventorySettingsSummary {
   reorderPoint?: number;
 }
 
+export interface ProductInventoryStockSummary {
+  branchId: string;
+  branchName: string;
+  item: InventoryStockBatchItem;
+}
+
 export interface ProductSupplierSummaryItem {
   supplier: OperationalSupplier;
   supplierProduct: SupplierProduct;
@@ -92,6 +98,10 @@ export interface ProductQuickViewModel extends ProductDetailViewModel {
   inventory: ProductInventorySummaryItem[];
   inventorySettings: ProductInventorySettingsSummary | null;
   inventorySettingsAvailable: boolean;
+  /** Existencias de la sucursal activa; null si no aplica, no hay datos o la lectura fallo. */
+  inventoryStock: ProductInventoryStockSummary | null;
+  /** true solo si la lectura de existencias fallo; el resto del Quick View sigue siendo valido. */
+  inventoryStockFailed: boolean;
   suppliers: ProductSupplierSummaryItem[];
   suppliersAvailable: boolean;
   promotions: Promotion[];

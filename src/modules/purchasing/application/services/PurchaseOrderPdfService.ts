@@ -89,11 +89,6 @@ export class PurchaseOrderPdfService {
     await generatePurchaseOrderPdf(data, true);
   }
 
-  async generatePurchaseOrderDocument(orderId: string) {
-    const data = await this.getPdfData(orderId);
-    return generatePurchaseOrderPdf(data, false);
-  }
-
   async downloadReceivingReport(orderId: string, options?: { branchName?: string }) {
     const data =
       this.repositories.purchaseOrdersDataSource === "api"
@@ -214,18 +209,6 @@ export class PurchaseOrderPdfService {
       receipts: receiptRows,
       incidents: pdfIncidents,
     };
-  }
-
-  async getSupplierEmail(orderId: string) {
-    const { tenantId, permissions } = await resolvePurchasingContext(this.repositories);
-    ensureCanReadPurchaseOrders(permissions);
-    const order = ensurePurchaseOrderBelongsToTenant(
-      await this.repositories.purchaseOrders.getByIdScoped(tenantId, orderId),
-      tenantId,
-    );
-    if (this.repositories.purchaseOrdersDataSource === "api") return "";
-    const supplier = await this.repositories.suppliers.getById(order.supplierId);
-    return supplier?.email?.trim() || "";
   }
 
   private async getPdfData(orderId: string): Promise<PdfData> {
@@ -417,21 +400,6 @@ function toApiPurchaseOrderPdfData(order: PurchaseOrder): PdfData {
     receipts: [],
     incidents: [],
   };
-}
-
-export class PurchaseOrderEmailSimulationService {
-  async simulatePurchaseOrderSend(input: { orderNumber: string; supplierEmail?: string }) {
-    if (!input.supplierEmail) {
-      return { sent: false, message: "Orden aprobada. El proveedor no tiene correo registrado." };
-    }
-    return {
-      sent: true,
-      to: input.supplierEmail,
-      subject: `Orden de compra ${input.orderNumber}`,
-      attachment: `${sanitizeFileName(input.orderNumber)}-orden-compra.pdf`,
-      message: `Documento preparado para ${input.supplierEmail}.`,
-    };
-  }
 }
 
 export function getPurchaseOrderPdfKind(status: PurchaseOrderStatus): PdfKind | null {

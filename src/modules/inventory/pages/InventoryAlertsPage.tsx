@@ -86,6 +86,7 @@ type EditableTransferRequestDto = Omit<TransferRequestDto, "quantity"> & {
 const STATUS_OPTIONS: Array<{ value: InventoryStatusFilter; label: string }> = [
   { value: "all", label: "Todos los estados" },
   { value: "out_of_stock", label: "Sin existencias" },
+  { value: "low_stock", label: "Stock bajo" },
   { value: "critical", label: "Critico" },
   { value: "near_minimum", label: "Proximo al minimo" },
   { value: "normal", label: "Normal" },
@@ -416,7 +417,6 @@ export function InventoryAlertsPage() {
         expiringSoon={kpis.expiringSoon}
         selectedFilter={kpiFilter}
         showExpiration={data.visibility.showExpirationFeatures}
-        lowStockFilterable={!apiMode}
         lowStock={kpis.lowStock}
         outOfStock={kpis.outOfStock}
         onFilterChange={(filter) => {
@@ -625,7 +625,6 @@ function KpiGrid({
   outOfStock,
   selectedFilter,
   showExpiration,
-  lowStockFilterable,
   onFilterChange,
 }: {
   activeProducts: number;
@@ -634,7 +633,6 @@ function KpiGrid({
   outOfStock: number;
   selectedFilter: InventoryKpiFilter;
   showExpiration: boolean;
-  lowStockFilterable: boolean;
   onFilterChange: (filter: InventoryKpiFilter) => void;
 }) {
   return (
@@ -658,7 +656,6 @@ function KpiGrid({
         filter="lowStock"
         icon="B"
         label="Stock bajo"
-        disabled={!lowStockFilterable}
         selected={selectedFilter === "lowStock"}
         tone="warning"
         value={lowStock}

@@ -43,7 +43,8 @@ import {
   cleanInventoryError,
 } from "@/modules/inventory/application/services/serviceHelpers";
 
-export type InventoryStatusFilter = InventoryStatus | "all";
+/** `low_stock` es un agregado de UI (near_minimum + critical); a la API viaja como lowStock=true. */
+export type InventoryStatusFilter = InventoryStatus | "low_stock" | "all";
 export type InventoryKpiFilter = "all" | "active" | "lowStock" | "expiringSoon" | "outOfStock";
 
 const EMPTY_KPIS: InventoryKpis = {
@@ -268,8 +269,7 @@ export function useInventoryAlerts() {
   useDataEvent("business-config.changed", reload);
 
   const effectiveKpiFilter: InventoryKpiFilter =
-    (!data.visibility.showExpirationFeatures && kpiFilter === "expiringSoon") ||
-    (apiMode && kpiFilter === "lowStock")
+    !data.visibility.showExpirationFeatures && kpiFilter === "expiringSoon"
       ? "all"
       : kpiFilter;
   const baseFilteredRows = useMemo(
@@ -360,7 +360,9 @@ export function useInventoryAlerts() {
   const setStatus = useCallback(
     (value: InventoryStatusFilter) => {
       setStatusState(value);
-      setKpiFilterState(value === "out_of_stock" ? "outOfStock" : "all");
+      setKpiFilterState(
+        value === "out_of_stock" ? "outOfStock" : value === "low_stock" ? "lowStock" : "all",
+      );
       resetPage();
       startApiRequest();
     },
@@ -369,9 +371,9 @@ export function useInventoryAlerts() {
   const setKpiFilter = useCallback(
     (value: InventoryKpiFilter) => {
       if (apiMode) {
-        if (value === "lowStock" || value === "expiringSoon") return;
+        if (value === "expiringSoon") return;
         const nextStatus: InventoryStatusFilter =
-          value === "outOfStock" ? "out_of_stock" : "all";
+          value === "outOfStock" ? "out_of_stock" : value === "lowStock" ? "low_stock" : "all";
         setKpiFilterState(value);
         setStatusState(nextStatus);
         resetPage();
@@ -380,13 +382,7 @@ export function useInventoryAlerts() {
       }
       setKpiFilterState(value);
       resetPage();
-      if (value === "lowStock") {
-        setStatusState((current) =>
-          current === "critical" || current === "near_minimum" || current === "all"
-            ? current
-            : "all",
-        );
-      }
+      if (value === "lowStock") setStatusState("low_stock");
       if (value === "outOfStock") setStatusState("out_of_stock");
       if (value === "active") setStatusState("all");
     },
@@ -654,7 +650,11 @@ function filterRows(
         value.toLowerCase().includes(query),
       );
     const matchesCategory = categoryId === "all" || row.categoryId === categoryId;
-    const matchesStatus = status === "all" || row.status === status;
+    const matchesStatus =
+      status === "all" ||
+      (status === "low_stock"
+        ? row.status === "near_minimum" || row.status === "critical"
+        : row.status === status);
     const matchesKpi =
       kpiFilter === "all" ||
       kpiFilter === "active" ||
