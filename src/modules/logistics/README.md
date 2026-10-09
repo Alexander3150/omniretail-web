@@ -37,6 +37,8 @@ OrderRepository, PickingRepository, DispatchRepository, InventoryRepository
 ## Packing y Despacho
 
 - `/logistica/despachos` consume la cola scoped de `DispatchApplicationService` para pedidos domiciliarios `ready_for_dispatch`.
+- En modo API, la cola de Dispatch es mixta (`order` y `transfer`) y se obtiene exclusivamente de `DispatchReadRepository`; el detalle previo de pedidos usa `/logistics/dispatch/{orderId}/prepared`. `DispatchCommandRepository` confirma pedidos y transferencias con idempotencia, sin extender el alcance a entrega final. El GET de transferencia representa exclusivamente un despacho ya materializado y se usa para read-back, nunca como preparación previa.
+- En modo mock se conserva `TransferDispatchPanel` y su flujo existente. Los cambios de sesión, tenant o sucursal descartan respuestas API tardías sin completar datos desde repositorios mock.
 - Packing persiste checklist, peso/bultos y evidencia de etiqueta; no consume inventario.
 - En modo API, Packing consume exclusivamente `PackingReadRepository` y `PackingCommandRepository`; no reconstruye respuestas reales con repositorios mock. El backend exige checklist, peso, bultos, etiqueta y registro de impresion tambien para `store_pickup`.
 - El coordinador de mutaciones API vive en el layout privado y queda aislado por sesion+usuario+tenant: sobrevive navegacion interna, pero nunca se comparte tras logout/login. Conserva identidades ante red, timeout, 5xx o respuestas ambiguas; elimina las de 4xx definitivos y retiene como maximo 64 identidades inciertas por sesion con politica LRU. Superado ese limite, el reintento mas antiguo deja de conservar su `operationId`.

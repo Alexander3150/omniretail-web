@@ -2,6 +2,11 @@ import type { Notification, Order, Package, PickingOrder } from "@/core/entities
 import { DeliveryMethod, InventoryTransferStatus, OrderStatus, PackingStatus, PickingStatus } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
+  ConfirmDispatchApiCommand,
+  ConfirmTransferDispatchApiCommand,
+} from "@/core/repositories";
+import type {
+  ApiDispatchResultDto,
   ConfirmDispatchCommand,
   ConfirmDispatchResultDto,
   DispatchAddressDto,
@@ -12,7 +17,15 @@ import type {
   MarkDispatchDeliveredResultDto,
   PreparedOrderDetailDto,
   PreparedOrderQueueItemDto,
+  DispatchQueueItemDto,
+  PreparedDispatchDetailDto,
 } from "@/modules/logistics/application/dto/DispatchReadModelDto";
+import {
+  toDispatchQueueItemDto,
+  toApiDispatchResultDto,
+  toPreparedDispatchDetailDto,
+} from "@/modules/logistics/application/mappers/DispatchApiMapper";
+import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import { resolveTrustedDispatchContext } from "@/modules/logistics/application/services/DispatchAuthorizationContext";
 
 const DISPATCH_READ = "logistics.dispatch.read";
@@ -20,11 +33,67 @@ const DISPATCH_CONFIRM = "logistics.dispatch.confirm";
 
 type DispatchRepositories = Pick<
   RepositoryRegistry,
-  "auth" | "users" | "roles" | "branches" | "orders" | "picking" | "packings" | "dispatches" | "notifications" | "inventoryTransfers"
+  "auth" | "users" | "roles" | "branches" | "orders" | "picking" | "packings" | "dispatches" | "notifications" | "inventoryTransfers" | "dispatchRead" | "dispatchCommands" | "dispatchReadDataSource"
 >;
 
 export class DispatchApplicationService {
   constructor(private readonly repositories: DispatchRepositories) {}
+
+  async getApiQueue(selectedBranchId: string): Promise<DispatchQueueItemDto[]> {
+    const context = await this.context(selectedBranchId, DISPATCH_READ);
+    const repository = this.requireApiReadRepository();
+    return (await repository.getQueue(context)).map(toDispatchQueueItemDto);
+  }
+
+  async getApiPreparedDetail(
+    selectedBranchId: string,
+    orderId: string,
+  ): Promise<PreparedDispatchDetailDto> {
+    const context = await this.context(selectedBranchId, DISPATCH_READ);
+    return toPreparedDispatchDetailDto(
+      await this.requireApiReadRepository().getPreparedDetail(context, orderId),
+    );
+  }
+
+  async getApiDispatchDetail(selectedBranchId: string, orderId: string): Promise<ApiDispatchResultDto> {
+    const context = await this.context(selectedBranchId, DISPATCH_READ);
+    return toApiDispatchResultDto(await this.requireApiReadRepository().getDetail(context, orderId));
+  }
+
+  async getApiTransferDetail(selectedBranchId: string, transferId: string): Promise<ApiDispatchResultDto> {
+    const context = await this.context(selectedBranchId, DISPATCH_READ);
+    return toApiDispatchResultDto(
+      await this.requireApiReadRepository().getTransferDetail(context, transferId),
+    );
+  }
+
+  async confirmApiOrder(
+    selectedBranchId: string,
+    orderId: string,
+    command: ConfirmDispatchApiCommand,
+  ): Promise<ApiDispatchResultDto> {
+    const context = await this.context(selectedBranchId, DISPATCH_CONFIRM);
+    const result = await this.requireApiCommandRepository().confirmOrder(context, orderId, command);
+    if (!result.idempotent) return toApiDispatchResultDto(result);
+    const authoritative = await this.requireApiReadRepository().getDetail(context, orderId);
+    return toApiDispatchResultDto({ ...authoritative, idempotent: true });
+  }
+
+  async confirmApiTransfer(
+    selectedBranchId: string,
+    transferId: string,
+    command: ConfirmTransferDispatchApiCommand,
+  ): Promise<ApiDispatchResultDto> {
+    const context = await this.context(selectedBranchId, DISPATCH_CONFIRM);
+    const result = await this.requireApiCommandRepository().confirmTransfer(
+      context,
+      transferId,
+      command,
+    );
+    if (!result.idempotent) return toApiDispatchResultDto(result);
+    const authoritative = await this.requireApiReadRepository().getTransferDetail(context, transferId);
+    return toApiDispatchResultDto({ ...authoritative, idempotent: true });
+  }
 
   async getTransferQueue(selectedBranchId: string) {
     const context = await this.context(selectedBranchId, DISPATCH_READ);
@@ -193,6 +262,28 @@ export class DispatchApplicationService {
     // Dispatch only completes an existing, scoped Order. A cancelled add-on must not strand
     // an already committed delivery; session, role, branch, resource and state still apply.
     return resolveTrustedDispatchContext(this.repositories, selectedBranchId, permission);
+  }
+
+  private requireApiReadRepository() {
+    if (this.repositories.dispatchReadDataSource === "api" && this.repositories.dispatchRead) {
+      return this.repositories.dispatchRead;
+    }
+    throw new BackendRequestError(
+      "El repositorio API de lectura de Dispatch no esta configurado.",
+      500,
+      "DISPATCH_API_NOT_CONFIGURED",
+    );
+  }
+
+  private requireApiCommandRepository() {
+    if (this.repositories.dispatchReadDataSource === "api" && this.repositories.dispatchCommands) {
+      return this.repositories.dispatchCommands;
+    }
+    throw new BackendRequestError(
+      "El repositorio API de comandos de Dispatch no esta configurado.",
+      500,
+      "DISPATCH_API_NOT_CONFIGURED",
+    );
   }
 
   private async requireScopedOrder(
