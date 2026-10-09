@@ -11,7 +11,13 @@ export type ImageUrlInput =
   | { status: "valid"; src: string }
   | { status: "invalid" };
 
-export const INVALID_IMAGE_URL_MESSAGE = "Ingrese una URL válida que comience con http:// o https://.";
+/** Coincide con `isSafeCatalogImageUrl`: URL http(s) o ruta del mismo sitio que empiece con "/". */
+export const INVALID_IMAGE_URL_MESSAGE =
+  "Ingrese una URL válida: debe comenzar con http:// o https://, o ser una ruta del sitio que empiece con /.";
+
+/** Mensaje al intentar guardar con una URL de imagen invalida pendiente. */
+export const INVALID_IMAGE_URL_SUBMIT_MESSAGE =
+  "Corrija las URL de imagen inválidas antes de guardar. Mientras tanto se conserva la imagen anterior.";
 
 export function resolveImageUrlInput(raw: string): ImageUrlInput {
   const trimmed = raw.trim();

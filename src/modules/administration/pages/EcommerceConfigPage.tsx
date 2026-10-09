@@ -2,6 +2,7 @@
 
 import { type FormEvent, useEffect, useState } from "react";
 import type { HeroBannerSlide } from "@/core/entities";
+import { INVALID_IMAGE_URL_SUBMIT_MESSAGE } from "@/core/media/resolveImageUrlInput";
 import type { EcommerceConfigInputDto } from "@/modules/administration/application/dto/EcommerceConfigDto";
 import type { HeroBannerConfigInputDto } from "@/modules/administration/application/dto/HeroBannerConfigDto";
 import { EcommerceConfigForm } from "@/modules/administration/components/EcommerceConfigForm";
@@ -38,6 +39,9 @@ export function EcommerceConfigPage() {
   const [dirty, setDirty] = useState(false);
   const [heroBannerValue, setHeroBannerValue] = useState<HeroBannerConfigInputDto | null>(null);
   const [heroBannerDirty, setHeroBannerDirty] = useState(false);
+  // URLs de imagen invalidas pendientes en el logo o en el carrusel: impiden guardar.
+  const [logoUrlInvalid, setLogoUrlInvalid] = useState(false);
+  const [heroBannerUrlInvalid, setHeroBannerUrlInvalid] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -98,6 +102,11 @@ export function EcommerceConfigPage() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!value || !heroBannerValue) return;
+
+    if (logoUrlInvalid || heroBannerUrlInvalid) {
+      setSubmitError(INVALID_IMAGE_URL_SUBMIT_MESSAGE);
+      return;
+    }
 
     const nextErrors = validateEcommerceFields(value);
     setFieldErrors(nextErrors);
@@ -201,12 +210,14 @@ export function EcommerceConfigPage() {
             branchOptions={branchOptions}
             fieldErrors={fieldErrors}
             onChange={handleChange}
+            onImageUrlInvalidChange={setLogoUrlInvalid}
             saving={isSaving}
             tenantId={tenantId}
             value={value}
           />
           <HeroBannerConfigForm
             onChange={handleHeroBannerChange}
+            onImageUrlInvalidChange={setHeroBannerUrlInvalid}
             preset={heroBannerPreset}
             saving={isSaving}
             tenantId={tenantId}

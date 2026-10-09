@@ -21,6 +21,8 @@ interface EcommerceConfigFormProps {
   tenantId: string | null;
   saving: boolean;
   onChange: (value: EcommerceConfigInputDto) => void;
+  /** Avisa si el campo de URL del logo tiene una URL invalida pendiente (bloquea el guardado). */
+  onImageUrlInvalidChange?: (invalid: boolean) => void;
 }
 
 export function EcommerceConfigForm({
@@ -30,7 +32,8 @@ export function EcommerceConfigForm({
   tenantId,
   saving,
   onChange,
-}: EcommerceConfigFormProps) {
+  onImageUrlInvalidChange,
+}: Readonly<EcommerceConfigFormProps>) {
   const activeBranchIds = new Set(branchOptions.map((option) => option.id));
   const preservedDefaultBranchId =
     value.defaultBranchId && !activeBranchIds.has(value.defaultBranchId)
@@ -39,6 +42,8 @@ export function EcommerceConfigForm({
   const [logoError, setLogoError] = useState<string | null>(null);
   const currentLogoUrl =
     value.logo?.kind === "url" && !value.removeLogo && !value.pendingLogo ? value.logo.src : "";
+  // Cualquier cambio del logo por otra via (archivo, Eliminar, recarga) descarta el borrador de URL.
+  const logoSyncKey = `${currentLogoUrl}|${value.pendingLogo ? "archivo" : ""}|${value.removeLogo ? "eliminado" : ""}`;
   const previewBlobUrl = useBlobPreviewUrl(value.pendingLogo?.blob);
   const persistedLogoUrl = useCatalogImageUrl(tenantId, value.removeLogo ? undefined : value.logo, "");
   const logoPreviewUrl = previewBlobUrl ?? persistedLogoUrl;
@@ -181,6 +186,8 @@ export function EcommerceConfigForm({
               disabled={saving}
               id="ecommerce-logo-url"
               onChange={changeLogoUrl}
+              onInvalidChange={onImageUrlInvalidChange}
+              syncKey={logoSyncKey}
             />
           </FormField>
         </div>
