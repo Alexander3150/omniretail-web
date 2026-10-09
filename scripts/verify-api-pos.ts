@@ -7,8 +7,12 @@ import {
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  ProductType,
+  PromotionStatus,
+  PromotionType,
   RoleStatus,
   SaleStatus,
+  SalesChannel,
   TransportMode,
   UserStatus,
   UserType,
@@ -25,6 +29,7 @@ import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { DataEventName } from "@/core/types/events.types";
 import { GetCashShiftMovementsService } from "@/modules/pos/application/services/GetCashShiftMovementsService";
+import { GetPosProductsService } from "@/modules/pos/application/services/GetPosProductsService";
 
 const id = (suffix: number) =>
   `10000000-0000-4000-8000-${String(suffix).padStart(12, "0")}`;
@@ -415,13 +420,30 @@ async function verifySaleRoutePayloadAndSchema() {
       }),
     );
 
+    // La respuesta 201 de una venta recien creada puede traer timestamps accesorios aun nulos;
+    // no deben convertir una venta registrada en un error visible.
+    globalThis.fetch = async () =>
+      Response.json({
+        ...saleConfirmation,
+        cashMovement: { ...saleConfirmation.cashMovement, createdAt: null },
+        inventoryEffects: saleConfirmation.inventoryEffects.map((effect) => ({
+          ...effect,
+          createdAt: null,
+        })),
+      });
+    const freshSale = await repository.confirmSale(command);
+    assert.equal(freshSale.id, saleConfirmation.id);
+    assert.equal(freshSale.cashMovement?.cashShiftId, ids.shift);
+    events.length = 0;
+
     globalThis.fetch = async () => Response.json({ ...saleConfirmation, total: "not-money" });
     await assert.rejects(
       repository.confirmSale(command),
       (error) =>
         error instanceof BackendRequestError &&
         error.status === 502 &&
-        error.code === "INVALID_BACKEND_RESPONSE",
+        error.code === "INVALID_BACKEND_RESPONSE" &&
+        Boolean(error.fields?.total),
     );
     globalThis.fetch = async () =>
       Response.json({ message: "Stock insuficiente", code: "INSUFFICIENT_STOCK" }, { status: 409 });
@@ -695,12 +717,106 @@ function captureCall(url: string, init: RequestInit | undefined): CapturedCall {
   };
 }
 
+/** Regresion de rendimiento: el catalogo POS no debe consultar promociones/conversiones por producto. */
+async function verifyPosCatalogLoadsSharedDataOnce() {
+  const productCount = 25;
+  const unitId = id(900);
+  const products = Array.from({ length: productCount }, (_, index) => ({
+    id: id(1000 + index),
+    tenantId: ids.tenant,
+    sku: `SKU-${index}`,
+    barcode: undefined,
+    name: `Producto ${String(index).padStart(2, "0")}`,
+    productType: ProductType.physical,
+    salePrice: 100,
+    baseUnitId: unitId,
+    saleUnitId: unitId,
+    tracking: { stock: true, lot: false, serial: false, expiration: false },
+  }));
+  const calls = { promotionsList: 0, applicable: 0, conversionsAll: 0, conversionsByProduct: 0, tiers: 0 };
+  const promotion = {
+    id: id(950),
+    tenantId: ids.tenant,
+    name: "Promo",
+    type: PromotionType.percentage,
+    value: 10,
+    channels: [SalesChannel.pos],
+    startAt: "2020-01-01T00:00:00.000Z",
+    untilStockEnds: false,
+    branchIds: [],
+    productIds: [products[3]!.id],
+    status: PromotionStatus.active,
+    createdAt: at,
+    updatedAt: at,
+  };
+  const repositories = {
+    inventoryStockDataSource: "api",
+    products: { getAvailableForPos: async () => products },
+    inventory: {
+      getStockPage: async () => ({
+        items: products.map((product) => ({
+          productId: product.id,
+          productType: ProductType.physical,
+          availableQuantity: 5,
+        })),
+        totalPages: 1,
+      }),
+    },
+    units: {
+      getByTenant: async () => [{ id: unitId, name: "Unidad" }],
+      getAllConversionsByTenant: async () => {
+        calls.conversionsAll += 1;
+        return [];
+      },
+      getConversionsByProductScoped: async () => {
+        calls.conversionsByProduct += 1;
+        return [];
+      },
+    },
+    promotions: {
+      getActiveByTenant: async () => {
+        calls.promotionsList += 1;
+        return [promotion];
+      },
+      getApplicable: async () => {
+        calls.applicable += 1;
+        return null;
+      },
+    },
+    productSalesPriceTiers: {
+      getByProduct: async () => {
+        calls.tiers += 1;
+        return [];
+      },
+    },
+  } as unknown as RepositoryRegistry;
+
+  const result = await new GetPosProductsService(repositories).execute({
+    tenantId: ids.tenant,
+    branchId: ids.branch,
+  });
+  assert.equal(result.length, productCount);
+  assert.deepEqual(calls, {
+    promotionsList: 1,
+    applicable: 0,
+    conversionsAll: 1,
+    conversionsByProduct: 0,
+    tiers: productCount,
+  });
+  const promoted = result.find((item) => item.productId === products[3]!.id);
+  assert.equal(promoted?.effectivePrice, 90, "La promocion se sigue aplicando al producto correcto");
+  assert.ok(
+    result.filter((item) => item.productId !== products[3]!.id).every((item) => item.effectivePrice === 100),
+  );
+}
+
 async function main() {
   await verifyCashRoutesAndParsing();
   await verifySaleRoutePayloadAndSchema();
   await verifyErrorsArePreserved();
   await verifyHistoryReturnAndVoid();
   await verifyProviderAndApplicationIsolation();
+  await verifyPosCatalogLoadsSharedDataOnce();
   verifyRequestValidation();
   console.log("API POS routes, schemas, errors, idempotency and isolation: PASS");
 }

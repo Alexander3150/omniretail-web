@@ -125,25 +125,6 @@ const paymentSchema = z.object({
   verifiedAt: optionalDateSchema,
 });
 
-const inventoryMovementSchema = z.object({
-  id: uuidSchema,
-  tenantId: uuidSchema,
-  branchId: uuidSchema,
-  productId: uuidSchema,
-  type: z.enum(["in", "out", "adjustment", "transfer"]),
-  reason: z.string(),
-  quantity: moneySchema,
-  quantityBefore: optionalMoneySchema,
-  quantityAfter: optionalMoneySchema,
-  fromLocationId: optionalUuidSchema,
-  toLocationId: optionalUuidSchema,
-  referenceType: optionalTextSchema,
-  referenceId: optionalUuidSchema,
-  referenceLineId: optionalUuidSchema,
-  performedByUserId: optionalUuidSchema,
-  createdAt: dateSchema,
-});
-
 const saleDocumentSchema = z.object({
   type: z.enum(["ticket", "invoice"]),
   taxId: optionalTextSchema,
@@ -170,8 +151,13 @@ const saleSummarySchema = z.object({
 const saleConfirmationSchema = saleSummarySchema.extend({
   items: z.array(saleItemSchema),
   payments: z.array(paymentSchema),
-  inventoryEffects: z.array(inventoryMovementSchema),
-  cashMovement: cashMovementSchema.nullable().transform((value) => value ?? undefined),
+  // Tras un 201 la venta ya existe: solo se exigen los campos de efectos que el frontend usa, para
+  // que un dato accesorio (p. ej. un timestamp aun no generado) no la presente como fallida.
+  inventoryEffects: z.array(z.object({ id: uuidSchema })),
+  cashMovement: z
+    .object({ id: uuidSchema, cashShiftId: uuidSchema, amount: moneySchema })
+    .nullable()
+    .transform((value) => value ?? undefined),
   order: z
     .object({ id: uuidSchema, orderNumber: z.string() })
     .passthrough()
@@ -438,7 +424,12 @@ const voidCommandSchema = z.object({ reason: z.string().trim().min(1).max(1000) 
 function parse<T>(schema: z.ZodType<T>, value: unknown, message: string): T {
   const result = schema.safeParse(value);
   if (!result.success) {
-    throw new BackendRequestError(message, 502, "INVALID_BACKEND_RESPONSE");
+    // Solo ruta y motivo de cada campo: nunca valores, que pueden incluir datos de clientes o pagos.
+    const fields = Object.fromEntries(
+      result.error.issues.map((issue) => [issue.path.join(".") || "response", issue.message]),
+    );
+    console.error(`[POS API] ${message}`, fields);
+    throw new BackendRequestError(message, 502, "INVALID_BACKEND_RESPONSE", fields);
   }
   return result.data;
 }

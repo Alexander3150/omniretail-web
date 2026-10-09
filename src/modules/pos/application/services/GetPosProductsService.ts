@@ -1,7 +1,7 @@
 import { ProductType, SalesChannel } from "@/core/enums";
 import { getBranchAvailableQuantity } from "@/core/inventory/stockAvailability";
 import { getCanonicalProductAvailability } from "@/core/inventory/canonicalAvailability";
-import { calculateEffectivePrice } from "@/core/pricing";
+import { calculateEffectivePrice, isPromotionApplicable } from "@/core/pricing";
 import { fromBaseQuantity } from "@/core/units";
 import type { InventoryStockListItem } from "@/core/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
@@ -200,26 +200,41 @@ export class GetPosProductsService {
     input: GetPosProductsInput,
     products: Awaited<ReturnType<RepositoryRegistry["products"]["getAvailableForPos"]>>,
   ): Promise<PosProductDto[]> {
-    const [stockItems, units] = await Promise.all([
+    // Promociones y conversiones se cargan una sola vez para todo el catalogo: consultarlas por
+    // producto multiplicaba las peticiones (cada una revalida sesion y rol en el backend).
+    // Los tramos de precio solo tienen endpoint por producto.
+    const [stockItems, units, activePromotions, allConversions] = await Promise.all([
       this.getAllApiStock(input.branchId),
       this.repositories.units.getByTenant(input.tenantId),
+      this.repositories.promotions.getActiveByTenant(input.tenantId),
+      this.repositories.units.getAllConversionsByTenant(input.tenantId),
     ]);
     const stockByProductId = new Map(stockItems.map((item) => [item.productId, item]));
+    const conversionsByProductId = new Map<string, typeof allConversions>();
+    for (const conversion of allConversions) {
+      if (!conversion.productId) continue;
+      const group = conversionsByProductId.get(conversion.productId) ?? [];
+      group.push(conversion);
+      conversionsByProductId.set(conversion.productId, group);
+    }
     const at = new Date().toISOString();
 
     const items = await Promise.all(
       products.map(async (product): Promise<PosProductDto> => {
-        const [promotion, salesPriceTiers, conversions] = await Promise.all([
-          this.repositories.promotions.getApplicable({
-            tenantId: input.tenantId,
-            productId: product.id,
-            at,
-            channel: SalesChannel.pos,
-            branchId: input.branchId,
-          }),
-          this.repositories.productSalesPriceTiers.getByProduct(product.id),
-          this.repositories.units.getConversionsByProductScoped(input.tenantId, product.id),
-        ]);
+        const promotion =
+          activePromotions.find((candidate) =>
+            isPromotionApplicable(candidate, {
+              tenantId: input.tenantId,
+              productId: product.id,
+              at,
+              channel: SalesChannel.pos,
+              branchId: input.branchId,
+            }),
+          ) ?? null;
+        const conversions = conversionsByProductId.get(product.id) ?? [];
+        const salesPriceTiers = await this.repositories.productSalesPriceTiers.getByProduct(
+          product.id,
+        );
         const price = calculateEffectivePrice(product.salePrice, promotion);
         const saleUnitId = product.saleUnitId ?? product.baseUnitId;
         const stock = stockByProductId.get(product.id);

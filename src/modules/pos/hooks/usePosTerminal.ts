@@ -106,6 +106,7 @@ export function usePosTerminal() {
   const [confirmationResult, setConfirmationResult] = useState<PosSaleConfirmationDto | null>(null);
   const confirmationLoadingRef = useRef(false);
   const productsRequestRef = useRef(0);
+  const reloadScheduledRef = useRef(false);
   const bankAccountsRequestRef = useRef(0);
   const cashShiftRequestRef = useRef(0);
   const paymentMethodsRequestRef = useRef(0);
@@ -413,10 +414,21 @@ export function usePosTerminal() {
     [],
   );
 
-  useDataEvent("product.changed", reload);
-  useDataEvent("promotion.changed", reload);
-  useDataEvent("inventory.changed", reload);
-  useDataEvent("stock.changed", reload);
+  // Una operacion emite varios eventos en el mismo tick (inventario, stock, producto): se agrupan
+  // en una sola recarga del catalogo en vez de repetir la consulta completa por cada evento.
+  const scheduleReload = useCallback(() => {
+    if (reloadScheduledRef.current) return;
+    reloadScheduledRef.current = true;
+    window.queueMicrotask(() => {
+      reloadScheduledRef.current = false;
+      void reload();
+    });
+  }, [reload]);
+
+  useDataEvent("product.changed", scheduleReload);
+  useDataEvent("promotion.changed", scheduleReload);
+  useDataEvent("inventory.changed", scheduleReload);
+  useDataEvent("stock.changed", scheduleReload);
   useDataEvent("payment.changed", reloadBankAccounts);
   useDataEvent("cash-shift.changed", reloadCashShift);
   useDataEvent("business-config.changed", reloadPaymentMethods);

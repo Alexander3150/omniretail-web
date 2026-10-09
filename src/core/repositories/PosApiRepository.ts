@@ -106,7 +106,7 @@ export interface PosApiSaleConfirmation {
   items: PosApiSaleItem[];
   payments: PosApiPayment[];
   inventoryEffects: Array<{ id: string }>;
-  cashMovement?: PosApiCashMovement;
+  cashMovement?: Pick<PosApiCashMovement, "id" | "cashShiftId" | "amount">;
   order?: { id: string; orderNumber: string };
   pickingOrder?: { id: string; orderId: string };
   idempotent: boolean;
