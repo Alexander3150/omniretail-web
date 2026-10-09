@@ -125,4 +125,15 @@ describe("ApiBranchRepository.getAssignedActive", () => {
     await repository.getAssignedActive(TENANT);
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
+
+  it("solo se ejecuta en el navegador: sin window falla sin llamar al backend", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("window", undefined);
+
+    await expect(
+      new ApiBranchRepository(createEventBus().eventBus).getAssignedActive(TENANT),
+    ).rejects.toThrow("solo se pueden leer desde el navegador");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

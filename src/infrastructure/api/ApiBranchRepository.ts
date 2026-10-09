@@ -69,6 +69,14 @@ export class ApiBranchRepository implements BranchRepository {
    * `auth/**`.
    */
   async getAssignedActive(tenantId: string): Promise<Branch[]> {
+    // Solo en el navegador: la sesion vive en una cookie HttpOnly que el fetch same-origin envia
+    // solo. Desde el servidor la URL relativa no resuelve ni llevaria la cookie del usuario, y
+    // reenviarla a mano mezclaria sesiones entre peticiones. Hoy solo la llama ActiveBranchProvider
+    // dentro de un efecto; este chequeo evita que una llamada nueva desde el servidor falle en
+    // silencio.
+    if (typeof window === "undefined") {
+      throw new Error("Las sucursales asignadas solo se pueden leer desde el navegador.");
+    }
     const branches = await this.assignedCache.get(async () => {
       const response = await fetch("/api/auth/session/branches", {
         credentials: "same-origin",
