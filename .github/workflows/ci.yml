@@ -44,6 +44,17 @@ jobs:
       - name: "[Step 1] Lint"
         run: npm run lint
 
+      - name: "[Step 1] Pruebas unitarias con cobertura"
+        run: npm run test:coverage
+
+      - name: Publicar cobertura para SonarQube
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 1
+
       - name: "[Step 1] Verificar contratos de Storefront y Ecommerce"
         run: |
           npx --yes --package=tsx tsx scripts/verify-storefront-public-config-contracts.ts
@@ -83,6 +94,13 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0 # Sonar necesita el historial completo para detectar codigo nuevo.
+
+      - name: Descargar cobertura
+        if: env.SONAR_TOKEN != '' && vars.SONAR_ORGANIZATION != '' && vars.SONAR_PROJECT_KEY != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-lcov
+          path: coverage
 
       - name: "[Step 2] Analisis con SonarQube Cloud"
         if: env.SONAR_TOKEN != '' && vars.SONAR_ORGANIZATION != '' && vars.SONAR_PROJECT_KEY != ''
