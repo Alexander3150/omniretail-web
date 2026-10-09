@@ -147,13 +147,59 @@ function apiPaymentMethodsForCustomers(
   };
 }
 
-/** `/administration/branches` exige `admin.branches.read`. */
-function apiBranchesForEmployees(
+const BRANCH_ADMIN_PERMISSIONS = ["admin.branches.read", "admin.branches.manage"] as const;
+
+/**
+ * Lectura de sucursales para un empleado SIN permiso administrativo: solo ve las sucursales activas
+ * que tiene asignadas (`GET /auth/session/branches`). Mantiene el contrato de `BranchRepository`
+ * para que los servicios operativos (inventario, compras, recepciones...) validen la sucursal sin
+ * necesitar `admin.branches.read`. Una sucursal fuera de esa lista se trata como inexistente.
+ * Crear y editar siguen exigiendo el permiso administrativo en el backend.
+ */
+function assignedBranchRepository(
+  api: ApiBranchRepository,
+  tenantId: string,
+): BranchRepository {
+  const assigned = () => api.getAssignedActive(tenantId);
+  const forTenant = async (id: string) =>
+    (await assigned()).find((branch) => branch.id === id && branch.tenantId === tenantId) ?? null;
+
+  return {
+    getAll: assigned,
+    getById: forTenant,
+    getByIdScoped: (scopedTenantId, id) =>
+      scopedTenantId === tenantId ? forTenant(id) : Promise.resolve(null),
+    getActive: assigned,
+    getActiveByTenant: async (scopedTenantId) =>
+      scopedTenantId === tenantId ? assigned() : [],
+    listByTenant: async (scopedTenantId) => (scopedTenantId === tenantId ? assigned() : []),
+    getActiveByTenantAndType: async (scopedTenantId, type) =>
+      scopedTenantId === tenantId
+        ? (await assigned()).filter((branch) => branch.type === type)
+        : [],
+    create: (input) => api.create(input),
+    update: (id, input) => api.update(id, input),
+  };
+}
+
+/**
+ * `/administration/branches` exige `admin.branches.read`. Con ese permiso se usa el backend
+ * administrativo; sin el, un empleado lee solo sus sucursales asignadas (nunca mock, nunca un 403).
+ * Clientes y storefront publico siguen en el mock.
+ */
+export function apiBranchesForEmployees(
   mock: BranchRepository,
-  api: BranchRepository,
+  api: ApiBranchRepository,
   currentSession: CurrentSessionClient,
 ): BranchRepository {
-  const resolve = employeeRouter(mock, api, currentSession);
+  const resolve = async (tenantId?: string): Promise<BranchRepository> => {
+    const current = await currentSession.get();
+    if (current?.user.type !== UserType.employee) return mock;
+    if (tenantId !== undefined && current.user.tenantId !== tenantId) return mock;
+    const granted = current.role?.permissions ?? [];
+    const canReadAdministration = BRANCH_ADMIN_PERMISSIONS.some((key) => granted.includes(key));
+    return canReadAdministration ? api : assignedBranchRepository(api, current.user.tenantId);
+  };
 
   return {
     getAll: async (): Promise<Branch[]> => (await resolve()).getAll(),

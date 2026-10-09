@@ -18,8 +18,14 @@ interface ActiveBranchContextValue {
   branches: Branch[];
   currentBranch: Branch | null;
   loading: boolean;
+  /** Mensaje si no se pudieron leer las sucursales (distinto de una lista realmente vacia). */
+  error: string | null;
+  /** Vuelve a pedir las sucursales (p. ej. desde el boton "Reintentar"). */
+  reload: () => Promise<void>;
   setActiveBranchId: (branchId: string) => void;
 }
+
+const BRANCH_LOAD_ERROR = "No se pudieron cargar las sucursales.";
 
 interface ActiveBranchProviderProps {
   /**
@@ -76,6 +82,7 @@ export function ActiveBranchProvider({
   const [branches, setBranches] = useState<Branch[]>([]);
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const applyBranches = useCallback(
     async (activeBranches: Branch[]) => {
@@ -104,47 +111,52 @@ export function ActiveBranchProvider({
     [activeBranchId, canAccessBranch, repositories.auth],
   );
 
-  // Si la lista de sucursales no se puede leer (p. ej. 403 por falta de permiso), el selector debe
-  // salir de "Cargando sucursal" y mostrar "Sin sucursales" en vez de quedarse cargando.
-  const clearBranches = useCallback(() => {
+  // Si la lista no se puede leer (red, 403...) se distingue de una lista realmente vacia: el
+  // selector sale de "Cargando sucursal" y ofrece reintentar en vez de decir "Sin sucursales".
+  const failBranches = useCallback(() => {
     setBranches([]);
     setActiveBranchId(null);
+    setError(BRANCH_LOAD_ERROR);
     setLoading(false);
   }, []);
 
-  const reloadBranches = useCallback(async () => {
-    if (!tenantId) {
-      await applyBranches([]);
-      return;
-    }
-    try {
-      const activeBranches = await repositories.branches.getActiveByTenant(tenantId);
-      await applyBranches(activeBranches);
-    } catch {
-      clearBranches();
-    }
-  }, [applyBranches, clearBranches, repositories, tenantId]);
+  const loadBranches = useCallback(
+    async (isCurrent: () => boolean = () => true) => {
+      try {
+        const activeBranches = tenantId
+          ? await repositories.branches.getActiveByTenant(tenantId)
+          : [];
+        if (!isCurrent()) return;
+        await applyBranches(activeBranches);
+        if (isCurrent()) setError(null);
+      } catch {
+        if (isCurrent()) failBranches();
+      }
+    },
+    [applyBranches, failBranches, repositories, tenantId],
+  );
+
+  const reloadBranches = useCallback(() => {
+    setLoading(true);
+    return loadBranches();
+  }, [loadBranches]);
 
   useEffect(() => {
     let active = true;
-    const request = tenantId
-      ? repositories.branches.getActiveByTenant(tenantId)
-      : Promise.resolve([]);
-    request
-      .then(async (activeBranches) => {
-        if (!active) return;
-        await applyBranches(activeBranches);
-      })
-      .catch(() => {
-        if (active) clearBranches();
-      });
+    window.queueMicrotask(() => {
+      if (active) void loadBranches(() => active);
+    });
 
     return () => {
       active = false;
     };
-  }, [applyBranches, clearBranches, repositories, tenantId]);
+  }, [loadBranches]);
 
-  useDataEvent("branch.changed", reloadBranches);
+  const onBranchChanged = useCallback(() => {
+    void loadBranches();
+  }, [loadBranches]);
+
+  useDataEvent("branch.changed", onBranchChanged);
 
   const currentBranch = useMemo(
     () => branches.find((branch) => branch.id === activeBranchId) ?? null,
@@ -168,9 +180,11 @@ export function ActiveBranchProvider({
       branches,
       currentBranch,
       loading,
+      error,
+      reload: reloadBranches,
       setActiveBranchId: selectActiveBranch,
     }),
-    [branches, currentBranch, loading, selectActiveBranch],
+    [branches, currentBranch, loading, error, reloadBranches, selectActiveBranch],
   );
 
   return <ActiveBranchContext.Provider value={value}>{children}</ActiveBranchContext.Provider>;

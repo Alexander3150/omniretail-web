@@ -5,7 +5,7 @@ import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchP
 import { ChevronDownIcon, StoreIcon } from "@/shared/navigation/PrivateHeader/icons";
 
 export function BranchSelector() {
-  const { branches, currentBranch, loading, setActiveBranchId } = useActiveBranch();
+  const { branches, currentBranch, loading, error, reload, setActiveBranchId } = useActiveBranch();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const canSwitch = branches.length > 1;
@@ -34,6 +34,21 @@ export function BranchSelector() {
       <div className="inline-flex h-10 max-w-full items-center gap-2 rounded-md border border-[var(--color-border)] bg-white px-2 text-sm font-semibold text-[var(--color-text-muted)] sm:px-3">
         <StoreIcon className="shrink-0" />
         Cargando sucursal
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div
+        className="inline-flex h-10 max-w-full items-center gap-2 rounded-md border border-[var(--color-danger)] bg-white px-2 text-sm font-semibold text-[var(--color-danger)] sm:px-3"
+        role="alert"
+      >
+        <StoreIcon className="shrink-0" />
+        <span className="truncate">No se pudo cargar la sucursal</span>
+        <button className="underline" onClick={() => void reload()} type="button">
+          Reintentar
+        </button>
       </div>
     );
   }

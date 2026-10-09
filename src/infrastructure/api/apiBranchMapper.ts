@@ -16,6 +16,14 @@ export interface ApiBranch {
   updatedAt: string;
 }
 
+/**
+ * Respuesta de `GET /auth/session/branches`: solo las sucursales activas asignadas al empleado de
+ * la sesion. Es un contrato acotado, por eso solo `id`, `code`, `name`, `type` y `status` son
+ * obligatorios; el resto se completa con los datos de la sesion.
+ */
+export type ApiSessionBranch = Pick<ApiBranch, "id" | "code" | "name" | "type" | "status"> &
+  Partial<Omit<ApiBranch, "id" | "code" | "name" | "type" | "status">>;
+
 /** CreateBranchRequest / UpdateBranchRequest: la tienda sale del JWT, nunca del body. */
 export interface ApiBranchRequest {
   code: string;
@@ -43,6 +51,22 @@ export function toBranch(branch: ApiBranch): Branch {
     createdAt: branch.createdAt,
     updatedAt: branch.updatedAt,
   };
+}
+
+export function toSessionBranch(
+  branch: ApiSessionBranch,
+  tenantId: string,
+  fetchedAt: string,
+): Branch {
+  return toBranch({
+    ...branch,
+    tenantId: branch.tenantId ?? tenantId,
+    address: branch.address ?? null,
+    phone: branch.phone ?? null,
+    email: branch.email ?? null,
+    createdAt: branch.createdAt ?? fetchedAt,
+    updatedAt: branch.updatedAt ?? fetchedAt,
+  });
 }
 
 /**
