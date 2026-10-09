@@ -82,12 +82,16 @@ export function usePosCashShift() {
     };
   }, [currentBranch, hasBranchAccess, user]);
 
-  const reload = useCallback(async () => {
+  /**
+   * `preserveError`: tras una mutación fallida se re-sincroniza con el backend sin borrar el
+   * motivo del fallo, que el usuario necesita para decidir si repite la operación.
+   */
+  const reload = useCallback(async (options: { preserveError?: boolean } = {}) => {
     const requestId = reloadSequenceRef.current + 1;
     reloadSequenceRef.current = requestId;
     if (branchLoading || sessionLoading) return;
     setLoading(true);
-    setError(null);
+    if (!options.preserveError) setError(null);
 
     try {
       const context = getContext();
@@ -148,11 +152,9 @@ export function usePosCashShift() {
     try {
       return await operation();
     } catch (mutationError) {
-      setError(cleanPosError(
-          mutationError,
-          "No se pudo completar la operación de caja.",
-          "non_idempotent",
-        ));
+      setError(
+        cleanPosError(mutationError, "No se pudo completar la operación de caja.", "non_idempotent"),
+      );
       return null;
     } finally {
       mutationLockRef.current = false;
@@ -164,7 +166,7 @@ export function usePosCashShift() {
     async (input: OpenCashShiftFormInput) => {
       const opened = await runMutation(() => services.open.execute({ ...getContext(), ...input }));
       if (!opened) {
-        await reload();
+        await reload({ preserveError: true });
         return false;
       }
       setLastClosedShift(null);
@@ -186,7 +188,7 @@ export function usePosCashShift() {
         }),
       );
       if (!movement) {
-        await reload();
+        await reload({ preserveError: true });
         return false;
       }
       setSuccessMessage("Movimiento de caja registrado correctamente.");
@@ -207,7 +209,7 @@ export function usePosCashShift() {
         }),
       );
       if (!closed) {
-        await reload();
+        await reload({ preserveError: true });
         return false;
       }
       setLastClosedShift(closed);
