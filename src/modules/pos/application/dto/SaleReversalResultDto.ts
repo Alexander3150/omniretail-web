@@ -2,19 +2,23 @@ import type { PaymentMethod, SaleStatus } from "@/core/enums";
 
 export interface SaleReversalResultDto {
   saleId: string;
-  documentNumber: string;
+  documentNumber?: string;
   saleStatus: SaleStatus;
   operationType: "return" | "void";
   operationId: string;
-  refundTotal: number;
-  refunds: Array<{
+  amount: number;
+  refunds?: Array<{
     paymentId: string;
     method: Exclude<PaymentMethod, "mixed">;
     amount: number;
   }>;
   inventoryMovementIds: string[];
   cashMovementId?: string;
-  creditNote: {
+  cashMovementIds: string[];
+  inventoryRestored: boolean;
+  cashMovementRecorded: boolean;
+  cashMovementAmount?: number;
+  creditNote?: {
     id: string;
     documentNumber: string;
     amount: number;

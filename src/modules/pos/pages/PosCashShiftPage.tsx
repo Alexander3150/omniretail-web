@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { CashShift } from "@/core/entities";
+import type { PosCashShiftDto } from "@/modules/pos/application/dto/PosCashShiftDto";
 import { CashMovementList } from "@/modules/pos/components/CashMovementList";
 import { CashMovementModal } from "@/modules/pos/components/CashMovementModal";
 import { CashShiftClosingModal } from "@/modules/pos/components/CashShiftClosingModal";
@@ -135,7 +135,7 @@ export function PosCashShiftPage() {
   );
 }
 
-function ClosedCashShiftResult({ cashShift }: { cashShift: CashShift }) {
+function ClosedCashShiftResult({ cashShift }: { cashShift: PosCashShiftDto }) {
   const difference = cashShift.difference ?? 0;
   return (
     <section className="rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm sm:p-5">
@@ -183,7 +183,9 @@ function ResultValue({
           : "border-[var(--color-border)] bg-white"
       }`}
     >
-      <dt className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">{label}</dt>
+      <dt className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+        {label}
+      </dt>
       <dd className={`mt-1 font-bold text-[var(--color-title)] ${emphasis ? "text-lg" : ""}`}>
         {formatCurrency(value)}
       </dd>

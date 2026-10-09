@@ -24,7 +24,8 @@ const POS_SALES_READ = "pos.sales.read";
 type PosSalesHistoryRepositories = Pick<
   RepositoryRegistry,
   "branches" | "orders" | "payments" | "roles" | "sales" | "users"
->;
+> &
+  Partial<Pick<RepositoryRegistry, "posApi" | "posDataSource">>;
 
 export interface GetPosSalesHistoryInput {
   actorUserId: string;
@@ -37,6 +38,12 @@ export class GetPosSalesHistoryService {
 
   async execute(input: GetPosSalesHistoryInput): Promise<PosSaleHistoryDto> {
     const context = await this.resolveContext(input);
+    if (this.repositories.posDataSource === "api") {
+      return this.getApiHistory(context.branchId, {
+        ...defaultPosSaleHistoryFilters,
+        ...input.filters,
+      });
+    }
     const sales = await this.repositories.sales.listByBranch(context.tenantId, context.branchId);
     const sourceOrderIds = [
       ...new Set(
@@ -72,6 +79,111 @@ export class GetPosSalesHistoryService {
         returned: countStatus(authorizedSales, SaleStatus.returned),
         cancelled: countStatus(authorizedSales, SaleStatus.cancelled),
       },
+    };
+  }
+
+  private async getApiHistory(
+    branchId: string,
+    filters: PosSaleHistoryFilters,
+  ): Promise<PosSaleHistoryDto> {
+    const api = this.repositories.posApi;
+    if (!api) throw new Error("La integración API de POS no está disponible.");
+    const rows = [];
+    let summary: PosSaleHistoryDto["summary"] = {
+      total: 0,
+      active: 0,
+      partiallyReturned: 0,
+      returned: 0,
+      cancelled: 0,
+    };
+    for (let page = 1; ; page += 1) {
+      const result = await api.getSalesHistory({
+        branchId,
+        search: filters.search || undefined,
+        from: filters.dateFrom || undefined,
+        to: filters.dateTo || undefined,
+        status: filters.saleStatus === "all" ? undefined : filters.saleStatus,
+        deliveryMethod:
+          filters.deliveryMethod === "all" || filters.deliveryMethod === "unavailable"
+            ? undefined
+            : filters.deliveryMethod,
+        operationalStatus:
+          filters.operationalStatus === "all" ||
+          filters.operationalStatus === "immediate" ||
+          filters.operationalStatus === "unavailable"
+            ? undefined
+            : filters.operationalStatus,
+        page,
+        pageSize: 100,
+      });
+      rows.push(...result.items);
+      summary = {
+        total: result.summary.total,
+        active: result.summary.completed,
+        partiallyReturned: result.summary.partiallyReturned,
+        returned: result.summary.returned,
+        cancelled: result.summary.cancelled,
+      };
+      if (page >= result.totalPages) break;
+    }
+    const details = await Promise.all(rows.map((row) => api.getSaleDetail(row.saleId)));
+    const sales = rows.map((row, index): PosSaleHistoryItemDto => {
+      const detail = details[index];
+      if (!detail) throw new Error(`No se pudo cargar el detalle de la venta ${row.saleNumber}.`);
+      const salePresentation = saleStatusPresentation[row.status];
+      const orderPresentation = row.operationalStatus
+        ? orderStatusPresentation[row.operationalStatus]
+        : undefined;
+      const hasUnavailableOrder = Boolean(row.sourceOrderId && !row.deliveryMethod);
+      return {
+        saleId: row.saleId,
+        documentNumber: row.saleNumber,
+        documentType: detail.sale.document.type,
+        taxId: detail.sale.document.taxId,
+        createdAt: row.createdAt,
+        customerDisplayName: row.customerDisplayName,
+        total: row.total,
+        saleStatus: row.status,
+        saleStatusLabel: salePresentation.label,
+        saleStatusTone: salePresentation.tone,
+        deliveryMethod: row.deliveryMethod,
+        deliveryMethodLabel: row.deliveryMethod
+          ? deliveryMethodLabels[row.deliveryMethod]
+          : "No disponible",
+        sourceOrderId: row.sourceOrderId,
+        orderStatus: row.operationalStatus,
+        operationalStatusLabel: row.sourceOrderId
+          ? (orderPresentation?.label ?? "Estado no disponible")
+          : "—",
+        operationalStatusTone: row.sourceOrderId
+          ? (orderPresentation?.tone ?? "neutral")
+          : "neutral",
+        hasUnavailableOrder,
+        paymentSummary:
+          detail.payments.length > 0
+            ? detail.payments.map((payment) => paymentMethodLabels[payment.method]).join(" + ")
+            : "No disponible",
+        payments: detail.payments.map((payment) => ({
+          paymentId: payment.id,
+          method: payment.method,
+          methodLabel: paymentMethodLabels[payment.method],
+          amount: payment.amount,
+          currency: payment.currency,
+        })),
+        items: detail.items.map((item) => ({
+          productId: item.productId,
+          sku: item.sku,
+          name: item.name,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          discount: item.discount,
+          subtotal: item.subtotal,
+        })),
+      };
+    });
+    return {
+      sales: sales.filter((sale) => matchesFilters(sale, filters)),
+      summary,
     };
   }
 

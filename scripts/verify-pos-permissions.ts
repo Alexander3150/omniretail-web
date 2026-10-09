@@ -253,6 +253,7 @@ function createHarness(initialUserId = USER_AUTHORIZED) {
     roles: new MockRoleRepository(store, eventBus),
     branches: new MockBranchRepository(store, eventBus),
     products: new MockProductRepository(store, eventBus),
+    productSalesPriceTiers: { getByProduct: async () => [] },
     promotions: new MockPromotionRepository(store, eventBus),
     units: new MockUnitRepository(store, eventBus),
     inventory: new MockInventoryRepository(store, eventBus),
@@ -460,8 +461,8 @@ async function verifyBankAccountBoundaries() {
     "read model must expose masked account number",
   );
   assert.ok(
-    accounts.every((account) => "accountNumber" in account),
-    "read model must expose full account number for POS transfer detail",
+    accounts.every((account) => !("accountNumber" in account)),
+    "read model must not expose full account number",
   );
   assert.equal(
     accounts.some((account) => account.id === "pos-hardening-bank-tenant-b"),
@@ -526,8 +527,8 @@ function verifySourceInvariants() {
     checkoutDto.match(/export interface CheckoutBankAccountDto \{[\s\S]*?\n\}/)?.[0] ?? "";
 
   assert.ok(
-    bankAccountDto.includes("accountNumber:"),
-    "POS bank account DTO must expose full account number for transfer detail",
+    !bankAccountDto.includes("accountNumber:"),
+    "POS bank account DTO must not expose full account number",
   );
 
   assert.ok(
@@ -539,8 +540,9 @@ function verifySourceInvariants() {
 
   assert.ok(
     checkoutModal.includes('label="Cuenta"') &&
-      checkoutModal.includes("value={account.accountNumber}"),
-    "POS transfer detail must show the full account number",
+      checkoutModal.includes("account.accountNumberMasked") &&
+      !checkoutModal.includes("value={account.accountNumber}"),
+    "POS transfer detail must show only the masked account number",
   );
 }
 

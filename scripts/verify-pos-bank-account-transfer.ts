@@ -205,31 +205,19 @@ async function verifyServiceBehavior(harness: ReturnType<typeof createHarness>) 
 function verifySourceInvariants() {
   const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
 
-  // A. Administration sigue mostrando el numero enmascarado, nunca el completo.
-  const bankAccountDto = read("src/modules/administration/application/dto/BankAccountDto.ts");
-  assert.match(
-    bankAccountDto,
-    /Omit<BankAccount,\s*"tenantId"\s*\|\s*"accountNumber">/,
-    "BankAccountDto de administration debe seguir excluyendo accountNumber",
-  );
-  const bankAccountMapper = read(
-    "src/modules/administration/application/mappers/BankAccountMapper.ts",
-  );
+  // A. El contrato de checkout POS solo permite el numero enmascarado.
+  const checkoutDto = read("src/modules/pos/application/dto/CheckoutDto.ts");
+  const checkoutBankAccountDto =
+    checkoutDto.match(/export interface CheckoutBankAccountDto \{[\s\S]*?\n\}/)?.[0] ?? "";
   assert.equal(
-    bankAccountMapper.includes("accountNumber: account.accountNumber"),
+    checkoutBankAccountDto.includes("accountNumber:"),
     false,
-    "El mapper de administration no debe mapear accountNumber completo",
+    "CheckoutBankAccountDto no debe exponer accountNumber completo",
   );
-  const bankAccountTable = read("src/modules/administration/components/BankAccountTable.tsx");
   assert.equal(
-    bankAccountTable.includes("account.accountNumberMasked"),
+    checkoutBankAccountDto.includes("accountNumberMasked:"),
     true,
-    "La tabla de administration debe renderizar accountNumberMasked",
-  );
-  assert.equal(
-    /\{account\.accountNumber\}/.test(bankAccountTable),
-    false,
-    "La tabla de administration no debe renderizar accountNumber completo",
+    "CheckoutBankAccountDto debe conservar accountNumberMasked",
   );
 
   // G. El service de POS no debe exigir admin.bank_accounts.manage.
@@ -240,6 +228,29 @@ function verifySourceInvariants() {
     checkoutBankAccountsService.includes("admin.bank_accounts.manage"),
     false,
     "El cajero no debe necesitar admin.bank_accounts.manage para leer cuentas de transferencia",
+  );
+  assert.equal(
+    checkoutBankAccountsService.includes("accountNumber: account.accountNumber"),
+    false,
+    "El servicio de checkout no debe mapear accountNumber completo",
+  );
+  assert.equal(
+    checkoutBankAccountsService.includes("accountNumberMasked: account.accountNumberMasked"),
+    true,
+    "El servicio de checkout debe mapear accountNumberMasked",
+  );
+  const apiSession = read("src/infrastructure/api/withApiSession.ts");
+  const apiBankAccounts =
+    apiSession.match(/function apiBankAccountsForEmployees[\s\S]*?\n\}/)?.[0] ?? "";
+  assert.equal(
+    apiBankAccounts.includes("getActiveByTenant: async (tenantId: string) => api.getActiveByTenant(tenantId)"),
+    true,
+    "La lectura operacional de cuentas POS debe usar API sin fallback a mock",
+  );
+  assert.equal(
+    apiBankAccounts.includes("getById: async (id: string) => api.getById(id)"),
+    true,
+    "La validacion de la cuenta seleccionada debe usar API sin fallback a mock",
   );
 
   // H. Checkout solo muestra mascara; no copia ni renderiza accountNumber completo.

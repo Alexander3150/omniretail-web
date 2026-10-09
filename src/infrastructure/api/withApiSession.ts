@@ -269,8 +269,8 @@ function apiPlansForEmployees(
 }
 
 /**
- * `/administration/bank-accounts` exige `admin.bank_accounts.manage`. Sin ese permiso (p. ej. un
- * cajero cargando las cuentas del POS) se usa el mock, igual que antes.
+ * Las mutaciones y el listado administrativo conservan `admin.bank_accounts.manage`. Las lecturas
+ * activas y por id usadas por POS son operacionales y siempre consultan API, sin fallback a mock.
  */
 function apiBankAccountsForEmployees(
   mock: BankAccountRepository,
@@ -281,10 +281,9 @@ function apiBankAccountsForEmployees(
 
   return {
     getAll: async () => (await resolve()).getAll(),
-    getActive: async () => (await resolve()).getActive(),
-    getActiveByTenant: async (tenantId: string) =>
-      (await resolve(tenantId)).getActiveByTenant(tenantId),
-    getById: async (id: string) => (await resolve()).getById(id),
+    getActive: async () => api.getActive(),
+    getActiveByTenant: async (tenantId: string) => api.getActiveByTenant(tenantId),
+    getById: async (id: string) => api.getById(id),
     create: async (input) => (await resolve(input.tenantId)).create(input),
     update: async (id, input) => (await resolve()).update(id, input),
   };

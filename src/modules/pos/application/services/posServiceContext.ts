@@ -2,6 +2,8 @@ import type { Branch, CashShift, Role, Tenant, User } from "@/core/entities";
 import { BranchStatus, CashShiftStatus, SaasCapabilityKey } from "@/core/enums";
 import { canUserOperateBranch } from "@/core/scopes/userBranchAccess";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
+import type { PosApiCashShift, PosApiRepository } from "@/core/repositories";
+import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import { resolveCurrentSessionSnapshot } from "@/modules/auth/application/services/resolveCurrentSessionSnapshot";
 import { ensureTenantCapability } from "@/shared/application/services/entitlementGuards";
 import { ResolveTenantEntitlementsService } from "@/shared/application/services/ResolveTenantEntitlementsService";
@@ -64,21 +66,24 @@ export async function ensurePosBranchAccess(
 }
 
 export async function ensureOwnedOpenCashShift(
-  repositories: Pick<RepositoryRegistry, "cashShifts">,
+  repositories: Pick<RepositoryRegistry, "cashShifts" | "posApi" | "posDataSource">,
   input: { tenantId: string; actorUserId: string; branchId: string; cashShiftId: string },
-): Promise<CashShift> {
-  const shift = await repositories.cashShifts.getOpenByUserAndBranch(
-    input.tenantId,
-    input.actorUserId,
-    input.branchId,
-  );
+): Promise<CashShift | PosApiCashShift> {
+  const shift =
+    repositories.posDataSource === "api"
+      ? await requirePosApi(repositories).getOpenCashShift(input.branchId)
+      : await repositories.cashShifts.getOpenByUserAndBranch(
+          input.tenantId,
+          input.actorUserId,
+          input.branchId,
+        );
   if (
     !shift ||
     shift.id !== input.cashShiftId ||
     shift.status !== CashShiftStatus.open ||
     shift.userId !== input.actorUserId ||
     shift.branchId !== input.branchId ||
-    shift.tenantId !== input.tenantId
+    ("tenantId" in shift && shift.tenantId !== input.tenantId)
   ) {
     throw new PosServiceError("No hay un turno de caja abierto y vigente para esta sucursal.");
   }
@@ -98,8 +103,42 @@ export async function ensureTenantCanUsePos(
   ensureTenantCapability(entitlements, SaasCapabilityKey.pos);
 }
 
-export function cleanPosError(error: unknown, fallback: string) {
-  if (error instanceof PosServiceError) return error.message;
-  if (error instanceof Error) return error.message;
+/**
+ * `read`: consulta sin efectos. `idempotent`: el reintento reutiliza la misma clave (venta,
+ * anulacion, devolucion) y el backend no duplica el efecto. `non_idempotent`: no hay garantia;
+ * ante una respuesta incierta el usuario debe verificar el estado antes de repetir.
+ */
+export type PosRetrySafety = "read" | "idempotent" | "non_idempotent";
+
+export function cleanPosError(
+  error: unknown,
+  fallback: string,
+  retrySafety: PosRetrySafety = "read",
+) {
+  if (error instanceof BackendRequestError) {
+    if (error.status === 401) return "Tu sesión expiró. Inicia sesión nuevamente para continuar.";
+    const uncertain = error.status === 0 || error.status >= 500;
+    if (uncertain && retrySafety === "idempotent") {
+      return "El servidor no confirmó la operación y pudo haberse registrado. Reintenta: se usará el mismo identificador y no se duplicará.";
+    }
+    if (uncertain && retrySafety === "non_idempotent") {
+      return "El servidor no confirmó la operación. Verifica el estado de caja antes de repetirla.";
+    }
+    if (error.status === 0) return "No hay conexión con el servidor. Intenta nuevamente.";
+    return error.message || fallback;
+  }
+  if (error instanceof Error && error.message) return error.message;
   return fallback;
+}
+
+export function requirePosApi(
+  repositories: Pick<RepositoryRegistry, "posApi" | "posDataSource">,
+): PosApiRepository {
+  if (repositories.posDataSource !== "api") {
+    throw new PosServiceError("La integración API de POS no está activa.");
+  }
+  if (!repositories.posApi) {
+    throw new PosServiceError("La integración API de POS no está disponible.");
+  }
+  return repositories.posApi;
 }

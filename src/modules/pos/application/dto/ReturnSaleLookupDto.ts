@@ -20,8 +20,8 @@ export interface ReturnSalePaymentDto {
   paymentId: string;
   method: PaymentMethod;
   amount: number;
-  refundedAmount: number;
-  refundableAmount: number;
+  refundedAmount?: number;
+  refundableAmount?: number;
   status: PaymentStatus;
 }
 

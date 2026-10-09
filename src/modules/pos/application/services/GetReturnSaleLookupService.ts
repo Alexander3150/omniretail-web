@@ -1,6 +1,7 @@
 import { DeliveryMethod } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { ReturnSaleLookupDto } from "@/modules/pos/application/dto/ReturnSaleLookupDto";
+import { requirePosApi } from "@/modules/pos/application/services/posServiceContext";
 import {
   requireReturnOperationContext,
   type ReturnOperationContext,
@@ -21,6 +22,36 @@ export class GetReturnSaleLookupService {
     );
     const documentNumber = input.documentNumber.trim();
     if (!documentNumber) throw new Error("El numero de documento es requerido.");
+    if (this.repositories.posDataSource === "api") {
+      const eligibility = await requirePosApi(this.repositories).getReturnEligibility(
+        context.branchId,
+        documentNumber,
+      );
+      if (!eligibility) return null;
+      const items = eligibility.items.map((item) => ({ ...item }));
+      const payments = eligibility.payments.map((payment) => ({
+        paymentId: payment.id,
+        method: payment.method,
+        amount: payment.amount,
+        status: payment.status,
+      }));
+      return {
+        sale: {
+          saleId: eligibility.sale.id,
+          documentNumber: eligibility.sale.documentNumber,
+          date: eligibility.sale.createdAt,
+          customerDisplayName: eligibility.sale.customerDisplayName,
+          total: eligibility.sale.total,
+          status: eligibility.sale.status,
+        },
+        items,
+        payments,
+        returnableItems: items.filter((item) => item.canReturn),
+        paymentSummary: payments.map((payment) => payment.method).join(" + "),
+        isWithinCurrentShift: eligibility.originalCashShiftOpen,
+        allowedOperations: eligibility.allowedOperations,
+      };
+    }
     const sale = await this.repositories.sales.getByDocumentNumber(
       context.tenantId,
       context.branchId,

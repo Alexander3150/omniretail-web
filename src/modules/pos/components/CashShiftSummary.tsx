@@ -1,5 +1,5 @@
-import type { CashShift } from "@/core/entities";
 import type { CashShiftSummaryDto } from "@/modules/pos/application/dto/CashShiftSummaryDto";
+import type { PosCashShiftDto } from "@/modules/pos/application/dto/PosCashShiftDto";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
 import { formatDate } from "@/shared/utils/formatDate";
@@ -7,7 +7,7 @@ import { formatDate } from "@/shared/utils/formatDate";
 interface CashShiftSummaryProps {
   branchName: string | null;
   cashierName: string | null;
-  cashShift: CashShift;
+  cashShift: PosCashShiftDto;
   summary: CashShiftSummaryDto;
 }
 
@@ -26,7 +26,8 @@ export function CashShiftSummary({
             {branchName ?? "Sucursal activa"}
           </p>
           <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-            Caja {cashShift.registerCode} · {cashierName ?? "Cajero"} · Apertura {formatDate(summary.openedAt)}
+            Caja {cashShift.registerCode} · {cashierName ?? "Cajero"} · Apertura{" "}
+            {formatDate(summary.openedAt)}
           </p>
         </div>
         <StatusBadge status="Caja abierta" tone="success" />
@@ -59,7 +60,9 @@ export function CashShiftSummary({
 function SummaryValue({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-lg border border-[var(--color-border)] bg-white px-3 py-2.5">
-      <dt className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">{label}</dt>
+      <dt className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+        {label}
+      </dt>
       <dd className="mt-1 font-bold text-[var(--color-title)]">{formatCurrency(value)}</dd>
     </div>
   );

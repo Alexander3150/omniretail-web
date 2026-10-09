@@ -739,7 +739,7 @@ function SelectedBankAccountDetail({ account }: { account?: CheckoutBankAccountD
       <DetailRow label="Banco" value={account.bankName} />
       <DetailRow label="Tipo de cuenta" value={accountTypeLabels[account.accountType]} />
       <DetailRow label="Titular" value={account.holderName} />
-      <DetailRow label="Cuenta" value={account.accountNumber} mono />
+      <DetailRow label="Cuenta" value={account.accountNumberMasked} mono />
     </div>
   );
 }

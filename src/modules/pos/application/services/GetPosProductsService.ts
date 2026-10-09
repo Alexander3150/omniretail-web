@@ -3,6 +3,7 @@ import { getBranchAvailableQuantity } from "@/core/inventory/stockAvailability";
 import { getCanonicalProductAvailability } from "@/core/inventory/canonicalAvailability";
 import { calculateEffectivePrice } from "@/core/pricing";
 import { fromBaseQuantity } from "@/core/units";
+import type { InventoryStockListItem } from "@/core/repositories";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { PosProductDto } from "@/modules/pos/application/dto/PosProductDto";
 
@@ -18,6 +19,9 @@ export class GetPosProductsService {
     const products = (await this.repositories.products.getAvailableForPos()).filter(
       (product) => product.tenantId === input.tenantId,
     );
+    if (this.repositories.inventoryStockDataSource === "api") {
+      return this.getApiProducts(input, products);
+    }
     const at = new Date().toISOString();
     const locations = await this.repositories.inventory.getLocations(input.branchId);
 
@@ -191,4 +195,109 @@ export class GetPosProductsService {
     );
     return resolvedKitAvailability.sort((left, right) => left.name.localeCompare(right.name));
   }
+
+  private async getApiProducts(
+    input: GetPosProductsInput,
+    products: Awaited<ReturnType<RepositoryRegistry["products"]["getAvailableForPos"]>>,
+  ): Promise<PosProductDto[]> {
+    const [stockItems, units] = await Promise.all([
+      this.getAllApiStock(input.branchId),
+      this.repositories.units.getByTenant(input.tenantId),
+    ]);
+    const stockByProductId = new Map(stockItems.map((item) => [item.productId, item]));
+    const at = new Date().toISOString();
+
+    const items = await Promise.all(
+      products.map(async (product): Promise<PosProductDto> => {
+        const [promotion, salesPriceTiers, conversions] = await Promise.all([
+          this.repositories.promotions.getApplicable({
+            tenantId: input.tenantId,
+            productId: product.id,
+            at,
+            channel: SalesChannel.pos,
+            branchId: input.branchId,
+          }),
+          this.repositories.productSalesPriceTiers.getByProduct(product.id),
+          this.repositories.units.getConversionsByProductScoped(input.tenantId, product.id),
+        ]);
+        const price = calculateEffectivePrice(product.salePrice, promotion);
+        const saleUnitId = product.saleUnitId ?? product.baseUnitId;
+        const stock = stockByProductId.get(product.id);
+        const tracksStock = product.tracking.stock || product.productType === ProductType.kit;
+        const canonicalAvailableQuantity = getApiAvailableQuantity(product.productType, stock);
+        let availableQuantity = canonicalAvailableQuantity;
+        let hasValidSaleConversion = true;
+        if (canonicalAvailableQuantity !== null) {
+          try {
+            availableQuantity = fromBaseQuantity(canonicalAvailableQuantity, {
+              targetUnitId: saleUnitId,
+              baseUnitId: product.baseUnitId,
+              conversions,
+            });
+          } catch {
+            availableQuantity = 0;
+            hasValidSaleConversion = false;
+          }
+        }
+        // El contrato de venta exige selecciones explicitas para trazabilidad. La terminal actual
+        // no ofrece ese selector, por lo que falla cerrado en vez de enviar selecciones vacias.
+        const requiresUnsupportedTraceability =
+          product.tracking.lot || product.tracking.serial || product.tracking.expiration;
+
+        return {
+          productId: product.id,
+          sku: product.sku,
+          barcode: product.barcode,
+          name: product.name,
+          productType: product.productType,
+          basePrice: price.basePrice,
+          effectivePrice: price.effectivePrice,
+          discount: price.discountAmount,
+          salesPriceTiers: salesPriceTiers
+            .filter(
+              (tier) =>
+                tier.tenantId === input.tenantId && tier.productId === product.id && tier.active,
+            )
+            .map(({ minQuantity, unitPrice, active }) => ({ minQuantity, unitPrice, active })),
+          promotion: promotion ?? undefined,
+          availableQuantity,
+          saleUnitId,
+          saleUnitName: units.find((unit) => unit.id === saleUnitId)?.name ?? saleUnitId,
+          tracksStock,
+          requiresLot: product.tracking.lot,
+          requiresSerial: product.tracking.serial,
+          requiresUnsupportedTraceability,
+          isAvailableForSale:
+            hasValidSaleConversion &&
+            !requiresUnsupportedTraceability &&
+            (!tracksStock || (availableQuantity !== null && availableQuantity > 0)),
+        };
+      }),
+    );
+    return items.sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  private async getAllApiStock(branchId: string): Promise<InventoryStockListItem[]> {
+    const items: InventoryStockListItem[] = [];
+    for (let page = 1; ; page += 1) {
+      const result = await this.repositories.inventory.getStockPage({
+        branchId,
+        productTypes: ["physical", "service", "kit"],
+        page,
+        pageSize: 100,
+        sort: "productName,asc",
+      });
+      items.push(...result.items);
+      if (page >= result.totalPages) return items;
+    }
+  }
+}
+
+function getApiAvailableQuantity(
+  productType: ProductType,
+  stock: InventoryStockListItem | undefined,
+): number | null {
+  if (productType === ProductType.service) return null;
+  if (!stock || stock.productType !== productType) return 0;
+  return stock.availableQuantity ?? 0;
 }

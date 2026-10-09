@@ -76,12 +76,12 @@ export async function requireCashContext(
 }
 
 export function assertOwnedCashShift(
-  shift: { tenantId: string; branchId: string; userId: string } | null,
+  shift: { tenantId?: string; branchId: string; userId: string } | null,
   context: CashShiftOperationContext,
 ): asserts shift is { tenantId: string; branchId: string; userId: string } {
   if (
     !shift ||
-    shift.tenantId !== context.tenantId ||
+    (shift.tenantId !== undefined && shift.tenantId !== context.tenantId) ||
     shift.branchId !== context.branchId ||
     shift.userId !== context.actorUserId
   ) {

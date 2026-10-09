@@ -16,6 +16,7 @@ import { calculateEffectivePrice, resolveQuantityPrice } from "@/core/pricing";
 import { toBaseQuantity } from "@/core/units";
 import type {
   ConfirmSaleResult,
+  PosApiCashShift,
   SaleConfirmationDeferredOrderInput,
   SaleConfirmationPaymentMethod,
   SaleConfirmationPaymentInput,
@@ -27,6 +28,7 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import { isStockLotEligible } from "@/infrastructure/mock/repositories/stockLotMutations";
 import type { CheckoutDto } from "@/modules/pos/application/dto/CheckoutDto";
 import type { SaleTicketDto, SaleTicketItemDto } from "@/modules/pos/application/dto/SaleTicketDto";
+import type { PosSaleConfirmationDto } from "@/modules/pos/application/dto/PosSaleConfirmationDto";
 import {
   getApprovedCardTerminalReference,
   validateCheckout,
@@ -38,6 +40,7 @@ import {
   ensurePosPermission,
   ensureTenantCanUsePos,
   resolvePosSessionContext,
+  requirePosApi,
 } from "@/modules/pos/application/services/posServiceContext";
 
 export interface ConfirmPosSaleInput {
@@ -56,7 +59,7 @@ export interface ConfirmPosSaleInput {
 interface AuthorizedConfirmPosSaleInput extends ConfirmPosSaleInput {
   user: User;
   currentBranch: Branch;
-  cashShift: CashShift;
+  cashShift: PosApiCashShift | CashShift;
   currency: CurrencyCode;
 }
 
@@ -77,7 +80,7 @@ interface ValidatedSaleItem {
 export class ConfirmSaleService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
-  async execute(input: ConfirmPosSaleInput): Promise<ConfirmSaleResult> {
+  async execute(input: ConfirmPosSaleInput): Promise<PosSaleConfirmationDto> {
     const context = await this.resolveOperationalContext(input.branchId, input.cashShiftId);
     const authorizedInput: AuthorizedConfirmPosSaleInput = {
       ...input,
@@ -91,6 +94,11 @@ export class ConfirmSaleService {
     if (authorizedInput.ticket.items.length === 0) throw new Error("El ticket está vacío.");
     if (authorizedInput.ticket.hasUnsupportedTraceability) {
       throw new Error("El ticket contiene lote, serial o kit no soportado para confirmación.");
+    }
+    if (this.repositories.posDataSource === "api" && authorizedInput.sourceOrderId) {
+      throw new Error(
+        "La confirmación de pedidos existentes todavía no está soportada en modo API.",
+      );
     }
 
     const capabilities = await this.repositories.businessConfig.getCapabilities(
@@ -109,6 +117,13 @@ export class ConfirmSaleService {
     }
 
     await this.validateOptionalReferences(authorizedInput);
+    if (this.repositories.posDataSource === "api") {
+      return this.confirmWithApi(
+        authorizedInput,
+        confirmationId,
+        capabilities.allowedPosPaymentMethods,
+      );
+    }
     const items = await this.validateAndBuildItems(authorizedInput);
     const totals = calculateValidatedTotals(items);
     assertTicketTotals(authorizedInput.ticket, totals);
@@ -123,32 +138,82 @@ export class ConfirmSaleService {
       ? undefined
       : this.createDeferredOrderInput(authorizedInput);
 
-    return this.repositories.saleConfirmations.confirm({
-      confirmationId,
-      tenantId: authorizedInput.currentBranch.tenantId,
-      branchId: authorizedInput.currentBranch.id,
-      cashierUserId: authorizedInput.user.id,
+    return toSaleConfirmationDto(
+      await this.repositories.saleConfirmations.confirm({
+        confirmationId,
+        tenantId: authorizedInput.currentBranch.tenantId,
+        branchId: authorizedInput.currentBranch.id,
+        cashierUserId: authorizedInput.user.id,
+        cashShiftId: currentShift.id,
+        customerId: authorizedInput.customerId,
+        sourceOrderId: authorizedInput.sourceOrderId,
+        deferredOrder,
+        items: items.map((item) => ({
+          productId: item.productId,
+          skuSnapshot: item.skuSnapshot,
+          nameSnapshot: item.nameSnapshot,
+          quantity: item.quantity,
+          inventoryQuantity: item.inventoryQuantity,
+          unitPrice: item.unitPrice,
+          discount: item.discount,
+          subtotal: item.subtotal,
+        })),
+        document,
+        subtotal: fromCents(totals.subtotalCents),
+        discountTotal: fromCents(totals.discountTotalCents),
+        taxTotal: 0,
+        total: fromCents(totals.totalCents),
+        payments,
+      }),
+    );
+  }
+
+  private async confirmWithApi(
+    input: AuthorizedConfirmPosSaleInput,
+    confirmationId: string,
+    allowedMethods: PaymentMethod[],
+  ): Promise<PosSaleConfirmationDto> {
+    const seenProductIds = new Set<string>();
+    input.ticket.items.forEach((item) => validateTicketItem(item, seenProductIds));
+    const payments = await this.validateAndBuildPayments(input);
+    assertAllowedPaymentMethods(payments, allowedMethods);
+    assertPaymentsMatchTotal(payments, toCents(input.ticket.total));
+    const currentShift = await this.requireCurrentCashShift(input);
+    const deferredOrder = this.createDeferredOrderInput(input);
+    const result = await requirePosApi(this.repositories).confirmSale({
+      branchId: input.currentBranch.id,
       cashShiftId: currentShift.id,
-      customerId: authorizedInput.customerId,
-      sourceOrderId: authorizedInput.sourceOrderId,
-      deferredOrder,
-      items: items.map((item) => ({
-        productId: item.productId,
-        skuSnapshot: item.skuSnapshot,
-        nameSnapshot: item.nameSnapshot,
-        quantity: item.quantity,
-        inventoryQuantity: item.inventoryQuantity,
-        unitPrice: item.unitPrice,
-        discount: item.discount,
-        subtotal: item.subtotal,
-      })),
-      document,
-      subtotal: fromCents(totals.subtotalCents),
-      discountTotal: fromCents(totals.discountTotalCents),
+      customerId: input.customerId,
       taxTotal: 0,
-      total: fromCents(totals.totalCents),
-      payments,
+      items: input.ticket.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        discount: item.discount,
+        trackingSelections: [],
+      })),
+      payments: payments.map((payment) => ({
+        method: payment.method,
+        amount: payment.amount,
+        bankAccountId: payment.bankAccountId,
+        reference: payment.reference,
+        externallyVerified: payment.manualVerification?.externallyVerified,
+      })),
+      confirmationId,
+      document: createDocumentSnapshot(input.checkout),
+      sourceOrderId: null,
+      deferredOrder,
     });
+    return {
+      sale: {
+        id: result.id,
+        number: result.number,
+        total: result.total,
+        sourceOrderId: result.sourceOrderId,
+      },
+      payments: result.payments.map((payment) => ({ currency: payment.currency })),
+      inventoryMovements: result.inventoryEffects,
+      idempotent: result.idempotent,
+    };
   }
 
   private createDeferredOrderInput(
@@ -230,18 +295,21 @@ export class ConfirmSaleService {
   }
 
   private async requireCurrentCashShift(input: AuthorizedConfirmPosSaleInput) {
-    const shift = await this.repositories.cashShifts.getOpenByUserAndBranch(
-      input.currentBranch.tenantId,
-      input.user.id,
-      input.currentBranch.id,
-    );
+    const shift =
+      this.repositories.posDataSource === "api"
+        ? await requirePosApi(this.repositories).getOpenCashShift(input.currentBranch.id)
+        : await this.repositories.cashShifts.getOpenByUserAndBranch(
+            input.currentBranch.tenantId,
+            input.user.id,
+            input.currentBranch.id,
+          );
     if (
       !shift ||
       shift.id !== input.cashShift.id ||
       shift.status !== CashShiftStatus.open ||
       shift.userId !== input.user.id ||
       shift.branchId !== input.currentBranch.id ||
-      shift.tenantId !== input.currentBranch.tenantId ||
+      ("tenantId" in shift && shift.tenantId !== input.currentBranch.tenantId) ||
       input.user.tenantId !== input.currentBranch.tenantId
     ) {
       throw new Error("No hay un turno de caja abierto y vigente para esta sucursal.");
@@ -472,6 +540,22 @@ export class ConfirmSaleService {
     }
     return payments;
   }
+}
+
+function toSaleConfirmationDto(result: ConfirmSaleResult): PosSaleConfirmationDto {
+  return {
+    sale: {
+      id: result.sale.id,
+      number: result.sale.number,
+      total: result.sale.total,
+      sourceOrderId: result.sale.sourceOrderId,
+    },
+    payments: result.payments.map((payment) => ({ currency: payment.currency })),
+    inventoryMovements: result.inventoryMovements,
+    order: result.order,
+    pickingOrder: result.pickingOrder,
+    idempotent: result.idempotent,
+  };
 }
 
 function validateTicketItem(item: SaleTicketItemDto, seenProductIds: Set<string>) {
