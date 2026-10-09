@@ -16,6 +16,8 @@ import type {
   CategoryRepository,
   CustomerPaymentMethodRepository,
   CustomerRepository,
+  DispatchCommandRepository,
+  DispatchReadRepository,
   DispatchRepository,
   InventoryAdjustmentRepository,
   InventoryRepository,
@@ -66,6 +68,7 @@ import { withApiPurchaseOrders } from "@/infrastructure/api/withApiPurchaseOrder
 import { withApiReceiving } from "@/infrastructure/api/withApiReceiving";
 import { withApiLogisticsPickingRead } from "@/infrastructure/api/withApiLogisticsPickingRead";
 import { withApiLogisticsPacking } from "@/infrastructure/api/withApiLogisticsPacking";
+import { withApiLogisticsDispatch } from "@/infrastructure/api/withApiLogisticsDispatch";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { getReferenceDataCache, referenceDataPrefixes } from "@/shared/utils/requestCache";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
@@ -131,6 +134,7 @@ export interface RepositoryRegistry {
   pickingReadDataSource?: "mock" | "api";
   pickingCommandsEnabled?: boolean;
   packingDataSource: "mock" | "api";
+  dispatchReadDataSource: "mock" | "api";
   tenants: TenantRepository;
   tenantOnboarding: TenantOnboardingRepository;
   businessConfig: BusinessConfigRepository;
@@ -180,6 +184,8 @@ export interface RepositoryRegistry {
   productMedia: ProductMediaRepository;
   catalogImageAssets: CatalogImageAssetRepository;
   dispatches: DispatchRepository;
+  dispatchRead?: DispatchReadRepository;
+  dispatchCommands?: DispatchCommandRepository;
   storePickupDeliveries: StorePickupDeliveryRepository;
   notifications: NotificationRepository;
   auditLogs: AuditLogRepository;
@@ -210,6 +216,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       pickingReadDataSource: "mock",
       pickingCommandsEnabled: true,
       packingDataSource: "mock",
+      dispatchReadDataSource: "mock",
       tenants: new MockTenantRepository(store, eventBus),
       tenantOnboarding: new MockTenantOnboardingRepository(store, eventBus),
       businessConfig: new MockBusinessConfigRepository(store, eventBus),
@@ -264,28 +271,30 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     // los flujos Product API no lo consultan ni escriben UUID reales en relaciones mock.
     // Modo mock (default): exactamente los mismos repositorios de siempre.
     const repositories = isApiMode()
-      ? withApiLogisticsPacking(
-          withApiLogisticsPickingRead(
-            withApiReceiving(
-              withApiPurchaseOrders(
-                withApiInventoryStock(
-                  withApiInventoryMovements(
-                    withApiProductRelations(
-                      withApiProducts(
-                        withApiCatalogMasterData(
-                          withApiSession(mockRepositories, eventBus),
+      ? withApiLogisticsDispatch(
+          withApiLogisticsPacking(
+            withApiLogisticsPickingRead(
+              withApiReceiving(
+                withApiPurchaseOrders(
+                  withApiInventoryStock(
+                    withApiInventoryMovements(
+                      withApiProductRelations(
+                        withApiProducts(
+                          withApiCatalogMasterData(
+                            withApiSession(mockRepositories, eventBus),
+                            eventBus,
+                          ),
                           eventBus,
                         ),
                         eventBus,
                       ),
-                      eventBus,
                     ),
+                    eventBus,
                   ),
                   eventBus,
                 ),
                 eventBus,
               ),
-              eventBus,
             ),
           ),
         )

@@ -45,17 +45,9 @@ jobs:
         run: npm run lint
 
       - name: "[Step 1] Pruebas unitarias con cobertura"
-        run: npm run test:coverage
+        run: npm test
 
-      - name: Publicar cobertura para SonarQube
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-lcov
-          path: coverage/lcov.info
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: "[Step 1] Verificar contratos de Storefront y Ecommerce"
+      - name: "[Step 1] Verificar contratos de aplicacion"
         run: |
           npx --yes --package=tsx tsx scripts/verify-storefront-public-config-contracts.ts
           npx --yes --package=tsx tsx scripts/verify-customer-storefront-integration.ts
@@ -65,6 +57,7 @@ jobs:
           npx --yes --package=tsx tsx scripts/verify-hardware-demo-catalog.ts
           npx --yes --package=tsx tsx scripts/verify-tenant-isolation-foundation.ts
           npx --yes --package=tsx tsx scripts/verify-storefront-second-purchase.ts
+          npx --yes --package=tsx tsx scripts/verify-api-logistics-dispatch.ts
 
       - name: "[Step 1] Build de produccion"
         run: npm run build
@@ -95,12 +88,20 @@ jobs:
         with:
           fetch-depth: 0 # Sonar necesita el historial completo para detectar codigo nuevo.
 
-      - name: Descargar cobertura
+      - name: Configurar Node.js 22
         if: env.SONAR_TOKEN != '' && vars.SONAR_ORGANIZATION != '' && vars.SONAR_PROJECT_KEY != ''
-        uses: actions/download-artifact@v4
+        uses: actions/setup-node@v7
         with:
-          name: coverage-lcov
-          path: coverage
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        if: env.SONAR_TOKEN != '' && vars.SONAR_ORGANIZATION != '' && vars.SONAR_PROJECT_KEY != ''
+        run: npm ci
+
+      - name: Generar cobertura LCOV para SonarQube Cloud
+        if: env.SONAR_TOKEN != '' && vars.SONAR_ORGANIZATION != '' && vars.SONAR_PROJECT_KEY != ''
+        run: npm test
 
       - name: "[Step 2] Analisis con SonarQube Cloud"
         if: env.SONAR_TOKEN != '' && vars.SONAR_ORGANIZATION != '' && vars.SONAR_PROJECT_KEY != ''

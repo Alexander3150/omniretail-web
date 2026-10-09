@@ -1,5 +1,12 @@
 import type { DispatchNotificationStatus } from "@/core/repositories";
-import type { DispatchStatus, OrderStatus, TransportMode } from "@/core/enums";
+import type {
+  DispatchStatus,
+  InventoryTransferStatus,
+  OrderStatus,
+  PackingStatus,
+  PickingStatus,
+  TransportMode,
+} from "@/core/enums";
 
 export interface DispatchAddressDto {
   recipientName: string;
@@ -34,6 +41,68 @@ export interface PreparedOrderQueueItemDto {
 export interface PreparedOrderDetailDto extends PreparedOrderQueueItemDto {
   orderStatus: OrderStatus;
   pickingStatus: "completed";
+}
+
+export interface DispatchQueueItemDto {
+  orderId: string | null;
+  orderReference: string | null;
+  createdAt: string;
+  transportMode: TransportMode;
+  packingId: string;
+  packingFinalizedAt: string;
+  sourceType: "order" | "transfer";
+  sourceId: string;
+  sourceReference: string;
+}
+
+export interface PreparedDispatchDetailDto {
+  orderId: string;
+  orderReference: string;
+  createdAt: string;
+  orderStatus: OrderStatus;
+  recipientName: string | null;
+  recipientPhone: string | null;
+  address: PreparedDispatchAddressDto | null;
+  notificationContact: DispatchNotificationContactDto;
+  transportMode: TransportMode;
+  pickingOrderId: string;
+  pickingStatus: PickingStatus;
+  pickingCompletedAt: string;
+  packingId: string;
+  packingStatus: PackingStatus;
+  packingFinalizedAt: string;
+  packageCount: number;
+  totalWeight: number;
+  labelCode: string;
+}
+
+export interface PreparedDispatchAddressDto {
+  recipientName: string | null;
+  recipientPhone: string | null;
+  line1: string | null;
+  line2: string | null;
+  city: string | null;
+  stateOrDepartment: string | null;
+  postalCode: string | null;
+  country: string | null;
+  references: string | null;
+}
+
+export interface ApiDispatchResultDto {
+  orderId: string | null;
+  orderStatus: OrderStatus | null;
+  dispatchId: string;
+  dispatchStatus: DispatchStatus;
+  transportMode: TransportMode;
+  carrierName: string | null;
+  trackingNumber: string | null;
+  dispatchedAt: string;
+  packages: DispatchPackageDto[];
+  idempotent: boolean;
+  sourceType: "order" | "transfer";
+  sourceId: string;
+  sourceReference: string | null;
+  transferStatus: InventoryTransferStatus | null;
 }
 
 export interface DispatchNotificationDto {

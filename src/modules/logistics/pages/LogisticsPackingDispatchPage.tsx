@@ -4,13 +4,16 @@ import { DeliveryMethod } from "@/core/enums";
 import { PackingOrderSelector } from "@/modules/logistics/components/PackingOrderSelector";
 import { PackingWorkspace } from "@/modules/logistics/components/PackingWorkspace";
 import { TransferDispatchPanel } from "@/modules/logistics/components/TransferDispatchPanel";
+import { DispatchReadPanel } from "@/modules/logistics/components/DispatchReadPanel";
 import { useLogisticsPacking } from "@/modules/logistics/hooks/useLogisticsPacking";
+import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 import { PageHeader } from "@/shared/components/PageHeader";
 import { useToast } from "@/shared/components/Toast";
 
 export function LogisticsPackingDispatchPage() {
   const packing = useLogisticsPacking();
+  const repositories = useRepositories();
   const { showToast } = useToast();
 
   return (
@@ -91,7 +94,7 @@ export function LogisticsPackingDispatchPage() {
           />
         </>
       ) : null}
-      <TransferDispatchPanel />
+      {repositories.dispatchReadDataSource === "api" ? <DispatchReadPanel /> : <TransferDispatchPanel />}
     </div>
   );
 }

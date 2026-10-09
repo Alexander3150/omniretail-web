@@ -15,7 +15,7 @@ export const logisticsNavigation = [
         id: "logistics-dispatches",
         label: "Packing y Despacho",
         href: "/logistica/despachos",
-        permission: "logistics.packing.read",
+        anyPermission: ["logistics.packing.read", "logistics.dispatch.read"],
       },
       {
         id: "logistics-history",

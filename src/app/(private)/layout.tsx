@@ -7,6 +7,7 @@ import { ScopedActiveBranchProvider } from "@/modules/auth/components/ScopedActi
 import { ScopedEntitlementProvider } from "@/modules/auth/components/ScopedEntitlementProvider";
 import { CurrentSessionProvider } from "@/modules/auth/providers/CurrentSessionProvider";
 import { PackingMutationCoordinatorProvider } from "@/modules/logistics/providers/PackingMutationCoordinatorProvider";
+import { DispatchMutationCoordinatorProvider } from "@/modules/logistics/providers/DispatchMutationCoordinatorProvider";
 import type { ReactNode } from "react";
 
 type PrivateLayoutProps = {
@@ -17,16 +18,18 @@ export default function PrivateLayout({ children }: PrivateLayoutProps) {
   return (
     <CurrentSessionProvider>
       <PackingMutationCoordinatorProvider>
-        <RequireSession>
-          <EmployeeInactivityTimeout />
-          <ScopedEntitlementProvider>
-            <ScopedActiveBranchProvider>
-              <AuthorizedPrivateShell navigationItems={navigationConfig}>
-                <RequirePermission>{children}</RequirePermission>
-              </AuthorizedPrivateShell>
-            </ScopedActiveBranchProvider>
-          </ScopedEntitlementProvider>
-        </RequireSession>
+        <DispatchMutationCoordinatorProvider>
+          <RequireSession>
+            <EmployeeInactivityTimeout />
+            <ScopedEntitlementProvider>
+              <ScopedActiveBranchProvider>
+                <AuthorizedPrivateShell navigationItems={navigationConfig}>
+                  <RequirePermission>{children}</RequirePermission>
+                </AuthorizedPrivateShell>
+              </ScopedActiveBranchProvider>
+            </ScopedEntitlementProvider>
+          </RequireSession>
+        </DispatchMutationCoordinatorProvider>
       </PackingMutationCoordinatorProvider>
     </CurrentSessionProvider>
   );
