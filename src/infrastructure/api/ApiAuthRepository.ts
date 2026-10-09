@@ -456,8 +456,8 @@ export class ApiAuthRepository implements AuthRepository {
    * (UserService -> SessionRevoker), asi que no hay nada que hacer desde el cliente. El contrato es
    * idempotente: resolver sin error evita abortar una edicion que ya se confirmo en el servidor.
    */
-  revokeAllSessionsByUserId(): Promise<void> {
-    return Promise.resolve();
+  async revokeAllSessionsByUserId(): Promise<void> {
+    // Sin accion: el backend ya revoca las sesiones (ver comentario superior).
   }
 
   /**

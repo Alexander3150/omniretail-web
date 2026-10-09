@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { isSafeCatalogImageUrl } from "@/core/media/catalogImage";
 import type { EcommerceConfigInputDto } from "@/modules/administration/application/dto/EcommerceConfigDto";
 import { BusinessConfigToggle } from "@/modules/administration/components/BusinessConfigToggle";
+import { ImageUrlField } from "@/modules/administration/components/ImageUrlField";
 import type { EcommerceBranchOption } from "@/modules/administration/hooks/useEcommerceConfig";
 import {
   ADMIN_FIELD_LIMITS,
@@ -37,7 +37,6 @@ export function EcommerceConfigForm({
       ? value.defaultBranchId
       : null;
   const [logoError, setLogoError] = useState<string | null>(null);
-  const [logoUrlDraft, setLogoUrlDraft] = useState<string | null>(null);
   const currentLogoUrl =
     value.logo?.kind === "url" && !value.removeLogo && !value.pendingLogo ? value.logo.src : "";
   const previewBlobUrl = useBlobPreviewUrl(value.pendingLogo?.blob);
@@ -64,30 +63,16 @@ export function EcommerceConfigForm({
   }
 
   function removeLogo() {
-    setLogoUrlDraft(null);
     onChange({ ...value, logo: undefined, pendingLogo: undefined, removeLogo: true });
   }
 
-  // El backend solo guarda URLs: el logo se puede indicar con una URL publica. Mientras el texto no
-  // sea una URL valida solo se conserva como borrador (no llega al formulario ni al guardado).
-  function changeLogoUrl(raw: string) {
-    const trimmed = raw.trim();
-    if (!trimmed) {
-      setLogoUrlDraft(null);
-      onChange({ ...value, logo: undefined, pendingLogo: undefined, removeLogo: Boolean(value.logo) });
-      return;
-    }
-    if (!isSafeCatalogImageUrl(trimmed)) {
-      setLogoUrlDraft(raw);
-      return;
-    }
-    setLogoUrlDraft(null);
-    onChange({
-      ...value,
-      logo: { kind: "url", src: trimmed },
-      pendingLogo: undefined,
-      removeLogo: false,
-    });
+  // El backend solo guarda URLs: el logo tambien se puede indicar con una URL publica.
+  function changeLogoUrl(src: string) {
+    onChange(
+      src
+        ? { ...value, logo: { kind: "url", src }, pendingLogo: undefined, removeLogo: false }
+        : { ...value, logo: undefined, pendingLogo: undefined, removeLogo: Boolean(value.logo) },
+    );
   }
 
   return (
@@ -191,28 +176,12 @@ export function EcommerceConfigForm({
             {logoError ? (
               <p className="mt-2 text-sm text-[var(--color-danger)]">{logoError}</p>
             ) : null}
-            <div className="mt-3">
-              <label
-                className="mb-1 block text-xs font-semibold text-[var(--color-text-muted)]"
-                htmlFor="ecommerce-logo-url"
-              >
-                O use una URL pública
-              </label>
-              <Input
-                disabled={saving}
-                id="ecommerce-logo-url"
-                inputMode="url"
-                onChange={(event) => changeLogoUrl(event.target.value)}
-                placeholder="https://..."
-                type="url"
-                value={logoUrlDraft ?? currentLogoUrl}
-              />
-              {logoUrlDraft !== null ? (
-                <p className="mt-1 text-xs text-[var(--color-danger)]">
-                  Ingrese una URL válida que comience con http:// o https://.
-                </p>
-              ) : null}
-            </div>
+            <ImageUrlField
+              currentUrl={currentLogoUrl}
+              disabled={saving}
+              id="ecommerce-logo-url"
+              onChange={changeLogoUrl}
+            />
           </FormField>
         </div>
       </section>
