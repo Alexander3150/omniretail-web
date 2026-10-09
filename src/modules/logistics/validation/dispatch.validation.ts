@@ -43,6 +43,12 @@ export function validateDispatchShipment(
     if (!carrierName) errors.carrierName = "El transporte es obligatorio.";
     if (!trackingNumber) errors.trackingNumber = "El número de guía es obligatorio.";
   }
+  if (carrierName && carrierName.length > 200) {
+    errors.carrierName = "Máximo 200 caracteres.";
+  }
+  if (trackingNumber && trackingNumber.length > 200) {
+    errors.trackingNumber = "Máximo 200 caracteres.";
+  }
 
   return {
     valid: Object.keys(errors).length === 0,
