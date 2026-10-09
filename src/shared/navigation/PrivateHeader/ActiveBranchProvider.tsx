@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -77,84 +78,136 @@ export function ActiveBranchProvider({
   tenantId,
   canAccessBranch,
   children,
-}: ActiveBranchProviderProps) {
+}: Readonly<ActiveBranchProviderProps>) {
   const repositories = useRepositories();
+  // Ultima lista de sucursales ACTIVAS leida del backend (sin filtrar por alcance). null = aun no
+  // hay lectura valida (cargando, o la lectura fallo).
+  const [fetchedBranches, setFetchedBranches] = useState<Branch[] | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // La seleccion activa se lee desde una ref: cambiarla NO debe recrear los callbacks de carga ni
+  // volver a consultar la lista (solo cambia cual de las sucursales ya cargadas esta activa).
+  const activeBranchIdRef = useRef<string | null>(null);
+  // Solo la ultima lectura/aplicacion puede escribir estado: una respuesta vieja (otro tenant, un
+  // `branch.changed` anterior o un reintento superado) se descarta.
+  const fetchRequestRef = useRef(0);
+  const applyRequestRef = useRef(0);
+  const mountedRef = useRef(true);
 
-  const applyBranches = useCallback(
-    async (activeBranches: Branch[]) => {
-      const accessibleBranches = canAccessBranch
-        ? activeBranches.filter((branch) => canAccessBranch(branch))
-        : activeBranches;
-      // Al cargar (sin seleccion previa en memoria) se parte de la sucursal guardada en la sesion,
-      // asi se conserva al recargar; solo se persiste si cambia, para no escribir en cada carga.
-      const sessionBranchId = await readSessionActiveBranchId(repositories.auth);
-      const nextBranchId = selectNextActiveBranchId(
-        accessibleBranches,
-        activeBranchId ?? sessionBranchId,
-      );
-      if (nextBranchId && nextBranchId !== sessionBranchId) {
-        try {
-          await repositories.auth.setActiveBranchId(nextBranchId);
-        } catch {
-          // Si no se puede guardar, la sucursal igual queda elegida en esta pestaña: el selector
-          // no se queda en "Cargando sucursal".
-        }
-      }
-      setBranches(accessibleBranches);
-      setActiveBranchId(nextBranchId);
-      setLoading(false);
-    },
-    [activeBranchId, canAccessBranch, repositories.auth],
-  );
+  useEffect(() => {
+    activeBranchIdRef.current = activeBranchId;
+  }, [activeBranchId]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Si la lista no se puede leer (red, 403...) se distingue de una lista realmente vacia: el
   // selector sale de "Cargando sucursal" y ofrece reintentar en vez de decir "Sin sucursales".
   const failBranches = useCallback(() => {
+    setFetchedBranches(null);
     setBranches([]);
     setActiveBranchId(null);
     setError(BRANCH_LOAD_ERROR);
     setLoading(false);
   }, []);
 
-  const loadBranches = useCallback(
-    async (isCurrent: () => boolean = () => true) => {
+  // Lee las sucursales del tenant. Solo se dispara por: cambio de tenant, `branch.changed` o
+  // "Reintentar" -- nunca por cambiar la sucursal activa.
+  const fetchBranches = useCallback(async () => {
+    const requestId = ++fetchRequestRef.current;
+    const isCurrent = () => mountedRef.current && fetchRequestRef.current === requestId;
+    try {
+      const activeBranches = tenantId
+        ? await repositories.branches.getActiveByTenant(tenantId)
+        : [];
+      if (!isCurrent()) return;
+      setError(null);
+      setFetchedBranches(activeBranches);
+    } catch {
+      if (isCurrent()) {
+        applyRequestRef.current += 1;
+        failBranches();
+      }
+    }
+  }, [failBranches, repositories, tenantId]);
+
+  // Filtra por alcance, resuelve cual queda activa y la persiste en la sesion. No consulta
+  // sucursales: solo vuelve a correr si llega una lista nueva o cambia el predicado de acceso.
+  const applyBranches = useCallback(
+    async (fetched: Branch[], canAccess: ((branch: Branch) => boolean) | undefined) => {
+      const requestId = ++applyRequestRef.current;
+      const isCurrent = () => mountedRef.current && applyRequestRef.current === requestId;
       try {
-        const activeBranches = tenantId
-          ? await repositories.branches.getActiveByTenant(tenantId)
-          : [];
+        const accessibleBranches = canAccess
+          ? fetched.filter((branch) => canAccess(branch))
+          : fetched;
+        // Al cargar (sin seleccion previa en memoria) se parte de la sucursal guardada en la
+        // sesion, asi se conserva al recargar; solo se persiste si cambia.
+        const sessionBranchId = await readSessionActiveBranchId(repositories.auth);
         if (!isCurrent()) return;
-        await applyBranches(activeBranches);
-        if (isCurrent()) setError(null);
+        const nextBranchId = selectNextActiveBranchId(
+          accessibleBranches,
+          activeBranchIdRef.current ?? sessionBranchId,
+        );
+        if (nextBranchId && nextBranchId !== sessionBranchId) {
+          try {
+            await repositories.auth.setActiveBranchId(nextBranchId);
+          } catch {
+            // Si no se puede guardar, la sucursal igual queda elegida en esta pestaña: el
+            // selector no se queda en "Cargando sucursal".
+          }
+          if (!isCurrent()) return;
+        }
+        activeBranchIdRef.current = nextBranchId;
+        setBranches(accessibleBranches);
+        setActiveBranchId(nextBranchId);
+        setLoading(false);
       } catch {
         if (isCurrent()) failBranches();
       }
     },
-    [applyBranches, failBranches, repositories, tenantId],
+    [failBranches, repositories.auth],
   );
 
-  const reloadBranches = useCallback(() => {
+  const reloadBranches = useCallback(async () => {
     setLoading(true);
-    return loadBranches();
-  }, [loadBranches]);
+    await fetchBranches();
+  }, [fetchBranches]);
 
+  // Carga inicial y cambio de tenant. Mientras llega la lista del nuevo tenant no se conservan las
+  // sucursales del anterior.
   useEffect(() => {
-    let active = true;
     window.queueMicrotask(() => {
-      if (active) void loadBranches(() => active);
+      if (!mountedRef.current) return;
+      setFetchedBranches(null);
+      setBranches([]);
+      setActiveBranchId(null);
+      setLoading(true);
+      void fetchBranches();
     });
 
     return () => {
-      active = false;
+      // Invalida la lectura en vuelo: su respuesta ya no pertenece a este tenant.
+      fetchRequestRef.current += 1;
     };
-  }, [loadBranches]);
+  }, [fetchBranches]);
+
+  useEffect(() => {
+    if (fetchedBranches === null) return;
+    window.queueMicrotask(() => {
+      if (mountedRef.current) void applyBranches(fetchedBranches, canAccessBranch);
+    });
+  }, [applyBranches, canAccessBranch, fetchedBranches]);
 
   const onBranchChanged = useCallback(() => {
-    void loadBranches();
-  }, [loadBranches]);
+    void fetchBranches();
+  }, [fetchBranches]);
 
   useDataEvent("branch.changed", onBranchChanged);
 
@@ -166,11 +219,15 @@ export function ActiveBranchProvider({
   // Defensa en profundidad: aunque hoy el unico consumidor (BranchSelector) solo ofrece
   // branches ya presentes en `branches` (ya filtradas por canAccessBranch), esta funcion es
   // parte del contrato publico del context -- un branchId fuera de `branches` (manipulado o
-  // de otro alcance) se ignora en vez de aceptarse silenciosamente.
+  // de otro alcance) se ignora en vez de aceptarse silenciosamente. Solo cambia la seleccion: no
+  // vuelve a consultar la lista.
   const selectActiveBranch = useCallback(
     (branchId: string) => {
       if (!isBranchIdSelectable(branches, branchId)) return;
-      void repositories.auth.setActiveBranchId(branchId).then(() => setActiveBranchId(branchId));
+      void repositories.auth.setActiveBranchId(branchId).then(() => {
+        activeBranchIdRef.current = branchId;
+        setActiveBranchId(branchId);
+      });
     },
     [branches, repositories.auth],
   );

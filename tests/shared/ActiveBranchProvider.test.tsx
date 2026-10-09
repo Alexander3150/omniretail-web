@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Branch } from "@/core/entities";
 import {
@@ -144,5 +144,164 @@ describe("ActiveBranchProvider + BranchSelector", () => {
     fireEvent.click(await screen.findByRole("option", { name: "Sucursal Norte" }));
 
     await waitFor(() => expect(setActiveBranchId).toHaveBeenCalledWith("norte"));
+  });
+});
+
+describe("ActiveBranchProvider: solo recarga cuando corresponde", () => {
+  afterEach(cleanup);
+
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 40));
+  const lists = {
+    both: () => [branch("centro", "Sucursal Centro"), branch("norte", "Sucursal Norte")],
+  };
+
+  async function triggerBranchChanged() {
+    await act(async () => {
+      repositoriesState.branchChangedHandler?.();
+      await settle();
+    });
+  }
+
+  it("la carga inicial consulta la lista una sola vez", async () => {
+    const { getActive } = setRepositories(async () => [branch("centro", "Sucursal Centro")]);
+
+    renderSelector();
+    await screen.findByText("Sucursal Centro");
+    await settle();
+
+    expect(getActive).toHaveBeenCalledTimes(1);
+  });
+
+  it("cambiar la sucursal activa no vuelve a consultar la lista", async () => {
+    const { getActive, setActiveBranchId } = setRepositories(async () => lists.both());
+
+    renderSelector();
+    fireEvent.click(await screen.findByRole("button", { name: /Sucursal Centro/ }));
+    fireEvent.click(await screen.findByRole("option", { name: "Sucursal Norte" }));
+
+    await screen.findByRole("button", { name: /Sucursal Norte/ });
+    await settle();
+    expect(setActiveBranchId).toHaveBeenCalledWith("norte");
+    expect(getActive).toHaveBeenCalledTimes(1);
+  });
+
+  it("branch.changed vuelve a consultar una vez y actualiza la lista", async () => {
+    let current = [branch("centro", "Sucursal Centro")];
+    const { getActive } = setRepositories(async () => current);
+    renderSelector();
+    await screen.findByText("Sucursal Centro");
+    expect(screen.queryByRole("button", { name: /Sucursal Centro/ })).toBeNull();
+
+    current = lists.both();
+    await triggerBranchChanged();
+
+    expect(getActive).toHaveBeenCalledTimes(2);
+    expect(await screen.findByRole("button", { name: /Sucursal Centro/ })).toBeTruthy();
+  });
+
+  it("al recargar conserva la seleccion si sigue autorizada y si no cae a la primera", async () => {
+    let current = lists.both();
+    setRepositories(async () => current);
+    renderSelector();
+    fireEvent.click(await screen.findByRole("button", { name: /Sucursal Centro/ }));
+    fireEvent.click(await screen.findByRole("option", { name: "Sucursal Norte" }));
+    await screen.findByRole("button", { name: /Sucursal Norte/ });
+
+    await triggerBranchChanged();
+    expect(await screen.findByRole("button", { name: /Sucursal Norte/ })).toBeTruthy();
+
+    current = [branch("centro", "Sucursal Centro")];
+    await triggerBranchChanged();
+    expect(await screen.findByText("Sucursal Centro")).toBeTruthy();
+    expect(screen.queryByText("Sucursal Norte")).toBeNull();
+  });
+
+  it("al cambiar de tenant, una respuesta anterior mas lenta no sobrescribe las sucursales del nuevo", async () => {
+    let resolveTenantA: (branches: Branch[]) => void = () => undefined;
+    const tenantA = new Promise<Branch[]>((resolve) => {
+      resolveTenantA = resolve;
+    });
+    const getActiveByTenant = vi.fn((tenantId: string) =>
+      tenantId === "tenant-a" ? tenantA : Promise.resolve([branch("b-centro", "Sucursal B")]),
+    );
+    repositoriesState.current = {
+      branches: { getActiveByTenant },
+      auth: {
+        getCurrentSessionId: vi.fn().mockResolvedValue("session-1"),
+        getSession: vi.fn().mockResolvedValue({ activeBranchId: null }),
+        setActiveBranchId: vi.fn().mockResolvedValue(undefined),
+      },
+    };
+    const tree = (tenantId: string) => (
+      <ActiveBranchProvider tenantId={tenantId}>
+        <BranchSelector />
+      </ActiveBranchProvider>
+    );
+
+    const view = render(tree("tenant-a"));
+    await settle();
+    view.rerender(tree("tenant-b"));
+    expect(await screen.findByText("Sucursal B")).toBeTruthy();
+
+    await act(async () => {
+      resolveTenantA([branch("a-centro", "Sucursal A")]);
+      await settle();
+    });
+
+    expect(screen.getByText("Sucursal B")).toBeTruthy();
+    expect(screen.queryByText("Sucursal A")).toBeNull();
+    expect(getActiveByTenant).toHaveBeenCalledWith("tenant-a");
+    expect(getActiveByTenant).toHaveBeenCalledWith("tenant-b");
+  });
+
+  it("Reintentar sigue funcionando tras varios errores seguidos", async () => {
+    let attempt = 0;
+    const { getActive } = setRepositories(async () => {
+      attempt += 1;
+      if (attempt <= 2) throw new Error("503");
+      return [branch("norte", "Sucursal Norte")];
+    });
+
+    renderSelector();
+    fireEvent.click(await screen.findByRole("button", { name: "Reintentar" }));
+    await waitFor(() => expect(getActive).toHaveBeenCalledTimes(2));
+    fireEvent.click(await screen.findByRole("button", { name: "Reintentar" }));
+
+    expect(await screen.findByText("Sucursal Norte")).toBeTruthy();
+    expect(getActive).toHaveBeenCalledTimes(3);
+  });
+
+  it("un predicado de acceso con identidad nueva en cada render no recarga la lista", async () => {
+    const { getActive } = setRepositories(async () => lists.both());
+    const tree = (canAccessBranch: (item: Branch) => boolean) => (
+      <ActiveBranchProvider canAccessBranch={canAccessBranch} tenantId="tenant-1">
+        <BranchSelector />
+      </ActiveBranchProvider>
+    );
+    const view = render(tree(() => true));
+    await screen.findByRole("button", { name: /Sucursal Centro/ });
+
+    view.rerender(tree(() => true));
+    view.rerender(tree(() => true));
+    await settle();
+
+    expect(getActive).toHaveBeenCalledTimes(1);
+  });
+
+  it("si cambia el resultado del predicado vuelve a filtrar la lista ya cargada, sin consultarla", async () => {
+    const { getActive } = setRepositories(async () => lists.both());
+    const tree = (canAccessBranch: (item: Branch) => boolean) => (
+      <ActiveBranchProvider canAccessBranch={canAccessBranch} tenantId="tenant-1">
+        <BranchSelector />
+      </ActiveBranchProvider>
+    );
+    const view = render(tree(() => true));
+    await screen.findByRole("button", { name: /Sucursal Centro/ });
+
+    view.rerender(tree((item) => item.id === "norte"));
+
+    expect(await screen.findByText("Sucursal Norte")).toBeTruthy();
+    expect(screen.queryByText("Sucursal Centro")).toBeNull();
+    expect(getActive).toHaveBeenCalledTimes(1);
   });
 });
