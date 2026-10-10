@@ -3,7 +3,13 @@ import type { BranchType } from "@/core/enums";
 import type { BranchRepository } from "@/core/repositories";
 import type { PaginatedResult } from "@/core/types";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
-import { type ApiBranch, toBranch, toBranchRequest } from "@/infrastructure/api/apiBranchMapper";
+import {
+  type ApiBranch,
+  type ApiSessionBranch,
+  toBranch,
+  toBranchRequest,
+  toSessionBranch,
+} from "@/infrastructure/api/apiBranchMapper";
 import { BackendRequestError, backendFetch } from "@/infrastructure/api/backendClient";
 import { TtlCache } from "@/infrastructure/api/TtlCache";
 
@@ -27,6 +33,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 export class ApiBranchRepository implements BranchRepository {
   private readonly allCache = new TtlCache<Branch[]>();
   private readonly activeCache = new TtlCache<Branch[]>();
+  private readonly assignedCache = new TtlCache<Branch[]>();
 
   constructor(private readonly eventBus: DataEventBus) {
     eventBus.subscribe("branch.changed", () => this.invalidateCache());
@@ -51,6 +58,42 @@ export class ApiBranchRepository implements BranchRepository {
   private invalidateCache(): void {
     this.allCache.invalidate();
     this.activeCache.invalidate();
+    this.assignedCache.invalidate();
+  }
+
+  /**
+   * Sucursales activas asignadas al empleado de la sesion (`GET /auth/session/branches`). No exige
+   * `admin.branches.read`: es la lectura operativa para roles como Inventario o Compras. El backend
+   * resuelve tenant y usuario desde el JWT; `tenantId` solo completa el dato si la respuesta no lo
+   * trae. Pasa por el BFF `/api/auth/session/branches` porque el puente `/api/backend` bloquea
+   * `auth/**`.
+   */
+  async getAssignedActive(tenantId: string): Promise<Branch[]> {
+    // Solo en el navegador: la sesion vive en una cookie HttpOnly que el fetch same-origin envia
+    // solo. Desde el servidor la URL relativa no resuelve ni llevaria la cookie del usuario, y
+    // reenviarla a mano mezclaria sesiones entre peticiones. Hoy solo la llama ActiveBranchProvider
+    // dentro de un efecto; este chequeo evita que una llamada nueva desde el servidor falle en
+    // silencio.
+    if (typeof window === "undefined") {
+      throw new TypeError("Las sucursales asignadas solo se pueden leer desde el navegador.");
+    }
+    const branches = await this.assignedCache.get(async () => {
+      const response = await fetch("/api/auth/session/branches", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new BackendRequestError(
+          "No se pudieron cargar las sucursales asignadas.",
+          response.status,
+        );
+      }
+      const fetchedAt = new Date().toISOString();
+      return ((await response.json()) as ApiSessionBranch[]).map((branch) =>
+        toSessionBranch(branch, tenantId, fetchedAt),
+      );
+    });
+    return [...branches];
   }
 
   async getById(id: string): Promise<Branch | null> {

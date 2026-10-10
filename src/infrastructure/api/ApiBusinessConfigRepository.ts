@@ -22,6 +22,23 @@ const CAPABILITIES_PATH = "/administration/business-config";
 const ECOMMERCE_PATH = "/administration/ecommerce-config";
 const HERO_BANNER_PATH = "/administration/hero-banner";
 
+const IMAGE_EXTENSIONS: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
+
+/** El backend ignora el nombre y valida el contenido real; solo se necesita uno coherente. */
+function imageFilename(base: string, mimeType: string): string {
+  return `${base}.${IMAGE_EXTENSIONS[mimeType] ?? "jpg"}`;
+}
+
+function imageForm(base: string, file: Blob): FormData {
+  const form = new FormData();
+  form.append("file", file, imageFilename(base, file.type));
+  return form;
+}
+
 /**
  * Lectura que devuelve `null` cuando el recurso no existe para la tienda (404) o, si
  * `planMayLackIt`, cuando el plan no incluye la capacidad (403 CAPABILITY_REQUIRED): para el
@@ -86,6 +103,36 @@ export class ApiBusinessConfigRepository implements BusinessConfigRepository {
     input: UpdateEcommerceConfigInput,
   ): Promise<EcommerceConfig> {
     return this.saveEcommerceConfig(tenantId, input, "updated");
+  }
+
+  async uploadEcommerceLogo(tenantId: string, file: Blob): Promise<EcommerceConfig> {
+    const saved = toEcommerceConfig(
+      await backendFetch<ApiEcommerceConfig>(`${ECOMMERCE_PATH}/logo`, {
+        method: "POST",
+        body: imageForm("logo", file),
+      }),
+      new Date().toISOString(),
+    );
+    this.emitChanged(tenantId, "updated");
+    return saved;
+  }
+
+  async uploadHeroBannerImage(
+    tenantId: string,
+    index: number,
+    file: Blob,
+  ): Promise<HeroBannerConfig> {
+    if (!Number.isInteger(index) || index < 0) throw new Error("Diapositiva no válida.");
+    const saved = toHeroBannerConfig(
+      await backendFetch<ApiHeroBannerConfig>(`${HERO_BANNER_PATH}/slides/${index}/image`, {
+        method: "POST",
+        body: imageForm(`slide-${index + 1}`, file),
+      }),
+      tenantId,
+      new Date().toISOString(),
+    );
+    this.emitChanged(tenantId, "updated");
+    return saved;
   }
 
   async getHeroBanner(tenantId: string): Promise<HeroBannerConfig | null> {

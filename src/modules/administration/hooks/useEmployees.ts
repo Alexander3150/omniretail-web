@@ -123,20 +123,18 @@ export function useEmployees() {
 
   const runMutation = useCallback(
     async <T>(action: (tenantId: string, actorUserId: string) => Promise<T>): Promise<T> => {
+      // Los errores de mutacion se relanzan para que los muestre el formulario/accion que los
+      // dispara. `error` queda solo para fallos de carga: su boton "Reintentar" recarga la lista y
+      // no repite la mutacion, asi que mostrar ahi un fallo de guardado confunde.
       if (!tenantId || !actorUserId) {
-        const message = "No se pudo resolver la sesión actual.";
-        setError(message);
-        throw new Error(message);
+        throw new Error("No se pudo resolver la sesión actual.");
       }
 
       setBusy(true);
-      setError(null);
       try {
         return await action(tenantId, actorUserId);
       } catch (caughtError) {
-        const message = cleanError(caughtError);
-        setError(message);
-        throw new Error(message);
+        throw new Error(cleanError(caughtError));
       } finally {
         setBusy(false);
       }
