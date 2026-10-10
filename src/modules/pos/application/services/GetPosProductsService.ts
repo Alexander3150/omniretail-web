@@ -1,4 +1,3 @@
-import type { Product } from "@/core/entities";
 import { ProductType, SalesChannel } from "@/core/enums";
 import { getBranchAvailableQuantity } from "@/core/inventory/stockAvailability";
 import { getCanonicalProductAvailability } from "@/core/inventory/canonicalAvailability";
@@ -12,9 +11,6 @@ export interface GetPosProductsInput {
   branchId: string;
 }
 
-/** Maximo de productos por lectura de existencias (POST /inventory/stock/batch). */
-const STOCK_BATCH_SIZE = 100;
-
 export class GetPosProductsService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
@@ -26,12 +22,6 @@ export class GetPosProductsService {
     const locations = await this.repositories.inventory.getLocations(input.branchId);
 
     const units = await this.repositories.units.getByTenant(input.tenantId);
-    // Modo api: las existencias salen del backend (una lectura por lotes), nunca de los saldos del
-    // mock, que no conocen los productos ni las sucursales reales.
-    const apiStock =
-      this.repositories.inventoryStockDataSource === "api"
-        ? await this.loadApiStock(products, input.branchId)
-        : null;
     const items = await Promise.all(
       products.map(
         async (product): Promise<PosProductDto & { canonicalAvailableQuantity: number | null }> => {
@@ -45,13 +35,13 @@ export class GetPosProductsService {
                 branchId: input.branchId,
               }),
               this.repositories.productSalesPriceTiers.getByProduct(product.id),
-              product.tracking.stock && !apiStock
+              product.tracking.stock
                 ? this.repositories.inventory.getBalanceByProduct(product.id, input.branchId)
                 : Promise.resolve([]),
-              product.tracking.lot && !apiStock
+              product.tracking.lot
                 ? this.repositories.inventory.getLots(product.id)
                 : Promise.resolve([]),
-              product.tracking.serial && !apiStock
+              product.tracking.serial
                 ? this.repositories.inventory.getSerialNumbers(product.id)
                 : Promise.resolve([]),
               product.productType === ProductType.kit
@@ -65,11 +55,7 @@ export class GetPosProductsService {
             product.id,
           );
           const tracksStock = product.tracking.stock || product.productType === ProductType.kit;
-          const physicalAvailableQuantity = apiStock
-            ? product.tracking.stock
-              ? (apiStock.get(product.id) ?? 0)
-              : null
-            : product.tracking.stock
+          const physicalAvailableQuantity = product.tracking.stock
             ? getCanonicalProductAvailability({
                 product,
                 tenantId: input.tenantId,
@@ -86,12 +72,6 @@ export class GetPosProductsService {
               ? Math.min(
                   ...(await Promise.all(
                     kitComponents.map(async (component) => {
-                      if (apiStock) {
-                        return Math.floor(
-                          (apiStock.get(component.componentProductId) ?? 0) /
-                            component.quantityPerKit,
-                        );
-                      }
                       const componentBalances =
                         await this.repositories.inventory.getBalanceByProduct(
                           component.componentProductId,
@@ -177,11 +157,6 @@ export class GetPosProductsService {
         const availableQuantity = components.length
           ? Math.min(
               ...components.map((component) => {
-                if (apiStock) {
-                  return Math.floor(
-                    (apiStock.get(component.componentProductId) ?? 0) / component.quantityPerKit,
-                  );
-                }
                 const componentProduct = byProductId.get(component.componentProductId);
                 return Math.floor(
                   ((componentProduct as PosProductDto & { canonicalAvailableQuantity?: number })
@@ -215,34 +190,5 @@ export class GetPosProductsService {
       }),
     );
     return resolvedKitAvailability.sort((left, right) => left.name.localeCompare(right.name));
-  }
-
-  /**
-   * Existencia disponible (unidad base) por producto en la sucursal, leida del backend en lotes.
-   * Incluye los componentes de los kits. Los productos sin fila de stock quedan en 0.
-   */
-  private async loadApiStock(
-    products: Product[],
-    branchId: string,
-  ): Promise<Map<string, number>> {
-    const ids = new Set<string>();
-    for (const product of products) {
-      if (product.productType === ProductType.kit) {
-        const components = await this.repositories.productKitComponents.getByKitProduct(product.id);
-        components.forEach((component) => ids.add(component.componentProductId));
-      } else if (product.tracking.stock) {
-        ids.add(product.id);
-      }
-    }
-    const list = [...ids];
-    const available = new Map<string, number>();
-    for (let start = 0; start < list.length; start += STOCK_BATCH_SIZE) {
-      const batch = await this.repositories.inventory.getStockBatch({
-        branchId,
-        productIds: list.slice(start, start + STOCK_BATCH_SIZE),
-      });
-      batch.items.forEach((item) => available.set(item.productId, item.availableQuantity));
-    }
-    return available;
   }
 }
