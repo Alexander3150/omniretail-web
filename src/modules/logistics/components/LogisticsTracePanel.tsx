@@ -1,4 +1,7 @@
-import type { LogisticsItemTraceDto } from "@/modules/logistics/application/dto/LogisticsItemTraceDto";
+import type {
+  LogisticsItemTraceDto,
+  LogisticsTraceAllocationDto,
+} from "@/modules/logistics/application/dto/LogisticsItemTraceDto";
 import { InlineAlert } from "@/shared/components/InlineAlert";
 
 interface LogisticsTracePanelProps {
@@ -26,7 +29,7 @@ export function LogisticsTracePanel({ items, state, error }: LogisticsTracePanel
             <article className="overflow-hidden rounded-lg border border-[var(--color-border)]" key={item.pickingItemId}>
               <header className="bg-[var(--color-app-background)] px-4 py-3">
                 <p className="font-semibold text-[var(--color-title)]">{item.name}</p>
-                <p className="text-xs text-[var(--color-text-muted)]">{item.sku} · {item.pickedQuantity} de {item.requestedQuantity}</p>
+                <p className="text-xs text-[var(--color-text-muted)]">{formatTraceQuantities(item)}</p>
               </header>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[640px] text-left text-sm">
@@ -34,7 +37,7 @@ export function LogisticsTracePanel({ items, state, error }: LogisticsTracePanel
                   <tbody>{item.allocations.map((allocation, index) => (
                     <tr className="border-t border-[var(--color-border)]" key={allocation.inventoryMovementId ?? `${item.pickingItemId}-${index}`}>
                       <td className="px-4 py-2">{allocation.quantity}</td>
-                      <td className="px-4 py-2">{allocation.location ? `${allocation.location.code} · ${allocation.location.name}` : "No aplica"}</td>
+                      <td className="px-4 py-2">{formatTraceLocation(allocation.location)}</td>
                       <td className="px-4 py-2">{allocation.lot?.number ?? "No aplica"}</td>
                       <td className="px-4 py-2">{allocation.lot?.expiresAt ? new Date(allocation.lot.expiresAt).toLocaleDateString("es-GT") : "No aplica"}</td>
                       <td className="px-4 py-2">{allocation.serial?.number ?? "No aplica"}</td>
@@ -48,4 +51,24 @@ export function LogisticsTracePanel({ items, state, error }: LogisticsTracePanel
       ) : null}
     </section>
   );
+}
+
+function formatTraceQuantities(item: LogisticsItemTraceDto) {
+  const parts = [item.sku, `${item.pickedQuantity} de ${item.requestedQuantity}`];
+  if (item.packedQuantity !== undefined) parts.push(`empacado ${formatStageQuantity(item.packedQuantity)}`);
+  if (item.dispatchedQuantity !== undefined) {
+    parts.push(`despachado ${formatStageQuantity(item.dispatchedQuantity)}`);
+  }
+  return parts.filter(Boolean).join(" · ");
+}
+
+/** `null` no es cero: la etapa todavía no registró una cantidad. */
+function formatStageQuantity(quantity: number | null) {
+  return quantity === null ? "sin registro" : String(quantity);
+}
+
+/** El historial API identifica la ubicación sin código ni nombre: se indica que fue registrada. */
+function formatTraceLocation(location: LogisticsTraceAllocationDto["location"]) {
+  if (!location) return "No aplica";
+  return [location.code, location.name].filter(Boolean).join(" · ") || "Ubicación registrada";
 }

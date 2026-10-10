@@ -20,6 +20,7 @@ const historyStatuses = [
   OrderStatus.ready_for_pickup,
   OrderStatus.dispatched,
   OrderStatus.delivered,
+  OrderStatus.cancelled,
 ] as const;
 
 export function LogisticsHistoryFilters({
