@@ -62,8 +62,29 @@ export interface PosSaleHistorySummaryDto {
   cancelled: number;
 }
 
+/** Campos que en modo API solo trae el detalle de la venta (`GET /pos/sales/{id}`). */
+export type PosSaleHistoryDetailField = "documentType" | "taxId" | "paymentSummary" | "payments" | "items";
+
+/**
+ * Fila del listado. En modo mock llega completa; en modo API los campos de detalle se cargan al
+ * seleccionar la venta, para no pedir un detalle por cada fila del historial.
+ */
+export type PosSaleHistoryRowDto = Omit<PosSaleHistoryItemDto, PosSaleHistoryDetailField> &
+  Partial<Pick<PosSaleHistoryItemDto, PosSaleHistoryDetailField>>;
+
+export function isPosSaleHistoryDetailLoaded(
+  sale: PosSaleHistoryRowDto,
+): sale is PosSaleHistoryItemDto {
+  return (
+    sale.documentType !== undefined &&
+    sale.paymentSummary !== undefined &&
+    sale.payments !== undefined &&
+    sale.items !== undefined
+  );
+}
+
 export interface PosSaleHistoryDto {
-  sales: PosSaleHistoryItemDto[];
+  sales: PosSaleHistoryRowDto[];
   summary: PosSaleHistorySummaryDto;
 }
 

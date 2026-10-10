@@ -6,8 +6,10 @@ import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import {
   defaultPosSaleHistoryFilters,
+  isPosSaleHistoryDetailLoaded,
   type PosSaleHistoryDto,
   type PosSaleHistoryFilters,
+  type PosSaleHistoryItemDto,
 } from "@/modules/pos/application/dto/PosSaleHistoryDto";
 import { GetPosSalesHistoryService } from "@/modules/pos/application/services/GetPosSalesHistoryService";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
@@ -34,6 +36,11 @@ export function usePosSalesHistory(enabled = true) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const requestSequenceRef = useRef(0);
+  // Detalles cargados bajo demanda (modo API); se descartan al recargar el listado.
+  const [details, setDetails] = useState<Record<string, PosSaleHistoryItemDto>>({});
+  const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const detailSequenceRef = useRef(0);
 
   const hasBranchAccess = Boolean(
     user &&
@@ -74,7 +81,11 @@ export function usePosSalesHistory(enabled = true) {
         filters,
       });
       if (requestId !== requestSequenceRef.current) return;
+      detailSequenceRef.current += 1;
       setHistory(nextHistory);
+      setDetails({});
+      setDetailLoadingId(null);
+      setDetailError(null);
     } catch (failure) {
       if (requestId !== requestSequenceRef.current) return;
       setHistory(emptyHistory);
@@ -123,6 +134,49 @@ export function usePosSalesHistory(enabled = true) {
   useDataEvent("order.changed", refreshForScopedEvent);
   useDataEvent("payment.changed", refreshForScopedEvent);
 
+  const getLoadedSale = useCallback(
+    (saleId: string): PosSaleHistoryItemDto | null => {
+      const row = history.sales.find((sale) => sale.saleId === saleId);
+      if (!row) return null;
+      return isPosSaleHistoryDetailLoaded(row) ? row : (details[saleId] ?? null);
+    },
+    [details, history.sales],
+  );
+
+  /** Pide el detalle de una sola venta (al seleccionarla o abrir sus productos). */
+  const loadSaleDetail = useCallback(
+    async (saleId: string): Promise<PosSaleHistoryItemDto | null> => {
+      const loaded = getLoadedSale(saleId);
+      if (loaded) return loaded;
+      const row = history.sales.find((sale) => sale.saleId === saleId);
+      if (!row || !user || !currentBranch) return null;
+      const sequence = ++detailSequenceRef.current;
+      setDetailLoadingId(saleId);
+      setDetailError(null);
+      try {
+        const sale = await service.getSaleDetail({
+          actorUserId: user.id,
+          branchId: currentBranch.id,
+          sale: row,
+        });
+        if (sequence !== detailSequenceRef.current) return null;
+        setDetails((current) => ({ ...current, [saleId]: sale }));
+        return sale;
+      } catch (failure) {
+        if (sequence !== detailSequenceRef.current) return null;
+        setDetailError(
+          failure instanceof Error && failure.message
+            ? failure.message
+            : "No se pudo cargar el detalle de la venta.",
+        );
+        return null;
+      } finally {
+        if (sequence === detailSequenceRef.current) setDetailLoadingId(null);
+      }
+    },
+    [currentBranch, getLoadedSale, history.sales, service, user],
+  );
+
   const updateFilters = useCallback((patch: Partial<PosSaleHistoryFilters>) => {
     setFilters((current) => ({ ...current, ...patch }));
   }, []);
@@ -138,5 +192,9 @@ export function usePosSalesHistory(enabled = true) {
     reload,
     updateFilters,
     resetFilters,
+    getLoadedSale,
+    loadSaleDetail,
+    detailLoadingId,
+    detailError,
   };
 }

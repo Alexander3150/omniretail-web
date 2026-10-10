@@ -1,14 +1,14 @@
 import type { KeyboardEvent } from "react";
-import type { PosSaleHistoryItemDto } from "@/modules/pos/application/dto/PosSaleHistoryDto";
+import type { PosSaleHistoryRowDto } from "@/modules/pos/application/dto/PosSaleHistoryDto";
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { cn } from "@/shared/utils/cn";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
 import { formatDate } from "@/shared/utils/formatDate";
 
 interface PosSalesHistoryTableProps {
-  sales: PosSaleHistoryItemDto[];
+  sales: PosSaleHistoryRowDto[];
   selectedSaleId?: string;
-  onOpenProducts: (sale: PosSaleHistoryItemDto) => void;
+  onOpenProducts: (sale: PosSaleHistoryRowDto) => void;
   onSelect: (saleId: string) => void;
 }
 
@@ -18,7 +18,7 @@ export function PosSalesHistoryTable({
   onOpenProducts,
   onSelect,
 }: PosSalesHistoryTableProps) {
-  function handleKeyDown(event: KeyboardEvent<HTMLTableRowElement>, sale: PosSaleHistoryItemDto) {
+  function handleKeyDown(event: KeyboardEvent<HTMLTableRowElement>, sale: PosSaleHistoryRowDto) {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
     onSelect(sale.saleId);

@@ -313,6 +313,6 @@ function getApiAvailableQuantity(
   stock: InventoryStockListItem | undefined,
 ): number | null {
   if (productType === ProductType.service) return null;
-  if (!stock || stock.productType !== productType) return 0;
+  if (stock?.productType !== productType) return 0;
   return stock.availableQuantity ?? 0;
 }

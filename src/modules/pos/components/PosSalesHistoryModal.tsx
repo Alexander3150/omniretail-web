@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { PosSaleHistoryItemDto } from "@/modules/pos/application/dto/PosSaleHistoryDto";
 import { PosSaleHistoryDetails } from "@/modules/pos/components/PosSaleHistoryDetails";
 import { PosSaleProductsModal } from "@/modules/pos/components/PosSaleProductsModal";
@@ -20,8 +20,22 @@ export function PosSalesHistoryModal({ open, onClose }: PosSalesHistoryModalProp
   const history = usePosSalesHistory(open);
   const [selectedSaleId, setSelectedSaleId] = useState<string>();
   const [productsSale, setProductsSale] = useState<PosSaleHistoryItemDto | null>(null);
-  const selectedSale =
+  const selectedRow =
     history.sales.find((sale) => sale.saleId === selectedSaleId) ?? history.sales[0] ?? null;
+  const selectedSale = selectedRow ? history.getLoadedSale(selectedRow.saleId) : null;
+  const { loadSaleDetail } = history;
+  const pendingDetailId = selectedRow && !selectedSale ? selectedRow.saleId : null;
+
+  // En modo API el detalle se pide solo para la venta seleccionada.
+  useEffect(() => {
+    if (!pendingDetailId) return;
+    window.queueMicrotask(() => void loadSaleDetail(pendingDetailId));
+  }, [loadSaleDetail, pendingDetailId]);
+
+  async function openProducts(saleId: string) {
+    const sale = await history.loadSaleDetail(saleId);
+    if (sale) setProductsSale(sale);
+  }
 
   function closeHistory() {
     if (productsSale) {
@@ -102,11 +116,15 @@ export function PosSalesHistoryModal({ open, onClose }: PosSalesHistoryModalProp
             <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,7fr)_minmax(300px,3fr)]">
               <PosSalesHistoryTable
                 sales={history.sales}
-                selectedSaleId={selectedSale?.saleId}
-                onOpenProducts={setProductsSale}
+                selectedSaleId={selectedRow?.saleId}
+                onOpenProducts={(sale) => void openProducts(sale.saleId)}
                 onSelect={setSelectedSaleId}
               />
-              <PosSaleHistoryDetails sale={selectedSale} />
+              <PosSaleHistoryDetails
+                error={selectedSale ? null : history.detailError}
+                loading={history.detailLoadingId === selectedRow?.saleId}
+                sale={selectedSale}
+              />
             </div>
           )}
         </div>

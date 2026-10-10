@@ -25,8 +25,8 @@ import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import { isApiUuid } from "@/infrastructure/api/uuid";
 
 const uuidSchema = z.string().refine(isApiUuid, { message: "UUID de backend invalido." });
-const dateSchema = z.string().datetime({ offset: true });
-const moneySchema = z.coerce.number().finite();
+const dateSchema = z.iso.datetime({ offset: true });
+const moneySchema = z.coerce.number();
 const optionalUuidSchema = uuidSchema.nullable().transform((value) => value ?? undefined);
 const optionalTextSchema = z
   .string()
@@ -40,7 +40,7 @@ const cashShiftSchema = z.object({
   branchId: uuidSchema,
   userId: uuidSchema,
   registerCode: z.string(),
-  status: z.nativeEnum(CashShiftStatus),
+  status: z.enum(CashShiftStatus),
   openedAt: dateSchema,
   openingAmount: moneySchema,
   closedAt: optionalDateSchema,
@@ -54,7 +54,7 @@ const cashShiftSchema = z.object({
 const cashMovementSchema = z.object({
   id: uuidSchema,
   cashShiftId: uuidSchema,
-  type: z.nativeEnum(CashMovementType),
+  type: z.enum(CashMovementType),
   amount: moneySchema,
   reason: z.string(),
   referenceType: optionalTextSchema,
@@ -69,7 +69,7 @@ const cashShiftSummarySchema = z.object({
   branchId: uuidSchema,
   cashierId: uuidSchema,
   registerCode: z.string(),
-  status: z.nativeEnum(CashShiftStatus),
+  status: z.enum(CashShiftStatus),
   openedAt: dateSchema,
   closedAt: optionalDateSchema,
   openingAmount: moneySchema,
@@ -114,7 +114,7 @@ const paymentSchema = z.object({
   method: z.enum([PaymentMethod.cash, PaymentMethod.card, PaymentMethod.transfer]),
   amount: moneySchema,
   reference: optionalTextSchema,
-  status: z.nativeEnum(PaymentStatus),
+  status: z.enum(PaymentStatus),
   currency: z.enum(["GTQ", "USD"]),
   bankAccountId: optionalUuidSchema,
   externallyVerified: z
@@ -142,7 +142,7 @@ const saleSummarySchema = z.object({
   taxTotal: moneySchema,
   total: moneySchema,
   createdAt: dateSchema,
-  status: z.nativeEnum(SaleStatus),
+  status: z.enum(SaleStatus),
   customerId: optionalUuidSchema,
   sourceOrderId: optionalUuidSchema,
   document: saleDocumentSchema,
@@ -160,12 +160,12 @@ const saleConfirmationSchema = saleSummarySchema.extend({
     .transform((value) => value ?? undefined),
   order: z
     .object({ id: uuidSchema, orderNumber: z.string() })
-    .passthrough()
+    .loose()
     .nullable()
     .transform((value) => value ?? undefined),
   pickingOrder: z
     .object({ id: uuidSchema, orderId: uuidSchema })
-    .passthrough()
+    .loose()
     .nullable()
     .transform((value) => value ?? undefined),
   idempotent: z.boolean(),
@@ -185,11 +185,11 @@ const salesHistoryPageSchema = z.object({
       createdAt: dateSchema,
       customerDisplayName: z.string(),
       total: moneySchema,
-      status: z.nativeEnum(SaleStatus),
+      status: z.enum(SaleStatus),
       sourceOrderId: optionalUuidSchema,
-      deliveryMethod: z.nativeEnum(DeliveryMethod).nullable().transform((value) => value ?? undefined),
+      deliveryMethod: z.enum(DeliveryMethod).nullable().transform((value) => value ?? undefined),
       operationalStatus: z
-        .nativeEnum(OrderStatus)
+        .enum(OrderStatus)
         .nullable()
         .transform((value) => value ?? undefined),
     }),
@@ -223,7 +223,7 @@ const returnEligibilitySchema = z.object({
     createdAt: dateSchema,
     customerDisplayName: z.string(),
     total: moneySchema,
-    status: z.nativeEnum(SaleStatus),
+    status: z.enum(SaleStatus),
   }),
   items: z.array(
     z.object({
@@ -245,8 +245,8 @@ const returnEligibilitySchema = z.object({
   payments: z.array(
     z.object({
       id: uuidSchema,
-      method: z.nativeEnum(PaymentMethod),
-      status: z.nativeEnum(PaymentStatus),
+      method: z.enum(PaymentMethod),
+      status: z.enum(PaymentStatus),
       amount: moneySchema,
       currency: z.enum(["GTQ", "USD"]),
     }),
@@ -298,7 +298,7 @@ const returnOperationSchema = z.object({
   operationId: uuidSchema,
   idempotent: z.boolean(),
   reason: z.string(),
-  saleStatus: z.nativeEnum(SaleStatus),
+  saleStatus: z.enum(SaleStatus),
   saleReturn: saleReturnSchema,
   commercialRefundAmount: moneySchema,
   inventory: inventoryEffectSchema,
@@ -327,7 +327,7 @@ const addressSchema = z.object({
 });
 
 const notificationSchema = z.discriminatedUnion("emailMode", [
-  z.object({ emailMode: z.literal("send"), email: z.string().email() }),
+  z.object({ emailMode: z.literal("send"), email: z.email() }),
   z.object({ emailMode: z.literal("not_applicable") }),
 ]);
 
@@ -340,8 +340,8 @@ const confirmSaleCommandSchema = z.object({
     .array(
       z.object({
         productId: uuidSchema,
-        quantity: z.number().finite().positive(),
-        discount: z.number().finite().nonnegative(),
+        quantity: z.number().positive(),
+        discount: z.number().nonnegative(),
         trackingSelections: z.tuple([]),
       }),
     )
@@ -350,7 +350,7 @@ const confirmSaleCommandSchema = z.object({
     .array(
       z.object({
         method: z.enum([PaymentMethod.cash, PaymentMethod.card, PaymentMethod.transfer]),
-        amount: z.number().finite().positive(),
+        amount: z.number().positive(),
         bankAccountId: uuidSchema.optional(),
         reference: z.string().optional(),
         externallyVerified: z.boolean().optional(),
@@ -370,8 +370,8 @@ const confirmSaleCommandSchema = z.object({
   deferredOrder: z
     .object({
       idempotencyKey: z.string().min(1),
-      deliveryMethod: z.nativeEnum(DeliveryMethod),
-      transportMode: z.nativeEnum(TransportMode),
+      deliveryMethod: z.enum(DeliveryMethod),
+      transportMode: z.enum(TransportMode),
       deliveryAddress: addressSchema.optional(),
       notificationContact: notificationSchema.optional(),
       storePickupContact: z
@@ -395,16 +395,16 @@ const confirmSaleCommandSchema = z.object({
 const openCashShiftCommandSchema = z.object({
   branchId: uuidSchema,
   registerCode: z.string().trim().min(1).max(50),
-  openingAmount: z.number().finite().nonnegative(),
+  openingAmount: z.number().nonnegative(),
 });
 const closeCashShiftCommandSchema = z.object({
   cashShiftId: uuidSchema,
-  countedAmount: z.number().finite().nonnegative(),
+  countedAmount: z.number().nonnegative(),
 });
 const cashMovementCommandSchema = z.object({
   cashShiftId: uuidSchema,
-  type: z.nativeEnum(CashMovementType),
-  amount: z.number().finite().positive(),
+  type: z.enum(CashMovementType),
+  amount: z.number().positive(),
   reason: z.string().trim().min(1).max(500),
 });
 const returnCommandSchema = z.object({
@@ -413,7 +413,7 @@ const returnCommandSchema = z.object({
     .array(
       z.object({
         saleItemId: uuidSchema,
-        quantity: z.number().finite().positive(),
+        quantity: z.number().positive(),
         trackingSelections: z.tuple([]),
       }),
     )

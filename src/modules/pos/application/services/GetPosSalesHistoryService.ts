@@ -9,17 +9,27 @@ import {
   UserStatus,
   UserType,
 } from "@/core/enums";
+import type {
+  PosApiSaleDetail,
+  PosApiSalesHistoryPage,
+  PosApiSalesHistoryRow,
+} from "@/core/repositories";
 import { canUserAccessBranch } from "@/core/scopes/userBranchAccess";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   PosSaleHistoryDto,
   PosSaleHistoryFilters,
   PosSaleHistoryItemDto,
+  PosSaleHistoryRowDto,
   PosSaleHistoryTone,
 } from "@/modules/pos/application/dto/PosSaleHistoryDto";
-import { defaultPosSaleHistoryFilters } from "@/modules/pos/application/dto/PosSaleHistoryDto";
+import {
+  defaultPosSaleHistoryFilters,
+  isPosSaleHistoryDetailLoaded,
+} from "@/modules/pos/application/dto/PosSaleHistoryDto";
 
 const POS_SALES_READ = "pos.sales.read";
+const API_HISTORY_PAGE_SIZE = 100;
 
 type PosSalesHistoryRepositories = Pick<
   RepositoryRegistry,
@@ -31,6 +41,12 @@ export interface GetPosSalesHistoryInput {
   actorUserId: string;
   branchId: string;
   filters?: Partial<PosSaleHistoryFilters>;
+}
+
+export interface GetPosSaleDetailInput {
+  actorUserId: string;
+  branchId: string;
+  sale: PosSaleHistoryRowDto;
 }
 
 export class GetPosSalesHistoryService {
@@ -72,122 +88,75 @@ export class GetPosSalesHistoryService {
 
     return {
       sales: authorizedSales.filter((sale) => matchesFilters(sale, filters)),
-      summary: {
-        total: authorizedSales.length,
-        active: countStatus(authorizedSales, SaleStatus.completed),
-        partiallyReturned: countStatus(authorizedSales, SaleStatus.partially_returned),
-        returned: countStatus(authorizedSales, SaleStatus.returned),
-        cancelled: countStatus(authorizedSales, SaleStatus.cancelled),
-      },
+      summary: summarize(authorizedSales),
     };
   }
 
+  /**
+   * Completa una fila con los datos que solo trae el detalle de la venta. En modo mock la fila ya
+   * llega completa; en modo API se consulta una sola venta, al seleccionarla.
+   */
+  async getSaleDetail(input: GetPosSaleDetailInput): Promise<PosSaleHistoryItemDto> {
+    await this.resolveContext(input);
+    if (isPosSaleHistoryDetailLoaded(input.sale)) return input.sale;
+    if (this.repositories.posDataSource !== "api") {
+      throw new Error(`No se pudo cargar el detalle de la venta ${input.sale.documentNumber}.`);
+    }
+    return withApiSaleDetail(input.sale, await this.requireApi().getSaleDetail(input.sale.saleId));
+  }
+
+  /**
+   * El backend ya aplica búsqueda (venta, razón social, cliente, pedido y productos), fechas en la
+   * zona del negocio, estado, modalidad y estado operativo: esos filtros no se repiten aquí. El
+   * listado se arma solo con las filas paginadas; el detalle de cada venta se pide al abrirla.
+   */
   private async getApiHistory(
     branchId: string,
     filters: PosSaleHistoryFilters,
   ): Promise<PosSaleHistoryDto> {
-    const api = this.repositories.posApi;
-    if (!api) throw new Error("La integración API de POS no está disponible.");
-    const rows = [];
-    let summary: PosSaleHistoryDto["summary"] = {
-      total: 0,
-      active: 0,
-      partiallyReturned: 0,
-      returned: 0,
-      cancelled: 0,
+    const api = this.requireApi();
+    const query = {
+      branchId,
+      search: filters.search || undefined,
+      from: filters.dateFrom || undefined,
+      to: filters.dateTo || undefined,
+      status: filters.saleStatus === "all" ? undefined : filters.saleStatus,
+      deliveryMethod:
+        filters.deliveryMethod === "all" || filters.deliveryMethod === "unavailable"
+          ? undefined
+          : filters.deliveryMethod,
+      operationalStatus:
+        filters.operationalStatus === "all" ||
+        filters.operationalStatus === "immediate" ||
+        filters.operationalStatus === "unavailable"
+          ? undefined
+          : filters.operationalStatus,
+      pageSize: API_HISTORY_PAGE_SIZE,
     };
-    for (let page = 1; ; page += 1) {
-      const result = await api.getSalesHistory({
-        branchId,
-        search: filters.search || undefined,
-        from: filters.dateFrom || undefined,
-        to: filters.dateTo || undefined,
-        status: filters.saleStatus === "all" ? undefined : filters.saleStatus,
-        deliveryMethod:
-          filters.deliveryMethod === "all" || filters.deliveryMethod === "unavailable"
-            ? undefined
-            : filters.deliveryMethod,
-        operationalStatus:
-          filters.operationalStatus === "all" ||
-          filters.operationalStatus === "immediate" ||
-          filters.operationalStatus === "unavailable"
-            ? undefined
-            : filters.operationalStatus,
-        page,
-        pageSize: 100,
-      });
-      rows.push(...result.items);
-      summary = {
-        total: result.summary.total,
-        active: result.summary.completed,
-        partiallyReturned: result.summary.partiallyReturned,
-        returned: result.summary.returned,
-        cancelled: result.summary.cancelled,
-      };
-      if (page >= result.totalPages) break;
-    }
-    const details = await Promise.all(rows.map((row) => api.getSaleDetail(row.saleId)));
-    const sales = rows.map((row, index): PosSaleHistoryItemDto => {
-      const detail = details[index];
-      if (!detail) throw new Error(`No se pudo cargar el detalle de la venta ${row.saleNumber}.`);
-      const salePresentation = saleStatusPresentation[row.status];
-      const orderPresentation = row.operationalStatus
-        ? orderStatusPresentation[row.operationalStatus]
-        : undefined;
-      const hasUnavailableOrder = Boolean(row.sourceOrderId && !row.deliveryMethod);
-      return {
-        saleId: row.saleId,
-        documentNumber: row.saleNumber,
-        documentType: detail.sale.document.type,
-        taxId: detail.sale.document.taxId,
-        createdAt: row.createdAt,
-        customerDisplayName: row.customerDisplayName,
-        total: row.total,
-        saleStatus: row.status,
-        saleStatusLabel: salePresentation.label,
-        saleStatusTone: salePresentation.tone,
-        deliveryMethod: row.deliveryMethod,
-        deliveryMethodLabel: row.deliveryMethod
-          ? deliveryMethodLabels[row.deliveryMethod]
-          : "No disponible",
-        sourceOrderId: row.sourceOrderId,
-        orderStatus: row.operationalStatus,
-        operationalStatusLabel: row.sourceOrderId
-          ? (orderPresentation?.label ?? "Estado no disponible")
-          : "—",
-        operationalStatusTone: row.sourceOrderId
-          ? (orderPresentation?.tone ?? "neutral")
-          : "neutral",
-        hasUnavailableOrder,
-        paymentSummary:
-          detail.payments.length > 0
-            ? detail.payments.map((payment) => paymentMethodLabels[payment.method]).join(" + ")
-            : "No disponible",
-        payments: detail.payments.map((payment) => ({
-          paymentId: payment.id,
-          method: payment.method,
-          methodLabel: paymentMethodLabels[payment.method],
-          amount: payment.amount,
-          currency: payment.currency,
-        })),
-        items: detail.items.map((item) => ({
-          productId: item.productId,
-          sku: item.sku,
-          name: item.name,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          discount: item.discount,
-          subtotal: item.subtotal,
-        })),
-      };
-    });
+    const firstPage = await api.getSalesHistory({ ...query, page: 1 });
+    const remainingPages = await Promise.all(
+      Array.from({ length: Math.max(0, firstPage.totalPages - 1) }, (_, index) =>
+        api.getSalesHistory({ ...query, page: index + 2 }),
+      ),
+    );
+    const rows = [firstPage, ...remainingPages]
+      .flatMap((page) => page.items)
+      .map(toApiHistoryRow)
+      .filter((row) => matchesClientOnlyFilters(row, filters));
     return {
-      sales: sales.filter((sale) => matchesFilters(sale, filters)),
-      summary,
+      sales: rows,
+      // El resumen del backend refleja sus filtros; si hay uno solo del cliente, se recalcula.
+      summary: hasClientOnlyFilter(filters) ? summarize(rows) : toSummary(firstPage.summary),
     };
   }
 
-  private async resolveContext(input: GetPosSalesHistoryInput) {
+  private requireApi() {
+    const api = this.repositories.posApi;
+    if (!api) throw new Error("La integración API de POS no está disponible.");
+    return api;
+  }
+
+  private async resolveContext(input: { actorUserId: string; branchId: string }) {
     const actorUserId = input.actorUserId.trim();
     const branchId = input.branchId.trim();
     if (!actorUserId || !branchId) {
@@ -311,6 +280,7 @@ const deliveryMethodLabels: Record<DeliveryMethod, string> = {
   [DeliveryMethod.home_delivery]: "Envío a domicilio",
 };
 
+/** Filtrado completo del modo mock (el backend no interviene). */
 function matchesFilters(sale: PosSaleHistoryItemDto, filters: PosSaleHistoryFilters) {
   const search = filters.search.trim().toLocaleLowerCase("es");
   if (
@@ -342,6 +312,98 @@ function matchesFilters(sale: PosSaleHistoryItemDto, filters: PosSaleHistoryFilt
   return true;
 }
 
-function countStatus(sales: PosSaleHistoryItemDto[], status: SaleStatus) {
-  return sales.filter((sale) => sale.saleStatus === status).length;
+/** Filtros sin equivalente en el backend: en modo API son los únicos que se aplican aquí. */
+function hasClientOnlyFilter(filters: PosSaleHistoryFilters) {
+  return (
+    filters.deliveryMethod === "unavailable" ||
+    filters.operationalStatus === "immediate" ||
+    filters.operationalStatus === "unavailable"
+  );
+}
+
+function matchesClientOnlyFilters(sale: PosSaleHistoryRowDto, filters: PosSaleHistoryFilters) {
+  if (filters.deliveryMethod === "unavailable" && !sale.hasUnavailableOrder) return false;
+  if (filters.operationalStatus === "immediate" && sale.sourceOrderId) return false;
+  if (filters.operationalStatus === "unavailable" && !sale.hasUnavailableOrder) return false;
+  return true;
+}
+
+function toApiHistoryRow(row: PosApiSalesHistoryRow): PosSaleHistoryRowDto {
+  const salePresentation = saleStatusPresentation[row.status];
+  const orderPresentation = row.operationalStatus
+    ? orderStatusPresentation[row.operationalStatus]
+    : undefined;
+  return {
+    saleId: row.saleId,
+    documentNumber: row.saleNumber,
+    createdAt: row.createdAt,
+    customerDisplayName: row.customerDisplayName,
+    total: row.total,
+    saleStatus: row.status,
+    saleStatusLabel: salePresentation.label,
+    saleStatusTone: salePresentation.tone,
+    deliveryMethod: row.deliveryMethod,
+    deliveryMethodLabel: row.deliveryMethod
+      ? deliveryMethodLabels[row.deliveryMethod]
+      : "No disponible",
+    sourceOrderId: row.sourceOrderId,
+    orderStatus: row.operationalStatus,
+    operationalStatusLabel: row.sourceOrderId
+      ? (orderPresentation?.label ?? "Estado no disponible")
+      : "—",
+    operationalStatusTone: row.sourceOrderId ? (orderPresentation?.tone ?? "neutral") : "neutral",
+    hasUnavailableOrder: Boolean(row.sourceOrderId && !row.deliveryMethod),
+  };
+}
+
+function withApiSaleDetail(
+  row: PosSaleHistoryRowDto,
+  detail: PosApiSaleDetail,
+): PosSaleHistoryItemDto {
+  return {
+    ...row,
+    documentType: detail.sale.document.type,
+    taxId: detail.sale.document.taxId,
+    paymentSummary:
+      detail.payments.length > 0
+        ? detail.payments.map((payment) => paymentMethodLabels[payment.method]).join(" + ")
+        : "No disponible",
+    payments: detail.payments.map((payment) => ({
+      paymentId: payment.id,
+      method: payment.method,
+      methodLabel: paymentMethodLabels[payment.method],
+      amount: payment.amount,
+      currency: payment.currency,
+    })),
+    items: detail.items.map((item) => ({
+      productId: item.productId,
+      sku: item.sku,
+      name: item.name,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      discount: item.discount,
+      subtotal: item.subtotal,
+    })),
+  };
+}
+
+function toSummary(summary: PosApiSalesHistoryPage["summary"]): PosSaleHistoryDto["summary"] {
+  return {
+    total: summary.total,
+    active: summary.completed,
+    partiallyReturned: summary.partiallyReturned,
+    returned: summary.returned,
+    cancelled: summary.cancelled,
+  };
+}
+
+function summarize(sales: PosSaleHistoryRowDto[]): PosSaleHistoryDto["summary"] {
+  const count = (status: SaleStatus) => sales.filter((sale) => sale.saleStatus === status).length;
+  return {
+    total: sales.length,
+    active: count(SaleStatus.completed),
+    partiallyReturned: count(SaleStatus.partially_returned),
+    returned: count(SaleStatus.returned),
+    cancelled: count(SaleStatus.cancelled),
+  };
 }
