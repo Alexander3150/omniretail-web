@@ -155,6 +155,7 @@ async function prepareCashCheckout(result: { current: ReturnType<typeof usePosTe
 
 describe("usePosTerminal", () => {
   beforeEach(() => {
+    window.sessionStorage.clear();
     mocks.listeners.clear();
     mocks.capabilities.mockResolvedValue({
       allowedPosPaymentMethods: [PaymentMethod.cash, PaymentMethod.card],
@@ -225,7 +226,8 @@ describe("usePosTerminal", () => {
 
     await act(async () => result.current.confirmSale());
 
-    expect(result.current.confirmationError).toContain("no se duplicará");
+    expect(result.current.confirmationError).toContain("Verificar resultado");
+    expect(result.current.pendingConfirmation).not.toBeNull();
     const firstAttempt = mocks.confirm.mock.calls[0]?.[0].confirmationId;
     expect(result.current.confirmationId).toBe(firstAttempt);
 
@@ -351,5 +353,120 @@ describe("usePosTerminal", () => {
     expect(result.current.hasOpenCashShift).toBe(false);
     expect(result.current.checkoutReadyToConfirm).toBe(false);
     expect(mocks.confirm).not.toHaveBeenCalled();
+  });
+
+  describe("venta con respuesta incierta", () => {
+    const uncertain = () => new BackendRequestError("sin respuesta", 0);
+
+    async function loseTheResponse() {
+      const view = await renderReadyTerminal();
+      await prepareCashCheckout(view.result);
+      mocks.confirm.mockRejectedValueOnce(uncertain());
+      await act(async () => view.result.current.confirmSale());
+      const original = mocks.confirm.mock.calls[0]?.[0];
+      return { ...view, original };
+    }
+
+    it("conserva la solicitud original y bloquea editar el ticket", async () => {
+      const { result, original } = await loseTheResponse();
+
+      expect(result.current.pendingConfirmation).toMatchObject({
+        confirmationId: original.confirmationId,
+        itemCount: 1,
+        total: 50,
+      });
+      act(() => result.current.addProduct(product));
+
+      expect(result.current.ticketItems).toHaveLength(1);
+      expect(result.current.ticketItems[0]?.quantity).toBe(1);
+      expect(result.current.ticketError).toContain("venta pendiente de verificar");
+
+      await act(async () => result.current.retryPendingConfirmation());
+      expect(mocks.confirm).toHaveBeenCalledTimes(2);
+      expect(mocks.confirm.mock.calls[1]?.[0]).toEqual(original);
+      expect(result.current.confirmationResult).toEqual(saleResult);
+      expect(result.current.pendingConfirmation).toBeNull();
+    });
+
+    it("bloquea modificar el cobro y reenvia el mismo contenido y la misma clave", async () => {
+      const { result, original } = await loseTheResponse();
+
+      act(() => result.current.updateCheckout({ cashReceived: 80 }));
+      act(() => result.current.clearTicket());
+      act(() => result.current.removeItem(ids.product));
+
+      expect(result.current.ticketItems).toHaveLength(1);
+      expect(result.current.checkout.cashReceived).toBe(50);
+
+      await act(async () => result.current.confirmSale());
+      expect(mocks.confirm.mock.calls[1]?.[0]).toEqual(original);
+      expect(mocks.confirm.mock.calls[1]?.[0].confirmationId).toBe(original.confirmationId);
+    });
+
+    it("sobrevive a una recarga: se recupera y se reenvia sin depender del ticket en pantalla", async () => {
+      const first = await loseTheResponse();
+      const { original } = first;
+      first.unmount();
+
+      const reloaded = renderHook(() => usePosTerminal());
+      await waitFor(() => expect(reloaded.result.current.hasOpenCashShift).toBe(true));
+      await waitFor(() => expect(reloaded.result.current.pendingConfirmation).not.toBeNull());
+      expect(reloaded.result.current.ticketItems).toEqual([]);
+      expect(reloaded.result.current.pendingConfirmation?.confirmationId).toBe(original.confirmationId);
+
+      await act(async () => reloaded.result.current.retryPendingConfirmation());
+
+      expect(mocks.confirm).toHaveBeenCalledTimes(2);
+      expect(mocks.confirm.mock.calls[1]?.[0]).toEqual(original);
+      expect(reloaded.result.current.confirmationResult).toEqual(saleResult);
+      expect(reloaded.result.current.pendingConfirmation).toBeNull();
+      expect(window.sessionStorage.length).toBe(0);
+    });
+
+    it("sigue pendiente si el reintento vuelve a quedar incierto o falla localmente", async () => {
+      const { result } = await loseTheResponse();
+
+      mocks.confirm.mockRejectedValueOnce(uncertain());
+      await act(async () => result.current.retryPendingConfirmation());
+      expect(result.current.pendingConfirmation).not.toBeNull();
+
+      mocks.confirm.mockRejectedValueOnce(new Error("El precio de Producto POS cambió."));
+      await act(async () => result.current.retryPendingConfirmation());
+      expect(result.current.pendingConfirmation).not.toBeNull();
+      expect(result.current.confirmationError).toContain("cambió");
+    });
+
+    it("solo descarta la verificación si el servidor rechaza definitivamente la solicitud", async () => {
+      const { result } = await loseTheResponse();
+
+      mocks.confirm.mockRejectedValueOnce(new BackendRequestError("Stock insuficiente", 409));
+      await act(async () => result.current.retryPendingConfirmation());
+
+      expect(result.current.pendingConfirmation).toBeNull();
+      expect(result.current.confirmationError).toContain("Stock insuficiente");
+      expect(window.sessionStorage.length).toBe(0);
+    });
+
+    it("permite descartar manualmente y vuelve a habilitar la edición", async () => {
+      const { result } = await loseTheResponse();
+
+      act(() => result.current.discardPendingConfirmation());
+
+      expect(result.current.pendingConfirmation).toBeNull();
+      expect(window.sessionStorage.length).toBe(0);
+      act(() => result.current.addProduct(product));
+      expect(result.current.ticketItems[0]?.quantity).toBe(2);
+    });
+
+    it("un rechazo 4xx de una venta nueva no deja nada pendiente", async () => {
+      const { result } = await renderReadyTerminal();
+      await prepareCashCheckout(result);
+      mocks.confirm.mockRejectedValueOnce(new BackendRequestError("Stock insuficiente", 409));
+
+      await act(async () => result.current.confirmSale());
+
+      expect(result.current.pendingConfirmation).toBeNull();
+      expect(window.sessionStorage.length).toBe(0);
+    });
   });
 });

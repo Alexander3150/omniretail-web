@@ -25,6 +25,12 @@ import type { PosCashShiftDto } from "@/modules/pos/application/dto/PosCashShift
 import type { PosSaleConfirmationDto } from "@/modules/pos/application/dto/PosSaleConfirmationDto";
 import type { SaleTicketDto, SaleTicketItemDto } from "@/modules/pos/application/dto/SaleTicketDto";
 import { ConfirmSaleService } from "@/modules/pos/application/services/ConfirmSaleService";
+import {
+  type PendingSaleConfirmation,
+  PendingSaleConfirmationStore,
+  isDefinitiveSaleRejection,
+  isUncertainSaleFailure,
+} from "@/modules/pos/application/services/pendingSaleConfirmation";
 import { GetCheckoutBankAccountsService } from "@/modules/pos/application/services/GetCheckoutBankAccountsService";
 import { GetPosProductsService } from "@/modules/pos/application/services/GetPosProductsService";
 import { GetOpenCashShiftService } from "@/modules/pos/application/services/GetOpenCashShiftService";
@@ -106,6 +112,19 @@ export function usePosTerminal() {
   const [confirmationError, setConfirmationError] = useState<string | null>(null);
   const [confirmationResult, setConfirmationResult] = useState<PosSaleConfirmationDto | null>(null);
   const confirmationLoadingRef = useRef(false);
+  // Venta con respuesta incierta: sobrevive a ediciones del ticket y a recargas (sessionStorage).
+  // Su alcance no incluye la sesion: tras volver a iniciar sesion la venta sigue sin resolverse.
+  const pendingStore = useMemo(() => new PendingSaleConfirmationStore(), []);
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingSaleConfirmation | null>(null);
+  const pendingConfirmationRef = useRef<PendingSaleConfirmation | null>(null);
+  const applyPendingConfirmation = useCallback((value: PendingSaleConfirmation | null) => {
+    pendingConfirmationRef.current = value;
+    setPendingConfirmation(value);
+  }, []);
+  const pendingScopeKey =
+    user && currentBranch && cashShift
+      ? `${user.id}:${currentBranch.tenantId}:${currentBranch.id}:${cashShift.id}`
+      : null;
   const productsRequestRef = useRef(0);
   const reloadScheduledRef = useRef(false);
   const bankAccountsRequestRef = useRef(0);
@@ -124,6 +143,18 @@ export function usePosTerminal() {
     confirmationAttempt?.contextKey === currentConfirmationContextKey
       ? confirmationAttempt.confirmationId
       : null;
+
+  // Al abrir o recargar la terminal se recupera la venta incierta de este usuario, sucursal y caja.
+  useEffect(() => {
+    if (!pendingScopeKey) return;
+    let active = true;
+    window.queueMicrotask(() => {
+      if (active) applyPendingConfirmation(pendingStore.load(pendingScopeKey));
+    });
+    return () => {
+      active = false;
+    };
+  }, [applyPendingConfirmation, pendingScopeKey, pendingStore]);
 
   const reload = useCallback(async () => {
     const requestId = ++productsRequestRef.current;
@@ -466,6 +497,7 @@ export function usePosTerminal() {
 
   const addProduct = useCallback(
     (product: PosProductDto) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateCheckoutValidation();
       setTicketState((current) => {
         const existingItem = current.items.find((item) => item.productId === product.productId);
@@ -495,6 +527,7 @@ export function usePosTerminal() {
 
   const increaseQuantity = useCallback(
     (productId: string) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateCheckoutValidation();
       setTicketState((current) => {
         const item = current.items.find((candidate) => candidate.productId === productId);
@@ -523,6 +556,7 @@ export function usePosTerminal() {
 
   const decreaseQuantity = useCallback(
     (productId: string) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateCheckoutValidation();
       setTicketState((current) => {
         const item = current.items.find((candidate) => candidate.productId === productId);
@@ -553,6 +587,7 @@ export function usePosTerminal() {
 
   const removeItem = useCallback(
     (productId: string) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateCheckoutValidation();
       setTicketState((current) => ({
         items: current.items.filter((item) => item.productId !== productId),
@@ -563,6 +598,7 @@ export function usePosTerminal() {
   );
 
   const clearTicket = useCallback(() => {
+    if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
     cancelCardTerminalProcessing();
     invalidateConfirmationAttempt();
     setTicketState({ items: [], error: null });
@@ -649,6 +685,7 @@ export function usePosTerminal() {
   }, []);
 
   const resetCheckout = useCallback(() => {
+    if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
     cancelCardTerminalProcessing();
     invalidateConfirmationAttempt();
     setCheckoutState((current) => ({
@@ -664,6 +701,7 @@ export function usePosTerminal() {
 
   const setDocumentType = useCallback(
     (documentType: CheckoutDto["documentType"]) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateConfirmationAttempt();
       setCheckoutState((current) => ({
         ...current,
@@ -680,6 +718,7 @@ export function usePosTerminal() {
 
   const setPaymentMode = useCallback(
     (paymentMode: CheckoutPaymentMode) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       if (!availablePaymentModes.includes(paymentMode)) return;
       cancelCardTerminalProcessing();
       invalidateConfirmationAttempt();
@@ -703,6 +742,7 @@ export function usePosTerminal() {
 
   const updateCheckout = useCallback(
     (patch: EditableCheckoutPatch) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       if (patch.cardAmount !== undefined) cancelCardTerminalProcessing();
       invalidateConfirmationAttempt();
       setCheckoutState((current) => {
@@ -733,6 +773,7 @@ export function usePosTerminal() {
 
   const processCardPayment = useCallback(
     (outcome: CardTerminalOutcome = "approved") => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       cancelCardTerminalProcessing();
       invalidateConfirmationAttempt();
 
@@ -810,6 +851,7 @@ export function usePosTerminal() {
 
   const updateInvoiceData = useCallback(
     (patch: Partial<CheckoutInvoiceDataDto>) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateConfirmationAttempt();
       setCheckoutState((current) => ({
         ...current,
@@ -829,6 +871,7 @@ export function usePosTerminal() {
 
   const updateDeliveryAddress = useCallback(
     (patch: Partial<NonNullable<CheckoutDto["deliveryAddress"]>>) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateConfirmationAttempt();
       setCheckoutState((current) => ({
         ...current,
@@ -856,6 +899,7 @@ export function usePosTerminal() {
 
   const updateStorePickupContact = useCallback(
     (patch: Partial<NonNullable<CheckoutDto["storePickupContact"]>>) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateConfirmationAttempt();
       setCheckoutState((current) => ({
         ...current,
@@ -957,18 +1001,35 @@ export function usePosTerminal() {
     : checkoutState.message;
 
   const confirmSale = useCallback(async () => {
-    if (confirmationLoadingRef.current || !checkoutReadyToConfirm) return;
+    const pending = pendingConfirmationRef.current;
+    // Con una venta pendiente se reenvia ESA solicitud: el estado de pantalla ya no es la fuente.
+    if (confirmationLoadingRef.current || (!pending && !checkoutReadyToConfirm)) return;
     if (!user || !currentBranch || !cashShift) {
       setConfirmationError("La sesión, sucursal o caja ya no está disponible.");
       return;
     }
 
     const confirmationContextKey = `${sessionId ?? ""}:${user.id}:${currentBranch.tenantId}:${currentBranch.id}:${cashShift.id}`;
-    const isDeferred = checkoutState.value.deliveryMethod !== DeliveryMethod.immediate;
-    const attemptId = confirmationId ?? crypto.randomUUID();
+    const scopeKey = `${user.id}:${currentBranch.tenantId}:${currentBranch.id}:${cashShift.id}`;
+    if (pending && pending.contextKey !== scopeKey) {
+      setConfirmationError("La venta pendiente pertenece a otra sucursal o caja.");
+      return;
+    }
+    const request = pending
+      ? pending.input
+      : {
+          branchId: currentBranch.id,
+          cashShiftId: cashShift.id,
+          ticket,
+          checkout: checkoutState.value,
+        };
+    const isDeferred = request.checkout.deliveryMethod !== DeliveryMethod.immediate;
+    const attemptId = pending?.confirmationId ?? confirmationId ?? crypto.randomUUID();
     const orderIdempotencyKey =
-      confirmationAttempt?.orderIdempotencyKey ?? (isDeferred ? crypto.randomUUID() : undefined);
-    if (!confirmationId) {
+      pending?.orderIdempotencyKey ??
+      confirmationAttempt?.orderIdempotencyKey ??
+      (isDeferred ? crypto.randomUUID() : undefined);
+    if (!pending && !confirmationId) {
       setConfirmationAttempt({
         confirmationId: attemptId,
         orderIdempotencyKey,
@@ -983,13 +1044,13 @@ export function usePosTerminal() {
     try {
       const result = await confirmationService.execute({
         confirmationId: attemptId,
-        branchId: currentBranch.id,
-        cashShiftId: cashShift.id,
-        ticket,
-        checkout: checkoutState.value,
+        ...request,
         orderIdempotencyKey,
       });
 
+      // La venta quedo registrada: la verificacion pendiente se resuelve aunque el contexto cambiara.
+      pendingStore.clear(scopeKey);
+      if (pendingConfirmationRef.current?.contextKey === scopeKey) applyPendingConfirmation(null);
       if (currentConfirmationContextRef.current !== confirmationContextKey) return;
 
       setConfirmationResult(result);
@@ -997,19 +1058,45 @@ export function usePosTerminal() {
       setTicketState({ items: [], error: null });
       setCheckoutState(createCheckoutState(0));
     } catch (confirmationFailure) {
-      if (currentConfirmationContextRef.current !== confirmationContextKey) return;
-      setConfirmationError(
-        cleanPosError(
-          confirmationFailure,
-          "No se pudo confirmar la venta. Puedes reintentar sin perder el ticket.",
-          "idempotent",
-        ),
-      );
+      if (isUncertainSaleFailure(confirmationFailure)) {
+        // El backend pudo registrar la venta: se conserva la solicitud original y se bloquea una nueva.
+        const record: PendingSaleConfirmation = pending ?? {
+          version: 1,
+          contextKey: scopeKey,
+          confirmationId: attemptId,
+          orderIdempotencyKey,
+          input: request,
+          createdAt: new Date().toISOString(),
+        };
+        pendingStore.save(record);
+        if (currentConfirmationContextRef.current !== confirmationContextKey) return;
+        applyPendingConfirmation(record);
+        setConfirmationError(UNCERTAIN_SALE_MESSAGE);
+      } else if (pending && isDefinitiveSaleRejection(confirmationFailure)) {
+        // El servidor respondio con un rechazo: esa solicitud no dejo una venta nueva.
+        pendingStore.clear(scopeKey);
+        if (pendingConfirmationRef.current?.contextKey === scopeKey) applyPendingConfirmation(null);
+        if (currentConfirmationContextRef.current !== confirmationContextKey) return;
+        setConfirmationAttempt(null);
+        setConfirmationError(
+          `${cleanPosError(confirmationFailure, "El servidor rechazó la venta.", "idempotent")} La verificación pendiente se descartó porque el servidor rechazó la solicitud.`,
+        );
+      } else {
+        if (currentConfirmationContextRef.current !== confirmationContextKey) return;
+        setConfirmationError(
+          cleanPosError(
+            confirmationFailure,
+            "No se pudo confirmar la venta. Puedes reintentar sin perder el ticket.",
+            "idempotent",
+          ),
+        );
+      }
     } finally {
       confirmationLoadingRef.current = false;
       setConfirmationLoading(false);
     }
   }, [
+    applyPendingConfirmation,
     cashShift,
     checkoutReadyToConfirm,
     checkoutState.value,
@@ -1017,12 +1104,33 @@ export function usePosTerminal() {
     confirmationAttempt?.orderIdempotencyKey,
     confirmationService,
     currentBranch,
+    pendingStore,
     sessionId,
     ticket,
     user,
   ]);
 
+  /** Descarta la verificacion: solo tras revisar el historial, porque la venta pudo registrarse. */
+  const discardPendingConfirmation = useCallback(() => {
+    const pending = pendingConfirmationRef.current;
+    if (!pending) return;
+    pendingStore.clear(pending.contextKey);
+    applyPendingConfirmation(null);
+    setConfirmationAttempt(null);
+    setConfirmationError(null);
+  }, [applyPendingConfirmation, pendingStore]);
+
   return {
+    pendingConfirmation: pendingConfirmation
+      ? {
+          confirmationId: pendingConfirmation.confirmationId,
+          createdAt: pendingConfirmation.createdAt,
+          total: pendingConfirmation.input.ticket.total,
+          itemCount: pendingConfirmation.input.ticket.items.length,
+        }
+      : null,
+    retryPendingConfirmation: confirmSale,
+    discardPendingConfirmation,
     products,
     filteredProducts,
     search,
@@ -1082,6 +1190,22 @@ export function usePosTerminal() {
     confirmSale,
   };
 }
+
+const PENDING_EDIT_MESSAGE =
+  "Hay una venta pendiente de verificar. Usa «Verificar resultado» o descártala antes de modificar el ticket o el cobro.";
+
+/** Mientras haya una venta incierta no se editan ticket ni cobro: solo se reenvia la solicitud original. */
+function isEditBlockedByPendingSale(
+  pendingRef: { current: PendingSaleConfirmation | null },
+  setTicketState: (update: (current: TicketState) => TicketState) => void,
+): boolean {
+  if (!pendingRef.current) return false;
+  setTicketState((current) => ({ ...current, error: PENDING_EDIT_MESSAGE }));
+  return true;
+}
+
+const UNCERTAIN_SALE_MESSAGE =
+  "No se pudo confirmar si la venta quedó registrada. No repitas el cobro: usa «Verificar resultado» para consultarlo con la misma solicitud.";
 
 function filterPosProducts(products: PosProductDto[], search: string) {
   const query = search.trim().toLocaleLowerCase("es");

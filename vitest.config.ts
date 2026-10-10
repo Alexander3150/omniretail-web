@@ -47,6 +47,9 @@ export default defineConfig({
         "src/modules/pos/components/PosSalesHistoryModal.tsx",
         "src/modules/pos/components/PosSaleHistoryDetails.tsx",
         "src/modules/pos/validation/kitDelivery.ts",
+        "src/infrastructure/storage/SessionJsonStore.ts",
+        "src/modules/pos/application/services/pendingSaleConfirmation.ts",
+        "src/modules/pos/components/PendingSaleBanner.tsx",
         // Correcciones de administracion (PR #163).
         "src/app/api/auth/session/branches/route.ts",
         "src/core/media/resolveImageUrlInput.ts",
