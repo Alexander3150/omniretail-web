@@ -7,6 +7,7 @@ import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import {
   defaultPosSaleHistoryFilters,
   isPosSaleHistoryDetailLoaded,
+  POS_SALE_HISTORY_DEFAULT_PAGE_SIZE,
   type PosSaleHistoryDto,
   type PosSaleHistoryFilters,
   type PosSaleHistoryItemDto,
@@ -18,6 +19,10 @@ import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchP
 const emptyHistory: PosSaleHistoryDto = {
   sales: [],
   summary: { total: 0, active: 0, partiallyReturned: 0, returned: 0, cancelled: 0 },
+  page: 1,
+  pageSize: POS_SALE_HISTORY_DEFAULT_PAGE_SIZE,
+  totalItems: 0,
+  totalPages: 1,
 };
 
 export function usePosSalesHistory(enabled = true) {
@@ -33,6 +38,8 @@ export function usePosSalesHistory(enabled = true) {
   const service = useMemo(() => new GetPosSalesHistoryService(repositories), [repositories]);
   const [filters, setFilters] = useState<PosSaleHistoryFilters>(defaultPosSaleHistoryFilters);
   const [history, setHistory] = useState<PosSaleHistoryDto>(emptyHistory);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(POS_SALE_HISTORY_DEFAULT_PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const requestSequenceRef = useRef(0);
@@ -79,6 +86,8 @@ export function usePosSalesHistory(enabled = true) {
         actorUserId: user.id,
         branchId: currentBranch.id,
         filters,
+        page,
+        pageSize,
       });
       if (requestId !== requestSequenceRef.current) return;
       detailSequenceRef.current += 1;
@@ -104,6 +113,8 @@ export function usePosSalesHistory(enabled = true) {
     enabled,
     filters,
     hasBranchAccess,
+    page,
+    pageSize,
     service,
     sessionError,
     user,
@@ -162,11 +173,11 @@ export function usePosSalesHistory(enabled = true) {
         if (sequence !== detailSequenceRef.current) return null;
         setDetails((current) => ({ ...current, [saleId]: sale }));
         return sale;
-      } catch (failure) {
+      } catch (error_) {
         if (sequence !== detailSequenceRef.current) return null;
         setDetailError(
-          failure instanceof Error && failure.message
-            ? failure.message
+          error_ instanceof Error && error_.message
+            ? error_.message
             : "No se pudo cargar el detalle de la venta.",
         );
         return null;
@@ -177,10 +188,25 @@ export function usePosSalesHistory(enabled = true) {
     [currentBranch, getLoadedSale, history.sales, service, user],
   );
 
+  // Al cambiar de sucursal o de usuario se vuelve a la primera página.
+  const contextKey = `${user?.id ?? ""}:${currentBranch?.id ?? ""}`;
+  useEffect(() => {
+    window.queueMicrotask(() => setPage(1));
+  }, [contextKey]);
+
   const updateFilters = useCallback((patch: Partial<PosSaleHistoryFilters>) => {
+    setPage(1);
     setFilters((current) => ({ ...current, ...patch }));
   }, []);
-  const resetFilters = useCallback(() => setFilters(defaultPosSaleHistoryFilters), []);
+  const resetFilters = useCallback(() => {
+    setPage(1);
+    setFilters(defaultPosSaleHistoryFilters);
+  }, []);
+  const goToPage = useCallback((nextPage: number) => setPage(Math.max(1, nextPage)), []);
+  const changePageSize = useCallback((nextPageSize: number) => {
+    setPage(1);
+    setPageSize(nextPageSize);
+  }, []);
 
   return {
     ...history,
@@ -192,6 +218,14 @@ export function usePosSalesHistory(enabled = true) {
     reload,
     updateFilters,
     resetFilters,
+    pagination: {
+      page: history.page,
+      pageSize,
+      totalItems: history.totalItems,
+      totalPages: history.totalPages,
+    },
+    setPage: goToPage,
+    setPageSize: changePageSize,
     getLoadedSale,
     loadSaleDetail,
     detailLoadingId,

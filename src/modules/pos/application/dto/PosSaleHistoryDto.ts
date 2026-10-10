@@ -83,9 +83,16 @@ export function isPosSaleHistoryDetailLoaded(
   );
 }
 
+export const POS_SALE_HISTORY_DEFAULT_PAGE_SIZE = 10;
+
+/** Una página del historial. En modo API la página, el total y el resumen los da el backend. */
 export interface PosSaleHistoryDto {
   sales: PosSaleHistoryRowDto[];
   summary: PosSaleHistorySummaryDto;
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
 }
 
 export const defaultPosSaleHistoryFilters: PosSaleHistoryFilters = {

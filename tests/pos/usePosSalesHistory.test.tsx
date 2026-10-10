@@ -74,10 +74,14 @@ async function renderHistory() {
 
 describe("usePosSalesHistory", () => {
   beforeEach(() => {
-    mocks.execute.mockResolvedValue({
+    mocks.execute.mockImplementation(async ({ page, pageSize }: { page: number; pageSize: number }) => ({
       sales: [row(1), row(2), row(3)],
-      summary: { total: 3, active: 3, partiallyReturned: 0, returned: 0, cancelled: 0 },
-    });
+      summary: { total: 30, active: 30, partiallyReturned: 0, returned: 0, cancelled: 0 },
+      page,
+      pageSize,
+      totalItems: 30,
+      totalPages: Math.ceil(30 / pageSize),
+    }));
     mocks.getSaleDetail.mockImplementation(async ({ sale }: { sale: PosSaleHistoryRowDto }) =>
       withDetail(sale),
     );
@@ -88,6 +92,43 @@ describe("usePosSalesHistory", () => {
     expect(result.current.sales).toHaveLength(3);
     expect(mocks.getSaleDetail).not.toHaveBeenCalled();
     expect(result.current.getLoadedSale("sale-1")).toBeNull();
+  });
+
+  it("al abrir pide una sola página al servicio y expone el total del servidor", async () => {
+    const { result } = await renderHistory();
+
+    expect(mocks.execute).toHaveBeenCalledTimes(1);
+    expect(mocks.execute).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 10 }));
+    expect(result.current.pagination).toEqual({ page: 1, pageSize: 10, totalItems: 30, totalPages: 3 });
+  });
+
+  it("cambia de página y vuelve a la primera al filtrar o cambiar el tamaño", async () => {
+    const { result } = await renderHistory();
+
+    act(() => result.current.setPage(2));
+    await waitFor(() => expect(mocks.execute).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 })));
+    await waitFor(() => expect(result.current.pagination.page).toBe(2));
+
+    act(() => result.current.updateFilters({ search: "V-1" }));
+    await waitFor(() =>
+      expect(mocks.execute).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 1, filters: expect.objectContaining({ search: "V-1" }) }),
+      ),
+    );
+
+    act(() => result.current.setPage(3));
+    act(() => result.current.setPageSize(25));
+    await waitFor(() =>
+      expect(mocks.execute).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, pageSize: 25 })),
+    );
+
+    act(() => result.current.setPage(2));
+    act(() => result.current.resetFilters());
+    await waitFor(() =>
+      expect(mocks.execute).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 1, filters: expect.objectContaining({ search: "" }) }),
+      ),
+    );
   });
 
   it("carga el detalle de una sola venta al pedirlo y lo reutiliza", async () => {
@@ -116,6 +157,10 @@ describe("usePosSalesHistory", () => {
     mocks.execute.mockResolvedValue({
       sales: [withDetail(row(1))],
       summary: { total: 1, active: 1, partiallyReturned: 0, returned: 0, cancelled: 0 },
+      page: 1,
+      pageSize: 10,
+      totalItems: 1,
+      totalPages: 1,
     });
     const { result } = await renderHistory();
 

@@ -8,6 +8,7 @@ import { PosSalesHistoryFilters } from "@/modules/pos/components/PosSalesHistory
 import { PosSalesHistoryTable } from "@/modules/pos/components/PosSalesHistoryTable";
 import { usePosSalesHistory } from "@/modules/pos/hooks/usePosSalesHistory";
 import { InlineAlert } from "@/shared/components/InlineAlert";
+import { TablePagination, type TablePageSize } from "@/shared/components/TablePagination";
 import { KPICard } from "@/shared/components/KPICard";
 import { Modal } from "@/shared/components/Modal";
 
@@ -114,12 +115,23 @@ export function PosSalesHistoryModal({ open, onClose }: PosSalesHistoryModalProp
             </div>
           ) : (
             <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,7fr)_minmax(300px,3fr)]">
-              <PosSalesHistoryTable
-                sales={history.sales}
-                selectedSaleId={selectedRow?.saleId}
-                onOpenProducts={(sale) => void openProducts(sale.saleId)}
-                onSelect={setSelectedSaleId}
-              />
+              <div className="min-w-0 space-y-2">
+                <PosSalesHistoryTable
+                  sales={history.sales}
+                  selectedSaleId={selectedRow?.saleId}
+                  onOpenProducts={(sale) => void openProducts(sale.saleId)}
+                  onSelect={setSelectedSaleId}
+                />
+                <TablePagination
+                  ariaLabel="Paginación del historial de ventas"
+                  itemLabel="ventas"
+                  page={history.pagination.page}
+                  pageSize={history.pagination.pageSize as TablePageSize}
+                  totalItems={history.pagination.totalItems}
+                  onPageChange={history.setPage}
+                  onPageSizeChange={history.setPageSize}
+                />
+              </div>
               <PosSaleHistoryDetails
                 error={selectedSale ? null : history.detailError}
                 loading={history.detailLoadingId === selectedRow?.saleId}

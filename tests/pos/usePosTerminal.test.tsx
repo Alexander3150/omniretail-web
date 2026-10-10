@@ -316,6 +316,26 @@ describe("usePosTerminal", () => {
     expect(result.current.hasOpenCashShift).toBe(false);
   });
 
+  it("explica que el cobro por transferencia no está disponible si el rol no accede a las cuentas", async () => {
+    mocks.bankAccounts.mockRejectedValueOnce(new BackendRequestError("Forbidden", 403));
+    const { result } = renderHook(() => usePosTerminal());
+
+    await waitFor(() =>
+      expect(result.current.bankAccountsError).toBe(
+        "Tu rol no tiene acceso a las cuentas bancarias: el cobro por transferencia no está disponible. Usa efectivo o tarjeta.",
+      ),
+    );
+    expect(result.current.bankAccounts).toEqual([]);
+  });
+
+  it("mantiene el mensaje genérico ante otros fallos de cuentas bancarias", async () => {
+    mocks.bankAccounts.mockRejectedValueOnce(new BackendRequestError("Error", 500));
+    const { result } = renderHook(() => usePosTerminal());
+    await waitFor(() =>
+      expect(result.current.bankAccountsError).toBe("No se pudieron cargar las cuentas bancarias disponibles."),
+    );
+  });
+
   it("no habilita el cobro sin turno abierto del usuario", async () => {
     mocks.openShift.mockResolvedValue(null);
     const { result } = renderHook(() => usePosTerminal());

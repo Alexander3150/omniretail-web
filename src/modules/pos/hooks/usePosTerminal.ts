@@ -10,6 +10,7 @@ import {
   TransportMode,
 } from "@/core/enums";
 import type { SaleConfirmationPaymentMethod } from "@/core/repositories";
+import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import type {
@@ -215,7 +216,7 @@ export function usePosTerminal() {
         return;
       }
       setBankAccounts(accounts);
-    } catch {
+    } catch (error_) {
       if (
         requestId !== bankAccountsRequestRef.current ||
         requestedContext !== currentReadContextRef.current
@@ -223,7 +224,7 @@ export function usePosTerminal() {
         return;
       }
       setBankAccounts([]);
-      setBankAccountsError("No se pudieron cargar las cuentas bancarias disponibles.");
+      setBankAccountsError(toBankAccountsErrorMessage(error_));
     } finally {
       if (
         requestId === bankAccountsRequestRef.current &&
@@ -1317,3 +1318,15 @@ function createCardTerminalReference(sequence: number) {
 }
 
 const CARD_TERMINAL_PROCESSING_DELAY_MS = 650;
+
+/**
+ * Las cuentas bancarias se leen con un permiso administrativo (`admin.bank_accounts.manage`).
+ * Un cajero sin ese permiso recibe 403: el cobro por transferencia queda fuera de su alcance en
+ * esta entrega y se le indica con claridad, sin relajar el control del backend.
+ */
+function toBankAccountsErrorMessage(error: unknown) {
+  if (error instanceof BackendRequestError && error.status === 403) {
+    return "Tu rol no tiene acceso a las cuentas bancarias: el cobro por transferencia no está disponible. Usa efectivo o tarjeta.";
+  }
+  return "No se pudieron cargar las cuentas bancarias disponibles.";
+}

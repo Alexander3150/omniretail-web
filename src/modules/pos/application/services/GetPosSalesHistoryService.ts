@@ -26,10 +26,12 @@ import type {
 import {
   defaultPosSaleHistoryFilters,
   isPosSaleHistoryDetailLoaded,
+  POS_SALE_HISTORY_DEFAULT_PAGE_SIZE,
 } from "@/modules/pos/application/dto/PosSaleHistoryDto";
 
 const POS_SALES_READ = "pos.sales.read";
-const API_HISTORY_PAGE_SIZE = 100;
+/** Tope de tamaño de página que aceptamos pedir al backend. */
+const MAX_HISTORY_PAGE_SIZE = 100;
 
 type PosSalesHistoryRepositories = Pick<
   RepositoryRegistry,
@@ -41,6 +43,9 @@ export interface GetPosSalesHistoryInput {
   actorUserId: string;
   branchId: string;
   filters?: Partial<PosSaleHistoryFilters>;
+  /** Página desde 1. */
+  page?: number;
+  pageSize?: number;
 }
 
 export interface GetPosSaleDetailInput {
@@ -54,11 +59,14 @@ export class GetPosSalesHistoryService {
 
   async execute(input: GetPosSalesHistoryInput): Promise<PosSaleHistoryDto> {
     const context = await this.resolveContext(input);
+    const filters = { ...defaultPosSaleHistoryFilters, ...input.filters };
+    const page = Math.max(1, Math.trunc(input.page ?? 1));
+    const pageSize = Math.min(
+      MAX_HISTORY_PAGE_SIZE,
+      Math.max(1, Math.trunc(input.pageSize ?? POS_SALE_HISTORY_DEFAULT_PAGE_SIZE)),
+    );
     if (this.repositories.posDataSource === "api") {
-      return this.getApiHistory(context.branchId, {
-        ...defaultPosSaleHistoryFilters,
-        ...input.filters,
-      });
+      return this.getApiHistory(context.branchId, filters, page, pageSize);
     }
     const sales = await this.repositories.sales.listByBranch(context.tenantId, context.branchId);
     const sourceOrderIds = [
@@ -84,11 +92,17 @@ export class GetPosSalesHistoryService {
         paymentsBySale[index] ?? [],
       ),
     );
-    const filters = { ...defaultPosSaleHistoryFilters, ...input.filters };
+    const matchingSales = authorizedSales.filter((sale) => matchesFilters(sale, filters));
+    const totalPages = Math.max(1, Math.ceil(matchingSales.length / pageSize));
+    const currentPage = Math.min(page, totalPages);
 
     return {
-      sales: authorizedSales.filter((sale) => matchesFilters(sale, filters)),
+      sales: matchingSales.slice((currentPage - 1) * pageSize, currentPage * pageSize),
       summary: summarize(authorizedSales),
+      page: currentPage,
+      pageSize,
+      totalItems: matchingSales.length,
+      totalPages,
     };
   }
 
@@ -106,47 +120,44 @@ export class GetPosSalesHistoryService {
   }
 
   /**
-   * El backend ya aplica búsqueda (venta, razón social, cliente, pedido y productos), fechas en la
-   * zona del negocio, estado, modalidad y estado operativo: esos filtros no se repiten aquí. El
-   * listado se arma solo con las filas paginadas; el detalle de cada venta se pide al abrirla.
+   * Paginación real del servidor: se pide solo la página visible. El backend aplica búsqueda
+   * (venta, razón social, cliente, pedido y productos), fechas en la zona del negocio, estado,
+   * modalidad y estado operativo, y devuelve el total y el resumen de esos filtros. El detalle de
+   * cada venta se pide al abrirla.
    */
   private async getApiHistory(
     branchId: string,
     filters: PosSaleHistoryFilters,
+    page: number,
+    pageSize: number,
   ): Promise<PosSaleHistoryDto> {
-    const api = this.requireApi();
-    const query = {
+    const deliveryMethod = toApiDeliveryMethod(filters);
+    // "No disponible" (pedido de origen inaccesible) y combinaciones contradictorias no tienen
+    // equivalente en el backend: se responde vacío en lugar de filtrar una página parcial.
+    if (deliveryMethod === UNSUPPORTED_FILTER) return emptyHistoryPage(pageSize);
+    const result = await this.requireApi().getSalesHistory({
       branchId,
       search: filters.search || undefined,
       from: filters.dateFrom || undefined,
       to: filters.dateTo || undefined,
       status: filters.saleStatus === "all" ? undefined : filters.saleStatus,
-      deliveryMethod:
-        filters.deliveryMethod === "all" || filters.deliveryMethod === "unavailable"
-          ? undefined
-          : filters.deliveryMethod,
+      deliveryMethod,
       operationalStatus:
         filters.operationalStatus === "all" ||
         filters.operationalStatus === "immediate" ||
         filters.operationalStatus === "unavailable"
           ? undefined
           : filters.operationalStatus,
-      pageSize: API_HISTORY_PAGE_SIZE,
-    };
-    const firstPage = await api.getSalesHistory({ ...query, page: 1 });
-    const remainingPages = await Promise.all(
-      Array.from({ length: Math.max(0, firstPage.totalPages - 1) }, (_, index) =>
-        api.getSalesHistory({ ...query, page: index + 2 }),
-      ),
-    );
-    const rows = [firstPage, ...remainingPages]
-      .flatMap((page) => page.items)
-      .map(toApiHistoryRow)
-      .filter((row) => matchesClientOnlyFilters(row, filters));
+      page,
+      pageSize,
+    });
     return {
-      sales: rows,
-      // El resumen del backend refleja sus filtros; si hay uno solo del cliente, se recalcula.
-      summary: hasClientOnlyFilter(filters) ? summarize(rows) : toSummary(firstPage.summary),
+      sales: result.items.map(toApiHistoryRow),
+      summary: toSummary(result.summary),
+      page: result.page,
+      pageSize: result.pageSize,
+      totalItems: result.totalItems,
+      totalPages: Math.max(1, result.totalPages),
     };
   }
 
@@ -312,20 +323,35 @@ function matchesFilters(sale: PosSaleHistoryItemDto, filters: PosSaleHistoryFilt
   return true;
 }
 
-/** Filtros sin equivalente en el backend: en modo API son los únicos que se aplican aquí. */
-function hasClientOnlyFilter(filters: PosSaleHistoryFilters) {
-  return (
-    filters.deliveryMethod === "unavailable" ||
-    filters.operationalStatus === "immediate" ||
-    filters.operationalStatus === "unavailable"
-  );
+const UNSUPPORTED_FILTER = Symbol("unsupported-filter");
+
+/**
+ * Traduce la modalidad para el backend. "Inmediata" como estado operativo equivale a
+ * `deliveryMethod=immediate` (ventas sin pedido), que el backend sí resuelve.
+ */
+function toApiDeliveryMethod(
+  filters: PosSaleHistoryFilters,
+): DeliveryMethod | undefined | typeof UNSUPPORTED_FILTER {
+  if (filters.deliveryMethod === "unavailable" || filters.operationalStatus === "unavailable") {
+    return UNSUPPORTED_FILTER;
+  }
+  const delivery = filters.deliveryMethod === "all" ? undefined : filters.deliveryMethod;
+  if (filters.operationalStatus !== "immediate") return delivery;
+  if (delivery === undefined || delivery === DeliveryMethod.immediate) {
+    return DeliveryMethod.immediate;
+  }
+  return UNSUPPORTED_FILTER;
 }
 
-function matchesClientOnlyFilters(sale: PosSaleHistoryRowDto, filters: PosSaleHistoryFilters) {
-  if (filters.deliveryMethod === "unavailable" && !sale.hasUnavailableOrder) return false;
-  if (filters.operationalStatus === "immediate" && sale.sourceOrderId) return false;
-  if (filters.operationalStatus === "unavailable" && !sale.hasUnavailableOrder) return false;
-  return true;
+function emptyHistoryPage(pageSize: number): PosSaleHistoryDto {
+  return {
+    sales: [],
+    summary: summarize([]),
+    page: 1,
+    pageSize,
+    totalItems: 0,
+    totalPages: 1,
+  };
 }
 
 function toApiHistoryRow(row: PosApiSalesHistoryRow): PosSaleHistoryRowDto {

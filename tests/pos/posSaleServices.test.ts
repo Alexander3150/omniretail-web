@@ -373,27 +373,17 @@ describe("GetPosProductsService en modo API", () => {
 });
 
 describe("GetPosSalesHistoryService en modo API", () => {
-  it("arma el listado solo con las filas paginadas, sin pedir el detalle de cada venta", async () => {
+  it("pide solo la página visible al backend, con su total y resumen, sin detalles", async () => {
     const { repositories, posApi } = createPosRepositories();
-    posApi.getSalesHistory
-      .mockResolvedValueOnce(apiHistoryPage({ totalPages: 3 }))
-      .mockResolvedValueOnce(
-        apiHistoryPage({
-          page: 2,
-          totalPages: 3,
-          items: [
-            {
-              saleId: id(80),
-              saleNumber: "V-101",
-              createdAt: at,
-              customerDisplayName: "Consumidor final",
-              total: 20,
-              status: SaleStatus.cancelled,
-            },
-          ],
-        }),
-      )
-      .mockResolvedValueOnce(apiHistoryPage({ page: 3, totalPages: 3, items: [] }));
+    posApi.getSalesHistory.mockResolvedValueOnce(
+      apiHistoryPage({
+        page: 1,
+        pageSize: 10,
+        totalItems: 480,
+        totalPages: 48,
+        summary: { total: 480, completed: 470, partiallyReturned: 4, returned: 2, cancelled: 4 },
+      }),
+    );
 
     const result = await new GetPosSalesHistoryService(repositories).execute({
       actorUserId: ids.user,
@@ -401,9 +391,8 @@ describe("GetPosSalesHistoryService en modo API", () => {
       filters: { search: "V-1" },
     });
 
-    expect(posApi.getSaleDetail).not.toHaveBeenCalled();
-    expect(posApi.getSalesHistory).toHaveBeenCalledTimes(3);
-    expect(posApi.getSalesHistory).toHaveBeenNthCalledWith(1, {
+    expect(posApi.getSalesHistory).toHaveBeenCalledTimes(1);
+    expect(posApi.getSalesHistory).toHaveBeenCalledWith({
       branchId: ids.branch,
       search: "V-1",
       from: undefined,
@@ -412,11 +401,11 @@ describe("GetPosSalesHistoryService en modo API", () => {
       deliveryMethod: undefined,
       operationalStatus: undefined,
       page: 1,
-      pageSize: 100,
+      pageSize: 10,
     });
-    expect(posApi.getSalesHistory.mock.calls.map(([query]) => query.page).sort()).toEqual([1, 2, 3]);
-    // El resumen es el del backend (con sus filtros), no un conteo de las filas cargadas.
-    expect(result.summary).toEqual({ total: 1, active: 1, partiallyReturned: 0, returned: 0, cancelled: 0 });
+    expect(posApi.getSaleDetail).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ page: 1, pageSize: 10, totalItems: 480, totalPages: 48 });
+    expect(result.summary).toEqual({ total: 480, active: 470, partiallyReturned: 4, returned: 2, cancelled: 4 });
     const pickup = result.sales.find((sale) => sale.saleId === ids.sale);
     expect(pickup).toMatchObject({
       documentNumber: "V-100",
@@ -425,7 +414,41 @@ describe("GetPosSalesHistoryService en modo API", () => {
       operationalStatusLabel: "Listo para retiro",
     });
     expect(pickup).not.toHaveProperty("payments");
-    expect(result.sales.find((sale) => sale.saleId === id(80))).toMatchObject({
+  });
+
+  it("pide la página solicitada y acota el tamaño de página", async () => {
+    const { repositories, posApi } = createPosRepositories();
+    posApi.getSalesHistory.mockResolvedValueOnce(
+      apiHistoryPage({
+        page: 3,
+        pageSize: 100,
+        totalItems: 250,
+        totalPages: 3,
+        items: [
+          {
+            saleId: id(80),
+            saleNumber: "V-101",
+            createdAt: at,
+            customerDisplayName: "Consumidor final",
+            total: 20,
+            status: SaleStatus.cancelled,
+          },
+        ],
+      }),
+    );
+
+    const result = await new GetPosSalesHistoryService(repositories).execute({
+      actorUserId: ids.user,
+      branchId: ids.branch,
+      page: 3,
+      pageSize: 500,
+    });
+
+    expect(posApi.getSalesHistory).toHaveBeenCalledTimes(1);
+    expect(posApi.getSalesHistory).toHaveBeenCalledWith(expect.objectContaining({ page: 3, pageSize: 100 }));
+    expect(result).toMatchObject({ page: 3, totalPages: 3, totalItems: 250 });
+    expect(result.sales[0]).toMatchObject({
+      saleId: id(80),
       deliveryMethodLabel: "No disponible",
       operationalStatusLabel: "—",
     });
@@ -464,34 +487,38 @@ describe("GetPosSalesHistoryService en modo API", () => {
     expect(result.sales).toHaveLength(1);
   });
 
-  it("aplica en el cliente solo los filtros sin equivalente en el backend y recalcula el resumen", async () => {
+  it("resuelve en el backend el filtro operativo de ventas inmediatas", async () => {
     const { repositories, posApi } = createPosRepositories();
-    posApi.getSalesHistory.mockResolvedValueOnce(
-      apiHistoryPage({
-        items: [
-          ...apiHistoryPage().items,
-          {
-            saleId: id(81),
-            saleNumber: "V-102",
-            createdAt: at,
-            customerDisplayName: "Consumidor final",
-            total: 15,
-            status: SaleStatus.completed,
-            deliveryMethod: DeliveryMethod.immediate,
-          },
-        ],
-        summary: { total: 2, completed: 2, partiallyReturned: 0, returned: 0, cancelled: 0 },
-      }),
-    );
 
-    const result = await new GetPosSalesHistoryService(repositories).execute({
+    await new GetPosSalesHistoryService(repositories).execute({
       actorUserId: ids.user,
       branchId: ids.branch,
       filters: { operationalStatus: "immediate" },
     });
 
-    expect(result.sales.map((sale) => sale.saleId)).toEqual([id(81)]);
-    expect(result.summary).toEqual({ total: 1, active: 1, partiallyReturned: 0, returned: 0, cancelled: 0 });
+    expect(posApi.getSalesHistory).toHaveBeenCalledWith(
+      expect.objectContaining({ deliveryMethod: DeliveryMethod.immediate, operationalStatus: undefined }),
+    );
+  });
+
+  it.each([
+    ["pedido de origen no disponible", { operationalStatus: "unavailable" as const }],
+    ["modalidad no disponible", { deliveryMethod: "unavailable" as const }],
+    [
+      "inmediata con retiro en tienda",
+      { operationalStatus: "immediate" as const, deliveryMethod: DeliveryMethod.store_pickup },
+    ],
+  ])("responde vacío sin filtrar una página parcial: %s", async (_label, filters) => {
+    const { repositories, posApi } = createPosRepositories();
+
+    const result = await new GetPosSalesHistoryService(repositories).execute({
+      actorUserId: ids.user,
+      branchId: ids.branch,
+      filters,
+    });
+
+    expect(posApi.getSalesHistory).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ sales: [], totalItems: 0, totalPages: 1, page: 1 });
   });
 
   it("carga el detalle de una sola venta al seleccionarla", async () => {
@@ -562,18 +589,6 @@ describe("GetPosSalesHistoryService en modo API", () => {
     ).rejects.toThrow("No se pudo cargar el detalle de la venta V-100.");
   });
 
-  it("no envía al backend los filtros que solo existen en el cliente", async () => {
-    const { repositories, posApi } = createPosRepositories();
-    await new GetPosSalesHistoryService(repositories).execute({
-      actorUserId: ids.user,
-      branchId: ids.branch,
-      filters: { deliveryMethod: "unavailable", operationalStatus: "immediate" },
-    });
-    expect(posApi.getSalesHistory).toHaveBeenCalledWith(
-      expect.objectContaining({ deliveryMethod: undefined, operationalStatus: undefined, search: undefined }),
-    );
-  });
-
   it("envía al backend los filtros concretos de estado, entrega y fechas", async () => {
     const { repositories, posApi } = createPosRepositories();
     await new GetPosSalesHistoryService(repositories).execute({
@@ -596,6 +611,38 @@ describe("GetPosSalesHistoryService en modo API", () => {
         operationalStatus: OrderStatus.ready_for_pickup,
       }),
     );
+  });
+
+  it("en modo mock pagina en el cliente sobre las ventas filtradas", async () => {
+    const sale = (index: number) => ({
+      id: id(200 + index),
+      tenantId: ids.tenant,
+      branchId: ids.branch,
+      number: `V-${String(index).padStart(3, "0")}`,
+      status: SaleStatus.completed,
+      total: 10,
+      createdAt: at,
+      items: [],
+    });
+    const { repositories } = createPosRepositories({
+      extra: {
+        posDataSource: "mock",
+        sales: { listByBranch: vi.fn().mockResolvedValue(Array.from({ length: 23 }, (_, index) => sale(index))) },
+        orders: { getByIdsScoped: vi.fn().mockResolvedValue([]) },
+        payments: { getBySaleScoped: vi.fn().mockResolvedValue([]) },
+      },
+    });
+
+    const result = await new GetPosSalesHistoryService(repositories).execute({
+      actorUserId: ids.user,
+      branchId: ids.branch,
+      page: 3,
+      pageSize: 10,
+    });
+
+    expect(result).toMatchObject({ page: 3, pageSize: 10, totalItems: 23, totalPages: 3 });
+    expect(result.sales.map((item) => item.documentNumber)).toEqual(["V-020", "V-021", "V-022"]);
+    expect(result.summary.total).toBe(23);
   });
 
   it("falla con un mensaje claro si la integración API no está configurada", async () => {

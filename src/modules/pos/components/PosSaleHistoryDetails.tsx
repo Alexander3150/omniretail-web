@@ -9,7 +9,11 @@ interface PosSaleHistoryDetailsProps {
   error?: string | null;
 }
 
-export function PosSaleHistoryDetails({ sale, loading = false, error = null }: PosSaleHistoryDetailsProps) {
+export function PosSaleHistoryDetails({
+  sale,
+  loading = false,
+  error = null,
+}: Readonly<PosSaleHistoryDetailsProps>) {
   if (!sale) {
     return (
       <aside className="flex min-h-64 items-center justify-center rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] p-6 text-center text-sm text-[var(--color-text-muted)]">
