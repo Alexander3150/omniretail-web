@@ -1,3 +1,4 @@
+import { isApiMode } from "@/config/api-mode";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type {
   EcommerceConfigDto,
@@ -5,7 +6,11 @@ import type {
 } from "@/modules/administration/application/dto/EcommerceConfigDto";
 import { toEcommerceConfigDto } from "@/modules/administration/application/mappers/EcommerceConfigMapper";
 import { resolveEcommerceConfigAdminContext } from "@/modules/administration/application/services/resolveEcommerceConfigAdminContext";
-import { ensureEcommerceDefaultBranch } from "@/modules/administration/application/services/serviceHelpers";
+import {
+  AdministrationServiceError,
+  cleanError,
+  ensureEcommerceDefaultBranch,
+} from "@/modules/administration/application/services/serviceHelpers";
 import {
   normalizeEcommerceConfigInput,
   validateEcommerceConfigInput,
@@ -28,6 +33,10 @@ export class SaveEcommerceConfigService {
       defaultBranch,
       tenantId,
     );
+
+    if (isApiMode()) {
+      return this.saveInApi(tenantId, actorUserId, normalizedInput);
+    }
 
     const previousLogoAssetId =
       normalizedInput.logo?.kind === "mockAsset" ? normalizedInput.logo.assetId : undefined;
@@ -72,6 +81,59 @@ export class SaveEcommerceConfigService {
     }
     if (previousLogoAssetId && (newLogoAssetId || normalizedInput.removeLogo)) {
       await this.repositories.catalogImageAssets.remove(tenantId, previousLogoAssetId);
+    }
+
+    await this.repositories.auditLogs.append({
+      tenantId,
+      actorUserId,
+      action: "ecommerce_config.updated",
+      entityType: "EcommerceConfig",
+      entityId: tenantId,
+      metadata: {
+        enabled: config.enabled,
+        storeName: config.storeName,
+        defaultBranchId: config.defaultBranchId,
+      },
+    });
+
+    return toEcommerceConfigDto(config);
+  }
+
+  /**
+   * Modo api: el logo es un archivo del backend (`/media/...`), nunca un asset local. Primero se
+   * guarda el formulario conservando la URL actual (el backend borra el archivo anterior si la URL
+   * cambia o se quita) y despues se sube el archivo nuevo. Si la subida falla, lo demas ya quedo
+   * guardado y se avisa con un error claro.
+   */
+  private async saveInApi(
+    tenantId: string,
+    actorUserId: string,
+    input: ReturnType<typeof normalizeEcommerceConfigInput>,
+  ): Promise<EcommerceConfigDto> {
+    let config = await this.repositories.businessConfig.updateEcommerceConfig(tenantId, {
+      enabled: input.enabled,
+      storeName: input.storeName,
+      logo: input.removeLogo ? undefined : input.logo,
+      contactPhone: input.contactPhone,
+      contactEmail: input.contactEmail,
+      requireAccountForCheckout: input.requireAccountForCheckout,
+      guestTrackingEnabled: input.guestTrackingEnabled,
+      allowedDeliveryMethods: input.allowedDeliveryMethods,
+      allowedPaymentMethods: input.allowedPaymentMethods,
+      defaultBranchId: input.defaultBranchId,
+    });
+
+    if (input.pendingLogo) {
+      try {
+        config = await this.repositories.businessConfig.uploadEcommerceLogo(
+          tenantId,
+          input.pendingLogo.blob,
+        );
+      } catch (error) {
+        throw new AdministrationServiceError(
+          `La configuración se guardó, pero no se pudo subir el logo. ${cleanError(error)}`,
+        );
+      }
     }
 
     await this.repositories.auditLogs.append({

@@ -375,7 +375,7 @@ function apiSuppliersForEmployees(
  * `admin.ecommerce_config.manage`, asi que el storefront publico y los empleados sin ese permiso
  * siguen leyendo el mock.
  */
-function apiBusinessConfigForEmployees(
+export function apiBusinessConfigForEmployees(
   mock: BusinessConfigRepository,
   api: BusinessConfigRepository,
   currentSession: CurrentSessionClient,
@@ -401,6 +401,10 @@ function apiBusinessConfigForEmployees(
       (await manageEcommerce(input.tenantId)).createEcommerceConfig(input),
     updateEcommerceConfig: async (tenantId, input) =>
       (await manageEcommerce(tenantId)).updateEcommerceConfig(tenantId, input),
+    uploadEcommerceLogo: async (tenantId, file) =>
+      (await manageEcommerce(tenantId)).uploadEcommerceLogo(tenantId, file),
+    uploadHeroBannerImage: async (tenantId, index, file) =>
+      (await manageEcommerce(tenantId)).uploadHeroBannerImage(tenantId, index, file),
     getHeroBanner: async (tenantId: string) =>
       (await manageEcommerce(tenantId)).getHeroBanner(tenantId),
     createHeroBanner: async (input) =>

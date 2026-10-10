@@ -51,6 +51,13 @@ export default defineConfig({
         "src/modules/catalog/application/services/GetProductsService.ts",
         "src/shared/navigation/PrivateHeader/ActiveBranchProvider.tsx",
         "src/shared/navigation/PrivateHeader/BranchSelector.tsx",
+        // Subida de logo y carrusel del e-commerce.
+        "src/infrastructure/api/ApiBusinessConfigRepository.ts",
+        "src/infrastructure/api/mediaUrl.ts",
+        "src/infrastructure/mock/repositories/MockBusinessConfigRepository.ts",
+        "src/modules/administration/application/services/SaveEcommerceConfigService.ts",
+        "src/modules/administration/application/services/SaveHeroBannerConfigService.ts",
+        "src/modules/storefront/application/services/ApiPublicStorefrontConfigService.ts",
       ],
     },
   },

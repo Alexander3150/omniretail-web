@@ -1,4 +1,5 @@
 import type { CatalogImageSource } from "@/core/entities";
+import { toSameOriginMediaUrl } from "@/infrastructure/api/mediaUrl";
 
 export interface PublicStoreIdentity {
   tenantId: string;
@@ -29,6 +30,6 @@ export async function fetchPublicStoreIdentity(tenantSlug: string): Promise<Publ
     tenantId: data.tenantId,
     enabled: data.enabled,
     storeName: data.storeName,
-    logo: data.logoUrl ? { kind: "url", src: data.logoUrl } : undefined,
+    logo: data.logoUrl ? { kind: "url", src: toSameOriginMediaUrl(data.logoUrl) } : undefined,
   };
 }

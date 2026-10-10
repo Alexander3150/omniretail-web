@@ -46,4 +46,27 @@ describe("fetchPublicStoreIdentity", () => {
 
     await expect(fetchPublicStoreIdentity("x")).rejects.toThrow("No se pudo cargar");
   });
+
+  it("resuelve por el proxy same-origin un logo subido al backend (ruta relativa)", async () => {
+    const tenant = "11111111-1111-1111-1111-111111111111";
+    const file = "33333333-3333-3333-3333-333333333333";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            tenantId: tenant,
+            enabled: true,
+            storeName: "X",
+            logoUrl: `/media/${tenant}/ecommerce/${tenant}/${file}.png`,
+          }),
+        ),
+      ),
+    );
+
+    expect((await fetchPublicStoreIdentity("x")).logo).toEqual({
+      kind: "url",
+      src: `/api/media/${tenant}/ecommerce/${tenant}/${file}.png`,
+    });
+  });
 });

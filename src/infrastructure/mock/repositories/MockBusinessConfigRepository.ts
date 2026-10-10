@@ -85,6 +85,15 @@ export class MockBusinessConfigRepository
     this.emit("business-config.changed", { tenantId: input.tenantId, action: "created" });
     return created;
   }
+  /** La subida a `/media` solo existe en modo api; el mock guarda imagenes como assets locales. */
+  async uploadEcommerceLogo(): Promise<never> {
+    throw new Error("La subida de archivos al servidor solo está disponible en modo API.");
+  }
+
+  async uploadHeroBannerImage(): Promise<never> {
+    throw new Error("La subida de archivos al servidor solo está disponible en modo API.");
+  }
+
   async updateHeroBanner(
     tenantId: string,
     input: Parameters<BusinessConfigRepository["updateHeroBanner"]>[1],
