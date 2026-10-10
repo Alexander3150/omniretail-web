@@ -63,6 +63,7 @@ export default defineConfig({
         "src/infrastructure/api/ApiSessionEntitlementsClient.ts",
         "src/modules/catalog/application/services/GetProductDetailService.ts",
         "src/modules/inventory/navigation.ts",
+        "src/modules/pos/application/services/GetPosProductsService.ts",
       ],
     },
   },
