@@ -8,6 +8,7 @@ import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import type {
   LogisticsHistoryDetailDto,
   LogisticsHistoryItemDto,
+  LogisticsHistoryQueryDto,
 } from "@/modules/logistics/application/dto/LogisticsHistoryDto";
 import type { PreparedOrderDetailDto } from "@/modules/logistics/application/dto/DispatchReadModelDto";
 import { DispatchApplicationService } from "@/modules/logistics/application/services/DispatchApplicationService";
@@ -16,13 +17,11 @@ import type { DispatchShipmentValidationResult } from "@/modules/logistics/valid
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 
-export interface LogisticsHistoryFilters {
-  search: string;
-  status: "all" | OrderStatus;
-  deliveryMethod: "all" | DeliveryMethod.home_delivery | DeliveryMethod.store_pickup;
-  from: string;
-  to: string;
-}
+export type LogisticsHistoryFilters = LogisticsHistoryQueryDto;
+
+export const LOGISTICS_HISTORY_DEFAULT_PAGE_SIZE = 10;
+/** Espera tras la última tecla antes de consultar el backend con el texto de búsqueda. */
+export const LOGISTICS_HISTORY_SEARCH_DEBOUNCE_MS = 300;
 
 export const defaultLogisticsHistoryFilters: LogisticsHistoryFilters = {
   search: "",
@@ -47,7 +46,12 @@ export function useLogisticsHistory() {
     () => new DispatchApplicationService(repositories),
     [repositories],
   );
+  const usesApi = service.usesApi;
   const [items, setItems] = useState<LogisticsHistoryItemDto[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(LOGISTICS_HISTORY_DEFAULT_PAGE_SIZE);
+  const [serverTotals, setServerTotals] = useState({ totalItems: 0, totalPages: 1 });
+  const [appliedSearch, setAppliedSearch] = useState(defaultLogisticsHistoryFilters.search);
   const [loadedBranchId, setLoadedBranchId] = useState<string | null>(null);
   const [filters, setFilters] = useState<LogisticsHistoryFilters>(defaultLogisticsHistoryFilters);
   const [loading, setLoading] = useState(true);
@@ -66,6 +70,7 @@ export function useLogisticsHistory() {
   const dispatchSequenceRef = useRef(0);
   const activeBranchIdRef = useRef<string | null>(currentBranch?.id ?? null);
   const detailOrderIdRef = useRef<string | null>(null);
+  const detailItemRef = useRef<LogisticsHistoryItemDto | null>(null);
   const dispatchOrderIdRef = useRef<string | null>(null);
   const dispatchOperationIdRef = useRef("");
   const dispatchMutationLockRef = useRef(false);
@@ -81,6 +86,32 @@ export function useLogisticsHistory() {
   const canConfirmDispatch =
     canReadDispatch && hasPermission("logistics.dispatch.confirm");
   const contextLoading = branchLoading || sessionLoading;
+
+  // En modo mock los filtros se aplican en el cliente: `apiQuery` es null y no provoca consultas.
+  const apiQuery = useMemo(
+    () =>
+      usesApi
+        ? {
+            search: appliedSearch,
+            status: filters.status,
+            deliveryMethod: filters.deliveryMethod,
+            from: filters.from,
+            to: filters.to,
+            page,
+            pageSize,
+          }
+        : null,
+    [
+      appliedSearch,
+      filters.deliveryMethod,
+      filters.from,
+      filters.status,
+      filters.to,
+      page,
+      pageSize,
+      usesApi,
+    ],
+  );
 
   const reload = useCallback(async () => {
     const sequence = ++requestSequenceRef.current;
@@ -100,27 +131,38 @@ export function useLogisticsHistory() {
 
     const branchId = currentBranch.id;
     try {
-      const nextItems = await service.execute(branchId);
-      if (sequence !== requestSequenceRef.current || activeBranchIdRef.current !== branchId) return;
-      setItems(nextItems);
+      if (apiQuery) {
+        const result = await service.searchApi(branchId, apiQuery);
+        if (sequence !== requestSequenceRef.current || activeBranchIdRef.current !== branchId) return;
+        setItems(result.items);
+        setServerTotals({ totalItems: result.totalItems, totalPages: Math.max(1, result.totalPages) });
+      } else {
+        const nextItems = await service.execute(branchId);
+        if (sequence !== requestSequenceRef.current || activeBranchIdRef.current !== branchId) return;
+        setItems(nextItems);
+      }
       setLoadedBranchId(branchId);
     } catch (cause) {
       if (sequence !== requestSequenceRef.current || activeBranchIdRef.current !== branchId) return;
       setItems([]);
+      setServerTotals({ totalItems: 0, totalPages: 1 });
       setLoadedBranchId(null);
       setError(toMessage(cause, "No se pudo cargar el historial logístico."));
     } finally {
       if (sequence === requestSequenceRef.current) setLoading(false);
     }
-  }, [canRead, contextLoading, currentBranch, hasBranchAccess, service, sessionError]);
+  }, [apiQuery, canRead, contextLoading, currentBranch, hasBranchAccess, service, sessionError]);
 
   const loadDetail = useCallback(
-    async (branchId: string, orderId: string) => {
+    async (branchId: string, item: LogisticsHistoryItemDto) => {
+      const orderId = item.orderId;
       const sequence = ++detailSequenceRef.current;
       setDetailLoading(true);
       setDetailError(null);
       try {
-        const nextDetail = await service.getDetail(branchId, orderId);
+        const nextDetail = usesApi
+          ? await service.getApiDetail(branchId, item)
+          : await service.getDetail(branchId, orderId);
         if (
           sequence !== detailSequenceRef.current ||
           activeBranchIdRef.current !== branchId ||
@@ -145,17 +187,18 @@ export function useLogisticsHistory() {
         ) setDetailLoading(false);
       }
     },
-    [service],
+    [service, usesApi],
   );
 
   const openDetail = useCallback(
     async (item: LogisticsHistoryItemDto) => {
       if (!currentBranch || !hasBranchAccess || !canRead) return;
       detailOrderIdRef.current = item.orderId;
+      detailItemRef.current = item;
       setDetailOrderId(item.orderId);
       setDetail(null);
       setDetailError(null);
-      await loadDetail(currentBranch.id, item.orderId);
+      await loadDetail(currentBranch.id, item);
     },
     [canRead, currentBranch, hasBranchAccess, loadDetail],
   );
@@ -163,6 +206,7 @@ export function useLogisticsHistory() {
   const closeDetail = useCallback(() => {
     detailSequenceRef.current += 1;
     detailOrderIdRef.current = null;
+    detailItemRef.current = null;
     setDetailOrderId(null);
     setDetail(null);
     setDetailError(null);
@@ -276,11 +320,13 @@ export function useLogisticsHistory() {
     detailSequenceRef.current += 1;
     dispatchSequenceRef.current += 1;
     detailOrderIdRef.current = null;
+    detailItemRef.current = null;
     dispatchOrderIdRef.current = null;
     dispatchMutationLockRef.current = false;
     dispatchOperationIdRef.current = "";
     window.queueMicrotask(() => {
       if (!active) return;
+      setPage(1);
       setDetailOrderId(null);
       setDetail(null);
       setDetailError(null);
@@ -312,8 +358,8 @@ export function useLogisticsHistory() {
       if (!currentBranch || payload.tenantId !== currentBranch.tenantId) return;
       if (payload.branchId && payload.branchId !== currentBranch.id) return;
       void reload();
-      const orderId = detailOrderIdRef.current;
-      if (orderId) void loadDetail(currentBranch.id, orderId);
+      const item = detailItemRef.current;
+      if (item) void loadDetail(currentBranch.id, item);
     },
     [currentBranch, loadDetail, reload],
   );
@@ -322,23 +368,54 @@ export function useLogisticsHistory() {
   useDataEvent("packing.changed", refreshForScopedEvent);
   useDataEvent("dispatch.changed", refreshForScopedEvent);
 
+  useEffect(() => {
+    if (!usesApi) return;
+    const timer = window.setTimeout(
+      () => setAppliedSearch(filters.search.trim()),
+      LOGISTICS_HISTORY_SEARCH_DEBOUNCE_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [filters.search, usesApi]);
+
   const scopedItems = useMemo(
     () => (loadedBranchId === currentBranch?.id ? items : []),
     [currentBranch?.id, items, loadedBranchId],
   );
-  const filteredItems = useMemo(
-    () => filterLogisticsHistory(scopedItems, filters),
-    [filters, scopedItems],
+  // En modo API la página ya llega filtrada y paginada desde el backend.
+  const visibleItems = useMemo(
+    () => (usesApi ? scopedItems : filterLogisticsHistory(scopedItems, filters)),
+    [filters, scopedItems, usesApi],
   );
 
   const updateFilters = useCallback((patch: Partial<LogisticsHistoryFilters>) => {
+    setPage(1);
     setFilters((current) => ({ ...current, ...patch }));
   }, []);
-  const resetFilters = useCallback(() => setFilters(defaultLogisticsHistoryFilters), []);
+  const resetFilters = useCallback(() => {
+    setPage(1);
+    setFilters(defaultLogisticsHistoryFilters);
+    setAppliedSearch(defaultLogisticsHistoryFilters.search);
+  }, []);
+  const goToPage = useCallback((nextPage: number) => setPage(Math.max(1, nextPage)), []);
+  const changePageSize = useCallback((nextPageSize: number) => {
+    setPage(1);
+    setPageSize(nextPageSize);
+  }, []);
 
   return {
-    items: filteredItems,
-    totalItems: scopedItems.length,
+    items: visibleItems,
+    totalItems: usesApi ? serverTotals.totalItems : scopedItems.length,
+    pagination: {
+      mode: usesApi ? ("server" as const) : ("client" as const),
+      page,
+      pageSize,
+      totalItems: usesApi ? serverTotals.totalItems : visibleItems.length,
+      totalPages: usesApi
+        ? serverTotals.totalPages
+        : Math.max(1, Math.ceil(visibleItems.length / pageSize)),
+    },
+    setPage: goToPage,
+    setPageSize: changePageSize,
     filters,
     loading: contextLoading || loading,
     error,

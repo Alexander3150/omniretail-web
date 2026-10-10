@@ -14,6 +14,11 @@ interface LogisticsHistoryTableProps {
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
   onRowDoubleClick?: (item: LogisticsHistoryItemDto) => void;
+  /**
+   * Paginación del servidor: `items` ya es la página actual y el total lo informa el backend.
+   * Sin este dato la tabla pagina en el cliente sobre todos los registros.
+   */
+  serverTotalItems?: number;
 }
 
 export function LogisticsHistoryTable({
@@ -25,12 +30,18 @@ export function LogisticsHistoryTable({
   onPageChange,
   onPageSizeChange,
   onRowDoubleClick,
+  serverTotalItems,
 }: LogisticsHistoryTableProps) {
-  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const serverPaginated = serverTotalItems !== undefined;
+  const totalItems = serverPaginated ? serverTotalItems : items.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const safePage = Math.min(currentPage, totalPages);
-  const rangeStart = items.length === 0 ? 0 : (safePage - 1) * pageSize + 1;
-  const rangeEnd = Math.min(safePage * pageSize, items.length);
-  const visibleItems = items.slice(rangeStart === 0 ? 0 : rangeStart - 1, rangeEnd);
+  const { rangeStart, rangeEnd, visibleItems } = resolvePageWindow(
+    items,
+    safePage,
+    pageSize,
+    serverPaginated,
+  );
   const showActionColumn = items.some(canAddGuide);
 
   const columns: DataTableColumn<LogisticsHistoryItemDto>[] = [
@@ -40,7 +51,9 @@ export function LogisticsHistoryTable({
       className: "w-[9%] px-2 py-2 align-top",
       cell: (item) => (
         <div className="min-w-0">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">Pedido</span>
+          <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+            {item.sourceType === "transfer" ? "Traslado" : "Pedido"}
+          </span>
           <strong className="block whitespace-nowrap text-sm text-[var(--color-title)]">
             {item.orderReference}
           </strong>
@@ -55,9 +68,7 @@ export function LogisticsHistoryTable({
         <div className="min-w-0 space-y-0.5">
           <strong className="block break-words text-sm text-[var(--color-title)]">{item.contactName}</strong>
           <span className="block text-xs text-[var(--color-text-muted)]">
-            {item.deliveryMethod === DeliveryMethod.home_delivery
-              ? "Envío a domicilio"
-              : "Retiro en tienda/bodega"}
+            {deliveryMethodLabel(item)}
           </span>
         </div>
       ),
@@ -140,7 +151,7 @@ export function LogisticsHistoryTable({
           <p className="tabular-nums">
             {items.length === 0
               ? "Mostrando 0 de 0 registros"
-              : `Mostrando ${rangeStart}-${rangeEnd} de ${items.length} registros`}
+              : `Mostrando ${rangeStart}-${rangeEnd} de ${totalItems} registros`}
           </p>
           <label className="flex items-center gap-2">
             <span className="text-xs font-semibold text-[var(--color-title)]">Filas</span>
@@ -186,6 +197,36 @@ export function LogisticsHistoryTable({
       </div>
     </div>
   );
+}
+
+const deliveryMethodLabels: Record<LogisticsHistoryItemDto["deliveryMethod"], string> = {
+  [DeliveryMethod.immediate]: "Entrega inmediata",
+  [DeliveryMethod.store_pickup]: "Retiro en tienda/bodega",
+  [DeliveryMethod.home_delivery]: "Envío a domicilio",
+  transfer: "Traslado entre sucursales",
+};
+
+/** La modalidad se deriva del origen: un traslado nunca es retiro ni envío a un cliente. */
+export function deliveryMethodLabel(item: Pick<LogisticsHistoryItemDto, "sourceType" | "deliveryMethod">) {
+  return item.sourceType === "transfer"
+    ? deliveryMethodLabels.transfer
+    : deliveryMethodLabels[item.deliveryMethod];
+}
+
+/** Con paginación del servidor `items` ya es la página; sin ella se recorta en el cliente. */
+function resolvePageWindow(
+  items: LogisticsHistoryItemDto[],
+  page: number,
+  pageSize: number,
+  serverPaginated: boolean,
+) {
+  if (items.length === 0) return { rangeStart: 0, rangeEnd: 0, visibleItems: items };
+  const rangeStart = (page - 1) * pageSize + 1;
+  if (serverPaginated) {
+    return { rangeStart, rangeEnd: rangeStart + items.length - 1, visibleItems: items };
+  }
+  const rangeEnd = Math.min(page * pageSize, items.length);
+  return { rangeStart, rangeEnd, visibleItems: items.slice(rangeStart - 1, rangeEnd) };
 }
 
 export function canAddGuide(item: LogisticsHistoryItemDto) {
