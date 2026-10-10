@@ -111,6 +111,7 @@ export function PosTerminalPage() {
         hasOpenCashShift={terminal.hasOpenCashShift}
         hasOperationalBlock={terminal.checkoutHasOperationalBlock}
         hasPosSalesPermission={terminal.hasPosSalesPermission}
+        hasKitItems={terminal.ticketItems.some((item) => item.isKit)}
         hasUnsupportedTraceability={terminal.hasUnsupportedTraceability}
         message={terminal.checkoutMessage}
         open={terminal.checkoutOpen}

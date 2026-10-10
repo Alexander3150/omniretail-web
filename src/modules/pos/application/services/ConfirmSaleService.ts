@@ -1,4 +1,5 @@
 import type { Branch, CashShift, SaleDocumentSnapshot, User } from "@/core/entities";
+import { KIT_DEFERRED_MESSAGE, isKitDeferredSale } from "@/modules/pos/validation/kitDelivery";
 import {
   CashShiftStatus,
   DeliveryMethod,
@@ -94,6 +95,16 @@ export class ConfirmSaleService {
     if (authorizedInput.ticket.items.length === 0) throw new Error("El ticket está vacío.");
     if (authorizedInput.ticket.hasUnsupportedTraceability) {
       throw new Error("El ticket contiene lote, serial o kit no soportado para confirmación.");
+    }
+    // El backend rechaza los kits diferidos (KIT_FULFILLMENT_NOT_SUPPORTED): se bloquea antes de
+    // validar el cobro y de enviar nada.
+    const kit = authorizedInput.ticket.items.find((item) => item.isKit);
+    if (
+      this.repositories.posDataSource === "api" &&
+      kit &&
+      isKitDeferredSale(authorizedInput.checkout.deliveryMethod, true)
+    ) {
+      throw new Error(`${kit.name}: ${KIT_DEFERRED_MESSAGE}`);
     }
     if (this.repositories.posDataSource === "api" && authorizedInput.sourceOrderId) {
       throw new Error(

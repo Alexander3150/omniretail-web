@@ -1117,6 +1117,7 @@ function createTicketItem(product: PosProductDto, quantity: number): SaleTicketI
     saleUnitName: product.saleUnitName,
     tracksStock: product.tracksStock,
     requiresUnsupportedTraceability: product.requiresUnsupportedTraceability,
+    isKit: product.productType === "kit",
   };
 }
 

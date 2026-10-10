@@ -254,6 +254,40 @@ describe("ConfirmSaleService en modo API", () => {
     expect(noShift.posApi.confirmSale).not.toHaveBeenCalled();
   });
 
+  it("bloquea los kits en ventas diferidas antes de llamar al backend", async () => {
+    const kitTicket = ticket({
+      items: [{ ...ticket().items[0]!, isKit: true, name: "Kit Hogar" }],
+    });
+    for (const deliveryMethod of [DeliveryMethod.store_pickup, DeliveryMethod.home_delivery]) {
+      const { repositories, posApi } = createPosRepositories();
+
+      await expect(
+        new ConfirmSaleService(repositories).execute(
+          confirmInput({
+            ticket: kitTicket,
+            checkout: checkout({
+              deliveryMethod,
+              transportMode:
+                deliveryMethod === DeliveryMethod.store_pickup
+                  ? TransportMode.customer
+                  : TransportMode.own_fleet,
+            }),
+          }),
+        ),
+      ).rejects.toThrow("Kit Hogar: Los kits solo se pueden vender con entrega inmediata.");
+      expect(posApi.confirmSale).not.toHaveBeenCalled();
+    }
+  });
+
+  it("permite vender un kit con entrega inmediata", async () => {
+    const { repositories, posApi } = createPosRepositories();
+    const kitTicket = ticket({ items: [{ ...ticket().items[0]!, isKit: true }] });
+
+    await new ConfirmSaleService(repositories).execute(confirmInput({ ticket: kitTicket }));
+
+    expect(posApi.confirmSale).toHaveBeenCalledTimes(1);
+  });
+
   it("propaga el rechazo del backend sin inventar una venta", async () => {
     const { repositories, posApi } = createPosRepositories();
     posApi.confirmSale.mockRejectedValueOnce(new Error("Stock insuficiente"));
