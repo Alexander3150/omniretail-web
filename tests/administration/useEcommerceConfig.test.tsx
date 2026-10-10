@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useEcommerceConfig } from "@/modules/administration/hooks/useEcommerceConfig";
 import { useHeroBannerConfig } from "@/modules/administration/hooks/useHeroBannerConfig";
+import { PartialSaveError } from "@/modules/administration/application/services/serviceHelpers";
 
 const state = vi.hoisted(() => ({
   getConfig: vi.fn(),
@@ -97,6 +98,23 @@ describe("useEcommerceConfig", () => {
     expect(result.current.config).toBeNull();
   });
 
+  it("un guardado parcial muestra lo persistido y relanza el error con ese estado", async () => {
+    const persisted = { storeName: "Guardada", logo: { kind: "url", src: "/api/media/viejo.png" } };
+    state.saveConfig.mockRejectedValue(new PartialSaveError("No se pudo subir el logo.", persisted));
+    const { result } = renderHook(() => useEcommerceConfig());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    let failure: unknown;
+    await act(async () => {
+      failure = await result.current.save({} as never).catch((error: unknown) => error);
+    });
+
+    expect(failure).toBeInstanceOf(PartialSaveError);
+    expect(result.current.config).toEqual(persisted);
+    expect(result.current.error).toBeNull();
+    expect(result.current.saving).toBe(false);
+  });
+
   it("guardar con exito actualiza la configuracion", async () => {
     state.saveConfig.mockResolvedValue({ storeName: "Nueva" });
     const { result } = renderHook(() => useEcommerceConfig());
@@ -136,6 +154,20 @@ describe("useHeroBannerConfig", () => {
 
     expect(result.current.error).toBeNull();
     expect(result.current.saving).toBe(false);
+  });
+
+  it("un guardado parcial del carrusel muestra las diapositivas persistidas", async () => {
+    const persisted = { slides: [{ title: "Uno", description: "A", image: { kind: "url", src: "/api/media/a.png" } }] };
+    state.saveHero.mockRejectedValue(new PartialSaveError("No se pudo subir la diapositiva 2.", persisted));
+    const { result } = renderHook(() => useHeroBannerConfig());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await expect(result.current.save({ slides: [] } as never)).rejects.toBeInstanceOf(PartialSaveError);
+    });
+
+    expect(result.current.config).toEqual(persisted);
+    expect(result.current.error).toBeNull();
   });
 
   it("guardar con exito actualiza el carrusel", async () => {

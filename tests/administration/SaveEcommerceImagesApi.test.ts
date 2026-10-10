@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { EcommerceConfigInputDto } from "@/modules/administration/application/dto/EcommerceConfigDto";
 import type { HeroBannerConfigInputDto } from "@/modules/administration/application/dto/HeroBannerConfigDto";
 import { SaveEcommerceConfigService } from "@/modules/administration/application/services/SaveEcommerceConfigService";
 import { SaveHeroBannerConfigService } from "@/modules/administration/application/services/SaveHeroBannerConfigService";
+import { PartialSaveError } from "@/modules/administration/application/services/serviceHelpers";
 
 const state = vi.hoisted(() => ({ apiMode: true }));
 
@@ -128,17 +130,54 @@ describe("SaveEcommerceConfigService (modo api)", () => {
     expect(result.logo).toBeUndefined();
   });
 
-  it("si la subida falla avisa que lo demas si se guardo", async () => {
+  it("si falla el logo devuelve lo persistido, conserva el logo anterior y audita el guardado parcial", async () => {
     const { registry, businessConfig, auditLogs } = createRegistry({
-      uploadEcommerceLogo: vi.fn().mockRejectedValue(new Error("413")),
+      uploadEcommerceLogo: vi.fn().mockRejectedValue(new BackendRequestError("La imagen supera el tamaño máximo.", 413)),
     });
 
-    await expect(
-      new SaveEcommerceConfigService(registry).execute(ecommerceInput({ pendingLogo: draft() })),
-    ).rejects.toThrow("La configuración se guardó, pero no se pudo subir el logo.");
+    const failure = await new SaveEcommerceConfigService(registry)
+      .execute(ecommerceInput({ logo: LOGO_URL, storeName: "FerrePharma", pendingLogo: draft() }))
+      .catch((error: unknown) => error);
 
+    expect(failure).toBeInstanceOf(PartialSaveError);
+    const partial = failure as PartialSaveError<{ logo?: unknown; storeName: string }>;
+    expect(partial.message).toBe(
+      "Se guardaron los datos de la tienda, pero no se pudo subir el logo: La imagen supera el tamaño máximo. El logo anterior se conserva; vuelve a seleccionar la imagen y guarda de nuevo.",
+    );
+    // Lo persistido es lo que devolvió el guardado del formulario (con el logo anterior).
+    expect(partial.persisted).toMatchObject({ storeName: "FerrePharma", logo: LOGO_URL });
     expect(businessConfig.updateEcommerceConfig).toHaveBeenCalledTimes(1);
+    expect(auditLogs.append).toHaveBeenCalledTimes(1);
+    expect(auditLogs.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "ecommerce_config.updated",
+        metadata: expect.objectContaining({ logoUploaded: false, partial: true }),
+      }),
+    );
+  });
+
+  it("si falla el guardado del formulario no sube el logo ni audita", async () => {
+    const { registry, businessConfig, auditLogs } = createRegistry({
+      updateEcommerceConfig: vi.fn().mockRejectedValue(new Error("Sin conexión")),
+    });
+
+    const failure = await new SaveEcommerceConfigService(registry)
+      .execute(ecommerceInput({ pendingLogo: draft() }))
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(PartialSaveError);
+    expect(businessConfig.uploadEcommerceLogo).not.toHaveBeenCalled();
     expect(auditLogs.append).not.toHaveBeenCalled();
+  });
+
+  it("un logo subido correctamente queda registrado en la auditoría", async () => {
+    const { registry, auditLogs } = createRegistry();
+    await new SaveEcommerceConfigService(registry).execute(ecommerceInput({ pendingLogo: draft() }));
+    expect(auditLogs.append).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.objectContaining({ logoUploaded: true }) }),
+    );
+    expect(auditLogs.append.mock.calls[0][0].metadata).not.toHaveProperty("partial");
   });
 
   it("en modo mock sigue guardando el logo como asset local y no usa la subida", async () => {
@@ -233,29 +272,83 @@ describe("SaveHeroBannerConfigService (modo api)", () => {
     expect(result.slides.map((slide) => slide.image)).toEqual([slideUrl("a"), undefined, slideUrl("c")]);
   });
 
-  it("si falla la subida de una diapositiva avisa cual fue y no sigue con las demas", async () => {
+  it("si falla una diapositiva intermedia devuelve lo persistido, no sigue y audita lo confirmado", async () => {
     const upload = vi
       .fn()
       .mockResolvedValueOnce(heroConfig(["a", undefined, undefined]))
-      .mockRejectedValueOnce(new Error("415"));
+      .mockRejectedValueOnce(new BackendRequestError("Formato no permitido.", 415));
     const { registry, auditLogs } = createRegistry({
       updateHeroBanner: vi.fn().mockResolvedValue(heroConfig([undefined, undefined, undefined])),
       uploadHeroBannerImage: upload,
     });
 
-    await expect(
-      new SaveHeroBannerConfigService(registry).execute(
+    const failure = await new SaveHeroBannerConfigService(registry)
+      .execute(
         heroInput([
           { title: "A", description: "a", pendingImage: draft() },
           { title: "B", description: "b", pendingImage: draft() },
           { title: "C", description: "c", pendingImage: draft() },
         ]),
-      ),
-    ).rejects.toThrow(
-      "La configuración se guardó, pero no se pudo subir la imagen de la diapositiva 2.",
-    );
+      )
+      .catch((error: unknown) => error);
 
+    expect(failure).toBeInstanceOf(PartialSaveError);
+    const partial = failure as PartialSaveError<{ slides: Array<{ image?: unknown }> }>;
+    expect(partial.message).toBe(
+      "Se guardaron los textos del carrusel y la imagen de la diapositiva 1, pero no se pudo subir la imagen de la diapositiva 2: Formato no permitido. Tampoco se subieron las imágenes de la diapositiva 3. Vuelve a seleccionar las imágenes pendientes y guarda de nuevo.",
+    );
+    // La diapositiva 1 quedó con su imagen nueva; la 2 y la 3 sin imagen.
+    expect(partial.persisted.slides.map((slide) => slide.image)).toEqual([slideUrl("a"), undefined, undefined]);
     expect(upload).toHaveBeenCalledTimes(2);
+    expect(auditLogs.append).toHaveBeenCalledTimes(1);
+    expect(auditLogs.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "hero_banner.updated",
+        metadata: { partial: true, uploadedSlides: [1], failedSlide: 2, skippedSlides: [3] },
+      }),
+    );
+  });
+
+  it("si falla la primera imagen informa que no se subió ninguna y devuelve los textos guardados", async () => {
+    const upload = vi.fn().mockRejectedValueOnce(new BackendRequestError("Timeout", 504));
+    const { registry, auditLogs } = createRegistry({
+      updateHeroBanner: vi.fn().mockResolvedValue(heroConfig(["uno", undefined, undefined])),
+      uploadHeroBannerImage: upload,
+    });
+
+    const failure = (await new SaveHeroBannerConfigService(registry)
+      .execute(
+        heroInput([
+          { title: "A", description: "a", image: slideUrl("uno") },
+          { title: "B", description: "b", pendingImage: draft() },
+          { title: "C", description: "c" },
+        ]),
+      )
+      .catch((error: unknown) => error)) as PartialSaveError<{ slides: Array<{ image?: unknown }> }>;
+
+    expect(failure.message).toBe(
+      "Se guardaron los textos del carrusel, pero no se pudo subir la imagen de la diapositiva 2: Timeout Vuelve a seleccionar las imágenes pendientes y guarda de nuevo.",
+    );
+    expect(failure.persisted.slides.map((slide) => slide.image)).toEqual([slideUrl("uno"), undefined, undefined]);
+    expect(auditLogs.append.mock.calls[0][0].metadata).toEqual({
+      partial: true,
+      uploadedSlides: [],
+      failedSlide: 2,
+      skippedSlides: [],
+    });
+  });
+
+  it("si falla el guardado del carrusel no sube imágenes ni audita", async () => {
+    const { registry, businessConfig, auditLogs } = createRegistry({
+      updateHeroBanner: vi.fn().mockRejectedValue(new Error("Sin conexión")),
+    });
+
+    await expect(
+      new SaveHeroBannerConfigService(registry).execute(
+        heroInput([{ title: "A", description: "a", pendingImage: draft() }]),
+      ),
+    ).rejects.not.toBeInstanceOf(PartialSaveError);
+    expect(businessConfig.uploadHeroBannerImage).not.toHaveBeenCalled();
     expect(auditLogs.append).not.toHaveBeenCalled();
   });
 

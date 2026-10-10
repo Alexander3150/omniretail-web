@@ -30,6 +30,21 @@ export class AdministrationServiceError extends Error {
 }
 
 /**
+ * Guardado incompleto: parte de la operacion quedo confirmada en el backend y otra parte fallo.
+ * `persisted` es el estado que el backend devolvio por ultima vez, para que la UI muestre lo que
+ * realmente quedo guardado en lugar de conservar datos desactualizados.
+ */
+export class PartialSaveError<TPersisted> extends AdministrationServiceError {
+  constructor(
+    message: string,
+    readonly persisted: TPersisted,
+  ) {
+    super(message);
+    this.name = "PartialSaveError";
+  }
+}
+
+/**
  * El permiso se verifica en la capa de aplicacion, no en la pantalla: ocultar el menu o el boton no
  * es enforcement, y la configuracion afecta a todo el tenant.
  */

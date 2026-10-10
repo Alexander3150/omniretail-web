@@ -9,7 +9,7 @@ import type {
 } from "@/modules/administration/application/dto/EcommerceConfigDto";
 import { GetEcommerceConfigService } from "@/modules/administration/application/services/GetEcommerceConfigService";
 import { SaveEcommerceConfigService } from "@/modules/administration/application/services/SaveEcommerceConfigService";
-import { cleanError } from "@/modules/administration/application/services/serviceHelpers";
+import { PartialSaveError, cleanError } from "@/modules/administration/application/services/serviceHelpers";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useEntitlementContext } from "@/shared/providers/EntitlementProvider";
@@ -125,6 +125,12 @@ export function useEcommerceConfig() {
         setConfig(savedConfig);
         return savedConfig;
       } catch (caughtError) {
+        // Guardado parcial: se muestra lo que el backend si confirmo y se conserva el error para
+        // que la pantalla sincronice el formulario con ese estado.
+        if (caughtError instanceof PartialSaveError) {
+          setConfig(caughtError.persisted as EcommerceConfigDto);
+          throw caughtError;
+        }
         throw new Error(cleanError(caughtError));
       } finally {
         setSaving(false);

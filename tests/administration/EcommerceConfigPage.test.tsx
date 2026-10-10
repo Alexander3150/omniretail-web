@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { INVALID_IMAGE_URL_SUBMIT_MESSAGE } from "@/core/media/resolveImageUrlInput";
 import { EcommerceConfigPage } from "@/modules/administration/pages/EcommerceConfigPage";
+import { PartialSaveError } from "@/modules/administration/application/services/serviceHelpers";
 
 const state = vi.hoisted(() => ({
   save: vi.fn(),
@@ -162,5 +163,78 @@ describe("EcommerceConfigPage: URLs de imagen invalidas", () => {
     await waitFor(() => expect(state.save).toHaveBeenCalledTimes(1));
     expect(state.saveHeroBanner).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(INVALID_IMAGE_URL_SUBMIT_MESSAGE)).toBeNull();
+  });
+});
+
+describe("EcommerceConfigPage: guardado parcial de imágenes", () => {
+  beforeEach(() => {
+    cleanup();
+    state.showToast.mockReset();
+    state.save.mockReset().mockImplementation(async (value) => value);
+    state.saveHeroBanner.mockReset().mockImplementation(async (value) => value);
+  });
+
+  it("si falla el logo muestra el motivo, sincroniza el formulario con lo guardado y no anuncia éxito", async () => {
+    const persistedLogo = "https://cdn.example.com/guardado.png";
+    state.save.mockImplementation(async (value) => {
+      throw new PartialSaveError("Se guardaron los datos de la tienda, pero no se pudo subir el logo.", {
+        ...value,
+        storeName: "FerrePharma Guardada",
+        logo: { kind: "url", src: persistedLogo },
+      });
+    });
+    await renderPage();
+
+    clickSave();
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Se guardaron los datos de la tienda, pero no se pudo subir el logo."),
+      ).toBeInTheDocument(),
+    );
+    await waitFor(() => expect(logoInput().value).toBe(persistedLogo));
+    expect(state.saveHeroBanner).toHaveBeenCalledTimes(1);
+    expect(state.showToast).not.toHaveBeenCalled();
+  });
+
+  it("si falla una diapositiva intermedia conserva el guardado del logo y refleja el carrusel persistido", async () => {
+    const savedSlide = "https://cdn.example.com/slide-guardada.png";
+    state.saveHeroBanner.mockImplementation(async () => {
+      throw new PartialSaveError("No se pudo subir la imagen de la diapositiva 2.", {
+        slides: [
+          { title: "Uno", description: "A", image: { kind: "url", src: savedSlide } },
+          { title: "Dos", description: "B" },
+          { title: "Tres", description: "C" },
+        ],
+      });
+    });
+    await renderPage();
+
+    clickSave();
+
+    await waitFor(() =>
+      expect(screen.getByText("No se pudo subir la imagen de la diapositiva 2.")).toBeInTheDocument(),
+    );
+    await waitFor(() => expect(slideInput(0).value).toBe(savedSlide));
+    expect(state.save).toHaveBeenCalledTimes(1);
+    expect(state.showToast).not.toHaveBeenCalled();
+  });
+
+  it("si una parte falla sin guardar nada, muestra el error y conserva lo que el usuario editó", async () => {
+    state.saveHeroBanner.mockRejectedValue(new Error("Sin conexión con el servidor."));
+    await renderPage();
+    fireEvent.change(slideInput(1), { target: { value: "https://cdn.example.com/nueva.png" } });
+
+    clickSave();
+
+    await waitFor(() => expect(screen.getByText("Sin conexión con el servidor.")).toBeInTheDocument());
+    expect(slideInput(1).value).toBe("https://cdn.example.com/nueva.png");
+    expect(state.showToast).not.toHaveBeenCalled();
+  });
+
+  it("si todo se guarda anuncia el éxito", async () => {
+    await renderPage();
+    clickSave();
+    await waitFor(() => expect(state.showToast).toHaveBeenCalledWith(expect.objectContaining({ tone: "success" })));
   });
 });

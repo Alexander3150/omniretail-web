@@ -10,7 +10,7 @@ import type {
 import { GetBusinessConfigService } from "@/modules/administration/application/services/GetBusinessConfigService";
 import { GetHeroBannerConfigService } from "@/modules/administration/application/services/GetHeroBannerConfigService";
 import { SaveHeroBannerConfigService } from "@/modules/administration/application/services/SaveHeroBannerConfigService";
-import { cleanError } from "@/modules/administration/application/services/serviceHelpers";
+import { PartialSaveError, cleanError } from "@/modules/administration/application/services/serviceHelpers";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 
@@ -115,6 +115,12 @@ export function useHeroBannerConfig() {
         setConfig(savedConfig);
         return savedConfig;
       } catch (caughtError) {
+        // Guardado parcial: se muestra lo que el backend si confirmo y se conserva el error para
+        // que la pantalla sincronice el formulario con ese estado.
+        if (caughtError instanceof PartialSaveError) {
+          setConfig(caughtError.persisted as HeroBannerConfigDto);
+          throw caughtError;
+        }
         throw new Error(cleanError(caughtError));
       } finally {
         setSaving(false);

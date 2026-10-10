@@ -7,9 +7,9 @@ import type {
 import { toEcommerceConfigDto } from "@/modules/administration/application/mappers/EcommerceConfigMapper";
 import { resolveEcommerceConfigAdminContext } from "@/modules/administration/application/services/resolveEcommerceConfigAdminContext";
 import {
-  AdministrationServiceError,
   cleanError,
   ensureEcommerceDefaultBranch,
+  PartialSaveError,
 } from "@/modules/administration/application/services/serviceHelpers";
 import {
   normalizeEcommerceConfigInput,
@@ -102,8 +102,10 @@ export class SaveEcommerceConfigService {
   /**
    * Modo api: el logo es un archivo del backend (`/media/...`), nunca un asset local. Primero se
    * guarda el formulario conservando la URL actual (el backend borra el archivo anterior si la URL
-   * cambia o se quita) y despues se sube el archivo nuevo. Si la subida falla, lo demas ya quedo
-   * guardado y se avisa con un error claro.
+   * cambia o se quita) y despues se sube el archivo nuevo. No hay transaccion distribuida: si la
+   * subida falla, la configuracion ya quedo guardada, se audita lo confirmado y se lanza
+   * `PartialSaveError` con el estado persistido para que la UI lo refleje. El backend no audita
+   * estos cambios, por lo que esta auditoria no se duplica.
    */
   private async saveInApi(
     tenantId: string,
@@ -130,12 +132,30 @@ export class SaveEcommerceConfigService {
           input.pendingLogo.blob,
         );
       } catch (error) {
-        throw new AdministrationServiceError(
-          `La configuración se guardó, pero no se pudo subir el logo. ${cleanError(error)}`,
+        await this.auditApiSave(tenantId, actorUserId, config, { logoUploaded: false });
+        throw new PartialSaveError(
+          `Se guardaron los datos de la tienda, pero no se pudo subir el logo: ${cleanError(error)} El logo anterior se conserva; vuelve a seleccionar la imagen y guarda de nuevo.`,
+          toEcommerceConfigDto(config),
         );
       }
     }
 
+    await this.auditApiSave(
+      tenantId,
+      actorUserId,
+      config,
+      input.pendingLogo ? { logoUploaded: true } : {},
+    );
+    return toEcommerceConfigDto(config);
+  }
+
+  /** Audita solo lo que el backend confirmo; `partial` indica que una subida fallo. */
+  private async auditApiSave(
+    tenantId: string,
+    actorUserId: string,
+    config: Awaited<ReturnType<RepositoryRegistry["businessConfig"]["updateEcommerceConfig"]>>,
+    logo: { logoUploaded?: boolean },
+  ) {
     await this.repositories.auditLogs.append({
       tenantId,
       actorUserId,
@@ -146,9 +166,9 @@ export class SaveEcommerceConfigService {
         enabled: config.enabled,
         storeName: config.storeName,
         defaultBranchId: config.defaultBranchId,
+        ...logo,
+        ...(logo.logoUploaded === false ? { partial: true } : {}),
       },
     });
-
-    return toEcommerceConfigDto(config);
   }
 }
