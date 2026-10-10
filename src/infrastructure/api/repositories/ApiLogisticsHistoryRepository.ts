@@ -25,6 +25,7 @@ export class ApiLogisticsHistoryRepository implements LogisticsHistoryReadReposi
           branchId: query.branchId,
           search: query.search?.trim() || undefined,
           status: query.status || undefined,
+          transferStatus: query.transferStatus,
           deliveryMethod: query.deliveryMethod,
           from: query.from || undefined,
           to: query.to || undefined,

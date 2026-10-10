@@ -1,4 +1,4 @@
-import type { DispatchStatus } from "@/core/enums";
+import type { DispatchStatus, InventoryTransferStatus } from "@/core/enums";
 import type { PaginatedResult } from "@/core/types/pagination.types";
 
 export type LogisticsHistorySourceType = "order" | "transfer";
@@ -81,6 +81,11 @@ export interface LogisticsHistorySearchQuery {
   search?: string;
   /** Nombre de un `OrderStatus` o `InventoryTransferStatus`. */
   status?: string;
+  /**
+   * Estado equivalente para los traslados (p. ej. `dispatched` ↔ `inTransit`). Requiere el
+   * parámetro `transferStatus` en el backend; mientras no exista, el backend lo ignora.
+   */
+  transferStatus?: InventoryTransferStatus;
   deliveryMethod?: LogisticsHistoryDeliveryMethod;
   /** Fecha `YYYY-MM-DD` inclusiva; filtra por creación del Picking en la zona del tenant. */
   from?: string;

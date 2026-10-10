@@ -37,6 +37,25 @@ const transferStatuses: Record<InventoryTransferStatus, OrderStatus> = {
 
 const orderStatuses = new Set<string>(Object.values(OrderStatus));
 
+/**
+ * Inverso de `transferStatuses` para los filtros: "Despachado" también debe traer los traslados
+ * en tránsito y "Entregado" los recibidos. Los estados sin equivalente solo filtran pedidos.
+ */
+const transferStatusByOrderStatus: Partial<Record<OrderStatus, InventoryTransferStatus>> = {
+  [OrderStatus.dispatched]: InventoryTransferStatus.inTransit,
+  [OrderStatus.delivered]: InventoryTransferStatus.received,
+  [OrderStatus.cancelled]: InventoryTransferStatus.cancelled,
+  [OrderStatus.preparing]: InventoryTransferStatus.preparing,
+};
+
+export function toLogisticsHistoryStatusQuery(status: "all" | OrderStatus): {
+  status?: OrderStatus;
+  transferStatus?: InventoryTransferStatus;
+} {
+  if (status === "all") return {};
+  return { status, transferStatus: transferStatusByOrderStatus[status] };
+}
+
 export function toLogisticsHistoryItemDto(row: LogisticsHistoryRowReadModel): LogisticsHistoryItemDto {
   const isTransfer = row.sourceType === "transfer";
   return {

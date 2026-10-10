@@ -17,6 +17,7 @@ import type {
 import {
   toLogisticsHistoryDetailDto,
   toLogisticsHistoryItemDto,
+  toLogisticsHistoryStatusQuery,
 } from "@/modules/logistics/application/mappers/LogisticsHistoryApiMapper";
 import { getLogisticsItemTraceForScope } from "@/modules/logistics/application/services/GetLogisticsItemTraceService";
 import { resolveTrustedLogisticsHistoryContext } from "@/modules/logistics/application/services/LogisticsHistoryAuthorizationContext";
@@ -67,7 +68,7 @@ export class GetLogisticsHistoryService {
     const result = await this.requireApiRepository().search({
       branchId: context.branchId,
       search: query.search,
-      status: query.status === "all" ? undefined : query.status,
+      ...toLogisticsHistoryStatusQuery(query.status),
       deliveryMethod: query.deliveryMethod === "all" ? undefined : query.deliveryMethod,
       from: query.from,
       to: query.to,

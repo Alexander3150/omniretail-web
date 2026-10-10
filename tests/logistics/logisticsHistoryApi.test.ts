@@ -3,6 +3,7 @@ import {
   BranchStatus,
   DeliveryMethod,
   DispatchStatus,
+  InventoryTransferStatus,
   OrderStatus,
   RoleStatus,
   UserStatus,
@@ -17,6 +18,7 @@ import {
   TRANSFER_HISTORY_PREFIX,
   toLogisticsHistoryDetailDto,
   toLogisticsHistoryItemDto,
+  toLogisticsHistoryStatusQuery,
 } from "@/modules/logistics/application/mappers/LogisticsHistoryApiMapper";
 import { GetLogisticsHistoryService } from "@/modules/logistics/application/services/GetLogisticsHistoryService";
 
@@ -153,6 +155,20 @@ describe("ApiLogisticsHistoryRepository", () => {
       `/api/backend/logistics/history?branchId=${ids.branch}&search=WEB-100&status=dispatched&deliveryMethod=home_delivery&from=2026-10-01&to=2026-10-09&page=2&size=100`,
       `/api/backend/logistics/history?branchId=${ids.branch}&page=0&size=10`,
     ]);
+  });
+
+  it("envía el estado equivalente de traslados junto al de pedidos", async () => {
+    const urls = stubFetch(() => Response.json(pageJson));
+    await new ApiLogisticsHistoryRepository().search({
+      branchId: ids.branch,
+      status: OrderStatus.dispatched,
+      transferStatus: InventoryTransferStatus.inTransit,
+      page: 1,
+      pageSize: 10,
+    });
+    expect(urls[0]).toBe(
+      `/api/backend/logistics/history?branchId=${ids.branch}&status=dispatched&transferStatus=inTransit&page=0&size=10`,
+    );
   });
 
   it("valida sucursal y rango de fechas antes de llamar al backend", async () => {
@@ -301,6 +317,17 @@ describe("LogisticsHistoryApiMapper", () => {
     expect(row.operationalStatus).toBe(expected);
   });
 
+  it.each([
+    ["all", {}],
+    [OrderStatus.dispatched, { status: OrderStatus.dispatched, transferStatus: InventoryTransferStatus.inTransit }],
+    [OrderStatus.delivered, { status: OrderStatus.delivered, transferStatus: InventoryTransferStatus.received }],
+    [OrderStatus.cancelled, { status: OrderStatus.cancelled, transferStatus: InventoryTransferStatus.cancelled }],
+    [OrderStatus.packing, { status: OrderStatus.packing, transferStatus: undefined }],
+    [OrderStatus.ready_for_pickup, { status: OrderStatus.ready_for_pickup, transferStatus: undefined }],
+  ] as const)("el filtro %s incluye el estado equivalente de traslados", (status, expected) => {
+    expect(toLogisticsHistoryStatusQuery(status)).toEqual(expected);
+  });
+
   it("rechaza estados operativos desconocidos", () => {
     expect(() =>
       toLogisticsHistoryItemDto({ ...toRowModel(orderRowJson), operationalStatus: "lost" }),
@@ -411,6 +438,43 @@ describe("GetLogisticsHistoryService en modo API", () => {
     });
     expect(page).toMatchObject({ page: 2, totalItems: 11, totalPages: 2 });
     expect(page.items[0]?.orderReference).toBe("WEB-100");
+  });
+
+  it("filtrar por Despachado pide pedidos despachados y traslados en tránsito con los totales del servidor", async () => {
+    const { service, api } = createService({
+      api: {
+        search: vi.fn().mockResolvedValue({
+          items: [toRowModel(orderRowJson), toRowModel(transferRowJson)],
+          page: 1,
+          pageSize: 10,
+          totalItems: 12,
+          totalPages: 2,
+        }),
+      },
+    });
+
+    const page = await service.searchApi(ids.branch, {
+      search: "",
+      status: OrderStatus.dispatched,
+      deliveryMethod: "all",
+      from: "",
+      to: "",
+      page: 1,
+      pageSize: 10,
+    });
+
+    expect(api.search).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: OrderStatus.dispatched,
+        transferStatus: InventoryTransferStatus.inTransit,
+        deliveryMethod: undefined,
+      }),
+    );
+    expect(page.items.map((item) => [item.sourceType, item.operationalStatus])).toEqual([
+      ["order", OrderStatus.dispatched],
+      ["transfer", OrderStatus.dispatched],
+    ]);
+    expect(page).toMatchObject({ totalItems: 12, totalPages: 2 });
   });
 
   it("pide el detalle por tipo e id de origen", async () => {
