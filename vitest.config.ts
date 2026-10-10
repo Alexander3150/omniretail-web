@@ -11,6 +11,7 @@ export default defineConfig({
     environment: "jsdom",
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     setupFiles: ["./tests/setup.ts"],
+    testTimeout: 15000,
     clearMocks: true,
     restoreMocks: true,
     coverage: {

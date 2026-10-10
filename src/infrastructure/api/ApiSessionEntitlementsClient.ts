@@ -48,7 +48,7 @@ export class ApiSessionEntitlementsClient {
     // Solo en el navegador: la cookie HttpOnly viaja sola en un fetch same-origin. Desde el
     // servidor la URL relativa no resuelve ni llevaria la sesion del usuario.
     if (typeof window === "undefined") {
-      throw new Error("Los entitlements de la sesion solo se pueden leer desde el navegador.");
+      throw new TypeError("Los entitlements de la sesion solo se pueden leer desde el navegador.");
     }
     return this.cache.get(async () => {
       const response = await fetch("/api/auth/session/entitlements", {

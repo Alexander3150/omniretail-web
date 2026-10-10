@@ -75,7 +75,7 @@ export class ApiBranchRepository implements BranchRepository {
     // dentro de un efecto; este chequeo evita que una llamada nueva desde el servidor falle en
     // silencio.
     if (typeof window === "undefined") {
-      throw new Error("Las sucursales asignadas solo se pueden leer desde el navegador.");
+      throw new TypeError("Las sucursales asignadas solo se pueden leer desde el navegador.");
     }
     const branches = await this.assignedCache.get(async () => {
       const response = await fetch("/api/auth/session/branches", {
