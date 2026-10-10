@@ -58,6 +58,11 @@ export default defineConfig({
         "src/modules/administration/application/services/SaveEcommerceConfigService.ts",
         "src/modules/administration/application/services/SaveHeroBannerConfigService.ts",
         "src/modules/storefront/application/services/ApiPublicStorefrontConfigService.ts",
+        // Entitlements de roles operativos (Cajero, Inventario, Bodeguero).
+        "src/app/api/auth/session/entitlements/route.ts",
+        "src/infrastructure/api/ApiSessionEntitlementsClient.ts",
+        "src/modules/catalog/application/services/GetProductDetailService.ts",
+        "src/modules/inventory/navigation.ts",
       ],
     },
   },

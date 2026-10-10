@@ -20,7 +20,7 @@ export const inventoryNavigation = [
         id: "inventory-movements",
         label: "Historial de movimientos",
         href: "/inventario/movimientos",
-        permission: "inventory.stock.read",
+        permission: "inventory.movements.read",
       },
     ],
   },

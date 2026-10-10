@@ -26,6 +26,12 @@ import { ApiCustomerRepository } from "@/infrastructure/api/ApiCustomerRepositor
 import { ApiEmailSenderConfigRepository } from "@/infrastructure/api/ApiEmailSenderConfigRepository";
 import { ApiPlanRepository } from "@/infrastructure/api/ApiPlanRepository";
 import { ApiRoleRepository } from "@/infrastructure/api/ApiRoleRepository";
+import {
+  ApiSessionEntitlementsClient,
+  isSessionPlanId,
+  toSessionPlan,
+  toSessionSubscription,
+} from "@/infrastructure/api/ApiSessionEntitlementsClient";
 import { ApiSupplierRepository } from "@/infrastructure/api/ApiSupplierRepository";
 import { ApiTenantSubscriptionRepository } from "@/infrastructure/api/ApiTenantSubscriptionRepository";
 import { ApiUserRepository } from "@/infrastructure/api/ApiUserRepository";
@@ -279,16 +285,44 @@ function apiUsersForEmployees(
   };
 }
 
-/** `/admin/subscriptions` exige `admin.plans.read`. */
-function apiSubscriptionsForEmployees(
+/**
+ * Entitlements de la sesion para el empleado de `tenantId` que NO tiene `admin.plans.read`: la
+ * lectura operativa de `GET /auth/session/entitlements`. Devuelve `undefined` cuando no aplica
+ * (sin cliente, no empleado, otra tienda o con permiso administrativo) para seguir el flujo normal.
+ */
+async function sessionEntitlementsFor(
+  currentSession: CurrentSessionClient,
+  sessionEntitlements: ApiSessionEntitlementsClient | undefined,
+  tenantId: string,
+) {
+  if (!sessionEntitlements) return undefined;
+  const current = await currentSession.get();
+  if (current?.user.type !== UserType.employee || current.user.tenantId !== tenantId) return undefined;
+  if (current.role?.permissions.includes("admin.plans.read")) return undefined;
+  return { entitlements: await sessionEntitlements.get() };
+}
+
+/**
+ * `/admin/subscriptions` exige `admin.plans.read`. Un empleado sin ese permiso (Cajero, Inventario,
+ * Bodeguero) obtiene su suscripcion derivada de `/auth/session/entitlements`, para que el resolver
+ * de entitlements funcione igual que para un administrador.
+ */
+export function apiSubscriptionsForEmployees(
   mock: TenantSubscriptionRepository,
   api: TenantSubscriptionRepository,
   currentSession: CurrentSessionClient,
+  sessionEntitlements?: ApiSessionEntitlementsClient,
 ): TenantSubscriptionRepository {
   const resolve = employeeRouter(mock, api, currentSession, ["admin.plans.read"]);
 
   return {
-    getByTenantId: async (tenantId: string) => (await resolve(tenantId)).getByTenantId(tenantId),
+    getByTenantId: async (tenantId: string) => {
+      const operational = await sessionEntitlementsFor(currentSession, sessionEntitlements, tenantId);
+      if (operational) {
+        return operational.entitlements ? toSessionSubscription(operational.entitlements) : null;
+      }
+      return (await resolve(tenantId)).getByTenantId(tenantId);
+    },
     listInvoices: async (tenantId: string) => (await resolve(tenantId)).listInvoices(tenantId),
     ensureInvoice: async (input) => (await resolve(input.tenantId)).ensureInvoice(input),
     create: async (input) => (await resolve(input.tenantId)).create(input),
@@ -300,16 +334,26 @@ function apiSubscriptionsForEmployees(
  * `/admin/plans` exige `admin.plans.read`. Sin ese permiso (o sin sesion: alta publica de negocio)
  * se usa el catalogo mock, igual que antes.
  */
-function apiPlansForEmployees(
+export function apiPlansForEmployees(
   mock: PlanRepository,
   api: PlanRepository,
   currentSession: CurrentSessionClient,
+  sessionEntitlements?: ApiSessionEntitlementsClient,
 ): PlanRepository {
   const resolve = employeeRouter(mock, api, currentSession, ["admin.plans.read"]);
 
   return {
     listActive: async () => (await resolve()).listActive(),
-    getById: async (id: string) => (await resolve()).getById(id),
+    getById: async (id: string) => {
+      // Plan sintetico de la suscripcion derivada: lleva el tenant en el id y solo es valido para
+      // el empleado de esa misma tienda.
+      if (isSessionPlanId(id)) {
+        const tenantId = id.slice(id.lastIndexOf(":") + 1);
+        const operational = await sessionEntitlementsFor(currentSession, sessionEntitlements, tenantId);
+        return operational?.entitlements ? toSessionPlan(operational.entitlements) : null;
+      }
+      return (await resolve()).getById(id);
+    },
     getByCode: async (code: PlanCode) => (await resolve()).getByCode(code),
   };
 }
@@ -452,6 +496,7 @@ function apiEmailSenderForEmployees(
  */
 export function withApiSession(repositories: RepositoryRegistry, eventBus: DataEventBus): RepositoryRegistry {
   const currentSession = new CurrentSessionClient();
+  const sessionEntitlements = new ApiSessionEntitlementsClient(eventBus);
   // `savedPaymentMethods` es un alias de `customerPaymentMethods`: ambos apuntan al mismo objeto.
   const customerPaymentMethods = apiPaymentMethodsForCustomers(
     repositories.customerPaymentMethods,
@@ -481,8 +526,14 @@ export function withApiSession(repositories: RepositoryRegistry, eventBus: DataE
       repositories.tenantSubscriptions,
       new ApiTenantSubscriptionRepository(eventBus),
       currentSession,
+      sessionEntitlements,
     ),
-    plans: apiPlansForEmployees(repositories.plans, new ApiPlanRepository(), currentSession),
+    plans: apiPlansForEmployees(
+      repositories.plans,
+      new ApiPlanRepository(),
+      currentSession,
+      sessionEntitlements,
+    ),
     bankAccounts: apiBankAccountsForEmployees(
       repositories.bankAccounts,
       new ApiBankAccountRepository(eventBus),
