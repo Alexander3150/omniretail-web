@@ -3,8 +3,11 @@ import type {
   GetCountSnapshotInput,
   InventoryAdjustmentRepository,
   ListAdjustmentLotsInput,
+  GetLocationRegularizationOptionsInput,
   ListAdjustmentSerialsInput,
+  PreviewLocationRegularizationInput,
   ReconcileCountInput,
+  RegularizeLocationBalanceInput,
   ReconcileCountLotInput,
   RegisterInventoryAdjustmentStockInput,
   ValidateNewSerialsInput,
@@ -19,10 +22,19 @@ import {
   parseApiAdjustmentSerials,
   parseApiSerialValidationResult,
 } from "@/infrastructure/api/repositories/inventoryAdjustmentApi.schema";
+import {
+  parseApiLocationRegularizationOptions,
+  parseApiLocationRegularizationPreview,
+  parseApiLocationRegularizationResult,
+  parseBackendDecimal,
+} from "@/infrastructure/api/repositories/inventoryRegularizationApi.schema";
 import { assertApiUuid, assertOptionalApiUuid } from "@/infrastructure/api/uuid";
 import type { DataEventBus } from "@/infrastructure/events/DataEventBus";
 
 const QUANTITY_DECIMALS = 3;
+const REGULARIZATION_PATH = "/inventory/location-regularizations";
+const MAX_REGULARIZATION_QUANTITY = 999_999_999.999;
+const FINGERPRINT_LENGTH = 64;
 
 /**
  * Ajuste real de inventario: el backend solo conoce in/out. Entrada manual -> in; salida y merma
@@ -30,6 +42,9 @@ const QUANTITY_DECIMALS = 3;
  * existe en el contrato, por eso no se envia.
  */
 export class ApiInventoryAdjustmentRepository {
+  /** Regularizaciones confirmadas ya notificadas: una actualizacion confirmada emite una sola vez. */
+  private readonly announcedRegularizations = new Set<string>();
+
   constructor(private readonly eventBus: DataEventBus) {}
 
   withAdjustmentDelegate(delegate: InventoryAdjustmentRepository): InventoryAdjustmentRepository {
@@ -39,8 +54,14 @@ export class ApiInventoryAdjustmentRepository {
     const validateNewSerials = this.validateNewSerials.bind(this);
     const getCountSnapshot = this.getCountSnapshot.bind(this);
     const reconcileCount = this.reconcileCount.bind(this);
+    const previewLocationRegularization = this.previewLocationRegularization.bind(this);
+    const regularizeLocationBalance = this.regularizeLocationBalance.bind(this);
+    const getLocationRegularizationOptions = this.getLocationRegularizationOptions.bind(this);
     return new Proxy(delegate, {
       get: (target, property) => {
+        if (property === "getLocationRegularizationOptions") return getLocationRegularizationOptions;
+        if (property === "previewLocationRegularization") return previewLocationRegularization;
+        if (property === "regularizeLocationBalance") return regularizeLocationBalance;
         if (property === "registerStockAdjustment") return registerStockAdjustment;
         if (property === "listAvailableLots") return listAvailableLots;
         if (property === "listAvailableSerials") return listAvailableSerials;
@@ -76,6 +97,7 @@ export class ApiInventoryAdjustmentRepository {
       reason: input.reason.trim(),
       // Metadata estructurada para el historial: el type del backend solo distingue in/out.
       referenceType: toAdjustmentReferenceType(input.type),
+      ...(input.expectedQuantity !== undefined ? { expectedQuantity: input.expectedQuantity } : {}),
       ...(input.locationId ? { locationId: input.locationId } : {}),
       // IN crea tracking nuevo (lotNumber/expirationDate); OUT solo referencia existente (lotId).
       ...(type === "in" && input.lotNumber?.trim() ? { lotNumber: input.lotNumber.trim() } : {}),
@@ -194,6 +216,102 @@ export class ApiInventoryAdjustmentRepository {
     return result;
   }
 
+  /** GET /inventory/location-regularizations/options: solo lectura (permiso inventory.stock.read). */
+  async getLocationRegularizationOptions(input: GetLocationRegularizationOptionsInput) {
+    assertApiUuid(input.branchId, "branchId");
+    assertApiUuid(input.productId, "productId");
+    return parseApiLocationRegularizationOptions(
+      await backendFetch<unknown>(`${REGULARIZATION_PATH}/options`, {
+        query: { branchId: input.branchId, productId: input.productId },
+      }),
+    );
+  }
+
+  /**
+   * GET /inventory/location-regularizations/preview: solo lectura, sin eventos ni efectos. `assign`
+   * solo se envia cuando es true (el backend lo interpreta como false si falta).
+   */
+  async previewLocationRegularization(input: PreviewLocationRegularizationInput) {
+    assertApiUuid(input.branchId, "branchId");
+    assertApiUuid(input.productId, "productId");
+    assertApiUuid(input.locationId, "locationId");
+    return parseApiLocationRegularizationPreview(
+      await backendFetch<unknown>(`${REGULARIZATION_PATH}/preview`, {
+        query: {
+          branchId: input.branchId,
+          productId: input.productId,
+          locationId: input.locationId,
+          ...(input.assign === true ? { assign: true } : {}),
+        },
+      }),
+    );
+  }
+
+  /**
+   * POST /inventory/location-regularizations. El cuerpo es exactamente el recibido: nunca se
+   * regenera la clave ni se recalculan cantidades, para que un reintento sea la MISMA solicitud
+   * (el backend liga la clave a la huella completa del cuerpo). 201 aplicada, 200 reintento.
+   */
+  async regularizeLocationBalance(input: RegularizeLocationBalanceInput) {
+    assertApiUuid(input.branchId, "branchId");
+    assertApiUuid(input.productId, "productId");
+    assertApiUuid(input.locationId, "locationId");
+    assertApiUuid(input.idempotencyKey, "idempotencyKey");
+    const reason = input.reason.trim();
+    if (!reason || reason.length > 200) {
+      throw new BackendRequestError(
+        "El motivo es obligatorio y admite hasta 200 caracteres.",
+        400,
+        "INVALID_REASON",
+        { reason: "El motivo es obligatorio y admite hasta 200 caracteres." },
+      );
+    }
+    if (input.snapshotFingerprint.length !== FINGERPRINT_LENGTH) {
+      throw new BackendRequestError(
+        "La vista previa no tiene una huella valida.",
+        400,
+        "INVALID_SNAPSHOT_FINGERPRINT",
+      );
+    }
+    const body = {
+      branchId: input.branchId,
+      productId: input.productId,
+      locationId: input.locationId,
+      idempotencyKey: input.idempotencyKey,
+      reason,
+      expectedSourceQuantity: toWireQuantity(
+        input.expectedSourceQuantity,
+        "expectedSourceQuantity",
+      ),
+      expectedSourceReservedQuantity: toWireQuantity(
+        input.expectedSourceReservedQuantity,
+        "expectedSourceReservedQuantity",
+      ),
+      expectedDestinationQuantity: toWireQuantity(
+        input.expectedDestinationQuantity,
+        "expectedDestinationQuantity",
+      ),
+      snapshotFingerprint: input.snapshotFingerprint,
+      // Siempre explicito: false conserva el flujo original (el backend lo trata igual que ausente).
+      assignDestination: input.assignDestination === true,
+    };
+    const result = parseApiLocationRegularizationResult(
+      await backendFetch<unknown>(REGULARIZATION_PATH, { method: "POST", body }),
+    );
+    // Una sola notificacion por regularizacion confirmada, aunque el reintento devuelva 200.
+    if (!this.announcedRegularizations.has(result.regularizationId)) {
+      this.announcedRegularizations.add(result.regularizationId);
+      const payload = {
+        entityId: input.productId,
+        branchId: input.branchId,
+        action: "updated" as const,
+      };
+      this.eventBus.emit("inventory.changed", payload);
+      this.eventBus.emit("stock.changed", payload);
+    }
+    return result;
+  }
+
   async validateNewSerials(input: ValidateNewSerialsInput) {
     assertApiUuid(input.productId, "productId");
     return parseApiSerialValidationResult(
@@ -203,6 +321,23 @@ export class ApiInventoryAdjustmentRepository {
       }),
     );
   }
+}
+
+/**
+ * Cantidad del cuerpo de regularizacion: como mucho 9 enteros y 3 decimales (@Digits del backend),
+ * sin redondear en silencio y sin notacion cientifica (los valores con 3 decimales no la usan).
+ */
+function toWireQuantity(value: number, fieldName: string): number {
+  const parsed = parseBackendDecimal(value);
+  if (parsed === null || parsed < 0 || parsed > MAX_REGULARIZATION_QUANTITY) {
+    throw new BackendRequestError(
+      `${fieldName} debe ser una cantidad positiva con hasta 3 decimales.`,
+      400,
+      "INVALID_QUANTITY",
+      { [fieldName]: "Cantidad invalida." },
+    );
+  }
+  return parsed;
 }
 
 function roundQuantity(value: number) {

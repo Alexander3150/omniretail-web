@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { Product, Promotion } from "@/core/entities";
 import {
+  LocationStatus,
   ProductStatus,
   ProductType,
   PromotionStatus,
@@ -204,27 +205,16 @@ export function ProductForm({
     isEdit &&
     detail?.product.productType === ProductType.kit &&
     detail.product.status === ProductStatus.archived;
-  const attributeLoadState = productAttributes.getState(
-    editorTenantId,
-    editorProductId,
-  );
-  const salesPriceTiersLoadState = productSalesPriceTiers.getState(
-    editorTenantId,
-    editorProductId,
-  );
-  const unitConversionsLoadState = productUnitConversions.getState(
-    editorTenantId,
-    editorProductId,
-  );
+  const attributeLoadState = productAttributes.getState(editorTenantId, editorProductId);
+  const salesPriceTiersLoadState = productSalesPriceTiers.getState(editorTenantId, editorProductId);
+  const unitConversionsLoadState = productUnitConversions.getState(editorTenantId, editorProductId);
   const inventorySettingsLoadState = productInventorySettings.getState(
     editorTenantId,
     editorProductId,
     branchId,
   );
   const promotionState = useProductPromotions(editorProductId ?? null, {
-    enabled:
-      activeTab === "promotion" &&
-      editorData.access.canReadPromotions,
+    enabled: activeTab === "promotion" && editorData.access.canReadPromotions,
     tenantId: editorTenantId,
   });
   const categoryName =
@@ -316,11 +306,7 @@ export function ProductForm({
   }
 
   function loadAttributes() {
-    if (
-      !editorTenantId ||
-      !editorData.access.canReadAttributes ||
-      value.attributes !== undefined
-    ) {
+    if (!editorTenantId || !editorData.access.canReadAttributes || value.attributes !== undefined) {
       return;
     }
     void productAttributes
@@ -336,9 +322,7 @@ export function ProductForm({
   }
 
   function loadSupplierCostTiers(supplierProductId: string) {
-    const supplierProduct = value.supplierProducts.find(
-      (item) => item.id === supplierProductId,
-    );
+    const supplierProduct = value.supplierProducts.find((item) => item.id === supplierProductId);
     if (!supplierProduct || supplierProduct.costTiers !== undefined) return;
 
     void supplierCostTiers
@@ -375,10 +359,7 @@ export function ProductForm({
       .load(editorTenantId, editorProductId)
       .then((unitConversions) => {
         setValue((current) => {
-          if (
-            current.productType === ProductType.kit ||
-            current.unitConversions !== undefined
-          ) {
+          if (current.productType === ProductType.kit || current.unitConversions !== undefined) {
             return current;
           }
           const factorFor = (unitId: string) =>
@@ -386,8 +367,7 @@ export function ProductForm({
               ? 1
               : (unitConversions.find(
                   (conversion) =>
-                    conversion.fromUnitId === unitId &&
-                    conversion.toUnitId === current.baseUnitId,
+                    conversion.fromUnitId === unitId && conversion.toUnitId === current.baseUnitId,
                 )?.factor ?? "");
           return {
             ...current,
@@ -417,8 +397,7 @@ export function ProductForm({
       .load(editorTenantId, editorProductId, branchId)
       .then((inventorySettings) => {
         setValue((current) =>
-          current.productType === ProductType.physical &&
-          current.inventorySettings === undefined
+          current.productType === ProductType.physical && current.inventorySettings === undefined
             ? {
                 ...current,
                 inventorySettings: {
@@ -514,19 +493,28 @@ export function ProductForm({
     if (patch.media !== undefined) affectedFields.push("primaryImageUrl");
 
     setErrors((current) => {
-      if (!affectedFields.some((field) => current[field] ||
-        (hasSubmitted && (field === "salePrice" || field === "defaultLocationId")))) return current;
+      if (
+        !affectedFields.some(
+          (field) =>
+            current[field] ||
+            (hasSubmitted && (field === "salePrice" || field === "defaultLocationId")),
+        )
+      )
+        return current;
 
       const validatedValue = applyCapabilityRulesToEditor(
         next,
         options.businessCapabilities,
         existingCapabilityContext,
       );
-      const validation = validateProductFormFields(validatedValue, !isEdit);
+      const validation = validateProductFormFields(validatedValue);
       const nextErrors = { ...current };
       for (const field of affectedFields) {
-        if (!current[field] && !(hasSubmitted &&
-          (field === "salePrice" || field === "defaultLocationId"))) continue;
+        if (
+          !current[field] &&
+          !(hasSubmitted && (field === "salePrice" || field === "defaultLocationId"))
+        )
+          continue;
         if (validation[field]) nextErrors[field] = validation[field];
         else delete nextErrors[field];
       }
@@ -545,7 +533,7 @@ export function ProductForm({
       existingCapabilityContext,
     );
     const pilotErrors = validateProductFormPilot(nextValue);
-    const nextErrors = validateProductFormFields(nextValue, !isEdit);
+    const nextErrors = validateProductFormFields(nextValue);
     const nextEditorError =
       pilotErrors.tracking ?? validateEditor(nextValue, deferredEditorData, options.units);
     setErrors(nextErrors);
@@ -579,289 +567,291 @@ export function ProductForm({
         )}
         disabled={Boolean(busy)}
       >
-      <section className="rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0 space-y-2">
-            <nav aria-label="Ruta" className="text-sm font-semibold text-[var(--color-text-muted)]">
-              Catalogo &gt;{" "}
-              {isEdit ? `Editar: ${detail?.product.name ?? value.name}` : "Nuevo producto"}
-            </nav>
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="break-words text-2xl font-bold text-[var(--color-title)]">
-                {isEdit ? "Editar producto" : "Nuevo producto"}
-              </h1>
-              {isEdit ? <ProductStatusPill status={value.status} /> : null}
+        <section className="rounded-md border border-[var(--color-border)] bg-white p-4 sm:p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0 space-y-2">
+              <nav
+                aria-label="Ruta"
+                className="text-sm font-semibold text-[var(--color-text-muted)]"
+              >
+                Catalogo &gt;{" "}
+                {isEdit ? `Editar: ${detail?.product.name ?? value.name}` : "Nuevo producto"}
+              </nav>
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="break-words text-2xl font-bold text-[var(--color-title)]">
+                  {isEdit ? "Editar producto" : "Nuevo producto"}
+                </h1>
+                {isEdit ? <ProductStatusPill status={value.status} /> : null}
+              </div>
+              <p className="max-w-2xl text-sm text-[var(--color-text-muted)]">
+                Configura la informacion comercial, inventario y venta del producto.
+              </p>
             </div>
-            <p className="max-w-2xl text-sm text-[var(--color-text-muted)]">
-              Configura la informacion comercial, inventario y venta del producto.
-            </p>
-          </div>
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
-            {busy ? (
-              // Un Link ignora `disabled`: durante el guardado se renderiza un boton inerte.
-              <Button className="w-full sm:w-auto" disabled type="button" variant="secondary">
-                {"<-"} Volver
-              </Button>
-            ) : (
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
+              {busy ? (
+                // Un Link ignora `disabled`: durante el guardado se renderiza un boton inerte.
+                <Button className="w-full sm:w-auto" disabled type="button" variant="secondary">
+                  {"<-"} Volver
+                </Button>
+              ) : (
+                <Button
+                  className="w-full sm:w-auto"
+                  href={detail ? `/catalogo/productos/${detail.product.id}` : "/catalogo/productos"}
+                  variant="secondary"
+                >
+                  {"<-"} Volver
+                </Button>
+              )}
               <Button
                 className="w-full sm:w-auto"
-                href={detail ? `/catalogo/productos/${detail.product.id}` : "/catalogo/productos"}
-                variant="secondary"
+                disabled={
+                  busy ||
+                  // UI action gating (feature/saas-entitlement-enforcement §7/§12): SOLO Kits se
+                  // gatea por capability -- Catalog/Products general nunca. El backend
+                  // (ensureTenantCanUseKits en productEditorHelpers) sigue siendo la autoridad final.
+                  (value.productType === ProductType.kit &&
+                    !hasCapability(SaasCapabilityKey.catalogKits))
+                }
+                form="catalog-product-form"
+                type="submit"
               >
-                {"<-"} Volver
-              </Button>
-            )}
-            <Button
-              className="w-full sm:w-auto"
-              disabled={
-                busy ||
-                // UI action gating (feature/saas-entitlement-enforcement §7/§12): SOLO Kits se
-                // gatea por capability -- Catalog/Products general nunca. El backend
-                // (ensureTenantCanUseKits en productEditorHelpers) sigue siendo la autoridad final.
-                (value.productType === ProductType.kit &&
-                  !hasCapability(SaasCapabilityKey.catalogKits))
-              }
-              form="catalog-product-form"
-              type="submit"
-            >
-              {busy ? (
-                <span
-                  aria-hidden="true"
-                  className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
-                />
-              ) : (
-                <CheckIcon />
-              )}
-              {busy ? "Guardando producto..." : "Guardar producto"}
-            </Button>
-          </div>
-        </div>
-      </section>
-
-      <nav
-        aria-label="Secciones del formulario"
-        className="overflow-x-auto rounded-md border border-[var(--color-border)] bg-white p-2"
-      >
-        <div className="flex min-w-max gap-2">
-          {tabs.map((tab) => (
-            <button
-              aria-current={activeTab === tab.id ? "page" : undefined}
-              className={cn(
-                "inline-flex min-h-10 items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
-                activeTab === tab.id
-                  ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-title)]"
-                  : "border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-app-background)] hover:text-[var(--color-title)]",
-              )}
-              key={tab.id}
-              onClick={() => selectTab(tab.id)}
-              type="button"
-            >
-              <span className="grid h-6 w-6 place-items-center rounded-md bg-white text-xs text-[var(--color-title)]">
-                {tab.icon}
-              </span>
-              {tab.label}
-              {typeof tab.count === "number" ? (
-                <span className="rounded-full bg-white px-2 py-0.5 text-xs text-[var(--color-text-muted)]">
-                  {tab.count}
-                </span>
-              ) : null}
-            </button>
-          ))}
-        </div>
-      </nav>
-
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="min-w-0">
-          {activeTab === "general" ? (
-            <GeneralTab
-              capabilities={options.businessCapabilities}
-              categories={options.categories}
-              errors={errors}
-              onChange={updateValue}
-              value={value}
-            />
-          ) : null}
-          {activeTab === "units" ? (
-            <UnitsTab
-              canRead={editorData.access.canReadConversions}
-              capabilities={options.businessCapabilities}
-              errors={errors}
-              isExistingProduct={Boolean(existingCapabilityContext)}
-              loadState={unitConversionsLoadState}
-              onLoad={loadUnitConversions}
-              onChange={updateValue}
-              readOnly={
-                !editorData.access.canReadConversions ||
-                !editorData.access.canManageConversions
-              }
-              units={options.units}
-              value={value}
-            />
-          ) : null}
-          {activeTab === "tracking" ? (
-            <TrackingTab
-              capabilities={options.businessCapabilities}
-              editorData={deferredEditorData}
-              error={editorError}
-              errors={errors}
-              kitEligibleProductsState={kitEligibleProductsState}
-              loadState={inventorySettingsLoadState}
-              locationsState={locationsState}
-              onLoad={loadInventorySettings}
-              onChange={updateValue}
-              units={options.units}
-              value={value}
-            />
-          ) : null}
-          {activeTab === "attributes" ? (
-            <AttributesTab
-              canCreateDefinitions={editorData.access.canManageAttributes}
-              canRead={editorData.access.canReadAttributes}
-              loadState={attributeLoadState}
-              onLoad={loadAttributes}
-              onChange={(attributes) => updateValue({ attributes })}
-              archivedKit={isArchivedKit}
-              readOnly={
-                isArchivedKit ||
-                !options.businessCapabilities.supportsProductAttributes ||
-                !editorData.access.canReadAttributes ||
-                !editorData.access.canUpdateProductRelations
-              }
-              value={value.attributes}
-            />
-          ) : null}
-          {activeTab === "prices" ? (
-            <PricesTab
-              errors={errors}
-              loadState={salesPriceTiersLoadState}
-              onLoadTiers={loadSalesPriceTiers}
-              onChange={updateValue}
-              archivedKit={isArchivedKit}
-              readOnlyTiers={isArchivedKit || !editorData.access.canUpdateProductRelations}
-              value={value}
-            />
-          ) : null}
-          {activeTab === "promotion" && promotionProduct ? (
-            <PromotionTab
-              canManage={editorData.access.canManagePromotions}
-              product={promotionProduct}
-              state={promotionState}
-            />
-          ) : null}
-          {activeTab === "suppliers" ? (
-            <SuppliersTab
-              baseUnitId={value.baseUnitId}
-              baseUnitName={baseUnit?.name ?? "unidad de inventario"}
-              getCostTierState={supplierCostTiers.getState}
-              onLoadCostTiers={loadSupplierCostTiers}
-              onChange={(supplierProducts) => updateValue({ supplierProducts })}
-              suppliers={editorData.suppliers}
-              units={options.units}
-              value={value.supplierProducts}
-            />
-          ) : null}
-          {activeTab === "media" ? (
-            <MediaTab
-              errors={errors}
-              onChange={(media) => updateValue({ media })}
-              readOnly={!editorData.access.canUpdateProductRelations}
-              value={value.media}
-            />
-          ) : null}
-        </div>
-
-        <aside className="min-w-0 space-y-4">
-          <section className="rounded-md border border-[var(--color-border)] bg-white p-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-[var(--color-title)]">Preparacion</h2>
-              <span className="text-sm font-bold text-[var(--color-title)]">
-                {completedItems}/{preparationItems.length}
-              </span>
-            </div>
-            <div
-              aria-label={`${completedItems} de ${preparationItems.length} completos`}
-              aria-valuemax={preparationItems.length}
-              aria-valuemin={0}
-              aria-valuenow={completedItems}
-              className="mt-3 h-2 rounded-full bg-[var(--color-app-background)]"
-              role="progressbar"
-            >
-              <div
-                className="h-full rounded-full bg-[var(--color-primary)]"
-                style={{ width: `${completionPercentage}%` }}
-              />
-            </div>
-            <ul className="mt-4 space-y-2">
-              {preparationItems.map((item) => (
-                <li
-                  className="flex items-center justify-between gap-3 text-sm text-[var(--color-text)]"
-                  key={item.label}
-                >
-                  <span>{item.label}</span>
+                {busy ? (
                   <span
-                    className={cn(
-                      "grid h-6 w-6 place-items-center rounded-full border",
-                      item.complete
-                        ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-title)]"
-                        : "border-[var(--color-border)] text-[var(--color-text-muted)]",
-                    )}
-                  >
-                    {item.complete ? <CheckIcon /> : "-"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          <section className="rounded-md border border-[var(--color-border)] bg-white p-4">
-            <h2 className="text-base font-bold text-[var(--color-title)]">Resumen operativo</h2>
-            <dl className="mt-4 divide-y divide-[var(--color-border)]">
-              <SummaryItem label="Tipo" value={productTypeLabels[value.productType]} />
-              <SummaryItem label="Categoria" value={categoryName} />
-              <SummaryItem
-                label="Inventario"
-                value={value.tracking.stock ? (baseUnit?.name ?? "Controlado") : "Sin control"}
-              />
-              <SummaryItem label="Venta" value={saleUnit?.name ?? "Sin unidad"} />
-              <SummaryItem label="Proveedor preferido" value={preferredSupplierName ?? "-"} />
-              <SummaryItem
-                label="Costo proveedor"
-                value={
-                  preferredSupplier
-                    ? formatCurrency(toFiniteNumber(preferredSupplier.lastCost))
-                    : "-"
-                }
-              />
-              <SummaryItem
-                label="Precio de venta"
-                value={formatCurrency(toFiniteNumber(value.salePrice))}
-              />
-              <SummaryItem
-                label="Promocion"
-                value={
-                  showPromotionTab
-                    ? promotionCount === undefined
-                      ? "Sin cargar"
-                      : `${promotionCount} vigente`
-                    : "-"
-                }
-              />
-            </dl>
-          </section>
-
-          {isEdit && value.status === ProductStatus.published ? (
-            <section className="rounded-md border border-[var(--color-border)] bg-white p-4">
-              <h2 className="text-base font-bold text-[var(--color-title)]">
-                Acciones del producto
-              </h2>
-              <Button className="mt-3 w-full" onClick={onArchive} type="button" variant="danger">
-                <ArchiveIcon />
-                Archivar producto
+                    aria-hidden="true"
+                    className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                  />
+                ) : (
+                  <CheckIcon />
+                )}
+                {busy ? "Guardando producto..." : "Guardar producto"}
               </Button>
+            </div>
+          </div>
+        </section>
+
+        <nav
+          aria-label="Secciones del formulario"
+          className="overflow-x-auto rounded-md border border-[var(--color-border)] bg-white p-2"
+        >
+          <div className="flex min-w-max gap-2">
+            {tabs.map((tab) => (
+              <button
+                aria-current={activeTab === tab.id ? "page" : undefined}
+                className={cn(
+                  "inline-flex min-h-10 items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)]",
+                  activeTab === tab.id
+                    ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-title)]"
+                    : "border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-app-background)] hover:text-[var(--color-title)]",
+                )}
+                key={tab.id}
+                onClick={() => selectTab(tab.id)}
+                type="button"
+              >
+                <span className="grid h-6 w-6 place-items-center rounded-md bg-white text-xs text-[var(--color-title)]">
+                  {tab.icon}
+                </span>
+                {tab.label}
+                {typeof tab.count === "number" ? (
+                  <span className="rounded-full bg-white px-2 py-0.5 text-xs text-[var(--color-text-muted)]">
+                    {tab.count}
+                  </span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+        </nav>
+
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="min-w-0">
+            {activeTab === "general" ? (
+              <GeneralTab
+                capabilities={options.businessCapabilities}
+                categories={options.categories}
+                errors={errors}
+                onChange={updateValue}
+                value={value}
+              />
+            ) : null}
+            {activeTab === "units" ? (
+              <UnitsTab
+                canRead={editorData.access.canReadConversions}
+                capabilities={options.businessCapabilities}
+                errors={errors}
+                isExistingProduct={Boolean(existingCapabilityContext)}
+                loadState={unitConversionsLoadState}
+                onLoad={loadUnitConversions}
+                onChange={updateValue}
+                readOnly={
+                  !editorData.access.canReadConversions || !editorData.access.canManageConversions
+                }
+                units={options.units}
+                value={value}
+              />
+            ) : null}
+            {activeTab === "tracking" ? (
+              <TrackingTab
+                capabilities={options.businessCapabilities}
+                editorData={deferredEditorData}
+                error={editorError}
+                errors={errors}
+                kitEligibleProductsState={kitEligibleProductsState}
+                loadState={inventorySettingsLoadState}
+                locationsState={locationsState}
+                onLoad={loadInventorySettings}
+                onChange={updateValue}
+                units={options.units}
+                value={value}
+              />
+            ) : null}
+            {activeTab === "attributes" ? (
+              <AttributesTab
+                canCreateDefinitions={editorData.access.canManageAttributes}
+                canRead={editorData.access.canReadAttributes}
+                loadState={attributeLoadState}
+                onLoad={loadAttributes}
+                onChange={(attributes) => updateValue({ attributes })}
+                archivedKit={isArchivedKit}
+                readOnly={
+                  isArchivedKit ||
+                  !options.businessCapabilities.supportsProductAttributes ||
+                  !editorData.access.canReadAttributes ||
+                  !editorData.access.canUpdateProductRelations
+                }
+                value={value.attributes}
+              />
+            ) : null}
+            {activeTab === "prices" ? (
+              <PricesTab
+                errors={errors}
+                loadState={salesPriceTiersLoadState}
+                onLoadTiers={loadSalesPriceTiers}
+                onChange={updateValue}
+                archivedKit={isArchivedKit}
+                readOnlyTiers={isArchivedKit || !editorData.access.canUpdateProductRelations}
+                value={value}
+              />
+            ) : null}
+            {activeTab === "promotion" && promotionProduct ? (
+              <PromotionTab
+                canManage={editorData.access.canManagePromotions}
+                product={promotionProduct}
+                state={promotionState}
+              />
+            ) : null}
+            {activeTab === "suppliers" ? (
+              <SuppliersTab
+                baseUnitId={value.baseUnitId}
+                baseUnitName={baseUnit?.name ?? "unidad de inventario"}
+                getCostTierState={supplierCostTiers.getState}
+                onLoadCostTiers={loadSupplierCostTiers}
+                onChange={(supplierProducts) => updateValue({ supplierProducts })}
+                suppliers={editorData.suppliers}
+                units={options.units}
+                value={value.supplierProducts}
+              />
+            ) : null}
+            {activeTab === "media" ? (
+              <MediaTab
+                errors={errors}
+                onChange={(media) => updateValue({ media })}
+                readOnly={!editorData.access.canUpdateProductRelations}
+                value={value.media}
+              />
+            ) : null}
+          </div>
+
+          <aside className="min-w-0 space-y-4">
+            <section className="rounded-md border border-[var(--color-border)] bg-white p-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-bold text-[var(--color-title)]">Preparacion</h2>
+                <span className="text-sm font-bold text-[var(--color-title)]">
+                  {completedItems}/{preparationItems.length}
+                </span>
+              </div>
+              <div
+                aria-label={`${completedItems} de ${preparationItems.length} completos`}
+                aria-valuemax={preparationItems.length}
+                aria-valuemin={0}
+                aria-valuenow={completedItems}
+                className="mt-3 h-2 rounded-full bg-[var(--color-app-background)]"
+                role="progressbar"
+              >
+                <div
+                  className="h-full rounded-full bg-[var(--color-primary)]"
+                  style={{ width: `${completionPercentage}%` }}
+                />
+              </div>
+              <ul className="mt-4 space-y-2">
+                {preparationItems.map((item) => (
+                  <li
+                    className="flex items-center justify-between gap-3 text-sm text-[var(--color-text)]"
+                    key={item.label}
+                  >
+                    <span>{item.label}</span>
+                    <span
+                      className={cn(
+                        "grid h-6 w-6 place-items-center rounded-full border",
+                        item.complete
+                          ? "border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-title)]"
+                          : "border-[var(--color-border)] text-[var(--color-text-muted)]",
+                      )}
+                    >
+                      {item.complete ? <CheckIcon /> : "-"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </section>
-          ) : null}
-        </aside>
-      </div>
+
+            <section className="rounded-md border border-[var(--color-border)] bg-white p-4">
+              <h2 className="text-base font-bold text-[var(--color-title)]">Resumen operativo</h2>
+              <dl className="mt-4 divide-y divide-[var(--color-border)]">
+                <SummaryItem label="Tipo" value={productTypeLabels[value.productType]} />
+                <SummaryItem label="Categoria" value={categoryName} />
+                <SummaryItem
+                  label="Inventario"
+                  value={value.tracking.stock ? (baseUnit?.name ?? "Controlado") : "Sin control"}
+                />
+                <SummaryItem label="Venta" value={saleUnit?.name ?? "Sin unidad"} />
+                <SummaryItem label="Proveedor preferido" value={preferredSupplierName ?? "-"} />
+                <SummaryItem
+                  label="Costo proveedor"
+                  value={
+                    preferredSupplier
+                      ? formatCurrency(toFiniteNumber(preferredSupplier.lastCost))
+                      : "-"
+                  }
+                />
+                <SummaryItem
+                  label="Precio de venta"
+                  value={formatCurrency(toFiniteNumber(value.salePrice))}
+                />
+                <SummaryItem
+                  label="Promocion"
+                  value={
+                    showPromotionTab
+                      ? promotionCount === undefined
+                        ? "Sin cargar"
+                        : `${promotionCount} vigente`
+                      : "-"
+                  }
+                />
+              </dl>
+            </section>
+
+            {isEdit && value.status === ProductStatus.published ? (
+              <section className="rounded-md border border-[var(--color-border)] bg-white p-4">
+                <h2 className="text-base font-bold text-[var(--color-title)]">
+                  Acciones del producto
+                </h2>
+                <Button className="mt-3 w-full" onClick={onArchive} type="button" variant="danger">
+                  <ArchiveIcon />
+                  Archivar producto
+                </Button>
+              </section>
+            ) : null}
+          </aside>
+        </div>
       </fieldset>
 
       {editorError ? <FieldError>{editorError}</FieldError> : null}
@@ -1136,8 +1126,7 @@ function UnitsTab({
                   : {}),
                 inventoryToBaseFactor:
                   readOnly || event.target.value === value.inventoryUnitId ? 1 : "",
-                saleToBaseFactor:
-                  readOnly || event.target.value === value.saleUnitId ? 1 : "",
+                saleToBaseFactor: readOnly || event.target.value === value.saleUnitId ? 1 : "",
               })
             }
             value={value.baseUnitId}
@@ -1297,18 +1286,19 @@ function TrackingTab({
   const isKit = value.productType === ProductType.kit;
   const usesStock = !isService && !isKit && value.tracking.stock;
   const inventorySettingsReadOnly =
-    !editorData.access.canReadInventorySettings ||
-    !editorData.access.canUpdateProductRelations;
+    !editorData.access.canReadInventorySettings || !editorData.access.canUpdateProductRelations;
   const inventorySettings = value.inventorySettings;
   const currentDefaultLocation = inventorySettings?.defaultLocationId
     ? (editorData.branchLocations.find(
         (location) => location.id === inventorySettings.defaultLocationId,
       ) ?? null)
     : null;
-  const assignedArchivedDefaultLocation =
+  const assignedUnavailableDefaultLocation =
     currentDefaultLocation &&
     currentDefaultLocation.id === inventorySettings?.defaultLocationId &&
     !editorData.storageLocations.some((location) => location.id === currentDefaultLocation.id);
+  const unavailableDefaultLocationStatus =
+    currentDefaultLocation?.status === LocationStatus.inactive ? "inactiva" : "archivada";
   const options = [
     {
       key: "stock",
@@ -1342,9 +1332,7 @@ function TrackingTab({
       {
         ...value.tracking,
         [key]: checked,
-        ...(key === "lot" || key === "expiration"
-          ? { lot: checked, expiration: checked }
-          : {}),
+        ...(key === "lot" || key === "expiration" ? { lot: checked, expiration: checked } : {}),
       },
       capabilities,
     );
@@ -1352,7 +1340,9 @@ function TrackingTab({
       tracking,
       inventorySettings:
         !tracking.stock && inventorySettings
-          ? { ...inventorySettings, minStock: 0, reorderPoint: "", defaultLocationId: "" }
+          ? // La asignacion de ubicacion NO se borra al apagar el control de stock: con el control
+            // apagado no se envia nada, y al reactivarlo debe conservarse la ubicacion cargada.
+            { ...inventorySettings, minStock: 0, reorderPoint: "" }
           : inventorySettings,
     });
   }
@@ -1436,7 +1426,11 @@ function TrackingTab({
                 : "Cargando productos elegibles para el kit..."}
             </p>
             {kitEligibleProductsState.status === "error" ? (
-              <Button onClick={() => void kitEligibleProductsState.retry()} type="button" variant="secondary">
+              <Button
+                onClick={() => void kitEligibleProductsState.retry()}
+                type="button"
+                variant="secondary"
+              >
                 Reintentar
               </Button>
             ) : null}
@@ -1468,7 +1462,8 @@ function TrackingTab({
         <>
           {loadState.status === "loaded" && loadState.settings === null ? (
             <p className="rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
-              La configuración de inventario para esta sucursal se creará automáticamente al guardar el producto.
+              La configuración de inventario para esta sucursal se creará automáticamente al guardar
+              el producto.
             </p>
           ) : null}
           {editorData.access.canReadLocations && locationsState.status !== "loaded" ? (
@@ -1479,7 +1474,11 @@ function TrackingTab({
                   : "Cargando ubicaciones de la sucursal..."}
               </p>
               {locationsState.status === "error" ? (
-                <Button onClick={() => void locationsState.retry()} type="button" variant="secondary">
+                <Button
+                  onClick={() => void locationsState.retry()}
+                  type="button"
+                  variant="secondary"
+                >
                   Reintentar
                 </Button>
               ) : null}
@@ -1507,7 +1506,8 @@ function TrackingTab({
                 <p className="mt-2 text-sm font-semibold text-[var(--color-danger)]">{error}</p>
               ) : (
                 <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-                  Define la cantidad mínima que deseas mantener en esta sucursal. No representa las existencias actuales.
+                  Define la cantidad mínima que deseas mantener en esta sucursal. No representa las
+                  existencias actuales.
                 </p>
               )}
             </FormField>
@@ -1529,10 +1529,15 @@ function TrackingTab({
                 value={inventorySettings.reorderPoint ?? ""}
               />
               <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-                Cuando las existencias disponibles lleguen a esta cantidad, el sistema podrá sugerir reabastecimiento.
+                Cuando las existencias disponibles lleguen a esta cantidad, el sistema podrá sugerir
+                reabastecimiento.
               </p>
             </FormField>
-            <FormField id="default-location-id" label="Ubicación predeterminada" error={errors.defaultLocationId}>
+            <FormField
+              id="default-location-id"
+              label="Ubicación predeterminada"
+              error={errors.defaultLocationId}
+            >
               <Select
                 disabled={
                   inventorySettingsReadOnly ||
@@ -1551,9 +1556,9 @@ function TrackingTab({
                 value={inventorySettings.defaultLocationId}
               >
                 <option value="">Sin ubicación predeterminada</option>
-                {assignedArchivedDefaultLocation ? (
+                {assignedUnavailableDefaultLocation ? (
                   <option disabled value={currentDefaultLocation.id}>
-                    {currentDefaultLocation.name} (archivada)
+                    {currentDefaultLocation.name} ({unavailableDefaultLocationStatus})
                   </option>
                 ) : null}
                 {editorData.storageLocations.map((location) => (
@@ -1564,10 +1569,10 @@ function TrackingTab({
               </Select>
               {error?.includes("ubicacion") ? (
                 <p className="mt-2 text-sm font-semibold text-[var(--color-danger)]">{error}</p>
-              ) : assignedArchivedDefaultLocation ? (
+              ) : assignedUnavailableDefaultLocation ? (
                 <p className="mt-2 text-xs font-semibold text-[var(--color-danger)]">
-                  La ubicacion asignada actualmente esta archivada. Elige una activa o deja el campo
-                  sin ubicacion.
+                  La ubicacion asignada actualmente esta {unavailableDefaultLocationStatus}. Elige
+                  una activa o deja el campo sin ubicacion.
                 </p>
               ) : (
                 <p className="mt-2 text-xs text-[var(--color-text-muted)]">
@@ -1704,8 +1709,8 @@ function AttributesTab({
           archivedKit
             ? "Un kit archivado no admite cambios de atributos. Restáuralo para editarlos."
             : readOnly
-            ? "Los atributos existentes se conservan solo para consulta por la configuración del negocio o tus permisos."
-            : "Agrega características del producto, como color, material, tamaño o presentación."
+              ? "Los atributos existentes se conservan solo para consulta por la configuración del negocio o tus permisos."
+              : "Agrega características del producto, como color, material, tamaño o presentación."
         }
         title="Atributos"
       />
@@ -1745,8 +1750,8 @@ function AttributesTab({
         </div>
       ) : (
         <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-text)]">
-          Puede editar valores existentes. Crear definiciones nuevas requiere el permiso de
-          gestion de atributos.
+          Puede editar valores existentes. Crear definiciones nuevas requiere el permiso de gestion
+          de atributos.
         </p>
       )}
       {value === undefined || !canRead ? null : value.length ? (
@@ -3064,9 +3069,7 @@ function validatePromotionForm(state: PromotionFormState, salePrice: number) {
   const value = Number(state.value);
   if (!Number.isFinite(value) || value <= 0) return "Ingresa un valor mayor a 0.";
   const maximumDecimalPlaces =
-    state.type === PromotionType.percentage
-      ? PERCENTAGE_DECIMAL_PLACES
-      : MONEY_DECIMAL_PLACES;
+    state.type === PromotionType.percentage ? PERCENTAGE_DECIMAL_PLACES : MONEY_DECIMAL_PLACES;
   if (!hasAtMostDecimalPlaces(state.value, maximumDecimalPlaces)) {
     return `El valor admite hasta ${maximumDecimalPlaces} decimales.`;
   }
@@ -3090,10 +3093,7 @@ function validatePromotionForm(state: PromotionFormState, salePrice: number) {
   return null;
 }
 
-function validateProductFormFields(
-  value: ProductEditorDto,
-  requireInventorySettings = false,
-): ProductFormErrors {
+function validateProductFormFields(value: ProductEditorDto): ProductFormErrors {
   const errors: ProductFormErrors = {
     ...validateProductFormPilot(value),
     ...validateProductDto({
@@ -3106,15 +3106,6 @@ function validateProductFormFields(
   if (value.salePrice === "") {
     errors.salePrice = "Configure al menos un precio de venta.";
   }
-  if (
-    value.productType === ProductType.physical &&
-    value.tracking.stock &&
-    (requireInventorySettings || value.inventorySettings !== undefined) &&
-    !value.inventorySettings?.defaultLocationId
-  ) {
-    errors.defaultLocationId = "Seleccione una ubicación predeterminada.";
-  }
-
   return errors;
 }
 
@@ -3142,10 +3133,7 @@ function validateEditor(
       return "El factor de conversion no puede superar 999,999.99.";
     }
     if (
-      !hasAtMostDecimalPlaces(
-        value.inventoryToBaseFactor,
-        CONVERSION_FACTOR_DECIMAL_PLACES,
-      ) ||
+      !hasAtMostDecimalPlaces(value.inventoryToBaseFactor, CONVERSION_FACTOR_DECIMAL_PLACES) ||
       !hasAtMostDecimalPlaces(value.saleToBaseFactor, CONVERSION_FACTOR_DECIMAL_PLACES)
     ) {
       return "El factor de conversion admite hasta 6 decimales.";
@@ -3155,9 +3143,7 @@ function validateEditor(
       [
         ...(value.inventoryUnitId === value.baseUnitId ? [] : [value.inventoryToBaseFactor]),
         ...(value.saleUnitId === value.baseUnitId ? [] : [value.saleToBaseFactor]),
-      ].some(
-        (factor) => !isConversionFactorCompatibleWithBaseUnit(factor, baseUnit.allowsDecimals),
-      )
+      ].some((factor) => !isConversionFactorCompatibleWithBaseUnit(factor, baseUnit.allowsDecimals))
     ) {
       return baseUnit.allowsDecimals
         ? "El factor de conversion admite hasta 6 decimales."
@@ -3271,6 +3257,9 @@ function validateEditor(
   if (
     value.tracking.stock &&
     editorData.access.canReadLocations &&
+    // Solo se valida con las ubicaciones de la sucursal ya cargadas: si aun cargan o fallaron, la lista
+    // vacia no prueba que la ubicacion asignada este inactiva.
+    editorData.branchLocations.length > 0 &&
     value.inventorySettings?.defaultLocationId &&
     !editorData.storageLocations.some(
       (location) => location.id === value.inventorySettings?.defaultLocationId,
@@ -3315,8 +3304,8 @@ function routeToFirstError(
                 editorError.includes("costo")
               ? "suppliers"
               : editorError.includes("imagen") ||
-              editorError.includes("imágenes") ||
-              editorError.includes("multimedia")
+                  editorError.includes("imágenes") ||
+                  editorError.includes("multimedia")
                 ? "media"
                 : "general",
     );

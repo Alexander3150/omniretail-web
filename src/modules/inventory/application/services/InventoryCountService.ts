@@ -13,6 +13,12 @@ import {
   ensureUserCanOperateInventoryBranch,
   resolveInventoryContext,
 } from "@/modules/inventory/application/services/serviceHelpers";
+import { resolveOperationalInventoryLocation } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
+import {
+  REFERENCE_DATA_TTL_MS,
+  getReferenceDataCache,
+  referenceDataKeys,
+} from "@/shared/utils/requestCache";
 
 export type CountErrorKind = "stale" | "reserved" | "generic";
 
@@ -52,7 +58,8 @@ export function describeCountError(error: unknown): CountErrorInfo {
         kind:
           error.code === "COUNT_SNAPSHOT_STALE" || error.code === "COUNT_EXPECTED_SERIALS_REQUIRED"
             ? "stale"
-            : error.code === "COUNT_BELOW_RESERVED" || error.code === "COUNT_RESERVED_SERIAL_MISSING"
+            : error.code === "COUNT_BELOW_RESERVED" ||
+                error.code === "COUNT_RESERVED_SERIAL_MISSING"
               ? "reserved"
               : "generic",
         message,
@@ -70,14 +77,14 @@ export class InventoryCountService {
   constructor(private readonly repositories: RepositoryRegistry) {}
 
   async getSnapshot(input: GetCountSnapshotInput): Promise<InventoryCountSnapshot> {
-    await this.ensureAllowed(input.branchId);
-    return this.repositories.inventoryAdjustments.getCountSnapshot(input);
+    const canonicalInput = await this.withOperationalLocation(input, false);
+    return this.repositories.inventoryAdjustments.getCountSnapshot(canonicalInput);
   }
 
   async reconcile(input: ReconcileCountInput): Promise<InventoryCountResult> {
-    await this.ensureAllowed(input.branchId);
+    const canonicalInput = await this.withOperationalLocation(input, true);
     if (!input.reason.trim()) throw new Error("El motivo es requerido.");
-    return this.repositories.inventoryAdjustments.reconcileCount(input);
+    return this.repositories.inventoryAdjustments.reconcileCount(canonicalInput);
   }
 
   async validateNewSerials(input: {
@@ -93,5 +100,53 @@ export class InventoryCountService {
     ensureCanCreateAdjustment(permissions);
     await ensureTenantCanUseInventory(this.repositories, tenantId);
     if (branchId) await ensureUserCanOperateInventoryBranch(this.repositories, user, branchId);
+    return { tenantId };
+  }
+
+  private async withOperationalLocation<
+    T extends { branchId: string; productId: string; locationId?: string },
+  >(input: T, fresh: boolean): Promise<T> {
+    const { tenantId } = await this.ensureAllowed(input.branchId);
+    const capabilities = await this.repositories.businessConfig.getCapabilities(tenantId);
+    // Sin configuracion del negocio el backend interpreta false: no se asume true.
+    const usesLocations = capabilities?.supportsMultipleLocations ?? false;
+    if (!usesLocations) return { ...input, locationId: undefined };
+    const [settings, locations] = await Promise.all([
+      this.repositories.inventory.getProductInventorySettings(input.productId, input.branchId),
+      fresh
+        ? this.repositories.inventory.getLocations(input.branchId)
+        : getReferenceDataCache(this.repositories).getOrLoad(
+            referenceDataKeys.locations(tenantId, input.branchId),
+            REFERENCE_DATA_TTL_MS,
+            () => this.repositories.inventory.getLocations(input.branchId),
+          ),
+    ]);
+    // Con asignacion explicita no hace falta leer balances para resolver la ubicacion. Solo el
+    // camino legacy sin asignacion necesita comprobar que realmente existe un balance NULL.
+    const balances = settings?.defaultLocationId
+      ? []
+      : await this.repositories.inventory.getProductBalances(
+          input.productId,
+          input.branchId,
+          tenantId,
+          fresh ? { fresh: true } : undefined,
+        );
+    const locationId = resolveOperationalInventoryLocation({
+      tenantId,
+      branchId: input.branchId,
+      productId: input.productId,
+      requestedLocationId: input.locationId,
+      usesLocations,
+      settings,
+      locations,
+      legacyNullBalance: balances.some(
+        (balance) =>
+          balance.tenantId === tenantId &&
+          balance.branchId === input.branchId &&
+          balance.productId === input.productId &&
+          !balance.locationId,
+      ),
+    });
+    return { ...input, locationId };
   }
 }

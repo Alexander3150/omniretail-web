@@ -13,18 +13,10 @@ const apiUuidSchema = z.string().refine(isApiUuid, {
   message: "UUID de backend invalido.",
 });
 const nullableUuidSchema = apiUuidSchema.nullable();
-const finiteNumberSchema = z.coerce.number().finite();
-const inventoryStockStatusSchema = z.enum([
-  "out_of_stock",
-  "critical",
-  "near_minimum",
-  "normal",
-]);
-const inventoryAlertStatusSchema = z.enum([
-  "out_of_stock",
-  "critical",
-  "near_minimum",
-]);
+// BigDecimal del backend se serializa como JSON number. No usar coerce: null/"" no son cero.
+const finiteNumberSchema = z.number().finite();
+const inventoryStockStatusSchema = z.enum(["out_of_stock", "critical", "near_minimum", "normal"]);
+const inventoryAlertStatusSchema = z.enum(["out_of_stock", "critical", "near_minimum"]);
 
 // Producto fisico con stock propio. /inventory/alerts sigue siendo SOLO fisico: su schema parte de
 // este y no admite nulls ni otros tipos.
@@ -40,7 +32,7 @@ const physicalStockItemSchema = z.object({
   reservedQuantity: finiteNumberSchema,
   availableQuantity: finiteNumberSchema,
   minStock: finiteNumberSchema,
-  reorderPoint: finiteNumberSchema,
+  reorderPoint: finiteNumberSchema.nullable(),
   defaultLocationId: nullableUuidSchema,
   defaultLocationName: z.string().nullable(),
   status: inventoryStockStatusSchema,
@@ -218,6 +210,33 @@ const inventoryStockBatchSchema = z.object({
 export function parseApiInventoryStockBatch(value: unknown): InventoryStockBatchResult {
   const parsed = inventoryStockBatchSchema.safeParse(value);
   if (!parsed.success) throw invalidResponse("stock por lote");
+  return parsed.data;
+}
+
+// GET /inventory/balances: un balance por (producto, ubicacion); locationId null = balance sin
+// ubicacion (concepto distinto de una cantidad numerica nula).
+const inventoryBalancePageSchema = z.object({
+  items: z.array(
+    z.object({
+      id: apiUuidSchema,
+      tenantId: apiUuidSchema,
+      branchId: apiUuidSchema,
+      productId: apiUuidSchema,
+      locationId: nullableUuidSchema.optional(),
+      quantity: finiteNumberSchema,
+      reservedQuantity: finiteNumberSchema,
+      updatedAt: z.string().optional(),
+    }),
+  ),
+  page: z.number().int().positive(),
+  pageSize: z.number().int().positive(),
+  totalItems: z.number().int().nonnegative(),
+  totalPages: z.number().int().nonnegative(),
+});
+
+export function parseApiInventoryBalancePage(value: unknown) {
+  const parsed = inventoryBalancePageSchema.safeParse(value);
+  if (!parsed.success) throw invalidResponse("balances");
   return parsed.data;
 }
 

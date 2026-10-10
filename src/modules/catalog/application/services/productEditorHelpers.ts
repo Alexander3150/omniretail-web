@@ -349,9 +349,7 @@ export async function syncApiEditorRelatedData(
       hasPermission("catalog.units.read") &&
       hasPermission("catalog.units.manage")
     ) {
-      await run("conversions", () =>
-        syncUnitConversion(repositories, product, dto, options),
-      );
+      await run("conversions", () => syncUnitConversion(repositories, product, dto, options));
     }
     if (hasPermission("admin.suppliers.manage")) {
       await run("suppliers", () => syncSupplierProducts(repositories, product, dto));
@@ -433,7 +431,7 @@ function assertInventorySettings(dto: ProductEditorDto, required: boolean) {
   if (!dto.inventorySettings) {
     if (required) {
       throw new CatalogServiceError(
-        "Abra la seccion de inventario para configurar la ubicacion predeterminada.",
+        "Abra la seccion de inventario para configurar los parametros de la sucursal.",
       );
     }
     return;
@@ -468,7 +466,13 @@ async function syncInventorySettings(
         : dto.inventorySettings.reorderPoint === ""
           ? null
           : toFiniteNumber(dto.inventorySettings.reorderPoint),
-    defaultLocationId: dto.inventorySettings.defaultLocationId || undefined,
+    // undefined conserva un valor no cargado; la opcion vacia solicita limpiar la asignacion.
+    defaultLocationId:
+      dto.inventorySettings.defaultLocationId === undefined
+        ? undefined
+        : dto.inventorySettings.defaultLocationId === ""
+          ? null
+          : dto.inventorySettings.defaultLocationId,
   });
 }
 
@@ -752,9 +756,7 @@ export async function syncApiProductMedia(
     (item) => item.pendingUpload || item.source || item.url.trim(),
   );
   const firstImageIndex = candidates.findIndex((item) => item.type === "image");
-  const hasPrimaryImage = candidates.some(
-    (item) => item.type === "image" && item.isPrimary,
-  );
+  const hasPrimaryImage = candidates.some((item) => item.type === "image" && item.isPrimary);
   const normalized = candidates.map((item, index) => ({
     ...item,
     url: editorMediaUrl(item),
@@ -763,9 +765,7 @@ export async function syncApiProductMedia(
     sortOrder: index,
   }));
   const currentById = new Map(current.map((item) => [item.id, item]));
-  const currentPrimaryId = current.find(
-    (item) => item.type === "image" && item.isPrimary,
-  )?.id;
+  const currentPrimaryId = current.find((item) => item.type === "image" && item.isPrimary)?.id;
   for (const media of normalized) {
     if (media.id && !currentById.has(media.id)) {
       throw new CatalogServiceError("Una referencia multimedia ya no pertenece al producto.");
@@ -787,11 +787,7 @@ export async function syncApiProductMedia(
       const nextAlt = media.alt?.trim() || undefined;
       const existingAlt = existing.alt?.trim() || undefined;
       const urlChanged = media.url !== existing.url;
-      if (
-        nextAlt !== existingAlt ||
-        media.sortOrder !== existing.sortOrder ||
-        urlChanged
-      ) {
+      if (nextAlt !== existingAlt || media.sortOrder !== existing.sortOrder || urlChanged) {
         await repositories.productMedia.update({
           ...existing,
           url: media.url,

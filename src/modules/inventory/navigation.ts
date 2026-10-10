@@ -22,6 +22,13 @@ export const inventoryNavigation = [
         href: "/inventario/movimientos",
         permission: "inventory.movements.read",
       },
+      {
+        id: "inventory-location-regularization",
+        label: "Regularización de ubicaciones",
+        href: "/inventario/regularizacion",
+        // Misma autorizacion que la ejecucion (ajustes); la vista previa solo requiere stock.read.
+        permission: "inventory.adjustment.create",
+      },
     ],
   },
 ] satisfies NavigationItem[];

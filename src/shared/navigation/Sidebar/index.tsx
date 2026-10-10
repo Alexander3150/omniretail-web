@@ -54,6 +54,7 @@ const NAVIGATION_ICON_MAP: Record<string, IconComponent> = {
   "catalog-locations": MapPinIcon,
   "catalog-units": RulerIcon,
   "inventory-movements": HistoryIcon,
+  "inventory-location-regularization": MapPinIcon,
   purchasing: ShoppingCartIcon,
   "purchasing-suppliers": BuildingIcon,
   "purchasing-orders": ClipboardListIcon,

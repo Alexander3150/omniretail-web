@@ -1,5 +1,5 @@
-import type { SupplierProduct } from "@/core/entities";
-import { ProductType } from "@/core/enums";
+import type { InventoryBalance, StorageLocation, SupplierProduct } from "@/core/entities";
+import { LocationStatus, ProductType } from "@/core/enums";
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import { GetProductDetailService } from "@/modules/catalog/application/services/GetProductDetailService";
 import { resolveTenantContext } from "@/modules/catalog/application/services/serviceHelpers";
@@ -45,46 +45,59 @@ export class GetProductQuickViewService {
 
       const canReadStock = Boolean(inventoryApplies && validBranch && canReadInventory);
 
-      const [inventorySettings, stockRead, supplierProducts, suppliers, units] = await Promise.all([
+      const [inventorySettings, capabilities, stockBatchRead, supplierProducts, suppliers, units] =
+        await Promise.all([
+          canReadStock && validBranch
+            ? this.repositories.inventory.getProductInventorySettings(productId, validBranch.id)
+            : Promise.resolve(null),
+          canReadStock
+            ? this.repositories.businessConfig.getCapabilities(tenantId)
+            : Promise.resolve(null),
+          canReadStock && validBranch
+            ? this.repositories.inventory
+                .getStockBatch({ branchId: validBranch.id, productIds: [productId] })
+                .then(
+                  (result) => ({
+                    failed: false,
+                    item: result.items.find((stock) => stock.productId === productId) ?? null,
+                  }),
+                  () => ({ failed: true, item: null }),
+                )
+            : Promise.resolve({ failed: false, item: null }),
+          canReadSuppliers
+            ? this.repositories.supplierProducts
+                .getAllByProductForTenant(tenantId, productId)
+                .then((items) => items.filter((item) => item.active))
+            : Promise.resolve([]),
+          canReadSuppliers
+            ? this.repositories.suppliers.listByTenant(tenantId)
+            : Promise.resolve([]),
+          canReadSuppliers && canReadUnits
+            ? this.repositories.units.getActiveByTenant(tenantId)
+            : Promise.resolve([]),
+        ]);
+      const operationalRead =
         canReadStock && validBranch
-          ? this.repositories.inventory.getProductInventorySettings(productId, validBranch.id)
-          : Promise.resolve(null),
-        // Degradacion parcial: solo la lectura de existencias se aisla; si falla, el resto del
-        // Quick View sigue siendo valido.
-        canReadStock && validBranch
-          ? this.repositories.inventory
-              .getStockBatch({ branchId: validBranch.id, productIds: [productId] })
-              .then(
-                (result) => ({
-                  failed: false,
-                  item: result.items.find((stock) => stock.productId === productId) ?? null,
-                }),
-                () => ({ failed: true, item: null }),
-              )
-          : Promise.resolve({ failed: false, item: null }),
-        canReadSuppliers
-          ? this.repositories.supplierProducts
-              .getAllByProductForTenant(tenantId, productId)
-              .then((items) => items.filter((item) => item.active))
-          : Promise.resolve([]),
-        canReadSuppliers
-          ? this.repositories.suppliers.listByTenant(tenantId)
-          : Promise.resolve([]),
-        canReadSuppliers && canReadUnits
-          ? this.repositories.units.getActiveByTenant(tenantId)
-          : Promise.resolve([]),
-      ]);
-      const defaultLocation =
-        inventorySettings?.defaultLocationId && validBranch && canReadLocations
-          ? (
-              await getReferenceDataCache(this.repositories).getOrLoad(
-                referenceDataKeys.locations(tenantId, validBranch.id),
-                REFERENCE_DATA_TTL_MS,
-                () => this.repositories.inventory.getLocations(validBranch.id),
-              )
-            ).find((location) => location.id === inventorySettings.defaultLocationId)
-          : undefined;
+          ? await loadQuickViewOperationalInventory({
+              repositories: this.repositories,
+              tenantId,
+              branchId: validBranch.id,
+              productId,
+              supportsMultipleLocations: capabilities?.supportsMultipleLocations ?? false,
+              defaultLocationId: inventorySettings?.defaultLocationId ?? null,
+              canReadLocations,
+            })
+          : { failed: false, balances: [] as InventoryBalance[], defaultLocation: undefined };
       const unitNames = new Map(units.map((unit) => [unit.id, unit.name]));
+      const defaultLocation = operationalRead.defaultLocation;
+      const operationalStock = operationalRead.failed
+        ? null
+        : resolveQuickViewOperationalStock({
+            balances: operationalRead.balances,
+            supportsMultipleLocations: capabilities?.supportsMultipleLocations ?? false,
+            defaultLocationId: inventorySettings?.defaultLocationId ?? null,
+            defaultLocation,
+          });
 
       return {
         ...detail,
@@ -101,10 +114,15 @@ export class GetProductQuickViewService {
             : null,
         inventorySettingsAvailable: canReadStock,
         inventoryStock:
-          stockRead.item && validBranch
-            ? { branchId: validBranch.id, branchName: validBranch.name, item: stockRead.item }
+          stockBatchRead.item && validBranch
+            ? {
+                branchId: validBranch.id,
+                branchName: validBranch.name,
+                item: stockBatchRead.item,
+                operational: operationalStock,
+              }
             : null,
-        inventoryStockFailed: stockRead.failed,
+        inventoryStockFailed: stockBatchRead.failed || operationalRead.failed,
         suppliers: supplierProducts
           .map<ProductSupplierSummaryItem | null>((supplierProduct) => {
             const supplier = suppliers.find((item) => item.id === supplierProduct.supplierId);
@@ -152,7 +170,10 @@ export class GetProductQuickViewService {
           balance,
           branchName: branchNames.get(balance.branchId) ?? "Sucursal no disponible",
           locationName: balance.locationId ? locationNames.get(balance.locationId) : undefined,
-          stockStatus: getStockStatus(balance.quantity, balance.minStock),
+          stockStatus: getStockStatus(
+            balance.quantity - balance.reservedQuantity,
+            balance.minStock,
+          ),
         })),
       suppliers: supplierProducts
         .map<ProductSupplierSummaryItem | null>((supplierProduct) => {
@@ -187,8 +208,96 @@ export class GetProductQuickViewService {
   }
 }
 
-function getStockStatus(quantity: number, minStock?: number) {
-  if (quantity <= 0) return "Sin stock";
-  if (typeof minStock === "number" && quantity <= minStock) return "Bajo";
+function getStockStatus(availableQuantity: number, minStock?: number) {
+  if (availableQuantity <= 0) return "Sin stock";
+  if (typeof minStock === "number" && availableQuantity <= minStock) return "Bajo";
   return "Disponible";
+}
+
+export async function loadQuickViewOperationalInventory(input: {
+  repositories: RepositoryRegistry;
+  tenantId: string;
+  branchId: string;
+  productId: string;
+  supportsMultipleLocations: boolean;
+  defaultLocationId: string | null;
+  canReadLocations: boolean;
+}): Promise<{
+  failed: boolean;
+  balances: InventoryBalance[];
+  defaultLocation: StorageLocation | undefined;
+}> {
+  const mustValidateAssignedLocation = Boolean(
+    input.supportsMultipleLocations && input.defaultLocationId && input.canReadLocations,
+  );
+  // Sin permiso para validar una asignacion fisica no se solicita ni se expone su saldo. En los
+  // demas casos el balance es necesario: ubicacion asignada, o balance NULL legacy.
+  const needsBalances =
+    !input.supportsMultipleLocations || !input.defaultLocationId || input.canReadLocations;
+  const [balanceRead, locationRead] = await Promise.all([
+    needsBalances
+      ? input.repositories.inventory
+          .getProductBalances(input.productId, input.branchId, input.tenantId)
+          .then(
+            (balances) => ({ failed: false, balances }),
+            () => ({ failed: true, balances: [] as InventoryBalance[] }),
+          )
+      : Promise.resolve({ failed: false, balances: [] as InventoryBalance[] }),
+    mustValidateAssignedLocation
+      ? getReferenceDataCache(input.repositories)
+          .getOrLoad(
+            referenceDataKeys.locations(input.tenantId, input.branchId),
+            REFERENCE_DATA_TTL_MS,
+            () => input.repositories.inventory.getLocations(input.branchId),
+          )
+          .then(
+            (locations) => ({
+              failed: false,
+              location: locations.find((location) => location.id === input.defaultLocationId),
+            }),
+            () => ({ failed: true, location: undefined }),
+          )
+      : Promise.resolve({ failed: false, location: undefined }),
+  ]);
+  return {
+    failed: balanceRead.failed || locationRead.failed,
+    balances: balanceRead.balances,
+    defaultLocation: locationRead.location,
+  };
+}
+
+export function resolveQuickViewOperationalStock(input: {
+  balances: InventoryBalance[];
+  supportsMultipleLocations: boolean;
+  defaultLocationId: string | null;
+  defaultLocation?: StorageLocation;
+}) {
+  const targetLocationId = input.supportsMultipleLocations ? input.defaultLocationId : null;
+  // Una asignacion no verificable no debe presentarse como vendible. Esto incluye permisos sin
+  // lectura de ubicaciones, una ubicacion archivada o una respuesta inconsistente del backend.
+  if (targetLocationId && !input.defaultLocation) return null;
+  if (
+    input.supportsMultipleLocations &&
+    !targetLocationId &&
+    !input.balances.some((balance) => !balance.locationId)
+  ) {
+    return null;
+  }
+  const targetBalances = input.balances.filter(
+    (balance) => (balance.locationId ?? null) === targetLocationId,
+  );
+  const quantity = targetBalances.reduce((total, balance) => total + balance.quantity, 0);
+  const reservedQuantity = targetBalances.reduce(
+    (total, balance) => total + balance.reservedQuantity,
+    0,
+  );
+  const usable = !targetLocationId || input.defaultLocation?.status === LocationStatus.active;
+  return {
+    locationId: targetLocationId,
+    locationName: input.defaultLocation?.name,
+    legacyUnlocated: targetLocationId === null,
+    quantity,
+    reservedQuantity,
+    availableQuantity: usable ? Math.max(0, quantity - reservedQuantity) : 0,
+  };
 }

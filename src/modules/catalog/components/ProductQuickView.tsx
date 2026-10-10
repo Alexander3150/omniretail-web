@@ -151,7 +151,9 @@ export function ProductQuickView({
           ) : (
             <>
               {activeTab === "general" ? <QuickViewGeneral detail={detail} /> : null}
-              {activeTab === "inventory" ? <QuickViewInventory activeBranchId={branchId} detail={detail} /> : null}
+              {activeTab === "inventory" ? (
+                <QuickViewInventory activeBranchId={branchId} detail={detail} />
+              ) : null}
               {activeTab === "suppliers" ? <QuickViewSuppliers detail={detail} /> : null}
             </>
           )}
@@ -295,9 +297,31 @@ function QuickViewInventory({
           <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
             {stock ? (
               <>
-                <DetailItem label="Existencia" value={String(stock.item.quantity)} />
-                <DetailItem label="Reservado" value={String(stock.item.reservedQuantity)} />
-                <DetailItem label="Disponible" value={String(stock.item.availableQuantity)} />
+                <DetailItem label="Físico sucursal" value={String(stock.item.quantity)} />
+                <DetailItem
+                  label="Reservado sucursal"
+                  value={String(stock.item.reservedQuantity)}
+                />
+                <DetailItem
+                  label="Disponible agregado"
+                  value={String(stock.item.availableQuantity)}
+                />
+                {stock.operational ? (
+                  <>
+                    <DetailItem
+                      label="Existencia operativa"
+                      value={String(stock.operational.quantity)}
+                    />
+                    <DetailItem
+                      label="Reservado operativo"
+                      value={String(stock.operational.reservedQuantity)}
+                    />
+                    <DetailItem
+                      label="Disponible vendible"
+                      value={String(stock.operational.availableQuantity)}
+                    />
+                  </>
+                ) : null}
               </>
             ) : null}
             {minStock !== undefined && minStock !== null ? (
@@ -315,6 +339,12 @@ function QuickViewInventory({
               <DetailItem label="Estado" value={stockStatusLabels[stock.item.status]} />
             ) : null}
           </dl>
+          {stock && !stock.operational ? (
+            <p className="mt-4 text-sm text-[var(--color-text-muted)]">
+              No se pudo validar de forma segura el balance operativo; el agregado de sucursal no se
+              considera disponibilidad vendible.
+            </p>
+          ) : null}
           {detail.inventoryStockFailed ? (
             <p className="mt-4 text-sm text-[var(--color-text-muted)]">
               No se pudo cargar la información de inventario.
@@ -360,6 +390,10 @@ function QuickViewInventory({
           <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
             <DetailItem label="Stock" value={String(item.balance.quantity)} />
             <DetailItem label="Reservado" value={String(item.balance.reservedQuantity)} />
+            <DetailItem
+              label="Disponible"
+              value={String(Math.max(0, item.balance.quantity - item.balance.reservedQuantity))}
+            />
             <DetailItem label="Mínimo" value={String(item.balance.minStock ?? "-")} />
           </dl>
         </article>
@@ -371,9 +405,7 @@ function QuickViewInventory({
 function QuickViewSuppliers({ detail }: { detail: ProductQuickViewModel }) {
   if (!detail.suppliersAvailable) {
     return (
-      <EmptyPanel
-        message="La información de proveedores no está disponible con los permisos actuales."
-      />
+      <EmptyPanel message="La información de proveedores no está disponible con los permisos actuales." />
     );
   }
 

@@ -11,6 +11,7 @@ export interface LocationValidationErrors {
   description?: string;
   parentId?: string;
   type?: string;
+  status?: string;
 }
 
 export function normalizeLocationCode(value: string) {
@@ -87,6 +88,18 @@ export function validateLocationDto(
     if (duplicate.code === code) {
       errors.code = "Ya existe una ubicacion con este codigo en la sucursal.";
     }
+  }
+
+  const current = currentLocationId
+    ? locations.find((location) => location.id === currentLocationId)
+    : undefined;
+  if (
+    current?.productCount != null &&
+    current.productCount > 0 &&
+    dto.status !== current.status &&
+    dto.status !== LocationStatus.active
+  ) {
+    errors.status = "Desasigna los productos antes de inactivar o archivar la ubicacion.";
   }
 
   return errors;

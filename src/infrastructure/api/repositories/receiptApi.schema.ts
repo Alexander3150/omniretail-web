@@ -9,7 +9,8 @@ const apiUuidSchema = z.string().refine(isApiUuid, {
 });
 const instantSchema = z.string().datetime({ offset: true });
 const localDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const finiteNumberSchema = z.coerce.number().finite();
+// Las cantidades ausentes/null son errores de contrato, no ceros implicitos.
+const finiteNumberSchema = z.number().finite();
 
 const trackingDetailSchema = z.object({
   baseQuantity: finiteNumberSchema.positive(),
@@ -154,9 +155,7 @@ export type ApiGoodsReceipt = z.infer<typeof goodsReceiptSchema>;
 export type ApiGoodsReceiptCreateRequest = z.infer<typeof createGoodsReceiptRequestSchema>;
 export type ApiGoodsReceiptUpdateRequest = z.infer<typeof updateGoodsReceiptRequestSchema>;
 export type ApiReceiptIncident = z.infer<typeof receiptIncidentSchema>;
-export type ApiReceiptIncidentCreateRequest = z.infer<
-  typeof createReceiptIncidentRequestSchema
->;
+export type ApiReceiptIncidentCreateRequest = z.infer<typeof createReceiptIncidentRequestSchema>;
 
 export function parseApiGoodsReceipt(value: unknown): ApiGoodsReceipt {
   const parsed = goodsReceiptSchema.safeParse(value);
@@ -194,9 +193,7 @@ export function parseApiReceiptIncidentPage(value: unknown) {
   return parsed.data;
 }
 
-export function parseReceiptIncidentCreateRequest(
-  value: unknown,
-): ApiReceiptIncidentCreateRequest {
+export function parseReceiptIncidentCreateRequest(value: unknown): ApiReceiptIncidentCreateRequest {
   const parsed = createReceiptIncidentRequestSchema.safeParse(value);
   if (!parsed.success) {
     throw new BackendRequestError(

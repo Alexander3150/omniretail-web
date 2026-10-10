@@ -10,9 +10,11 @@ export function withApiInventoryStock(
   return {
     ...repositories,
     inventoryStockDataSource: "api",
-    inventory: new ApiInventoryStockRepository().withInventoryDelegate(repositories.inventory),
-    inventoryAdjustments: new ApiInventoryAdjustmentRepository(
-      eventBus,
-    ).withAdjustmentDelegate(repositories.inventoryAdjustments),
+    inventory: new ApiInventoryStockRepository(eventBus).withInventoryDelegate(
+      repositories.inventory,
+    ),
+    inventoryAdjustments: new ApiInventoryAdjustmentRepository(eventBus).withAdjustmentDelegate(
+      repositories.inventoryAdjustments,
+    ),
   };
 }

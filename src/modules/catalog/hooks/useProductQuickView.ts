@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { GetProductQuickViewService } from "@/modules/catalog/application/services/GetProductQuickViewService";
 import type { ProductQuickViewModel } from "@/modules/catalog/types/catalog.types";
+import { createReloadCoalescer } from "@/shared/utils/reloadCoalescer";
 
 export function useProductQuickView(
   productId: string | null,
@@ -14,45 +15,47 @@ export function useProductQuickView(
 ) {
   const repositories = useRepositories();
   const service = useMemo(() => new GetProductQuickViewService(repositories), [repositories]);
-  const [data, setData] = useState<ProductQuickViewModel | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const requestKey = `${productId ?? ""}:${branchTenantId ?? ""}:${branchId ?? ""}`;
+  const [result, setResult] = useState<{
+    key: string;
+    data: ProductQuickViewModel | null;
+  } | null>(null);
+  const [failure, setFailure] = useState<{ key: string; message: string } | null>(null);
+  const requestIdRef = useRef(0);
 
-  const reload = useCallback(async () => {
+  const load = useCallback(async () => {
     if (!productId) {
       return;
     }
-    setError(null);
+    const requestId = ++requestIdRef.current;
+    setFailure(null);
     try {
-      setData(
-        await service.execute(
-          productId,
-          createBranchContext(branchId, branchTenantId, branchName),
-        ),
+      const data = await service.execute(
+        productId,
+        createBranchContext(branchId, branchTenantId, branchName),
       );
+      if (requestId === requestIdRef.current) setResult({ key: requestKey, data });
     } catch {
-      setError("No se pudo cargar la consulta rápida.");
+      if (requestId === requestIdRef.current) {
+        setFailure({ key: requestKey, message: "No se pudo cargar la consulta rápida." });
+      }
     }
-  }, [branchId, branchName, branchTenantId, productId, service]);
+  }, [branchId, branchName, branchTenantId, productId, requestKey, service]);
+
+  const reloadCoalescer = useMemo(() => createReloadCoalescer(null, requestKey), [requestKey]);
+  useEffect(() => {
+    reloadCoalescer.setLoader(load);
+    return () => reloadCoalescer.setLoader(null);
+  }, [load, reloadCoalescer]);
+  const reload = useCallback(() => reloadCoalescer.invalidate(), [reloadCoalescer]);
 
   useEffect(() => {
     if (!productId) return;
-
-    let active = true;
-    service
-      .execute(productId, createBranchContext(branchId, branchTenantId, branchName))
-      .then((nextData) => {
-        if (!active) return;
-        setData(nextData);
-        setError(null);
-      })
-      .catch(() => {
-        if (active) setError("No se pudo cargar la consulta rápida.");
-      });
-
+    void reload();
     return () => {
-      active = false;
+      requestIdRef.current += 1;
     };
-  }, [branchId, branchName, branchTenantId, productId, service]);
+  }, [productId, reload]);
 
   useDataEvent("product.changed", (payload) => {
     if (productId && (!payload.productId || payload.productId === productId)) reload();
@@ -60,12 +63,20 @@ export function useProductQuickView(
   useDataEvent("stock.changed", (payload) => {
     if (productId && (!payload.productId || payload.productId === productId)) reload();
   });
+  useDataEvent("inventory.changed", (payload) => {
+    if (!productId || (payload.productId && payload.productId !== productId)) return;
+    if (branchId && payload.branchId && payload.branchId !== branchId) return;
+    if (branchTenantId && payload.tenantId && payload.tenantId !== branchTenantId) return;
+    void reload();
+  });
   useDataEvent("supplier.changed", reload);
   useDataEvent("supplier-product.changed", (payload) => {
     if (productId && (!payload.productId || payload.productId === productId)) reload();
   });
   useDataEvent("promotion.changed", reload);
 
+  const data = result?.key === requestKey ? result.data : null;
+  const error = failure?.key === requestKey ? failure.message : null;
   const currentData = data?.product.id === productId ? data : null;
   const loading = Boolean(productId && !currentData && !error);
 

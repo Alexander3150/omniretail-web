@@ -35,6 +35,8 @@ export interface PurchaseOrderEditorLine {
   leadTimeDays?: number;
   tiers: Array<{ minQuantity: number; unitCost: number }>;
   stockQuantity?: number;
+  reservedQuantity?: number;
+  availableQuantity?: number;
   minStock?: number;
   reorderPoint?: number;
   shortage?: number;
@@ -58,6 +60,8 @@ export interface PurchaseOrderAvailableProduct {
   leadTimeDays?: number;
   tiers: Array<{ minQuantity: number; unitCost: number }>;
   stockQuantity?: number;
+  reservedQuantity?: number;
+  availableQuantity?: number;
   minStock?: number;
   reorderPoint?: number;
   shortage?: number;

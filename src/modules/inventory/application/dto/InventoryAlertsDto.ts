@@ -59,6 +59,14 @@ export interface InventoryProductRow {
   defaultLocationId?: string | null;
   defaultLocationName: string;
   locationQuantities: Record<string, number>;
+  locationAvailableQuantities: Record<string, number>;
+  unlocatedQuantity: number;
+  unlocatedAvailableQuantity: number;
+  /**
+   * Solo modo API, tras abrir el ajuste: el producto conserva existencias o reservas fuera de su
+   * balance operativo. Entradas y conteos quedan bloqueados porque el saldo seria ambiguo.
+   */
+  hasStockOutsideOperationalBalance?: boolean;
   tracking: ProductTrackingConfig;
   availableLots: Array<{
     id: string;
