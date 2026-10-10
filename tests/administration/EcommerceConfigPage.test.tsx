@@ -5,14 +5,41 @@ import { INVALID_IMAGE_URL_SUBMIT_MESSAGE } from "@/core/media/resolveImageUrlIn
 import { EcommerceConfigPage } from "@/modules/administration/pages/EcommerceConfigPage";
 import { PartialSaveError } from "@/modules/administration/application/services/serviceHelpers";
 
+const OLD_LOGO = "https://cdn.example.com/viejo.png";
+const OLD_SLIDE = "https://cdn.example.com/slide.png";
+
+function initialConfig() {
+  return {
+    enabled: false,
+    storeName: "FerrePharma",
+    logo: { kind: "url", src: OLD_LOGO },
+    requireAccountForCheckout: false,
+    guestTrackingEnabled: true,
+    allowedDeliveryMethods: [],
+    allowedPaymentMethods: [],
+  };
+}
+
+function initialHeroBanner() {
+  return {
+    slides: [
+      { title: "Uno", description: "A", image: { kind: "url", src: OLD_SLIDE } },
+      { title: "Dos", description: "B" },
+      { title: "Tres", description: "C" },
+    ],
+  };
+}
+
+// Los hooks reales guardan en su propio estado lo que el backend confirmo (tambien tras un
+// PartialSaveError); la pagina se resincroniza desde ese `config`. El mock lo imita con
+// `persistConfig`/`persistHeroBanner` y devuelve la misma referencia entre renders.
 const state = vi.hoisted(() => ({
   save: vi.fn(),
   saveHeroBanner: vi.fn(),
   showToast: vi.fn(),
+  config: null as unknown,
+  heroBanner: null as unknown,
 }));
-
-const OLD_LOGO = "https://cdn.example.com/viejo.png";
-const OLD_SLIDE = "https://cdn.example.com/slide.png";
 
 vi.mock("@/infrastructure/media/useCatalogImageUrl", () => ({
   useBlobPreviewUrl: () => undefined,
@@ -32,15 +59,7 @@ vi.mock("@/modules/administration/hooks/useEcommerceConfig", () => ({
   useEcommerceConfig: () => ({
     branchOptions: [],
     canManage: true,
-    config: {
-      enabled: false,
-      storeName: "FerrePharma",
-      logo: { kind: "url", src: OLD_LOGO },
-      requireAccountForCheckout: false,
-      guestTrackingEnabled: true,
-      allowedDeliveryMethods: [],
-      allowedPaymentMethods: [],
-    },
+    config: state.config,
     error: null,
     loading: false,
     reload: vi.fn(),
@@ -51,13 +70,7 @@ vi.mock("@/modules/administration/hooks/useEcommerceConfig", () => ({
 }));
 vi.mock("@/modules/administration/hooks/useHeroBannerConfig", () => ({
   useHeroBannerConfig: () => ({
-    config: {
-      slides: [
-        { title: "Uno", description: "A", image: { kind: "url", src: OLD_SLIDE } },
-        { title: "Dos", description: "B" },
-        { title: "Tres", description: "C" },
-      ],
-    },
+    config: state.heroBanner,
     error: null,
     loading: false,
     preset: null,
@@ -82,6 +95,8 @@ async function renderPage() {
 describe("EcommerceConfigPage: URLs de imagen invalidas", () => {
   beforeEach(() => {
     cleanup();
+    state.config = initialConfig();
+    state.heroBanner = initialHeroBanner();
     state.save.mockReset().mockImplementation(async (value) => value);
     state.saveHeroBanner.mockReset().mockImplementation(async (value) => value);
     state.showToast.mockReset();
@@ -169,6 +184,8 @@ describe("EcommerceConfigPage: URLs de imagen invalidas", () => {
 describe("EcommerceConfigPage: guardado parcial de imágenes", () => {
   beforeEach(() => {
     cleanup();
+    state.config = initialConfig();
+    state.heroBanner = initialHeroBanner();
     state.showToast.mockReset();
     state.save.mockReset().mockImplementation(async (value) => value);
     state.saveHeroBanner.mockReset().mockImplementation(async (value) => value);
@@ -177,11 +194,16 @@ describe("EcommerceConfigPage: guardado parcial de imágenes", () => {
   it("si falla el logo muestra el motivo, sincroniza el formulario con lo guardado y no anuncia éxito", async () => {
     const persistedLogo = "https://cdn.example.com/guardado.png";
     state.save.mockImplementation(async (value) => {
-      throw new PartialSaveError("Se guardaron los datos de la tienda, pero no se pudo subir el logo.", {
+      const persisted = {
         ...value,
         storeName: "FerrePharma Guardada",
         logo: { kind: "url", src: persistedLogo },
-      });
+      };
+      state.config = persisted;
+      throw new PartialSaveError(
+        "Se guardaron los datos de la tienda, pero no se pudo subir el logo.",
+        persisted,
+      );
     });
     await renderPage();
 
@@ -200,13 +222,15 @@ describe("EcommerceConfigPage: guardado parcial de imágenes", () => {
   it("si falla una diapositiva intermedia conserva el guardado del logo y refleja el carrusel persistido", async () => {
     const savedSlide = "https://cdn.example.com/slide-guardada.png";
     state.saveHeroBanner.mockImplementation(async () => {
-      throw new PartialSaveError("No se pudo subir la imagen de la diapositiva 2.", {
+      const persisted = {
         slides: [
           { title: "Uno", description: "A", image: { kind: "url", src: savedSlide } },
           { title: "Dos", description: "B" },
           { title: "Tres", description: "C" },
         ],
-      });
+      };
+      state.heroBanner = persisted;
+      throw new PartialSaveError("No se pudo subir la imagen de la diapositiva 2.", persisted);
     });
     await renderPage();
 
