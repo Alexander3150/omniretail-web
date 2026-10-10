@@ -1,10 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { isApiMode } from "@/config/api-mode";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import type { CustomerDto } from "@/modules/administration/application/dto/CustomerDto";
+import { ApiCustomersService } from "@/modules/administration/application/services/ApiCustomersService";
 import { GetCustomersService } from "@/modules/administration/application/services/GetCustomersService";
-import { cleanError } from "@/modules/administration/application/services/serviceHelpers";
+import {
+  cleanError,
+  ensureCanReadCustomers,
+} from "@/modules/administration/application/services/serviceHelpers";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 
@@ -13,7 +18,20 @@ export function useCustomers() {
   const { user, permissions, hasPermission, loading: sessionLoading } = useCurrentSession();
   const tenantId = user?.tenantId ?? null;
   const canRead = hasPermission("admin.customers.read");
-  const getService = useMemo(() => new GetCustomersService(repositories), [repositories]);
+  const getMockService = useMemo(() => new GetCustomersService(repositories), [repositories]);
+  const apiService = useMemo(() => new ApiCustomersService(), []);
+  // En modo api los clientes (incluidos los registrados en la tienda, p. ej. con Google) viven en
+  // el backend; el mock local solo los conoce en modo mock.
+  const getService = useMemo(
+    () => ({
+      execute: async (currentTenantId: string, currentPermissions: readonly string[]) => {
+        if (!isApiMode()) return getMockService.execute(currentTenantId, currentPermissions);
+        ensureCanReadCustomers(currentPermissions);
+        return apiService.list();
+      },
+    }),
+    [apiService, getMockService],
+  );
   const [customers, setCustomers] = useState<CustomerDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

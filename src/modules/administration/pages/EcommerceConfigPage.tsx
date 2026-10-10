@@ -2,8 +2,16 @@
 
 import { type FormEvent, useEffect, useState } from "react";
 import type { HeroBannerSlide } from "@/core/entities";
-import type { EcommerceConfigInputDto } from "@/modules/administration/application/dto/EcommerceConfigDto";
-import type { HeroBannerConfigInputDto } from "@/modules/administration/application/dto/HeroBannerConfigDto";
+import { INVALID_IMAGE_URL_SUBMIT_MESSAGE } from "@/core/media/resolveImageUrlInput";
+import type {
+  EcommerceConfigDto,
+  EcommerceConfigInputDto,
+} from "@/modules/administration/application/dto/EcommerceConfigDto";
+import type {
+  HeroBannerConfigDto,
+  HeroBannerConfigInputDto,
+} from "@/modules/administration/application/dto/HeroBannerConfigDto";
+import { PartialSaveError } from "@/modules/administration/application/services/serviceHelpers";
 import { EcommerceConfigForm } from "@/modules/administration/components/EcommerceConfigForm";
 import { HeroBannerConfigForm } from "@/modules/administration/components/HeroBannerConfigForm";
 import { StorefrontLinkCard } from "@/modules/administration/components/StorefrontLinkCard";
@@ -38,6 +46,9 @@ export function EcommerceConfigPage() {
   const [dirty, setDirty] = useState(false);
   const [heroBannerValue, setHeroBannerValue] = useState<HeroBannerConfigInputDto | null>(null);
   const [heroBannerDirty, setHeroBannerDirty] = useState(false);
+  // URLs de imagen invalidas pendientes en el logo o en el carrusel: impiden guardar.
+  const [logoUrlInvalid, setLogoUrlInvalid] = useState(false);
+  const [heroBannerUrlInvalid, setHeroBannerUrlInvalid] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -99,32 +110,46 @@ export function EcommerceConfigPage() {
     event.preventDefault();
     if (!value || !heroBannerValue) return;
 
+    if (logoUrlInvalid || heroBannerUrlInvalid) {
+      setSubmitError(INVALID_IMAGE_URL_SUBMIT_MESSAGE);
+      return;
+    }
+
     const nextErrors = validateEcommerceFields(value);
     setFieldErrors(nextErrors);
     if (Object.values(nextErrors).some(Boolean)) return;
 
     setSubmitError(undefined);
-    try {
-      const [savedConfig, savedHeroBanner] = await Promise.all([
-        save(value),
-        saveHeroBanner(heroBannerValue),
-      ]);
+    // Cada parte se resuelve por separado: si una falla, la otra pudo haberse guardado igual.
+    const [configResult, heroBannerResult] = await Promise.allSettled([
+      save(value),
+      saveHeroBanner(heroBannerValue),
+    ]);
+    const messages: string[] = [];
+
+    const savedConfig = settledPersisted<EcommerceConfigDto>(configResult);
+    if (savedConfig) {
       setValue(toInputDto(savedConfig));
       setDirty(false);
+    }
+    const savedHeroBanner = settledPersisted<HeroBannerConfigDto>(heroBannerResult);
+    if (savedHeroBanner) {
       setHeroBannerValue(toHeroBannerInputDto(savedHeroBanner.slides));
       setHeroBannerDirty(false);
-      showToast({
-        title: "Diseño e-commerce actualizado",
-        description: "La configuración de la tienda se guardó correctamente.",
-        tone: "success",
-      });
-    } catch (caughtError) {
-      setSubmitError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "No se pudo guardar la configuración de e-commerce.",
-      );
     }
+    for (const result of [configResult, heroBannerResult]) {
+      if (result.status === "rejected") messages.push(toSubmitMessage(result.reason));
+    }
+
+    if (messages.length > 0) {
+      setSubmitError(messages.join(" "));
+      return;
+    }
+    showToast({
+      title: "Diseño e-commerce actualizado",
+      description: "La configuración de la tienda se guardó correctamente.",
+      tone: "success",
+    });
   }
 
   const isSaving = saving || savingHeroBanner;
@@ -201,12 +226,14 @@ export function EcommerceConfigPage() {
             branchOptions={branchOptions}
             fieldErrors={fieldErrors}
             onChange={handleChange}
+            onImageUrlInvalidChange={setLogoUrlInvalid}
             saving={isSaving}
             tenantId={tenantId}
             value={value}
           />
           <HeroBannerConfigForm
             onChange={handleHeroBannerChange}
+            onImageUrlInvalidChange={setHeroBannerUrlInvalid}
             preset={heroBannerPreset}
             saving={isSaving}
             tenantId={tenantId}
@@ -252,6 +279,18 @@ function toHeroBannerInputDto(slides: HeroBannerSlide[]): HeroBannerConfigInputD
       image: slide.image,
     })),
   };
+}
+
+/** Estado confirmado por el backend: completo si se guardo, parcial si `PartialSaveError`. */
+function settledPersisted<T>(result: PromiseSettledResult<T>): T | null {
+  if (result.status === "fulfilled") return result.value;
+  return result.reason instanceof PartialSaveError ? (result.reason.persisted as T) : null;
+}
+
+function toSubmitMessage(reason: unknown) {
+  return reason instanceof Error && reason.message
+    ? reason.message
+    : "No se pudo guardar la configuración de e-commerce.";
 }
 
 function toInputDto(config: EcommerceConfigInputDto): EcommerceConfigInputDto {

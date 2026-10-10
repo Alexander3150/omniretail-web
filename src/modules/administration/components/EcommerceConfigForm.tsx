@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { EcommerceConfigInputDto } from "@/modules/administration/application/dto/EcommerceConfigDto";
 import { BusinessConfigToggle } from "@/modules/administration/components/BusinessConfigToggle";
+import { ImageUrlField } from "@/modules/administration/components/ImageUrlField";
 import type { EcommerceBranchOption } from "@/modules/administration/hooks/useEcommerceConfig";
 import {
   ADMIN_FIELD_LIMITS,
@@ -20,6 +21,8 @@ interface EcommerceConfigFormProps {
   tenantId: string | null;
   saving: boolean;
   onChange: (value: EcommerceConfigInputDto) => void;
+  /** Avisa si el campo de URL del logo tiene una URL invalida pendiente (bloquea el guardado). */
+  onImageUrlInvalidChange?: (invalid: boolean) => void;
 }
 
 export function EcommerceConfigForm({
@@ -29,13 +32,18 @@ export function EcommerceConfigForm({
   tenantId,
   saving,
   onChange,
-}: EcommerceConfigFormProps) {
+  onImageUrlInvalidChange,
+}: Readonly<EcommerceConfigFormProps>) {
   const activeBranchIds = new Set(branchOptions.map((option) => option.id));
   const preservedDefaultBranchId =
     value.defaultBranchId && !activeBranchIds.has(value.defaultBranchId)
       ? value.defaultBranchId
       : null;
   const [logoError, setLogoError] = useState<string | null>(null);
+  const currentLogoUrl =
+    value.logo?.kind === "url" && !value.removeLogo && !value.pendingLogo ? value.logo.src : "";
+  // Cualquier cambio del logo por otra via (archivo, Eliminar, recarga) descarta el borrador de URL.
+  const logoSyncKey = `${currentLogoUrl}|${value.pendingLogo ? "archivo" : ""}|${value.removeLogo ? "eliminado" : ""}`;
   const previewBlobUrl = useBlobPreviewUrl(value.pendingLogo?.blob);
   const persistedLogoUrl = useCatalogImageUrl(tenantId, value.removeLogo ? undefined : value.logo, "");
   const logoPreviewUrl = previewBlobUrl ?? persistedLogoUrl;
@@ -61,6 +69,15 @@ export function EcommerceConfigForm({
 
   function removeLogo() {
     onChange({ ...value, logo: undefined, pendingLogo: undefined, removeLogo: true });
+  }
+
+  // El backend solo guarda URLs: el logo tambien se puede indicar con una URL publica.
+  function changeLogoUrl(src: string) {
+    onChange(
+      src
+        ? { ...value, logo: { kind: "url", src }, pendingLogo: undefined, removeLogo: false }
+        : { ...value, logo: undefined, pendingLogo: undefined, removeLogo: Boolean(value.logo) },
+    );
   }
 
   return (
@@ -164,6 +181,14 @@ export function EcommerceConfigForm({
             {logoError ? (
               <p className="mt-2 text-sm text-[var(--color-danger)]">{logoError}</p>
             ) : null}
+            <ImageUrlField
+              currentUrl={currentLogoUrl}
+              disabled={saving}
+              id="ecommerce-logo-url"
+              onChange={changeLogoUrl}
+              onInvalidChange={onImageUrlInvalidChange}
+              syncKey={logoSyncKey}
+            />
           </FormField>
         </div>
       </section>

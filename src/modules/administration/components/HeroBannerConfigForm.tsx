@@ -1,5 +1,5 @@
 /* eslint-disable @next/next/no-img-element */
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { BusinessPreset } from "@/core/enums";
 import { heroBannerDefaultsConfig, heroBannerPresetLabels } from "@/config/hero-banner-defaults";
 import { useBlobPreviewUrl, useCatalogImageUrl } from "@/infrastructure/media/useCatalogImageUrl";
@@ -7,6 +7,7 @@ import type {
   HeroBannerConfigInputDto,
   HeroBannerSlideInput,
 } from "@/modules/administration/application/dto/HeroBannerConfigDto";
+import { ImageUrlField } from "@/modules/administration/components/ImageUrlField";
 import { ADMIN_FIELD_LIMITS } from "@/modules/administration/validation/adminFieldConstraints";
 import { processImageUpload } from "@/shared/application/services/processImageUpload";
 import { Button } from "@/shared/components/Button";
@@ -22,6 +23,8 @@ interface HeroBannerConfigFormProps {
   preset: BusinessPreset | null;
   saving: boolean;
   onChange: (value: HeroBannerConfigInputDto) => void;
+  /** Avisa si alguna diapositiva tiene una URL de imagen invalida pendiente (bloquea el guardado). */
+  onImageUrlInvalidChange?: (invalid: boolean) => void;
 }
 
 export function HeroBannerConfigForm({
@@ -30,8 +33,26 @@ export function HeroBannerConfigForm({
   preset,
   saving,
   onChange,
-}: HeroBannerConfigFormProps) {
+  onImageUrlInvalidChange,
+}: Readonly<HeroBannerConfigFormProps>) {
   const [uploadErrors, setUploadErrors] = useState<Record<number, string | undefined>>({});
+  const [invalidUrlSlides, setInvalidUrlSlides] = useState<ReadonlySet<number>>(new Set());
+  const hasInvalidUrl = invalidUrlSlides.size > 0;
+
+  useEffect(() => {
+    onImageUrlInvalidChange?.(hasInvalidUrl);
+  }, [hasInvalidUrl, onImageUrlInvalidChange]);
+
+  const reportInvalidUrl = useCallback((index: number, invalid: boolean) => {
+    setInvalidUrlSlides((current) => {
+      if (current.has(index) === invalid) return current;
+      const next = new Set(current);
+      if (invalid) next.add(index);
+      else next.delete(index);
+      return next;
+    });
+  }, []);
+
   const [showImageHelp, setShowImageHelp] = useState(false);
   const canSuggest = Boolean(preset && preset !== BusinessPreset.custom);
 
@@ -148,7 +169,20 @@ export function HeroBannerConfigForm({
             index={index}
             key={index}
             onChangeDescription={(description) => updateSlide(index, { description })}
+            onChangeImageUrl={(src) =>
+              updateSlide(
+                index,
+                src
+                  ? { image: { kind: "url", src }, pendingImage: undefined, removeImage: false }
+                  : {
+                      image: undefined,
+                      pendingImage: undefined,
+                      removeImage: Boolean(value.slides[index]?.image),
+                    },
+              )
+            }
             onChangeTitle={(title) => updateSlide(index, { title })}
+            onImageUrlInvalidChange={(invalid) => reportInvalidUrl(index, invalid)}
             onRemoveImage={() =>
               updateSlide(index, { image: undefined, pendingImage: undefined, removeImage: true })
             }
@@ -167,28 +201,37 @@ export function HeroBannerConfigForm({
 function HeroBannerSlideFields({
   index,
   onChangeDescription,
+  onChangeImageUrl,
   onChangeTitle,
+  onImageUrlInvalidChange,
   onRemoveImage,
   onSelectImage,
   saving,
   slide,
   tenantId,
   uploadError,
-}: {
+}: Readonly<{
   index: number;
   onChangeDescription: (description: string) => void;
+  /** Recibe la URL ya validada, o `""` para quitar la imagen. */
+  onChangeImageUrl: (src: string) => void;
   onChangeTitle: (title: string) => void;
+  onImageUrlInvalidChange: (invalid: boolean) => void;
   onRemoveImage: () => void;
   onSelectImage: (file: File | undefined) => void;
   saving: boolean;
   slide: HeroBannerSlideInput;
   tenantId: string | null;
   uploadError: string | undefined;
-}) {
+}>) {
   const previewBlobUrl = useBlobPreviewUrl(slide.pendingImage?.blob);
   const persistedUrl = useCatalogImageUrl(tenantId, slide.removeImage ? undefined : slide.image, "");
   const previewUrl = previewBlobUrl ?? persistedUrl;
   const hasImage = Boolean(slide.pendingImage || (slide.image && !slide.removeImage));
+  const currentImageUrl =
+    slide.image?.kind === "url" && !slide.removeImage && !slide.pendingImage ? slide.image.src : "";
+  // Cualquier cambio de la imagen por otra via (archivo, Eliminar, recarga) descarta el borrador.
+  const imageSyncKey = `${currentImageUrl}|${slide.pendingImage ? "archivo" : ""}|${slide.removeImage ? "eliminado" : ""}`;
 
   return (
     <div className="flex min-w-0 flex-col space-y-4 overflow-hidden rounded-xl bg-slate-50 p-4 shadow-sm">
@@ -227,6 +270,14 @@ function HeroBannerSlideFields({
           ) : null}
         </div>
         {uploadError ? <p className="mt-2 text-sm text-[var(--color-danger)]">{uploadError}</p> : null}
+        <ImageUrlField
+          currentUrl={currentImageUrl}
+          disabled={saving}
+          id={`hero-banner-image-url-${index}`}
+          onChange={onChangeImageUrl}
+          onInvalidChange={onImageUrlInvalidChange}
+          syncKey={imageSyncKey}
+        />
       </FormField>
       <FormField id={`hero-banner-title-${index}`} label="Título">
         <Input

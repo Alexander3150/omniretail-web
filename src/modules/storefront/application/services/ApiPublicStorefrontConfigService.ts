@@ -1,3 +1,4 @@
+import { toSameOriginMediaUrl } from "@/infrastructure/api/mediaUrl";
 import type { PublicStorefrontConfigDto } from "@/modules/storefront/application/dto/PublicStorefrontConfigDto";
 
 interface BackendBannerSlide {
@@ -44,7 +45,9 @@ export class ApiPublicStorefrontConfigService {
         guestTrackingEnabled: data.guestTrackingEnabled,
         contactPhone: data.contactPhone ?? undefined,
         contactEmail: data.contactEmail ?? undefined,
-        logoImageSource: data.logoUrl ? { kind: "url", src: data.logoUrl } : undefined,
+        logoImageSource: data.logoUrl
+          ? { kind: "url", src: toSameOriginMediaUrl(data.logoUrl) }
+          : undefined,
         branches: (data.branches ?? []).map((branch) => ({
           id: branch.id,
           code: branch.code ?? undefined,
@@ -57,7 +60,9 @@ export class ApiPublicStorefrontConfigService {
           slides: (data.slides ?? []).map((slide) => ({
             title: slide.title ?? "",
             description: slide.description ?? "",
-            imageSource: slide.imageUrl ? { kind: "url", src: slide.imageUrl } : undefined,
+            imageSource: slide.imageUrl
+              ? { kind: "url", src: toSameOriginMediaUrl(slide.imageUrl) }
+              : undefined,
           })),
         },
       },

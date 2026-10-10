@@ -30,10 +30,21 @@ export class GetProductDetailService {
     const product = await this.repositories.products.getByIdScoped(tenantId, productId);
     if (!product) return null;
 
+    // Categoria y unidad son lecturas aparte con su propio permiso: un rol operativo (Cajero,
+    // Bodeguero) puede ver productos sin ellas, y un 403 no debe tumbar el detalle entero.
+    const canReadCategories =
+      permissions.includes("catalog.categories.read") ||
+      permissions.includes("catalog.categories.manage");
+    const canReadUnits =
+      permissions.includes("catalog.units.read") || permissions.includes("catalog.units.manage");
     const [media, category, unit] = await Promise.all([
       this.repositories.productMedia.getByProduct(product.id, product.tenantId),
-      this.repositories.categories.getByIdScoped(tenantId, product.categoryId),
-      this.repositories.units.getByIdScoped(tenantId, product.baseUnitId),
+      canReadCategories
+        ? this.repositories.categories.getByIdScoped(tenantId, product.categoryId)
+        : Promise.resolve(null),
+      canReadUnits
+        ? this.repositories.units.getByIdScoped(tenantId, product.baseUnitId)
+        : Promise.resolve(null),
     ]);
 
     const primaryMedia = selectPrimaryProductMedia(

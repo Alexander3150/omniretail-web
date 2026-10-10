@@ -9,7 +9,7 @@ import type {
 } from "@/modules/administration/application/dto/EcommerceConfigDto";
 import { GetEcommerceConfigService } from "@/modules/administration/application/services/GetEcommerceConfigService";
 import { SaveEcommerceConfigService } from "@/modules/administration/application/services/SaveEcommerceConfigService";
-import { cleanError } from "@/modules/administration/application/services/serviceHelpers";
+import { PartialSaveError, cleanError } from "@/modules/administration/application/services/serviceHelpers";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useEntitlementContext } from "@/shared/providers/EntitlementProvider";
@@ -113,22 +113,25 @@ export function useEcommerceConfig() {
 
   const save = useCallback(
     async (dto: EcommerceConfigInputDto): Promise<EcommerceConfigDto> => {
+      // `error` es solo para fallos de carga (su boton "Reintentar" recarga). Un fallo de guardado
+      // se relanza y lo muestra el formulario, para no repetir el mismo mensaje en varios banners.
       if (!tenantId) {
-        const message = "No se pudo resolver la sesión actual.";
-        setError(message);
-        throw new Error(message);
+        throw new Error("No se pudo resolver la sesión actual.");
       }
 
       setSaving(true);
-      setError(null);
       try {
         const savedConfig = await saveService.execute(dto);
         setConfig(savedConfig);
         return savedConfig;
       } catch (caughtError) {
-        const message = cleanError(caughtError);
-        setError(message);
-        throw new Error(message);
+        // Guardado parcial: se muestra lo que el backend si confirmo y se conserva el error para
+        // que la pantalla sincronice el formulario con ese estado.
+        if (caughtError instanceof PartialSaveError) {
+          setConfig(caughtError.persisted as EcommerceConfigDto);
+          throw caughtError;
+        }
+        throw new Error(cleanError(caughtError));
       } finally {
         setSaving(false);
       }

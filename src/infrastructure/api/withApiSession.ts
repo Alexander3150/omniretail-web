@@ -26,6 +26,12 @@ import { ApiCustomerRepository } from "@/infrastructure/api/ApiCustomerRepositor
 import { ApiEmailSenderConfigRepository } from "@/infrastructure/api/ApiEmailSenderConfigRepository";
 import { ApiPlanRepository } from "@/infrastructure/api/ApiPlanRepository";
 import { ApiRoleRepository } from "@/infrastructure/api/ApiRoleRepository";
+import {
+  ApiSessionEntitlementsClient,
+  isSessionPlanId,
+  toSessionPlan,
+  toSessionSubscription,
+} from "@/infrastructure/api/ApiSessionEntitlementsClient";
 import { ApiSupplierRepository } from "@/infrastructure/api/ApiSupplierRepository";
 import { ApiTenantSubscriptionRepository } from "@/infrastructure/api/ApiTenantSubscriptionRepository";
 import { ApiUserRepository } from "@/infrastructure/api/ApiUserRepository";
@@ -147,13 +153,59 @@ function apiPaymentMethodsForCustomers(
   };
 }
 
-/** `/administration/branches` exige `admin.branches.read`. */
-function apiBranchesForEmployees(
+const BRANCH_ADMIN_PERMISSIONS = ["admin.branches.read", "admin.branches.manage"] as const;
+
+/**
+ * Lectura de sucursales para un empleado SIN permiso administrativo: solo ve las sucursales activas
+ * que tiene asignadas (`GET /auth/session/branches`). Mantiene el contrato de `BranchRepository`
+ * para que los servicios operativos (inventario, compras, recepciones...) validen la sucursal sin
+ * necesitar `admin.branches.read`. Una sucursal fuera de esa lista se trata como inexistente.
+ * Crear y editar siguen exigiendo el permiso administrativo en el backend.
+ */
+function assignedBranchRepository(
+  api: ApiBranchRepository,
+  tenantId: string,
+): BranchRepository {
+  const assigned = () => api.getAssignedActive(tenantId);
+  const forTenant = async (id: string) =>
+    (await assigned()).find((branch) => branch.id === id && branch.tenantId === tenantId) ?? null;
+
+  return {
+    getAll: assigned,
+    getById: forTenant,
+    getByIdScoped: (scopedTenantId, id) =>
+      scopedTenantId === tenantId ? forTenant(id) : Promise.resolve(null),
+    getActive: assigned,
+    getActiveByTenant: async (scopedTenantId) =>
+      scopedTenantId === tenantId ? assigned() : [],
+    listByTenant: async (scopedTenantId) => (scopedTenantId === tenantId ? assigned() : []),
+    getActiveByTenantAndType: async (scopedTenantId, type) =>
+      scopedTenantId === tenantId
+        ? (await assigned()).filter((branch) => branch.type === type)
+        : [],
+    create: (input) => api.create(input),
+    update: (id, input) => api.update(id, input),
+  };
+}
+
+/**
+ * `/administration/branches` exige `admin.branches.read`. Con ese permiso se usa el backend
+ * administrativo; sin el, un empleado lee solo sus sucursales asignadas (nunca mock, nunca un 403).
+ * Clientes y storefront publico siguen en el mock.
+ */
+export function apiBranchesForEmployees(
   mock: BranchRepository,
-  api: BranchRepository,
+  api: ApiBranchRepository,
   currentSession: CurrentSessionClient,
 ): BranchRepository {
-  const resolve = employeeRouter(mock, api, currentSession);
+  const resolve = async (tenantId?: string): Promise<BranchRepository> => {
+    const current = await currentSession.get();
+    if (current?.user.type !== UserType.employee) return mock;
+    if (tenantId !== undefined && current.user.tenantId !== tenantId) return mock;
+    const granted = current.role?.permissions ?? [];
+    const canReadAdministration = BRANCH_ADMIN_PERMISSIONS.some((key) => granted.includes(key));
+    return canReadAdministration ? api : assignedBranchRepository(api, current.user.tenantId);
+  };
 
   return {
     getAll: async (): Promise<Branch[]> => (await resolve()).getAll(),
@@ -233,16 +285,44 @@ function apiUsersForEmployees(
   };
 }
 
-/** `/admin/subscriptions` exige `admin.plans.read`. */
-function apiSubscriptionsForEmployees(
+/**
+ * Entitlements de la sesion para el empleado de `tenantId` que NO tiene `admin.plans.read`: la
+ * lectura operativa de `GET /auth/session/entitlements`. Devuelve `undefined` cuando no aplica
+ * (sin cliente, no empleado, otra tienda o con permiso administrativo) para seguir el flujo normal.
+ */
+async function sessionEntitlementsFor(
+  currentSession: CurrentSessionClient,
+  sessionEntitlements: ApiSessionEntitlementsClient | undefined,
+  tenantId: string,
+) {
+  if (!sessionEntitlements) return undefined;
+  const current = await currentSession.get();
+  if (current?.user.type !== UserType.employee || current.user.tenantId !== tenantId) return undefined;
+  if (current.role?.permissions.includes("admin.plans.read")) return undefined;
+  return { entitlements: await sessionEntitlements.get() };
+}
+
+/**
+ * `/admin/subscriptions` exige `admin.plans.read`. Un empleado sin ese permiso (Cajero, Inventario,
+ * Bodeguero) obtiene su suscripcion derivada de `/auth/session/entitlements`, para que el resolver
+ * de entitlements funcione igual que para un administrador.
+ */
+export function apiSubscriptionsForEmployees(
   mock: TenantSubscriptionRepository,
   api: TenantSubscriptionRepository,
   currentSession: CurrentSessionClient,
+  sessionEntitlements?: ApiSessionEntitlementsClient,
 ): TenantSubscriptionRepository {
   const resolve = employeeRouter(mock, api, currentSession, ["admin.plans.read"]);
 
   return {
-    getByTenantId: async (tenantId: string) => (await resolve(tenantId)).getByTenantId(tenantId),
+    getByTenantId: async (tenantId: string) => {
+      const operational = await sessionEntitlementsFor(currentSession, sessionEntitlements, tenantId);
+      if (operational) {
+        return operational.entitlements ? toSessionSubscription(operational.entitlements) : null;
+      }
+      return (await resolve(tenantId)).getByTenantId(tenantId);
+    },
     listInvoices: async (tenantId: string) => (await resolve(tenantId)).listInvoices(tenantId),
     ensureInvoice: async (input) => (await resolve(input.tenantId)).ensureInvoice(input),
     create: async (input) => (await resolve(input.tenantId)).create(input),
@@ -254,16 +334,26 @@ function apiSubscriptionsForEmployees(
  * `/admin/plans` exige `admin.plans.read`. Sin ese permiso (o sin sesion: alta publica de negocio)
  * se usa el catalogo mock, igual que antes.
  */
-function apiPlansForEmployees(
+export function apiPlansForEmployees(
   mock: PlanRepository,
   api: PlanRepository,
   currentSession: CurrentSessionClient,
+  sessionEntitlements?: ApiSessionEntitlementsClient,
 ): PlanRepository {
   const resolve = employeeRouter(mock, api, currentSession, ["admin.plans.read"]);
 
   return {
     listActive: async () => (await resolve()).listActive(),
-    getById: async (id: string) => (await resolve()).getById(id),
+    getById: async (id: string) => {
+      // Plan sintetico de la suscripcion derivada: lleva el tenant en el id y solo es valido para
+      // el empleado de esa misma tienda.
+      if (isSessionPlanId(id)) {
+        const tenantId = id.slice(id.lastIndexOf(":") + 1);
+        const operational = await sessionEntitlementsFor(currentSession, sessionEntitlements, tenantId);
+        return operational?.entitlements ? toSessionPlan(operational.entitlements) : null;
+      }
+      return (await resolve()).getById(id);
+    },
     getByCode: async (code: PlanCode) => (await resolve()).getByCode(code),
   };
 }
@@ -328,7 +418,7 @@ function apiSuppliersForEmployees(
  * `admin.ecommerce_config.manage`, asi que el storefront publico y los empleados sin ese permiso
  * siguen leyendo el mock.
  */
-function apiBusinessConfigForEmployees(
+export function apiBusinessConfigForEmployees(
   mock: BusinessConfigRepository,
   api: BusinessConfigRepository,
   currentSession: CurrentSessionClient,
@@ -354,6 +444,10 @@ function apiBusinessConfigForEmployees(
       (await manageEcommerce(input.tenantId)).createEcommerceConfig(input),
     updateEcommerceConfig: async (tenantId, input) =>
       (await manageEcommerce(tenantId)).updateEcommerceConfig(tenantId, input),
+    uploadEcommerceLogo: async (tenantId, file) =>
+      (await manageEcommerce(tenantId)).uploadEcommerceLogo(tenantId, file),
+    uploadHeroBannerImage: async (tenantId, index, file) =>
+      (await manageEcommerce(tenantId)).uploadHeroBannerImage(tenantId, index, file),
     getHeroBanner: async (tenantId: string) =>
       (await manageEcommerce(tenantId)).getHeroBanner(tenantId),
     createHeroBanner: async (input) =>
@@ -401,6 +495,7 @@ function apiEmailSenderForEmployees(
  */
 export function withApiSession(repositories: RepositoryRegistry, eventBus: DataEventBus): RepositoryRegistry {
   const currentSession = new CurrentSessionClient();
+  const sessionEntitlements = new ApiSessionEntitlementsClient(eventBus);
   // `savedPaymentMethods` es un alias de `customerPaymentMethods`: ambos apuntan al mismo objeto.
   const customerPaymentMethods = apiPaymentMethodsForCustomers(
     repositories.customerPaymentMethods,
@@ -430,8 +525,14 @@ export function withApiSession(repositories: RepositoryRegistry, eventBus: DataE
       repositories.tenantSubscriptions,
       new ApiTenantSubscriptionRepository(eventBus),
       currentSession,
+      sessionEntitlements,
     ),
-    plans: apiPlansForEmployees(repositories.plans, new ApiPlanRepository(), currentSession),
+    plans: apiPlansForEmployees(
+      repositories.plans,
+      new ApiPlanRepository(),
+      currentSession,
+      sessionEntitlements,
+    ),
     bankAccounts: apiBankAccountsForEmployees(
       repositories.bankAccounts,
       new ApiBankAccountRepository(eventBus),

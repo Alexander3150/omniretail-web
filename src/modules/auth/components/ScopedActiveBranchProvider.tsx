@@ -1,7 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { type ReactNode, useCallback } from "react";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
+import type { Branch } from "@/core/entities";
 import { canUserOperateBranch } from "@/core/scopes/userBranchAccess";
 import { ActiveBranchProvider } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 
@@ -14,12 +15,15 @@ import { ActiveBranchProvider } from "@/shared/navigation/PrivateHeader/ActiveBr
  */
 export function ScopedActiveBranchProvider({ children }: { children: ReactNode }) {
   const { user } = useCurrentSession();
+  // Identidad estable mientras no cambie el usuario: ActiveBranchProvider vuelve a filtrar la lista
+  // ya cargada cuando cambia el predicado, y no debe hacerlo en cada render de este componente.
+  const canAccessBranch = useCallback(
+    (branch: Branch) => (user ? canUserOperateBranch(user, branch) : false),
+    [user],
+  );
 
   return (
-    <ActiveBranchProvider
-      tenantId={user?.tenantId ?? null}
-      canAccessBranch={(branch) => (user ? canUserOperateBranch(user, branch) : false)}
-    >
+    <ActiveBranchProvider tenantId={user?.tenantId ?? null} canAccessBranch={canAccessBranch}>
       {children}
     </ActiveBranchProvider>
   );

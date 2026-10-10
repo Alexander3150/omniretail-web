@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { LogisticsHistoryFilters } from "@/modules/logistics/components/LogisticsHistoryFilters";
 import { LogisticsHistoryDetailModal } from "@/modules/logistics/components/LogisticsHistoryDetailModal";
 import { LogisticsHistoryDispatchModal } from "@/modules/logistics/components/LogisticsHistoryDispatchModal";
@@ -13,8 +12,7 @@ import { useToast } from "@/shared/components/Toast";
 export function LogisticsHistoryPage() {
   const history = useLogisticsHistory();
   const { showToast } = useToast();
-  const [historyPage, setHistoryPage] = useState(1);
-  const [historyPageSize, setHistoryPageSize] = useState(10);
+  const { pagination } = history;
 
   return (
     <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
@@ -30,10 +28,7 @@ export function LogisticsHistoryPage() {
       <LogisticsHistoryFilters
         disabled={history.loading || !history.hasBranchAccess || !history.canRead}
         filters={history.filters}
-        onChange={(patch) => {
-          setHistoryPage(1);
-          history.updateFilters(patch);
-        }}
+        onChange={history.updateFilters}
       />
 
       <section className="min-w-0 rounded-xl border border-[var(--color-border)] bg-white p-3 shadow-sm sm:p-4">
@@ -47,7 +42,7 @@ export function LogisticsHistoryPage() {
             </p>
           </div>
           <span className="w-fit rounded-md bg-[var(--color-warning)]/20 px-2.5 py-1 text-xs font-semibold text-[var(--color-title)]">
-            {history.items.length} registros
+            {pagination.totalItems} registros
           </span>
         </div>
 
@@ -58,16 +53,14 @@ export function LogisticsHistoryPage() {
         ) : (
           <LogisticsHistoryTable
             canConfirmDispatch={history.canConfirmDispatch}
-            currentPage={historyPage}
+            currentPage={pagination.page}
             items={history.items}
             onAddGuide={(item) => void history.openDispatch(item)}
-            onPageChange={setHistoryPage}
-            onPageSizeChange={(pageSize) => {
-              setHistoryPageSize(pageSize);
-              setHistoryPage(1);
-            }}
-            pageSize={historyPageSize}
+            onPageChange={history.setPage}
+            onPageSizeChange={history.setPageSize}
+            pageSize={pagination.pageSize}
             onRowDoubleClick={(item) => void history.openDetail(item)}
+            serverTotalItems={pagination.mode === "server" ? pagination.totalItems : undefined}
           />
         )}
       </section>

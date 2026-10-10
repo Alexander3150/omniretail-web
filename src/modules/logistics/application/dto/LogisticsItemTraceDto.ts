@@ -33,5 +33,11 @@ export interface LogisticsItemTraceDto {
   name: string;
   requestedQuantity: number;
   pickedQuantity: number;
+  /**
+   * Solo en el historial API (pueden ser derivadas de Packing y Dispatch). `null` = la etapa aún
+   * no registra información; `undefined` = el origen no informa esta cantidad.
+   */
+  packedQuantity?: number | null;
+  dispatchedQuantity?: number | null;
   allocations: LogisticsTraceAllocationDto[];
 }

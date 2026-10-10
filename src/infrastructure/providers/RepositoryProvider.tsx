@@ -18,6 +18,7 @@ import type {
   CustomerRepository,
   DispatchCommandRepository,
   DispatchReadRepository,
+  LogisticsHistoryReadRepository,
   DispatchRepository,
   InventoryAdjustmentRepository,
   InventoryRepository,
@@ -71,6 +72,7 @@ import { withApiLogisticsPickingRead } from "@/infrastructure/api/withApiLogisti
 import { withApiLogisticsPacking } from "@/infrastructure/api/withApiLogisticsPacking";
 import { withApiLogisticsDispatch } from "@/infrastructure/api/withApiLogisticsDispatch";
 import { withApiPos } from "@/infrastructure/api/withApiPos";
+import { withApiLogisticsHistory } from "@/infrastructure/api/withApiLogisticsHistory";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import { getReferenceDataCache, referenceDataPrefixes } from "@/shared/utils/requestCache";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
@@ -139,6 +141,7 @@ export interface RepositoryRegistry {
   dispatchReadDataSource: "mock" | "api";
   posDataSource: "mock" | "api";
   posApi?: PosApiRepository;
+  logisticsHistoryDataSource: "mock" | "api";
   tenants: TenantRepository;
   tenantOnboarding: TenantOnboardingRepository;
   businessConfig: BusinessConfigRepository;
@@ -189,6 +192,7 @@ export interface RepositoryRegistry {
   catalogImageAssets: CatalogImageAssetRepository;
   dispatches: DispatchRepository;
   dispatchRead?: DispatchReadRepository;
+  logisticsHistory?: LogisticsHistoryReadRepository;
   dispatchCommands?: DispatchCommandRepository;
   storePickupDeliveries: StorePickupDeliveryRepository;
   notifications: NotificationRepository;
@@ -222,6 +226,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       packingDataSource: "mock",
       dispatchReadDataSource: "mock",
       posDataSource: "mock",
+      logisticsHistoryDataSource: "mock",
       tenants: new MockTenantRepository(store, eventBus),
       tenantOnboarding: new MockTenantOnboardingRepository(store, eventBus),
       businessConfig: new MockBusinessConfigRepository(store, eventBus),
@@ -287,7 +292,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
                         withApiProductRelations(
                           withApiProducts(
                             withApiCatalogMasterData(
-                              withApiSession(mockRepositories, eventBus),
+                              withApiLogisticsHistory(withApiSession(mockRepositories, eventBus)),
                               eventBus,
                             ),
                             eventBus,

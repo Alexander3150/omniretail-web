@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { isApiMode } from "@/config/api-mode";
+import { fetchPublicStoreIdentity } from "@/infrastructure/api/fetchPublicStoreIdentity";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import {
   GetInicioBusinessIdentityService,
@@ -17,7 +19,11 @@ interface InicioBusinessIdentityState {
 export function useInicioBusinessIdentity(tenantId: string | null | undefined) {
   const repositories = useRepositories();
   const service = useMemo(
-    () => new GetInicioBusinessIdentityService(repositories),
+    () =>
+      new GetInicioBusinessIdentityService(
+        repositories,
+        isApiMode() ? fetchPublicStoreIdentity : undefined,
+      ),
     [repositories],
   );
   const [state, setState] = useState<InicioBusinessIdentityState>({

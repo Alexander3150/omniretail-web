@@ -1,5 +1,7 @@
 import type { BusinessConfigRepository } from "@/core/repositories";
 import { BaseMockRepository } from "@/infrastructure/mock/repositories/base";
+
+const MOCK_UPLOAD_UNAVAILABLE = "La subida de archivos al servidor solo está disponible en modo API.";
 export class MockBusinessConfigRepository
   extends BaseMockRepository
   implements BusinessConfigRepository
@@ -85,6 +87,15 @@ export class MockBusinessConfigRepository
     this.emit("business-config.changed", { tenantId: input.tenantId, action: "created" });
     return created;
   }
+  /** La subida a `/media` solo existe en modo api; el mock guarda imagenes como assets locales. */
+  uploadEcommerceLogo(): Promise<never> {
+    return Promise.reject(new Error(MOCK_UPLOAD_UNAVAILABLE));
+  }
+
+  uploadHeroBannerImage(): Promise<never> {
+    return Promise.reject(new Error(MOCK_UPLOAD_UNAVAILABLE));
+  }
+
   async updateHeroBanner(
     tenantId: string,
     input: Parameters<BusinessConfigRepository["updateHeroBanner"]>[1],
