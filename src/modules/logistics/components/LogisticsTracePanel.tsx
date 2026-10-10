@@ -55,9 +55,16 @@ export function LogisticsTracePanel({ items, state, error }: LogisticsTracePanel
 
 function formatTraceQuantities(item: LogisticsItemTraceDto) {
   const parts = [item.sku, `${item.pickedQuantity} de ${item.requestedQuantity}`];
-  if (item.packedQuantity !== undefined) parts.push(`empacado ${item.packedQuantity}`);
-  if (item.dispatchedQuantity !== undefined) parts.push(`despachado ${item.dispatchedQuantity}`);
+  if (item.packedQuantity !== undefined) parts.push(`empacado ${formatStageQuantity(item.packedQuantity)}`);
+  if (item.dispatchedQuantity !== undefined) {
+    parts.push(`despachado ${formatStageQuantity(item.dispatchedQuantity)}`);
+  }
   return parts.filter(Boolean).join(" · ");
+}
+
+/** `null` no es cero: la etapa todavía no registró una cantidad. */
+function formatStageQuantity(quantity: number | null) {
+  return quantity === null ? "sin registro" : String(quantity);
 }
 
 /** El historial API identifica la ubicación sin código ni nombre: se indica que fue registrada. */

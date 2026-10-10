@@ -48,8 +48,8 @@ export function useLogisticsHistory() {
   );
   const usesApi = service.usesApi;
   const [items, setItems] = useState<LogisticsHistoryItemDto[]>([]);
-  const [page, setPageState] = useState(1);
-  const [pageSize, setPageSizeState] = useState(LOGISTICS_HISTORY_DEFAULT_PAGE_SIZE);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(LOGISTICS_HISTORY_DEFAULT_PAGE_SIZE);
   const [serverTotals, setServerTotals] = useState({ totalItems: 0, totalPages: 1 });
   const [appliedSearch, setAppliedSearch] = useState(defaultLogisticsHistoryFilters.search);
   const [loadedBranchId, setLoadedBranchId] = useState<string | null>(null);
@@ -326,7 +326,7 @@ export function useLogisticsHistory() {
     dispatchOperationIdRef.current = "";
     window.queueMicrotask(() => {
       if (!active) return;
-      setPageState(1);
+      setPage(1);
       setDetailOrderId(null);
       setDetail(null);
       setDetailError(null);
@@ -388,18 +388,18 @@ export function useLogisticsHistory() {
   );
 
   const updateFilters = useCallback((patch: Partial<LogisticsHistoryFilters>) => {
-    setPageState(1);
+    setPage(1);
     setFilters((current) => ({ ...current, ...patch }));
   }, []);
   const resetFilters = useCallback(() => {
-    setPageState(1);
+    setPage(1);
     setFilters(defaultLogisticsHistoryFilters);
     setAppliedSearch(defaultLogisticsHistoryFilters.search);
   }, []);
-  const setPage = useCallback((nextPage: number) => setPageState(Math.max(1, nextPage)), []);
-  const setPageSize = useCallback((nextPageSize: number) => {
-    setPageState(1);
-    setPageSizeState(nextPageSize);
+  const goToPage = useCallback((nextPage: number) => setPage(Math.max(1, nextPage)), []);
+  const changePageSize = useCallback((nextPageSize: number) => {
+    setPage(1);
+    setPageSize(nextPageSize);
   }, []);
 
   return {
@@ -414,8 +414,8 @@ export function useLogisticsHistory() {
         ? serverTotals.totalPages
         : Math.max(1, Math.ceil(visibleItems.length / pageSize)),
     },
-    setPage,
-    setPageSize,
+    setPage: goToPage,
+    setPageSize: changePageSize,
     filters,
     loading: contextLoading || loading,
     error,

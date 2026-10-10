@@ -194,6 +194,47 @@ describe("ApiLogisticsHistoryRepository", () => {
     expect(detail.lines[0]?.trackingSelections[0]?.serialNumbers).toEqual([]);
   });
 
+  it("distingue cantidades nulas, cero y positivas sin convertir null en 0", async () => {
+    const line = detailJson.lines[0]!;
+    stubFetch(() =>
+      Response.json({
+        ...detailJson,
+        lines: [
+          { ...line, packedQuantity: null, dispatchedQuantity: null },
+          { ...line, packedQuantity: 0, dispatchedQuantity: 0 },
+          { ...line, packedQuantity: 3, dispatchedQuantity: 2 },
+        ],
+      }),
+    );
+    const detail = await new ApiLogisticsHistoryRepository().getDetail(ids.branch, "order", ids.order);
+
+    expect(detail.lines.map(({ packedQuantity, dispatchedQuantity }) => [packedQuantity, dispatchedQuantity])).toEqual([
+      [null, null],
+      [0, 0],
+      [3, 2],
+    ]);
+    expect(
+      toLogisticsHistoryDetailDto(detail).items.map(({ packedQuantity, dispatchedQuantity }) => [
+        packedQuantity,
+        dispatchedQuantity,
+      ]),
+    ).toEqual([
+      [null, null],
+      [0, 0],
+      [3, 2],
+    ]);
+  });
+
+  it("rechaza cantidades en texto en lugar de convertirlas", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    stubFetch(() =>
+      Response.json({ ...detailJson, lines: [{ ...detailJson.lines[0], requestedQuantity: "" }] }),
+    );
+    await expect(
+      new ApiLogisticsHistoryRepository().getDetail(ids.branch, "order", ids.order),
+    ).rejects.toMatchObject({ status: 502, fields: { "lines.0.requestedQuantity": expect.any(String) } });
+  });
+
   it("rechaza respuestas inválidas indicando el campo, sin exponer valores", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     stubFetch(() => Response.json({ ...pageJson, items: [{ ...orderRowJson, deliveryMethod: "drone" }] }));

@@ -262,6 +262,60 @@ describe("componentes del historial", () => {
     expect(screen.getByText("2 / 2")).toBeInTheDocument();
   });
 
+  it("distingue pedidos y traslados y muestra la modalidad correcta", () => {
+    render(
+      <LogisticsHistoryTable
+        canConfirmDispatch={false}
+        currentPage={1}
+        items={[
+          item(1),
+          item(2, { deliveryMethod: DeliveryMethod.store_pickup }),
+          item(3, {
+            sourceType: "transfer",
+            orderReference: "Traslado TR-7",
+            deliveryMethod: "transfer",
+            contactName: "Destino: Norte",
+          }),
+        ]}
+        onAddGuide={() => undefined}
+        onPageChange={() => undefined}
+        onPageSizeChange={() => undefined}
+        pageSize={10}
+      />,
+    );
+    expect(screen.getAllByText("Pedido")).toHaveLength(2);
+    expect(screen.getByText("Traslado")).toBeInTheDocument();
+    expect(screen.getByText("Envío a domicilio")).toBeInTheDocument();
+    expect(screen.getByText("Retiro en tienda/bodega")).toBeInTheDocument();
+    expect(screen.getByText("Traslado entre sucursales")).toBeInTheDocument();
+    expect(screen.getByText("Mostrando 1-3 de 3 registros")).toBeInTheDocument();
+  });
+
+  it("el panel distingue una etapa sin registro de una cantidad cero", () => {
+    const line = {
+      pickingItemId: "line-1",
+      orderItemId: "line-1",
+      productId: "product-1",
+      sku: "",
+      name: "Cable THHN",
+      requestedQuantity: 3,
+      pickedQuantity: 3,
+      allocations: [],
+    };
+    render(
+      <LogisticsTracePanel
+        error={null}
+        state="data"
+        items={[
+          { ...line, packedQuantity: null, dispatchedQuantity: null },
+          { ...line, pickingItemId: "line-2", packedQuantity: 0, dispatchedQuantity: 0 },
+        ]}
+      />,
+    );
+    expect(screen.getByText("3 de 3 · empacado sin registro · despachado sin registro")).toBeInTheDocument();
+    expect(screen.getByText("3 de 3 · empacado 0 · despachado 0")).toBeInTheDocument();
+  });
+
   it("el panel de trazabilidad omite SKU y ubicación vacíos y muestra cantidades derivadas", () => {
     render(
       <LogisticsTracePanel

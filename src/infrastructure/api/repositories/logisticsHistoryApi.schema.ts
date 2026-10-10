@@ -9,11 +9,11 @@ import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import { isApiUuid } from "@/infrastructure/api/uuid";
 
 const uuidSchema = z.string().refine(isApiUuid, { message: "UUID de backend invalido." });
-const instantSchema = z.string().datetime({ offset: true });
+const instantSchema = z.iso.datetime({ offset: true });
 const nullable = <T extends z.ZodType>(schema: T) =>
   schema.nullable().optional().transform((value) => value ?? null);
-// Spring serializa BigDecimal como número; se acepta texto numérico por compatibilidad.
-const quantitySchema = z.coerce.number().finite();
+// Sin coerción: `null` significa "sin información" y nunca debe convertirse en 0.
+const quantitySchema = z.number();
 
 export const logisticsHistoryDeliveryMethodSchema = z.enum([
   "immediate",
@@ -43,7 +43,7 @@ const rowSchema = z.object({
   responsibleUserName: nullable(z.string()),
   totalWeight: nullable(quantitySchema),
   packageCount: nullable(z.number().int().nonnegative()),
-  dispatchStatus: nullable(z.nativeEnum(DispatchStatus)),
+  dispatchStatus: nullable(z.enum(DispatchStatus)),
   carrierName: nullable(z.string()),
   trackingNumber: nullable(z.string()),
 }) satisfies z.ZodType<LogisticsHistoryRowReadModel>;
@@ -64,14 +64,14 @@ const detailSchema = z.object({
       productName: z.string(),
       requestedQuantity: quantitySchema,
       pickedQuantity: quantitySchema,
-      packedQuantity: quantitySchema,
-      dispatchedQuantity: quantitySchema,
+      packedQuantity: nullable(quantitySchema),
+      dispatchedQuantity: nullable(quantitySchema),
       trackingSelections: z.array(
         z.object({
           locationId: uuidSchema,
           lotId: nullable(uuidSchema),
           lotNumber: nullable(z.string()),
-          expirationDate: nullable(z.string().date()),
+          expirationDate: nullable(z.iso.date()),
           quantity: quantitySchema,
           serialNumbers: nullable(z.array(z.string())).transform((value) => value ?? []),
         }),

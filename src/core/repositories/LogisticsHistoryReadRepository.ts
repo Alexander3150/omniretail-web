@@ -49,14 +49,17 @@ export interface LogisticsHistoryTraceSelectionReadModel {
   serialNumbers: string[];
 }
 
-/** Las cantidades empacada y despachada pueden ser derivadas de las etapas operativas. */
+/**
+ * Las cantidades empacada y despachada pueden ser derivadas de las etapas operativas; `null`
+ * indica que la etapa aún no registra información (distinto de una cantidad 0).
+ */
 export interface LogisticsHistoryLineReadModel {
   productId: string;
   productName: string;
   requestedQuantity: number;
   pickedQuantity: number;
-  packedQuantity: number;
-  dispatchedQuantity: number;
+  packedQuantity: number | null;
+  dispatchedQuantity: number | null;
   trackingSelections: LogisticsHistoryTraceSelectionReadModel[];
 }
 
