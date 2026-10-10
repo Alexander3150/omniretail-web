@@ -15,6 +15,7 @@ import {
   validateReturnSelection,
   validateVoidReason,
 } from "@/modules/pos/validation/returns.validation";
+import { cleanPosError } from "@/modules/pos/application/services/posServiceContext";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 
@@ -24,6 +25,7 @@ export function usePosReturns() {
   const repositories = useRepositories();
   const { currentBranch, loading: branchLoading } = useActiveBranch();
   const {
+    sessionId,
     user,
     canAccessBranch,
     hasPermission,
@@ -57,6 +59,8 @@ export function usePosReturns() {
   const mutationLockRef = useRef(false);
   const operationKeyRef = useRef<string | null>(null);
   const attemptedPayloadRef = useRef<string | null>(null);
+  const currentContextKey = `${sessionId ?? ""}:${user?.id ?? ""}:${currentBranch?.tenantId ?? ""}:${currentBranch?.id ?? ""}`;
+  const currentContextRef = useRef(currentContextKey);
 
   const hasBranchAccess = Boolean(
     user &&
@@ -98,6 +102,7 @@ export function usePosReturns() {
     async (requestedDocument: string, resetWorkflow: boolean) => {
       const requestId = lookupSequenceRef.current + 1;
       lookupSequenceRef.current = requestId;
+      const requestedContext = currentContextKey;
       if (resetWorkflow) {
         setLookup(null);
         resetOperation();
@@ -113,20 +118,35 @@ export function usePosReturns() {
           ...getContext(),
           documentNumber: requestedDocument,
         });
-        if (requestId !== lookupSequenceRef.current) return null;
+        if (
+          requestId !== lookupSequenceRef.current ||
+          requestedContext !== currentContextRef.current
+        ) {
+          return null;
+        }
         setLookup(nextLookup);
         setNotFound(!nextLookup);
         return nextLookup;
       } catch (error) {
-        if (requestId !== lookupSequenceRef.current) return null;
+        if (
+          requestId !== lookupSequenceRef.current ||
+          requestedContext !== currentContextRef.current
+        ) {
+          return null;
+        }
         if (resetWorkflow) setLookup(null);
-        setLookupError(toMessage(error, sessionError ?? "No se pudo consultar la venta."));
+        setLookupError(cleanPosError(error, sessionError ?? "No se pudo consultar la venta."));
         return null;
       } finally {
-        if (requestId === lookupSequenceRef.current) setIsSearching(false);
+        if (
+          requestId === lookupSequenceRef.current &&
+          requestedContext === currentContextRef.current
+        ) {
+          setIsSearching(false);
+        }
       }
     },
-    [getContext, resetOperation, services.lookup, sessionError],
+    [currentContextKey, getContext, resetOperation, services.lookup, sessionError],
   );
 
   const search = useCallback(async () => {
@@ -147,9 +167,8 @@ export function usePosReturns() {
   }, [accessBlocked, documentNumber, loadLookup]);
 
   useEffect(() => {
-    const contextKey = `${user?.id ?? ""}:${currentBranch?.id ?? ""}`;
+    currentContextRef.current = currentContextKey;
     window.queueMicrotask(() => {
-      void contextKey;
       lookupSequenceRef.current += 1;
       setLookup(null);
       setNotFound(false);
@@ -158,7 +177,7 @@ export function usePosReturns() {
       setResult(null);
       resetOperation();
     });
-  }, [currentBranch?.id, resetOperation, user?.id]);
+  }, [currentContextKey, resetOperation]);
 
   const handleSaleChanged = useCallback(
     (payload: DataEventPayload) => {
@@ -255,6 +274,7 @@ export function usePosReturns() {
     }
     attemptedPayloadRef.current = payloadFingerprint;
     const idempotencyKey = operationKeyRef.current;
+    const operationContext = currentContextKey;
 
     mutationLockRef.current = true;
     setProcessing(true);
@@ -276,6 +296,7 @@ export function usePosReturns() {
               idempotencyKey,
               reason: reason.trim(),
             });
+      if (operationContext !== currentContextRef.current) return false;
       setResult(nextResult);
       setMode(null);
       setReason("");
@@ -285,7 +306,8 @@ export function usePosReturns() {
       await loadLookup(lookup.sale.documentNumber, false);
       return true;
     } catch (error) {
-      setOperationError(toMessage(error, "No se pudo completar la operación."));
+      if (operationContext !== currentContextRef.current) return false;
+      setOperationError(cleanPosError(error, "No se pudo completar la operación.", "idempotent"));
       await loadLookup(lookup.sale.documentNumber, false);
       return false;
     } finally {
@@ -295,6 +317,7 @@ export function usePosReturns() {
   }, [
     canProcessReturn,
     canVoid,
+    currentContextKey,
     formIsValid,
     getContext,
     loadLookup,
@@ -337,10 +360,6 @@ export function usePosReturns() {
     setLineQuantity,
     submitOperation,
   };
-}
-
-function toMessage(error: unknown, fallback: string) {
-  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 function getOperationBlockedReason({

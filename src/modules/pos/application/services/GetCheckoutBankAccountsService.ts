@@ -29,7 +29,6 @@ export class GetCheckoutBankAccountsService {
     );
     ensurePosPermission(permissions, POS_SALES_CREATE_PERMISSION);
     const branch = await ensurePosBranchAccess(this.repositories, user, input.branchId);
-
     const accounts = await this.repositories.bankAccounts.getActiveByTenant(tenantId);
     return accounts
       .filter(
@@ -42,7 +41,6 @@ export class GetCheckoutBankAccountsService {
         bankName: account.bankName,
         accountType: account.accountType,
         holderName: account.holderName,
-        accountNumber: account.accountNumber,
         accountNumberMasked: account.accountNumberMasked,
         currency: account.currency,
       }));

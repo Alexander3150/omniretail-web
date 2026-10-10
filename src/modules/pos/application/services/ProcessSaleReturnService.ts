@@ -1,6 +1,10 @@
 import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryProvider";
 import type { SaleReversalResultDto } from "@/modules/pos/application/dto/SaleReversalResultDto";
-import { mapSaleReversalResult } from "@/modules/pos/application/mappers/SaleReversalResultMapper";
+import {
+  mapApiReturnResult,
+  mapSaleReversalResult,
+} from "@/modules/pos/application/mappers/SaleReversalResultMapper";
+import { requirePosApi } from "@/modules/pos/application/services/posServiceContext";
 import {
   requireReturnOperationContext,
   type ReturnOperationContext,
@@ -22,6 +26,17 @@ export class ProcessSaleReturnService {
       input,
       "pos.returns.create",
     );
+    if (this.repositories.posDataSource === "api") {
+      const result = await requirePosApi(this.repositories).processReturn(
+        input.saleId,
+        input.idempotencyKey,
+        {
+          reason: input.reason,
+          lines: input.lines.map((line) => ({ ...line, trackingSelections: [] })),
+        },
+      );
+      return mapApiReturnResult(input.saleId, result);
+    }
     const result = await this.repositories.saleReversals.processReturn({
       tenantId: context.tenantId,
       branchId: context.branchId,

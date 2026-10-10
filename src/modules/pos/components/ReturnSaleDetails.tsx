@@ -28,9 +28,7 @@ export function ReturnSaleDetails({
   canVoid,
   onBeginOperation,
 }: ReturnSaleDetailsProps) {
-  const returnBlockedNotice = isReturnBlockedNotice(
-    lookup.allowedOperations.returnBlockedReason,
-  )
+  const returnBlockedNotice = isReturnBlockedNotice(lookup.allowedOperations.returnBlockedReason)
     ? formatOperationReason(lookup.allowedOperations.returnBlockedReason)
     : undefined;
   const columns: DataTableColumn<ReturnSaleLookupDto["items"][number]>[] = [
@@ -147,11 +145,12 @@ export function ReturnSaleDetails({
                 {paymentLabels[payment.method] ?? payment.method}
               </p>
               <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                Disponible: {formatCurrency(payment.refundableAmount)}
+                {payment.refundableAmount === undefined ? "Pago original" : "Disponible"}:{" "}
+                {formatCurrency(payment.refundableAmount ?? payment.amount)}
               </p>
-              {payment.refundedAmount > 0 ? (
+              {(payment.refundedAmount ?? 0) > 0 ? (
                 <p className="text-xs text-[var(--color-text-muted)]">
-                  Reembolsado: {formatCurrency(payment.refundedAmount)}
+                  Reembolsado: {formatCurrency(payment.refundedAmount ?? 0)}
                 </p>
               ) : null}
             </div>

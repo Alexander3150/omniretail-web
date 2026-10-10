@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CashShift } from "@/core/entities";
 import { calculateEffectivePrice, resolveQuantityPrice } from "@/core/pricing";
 import {
   CashShiftStatus,
@@ -10,7 +9,8 @@ import {
   SaasCapabilityKey,
   TransportMode,
 } from "@/core/enums";
-import type { ConfirmSaleResult, SaleConfirmationPaymentMethod } from "@/core/repositories";
+import type { SaleConfirmationPaymentMethod } from "@/core/repositories";
+import { BackendRequestError } from "@/infrastructure/api/backendClient";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import type {
@@ -21,16 +21,27 @@ import type {
   CheckoutPaymentMode,
 } from "@/modules/pos/application/dto/CheckoutDto";
 import type { PosProductDto } from "@/modules/pos/application/dto/PosProductDto";
+import type { PosCashShiftDto } from "@/modules/pos/application/dto/PosCashShiftDto";
+import type { PosSaleConfirmationDto } from "@/modules/pos/application/dto/PosSaleConfirmationDto";
 import type { SaleTicketDto, SaleTicketItemDto } from "@/modules/pos/application/dto/SaleTicketDto";
 import { ConfirmSaleService } from "@/modules/pos/application/services/ConfirmSaleService";
+import {
+  type PendingSaleConfirmation,
+  PendingSaleConfirmationStore,
+  canDiscardAfterRejection,
+  isUncertainSaleFailure,
+  pendingSaleScopeKey,
+} from "@/modules/pos/application/services/pendingSaleConfirmation";
 import { GetCheckoutBankAccountsService } from "@/modules/pos/application/services/GetCheckoutBankAccountsService";
 import { GetPosProductsService } from "@/modules/pos/application/services/GetPosProductsService";
+import { GetOpenCashShiftService } from "@/modules/pos/application/services/GetOpenCashShiftService";
 import {
   calculateCheckoutAmounts,
   validateCheckout as validateCheckoutDto,
   type CheckoutValidationErrors,
 } from "@/modules/pos/validation/checkout.validation";
 import { validateTicketQuantity } from "@/modules/pos/validation/ticket.validation";
+import { cleanPosError } from "@/modules/pos/application/services/posServiceContext";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
@@ -62,6 +73,7 @@ export function usePosTerminal() {
   const repositories = useRepositories();
   const { currentBranch, loading: branchLoading } = useActiveBranch();
   const {
+    sessionId,
     user,
     canAccessBranch,
     hasPermission,
@@ -71,6 +83,10 @@ export function usePosTerminal() {
   const { hasCapability } = useEntitlement();
   const productService = useMemo(() => new GetPosProductsService(repositories), [repositories]);
   const confirmationService = useMemo(() => new ConfirmSaleService(repositories), [repositories]);
+  const openCashShiftService = useMemo(
+    () => new GetOpenCashShiftService(repositories),
+    [repositories],
+  );
   const bankAccountsService = useMemo(
     () => new GetCheckoutBankAccountsService(repositories),
     [repositories],
@@ -89,24 +105,59 @@ export function usePosTerminal() {
   >([]);
   const [paymentMethodsLoading, setPaymentMethodsLoading] = useState(true);
   const [paymentMethodsError, setPaymentMethodsError] = useState<string | null>(null);
-  const [cashShift, setCashShift] = useState<CashShift | null>(null);
+  const [cashShift, setCashShift] = useState<PosCashShiftDto | null>(null);
   const [cashShiftLoading, setCashShiftLoading] = useState(true);
   const [cashShiftError, setCashShiftError] = useState<string | null>(null);
   const [confirmationAttempt, setConfirmationAttempt] = useState<ConfirmationAttempt | null>(null);
   const [confirmationLoading, setConfirmationLoading] = useState(false);
   const [confirmationError, setConfirmationError] = useState<string | null>(null);
-  const [confirmationResult, setConfirmationResult] = useState<ConfirmSaleResult | null>(null);
+  const [confirmationResult, setConfirmationResult] = useState<PosSaleConfirmationDto | null>(null);
   const confirmationLoadingRef = useRef(false);
+  // Venta con respuesta incierta: sobrevive a ediciones del ticket y a recargas (sessionStorage).
+  // Su alcance no incluye la sesion: tras volver a iniciar sesion la venta sigue sin resolverse.
+  const pendingStore = useMemo(() => new PendingSaleConfirmationStore(), []);
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingSaleConfirmation | null>(null);
+  const pendingConfirmationRef = useRef<PendingSaleConfirmation | null>(null);
+  const applyPendingConfirmation = useCallback((value: PendingSaleConfirmation | null) => {
+    pendingConfirmationRef.current = value;
+    setPendingConfirmation(value);
+  }, []);
+  const pendingScopeKey =
+    user && currentBranch ? pendingSaleScopeKey(user.id, currentBranch.tenantId, currentBranch.id) : null;
+  const productsRequestRef = useRef(0);
+  const reloadScheduledRef = useRef(false);
+  const bankAccountsRequestRef = useRef(0);
+  const cashShiftRequestRef = useRef(0);
+  const paymentMethodsRequestRef = useRef(0);
   const cardTerminalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cardTerminalReferenceSequenceRef = useRef(482931);
+  const readContextKey = `${sessionId ?? ""}:${user?.id ?? ""}:${currentBranch?.tenantId ?? ""}:${currentBranch?.id ?? ""}`;
+  const currentReadContextRef = useRef(readContextKey);
   const currentConfirmationContextKey =
-    user && currentBranch && cashShift ? `${user.id}:${currentBranch.id}:${cashShift.id}` : null;
+    sessionId && user && currentBranch && cashShift
+      ? `${sessionId}:${user.id}:${currentBranch.tenantId}:${currentBranch.id}:${cashShift.id}`
+      : null;
+  const currentConfirmationContextRef = useRef(currentConfirmationContextKey);
   const confirmationId =
     confirmationAttempt?.contextKey === currentConfirmationContextKey
       ? confirmationAttempt.confirmationId
       : null;
 
+  // Al abrir o recargar la terminal se recupera la venta incierta de este usuario, sucursal y caja.
+  useEffect(() => {
+    if (!pendingScopeKey) return;
+    let active = true;
+    window.queueMicrotask(() => {
+      if (active) applyPendingConfirmation(pendingStore.load(pendingScopeKey));
+    });
+    return () => {
+      active = false;
+    };
+  }, [applyPendingConfirmation, pendingScopeKey, pendingStore]);
+
   const reload = useCallback(async () => {
+    const requestId = ++productsRequestRef.current;
+    const requestedContext = readContextKey;
     if (branchLoading || sessionLoading) return;
 
     if (!currentBranch || !user) {
@@ -126,29 +177,48 @@ export function usePosTerminal() {
     setLoading(true);
     setError(null);
     try {
-      setProducts(
-        await productService.execute({
-          tenantId: currentBranch.tenantId,
-          branchId: currentBranch.id,
-        }),
-      );
+      const nextProducts = await productService.execute({
+        tenantId: currentBranch.tenantId,
+        branchId: currentBranch.id,
+      });
+      if (
+        requestId !== productsRequestRef.current ||
+        requestedContext !== currentReadContextRef.current
+      ) {
+        return;
+      }
+      setProducts(nextProducts);
     } catch {
+      if (
+        requestId !== productsRequestRef.current ||
+        requestedContext !== currentReadContextRef.current
+      ) {
+        return;
+      }
       setProducts([]);
       setError("No se pudieron cargar los productos disponibles para POS.");
     } finally {
-      setLoading(false);
+      if (
+        requestId === productsRequestRef.current &&
+        requestedContext === currentReadContextRef.current
+      ) {
+        setLoading(false);
+      }
     }
   }, [
     branchLoading,
     canAccessBranch,
     currentBranch,
     productService,
+    readContextKey,
     sessionError,
     sessionLoading,
     user,
   ]);
 
   const reloadBankAccounts = useCallback(async () => {
+    const requestId = ++bankAccountsRequestRef.current;
+    const requestedContext = readContextKey;
     if (branchLoading || sessionLoading) return;
 
     if (
@@ -169,16 +239,43 @@ export function usePosTerminal() {
       const accounts = await bankAccountsService.execute({
         branchId: currentBranch.id,
       });
+      if (
+        requestId !== bankAccountsRequestRef.current ||
+        requestedContext !== currentReadContextRef.current
+      ) {
+        return;
+      }
       setBankAccounts(accounts);
-    } catch {
+    } catch (error_) {
+      if (
+        requestId !== bankAccountsRequestRef.current ||
+        requestedContext !== currentReadContextRef.current
+      ) {
+        return;
+      }
       setBankAccounts([]);
-      setBankAccountsError("No se pudieron cargar las cuentas bancarias disponibles.");
+      setBankAccountsError(toBankAccountsErrorMessage(error_));
     } finally {
-      setBankAccountsLoading(false);
+      if (
+        requestId === bankAccountsRequestRef.current &&
+        requestedContext === currentReadContextRef.current
+      ) {
+        setBankAccountsLoading(false);
+      }
     }
-  }, [bankAccountsService, branchLoading, canAccessBranch, currentBranch, sessionLoading, user]);
+  }, [
+    bankAccountsService,
+    branchLoading,
+    canAccessBranch,
+    currentBranch,
+    readContextKey,
+    sessionLoading,
+    user,
+  ]);
 
   const reloadCashShift = useCallback(async () => {
+    const requestId = ++cashShiftRequestRef.current;
+    const requestedContext = readContextKey;
     if (branchLoading || sessionLoading) return;
 
     setCashShift(null);
@@ -196,16 +293,21 @@ export function usePosTerminal() {
 
     setCashShiftLoading(true);
     try {
-      const shift = await repositories.cashShifts.getOpenByUserAndBranch(
-        currentBranch.tenantId,
-        user.id,
-        currentBranch.id,
-      );
+      const shift = await openCashShiftService.execute({
+        tenantId: currentBranch.tenantId,
+        actorUserId: user.id,
+        branchId: currentBranch.id,
+      });
+      if (
+        requestId !== cashShiftRequestRef.current ||
+        requestedContext !== currentReadContextRef.current
+      ) {
+        return;
+      }
       const isValidShift =
         shift?.status === CashShiftStatus.open &&
         shift.userId === user.id &&
         shift.branchId === currentBranch.id &&
-        shift.tenantId === currentBranch.tenantId &&
         user.tenantId === currentBranch.tenantId;
 
       if (!shift) return;
@@ -216,13 +318,34 @@ export function usePosTerminal() {
 
       setCashShift(shift);
     } catch {
+      if (
+        requestId !== cashShiftRequestRef.current ||
+        requestedContext !== currentReadContextRef.current
+      ) {
+        return;
+      }
       setCashShiftError("No se pudo consultar el turno de caja abierto.");
     } finally {
-      setCashShiftLoading(false);
+      if (
+        requestId === cashShiftRequestRef.current &&
+        requestedContext === currentReadContextRef.current
+      ) {
+        setCashShiftLoading(false);
+      }
     }
-  }, [branchLoading, canAccessBranch, currentBranch, repositories, sessionLoading, user]);
+  }, [
+    branchLoading,
+    canAccessBranch,
+    currentBranch,
+    openCashShiftService,
+    readContextKey,
+    sessionLoading,
+    user,
+  ]);
 
   const reloadPaymentMethods = useCallback(async () => {
+    const requestId = ++paymentMethodsRequestRef.current;
+    const requestedContext = readContextKey;
     if (branchLoading || sessionLoading) return;
 
     if (
@@ -243,25 +366,62 @@ export function usePosTerminal() {
       const capabilities = await repositories.businessConfig.getCapabilities(
         currentBranch.tenantId,
       );
+      if (
+        requestId !== paymentMethodsRequestRef.current ||
+        requestedContext !== currentReadContextRef.current
+      ) {
+        return;
+      }
       const allowedMethods = getAllowedPosPaymentMethods(capabilities?.allowedPosPaymentMethods);
       setAllowedPosPaymentMethods(allowedMethods);
       if (allowedMethods.length === 0) {
         setPaymentMethodsError("No hay métodos de pago habilitados para POS.");
       }
     } catch {
+      if (
+        requestId !== paymentMethodsRequestRef.current ||
+        requestedContext !== currentReadContextRef.current
+      ) {
+        return;
+      }
       setAllowedPosPaymentMethods([]);
       setPaymentMethodsError("No se pudo cargar la configuración de métodos de pago.");
     } finally {
-      setPaymentMethodsLoading(false);
+      if (
+        requestId === paymentMethodsRequestRef.current &&
+        requestedContext === currentReadContextRef.current
+      ) {
+        setPaymentMethodsLoading(false);
+      }
     }
   }, [
     branchLoading,
     canAccessBranch,
     currentBranch,
     repositories.businessConfig,
+    readContextKey,
     sessionLoading,
     user,
   ]);
+
+  useEffect(() => {
+    currentReadContextRef.current = readContextKey;
+    window.queueMicrotask(() => {
+      productsRequestRef.current += 1;
+      bankAccountsRequestRef.current += 1;
+      cashShiftRequestRef.current += 1;
+      paymentMethodsRequestRef.current += 1;
+      setTicketState({ items: [], error: null });
+      setCheckoutState(createCheckoutState(0));
+      setConfirmationAttempt(null);
+      setConfirmationError(null);
+      setConfirmationResult(null);
+    });
+  }, [readContextKey]);
+
+  useEffect(() => {
+    currentConfirmationContextRef.current = currentConfirmationContextKey;
+  }, [currentConfirmationContextKey]);
 
   useEffect(() => {
     let active = true;
@@ -285,10 +445,21 @@ export function usePosTerminal() {
     [],
   );
 
-  useDataEvent("product.changed", reload);
-  useDataEvent("promotion.changed", reload);
-  useDataEvent("inventory.changed", reload);
-  useDataEvent("stock.changed", reload);
+  // Una operacion emite varios eventos en el mismo tick (inventario, stock, producto): se agrupan
+  // en una sola recarga del catalogo en vez de repetir la consulta completa por cada evento.
+  const scheduleReload = useCallback(() => {
+    if (reloadScheduledRef.current) return;
+    reloadScheduledRef.current = true;
+    window.queueMicrotask(() => {
+      reloadScheduledRef.current = false;
+      void reload();
+    });
+  }, [reload]);
+
+  useDataEvent("product.changed", scheduleReload);
+  useDataEvent("promotion.changed", scheduleReload);
+  useDataEvent("inventory.changed", scheduleReload);
+  useDataEvent("stock.changed", scheduleReload);
   useDataEvent("payment.changed", reloadBankAccounts);
   useDataEvent("cash-shift.changed", reloadCashShift);
   useDataEvent("business-config.changed", reloadPaymentMethods);
@@ -325,6 +496,7 @@ export function usePosTerminal() {
 
   const addProduct = useCallback(
     (product: PosProductDto) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateCheckoutValidation();
       setTicketState((current) => {
         const existingItem = current.items.find((item) => item.productId === product.productId);
@@ -354,6 +526,7 @@ export function usePosTerminal() {
 
   const increaseQuantity = useCallback(
     (productId: string) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateCheckoutValidation();
       setTicketState((current) => {
         const item = current.items.find((candidate) => candidate.productId === productId);
@@ -382,6 +555,7 @@ export function usePosTerminal() {
 
   const decreaseQuantity = useCallback(
     (productId: string) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateCheckoutValidation();
       setTicketState((current) => {
         const item = current.items.find((candidate) => candidate.productId === productId);
@@ -412,6 +586,7 @@ export function usePosTerminal() {
 
   const removeItem = useCallback(
     (productId: string) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateCheckoutValidation();
       setTicketState((current) => ({
         items: current.items.filter((item) => item.productId !== productId),
@@ -422,6 +597,7 @@ export function usePosTerminal() {
   );
 
   const clearTicket = useCallback(() => {
+    if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
     cancelCardTerminalProcessing();
     invalidateConfirmationAttempt();
     setTicketState({ items: [], error: null });
@@ -454,7 +630,6 @@ export function usePosTerminal() {
     cashShift.status === CashShiftStatus.open &&
     cashShift.userId === user.id &&
     cashShift.branchId === currentBranch.id &&
-    cashShift.tenantId === currentBranch.tenantId &&
     user.tenantId === currentBranch.tenantId &&
     hasCurrentBranchAccess,
   );
@@ -509,6 +684,7 @@ export function usePosTerminal() {
   }, []);
 
   const resetCheckout = useCallback(() => {
+    if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
     cancelCardTerminalProcessing();
     invalidateConfirmationAttempt();
     setCheckoutState((current) => ({
@@ -524,6 +700,7 @@ export function usePosTerminal() {
 
   const setDocumentType = useCallback(
     (documentType: CheckoutDto["documentType"]) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateConfirmationAttempt();
       setCheckoutState((current) => ({
         ...current,
@@ -540,6 +717,7 @@ export function usePosTerminal() {
 
   const setPaymentMode = useCallback(
     (paymentMode: CheckoutPaymentMode) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       if (!availablePaymentModes.includes(paymentMode)) return;
       cancelCardTerminalProcessing();
       invalidateConfirmationAttempt();
@@ -563,6 +741,7 @@ export function usePosTerminal() {
 
   const updateCheckout = useCallback(
     (patch: EditableCheckoutPatch) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       if (patch.cardAmount !== undefined) cancelCardTerminalProcessing();
       invalidateConfirmationAttempt();
       setCheckoutState((current) => {
@@ -593,6 +772,7 @@ export function usePosTerminal() {
 
   const processCardPayment = useCallback(
     (outcome: CardTerminalOutcome = "approved") => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       cancelCardTerminalProcessing();
       invalidateConfirmationAttempt();
 
@@ -670,6 +850,7 @@ export function usePosTerminal() {
 
   const updateInvoiceData = useCallback(
     (patch: Partial<CheckoutInvoiceDataDto>) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateConfirmationAttempt();
       setCheckoutState((current) => ({
         ...current,
@@ -689,6 +870,7 @@ export function usePosTerminal() {
 
   const updateDeliveryAddress = useCallback(
     (patch: Partial<NonNullable<CheckoutDto["deliveryAddress"]>>) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateConfirmationAttempt();
       setCheckoutState((current) => ({
         ...current,
@@ -716,6 +898,7 @@ export function usePosTerminal() {
 
   const updateStorePickupContact = useCallback(
     (patch: Partial<NonNullable<CheckoutDto["storePickupContact"]>>) => {
+      if (isEditBlockedByPendingSale(pendingConfirmationRef, setTicketState)) return;
       invalidateConfirmationAttempt();
       setCheckoutState((current) => ({
         ...current,
@@ -817,18 +1000,41 @@ export function usePosTerminal() {
     : checkoutState.message;
 
   const confirmSale = useCallback(async () => {
-    if (confirmationLoadingRef.current || !checkoutReadyToConfirm) return;
+    const pending = pendingConfirmationRef.current;
+    // Con una venta pendiente se reenvia ESA solicitud: el estado de pantalla ya no es la fuente.
+    if (confirmationLoadingRef.current || (!pending && !checkoutReadyToConfirm)) return;
     if (!user || !currentBranch || !cashShift) {
       setConfirmationError("La sesión, sucursal o caja ya no está disponible.");
       return;
     }
 
-    const confirmationContextKey = `${user.id}:${currentBranch.id}:${cashShift.id}`;
-    const isDeferred = checkoutState.value.deliveryMethod !== DeliveryMethod.immediate;
-    const attemptId = confirmationId ?? crypto.randomUUID();
+    const confirmationContextKey = `${sessionId ?? ""}:${user.id}:${currentBranch.tenantId}:${currentBranch.id}:${cashShift.id}`;
+    const scopeKey = pendingSaleScopeKey(user.id, currentBranch.tenantId, currentBranch.id);
+    if (pending && pending.contextKey !== scopeKey) {
+      setConfirmationError("La venta pendiente pertenece a otra sucursal.");
+      return;
+    }
+    if (pending && pending.input.cashShiftId !== cashShift.id) {
+      setConfirmationError(
+        "La venta pendiente se envió en otro turno de caja y no se puede reenviar desde este. Revisa el Historial de ventas: si aparece, ya está registrada; si no, descártala y vuelve a cobrar.",
+      );
+      return;
+    }
+    const request = pending
+      ? pending.input
+      : {
+          branchId: currentBranch.id,
+          cashShiftId: cashShift.id,
+          ticket,
+          checkout: checkoutState.value,
+        };
+    const isDeferred = request.checkout.deliveryMethod !== DeliveryMethod.immediate;
+    const attemptId = pending?.confirmationId ?? confirmationId ?? crypto.randomUUID();
     const orderIdempotencyKey =
-      confirmationAttempt?.orderIdempotencyKey ?? (isDeferred ? crypto.randomUUID() : undefined);
-    if (!confirmationId) {
+      pending?.orderIdempotencyKey ??
+      confirmationAttempt?.orderIdempotencyKey ??
+      (isDeferred ? crypto.randomUUID() : undefined);
+    if (!pending && !confirmationId) {
       setConfirmationAttempt({
         confirmationId: attemptId,
         orderIdempotencyKey,
@@ -840,31 +1046,78 @@ export function usePosTerminal() {
     setConfirmationError(null);
     setConfirmationResult(null);
 
+    // Registro que quedo guardado justo antes del POST; si es `null`, la venta nunca se envio.
+    let sent: PendingSaleConfirmation | null = null;
     try {
       const result = await confirmationService.execute({
         confirmationId: attemptId,
-        branchId: currentBranch.id,
-        cashShiftId: cashShift.id,
-        ticket,
-        checkout: checkoutState.value,
+        ...request,
         orderIdempotencyKey,
+        beforeSend: () => {
+          // La solicitud se guarda ANTES de enviarla: si la pagina se cierra o recarga con el POST
+          // en vuelo, la recuperacion existe. Si no se puede guardar, la venta no se envia.
+          const base: PendingSaleConfirmation = pending ?? {
+            version: 1,
+            contextKey: scopeKey,
+            confirmationId: attemptId,
+            orderIdempotencyKey,
+            input: request,
+            createdAt: new Date().toISOString(),
+            attempts: 0,
+          };
+          const record = { ...base, attempts: base.attempts + 1 };
+          if (!pendingStore.save(record)) {
+            throw new Error(
+              "No se pudo guardar la venta para poder recuperarla si se pierde la respuesta, así que no se envió. Habilita el almacenamiento del navegador e inténtalo de nuevo.",
+            );
+          }
+          sent = record;
+          applyPendingConfirmation(record);
+        },
       });
+
+      // La venta quedo registrada: la verificacion pendiente se resuelve aunque el contexto cambiara.
+      pendingStore.clear(scopeKey);
+      if (pendingConfirmationRef.current?.contextKey === scopeKey) applyPendingConfirmation(null);
+      if (currentConfirmationContextRef.current !== confirmationContextKey) return;
 
       setConfirmationResult(result);
       setConfirmationAttempt(null);
       setTicketState({ items: [], error: null });
       setCheckoutState(createCheckoutState(0));
     } catch (confirmationFailure) {
+      const dispatched = sent as PendingSaleConfirmation | null;
+      const sameContext = currentConfirmationContextRef.current === confirmationContextKey;
+      if (dispatched && canDiscardAfterRejection(confirmationFailure, dispatched.attempts)) {
+        // Primer envio rechazado por el servidor: no hay venta y se puede volver a editar.
+        pendingStore.clear(scopeKey);
+        if (pendingConfirmationRef.current?.contextKey === scopeKey) applyPendingConfirmation(null);
+        if (!sameContext) return;
+        setConfirmationAttempt(null);
+      } else if (dispatched) {
+        // Ya se envio y no hay prueba de que no se registrara: se conserva hasta verificarla.
+        if (!sameContext) return;
+        setConfirmationError(
+          isUncertainSaleFailure(confirmationFailure)
+            ? UNCERTAIN_SALE_MESSAGE
+            : `${cleanPosError(confirmationFailure, "El servidor no aceptó la verificación.", "idempotent")} La venta sigue pendiente: verifícala de nuevo o revisa el Historial de ventas antes de descartarla.`,
+        );
+        return;
+      }
+      if (!sameContext) return;
       setConfirmationError(
-        confirmationFailure instanceof Error
-          ? confirmationFailure.message
-          : "No se pudo confirmar la venta. Puedes reintentar sin perder el ticket.",
+        cleanPosError(
+          confirmationFailure,
+          "No se pudo confirmar la venta. Puedes reintentar sin perder el ticket.",
+          "idempotent",
+        ),
       );
     } finally {
       confirmationLoadingRef.current = false;
       setConfirmationLoading(false);
     }
   }, [
+    applyPendingConfirmation,
     cashShift,
     checkoutReadyToConfirm,
     checkoutState.value,
@@ -872,11 +1125,33 @@ export function usePosTerminal() {
     confirmationAttempt?.orderIdempotencyKey,
     confirmationService,
     currentBranch,
+    pendingStore,
+    sessionId,
     ticket,
     user,
   ]);
 
+  /** Descarta la verificacion: solo tras revisar el historial, porque la venta pudo registrarse. */
+  const discardPendingConfirmation = useCallback(() => {
+    const pending = pendingConfirmationRef.current;
+    if (!pending) return;
+    pendingStore.clear(pending.contextKey);
+    applyPendingConfirmation(null);
+    setConfirmationAttempt(null);
+    setConfirmationError(null);
+  }, [applyPendingConfirmation, pendingStore]);
+
   return {
+    pendingConfirmation: pendingConfirmation
+      ? {
+          confirmationId: pendingConfirmation.confirmationId,
+          createdAt: pendingConfirmation.createdAt,
+          total: pendingConfirmation.input.ticket.total,
+          itemCount: pendingConfirmation.input.ticket.items.length,
+        }
+      : null,
+    retryPendingConfirmation: confirmSale,
+    discardPendingConfirmation,
     products,
     filteredProducts,
     search,
@@ -937,6 +1212,22 @@ export function usePosTerminal() {
   };
 }
 
+const PENDING_EDIT_MESSAGE =
+  "Hay una venta pendiente de verificar. Usa «Verificar resultado» o descártala antes de modificar el ticket o el cobro.";
+
+/** Mientras haya una venta incierta no se editan ticket ni cobro: solo se reenvia la solicitud original. */
+function isEditBlockedByPendingSale(
+  pendingRef: { current: PendingSaleConfirmation | null },
+  setTicketState: (update: (current: TicketState) => TicketState) => void,
+): boolean {
+  if (!pendingRef.current) return false;
+  setTicketState((current) => ({ ...current, error: PENDING_EDIT_MESSAGE }));
+  return true;
+}
+
+const UNCERTAIN_SALE_MESSAGE =
+  "No se pudo confirmar si la venta quedó registrada. No repitas el cobro: usa «Verificar resultado» para consultarlo con la misma solicitud.";
+
 function filterPosProducts(products: PosProductDto[], search: string) {
   const query = search.trim().toLocaleLowerCase("es");
   if (!query) return products;
@@ -971,6 +1262,7 @@ function createTicketItem(product: PosProductDto, quantity: number): SaleTicketI
     saleUnitName: product.saleUnitName,
     tracksStock: product.tracksStock,
     requiresUnsupportedTraceability: product.requiresUnsupportedTraceability,
+    isKit: product.productType === "kit",
   };
 }
 
@@ -1172,3 +1464,15 @@ function createCardTerminalReference(sequence: number) {
 }
 
 const CARD_TERMINAL_PROCESSING_DELAY_MS = 650;
+
+/**
+ * Las cuentas bancarias se leen con un permiso administrativo (`admin.bank_accounts.manage`).
+ * Un cajero sin ese permiso recibe 403: el cobro por transferencia queda fuera de su alcance en
+ * esta entrega y se le indica con claridad, sin relajar el control del backend.
+ */
+function toBankAccountsErrorMessage(error: unknown) {
+  if (error instanceof BackendRequestError && error.status === 403) {
+    return "Tu rol no tiene acceso a las cuentas bancarias: el cobro por transferencia no está disponible. Usa efectivo o tarjeta.";
+  }
+  return "No se pudieron cargar las cuentas bancarias disponibles.";
+}

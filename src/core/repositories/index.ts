@@ -40,6 +40,7 @@ export type * from "./SaleConfirmationRepository";
 export type * from "./SaleReversalRepository";
 export type * from "./CashShiftRepository";
 export type * from "./CashMovementRepository";
+export type * from "./PosApiRepository";
 export type * from "./PickingRepository";
 export type * from "./PickingReadRepository";
 export type * from "./PickingCommandRepository";

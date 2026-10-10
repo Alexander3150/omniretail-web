@@ -3,11 +3,23 @@ import type { PosSaleHistoryItemDto } from "@/modules/pos/application/dto/PosSal
 import { StatusBadge } from "@/shared/components/StatusBadge";
 import { formatCurrency } from "@/shared/utils/formatCurrency";
 
-export function PosSaleHistoryDetails({ sale }: { sale: PosSaleHistoryItemDto | null }) {
+interface PosSaleHistoryDetailsProps {
+  sale: PosSaleHistoryItemDto | null;
+  loading?: boolean;
+  error?: string | null;
+}
+
+export function PosSaleHistoryDetails({
+  sale,
+  loading = false,
+  error = null,
+}: Readonly<PosSaleHistoryDetailsProps>) {
   if (!sale) {
     return (
       <aside className="flex min-h-64 items-center justify-center rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-app-background)] p-6 text-center text-sm text-[var(--color-text-muted)]">
-        Selecciona una venta para consultar su detalle.
+        {loading
+          ? "Cargando detalle de la venta..."
+          : (error ?? "Selecciona una venta para consultar su detalle.")}
       </aside>
     );
   }

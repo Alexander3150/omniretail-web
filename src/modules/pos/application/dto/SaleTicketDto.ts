@@ -12,6 +12,8 @@ export interface SaleTicketItemDto {
   saleUnitName: string;
   tracksStock: boolean;
   requiresUnsupportedTraceability: boolean;
+  /** Producto tipo kit: el backend no admite su fulfillment diferido (retiro o domicilio). */
+  isKit?: boolean;
 }
 
 export interface SaleTicketDto {

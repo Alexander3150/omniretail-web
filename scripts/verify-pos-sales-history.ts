@@ -418,7 +418,7 @@ async function verifyPosSalesHistory() {
   assert.equal(immediate?.operationalStatusLabel, "—");
   assert.equal(immediate?.paymentSummary, "Efectivo + Tarjeta");
   assert.deepEqual(
-    immediate?.payments.map((payment) => payment.method),
+    immediate?.payments?.map((payment) => payment.method),
     [PaymentMethod.cash, PaymentMethod.card],
   );
   const pickup = branchOne.sales.find((item) => item.saleId === "history-pickup");

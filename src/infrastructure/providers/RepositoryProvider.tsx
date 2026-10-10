@@ -36,6 +36,7 @@ import type {
   PickingReadRepository,
   PickingCommandRepository,
   PlanRepository,
+  PosApiRepository,
   ProductMediaRepository,
   ProductKitComponentRepository,
   ProductPriceHistoryRepository,
@@ -70,6 +71,7 @@ import { withApiReceiving } from "@/infrastructure/api/withApiReceiving";
 import { withApiLogisticsPickingRead } from "@/infrastructure/api/withApiLogisticsPickingRead";
 import { withApiLogisticsPacking } from "@/infrastructure/api/withApiLogisticsPacking";
 import { withApiLogisticsDispatch } from "@/infrastructure/api/withApiLogisticsDispatch";
+import { withApiPos } from "@/infrastructure/api/withApiPos";
 import { withApiLogisticsHistory } from "@/infrastructure/api/withApiLogisticsHistory";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
 import {
@@ -141,6 +143,8 @@ export interface RepositoryRegistry {
   pickingCommandsEnabled?: boolean;
   packingDataSource: "mock" | "api";
   dispatchReadDataSource: "mock" | "api";
+  posDataSource: "mock" | "api";
+  posApi?: PosApiRepository;
   logisticsHistoryDataSource: "mock" | "api";
   tenants: TenantRepository;
   tenantOnboarding: TenantOnboardingRepository;
@@ -225,6 +229,7 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
       pickingCommandsEnabled: true,
       packingDataSource: "mock",
       dispatchReadDataSource: "mock",
+      posDataSource: "mock",
       logisticsHistoryDataSource: "mock",
       tenants: new MockTenantRepository(store, eventBus),
       tenantOnboarding: new MockTenantOnboardingRepository(store, eventBus),
@@ -280,32 +285,35 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     // los flujos Product API no lo consultan ni escriben UUID reales en relaciones mock.
     // Modo mock (default): exactamente los mismos repositorios de siempre.
     const repositories = isApiMode()
-      ? withApiLogisticsDispatch(
-          withApiLogisticsPacking(
-            withApiLogisticsPickingRead(
-              withApiReceiving(
-                withApiPurchaseOrders(
-                  withApiInventoryStock(
-                    withApiInventoryMovements(
-                      withApiProductRelations(
-                        withApiProducts(
-                          withApiCatalogMasterData(
-                            withApiLogisticsHistory(withApiSession(mockRepositories, eventBus)),
+      ? withApiPos(
+          withApiLogisticsDispatch(
+            withApiLogisticsPacking(
+              withApiLogisticsPickingRead(
+                withApiReceiving(
+                  withApiPurchaseOrders(
+                    withApiInventoryStock(
+                      withApiInventoryMovements(
+                        withApiProductRelations(
+                          withApiProducts(
+                            withApiCatalogMasterData(
+                              withApiLogisticsHistory(withApiSession(mockRepositories, eventBus)),
+                              eventBus,
+                            ),
                             eventBus,
                           ),
                           eventBus,
                         ),
-                        eventBus,
                       ),
+                      eventBus,
                     ),
                     eventBus,
                   ),
                   eventBus,
                 ),
-                eventBus,
               ),
             ),
           ),
+          eventBus,
         )
       : mockRepositories;
     // Datos de referencia cacheados: se descartan en cuanto cambia su fuente (el TTL cubre el resto).

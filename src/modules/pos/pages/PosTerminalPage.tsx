@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CheckoutModal } from "@/modules/pos/components/CheckoutModal";
+import { PendingSaleBanner } from "@/modules/pos/components/PendingSaleBanner";
 import { PosSalesHistoryModal } from "@/modules/pos/components/PosSalesHistoryModal";
 import { ProductSearch } from "@/modules/pos/components/ProductSearch";
 import { QuickProductList } from "@/modules/pos/components/QuickProductList";
@@ -27,6 +28,18 @@ export function PosTerminalPage() {
         description="Registra ventas desde la sucursal activa."
         title="Terminal de Cobro"
       />
+
+      {terminal.pendingConfirmation ? (
+        <PendingSaleBanner
+          createdAt={terminal.pendingConfirmation.createdAt}
+          error={terminal.confirmationError}
+          itemCount={terminal.pendingConfirmation.itemCount}
+          loading={terminal.confirmationLoading}
+          onDiscard={terminal.discardPendingConfirmation}
+          onRetry={terminal.retryPendingConfirmation}
+          total={terminal.pendingConfirmation.total}
+        />
+      ) : null}
 
       {terminal.confirmationResult ? (
         <div
@@ -111,6 +124,7 @@ export function PosTerminalPage() {
         hasOpenCashShift={terminal.hasOpenCashShift}
         hasOperationalBlock={terminal.checkoutHasOperationalBlock}
         hasPosSalesPermission={terminal.hasPosSalesPermission}
+        hasKitItems={terminal.ticketItems.some((item) => item.isKit)}
         hasUnsupportedTraceability={terminal.hasUnsupportedTraceability}
         message={terminal.checkoutMessage}
         open={terminal.checkoutOpen}

@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CashShift } from "@/core/entities";
 import { SaasCapabilityKey, type CashMovementType } from "@/core/enums";
 import type { DataEventPayload } from "@/core/types/events.types";
 import { useRepositories } from "@/infrastructure/providers/RepositoryProvider";
@@ -9,12 +8,18 @@ import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { useEntitlement } from "@/shared/hooks/useEntitlement";
 import type { CashMovementDto } from "@/modules/pos/application/dto/CashMovementDto";
 import type { CashShiftSummaryDto } from "@/modules/pos/application/dto/CashShiftSummaryDto";
+import type { PosCashShiftDto } from "@/modules/pos/application/dto/PosCashShiftDto";
 import { CloseCashShiftService } from "@/modules/pos/application/services/CloseCashShiftService";
 import { GetCashShiftMovementsService } from "@/modules/pos/application/services/GetCashShiftMovementsService";
 import { GetCashShiftSummaryService } from "@/modules/pos/application/services/GetCashShiftSummaryService";
 import { GetOpenCashShiftService } from "@/modules/pos/application/services/GetOpenCashShiftService";
 import { OpenCashShiftService } from "@/modules/pos/application/services/OpenCashShiftService";
 import { RegisterCashMovementService } from "@/modules/pos/application/services/RegisterCashMovementService";
+import {
+  PendingSaleConfirmationStore,
+  pendingSaleScopeKey,
+} from "@/modules/pos/application/services/pendingSaleConfirmation";
+import { cleanPosError } from "@/modules/pos/application/services/posServiceContext";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 
@@ -52,10 +57,10 @@ export function usePosCashShift() {
     }),
     [repositories],
   );
-  const [cashShift, setCashShift] = useState<CashShift | null>(null);
+  const [cashShift, setCashShift] = useState<PosCashShiftDto | null>(null);
   const [summary, setSummary] = useState<CashShiftSummaryDto | null>(null);
   const [movements, setMovements] = useState<CashMovementDto[]>([]);
-  const [lastClosedShift, setLastClosedShift] = useState<CashShift | null>(null);
+  const [lastClosedShift, setLastClosedShift] = useState<PosCashShiftDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [mutationLoading, setMutationLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,12 +86,16 @@ export function usePosCashShift() {
     };
   }, [currentBranch, hasBranchAccess, user]);
 
-  const reload = useCallback(async () => {
+  /**
+   * `preserveError`: tras una mutación fallida se re-sincroniza con el backend sin borrar el
+   * motivo del fallo, que el usuario necesita para decidir si repite la operación.
+   */
+  const reload = useCallback(async (options: { preserveError?: boolean } = {}) => {
     const requestId = reloadSequenceRef.current + 1;
     reloadSequenceRef.current = requestId;
     if (branchLoading || sessionLoading) return;
     setLoading(true);
-    setError(null);
+    if (!options.preserveError) setError(null);
 
     try {
       const context = getContext();
@@ -111,7 +120,7 @@ export function usePosCashShift() {
       setCashShift(null);
       setSummary(null);
       setMovements([]);
-      setError(toMessage(loadError, sessionError ?? "No se pudo cargar el estado de caja."));
+      setError(cleanPosError(loadError, sessionError ?? "No se pudo cargar el estado de caja."));
     } finally {
       if (requestId === reloadSequenceRef.current) setLoading(false);
     }
@@ -147,7 +156,9 @@ export function usePosCashShift() {
     try {
       return await operation();
     } catch (mutationError) {
-      setError(toMessage(mutationError, "No se pudo completar la operación de caja."));
+      setError(
+        cleanPosError(mutationError, "No se pudo completar la operación de caja.", "non_idempotent"),
+      );
       return null;
     } finally {
       mutationLockRef.current = false;
@@ -158,7 +169,10 @@ export function usePosCashShift() {
   const openCashShift = useCallback(
     async (input: OpenCashShiftFormInput) => {
       const opened = await runMutation(() => services.open.execute({ ...getContext(), ...input }));
-      if (!opened) return false;
+      if (!opened) {
+        await reload({ preserveError: true });
+        return false;
+      }
       setLastClosedShift(null);
       setSuccessMessage(`Caja ${opened.registerCode} abierta correctamente.`);
       await reload();
@@ -177,7 +191,10 @@ export function usePosCashShift() {
           ...input,
         }),
       );
-      if (!movement) return false;
+      if (!movement) {
+        await reload({ preserveError: true });
+        return false;
+      }
       setSuccessMessage("Movimiento de caja registrado correctamente.");
       await reload();
       return true;
@@ -188,6 +205,19 @@ export function usePosCashShift() {
   const closeCashShift = useCallback(
     async (countedAmount: number) => {
       if (!cashShift) return false;
+      // Cerrar el turno ocultaria una venta cuya respuesta se perdio: debe resolverse primero.
+      if (
+        user &&
+        currentBranch &&
+        new PendingSaleConfirmationStore().load(
+          pendingSaleScopeKey(user.id, currentBranch.tenantId, currentBranch.id),
+        )
+      ) {
+        setError(
+          "Hay una venta pendiente de verificar en la terminal. Verifícala o descártala antes de cerrar el turno de caja.",
+        );
+        return false;
+      }
       const closed = await runMutation(() =>
         services.close.execute({
           ...getContext(),
@@ -195,13 +225,16 @@ export function usePosCashShift() {
           countedAmount,
         }),
       );
-      if (!closed) return false;
+      if (!closed) {
+        await reload({ preserveError: true });
+        return false;
+      }
       setLastClosedShift(closed);
       setSuccessMessage("El turno de caja se cerró correctamente.");
       await reload();
       return true;
     },
-    [cashShift, getContext, reload, runMutation, services.close],
+    [cashShift, currentBranch, getContext, reload, runMutation, services.close, user],
   );
 
   const clearFeedback = useCallback(() => {
@@ -235,8 +268,4 @@ export function usePosCashShift() {
     closeCashShift,
     clearFeedback,
   };
-}
-
-function toMessage(error: unknown, fallback: string) {
-  return error instanceof Error && error.message ? error.message : fallback;
 }

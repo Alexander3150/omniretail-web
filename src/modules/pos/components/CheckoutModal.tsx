@@ -13,6 +13,7 @@ import { Button } from "@/shared/components/Button";
 import { FormField } from "@/shared/components/FormField";
 import { Input } from "@/shared/components/Input";
 import { InlineAlert } from "@/shared/components/InlineAlert";
+import { KIT_DEFERRED_MESSAGE, isKitDeferredSale } from "@/modules/pos/validation/kitDelivery";
 import { Modal } from "@/shared/components/Modal";
 import { Select } from "@/shared/components/Select";
 import { StatusBadge } from "@/shared/components/StatusBadge";
@@ -47,6 +48,8 @@ interface CheckoutModalProps {
   hasPosSalesPermission: boolean;
   hasCurrentBranchAccess: boolean;
   hasUnsupportedTraceability: boolean;
+  /** El ticket incluye kits: solo admiten entrega inmediata. */
+  hasKitItems?: boolean;
   validated: boolean;
   readyToConfirm: boolean;
   hasOperationalBlock: boolean;
@@ -89,6 +92,7 @@ export function CheckoutModal({
   hasPosSalesPermission,
   hasCurrentBranchAccess,
   hasUnsupportedTraceability,
+  hasKitItems = false,
   validated,
   readyToConfirm,
   hasOperationalBlock,
@@ -107,6 +111,7 @@ export function CheckoutModal({
   onValidate,
   onConfirm,
 }: CheckoutModalProps) {
+  const kitDeferredBlocked = isKitDeferredSale(checkout.deliveryMethod, hasKitItems);
   const showCash =
     availablePaymentModes.includes("cash") &&
     (checkout.paymentMode === "cash" || checkout.paymentMode === "mixed");
@@ -142,7 +147,7 @@ export function CheckoutModal({
             </Button>
             <Button
               className="w-full sm:min-w-36"
-              disabled={!readyToConfirm || confirmationLoading}
+              disabled={!readyToConfirm || confirmationLoading || kitDeferredBlocked}
               onClick={onConfirm}
               type="button"
             >
@@ -269,10 +274,15 @@ export function CheckoutModal({
               value={checkout.deliveryMethod}
             >
               <option value={DeliveryMethod.immediate}>Entrega inmediata</option>
-              <option value={DeliveryMethod.store_pickup}>Retiro en tienda</option>
-              <option value={DeliveryMethod.home_delivery}>Entrega a domicilio</option>
+              <option disabled={hasKitItems} value={DeliveryMethod.store_pickup}>
+                Retiro en tienda
+              </option>
+              <option disabled={hasKitItems} value={DeliveryMethod.home_delivery}>
+                Entrega a domicilio
+              </option>
             </Select>
           </FormField>
+          {hasKitItems ? <InlineAlert tone="warning" title={KIT_DEFERRED_MESSAGE} /> : null}
           <InlineAlert tone="info" title={getDeliveryMethodMessage(checkout.deliveryMethod)} />
             {checkout.deliveryMethod === DeliveryMethod.home_delivery ? (
               <div className="grid gap-3 md:grid-cols-2">
@@ -739,7 +749,7 @@ function SelectedBankAccountDetail({ account }: { account?: CheckoutBankAccountD
       <DetailRow label="Banco" value={account.bankName} />
       <DetailRow label="Tipo de cuenta" value={accountTypeLabels[account.accountType]} />
       <DetailRow label="Titular" value={account.holderName} />
-      <DetailRow label="Cuenta" value={account.accountNumber} mono />
+      <DetailRow label="Cuenta" value={account.accountNumberMasked} mono />
     </div>
   );
 }
