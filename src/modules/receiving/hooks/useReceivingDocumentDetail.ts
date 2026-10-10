@@ -14,7 +14,10 @@ import type {
   ReceivingTrackingDetail,
 } from "@/modules/receiving/application/dto/ReceivingDocumentDetailDto";
 import { PurchaseOrderPdfService } from "@/modules/purchasing/application/services/PurchaseOrderPdfService";
-import { ReceivingDocumentDetailService } from "@/modules/receiving/application/services/ReceivingDocumentDetailService";
+import {
+  hasStaleLocationToPersist,
+  ReceivingDocumentDetailService,
+} from "@/modules/receiving/application/services/ReceivingDocumentDetailService";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
 import { toFiniteNumber, type NumericInputValue } from "@/shared/utils/numberInput";
@@ -69,7 +72,14 @@ export function useReceivingDocumentDetail(
       setDetail(nextDetail);
       setLines(nextDetail.lines);
       setIncidents(nextDetail.incidents);
-      updateDirty(false);
+      // Un borrador API con ubicacion obsoleta ya no coincide con lo mostrado: queda pendiente de
+      // guardar (el servicio lo persiste antes de confirmar). Si esta bloqueado por incidencias
+      // no puede guardarse, asi que no se marca y la confirmacion informa el motivo.
+      updateDirty(
+        repositories.receivingDataSource === "api" &&
+          !nextDetail.draftEditingLocked &&
+          hasStaleLocationToPersist(nextDetail, nextDetail.lines),
+      );
     } catch (caughtError) {
       if (requestId !== requestIdRef.current) return;
       setError(caughtError instanceof Error ? caughtError.message : "No se pudo cargar.");
@@ -78,7 +88,7 @@ export function useReceivingDocumentDetail(
         setLoading(false);
       }
     }
-  }, [activeBranchId, documentId, documentType, service, updateDirty]);
+  }, [activeBranchId, documentId, documentType, repositories, service, updateDirty]);
 
   useEffect(() => {
     let active = true;
@@ -91,7 +101,8 @@ export function useReceivingDocumentDetail(
   }, [reload]);
 
   const reloadFromEvent = useCallback(async () => {
-    if (dirtyRef.current || mutationPendingRef.current || incidentMutationPendingRef.current) return;
+    if (dirtyRef.current || mutationPendingRef.current || incidentMutationPendingRef.current)
+      return;
     await reload();
   }, [reload]);
 
@@ -104,15 +115,20 @@ export function useReceivingDocumentDetail(
   useDataEvent("supplier-product.changed", reloadFromEvent);
   useDataEvent("business-config.changed", reloadFromEvent);
 
-  const updateLine = useCallback((lineId: string, patch: Partial<ReceivingDocumentLine>) => {
-    updateDirty(true);
-    setLines((current) =>
-      current.map((line) =>
-        // Una linea con incidencia (abierta o resuelta) queda inmutable: el backend la conserva.
-        line.id === lineId && !line.incidentProtected ? recalculateLine({ ...line, ...patch }) : line,
-      ),
-    );
-  }, [updateDirty]);
+  const updateLine = useCallback(
+    (lineId: string, patch: Partial<ReceivingDocumentLine>) => {
+      updateDirty(true);
+      setLines((current) =>
+        current.map((line) =>
+          // Una linea con incidencia (abierta o resuelta) queda inmutable: el backend la conserva.
+          line.id === lineId && !line.incidentProtected
+            ? recalculateLine({ ...line, ...patch })
+            : line,
+        ),
+      );
+    },
+    [updateDirty],
+  );
 
   const apiMode = repositories.receivingDataSource === "api";
 
@@ -146,6 +162,8 @@ export function useReceivingDocumentDetail(
       });
       if (activeBranchIdRef.current !== mutationBranchId) return;
       await reload();
+    } catch (caughtError) {
+      throw toFriendlyReceivingError(caughtError);
     } finally {
       mutationPendingRef.current = false;
       setSaving(false);
@@ -170,14 +188,9 @@ export function useReceivingDocumentDetail(
       await reload();
       setConfirmationId(crypto.randomUUID());
     } catch (caughtError) {
-      if (
-        caughtError instanceof BackendRequestError &&
-        caughtError.code === "RECEIPT_HAS_OPEN_INCIDENTS" &&
-        activeBranchIdRef.current === mutationBranchId
-      ) {
-        await reload();
-      }
-      throw caughtError;
+      // Confirmar puede guardar el borrador antes del POST final. Ante un 409 se conserva el
+      // formulario local: una recarga aqui descartaria ediciones que el usuario debe corregir.
+      throw toFriendlyReceivingError(caughtError);
     } finally {
       mutationPendingRef.current = false;
       setSaving(false);
@@ -253,7 +266,10 @@ export function useReceivingDocumentDetail(
 
   const createApiIncident = useCallback(
     async (
-      input: Omit<CreateReceivingIncidentInput, "documentId" | "receiptId" | "goodsReceiptItemId"> & {
+      input: Omit<
+        CreateReceivingIncidentInput,
+        "documentId" | "receiptId" | "goodsReceiptItemId"
+      > & {
         /** PurchaseOrderItem estable; el GoodsReceiptItem real se resuelve tras persistir. */
         sourceLineId: string;
       },
@@ -266,8 +282,9 @@ export function useReceivingDocumentDetail(
       try {
         let receiptId = detail.document.receiptId;
         const { sourceLineId, ...incidentInput } = input;
-        let goodsReceiptItemId = lines.find((line) => line.sourceLineId === sourceLineId)
-          ?.goodsReceiptItemId;
+        let goodsReceiptItemId = lines.find(
+          (line) => line.sourceLineId === sourceLineId,
+        )?.goodsReceiptItemId;
         let didSave = false;
         if (dirtyRef.current || !receiptId) {
           // Se usa el receipt devuelto por el guardado, nunca el estado de React (puede estar viejo).
@@ -337,12 +354,7 @@ export function useReceivingDocumentDetail(
           // Resolver relee el receipt: se persisten antes los cambios locales para no perderlos.
           await service.saveProgress({ documentType, documentId, lines, incidents });
         }
-        await service.resolveIncident(
-          documentId,
-          draftReceiptId,
-          incidentId,
-          trackingDetails,
-        );
+        await service.resolveIncident(documentId, draftReceiptId, incidentId, trackingDetails);
         // Cantidades, incidencias y estado se releen del backend (fuente de verdad).
         if (activeBranchIdRef.current !== mutationBranchId) return;
         await reload();
@@ -372,8 +384,7 @@ export function useReceivingDocumentDetail(
     confirmAvailable: !apiMode || Boolean(apiPurchaseOrder && detail?.canConfirm),
     // En API el draft puede no existir aun: la pagina lo persiste (Guardar avance) antes de abrir
     // el formulario, nunca se crea una segunda recepcion porque saveApiDraft reutiliza el draft.
-    incidentsAvailable:
-      !apiMode || Boolean(apiPurchaseOrder && detail?.canManageIncidents),
+    incidentsAvailable: !apiMode || Boolean(apiPurchaseOrder && detail?.canManageIncidents),
     reload,
     updateLine,
     updateLineQuantity,
@@ -389,13 +400,47 @@ export function useReceivingDocumentDetail(
 
 /** Traduce errores de backend conocidos a mensajes entendibles; conserva el resto. */
 export function toFriendlyIncidentError(error: unknown): Error {
+  return toFriendlyReceivingError(error);
+}
+
+/**
+ * Codigos 409 REALES del backend (InventoryOperationalLocationService). GOODS_RECEIPT_LOCATION_INVALID
+ * no esta aqui a proposito: su mensaje identifica SKU y linea y debe llegar completo al usuario.
+ */
+const RECEIVING_LOCATION_ERROR_MESSAGES: Record<string, string> = {
+  INVENTORY_ASSIGNED_LOCATION_INACTIVE:
+    "La ubicación operativa asignada al producto está inactiva. Asigna una ubicación activa e inténtalo de nuevo.",
+  INVENTORY_ASSIGNED_LOCATION_INVALID:
+    "La ubicación operativa asignada al producto no existe o no pertenece a la sucursal.",
+  INVENTORY_LOCATION_NOT_ASSIGNED:
+    "El producto no tiene una ubicación operativa asignada en esta sucursal.",
+  INVENTORY_LOCATION_MISMATCH:
+    "La ubicación indicada no es la ubicación operativa asignada al producto.",
+  INVENTORY_LOCATION_CONFLICT:
+    "El producto conserva existencias en otra ubicación de la sucursal. Regulariza el inventario antes de recibir.",
+  INVENTORY_LOCATION_CHANGE_BLOCKED:
+    "La ubicación asignada no puede cambiar mientras el producto tenga existencias o reservas en otra ubicación.",
+  INVENTORY_LOCATION_REQUIRED:
+    "La entrada debe indicar la ubicación donde se registra el producto.",
+};
+
+export function toFriendlyReceivingError(error: unknown): Error {
   if (error instanceof BackendRequestError) {
     if (error.code === "DUPLICATE_SERIAL") {
       return new Error("Uno o más números de serie ya están registrados. Revisa los seriales.");
     }
-    if (error.status === 409) {
-      return new Error("La información cambió. Actualiza la recepción e intenta nuevamente.");
+    if (error.code === "RECEIPT_HAS_OPEN_INCIDENTS") {
+      return new Error(
+        "La recepción tiene incidencias abiertas que deben resolverse antes de confirmar.",
+      );
     }
+    if (error.code === "INSUFFICIENT_STOCK") {
+      return new Error("El stock relacionado cambió y la recepción no pudo confirmarse.");
+    }
+    // GOODS_RECEIPT_LOCATION_INVALID trae el SKU y la linea de cada rechazo: se conserva tal cual.
+    const locationMessage = error.code ? RECEIVING_LOCATION_ERROR_MESSAGES[error.code] : undefined;
+    if (error.status === 409 && locationMessage) return new Error(locationMessage);
+    return new Error(error.message);
   }
   return error instanceof Error ? error : new Error("No se pudo completar la operación.");
 }

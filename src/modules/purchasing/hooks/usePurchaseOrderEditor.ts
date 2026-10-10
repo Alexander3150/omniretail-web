@@ -17,6 +17,7 @@ import {
   getPricingDetails,
   getTierCost,
   PurchaseOrderEditorService,
+  PurchaseOrderLoadSupersededError,
   PurchaseOrderSubmissionError,
 } from "@/modules/purchasing/application/services/PurchaseOrderEditorService";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
@@ -47,6 +48,7 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
   const [prefillWarning, setPrefillWarning] = useState<string | null>(null);
   const [prefillApplied, setPrefillApplied] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const productsRequestIdRef = useRef(0);
@@ -59,6 +61,7 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
       if (!currentBranch?.tenantId) return null;
       const requestId = productsRequestIdRef.current + 1;
       productsRequestIdRef.current = requestId;
+      setCatalogLoading(false);
       const load = await service.startAvailableProductsLoad(supplierId, currentBranch?.id);
       if (productsRequestIdRef.current !== requestId) return null;
       setAvailableProducts(load.products);
@@ -80,6 +83,66 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
     [currentBranch?.id, currentBranch?.tenantId, service],
   );
 
+  /**
+   * Carga con prefill: devuelve el producto solicitado en cuanto esta listo y completa el catalogo
+   * del proveedor y las existencias en segundo plano. Cada etapa se descarta si el proveedor, la
+   * sucursal o la sesion cambiaron (productsRequestIdRef).
+   */
+  const loadPrioritizedProducts = useCallback(
+    async (supplierId: string, priorityProductId: string) => {
+      if (!currentBranch?.tenantId) return null;
+      const requestId = productsRequestIdRef.current + 1;
+      productsRequestIdRef.current = requestId;
+      const isCurrent = () => productsRequestIdRef.current === requestId;
+      let load;
+      try {
+        load = await service.startPrioritizedAvailableProductsLoad({
+          supplierId,
+          branchId: currentBranch.id,
+          priorityProductId,
+          isCurrent,
+        });
+      } catch (caughtError) {
+        if (caughtError instanceof PurchaseOrderLoadSupersededError) return null;
+        throw caughtError;
+      }
+      if (!isCurrent()) return null;
+      setAvailableProducts(load.priority ? [load.priority] : []);
+      setCatalogLoading(true);
+      const handleDeferredError = (caughtError: unknown) => {
+        if (!isCurrent() || caughtError instanceof PurchaseOrderLoadSupersededError) return;
+        setCatalogLoading(false);
+        setError(
+          caughtError instanceof Error
+            ? caughtError.message
+            : "No se pudieron cargar los productos del proveedor.",
+        );
+      };
+      void load.catalog
+        .then((products) => {
+          if (!isCurrent()) return;
+          setAvailableProducts(products);
+          setCatalogLoading(false);
+        })
+        .catch(handleDeferredError);
+      void load.inventory
+        .then((products) => {
+          if (!isCurrent()) return;
+          setAvailableProducts(products);
+          setModel((current) => ({
+            ...current,
+            lines: current.lines.map((line) => {
+              const product = products.find((item) => item.productId === line.productId);
+              return product ? mergeLineInventory(line, product) : line;
+            }),
+          }));
+        })
+        .catch(handleDeferredError);
+      return load.priority;
+    },
+    [currentBranch?.id, currentBranch?.tenantId, service],
+  );
+
   useEffect(() => {
     let active = true;
     productsRequestIdRef.current += 1;
@@ -91,6 +154,7 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
       }
       setLoading(true);
       setError(null);
+      setCatalogLoading(false);
       try {
         if (!orderId) {
           setModel({ ...EMPTY_MODEL, baseDate: new Date().toISOString().slice(0, 10) });
@@ -129,11 +193,11 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
               : activeSuppliers,
           );
           if (resolution?.supplierId) {
-            const products = await loadAvailableProducts(resolution.supplierId);
+            const lineProduct =
+              (await loadPrioritizedProducts(resolution.supplierId, resolution.productId)) ??
+              undefined;
             if (!active) return;
-            const lineProduct = products?.find(
-              (product) => product.productId === resolution.productId,
-            );
+            const products = lineProduct ? [lineProduct] : [];
             setModel((current) => ({
               ...current,
               supplierId: resolution.supplierId ?? "",
@@ -148,7 +212,7 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
               ),
               lines: lineProduct ? [createEditorLine(lineProduct, resolution.quantity)] : [],
             }));
-            setAvailableProducts(products ?? []);
+            // availableProducts lo gestiona loadPrioritizedProducts (prioridad, catalogo, existencias).
           } else {
             setModel((current) => ({
               ...current,
@@ -177,7 +241,15 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
       active = false;
       productsRequestIdRef.current += 1;
     };
-  }, [currentBranch?.id, currentBranch?.tenantId, loadAvailableProducts, orderId, prefill, service]);
+  }, [
+    currentBranch?.id,
+    currentBranch?.tenantId,
+    loadAvailableProducts,
+    loadPrioritizedProducts,
+    orderId,
+    prefill,
+    service,
+  ]);
 
   useDataEvent("supplier.changed", (payload) => {
     if (
@@ -213,12 +285,7 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
     [model.supplierId, suppliers],
   );
   const expectedLeadTimeDays = useMemo(
-    () =>
-      getExpectedLeadTime(
-        model.lines,
-        availableProducts,
-        selectedSupplier?.leadTimeDays,
-      ),
+    () => getExpectedLeadTime(model.lines, availableProducts, selectedSupplier?.leadTimeDays),
     [availableProducts, model.lines, selectedSupplier?.leadTimeDays],
   );
 
@@ -422,6 +489,7 @@ export function usePurchaseOrderEditor(orderId?: string, prefill?: PurchaseOrder
     productSearch,
     branchName: currentBranch?.name ?? "Sin sucursal",
     loading: loading || branchLoading || sessionLoading,
+    catalogLoading,
     saving,
     error,
     total,
@@ -470,6 +538,8 @@ function createEditorLine(
     leadTimeDays: product.leadTimeDays,
     tiers: product.tiers,
     stockQuantity: product.stockQuantity,
+    reservedQuantity: product.reservedQuantity,
+    availableQuantity: product.availableQuantity,
     minStock: product.minStock,
     reorderPoint: product.reorderPoint,
     shortage: product.shortage,
@@ -478,13 +548,15 @@ function createEditorLine(
   };
 }
 
-function mergeLineInventory(
+export function mergeLineInventory(
   line: PurchaseOrderEditorLine,
   product: PurchaseOrderAvailableProduct,
 ): PurchaseOrderEditorLine {
   return {
     ...line,
     stockQuantity: product.stockQuantity,
+    reservedQuantity: product.reservedQuantity,
+    availableQuantity: product.availableQuantity,
     minStock: product.minStock,
     reorderPoint: product.reorderPoint,
     shortage: product.shortage,

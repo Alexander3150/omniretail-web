@@ -105,15 +105,8 @@ export class ApiLocationRepository {
     assertApiUuid(branchId, "branchId");
     const product = await this.products?.getById(productId);
     if (!product) return null;
-    const response = await backendFetch<unknown>(`/inventory/settings/${productId}`, {
-      query: { branchId },
-    });
-    if (response === undefined) return null;
-    const item = parseApi(
-      apiInventorySettingsSchema,
-      response,
-      "El backend devolvió configuración de inventario inválida.",
-    );
+    const item = await this.getApiProductInventorySettings(productId, branchId);
+    if (!item) return null;
     return {
       ...item,
       tenantId: product.tenantId,
@@ -129,7 +122,10 @@ export class ApiLocationRepository {
     assertApiUuid(input.productId, "productId");
     assertApiUuid(input.branchId, "branchId");
     assertOptionalApiUuid(input.defaultLocationId, "defaultLocationId");
-    const current = await this.getProductInventorySettings(input.productId, input.branchId);
+    const needsCurrent = input.reorderPoint === undefined || input.defaultLocationId === undefined;
+    const current = needsCurrent
+      ? await this.getApiProductInventorySettings(input.productId, input.branchId)
+      : null;
     const item = parseApi(
       apiInventorySettingsSchema,
       await backendFetch<unknown>(`/inventory/settings/${input.productId}`, {
@@ -138,10 +134,11 @@ export class ApiLocationRepository {
         body: {
           minStock: input.minStock,
           reorderPoint:
-            input.reorderPoint === undefined
-              ? (current?.reorderPoint ?? null)
-              : input.reorderPoint,
-          defaultLocationId: input.defaultLocationId ?? null,
+            input.reorderPoint === undefined ? (current?.reorderPoint ?? null) : input.reorderPoint,
+          defaultLocationId:
+            input.defaultLocationId === undefined
+              ? (current?.defaultLocationId ?? null)
+              : input.defaultLocationId,
         },
       }),
       "El backend devolvió configuración de inventario inválida.",
@@ -162,6 +159,18 @@ export class ApiLocationRepository {
       metadata: { entity: "ProductInventorySettings" },
     });
     return settings;
+  }
+
+  private async getApiProductInventorySettings(productId: string, branchId: string) {
+    const response = await backendFetch<unknown>(`/inventory/settings/${productId}`, {
+      query: { branchId },
+    });
+    if (response === undefined) return null;
+    return parseApi(
+      apiInventorySettingsSchema,
+      response,
+      "El backend devolvió configuración de inventario inválida.",
+    );
   }
 
   private async getById(id: string) {

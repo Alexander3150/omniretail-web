@@ -8,7 +8,8 @@ const apiUuidSchema = z.string().refine(isApiUuid, {
 });
 const nullableUuidSchema = apiUuidSchema.nullable().optional();
 const nullableTextSchema = z.string().nullable().optional();
-const numberSchema = z.coerce.number().finite();
+// Un snapshot incompleto debe fallar; null o texto no representan una cantidad cero.
+const numberSchema = z.number().finite();
 
 const serialSchema = z.object({
   serialId: apiUuidSchema,

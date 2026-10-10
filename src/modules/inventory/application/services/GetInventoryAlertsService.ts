@@ -130,30 +130,28 @@ export class GetInventoryAlertsService {
   private async getApiPage(params: GetInventoryAlertsParams): Promise<InventoryAlertsData> {
     const { tenantId, permissions } = await resolveInventoryContext(this.repositories);
     ensureCanReadStock(permissions);
-    const [result, categories, units, { supportsMultipleLocations, locations }] = await Promise.all([
-      this.repositories.inventory.getStockPage({
-        branchId: params.branchId,
-        search: params.search,
-        categoryId: params.categoryId,
-        // "low_stock" es solo de UI: viaja como lowStock=true y nunca junto a un status.
-        ...(params.status === "low_stock"
-          ? { lowStock: true }
-          : { status: params.status }),
-        productTypes: INVENTORY_PRODUCT_TYPES,
-        page: params.page,
-        pageSize: params.pageSize,
-        sort: params.sort,
-      }),
-      this.getCategories(tenantId),
-      this.getUnits(tenantId),
-      this.getLocationsIfSupported(tenantId, params.branchId),
-    ]);
+    const [result, categories, units, { supportsMultipleLocations, locations }] = await Promise.all(
+      [
+        this.repositories.inventory.getStockPage({
+          branchId: params.branchId,
+          search: params.search,
+          categoryId: params.categoryId,
+          // "low_stock" es solo de UI: viaja como lowStock=true y nunca junto a un status.
+          ...(params.status === "low_stock" ? { lowStock: true } : { status: params.status }),
+          productTypes: INVENTORY_PRODUCT_TYPES,
+          page: params.page,
+          pageSize: params.pageSize,
+          sort: params.sort,
+        }),
+        this.getCategories(tenantId),
+        this.getUnits(tenantId),
+        this.getLocationsIfSupported(tenantId, params.branchId),
+      ],
+    );
     const unitById = new Map(units.map((unit) => [unit.id, unit]));
     return {
       supportsMultipleLocations,
-      rows: result.items.map((item) =>
-        mapApiStockRow(item, tenantId, params.branchName, unitById),
-      ),
+      rows: result.items.map((item) => mapApiStockRow(item, tenantId, params.branchName, unitById)),
       alerts: [],
       alertTotalItems: 0,
       transferRequests: [],
@@ -345,7 +343,7 @@ export class GetInventoryAlertsService {
     ]);
 
     return {
-      supportsMultipleLocations: true,
+      supportsMultipleLocations: capabilities?.supportsMultipleLocations ?? false,
       rows,
       alerts,
       alertTotalItems: alerts.length,
@@ -572,11 +570,7 @@ function buildApiRow({
     sellableAvailableQuantity: fromApiBaseQuantity(item.availableQuantity, sale, item.baseUnitId),
     inventoryUnitId: inventory.unitId,
     inventoryUnitName: inventory.unitName,
-    inventoryPresentationQuantity: fromApiBaseQuantity(
-      item.quantity,
-      inventory,
-      item.baseUnitId,
-    ),
+    inventoryPresentationQuantity: fromApiBaseQuantity(item.quantity, inventory, item.baseUnitId),
     inventoryPresentationAvailableQuantity: fromApiBaseQuantity(
       item.availableQuantity,
       inventory,
@@ -600,6 +594,9 @@ function buildApiRow({
     defaultLocationId: item.defaultLocationId,
     defaultLocationName,
     locationQuantities: {},
+    locationAvailableQuantities: {},
+    unlocatedQuantity: item.quantity,
+    unlocatedAvailableQuantity: item.availableQuantity,
     // PLACEHOLDER, no fuente autoritativa: /inventory/stock no expone tracking. El tracking real
     // se resuelve on-demand desde el Product detail al abrir el ajuste (AdjustStockGate).
     tracking: { stock: true, lot: false, expiration: false, serial: false },
@@ -666,6 +663,9 @@ function buildNonStockApiRow(
     branchName: branchName || "Sucursal",
     defaultLocationName: isKit ? "Calculado por componentes" : "No aplica",
     locationQuantities: {},
+    locationAvailableQuantities: {},
+    unlocatedQuantity: 0,
+    unlocatedAvailableQuantity: 0,
     tracking: { stock: false, lot: false, expiration: false, serial: false },
     availableLots: [],
     availableSerials: [],
@@ -747,10 +747,17 @@ function buildTransferRequestRows(
     .sort((left, right) => left.requestedAt.localeCompare(right.requestedAt));
 }
 
-export function classifyInventoryStatus(quantity: number, minStock: number): InventoryStatus {
-  if (quantity === 0) return "out_of_stock";
-  if (minStock > 0 && quantity < minStock) return "critical";
-  if (minStock > 0 && quantity <= minStock * NEAR_MINIMUM_RATIO) return "near_minimum";
+export function classifyInventoryStatus(
+  availableQuantity: number,
+  minStock: number,
+  reorderPoint?: number | null,
+): InventoryStatus {
+  if (availableQuantity <= 0) return "out_of_stock";
+  if (minStock > 0 && availableQuantity < minStock) return "critical";
+  if (reorderPoint != null && availableQuantity <= reorderPoint) return "near_minimum";
+  if (reorderPoint == null && minStock > 0 && availableQuantity <= minStock * NEAR_MINIMUM_RATIO) {
+    return "near_minimum";
+  }
   return "normal";
 }
 
@@ -789,7 +796,9 @@ function buildRow(
   serials: Awaited<ReturnType<RepositoryRegistry["inventory"]["getSerialNumbers"]>>,
   availableQuantity: number,
   conversions: Awaited<ReturnType<RepositoryRegistry["units"]["getConversionsByProductScoped"]>>,
-  supplierProducts: Awaited<ReturnType<RepositoryRegistry["supplierProducts"]["getByProductForTenant"]>>,
+  supplierProducts: Awaited<
+    ReturnType<RepositoryRegistry["supplierProducts"]["getByProductForTenant"]>
+  >,
 ): InventoryProductRow {
   const branchBalances = balances.filter(
     (balance) => balance.productId === product.id && balance.branchId === branchId,
@@ -801,7 +810,7 @@ function buildRow(
   );
   const settings = maps.settingsByProduct.get(product.id);
   const minStock = settings?.minStock ?? 0;
-  const status = classifyInventoryStatus(availableQuantity, minStock);
+  const status = classifyInventoryStatus(availableQuantity, minStock, settings?.reorderPoint);
   const tracksExpiration = product.tracking.expiration;
   const nextExpirationDate = tracksExpiration
     ? getNextExpirationDate(maps.lotsByProduct.get(product.id) ?? [])
@@ -860,6 +869,9 @@ function buildRow(
     defaultLocationId: settings?.defaultLocationId,
     defaultLocationName: defaultLocation?.name ?? "Sin ubicacion habitual",
     locationQuantities: buildLocationQuantities(branchBalances),
+    locationAvailableQuantities: buildLocationAvailableQuantities(branchBalances),
+    unlocatedQuantity: buildUnlocatedQuantity(branchBalances),
+    unlocatedAvailableQuantity: buildUnlocatedAvailableQuantity(branchBalances),
     tracking: product.tracking,
     availableLots: (maps.lotsByProduct.get(product.id) ?? []).filter((lot) => lot.quantity > 0),
     availableSerials: serials
@@ -936,6 +948,9 @@ function buildKitRow(
     branchName: maps.branches.get(branchId)?.name ?? "Sucursal",
     defaultLocationName: "Calculado por componentes",
     locationQuantities: {},
+    locationAvailableQuantities: {},
+    unlocatedQuantity: 0,
+    unlocatedAvailableQuantity: 0,
     tracking: product.tracking,
     availableLots: [],
     availableSerials: [],
@@ -972,7 +987,9 @@ function resolveDisplayPresentation(
 function buildAdjustmentUnits(
   product: Product,
   conversions: Awaited<ReturnType<RepositoryRegistry["units"]["getConversionsByProductScoped"]>>,
-  supplierProducts: Awaited<ReturnType<RepositoryRegistry["supplierProducts"]["getByProductForTenant"]>>,
+  supplierProducts: Awaited<
+    ReturnType<RepositoryRegistry["supplierProducts"]["getByProductForTenant"]>
+  >,
   maps: InventoryLookupMaps,
 ) {
   const candidateUnitIds = new Set([
@@ -981,11 +998,13 @@ function buildAdjustmentUnits(
     product.inventoryUnitId ?? product.baseUnitId,
   ]);
   const supplierFactors = new Map<string, Set<number>>();
-  supplierProducts.filter((item) => item.active).forEach((item) => {
-    const factors = supplierFactors.get(item.purchaseUnitId) ?? new Set<number>();
-    factors.add(item.purchaseToBaseFactor);
-    supplierFactors.set(item.purchaseUnitId, factors);
-  });
+  supplierProducts
+    .filter((item) => item.active)
+    .forEach((item) => {
+      const factors = supplierFactors.get(item.purchaseUnitId) ?? new Set<number>();
+      factors.add(item.purchaseToBaseFactor);
+      supplierFactors.set(item.purchaseUnitId, factors);
+    });
   supplierFactors.forEach((factors, unitId) => {
     if (factors.size === 1) candidateUnitIds.add(unitId);
   });
@@ -1006,13 +1025,18 @@ function buildAdjustmentUnits(
     }
     const unit = maps.units.get(unitId);
     const unitName = unit?.name ?? unitId;
-    return [{
-      unitId,
-      unitName,
-      unitAllowsDecimals: unit?.allowsDecimals ?? false,
-      toBaseFactor: factor,
-      label: factor === 1 ? unitName : `${unitName} — ${factor} ${maps.units.get(product.baseUnitId)?.name ?? "base"}`,
-    }];
+    return [
+      {
+        unitId,
+        unitName,
+        unitAllowsDecimals: unit?.allowsDecimals ?? false,
+        toBaseFactor: factor,
+        label:
+          factor === 1
+            ? unitName
+            : `${unitName} — ${factor} ${maps.units.get(product.baseUnitId)?.name ?? "base"}`,
+      },
+    ];
   });
 }
 
@@ -1056,6 +1080,27 @@ function buildLocationQuantities(balances: InventoryBalance[]) {
     quantities[balance.locationId] = (quantities[balance.locationId] ?? 0) + balance.quantity;
     return quantities;
   }, {});
+}
+
+function buildLocationAvailableQuantities(balances: InventoryBalance[]) {
+  return balances.reduce<Record<string, number>>((quantities, balance) => {
+    if (!balance.locationId) return quantities;
+    quantities[balance.locationId] =
+      (quantities[balance.locationId] ?? 0) + balance.quantity - balance.reservedQuantity;
+    return quantities;
+  }, {});
+}
+
+function buildUnlocatedQuantity(balances: InventoryBalance[]) {
+  return balances
+    .filter((balance) => !balance.locationId)
+    .reduce((total, balance) => total + balance.quantity, 0);
+}
+
+function buildUnlocatedAvailableQuantity(balances: InventoryBalance[]) {
+  return balances
+    .filter((balance) => !balance.locationId)
+    .reduce((total, balance) => total + balance.quantity - balance.reservedQuantity, 0);
 }
 
 function buildRowAlerts(row: InventoryProductRow): InventoryAlert[] {

@@ -10,7 +10,6 @@ import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { Input } from "@/shared/components/Input";
 import { Modal } from "@/shared/components/Modal";
 import { PageHeader } from "@/shared/components/PageHeader";
-import { Select } from "@/shared/components/Select";
 import { useToast } from "@/shared/components/Toast";
 import { cn } from "@/shared/utils/cn";
 import {
@@ -19,10 +18,7 @@ import {
   type NumericInputValue,
 } from "@/shared/utils/numberInput";
 import { TEXT_LIMITS } from "@/shared/utils/inputLimits";
-import {
-  type ReceiptIncidentEvidence,
-  type ReceiptIncidentTypeCode,
-} from "@/core/entities";
+import { type ReceiptIncidentEvidence, type ReceiptIncidentTypeCode } from "@/core/entities";
 import {
   EXPIRATION_BEFORE_ENTRY_MESSAGE,
   getLocalCalendarDate,
@@ -45,7 +41,10 @@ import {
   validateLines,
 } from "@/modules/receiving/application/services/ReceivingDocumentDetailService";
 import { useReceivingDocumentDetail } from "@/modules/receiving/hooks/useReceivingDocumentDetail";
-import { findRepeatedSerials, useSerialPrecheck } from "@/modules/receiving/hooks/useSerialPrecheck";
+import {
+  findRepeatedSerials,
+  useSerialPrecheck,
+} from "@/modules/receiving/hooks/useSerialPrecheck";
 import type { ReceiptDraftTrackingDetailInput } from "@/core/repositories";
 
 interface SerialPrecheckResult {
@@ -138,10 +137,9 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
     [apiSummary, incidents, lines],
   );
   const saveProgressErrors = detail
-    ? (detail.dataSource === "api"
-        ? validateLines(lines, incidents, detail)
-        : validateIncidentQuantities(lines, incidents, detail)
-      )
+    ? detail.dataSource === "api"
+      ? validateLines(lines, incidents, detail)
+      : validateIncidentQuantities(lines, incidents, detail)
     : [];
   // Seriales ya registrados (precheck): solo lineas editables que se enviarian en el payload.
   const remoteSerialErrors = lines.flatMap((line) => {
@@ -158,24 +156,26 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
           lines.flatMap((line) => {
             if (toFiniteNumber(line.receivedNow) <= 0) return [];
             const remote = serialPrecheck[line.id]?.duplicates ?? [];
-            const reason = remote.length > 0
-              ? `Seriales ya registrados: ${remote.join(", ")}`
-              : validateApiDraftLines([line], detail)[0];
+            const reason =
+              remote.length > 0
+                ? `Seriales ya registrados: ${remote.join(", ")}`
+                : validateApiDraftLines([line], detail)[0];
             return reason ? [[line.id, reason]] : [];
           }),
         )
       : {};
   const hasOpenApiIncidents = incidents.some((incident) => incident.status === "open");
-  const confirmationInvalid = detail?.document.type === "transfer"
-    ? !lines.some((line) => toFiniteNumber(line.receivedNow) > 0) ||
-      validateLines(lines, incidents, detail).length > 0 ||
-      lines.some((line) => toFiniteNumber(line.receivedNow) > 0 && !line.locationId)
-    : detail
-      ? validateLines(lines, incidents, detail).length > 0 ||
-        hasOpenApiIncidents ||
-        remoteSerialErrors.length > 0 ||
-        Boolean(detail.incidentListIncomplete)
-      : true;
+  const confirmationInvalid =
+    detail?.document.type === "transfer"
+      ? !lines.some((line) => toFiniteNumber(line.receivedNow) > 0) ||
+        validateLines(lines, incidents, detail).length > 0 ||
+        lines.some((line) => toFiniteNumber(line.receivedNow) > 0 && !line.locationId)
+      : detail
+        ? validateLines(lines, incidents, detail).length > 0 ||
+          hasOpenApiIncidents ||
+          remoteSerialErrors.length > 0 ||
+          Boolean(detail.incidentListIncomplete)
+        : true;
 
   async function handleSaveProgress() {
     try {
@@ -311,7 +311,11 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
               detail.document.statusLabel === "Recibida" &&
               !detail.receiptHistoryIncomplete &&
               detail.previousReceipts.length > 0 ? (
-                <Button onClick={() => void handleDownloadReport()} type="button" variant="secondary">
+                <Button
+                  onClick={() => void handleDownloadReport()}
+                  type="button"
+                  variant="secondary"
+                >
                   Descargar PDF
                 </Button>
               ) : null}
@@ -475,118 +479,120 @@ export function ReceivingDocumentPage({ documentType, documentId }: ReceivingDoc
         </main>
 
         {sidePanelOpen ? (
-        <>
-        <button
-          aria-label="Cerrar panel"
-          className="fixed inset-0 z-30 bg-black/30 xl:hidden"
-          onClick={() => {
-            setIncidentEditorOpen(false);
-            setSummaryOpen(false);
-          }}
-          type="button"
-        />
-        <aside className="fixed inset-y-0 right-0 z-40 w-full max-w-sm overflow-y-auto bg-white p-3 shadow-xl xl:static xl:top-20 xl:z-auto xl:max-h-[calc(100dvh-6rem)] xl:w-auto xl:max-w-none xl:self-start xl:bg-transparent xl:p-0 xl:shadow-none xl:sticky">
-          {!showIncidentPanel ? (
-            <section className="rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-base font-bold text-[var(--color-title)]">Resumen</h2>
-                <button
-                  aria-label="Cerrar resumen"
-                  className="rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-app-background)]"
-                  onClick={() => setSummaryOpen(false)}
-                  type="button"
-                >
-                  <XIcon />
-                </button>
-              </div>
-              <div className="mt-4 space-y-3">
-                <SummaryItem label="Pedido total" value={formatNumber(summary.ordered)} />
-                <SummaryItem
-                  label="Aceptado previamente"
-                  value={
-                    detail.receiptHistoryIncomplete
-                      ? "No disponible"
-                      : formatNumber(summary.acceptedPreviously)
-                  }
-                />
-                <SummaryItem label="Aceptado ahora" value={formatNumber(summary.acceptedNow)} />
-                <SummaryItem
-                  label="Con incidencia ahora"
-                  value={formatNumber(summary.incidentNow)}
-                />
-                <SummaryItem
-                  label="Aceptado acumulado"
-                  value={
-                    detail.receiptHistoryIncomplete
-                      ? "No disponible"
-                      : formatNumber(summary.acceptedAccumulated)
-                  }
-                />
-                <SummaryItem
-                  label="Pendiente despues"
-                  value={
-                    detail.receiptHistoryIncomplete
-                      ? "No disponible"
-                      : formatNumber(summary.pendingAfter)
-                  }
-                />
-              </div>
-              <div className="mt-4 rounded-md border border-blue-100 bg-blue-50 p-3">
-                <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">
-                  Entrada inventario
-                </p>
-                <p className="mt-1 text-xl font-bold text-[var(--color-title)]">
-                  {formatNumber(summary.inventoryEntry)}
-                </p>
-                <p className="text-xs font-semibold text-[var(--color-text-muted)]">
-                  unidades base
-                </p>
-              </div>
-            </section>
-          ) : apiMode ? (
-            <ReceivingIncidentEditor
-              formProps={{
-                detail,
-                lines,
-                incidents,
-                lineBlocks: incidentLineBlocks,
-                saving: incidentSaving,
-                onCancel: () => setIncidentEditorOpen(false),
-                onSave: handleCreateApiIncident,
+          <>
+            <button
+              aria-label="Cerrar panel"
+              className="fixed inset-0 z-30 bg-black/30 xl:hidden"
+              onClick={() => {
+                setIncidentEditorOpen(false);
+                setSummaryOpen(false);
               }}
-              mode="api"
+              type="button"
             />
-          ) : (
-            <ReceivingIncidentEditor
-              formProps={{
-                detail,
-                incident: selectedIncident,
-                incidents,
-                lines,
-                onCancel: () => {
-                  setIncidentEditorOpen(false);
-                  setSelectedIncidentId(null);
-                },
-                onDelete: selectedIncident
-                  ? () => setDeleteIncidentId(selectedIncident.id)
-                  : undefined,
-                onPreview: setPreviewEvidence,
-                onSave: (input) => {
-                  saveIncident({ ...input, id: selectedIncident?.id });
-                  showToast({
-                    title: selectedIncident ? "Incidencia actualizada" : "Incidencia registrada",
-                    tone: "success",
-                  });
-                  setIncidentEditorOpen(false);
-                  setSelectedIncidentId(null);
-                },
-              }}
-              key={selectedIncident?.id ?? "new-incident"}
-              mode="local"
-            />
-          )}
-        </aside>
-        </>
+            <aside className="fixed inset-y-0 right-0 z-40 w-full max-w-sm overflow-y-auto bg-white p-3 shadow-xl xl:static xl:top-20 xl:z-auto xl:max-h-[calc(100dvh-6rem)] xl:w-auto xl:max-w-none xl:self-start xl:bg-transparent xl:p-0 xl:shadow-none xl:sticky">
+              {!showIncidentPanel ? (
+                <section className="rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <h2 className="text-base font-bold text-[var(--color-title)]">Resumen</h2>
+                    <button
+                      aria-label="Cerrar resumen"
+                      className="rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-app-background)]"
+                      onClick={() => setSummaryOpen(false)}
+                      type="button"
+                    >
+                      <XIcon />
+                    </button>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    <SummaryItem label="Pedido total" value={formatNumber(summary.ordered)} />
+                    <SummaryItem
+                      label="Aceptado previamente"
+                      value={
+                        detail.receiptHistoryIncomplete
+                          ? "No disponible"
+                          : formatNumber(summary.acceptedPreviously)
+                      }
+                    />
+                    <SummaryItem label="Aceptado ahora" value={formatNumber(summary.acceptedNow)} />
+                    <SummaryItem
+                      label="Con incidencia ahora"
+                      value={formatNumber(summary.incidentNow)}
+                    />
+                    <SummaryItem
+                      label="Aceptado acumulado"
+                      value={
+                        detail.receiptHistoryIncomplete
+                          ? "No disponible"
+                          : formatNumber(summary.acceptedAccumulated)
+                      }
+                    />
+                    <SummaryItem
+                      label="Pendiente despues"
+                      value={
+                        detail.receiptHistoryIncomplete
+                          ? "No disponible"
+                          : formatNumber(summary.pendingAfter)
+                      }
+                    />
+                  </div>
+                  <div className="mt-4 rounded-md border border-blue-100 bg-blue-50 p-3">
+                    <p className="text-xs font-bold uppercase text-[var(--color-text-muted)]">
+                      Entrada inventario
+                    </p>
+                    <p className="mt-1 text-xl font-bold text-[var(--color-title)]">
+                      {formatNumber(summary.inventoryEntry)}
+                    </p>
+                    <p className="text-xs font-semibold text-[var(--color-text-muted)]">
+                      unidades base
+                    </p>
+                  </div>
+                </section>
+              ) : apiMode ? (
+                <ReceivingIncidentEditor
+                  formProps={{
+                    detail,
+                    lines,
+                    incidents,
+                    lineBlocks: incidentLineBlocks,
+                    saving: incidentSaving,
+                    onCancel: () => setIncidentEditorOpen(false),
+                    onSave: handleCreateApiIncident,
+                  }}
+                  mode="api"
+                />
+              ) : (
+                <ReceivingIncidentEditor
+                  formProps={{
+                    detail,
+                    incident: selectedIncident,
+                    incidents,
+                    lines,
+                    onCancel: () => {
+                      setIncidentEditorOpen(false);
+                      setSelectedIncidentId(null);
+                    },
+                    onDelete: selectedIncident
+                      ? () => setDeleteIncidentId(selectedIncident.id)
+                      : undefined,
+                    onPreview: setPreviewEvidence,
+                    onSave: (input) => {
+                      saveIncident({ ...input, id: selectedIncident?.id });
+                      showToast({
+                        title: selectedIncident
+                          ? "Incidencia actualizada"
+                          : "Incidencia registrada",
+                        tone: "success",
+                      });
+                      setIncidentEditorOpen(false);
+                      setSelectedIncidentId(null);
+                    },
+                  }}
+                  key={selectedIncident?.id ?? "new-incident"}
+                  mode="local"
+                />
+              )}
+            </aside>
+          </>
         ) : null}
       </div>
 
@@ -679,8 +685,7 @@ function ReceivingLinesTable({
     detail.dataSource === "api"
       ? Math.max(0, line.pendingQuantity - getRejectedNow(line, incidents))
       : line.pendingQuantity;
-  const lineLocked = (line: ReceivingDocumentLine) =>
-    readOnly || Boolean(line.incidentProtected);
+  const lineLocked = (line: ReceivingDocumentLine) => readOnly || Boolean(line.incidentProtected);
   return (
     <>
       {detail.dataSource === "api"
@@ -746,7 +751,10 @@ function ReceivingLinesTable({
               </dl>
               <Field label={`Aceptado ahora (${line.unitName})`}>
                 <QuantityInput
-                  disabled={lineLocked(line) || (detail.document.type === "transfer" && line.tracking.serial)}
+                  disabled={
+                    lineLocked(line) ||
+                    (detail.document.type === "transfer" && line.tracking.serial)
+                  }
                   line={line}
                   enforceMaximum={detail.dataSource === "api"}
                   maximum={Math.max(0, pendingBefore - rejectedNow)}
@@ -759,24 +767,19 @@ function ReceivingLinesTable({
                 {line.baseUnitName}
               </p>
               {detail.capabilities.supportsMultipleLocations && line.tracking.stock ? (
-                <Field label="Ubicacion">
-                  <Select
-                    disabled={lineLocked(line)}
-                    onChange={(event) => onUpdateLine(line.id, { locationId: event.target.value })}
-                    value={line.locationId}
-                  >
-                    <option value="">Seleccionar</option>
-                    {detail.locations.map((location) => (
-                      <option key={location.id} value={location.id}>
-                        {location.code} - {location.name}
-                      </option>
-                    ))}
-                  </Select>
+                <Field label="Ubicacion operativa">
+                  <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-title)]">
+                    {getReceivingLocationLabel(detail, line)}
+                  </p>
                 </Field>
               ) : null}
               {detail.document.type === "transfer" ? (
-                <TransferTraceabilityFields detail={detail} line={line}
-                  readOnly={lineLocked(line)} onUpdateLine={onUpdateLine} />
+                <TransferTraceabilityFields
+                  detail={detail}
+                  line={line}
+                  readOnly={lineLocked(line)}
+                  onUpdateLine={onUpdateLine}
+                />
               ) : detail.dataSource === "api" ? (
                 <ApiTrackingDetailsEditor
                   line={line}
@@ -827,144 +830,133 @@ function ReceivingLinesTable({
                 detail.document.type === "purchase_order" &&
                 (line.tracking.lot || line.tracking.serial);
               return (
-              <Fragment key={line.id}>
-              <tr className="border-t border-[var(--color-border)] align-top">
-                <td className="px-2 py-2.5">
-                  <p
-                    className="line-clamp-2 break-words font-bold leading-5 text-[var(--color-title)]"
-                    title={line.productName}
-                  >
-                    {line.productName}
-                  </p>
-                  <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
-                    {line.sku}
-                  </p>
-                  <ProtectedLineBadge protectedLine={Boolean(line.incidentProtected)} />
-                </td>
-                <td className="px-2 py-2.5 font-semibold text-[var(--color-text)]">
-                  {line.unitName}
-                  <span className="mt-1 block text-[10px] font-medium text-[var(--color-text-muted)]">
-                    1 = {formatNumber(line.purchaseToBaseFactor)} {line.baseUnitName}
-                  </span>
-                </td>
-                <td className="px-2 py-2.5 text-right font-bold text-[var(--color-title)]">
-                  {formatNumber(line.orderedQuantity)}
-                  <span className="block text-[10px] font-medium text-[var(--color-text-muted)]">
-                    Total {formatNumber(line.orderedQuantity * line.purchaseToBaseFactor)}{" "}
-                    {line.baseUnitName}
-                  </span>
-                  <span className="block text-[10px] font-medium text-[var(--color-text-muted)]">
-                    {detail.receiptHistoryIncomplete ? (
-                      "Previo no disponible"
-                    ) : (
-                      <>
-                        Previo {formatNumber(line.acceptedPreviously)} /{" "}
-                        {formatNumber(line.acceptedPreviously * line.purchaseToBaseFactor)} base
-                      </>
-                    )}
-                  </span>
-                </td>
-                <td className="px-2 py-2.5">
-                  <QuantityInput
-                    disabled={lineLocked(line) || (detail.document.type === "transfer" && line.tracking.serial)}
-                    line={line}
-                    enforceMaximum={detail.dataSource === "api"}
-                    maximum={Math.max(
-                      0,
-                      line.orderedQuantity -
-                        line.acceptedPreviously -
-                        getRejectedNow(line, incidents),
-                    )}
-                    value={line.receivedNow}
-                    onChange={(value) => onQuantityChange(line.id, value)}
-                  />
-                  <span className="mt-1 block text-right text-[10px] font-semibold text-[var(--color-text-muted)]">
-                    Inventario:{" "}
-                    {formatNumber(
-                      Math.max(0, toFiniteNumber(line.receivedNow)) * line.purchaseToBaseFactor,
-                    )}{" "}
-                    {line.baseUnitName}
-                  </span>
-                </td>
-                <td className="px-2 py-2.5 text-right">
-                  <span className="inline-flex min-h-9 min-w-12 items-center justify-end rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] px-2 font-bold text-[var(--color-title)]">
-                    {formatNumber(getRejectedNow(line, incidents))}
-                  </span>
-                </td>
-                <td className="px-2 py-2.5 text-right font-bold text-[var(--color-title)]">
-                  {detail.receiptHistoryIncomplete ? (
-                    "No disponible"
-                  ) : (
-                    <>
-                      {formatNumber(pendingFor(line))}
+                <Fragment key={line.id}>
+                  <tr className="border-t border-[var(--color-border)] align-top">
+                    <td className="px-2 py-2.5">
+                      <p
+                        className="line-clamp-2 break-words font-bold leading-5 text-[var(--color-title)]"
+                        title={line.productName}
+                      >
+                        {line.productName}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
+                        {line.sku}
+                      </p>
+                      <ProtectedLineBadge protectedLine={Boolean(line.incidentProtected)} />
+                    </td>
+                    <td className="px-2 py-2.5 font-semibold text-[var(--color-text)]">
+                      {line.unitName}
+                      <span className="mt-1 block text-[10px] font-medium text-[var(--color-text-muted)]">
+                        1 = {formatNumber(line.purchaseToBaseFactor)} {line.baseUnitName}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2.5 text-right font-bold text-[var(--color-title)]">
+                      {formatNumber(line.orderedQuantity)}
                       <span className="block text-[10px] font-medium text-[var(--color-text-muted)]">
-                        {formatNumber(pendingFor(line) * line.purchaseToBaseFactor)}{" "}
+                        Total {formatNumber(line.orderedQuantity * line.purchaseToBaseFactor)}{" "}
                         {line.baseUnitName}
                       </span>
-                    </>
-                  )}
-                </td>
-                <td className="px-2 py-2.5">
-                  {detail.capabilities.supportsMultipleLocations && line.tracking.stock ? (
-                    <Select
-                      className="max-w-full truncate px-2 text-xs"
-                      disabled={lineLocked(line)}
-                      onChange={(event) =>
-                        onUpdateLine(line.id, { locationId: event.target.value })
-                      }
-                      value={line.locationId}
-                      title={
-                        detail.locations.find((location) => location.id === line.locationId)
-                          ?.name ?? "Seleccionar ubicacion"
-                      }
-                    >
-                      <option value="">Seleccionar</option>
-                      {detail.locations.map((location) => (
-                        <option key={location.id} value={location.id}>
-                          {location.code} - {location.name}
-                        </option>
-                      ))}
-                    </Select>
-                  ) : (
-                    <MutedText>No requerido</MutedText>
-                  )}
-                </td>
-                <td className="px-2 py-2.5">
-                  {detail.document.type === "transfer" ? (
-                    <TransferTraceabilityFields detail={detail} line={line}
-                      readOnly={lineLocked(line)} onUpdateLine={onUpdateLine} />
-                  ) : detail.dataSource === "api" ? (
-                    wideTracking ? (
-                      <TrackingSummary line={line} />
-                    ) : (
-                      <MutedText>No requerido</MutedText>
-                    )
-                  ) : (
-                    <TrackingFields
-                      capabilities={detail.capabilities}
-                      line={line}
-                      readOnly={lineLocked(line)}
-                      onUpdateLine={onUpdateLine}
-                    />
-                  )}
-                </td>
-              </tr>
-              {wideTracking ? (
-                <tr className="bg-[var(--color-app-background)]/60">
-                  <td className="px-3 pb-3 pt-1" colSpan={8}>
-                    <p className="mb-1 text-xs font-bold uppercase text-[var(--color-text-muted)]">
-                      Trazabilidad · {line.productName}
-                    </p>
-                    <ApiTrackingDetailsEditor
-                      line={line}
-                      precheck={serialPrecheck[line.id]}
-                      readOnly={lineLocked(line)}
-                      onUpdateLine={onUpdateLine}
-                    />
-                  </td>
-                </tr>
-              ) : null}
-              </Fragment>
+                      <span className="block text-[10px] font-medium text-[var(--color-text-muted)]">
+                        {detail.receiptHistoryIncomplete ? (
+                          "Previo no disponible"
+                        ) : (
+                          <>
+                            Previo {formatNumber(line.acceptedPreviously)} /{" "}
+                            {formatNumber(line.acceptedPreviously * line.purchaseToBaseFactor)} base
+                          </>
+                        )}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2.5">
+                      <QuantityInput
+                        disabled={
+                          lineLocked(line) ||
+                          (detail.document.type === "transfer" && line.tracking.serial)
+                        }
+                        line={line}
+                        enforceMaximum={detail.dataSource === "api"}
+                        maximum={Math.max(
+                          0,
+                          line.orderedQuantity -
+                            line.acceptedPreviously -
+                            getRejectedNow(line, incidents),
+                        )}
+                        value={line.receivedNow}
+                        onChange={(value) => onQuantityChange(line.id, value)}
+                      />
+                      <span className="mt-1 block text-right text-[10px] font-semibold text-[var(--color-text-muted)]">
+                        Inventario:{" "}
+                        {formatNumber(
+                          Math.max(0, toFiniteNumber(line.receivedNow)) * line.purchaseToBaseFactor,
+                        )}{" "}
+                        {line.baseUnitName}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2.5 text-right">
+                      <span className="inline-flex min-h-9 min-w-12 items-center justify-end rounded-md border border-[var(--color-border)] bg-[var(--color-app-background)] px-2 font-bold text-[var(--color-title)]">
+                        {formatNumber(getRejectedNow(line, incidents))}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2.5 text-right font-bold text-[var(--color-title)]">
+                      {detail.receiptHistoryIncomplete ? (
+                        "No disponible"
+                      ) : (
+                        <>
+                          {formatNumber(pendingFor(line))}
+                          <span className="block text-[10px] font-medium text-[var(--color-text-muted)]">
+                            {formatNumber(pendingFor(line) * line.purchaseToBaseFactor)}{" "}
+                            {line.baseUnitName}
+                          </span>
+                        </>
+                      )}
+                    </td>
+                    <td className="px-2 py-2.5">
+                      {detail.capabilities.supportsMultipleLocations && line.tracking.stock ? (
+                        <MutedText>{getReceivingLocationLabel(detail, line)}</MutedText>
+                      ) : (
+                        <MutedText>No requerido</MutedText>
+                      )}
+                    </td>
+                    <td className="px-2 py-2.5">
+                      {detail.document.type === "transfer" ? (
+                        <TransferTraceabilityFields
+                          detail={detail}
+                          line={line}
+                          readOnly={lineLocked(line)}
+                          onUpdateLine={onUpdateLine}
+                        />
+                      ) : detail.dataSource === "api" ? (
+                        wideTracking ? (
+                          <TrackingSummary line={line} />
+                        ) : (
+                          <MutedText>No requerido</MutedText>
+                        )
+                      ) : (
+                        <TrackingFields
+                          capabilities={detail.capabilities}
+                          line={line}
+                          readOnly={lineLocked(line)}
+                          onUpdateLine={onUpdateLine}
+                        />
+                      )}
+                    </td>
+                  </tr>
+                  {wideTracking ? (
+                    <tr className="bg-[var(--color-app-background)]/60">
+                      <td className="px-3 pb-3 pt-1" colSpan={8}>
+                        <p className="mb-1 text-xs font-bold uppercase text-[var(--color-text-muted)]">
+                          Trazabilidad · {line.productName}
+                        </p>
+                        <ApiTrackingDetailsEditor
+                          line={line}
+                          precheck={serialPrecheck[line.id]}
+                          readOnly={lineLocked(line)}
+                          onUpdateLine={onUpdateLine}
+                        />
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
               );
             })}
           </tbody>
@@ -984,7 +976,11 @@ function TrackingSummary({ line }: { line: ReceivingDocumentLine }) {
   return (
     <div className="space-y-0.5 text-xs font-semibold text-[var(--color-text)]">
       <p>
-        {[line.tracking.lot ? "Lote" : null, line.tracking.expiration ? "Vencimiento" : null, line.tracking.serial ? "Series" : null]
+        {[
+          line.tracking.lot ? "Lote" : null,
+          line.tracking.expiration ? "Vencimiento" : null,
+          line.tracking.serial ? "Series" : null,
+        ]
           .filter(Boolean)
           .join(" / ")}
       </p>
@@ -1033,7 +1029,9 @@ function QuantityInput({
         onChange={(event) => {
           const parsed = parseUnitQuantityInput(event.target.value, line.unitAllowsDecimals);
           // Un valor por encima del maximo se recorta en vez de guardarse como invalido.
-          onChange(enforceMaximum && typeof parsed === "number" && parsed > maximum ? maximum : parsed);
+          onChange(
+            enforceMaximum && typeof parsed === "number" && parsed > maximum ? maximum : parsed,
+          );
         }}
         type="text"
         value={value}
@@ -1058,11 +1056,19 @@ function TransferTraceabilityFields({
   readOnly: boolean;
   onUpdateLine: (lineId: string, patch: Partial<ReceivingDocumentLine>) => void;
 }) {
-  const available = detail.lines.find((entry) => entry.id === line.id)?.serialNumbersText
-    .split(/\r?\n/).map((value) => value.trim()).filter(Boolean) ?? [];
-  const selected = toFiniteNumber(line.receivedNow) > 0
-    ? line.serialNumbersText.split(/\r?\n/).map((value) => value.trim()).filter(Boolean)
-    : [];
+  const available =
+    detail.lines
+      .find((entry) => entry.id === line.id)
+      ?.serialNumbersText.split(/\r?\n/)
+      .map((value) => value.trim())
+      .filter(Boolean) ?? [];
+  const selected =
+    toFiniteNumber(line.receivedNow) > 0
+      ? line.serialNumbersText
+          .split(/\r?\n/)
+          .map((value) => value.trim())
+          .filter(Boolean)
+      : [];
   function toggle(serial: string) {
     const next = selected.includes(serial)
       ? selected.filter((value) => value !== serial)
@@ -1078,17 +1084,28 @@ function TransferTraceabilityFields({
           <p className="font-semibold">
             {readOnly ? "Series despachadas:" : "Series pendientes del despacho:"}
           </p>
-          {available.length ? available.map((serial) => (
-            readOnly ? <p key={serial}>{serial}</p> : (
-              <label className="flex items-center gap-2" key={serial}>
-                <input checked={selected.includes(serial)}
-                  onChange={() => toggle(serial)} type="checkbox" />
-                <span>{serial}</span>
-              </label>
+          {available.length ? (
+            available.map((serial) =>
+              readOnly ? (
+                <p key={serial}>{serial}</p>
+              ) : (
+                <label className="flex items-center gap-2" key={serial}>
+                  <input
+                    checked={selected.includes(serial)}
+                    onChange={() => toggle(serial)}
+                    type="checkbox"
+                  />
+                  <span>{serial}</span>
+                </label>
+              ),
             )
-          )) : <MutedText>Sin series pendientes</MutedText>}
+          ) : (
+            <MutedText>Sin series pendientes</MutedText>
+          )}
         </div>
-      ) : !line.lotNumber ? <MutedText>Sin trazabilidad requerida</MutedText> : null}
+      ) : !line.lotNumber ? (
+        <MutedText>Sin trazabilidad requerida</MutedText>
+      ) : null}
     </div>
   );
 }
@@ -1215,48 +1232,50 @@ function ApiTrackingDetailsEditor({
               ) : null}
             </div>
             <div className="grid gap-2 md:grid-cols-3">
-            <Input
-              aria-label={`Cantidad base del detalle ${index + 1}`}
-              className="h-9 px-2 text-xs"
-              disabled={readOnly}
-              inputMode={line.baseUnitAllowsDecimals && !line.tracking.serial ? "decimal" : "numeric"}
-              maxLength={12}
-              onChange={(event) =>
-                updateDetail(detail.id, {
-                  baseQuantity: parseUnitQuantityInput(
-                    event.target.value,
-                    line.baseUnitAllowsDecimals && !line.tracking.serial,
-                  ),
-                })
-              }
-              placeholder={`Cantidad en ${line.baseUnitName}`}
-              type="text"
-              value={detail.baseQuantity}
-            />
-            {line.tracking.lot ? (
               <Input
-                aria-label={`Lote del detalle ${index + 1}`}
+                aria-label={`Cantidad base del detalle ${index + 1}`}
                 className="h-9 px-2 text-xs"
                 disabled={readOnly}
-                maxLength={TEXT_LIMITS.lotNumber}
-                onChange={(event) => updateDetail(detail.id, { lotNumber: event.target.value })}
-                placeholder="Número de lote"
-                value={detail.lotNumber}
-              />
-            ) : null}
-            {line.tracking.expiration ? (
-              <Input
-                aria-label={`Vencimiento del detalle ${index + 1}`}
-                className="h-9 px-2 text-xs"
-                disabled={readOnly}
-                min={operationDate}
-                onChange={(event) =>
-                  updateDetail(detail.id, { expirationDate: event.target.value })
+                inputMode={
+                  line.baseUnitAllowsDecimals && !line.tracking.serial ? "decimal" : "numeric"
                 }
-                type="date"
-                value={detail.expirationDate}
+                maxLength={12}
+                onChange={(event) =>
+                  updateDetail(detail.id, {
+                    baseQuantity: parseUnitQuantityInput(
+                      event.target.value,
+                      line.baseUnitAllowsDecimals && !line.tracking.serial,
+                    ),
+                  })
+                }
+                placeholder={`Cantidad en ${line.baseUnitName}`}
+                type="text"
+                value={detail.baseQuantity}
               />
-            ) : null}
+              {line.tracking.lot ? (
+                <Input
+                  aria-label={`Lote del detalle ${index + 1}`}
+                  className="h-9 px-2 text-xs"
+                  disabled={readOnly}
+                  maxLength={TEXT_LIMITS.lotNumber}
+                  onChange={(event) => updateDetail(detail.id, { lotNumber: event.target.value })}
+                  placeholder="Número de lote"
+                  value={detail.lotNumber}
+                />
+              ) : null}
+              {line.tracking.expiration ? (
+                <Input
+                  aria-label={`Vencimiento del detalle ${index + 1}`}
+                  className="h-9 px-2 text-xs"
+                  disabled={readOnly}
+                  min={operationDate}
+                  onChange={(event) =>
+                    updateDetail(detail.id, { expirationDate: event.target.value })
+                  }
+                  type="date"
+                  value={detail.expirationDate}
+                />
+              ) : null}
             </div>
             {line.tracking.serial ? (
               <div className="space-y-1">
@@ -1288,7 +1307,12 @@ function ApiTrackingDetailsEditor({
         );
       })}
       {!readOnly ? (
-        <Button className="w-full justify-center px-2" onClick={addDetail} type="button" variant="ghost">
+        <Button
+          className="w-full justify-center px-2"
+          onClick={addDetail}
+          type="button"
+          variant="ghost"
+        >
           Agregar detalle
         </Button>
       ) : null}
@@ -1584,7 +1608,9 @@ function ReplacementModal({
   }
   if (line.tracking.serial) {
     if (!Number.isInteger(baseQuantity) || serials.length !== baseQuantity) {
-      errors.push(`Ingresa exactamente ${formatNumber(baseQuantity)} números de serie (tienes ${serials.length}).`);
+      errors.push(
+        `Ingresa exactamente ${formatNumber(baseQuantity)} números de serie (tienes ${serials.length}).`,
+      );
     }
     if (repeated.length > 0) errors.push(`Seriales repetidos: ${repeated.join(", ")}.`);
     if (alreadyInReceipt.length > 0) {
@@ -1609,7 +1635,13 @@ function ReplacementModal({
   }
 
   return (
-    <Modal open title="Registrar reemplazo" subtitle={incident.productName} onClose={onClose} size="lg">
+    <Modal
+      open
+      title="Registrar reemplazo"
+      subtitle={incident.productName}
+      onClose={onClose}
+      size="lg"
+    >
       <div className="space-y-3">
         <dl className="grid gap-3 sm:grid-cols-2">
           <DetailItem label="Producto" value={`${incident.productName} (${incident.sku})`} />
@@ -1716,6 +1748,18 @@ function SummaryItem({ label, value }: { label: string; value: string }) {
 
 function MutedText({ children }: { children: React.ReactNode }) {
   return <p className="text-sm font-semibold text-[var(--color-text-muted)]">{children}</p>;
+}
+
+function getReceivingLocationLabel(
+  detail: { locations: Array<{ id: string; code: string; name: string }> },
+  line: Pick<ReceivingDocumentLine, "locationId" | "staleSavedLocationId">,
+) {
+  const location = detail.locations.find((candidate) => candidate.id === line.locationId);
+  const label = location ? `${location.code} - ${location.name}` : "Sin ubicacion operativa activa";
+  // El borrador guardaba otra ubicacion: se avisa y se corrige al guardar, sin perder la captura.
+  return line.staleSavedLocationId
+    ? `${label} (el borrador tenia otra ubicacion; se corregira al guardar)`
+    : label;
 }
 
 function SmallDescription({ label, value }: { label: string; value: string }) {

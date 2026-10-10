@@ -125,10 +125,9 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
     () => visibleOrders.find((order) => order.id === selectedOrderId) ?? null,
     [selectedOrderId, visibleOrders],
   );
-  const emptyMessage =
-    (apiMode ? totalItems === 0 : data.orders.length === 0)
-      ? "No hay ordenes de compra registradas."
-      : "No se encontraron ordenes.";
+  const emptyMessage = (apiMode ? totalItems === 0 : data.orders.length === 0)
+    ? "No hay ordenes de compra registradas."
+    : "No se encontraron ordenes.";
 
   useEffect(() => {
     const orderId = activeOrderId;
@@ -178,15 +177,7 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
     return () => {
       active = false;
     };
-  }, [
-    apiMode,
-    directlyLocatedOrder,
-    activeOrderId,
-    loadOrderById,
-    loading,
-    router,
-    updateFilters,
-  ]);
+  }, [apiMode, directlyLocatedOrder, activeOrderId, loadOrderById, loading, router, updateFilters]);
 
   function clearOrderLocator() {
     if (!activeOrderId) return;
@@ -303,7 +294,8 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
         // depende ni informa de la entrega SMTP.
         showToast({
           title: `Orden ${pendingAction.order.number} aprobada correctamente`,
-          description: "El proveedor será notificado automáticamente si tiene un correo configurado.",
+          description:
+            "El proveedor será notificado automáticamente si tiene un correo configurado.",
           tone: "success",
         });
       } else {
@@ -376,9 +368,7 @@ export function PurchaseOrdersPage({ initialOrderId }: { initialOrderId?: string
         <div
           className={cn(
             "grid gap-3 md:grid-cols-2",
-            apiMode
-              ? "xl:grid-cols-[220px_220px]"
-              : "xl:grid-cols-[minmax(0,1fr)_220px_220px]",
+            apiMode ? "xl:grid-cols-[220px_220px]" : "xl:grid-cols-[minmax(0,1fr)_220px_220px]",
           )}
         >
           {!apiMode ? (
@@ -543,7 +533,15 @@ function ReorderSuggestions({
                   </p>
                   <p className="text-xs text-[var(--color-text-muted)]">{suggestion.sku}</p>
                 </div>
-                <SmallMetric label="Stock" value={formatNumber(suggestion.currentStock)} />
+                <SmallMetric label="Fisico" value={formatNumber(suggestion.currentStock)} />
+                <SmallMetric
+                  label="Reservado"
+                  value={formatNumber(suggestion.reservedStock ?? 0)}
+                />
+                <SmallMetric
+                  label="Disponible"
+                  value={formatNumber(suggestion.availableStock ?? suggestion.currentStock)}
+                />
                 <SmallMetric label="Minimo" value={formatNumber(suggestion.minStock)} />
                 <SmallMetric label="Sugerido" value={formatNumber(suggestion.suggestedQuantity)} />
                 <SmallMetric label="Faltante" value={formatNumber(suggestion.shortage)} />

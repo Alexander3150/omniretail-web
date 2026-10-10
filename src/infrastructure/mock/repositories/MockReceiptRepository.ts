@@ -1,5 +1,6 @@
 import {
   InventoryMovementType,
+  LocationStatus,
   PurchaseOrderStatus,
   ReceiptLineStatus,
   ReceiptStatus,
@@ -27,15 +28,11 @@ export class MockReceiptRepository extends BaseMockRepository implements Receipt
   async listByTenant(tenantId: string) {
     return this.read((db) => db.receipts.filter((item) => item.tenantId === tenantId));
   }
-  async getPageScoped(
-    tenantId: string,
-    params: Parameters<ReceiptRepository["getPageScoped"]>[1],
-  ) {
+  async getPageScoped(tenantId: string, params: Parameters<ReceiptRepository["getPageScoped"]>[1]) {
     const receipts = (await this.listByTenant(tenantId))
       .filter((receipt) => !params.branchId || receipt.branchId === params.branchId)
       .filter(
-        (receipt) =>
-          !params.purchaseOrderId || receipt.purchaseOrderId === params.purchaseOrderId,
+        (receipt) => !params.purchaseOrderId || receipt.purchaseOrderId === params.purchaseOrderId,
       )
       .filter((receipt) => {
         if (!params.status) return true;
@@ -222,6 +219,27 @@ export class MockReceiptRepository extends BaseMockRepository implements Receipt
         if (product.productType === "kit")
           throw new Error(`Virtual kits cannot be received: ${line.id}`);
         if (!product.tracking.stock) return;
+        const capabilities = db.businessCapabilities.find(
+          (item) => item.tenantId === receipt.tenantId,
+        );
+        // Sin configuracion del negocio el backend interpreta false: no se asume true.
+        const usesLocations = capabilities?.supportsMultipleLocations ?? false;
+        if (usesLocations) {
+          const location = db.storageLocations.find((item) => item.id === line.locationId);
+          if (
+            !line.locationId ||
+            !location ||
+            location.tenantId !== receipt.tenantId ||
+            location.branchId !== receipt.branchId ||
+            location.status !== LocationStatus.active
+          ) {
+            throw new Error(
+              `Receipt line location must be active and match the receipt tenant and branch: ${line.id}`,
+            );
+          }
+        } else if (line.locationId) {
+          throw new Error(`Receipt line location must be empty: ${line.id}`);
+        }
         const balance = findOrCreateBalance(
           db.inventoryBalances,
           receipt,
@@ -324,9 +342,7 @@ export class MockReceiptRepository extends BaseMockRepository implements Receipt
         db.inventoryMovements.push(movement);
         movements.push(movement);
       });
-      const orderItems = db.purchaseOrderItems.filter(
-        (item) => item.purchaseOrderId === order.id,
-      );
+      const orderItems = db.purchaseOrderItems.filter((item) => item.purchaseOrderId === order.id);
       const totalOrdered = orderItems.reduce((sum, item) => sum + item.quantity, 0);
       const priorAccepted = db.receipts
         .filter(
@@ -468,9 +484,7 @@ export class MockReceiptRepository extends BaseMockRepository implements Receipt
   }
   async deleteDraftScoped(tenantId: string, id: string) {
     this.store.mutate((db) => {
-      const receipt = db.receipts.find(
-        (item) => item.id === id && item.tenantId === tenantId,
-      );
+      const receipt = db.receipts.find((item) => item.id === id && item.tenantId === tenantId);
       if (!receipt) throw this.missing("Receipt", id);
       if (receipt.status !== ReceiptStatus.in_progress) {
         throw new Error(`Receipt is not a draft: ${id}`);
@@ -545,9 +559,7 @@ export class MockReceiptRepository extends BaseMockRepository implements Receipt
     });
   }
 
-  async createIncidentScoped(
-    input: Parameters<ReceiptRepository["createIncidentScoped"]>[0],
-  ) {
+  async createIncidentScoped(input: Parameters<ReceiptRepository["createIncidentScoped"]>[0]) {
     const result = this.store.mutate((db) => {
       const receipt = db.receipts.find(
         (item) => item.id === input.receiptId && item.tenantId === input.tenantId,
@@ -621,9 +633,7 @@ export class MockReceiptRepository extends BaseMockRepository implements Receipt
     const result = this.store.mutate((db) => {
       const incident = db.receiptIncidents.find((item) => item.id === incidentId);
       const receipt = incident
-        ? db.receipts.find(
-            (item) => item.id === incident.receiptId && item.tenantId === tenantId,
-          )
+        ? db.receipts.find((item) => item.id === incident.receiptId && item.tenantId === tenantId)
         : undefined;
       if (!incident || !receipt) throw this.missing("ReceiptIncident", incidentId);
       const now = this.now();
@@ -644,10 +654,7 @@ export class MockReceiptRepository extends BaseMockRepository implements Receipt
   }
 }
 
-function toMockIncidentRecord(
-  incident: ReceiptIncident,
-  branchId: string,
-): ReceiptIncidentRecord {
+function toMockIncidentRecord(incident: ReceiptIncident, branchId: string): ReceiptIncidentRecord {
   return {
     id: incident.id,
     branchId,
@@ -662,9 +669,7 @@ function toMockIncidentRecord(
       : {}),
     notes: incident.description,
     createdByUserId: incident.createdByUserId,
-    ...(incident.resolvedByUserId
-      ? { resolvedByUserId: incident.resolvedByUserId }
-      : {}),
+    ...(incident.resolvedByUserId ? { resolvedByUserId: incident.resolvedByUserId } : {}),
     ...(incident.resolvedAt ? { resolvedAt: incident.resolvedAt } : {}),
     createdAt: incident.createdAt,
     updatedAt: incident.updatedAt ?? incident.createdAt,
@@ -696,10 +701,9 @@ function toMockDraftLines(
       productId: orderItem.productId,
       orderedQuantity: orderItem.quantity,
       receivedQuantity: item.receivedQuantity,
-      inventoryQuantity: item.trackingDetails.reduce(
-        (sum, tracking) => sum + tracking.baseQuantity,
-        0,
-      ) || item.receivedQuantity,
+      inventoryQuantity:
+        item.trackingDetails.reduce((sum, tracking) => sum + tracking.baseQuantity, 0) ||
+        item.receivedQuantity,
       status: ReceiptLineStatus.partial,
       locationId: item.locationId,
       lotNumber: detail?.lotNumber,

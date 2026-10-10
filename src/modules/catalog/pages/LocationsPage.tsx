@@ -88,22 +88,50 @@ export function LocationsPage() {
 
   async function handleUpdate(dto: LocationEditorDto) {
     if (!panelLocation) return;
-    const updated = await update(panelLocation.id, dto);
-    if (updated) setPanel({ mode: "detail", location: updated });
-    showToast({ title: "Ubicacion actualizada", tone: "success" });
+    try {
+      const updated = await update(panelLocation.id, dto);
+      if (updated) setPanel({ mode: "detail", location: updated });
+      showToast({ title: "Ubicacion actualizada", tone: "success" });
+    } catch (error) {
+      showToast({
+        title: "No se pudo actualizar la ubicacion",
+        description: error instanceof Error ? error.message : undefined,
+        tone: "danger",
+      });
+    }
   }
 
   async function handleArchive() {
     if (!archiveTarget) return;
-    await archive(archiveTarget.id);
-    showToast({ title: "Ubicacion archivada", tone: "success" });
-    if (panelLocation?.id === archiveTarget.id) {
-      setPanel({
-        mode: "detail",
-        location: { ...archiveTarget, status: LocationStatus.archived },
+    try {
+      await archive(archiveTarget.id);
+      showToast({ title: "Ubicacion archivada", tone: "success" });
+      if (panelLocation?.id === archiveTarget.id) {
+        setPanel({
+          mode: "detail",
+          location: { ...archiveTarget, status: LocationStatus.archived },
+        });
+      }
+      setArchiveTarget(null);
+    } catch (error) {
+      showToast({
+        title: "No se pudo archivar la ubicacion",
+        description: error instanceof Error ? error.message : undefined,
+        tone: "danger",
       });
     }
-    setArchiveTarget(null);
+  }
+
+  function requestArchive(location: LocationListItem) {
+    if (location.productCount != null && location.productCount > 0) {
+      showToast({
+        title: "Ubicacion asignada",
+        description: "Desasigna los productos antes de archivar la ubicacion.",
+        tone: "danger",
+      });
+      return;
+    }
+    setArchiveTarget(location);
   }
 
   async function handleRestore(location: LocationListItem) {
@@ -181,7 +209,7 @@ export function LocationsPage() {
                   : "No hay ubicaciones que coincidan con los filtros."
               }
               locations={paginatedLocations}
-              onArchive={setArchiveTarget}
+              onArchive={requestArchive}
               onEdit={(location) => setPanel({ mode: "edit", location })}
               onOpen={(location) => setPanel({ mode: "detail", location })}
               onRestore={handleRestore}
@@ -224,11 +252,7 @@ export function LocationsPage() {
       <ConfirmDialog
         open={Boolean(archiveTarget)}
         title="Archivar ubicacion"
-        message={
-          archiveTarget?.productCount
-            ? "La ubicacion tiene productos asociados como predeterminada. Se archivara sin mover stock ni eliminar historial."
-            : "La ubicacion dejara de estar disponible, pero se conservara su historial."
-        }
+        message="La ubicacion dejara de estar disponible. Esta accion no mueve stock ni elimina historial."
         confirmLabel="Archivar"
         onCancel={() => setArchiveTarget(null)}
         onConfirm={handleArchive}
@@ -258,12 +282,18 @@ function LocationFilters({
         type="search"
         value={search}
       />
-      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+      <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:justify-end">
         <StatusFilterButton
           active={status === LocationStatus.active}
           onClick={() => onStatusChange(LocationStatus.active)}
         >
           Activas
+        </StatusFilterButton>
+        <StatusFilterButton
+          active={status === LocationStatus.inactive}
+          onClick={() => onStatusChange(LocationStatus.inactive)}
+        >
+          Inactivas
         </StatusFilterButton>
         <StatusFilterButton
           active={status === LocationStatus.archived}
@@ -864,13 +894,14 @@ function LocationForm({
           </p>
         </Field>
       ) : null}
-      <Field id="location-status" label="Estado">
+      <Field id="location-status" label="Estado" error={errors.status}>
         <Select
           id="location-status"
           onChange={(event) => update({ status: event.target.value as LocationStatus })}
           value={value.status}
         >
           <option value={LocationStatus.active}>Activa</option>
+          <option value={LocationStatus.inactive}>Inactiva</option>
           <option value={LocationStatus.archived}>Archivada</option>
         </Select>
       </Field>

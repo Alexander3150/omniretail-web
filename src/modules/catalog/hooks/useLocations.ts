@@ -15,7 +15,8 @@ import { cleanError } from "@/modules/catalog/application/services/serviceHelper
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
 import { isApiMode } from "@/config/api-mode";
 
-export type LocationStatusFilter = LocationStatus.active | LocationStatus.archived;
+export type LocationStatusFilter =
+  LocationStatus.active | LocationStatus.inactive | LocationStatus.archived;
 
 const DEFAULT_PAGE_SIZE = 10;
 
