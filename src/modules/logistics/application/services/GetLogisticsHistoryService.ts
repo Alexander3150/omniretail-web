@@ -11,7 +11,13 @@ import type { RepositoryRegistry } from "@/infrastructure/providers/RepositoryPr
 import type {
   LogisticsHistoryDetailDto,
   LogisticsHistoryItemDto,
+  LogisticsHistoryPageDto,
+  LogisticsHistoryQueryDto,
 } from "@/modules/logistics/application/dto/LogisticsHistoryDto";
+import {
+  toLogisticsHistoryDetailDto,
+  toLogisticsHistoryItemDto,
+} from "@/modules/logistics/application/mappers/LogisticsHistoryApiMapper";
 import { getLogisticsItemTraceForScope } from "@/modules/logistics/application/services/GetLogisticsItemTraceService";
 import { resolveTrustedLogisticsHistoryContext } from "@/modules/logistics/application/services/LogisticsHistoryAuthorizationContext";
 
@@ -30,7 +36,8 @@ type HistoryRepositories = Pick<
   | "inventory"
   | "inventoryTransfers"
   | "products"
->;
+> &
+  Partial<Pick<RepositoryRegistry, "logisticsHistory" | "logisticsHistoryDataSource">>;
 
 const HOME_HISTORY_STATUSES = new Set<OrderStatus>([
   OrderStatus.packing,
@@ -46,6 +53,46 @@ const PICKUP_HISTORY_STATUSES = new Set<OrderStatus>([
 
 export class GetLogisticsHistoryService {
   constructor(private readonly repositories: HistoryRepositories) {}
+
+  /** En modo API el filtrado y la paginación los resuelve el backend. */
+  get usesApi() {
+    return this.repositories.logisticsHistoryDataSource === "api";
+  }
+
+  async searchApi(
+    selectedBranchId: string,
+    query: LogisticsHistoryQueryDto & { page: number; pageSize: number },
+  ): Promise<LogisticsHistoryPageDto> {
+    const context = await resolveTrustedLogisticsHistoryContext(this.repositories, selectedBranchId);
+    const result = await this.requireApiRepository().search({
+      branchId: context.branchId,
+      search: query.search,
+      status: query.status === "all" ? undefined : query.status,
+      deliveryMethod: query.deliveryMethod === "all" ? undefined : query.deliveryMethod,
+      from: query.from,
+      to: query.to,
+      page: query.page,
+      pageSize: query.pageSize,
+    });
+    return { ...result, items: result.items.map(toLogisticsHistoryItemDto) };
+  }
+
+  async getApiDetail(
+    selectedBranchId: string,
+    item: Pick<LogisticsHistoryItemDto, "sourceType" | "sourceId">,
+  ): Promise<LogisticsHistoryDetailDto> {
+    const context = await resolveTrustedLogisticsHistoryContext(this.repositories, selectedBranchId);
+    return toLogisticsHistoryDetailDto(
+      await this.requireApiRepository().getDetail(context.branchId, item.sourceType, item.sourceId),
+    );
+  }
+
+  private requireApiRepository() {
+    if (!this.usesApi || !this.repositories.logisticsHistory) {
+      throw new Error("La integración API del historial logístico no está disponible.");
+    }
+    return this.repositories.logisticsHistory;
+  }
 
   async execute(selectedBranchId: string): Promise<LogisticsHistoryItemDto[]> {
     const context = await resolveTrustedLogisticsHistoryContext(this.repositories, selectedBranchId);

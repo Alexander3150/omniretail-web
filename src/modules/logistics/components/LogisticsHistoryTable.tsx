@@ -14,6 +14,11 @@ interface LogisticsHistoryTableProps {
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
   onRowDoubleClick?: (item: LogisticsHistoryItemDto) => void;
+  /**
+   * Paginación del servidor: `items` ya es la página actual y el total lo informa el backend.
+   * Sin este dato la tabla pagina en el cliente sobre todos los registros.
+   */
+  serverTotalItems?: number;
 }
 
 export function LogisticsHistoryTable({
@@ -25,12 +30,21 @@ export function LogisticsHistoryTable({
   onPageChange,
   onPageSizeChange,
   onRowDoubleClick,
+  serverTotalItems,
 }: LogisticsHistoryTableProps) {
-  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const serverPaginated = serverTotalItems !== undefined;
+  const totalItems = serverPaginated ? serverTotalItems : items.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const safePage = Math.min(currentPage, totalPages);
   const rangeStart = items.length === 0 ? 0 : (safePage - 1) * pageSize + 1;
-  const rangeEnd = Math.min(safePage * pageSize, items.length);
-  const visibleItems = items.slice(rangeStart === 0 ? 0 : rangeStart - 1, rangeEnd);
+  const rangeEnd = serverPaginated
+    ? rangeStart === 0
+      ? 0
+      : rangeStart + items.length - 1
+    : Math.min(safePage * pageSize, items.length);
+  const visibleItems = serverPaginated
+    ? items
+    : items.slice(rangeStart === 0 ? 0 : rangeStart - 1, rangeEnd);
   const showActionColumn = items.some(canAddGuide);
 
   const columns: DataTableColumn<LogisticsHistoryItemDto>[] = [
@@ -140,7 +154,7 @@ export function LogisticsHistoryTable({
           <p className="tabular-nums">
             {items.length === 0
               ? "Mostrando 0 de 0 registros"
-              : `Mostrando ${rangeStart}-${rangeEnd} de ${items.length} registros`}
+              : `Mostrando ${rangeStart}-${rangeEnd} de ${totalItems} registros`}
           </p>
           <label className="flex items-center gap-2">
             <span className="text-xs font-semibold text-[var(--color-title)]">Filas</span>

@@ -33,5 +33,8 @@ export interface LogisticsItemTraceDto {
   name: string;
   requestedQuantity: number;
   pickedQuantity: number;
+  /** Solo en el historial API: pueden ser derivadas de las etapas de Packing y Dispatch. */
+  packedQuantity?: number;
+  dispatchedQuantity?: number;
   allocations: LogisticsTraceAllocationDto[];
 }

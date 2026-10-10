@@ -31,3 +31,20 @@ export interface LogisticsHistoryDetailDto {
   summary: LogisticsHistoryItemDto;
   items: LogisticsItemTraceDto[];
 }
+
+/** Filtros de la pantalla; en modo API se resuelven en el backend. */
+export interface LogisticsHistoryQueryDto {
+  search: string;
+  status: "all" | OrderStatus;
+  deliveryMethod: "all" | DeliveryMethod.home_delivery | DeliveryMethod.store_pickup;
+  from: string;
+  to: string;
+}
+
+export interface LogisticsHistoryPageDto {
+  items: LogisticsHistoryItemDto[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+}
