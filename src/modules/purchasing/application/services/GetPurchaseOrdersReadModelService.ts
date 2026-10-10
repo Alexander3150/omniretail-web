@@ -208,9 +208,7 @@ export class GetPurchaseOrdersReadModelService {
     const suggestions = candidates.map(({ alert, remainingQuantity }, index) => {
       const associatedSupplierProducts = supplierProductsByCandidate[index].filter(
         (item) =>
-          item.active &&
-          item.productId === alert.productId &&
-          supplierById.has(item.supplierId),
+          item.active && item.productId === alert.productId && supplierById.has(item.supplierId),
       );
       const preferredSupplierIds = [
         ...new Set(
@@ -220,9 +218,7 @@ export class GetPurchaseOrdersReadModelService {
         ),
       ];
       const preferredSupplier =
-        preferredSupplierIds.length === 1
-          ? supplierById.get(preferredSupplierIds[0])
-          : undefined;
+        preferredSupplierIds.length === 1 ? supplierById.get(preferredSupplierIds[0]) : undefined;
       return toApiReorderSuggestion(
         alert,
         remainingQuantity,
@@ -386,9 +382,11 @@ export class GetPurchaseOrdersReadModelService {
             productName: row?.productName ?? alert.title,
             sku: row?.sku ?? alert.productId,
             currentStock: row?.quantity ?? 0,
+            reservedStock: row?.reservedQuantity ?? 0,
+            availableStock: row?.availableQuantity ?? 0,
             minStock: row?.minStock ?? 0,
             suggestedQuantity: remainingQuantity,
-            shortage: Math.max(0, (row?.minStock ?? 0) - (row?.quantity ?? 0)),
+            shortage: Math.max(0, (row?.minStock ?? 0) - (row?.availableQuantity ?? 0)),
             preferredSupplierId: preferredSupplier?.id,
             preferredSupplierName: preferredSupplier?.name ?? "Sin proveedor preferido",
             associatedSupplierCount: associatedSupplierProducts.length,
@@ -441,6 +439,8 @@ function toApiReorderSuggestion(
     productName: alert.productName,
     sku: alert.sku,
     currentStock: alert.quantity,
+    reservedStock: alert.reservedQuantity,
+    availableStock: alert.availableQuantity,
     minStock: alert.minStock,
     suggestedQuantity: remainingQuantity,
     shortage: Math.max(0, alert.minStock - alert.availableQuantity),

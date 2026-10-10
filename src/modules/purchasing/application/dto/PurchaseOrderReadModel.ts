@@ -68,6 +68,8 @@ export interface ReorderSuggestionReadModel {
   productName: string;
   sku: string;
   currentStock: number;
+  reservedStock?: number;
+  availableStock?: number;
   minStock: number;
   suggestedQuantity: number;
   shortage: number;

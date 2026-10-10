@@ -85,7 +85,17 @@ export interface ProductInventorySettingsSummary {
 export interface ProductInventoryStockSummary {
   branchId: string;
   branchName: string;
+  /** Agregado fisico del DTO stock/batch; no representa por si solo lo vendible. */
   item: InventoryStockBatchItem;
+  /** Balance vendible objetivo segun capacidad/asignacion; null si no pudo validarse con seguridad. */
+  operational: {
+    locationId: string | null;
+    locationName?: string;
+    legacyUnlocated: boolean;
+    quantity: number;
+    reservedQuantity: number;
+    availableQuantity: number;
+  } | null;
 }
 
 export interface ProductSupplierSummaryItem {

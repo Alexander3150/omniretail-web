@@ -11,14 +11,14 @@ const apiUuidSchema = z.string().refine(isApiUuid, {
   message: "UUID de backend invalido.",
 });
 const nullableUuidSchema = apiUuidSchema.nullable().optional();
-const finiteNumberSchema = z.coerce.number().finite();
+const finiteNumberSchema = z.number().finite();
 
 const lotSchema = z.object({
   lotId: apiUuidSchema,
   lotNumber: z.string(),
   expirationDate: z.string().nullable().optional(),
   quantity: finiteNumberSchema,
-  reservedQuantity: finiteNumberSchema.optional().default(0),
+  reservedQuantity: finiteNumberSchema,
   availableQuantity: finiteNumberSchema,
   locationId: nullableUuidSchema,
 });

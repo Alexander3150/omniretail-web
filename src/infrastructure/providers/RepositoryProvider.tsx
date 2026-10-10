@@ -72,7 +72,11 @@ import { withApiLogisticsPacking } from "@/infrastructure/api/withApiLogisticsPa
 import { withApiLogisticsDispatch } from "@/infrastructure/api/withApiLogisticsDispatch";
 import { withApiLogisticsHistory } from "@/infrastructure/api/withApiLogisticsHistory";
 import { DataEventBus } from "@/infrastructure/events/DataEventBus";
-import { getReferenceDataCache, referenceDataPrefixes } from "@/shared/utils/requestCache";
+import {
+  getReferenceDataCache,
+  referenceDataKeys,
+  referenceDataPrefixes,
+} from "@/shared/utils/requestCache";
 import { MockDatabaseStore } from "@/infrastructure/mock/database/MockDatabaseStore";
 import {
   MockAddressRepository,
@@ -312,6 +316,14 @@ export function RepositoryProvider({ children }: { children: ReactNode }) {
     eventBus.subscribe("supplier.changed", () =>
       referenceCache.invalidatePrefix(referenceDataPrefixes.suppliers),
     );
+    eventBus.subscribe("inventory.changed", (payload) => {
+      if (payload.metadata?.entity !== "StorageLocation") return;
+      if (payload.tenantId && payload.branchId) {
+        referenceCache.invalidate(referenceDataKeys.locations(payload.tenantId, payload.branchId));
+        return;
+      }
+      referenceCache.invalidatePrefix(referenceDataPrefixes.locations);
+    });
     return {
       repositories,
       eventBus,

@@ -1,4 +1,9 @@
-import { InventoryAdjustmentType, InventoryMovementType, SerialStatus } from "@/core/enums";
+import {
+  InventoryAdjustmentType,
+  InventoryMovementType,
+  LocationStatus,
+  SerialStatus,
+} from "@/core/enums";
 import type {
   InventoryAdjustment,
   InventoryMovement,
@@ -25,7 +30,9 @@ export class MockInventoryAdjustmentRepository
     return [];
   }
 
-  async validateNewSerials(input: Parameters<InventoryAdjustmentRepository["validateNewSerials"]>[0]) {
+  async validateNewSerials(
+    input: Parameters<InventoryAdjustmentRepository["validateNewSerials"]>[0],
+  ) {
     const seen = new Set<string>();
     const repeatedInRequest = new Set<string>();
     input.serialNumbers.forEach((serial) => {
@@ -42,6 +49,19 @@ export class MockInventoryAdjustmentRepository
 
   async reconcileCount(): Promise<never> {
     throw new Error("El conteo fisico trazable no esta disponible en modo mock.");
+  }
+
+  // La regularizacion de balances heredados solo existe contra el backend; sin fallback silencioso.
+  async getLocationRegularizationOptions(): Promise<never> {
+    throw new Error("La regularizacion de ubicaciones no esta disponible en modo mock.");
+  }
+
+  async previewLocationRegularization(): Promise<never> {
+    throw new Error("La regularizacion de ubicaciones no esta disponible en modo mock.");
+  }
+
+  async regularizeLocationBalance(): Promise<never> {
+    throw new Error("La regularizacion de ubicaciones no esta disponible en modo mock.");
   }
 
   async getById(id: string) {
@@ -104,13 +124,41 @@ export class MockInventoryAdjustmentRepository
     const result = this.store.transact((db) => {
       this.assertValidCreateInput(db, input);
       const product = db.products.find((item) => item.id === input.productId)!;
+      const capabilities = db.businessCapabilities.find((item) => item.tenantId === input.tenantId);
+      // Sin configuracion del negocio el backend interpreta false: no se asume true.
+      const usesLocations = capabilities?.supportsMultipleLocations ?? false;
       const location = db.storageLocations.find((item) => item.id === input.locationId);
-      if (
-        !location ||
-        location.tenantId !== input.tenantId ||
-        location.branchId !== input.branchId
-      ) {
-        throw new Error("Inventory adjustment location must match adjustment tenant and branch");
+      const settings = db.productInventorySettings.find(
+        (item) =>
+          item.tenantId === input.tenantId &&
+          item.branchId === input.branchId &&
+          item.productId === input.productId,
+      );
+      if (usesLocations && !input.locationId && !settings?.defaultLocationId) {
+        // Producto heredado sin asignacion: opera su balance NULL historico (igual que el backend).
+        const hasLegacyNullBalance = db.inventoryBalances.some(
+          (item) =>
+            item.tenantId === input.tenantId &&
+            item.branchId === input.branchId &&
+            item.productId === input.productId &&
+            !item.locationId,
+        );
+        if (!hasLegacyNullBalance) {
+          throw new Error("Inventory adjustment location must be the active operational location");
+        }
+      } else if (usesLocations) {
+        if (
+          !input.locationId ||
+          !location ||
+          location.tenantId !== input.tenantId ||
+          location.branchId !== input.branchId ||
+          location.status !== LocationStatus.active ||
+          settings?.defaultLocationId !== input.locationId
+        ) {
+          throw new Error("Inventory adjustment location must be the active operational location");
+        }
+      } else if (input.locationId) {
+        throw new Error("Inventory adjustment location must be empty when locations are disabled");
       }
       const delta = input.quantityAfter - input.quantityBefore;
       const quantity = Math.abs(delta);
@@ -123,7 +171,7 @@ export class MockInventoryAdjustmentRepository
           item.tenantId === input.tenantId &&
           item.branchId === input.branchId &&
           item.productId === input.productId &&
-          item.locationId === input.locationId,
+          (item.locationId ?? null) === (input.locationId ?? null),
       );
       const locationQuantity = balance?.quantity ?? 0;
       const actualQuantityBefore = db.inventoryBalances
@@ -131,12 +179,21 @@ export class MockInventoryAdjustmentRepository
           (item) =>
             item.tenantId === input.tenantId &&
             item.branchId === input.branchId &&
-            item.productId === input.productId,
+            item.productId === input.productId &&
+            (item.locationId ?? null) === (input.locationId ?? null),
         )
         .reduce((total, item) => total + item.quantity, 0);
-      if (actualQuantityBefore !== input.quantityBefore) {
-        throw new Error("Inventory changed while the adjustment was being prepared");
+      if (
+        input.type === InventoryAdjustmentType.countCorrection &&
+        input.expectedQuantity !== undefined &&
+        actualQuantityBefore !== input.expectedQuantity
+      ) {
+        throw new Error("COUNT_SNAPSHOT_STALE: Inventory changed while the count was prepared");
       }
+      // Los movimientos manuales son deltas y no llevan snapshot optimista. El mock usa el saldo
+      // actual como quantityBefore, igual que la API; el conteo exacto si queda protegido arriba.
+      const effectiveQuantityBefore = actualQuantityBefore;
+      const effectiveQuantityAfter = effectiveQuantityBefore + delta;
       const availableLocationQuantity = locationQuantity - (balance?.reservedQuantity ?? 0);
       if (delta < 0 && quantity > availableLocationQuantity) {
         throw new Error("Insufficient stock in the selected location");
@@ -273,8 +330,8 @@ export class MockInventoryAdjustmentRepository
         type: input.type,
         reason: input.reason.trim(),
         notes: input.notes?.trim() || undefined,
-        quantityBefore: input.quantityBefore,
-        quantityAfter: input.quantityAfter,
+        quantityBefore: effectiveQuantityBefore,
+        quantityAfter: effectiveQuantityAfter,
         delta,
         performedByUserId: input.performedByUserId,
         createdAt: now,
@@ -296,8 +353,8 @@ export class MockInventoryAdjustmentRepository
           type: movementType,
           reason: input.reason.trim(),
           quantity: movementQuantity,
-          quantityBefore: input.quantityBefore + Math.sign(delta) * index,
-          quantityAfter: input.quantityBefore + Math.sign(delta) * (index + movementQuantity),
+          quantityBefore: effectiveQuantityBefore + Math.sign(delta) * index,
+          quantityAfter: effectiveQuantityBefore + Math.sign(delta) * (index + movementQuantity),
           fromLocationId: delta < 0 ? input.locationId : undefined,
           toLocationId: delta > 0 ? input.locationId : undefined,
           referenceType: "inventoryAdjustment",
@@ -338,12 +395,20 @@ export class MockInventoryAdjustmentRepository
       throw new Error("Inventory adjustment product must match adjustment tenant");
     }
 
-    if (input.locationId) {
+    const capabilities = db.businessCapabilities.find((item) => item.tenantId === input.tenantId);
+    const usesLocations = capabilities?.supportsMultipleLocations ?? false;
+    if (usesLocations && input.locationId) {
       const location = db.storageLocations.find((item) => item.id === input.locationId);
       if (!location) throw this.missing("StorageLocation", input.locationId);
-      if (location.tenantId !== input.tenantId || location.branchId !== input.branchId) {
+      if (
+        location.tenantId !== input.tenantId ||
+        location.branchId !== input.branchId ||
+        location.status !== LocationStatus.active
+      ) {
         throw new Error("Inventory adjustment location must match adjustment tenant and branch");
       }
+    } else if (input.locationId) {
+      throw new Error("Inventory adjustment location must be empty when locations are disabled");
     }
 
     if (input.performedByUserId) {

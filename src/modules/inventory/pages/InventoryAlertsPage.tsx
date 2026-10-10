@@ -17,6 +17,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { StorageLocation } from "@/core/entities";
 import type { AdjustmentLotOption, AdjustmentSerialOption } from "@/core/repositories";
 import type { InventoryAdjustmentLookupService } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
+import { STOCK_ELSEWHERE_ADJUSTMENT_MESSAGE } from "@/modules/inventory/application/services/RegisterInventoryAdjustmentService";
 import { useSerialBatchPrecheck } from "@/shared/hooks/useSerialBatchPrecheck";
 import { INVENTORY_STOCK_READ_PERMISSION } from "@/modules/inventory/application/services/serviceHelpers";
 import { TraceableCountFlow } from "@/modules/inventory/components/TraceableCountFlow";
@@ -30,6 +31,7 @@ import { getLocalCalendarDate } from "@/core/inventory/expirationDate";
 import {
   InventoryTransferReason,
   InventoryTransferRequestStatus,
+  LocationStatus,
   SaasCapabilityKey,
 } from "@/core/enums";
 import { useCurrentSession } from "@/modules/auth/hooks/useCurrentSession";
@@ -72,7 +74,12 @@ import {
 } from "@/modules/inventory/validation/inventoryAlerts.validation";
 
 type ActionMode =
-  "adjust" | "other-branches" | "request-transfer" | "product-transfers" | "transfer-request-detail" | null;
+  | "adjust"
+  | "other-branches"
+  | "request-transfer"
+  | "product-transfers"
+  | "transfer-request-detail"
+  | null;
 
 type EditableAdjustStockDto = Omit<AdjustStockDto, "quantity" | "serialNumbers"> & {
   quantity: NumericInputValue;
@@ -214,7 +221,10 @@ export function InventoryAlertsPage() {
     null;
   const selectedTransferRequest =
     data.transferRequests.find((request) => request.id === selectedTransferRequestId) ?? null;
-  const branchLocations = locations.filter((location) => location.branchId === branchId);
+  const branchLocations = useMemo(
+    () => locations.filter((location) => location.branchId === branchId),
+    [branchId, locations],
+  );
   // Solo un producto con stock propio (TRACKED) admite ajustes; servicio y kit no.
   const canAdjustSelectedRow = canAdjustStock && selectedRow?.inventoryMode === "TRACKED";
   const firstVisible = totalItems === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -251,7 +261,10 @@ export function InventoryAlertsPage() {
       if (canAdjustStock && row.inventoryMode === "TRACKED") {
         setActionMode("adjust");
       }
-      router.replace(buildUrl((params) => params.delete("openAdjustment")), { scroll: false });
+      router.replace(
+        buildUrl((params) => params.delete("openAdjustment")),
+        { scroll: false },
+      );
     });
     return () => {
       active = false;
@@ -587,7 +600,9 @@ export function InventoryAlertsPage() {
             const request = data.transferRequests.find((item) => item.id === requestId);
             if (request) openTransferRequestDetail(request);
           }}
-          onCancelRequest={async (requestId) => { await cancelTransferRequest(requestId); }}
+          onCancelRequest={async (requestId) => {
+            await cancelTransferRequest(requestId);
+          }}
           onCancelTransfer={cancelTransfer}
         />
       ) : null}
@@ -674,7 +689,7 @@ function KpiGrid({
         />
       ) : null}
       <KpiCard
-        description="Sin cantidad registrada en la sucursal"
+        description="Sin disponibilidad en la sucursal"
         filter="outOfStock"
         icon="S"
         label="Sin existencias"
@@ -791,9 +806,7 @@ function InventoryFilters({
       {showAlertsLauncher ? (
         <button
           aria-label={
-            unreadAlertCount > 0
-              ? `Abrir alertas, ${unreadAlertCount} nuevas`
-              : "Abrir alertas"
+            unreadAlertCount > 0 ? `Abrir alertas, ${unreadAlertCount} nuevas` : "Abrir alertas"
           }
           className="absolute right-3 top-3 hidden h-11 w-11 items-center justify-center rounded-xl bg-[var(--color-structure)] text-white shadow-md transition hover:bg-[var(--color-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-structure)] xl:inline-flex"
           onClick={onOpenAlerts}
@@ -918,16 +931,15 @@ function InventoryTable({
         <table
           className={cn(
             "w-full min-w-[820px] border-collapse text-left text-sm",
-            compact &&
-              "xl:text-[13px] xl:[&_td]:px-2.5 xl:[&_td]:py-2.5 xl:[&_th]:px-2.5",
+            compact && "xl:text-[13px] xl:[&_td]:px-2.5 xl:[&_td]:py-2.5 xl:[&_th]:px-2.5",
           )}
         >
           <thead className="bg-[var(--color-structure)] text-xs uppercase text-white">
             <tr>
               <th className="px-3 py-2.5 font-semibold">Producto</th>
-              <th className="px-3 py-2.5 text-right font-semibold">Existencia</th>
-              <th className="px-3 py-2.5 text-right font-semibold">Reservado</th>
-              <th className="px-3 py-2.5 text-right font-semibold">Disponible</th>
+              <th className="px-3 py-2.5 text-right font-semibold">Existencia sucursal</th>
+              <th className="px-3 py-2.5 text-right font-semibold">Reservado sucursal</th>
+              <th className="px-3 py-2.5 text-right font-semibold">Disponible agregado</th>
               <th className="hidden px-3 py-2.5 text-right font-semibold md:table-cell">
                 Nivel minimo
               </th>
@@ -1509,46 +1521,46 @@ function ContextPanel({
             : "self-start rounded-xl",
         )}
       >
-      {mode === "product-detail" ? (
-        <button
-          className="flex w-full items-center justify-between border-b border-[var(--color-border)] px-4 py-3 text-left text-sm font-bold text-[var(--color-title)] transition hover:bg-[var(--color-app-background)]"
-          onClick={() => onModeChange("alerts")}
-          type="button"
-        >
-          <span>Alertas {totalAlerts}</span>
-          <span aria-hidden="true">v</span>
-        </button>
-      ) : (
-        <AlertsPanel
-          activeBranchId={activeBranchId}
-          alerts={alerts}
-          alertTotalItems={alertTotalItems}
-          transferRequests={transferRequests}
-          hasRestoredViewedTransferAlerts={hasRestoredViewedTransferAlerts}
-          viewedTransferAlertKeys={viewedTransferAlertKeys}
-          onCollapse={onCollapse}
-          onSelectProduct={onSelectProduct}
-          onSelectTransferRequest={onSelectTransferRequest}
-        />
-      )}
+        {mode === "product-detail" ? (
+          <button
+            className="flex w-full items-center justify-between border-b border-[var(--color-border)] px-4 py-3 text-left text-sm font-bold text-[var(--color-title)] transition hover:bg-[var(--color-app-background)]"
+            onClick={() => onModeChange("alerts")}
+            type="button"
+          >
+            <span>Alertas {totalAlerts}</span>
+            <span aria-hidden="true">v</span>
+          </button>
+        ) : (
+          <AlertsPanel
+            activeBranchId={activeBranchId}
+            alerts={alerts}
+            alertTotalItems={alertTotalItems}
+            transferRequests={transferRequests}
+            hasRestoredViewedTransferAlerts={hasRestoredViewedTransferAlerts}
+            viewedTransferAlertKeys={viewedTransferAlertKeys}
+            onCollapse={onCollapse}
+            onSelectProduct={onSelectProduct}
+            onSelectTransferRequest={onSelectTransferRequest}
+          />
+        )}
 
-      {mode === "product-detail" && row ? (
-        <ProductPanel
-          activeBranchName={activeBranchName}
-          alerts={productAlerts}
-          row={row}
-          canAdjustStock={canAdjustStock}
-          canCreatePurchaseOrder={canCreatePurchaseOrder}
-          canViewOtherBranches={canViewOtherBranches}
-          kitAvailabilityService={kitAvailabilityService}
-          onAdjust={onAdjust}
-          onCreateOrder={onCreateOrder}
-          onClose={onCloseProduct}
-          onOtherBranches={onOtherBranches}
-          onViewHistory={onViewHistory}
-          onViewProductTransfers={onViewProductTransfers}
-        />
-      ) : null}
+        {mode === "product-detail" && row ? (
+          <ProductPanel
+            activeBranchName={activeBranchName}
+            alerts={productAlerts}
+            row={row}
+            canAdjustStock={canAdjustStock}
+            canCreatePurchaseOrder={canCreatePurchaseOrder}
+            canViewOtherBranches={canViewOtherBranches}
+            kitAvailabilityService={kitAvailabilityService}
+            onAdjust={onAdjust}
+            onCreateOrder={onCreateOrder}
+            onClose={onCloseProduct}
+            onOtherBranches={onOtherBranches}
+            onViewHistory={onViewHistory}
+            onViewProductTransfers={onViewProductTransfers}
+          />
+        ) : null}
       </aside>
     </>
   );
@@ -1609,7 +1621,10 @@ function AlertsPanel({
         >
           ×
         </button>
-        <span aria-hidden="true" className="text-sm font-bold text-[var(--color-text-muted)] xl:hidden">
+        <span
+          aria-hidden="true"
+          className="text-sm font-bold text-[var(--color-text-muted)] xl:hidden"
+        >
           ^
         </span>
       </header>
@@ -1807,7 +1822,9 @@ const PANEL_SECONDARY_ACTION_CLASS =
 function CompactTile({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[10px] font-semibold uppercase text-[var(--color-text-muted)]">{label}</dt>
+      <dt className="text-[10px] font-semibold uppercase text-[var(--color-text-muted)]">
+        {label}
+      </dt>
       <dd className="mt-0.5 break-words text-[13px] font-semibold leading-snug text-[var(--color-text)]">
         {value}
       </dd>
@@ -1991,7 +2008,10 @@ function PhysicalProductPanel({
             ) : null}
             {row.saleConversionUnavailableUnitName ? (
               <>
-                <CompactTile label="Unidad de venta" value={row.saleConversionUnavailableUnitName} />
+                <CompactTile
+                  label="Unidad de venta"
+                  value={row.saleConversionUnavailableUnitName}
+                />
                 <CompactTile label="Equivalencia de venta" value="No disponible" />
               </>
             ) : null}
@@ -2357,6 +2377,7 @@ function AdjustStockGate({
   const [resolved, setResolved] = useState<{
     key: string;
     tracking: InventoryProductRow["tracking"];
+    operational: Awaited<ReturnType<InventoryAdjustmentLookupService["resolveOperationalStock"]>>;
   } | null>(null);
   const [loadError, setLoadError] = useState<{ key: string; message: string } | null>(null);
   const productId = row.productId;
@@ -2365,10 +2386,18 @@ function AdjustStockGate({
   useEffect(() => {
     if (!lookup) return;
     let active = true;
-    lookup
-      .resolveTracking(productId)
-      .then((tracking) => {
-        if (active) setResolved({ key, tracking });
+    // Tracking real y balance operativo real (no el agregado de /inventory/stock).
+    Promise.all([
+      lookup.resolveTracking(productId),
+      lookup.resolveOperationalStock({
+        branchId: row.branchId,
+        productId,
+        usesLocations: supportsMultipleLocations,
+        knownLocations: locations,
+      }),
+    ])
+      .then(([tracking, operational]) => {
+        if (active) setResolved({ key, tracking, operational });
       })
       .catch((caughtError) => {
         if (active) {
@@ -2384,7 +2413,7 @@ function AdjustStockGate({
     return () => {
       active = false;
     };
-  }, [lookup, key, productId]);
+  }, [locations, lookup, key, productId, row.branchId, supportsMultipleLocations]);
 
   if (!lookup) {
     return (
@@ -2412,7 +2441,14 @@ function AdjustStockGate({
         countService={countService}
         onApplyCount={onApplyCount}
         open
-        row={{ ...row, tracking: resolved.tracking, tracksExpiration: resolved.tracking.expiration }}
+        row={{
+          ...row,
+          tracking: resolved.tracking,
+          tracksExpiration: resolved.tracking.expiration,
+          quantity: resolved.operational.quantity,
+          availableQuantity: resolved.operational.availableQuantity,
+          hasStockOutsideOperationalBalance: resolved.operational.hasStockElsewhere,
+        }}
         onClose={onClose}
         onSubmit={onSubmit}
       />
@@ -2460,10 +2496,14 @@ function AdjustStockModal({
   onClose: () => void;
   onSubmit: (dto: AdjustStockDto) => Promise<void>;
 }) {
-  // Sin "Multiples ubicaciones" el ajuste va sin ubicacion: no se muestra selector ni se inventa una.
-  const defaultLocationId = supportsMultipleLocations
-    ? row.defaultLocationId || locations[0]?.id || ""
-    : "";
+  // La ubicacion se deriva solo de la configuracion producto+sucursal; nunca de la primera opcion.
+  const operationalLocation = supportsMultipleLocations
+    ? locations.find(
+        (location) =>
+          location.id === row.defaultLocationId && location.status === LocationStatus.active,
+      )
+    : undefined;
+  const defaultLocationId = operationalLocation?.id ?? "";
   const [value, setValue] = useState<EditableAdjustStockDto>(() => ({
     productId: row.productId,
     branchId: row.branchId,
@@ -2476,21 +2516,43 @@ function AdjustStockModal({
     serialNumbersText: "",
   }));
   const [errors, setErrors] = useState<AdjustmentValidationErrors>({});
-  // API: el tope de salida es la existencia DISPONIBLE (sin reservas); mock: por ubicacion.
-  const locationQuantity = useMemo(
-    () => (lookup ? row.availableQuantity : (row.locationQuantities[value.locationId] ?? 0)),
-    [lookup, row.availableQuantity, row.locationQuantities, value.locationId],
+  // El modal opera contra una sola ubicacion. En API, /inventory/stock ya es el read model
+  // autoritativo; en mock se usa exclusivamente el balance de la ubicacion configurada.
+  const operationalStock = useMemo(
+    () =>
+      lookup
+        ? { quantity: row.quantity, availableQuantity: row.availableQuantity }
+        : !supportsMultipleLocations || !value.locationId
+          ? {
+              quantity: row.unlocatedQuantity,
+              availableQuantity: row.unlocatedAvailableQuantity,
+            }
+          : {
+              quantity: row.locationQuantities[value.locationId] ?? 0,
+              availableQuantity: row.locationAvailableQuantities[value.locationId] ?? 0,
+            },
+    [
+      lookup,
+      row.availableQuantity,
+      row.locationAvailableQuantities,
+      row.locationQuantities,
+      row.quantity,
+      row.unlocatedAvailableQuantity,
+      row.unlocatedQuantity,
+      supportsMultipleLocations,
+      value.locationId,
+    ],
   );
   const selectedUnit =
     row.adjustmentUnits.find((option) => option.unitId === value.unitId) ?? row.adjustmentUnits[0];
   const canonicalInputQuantity = toFiniteNumber(value.quantity) * (selectedUnit?.toBaseFactor ?? 1);
   const finalQuantity =
     value.movementKind === "in"
-      ? row.quantity + canonicalInputQuantity
+      ? operationalStock.quantity + canonicalInputQuantity
       : value.movementKind === "out" || value.movementKind === "waste"
-        ? row.quantity - canonicalInputQuantity
+        ? operationalStock.quantity - canonicalInputQuantity
         : canonicalInputQuantity;
-  const delta = finalQuantity - row.quantity;
+  const delta = finalQuantity - operationalStock.quantity;
   const traceQuantity = Math.abs(delta);
   const isEntry = delta > 0;
   const parsedSerials = parseSerialNumbers(value.serialNumbersText);
@@ -2535,7 +2597,10 @@ function AdjustStockModal({
           setLotsState({
             key: lotsKey,
             items: [],
-            error: caughtError instanceof Error ? caughtError.message : "No se pudieron cargar los lotes.",
+            error:
+              caughtError instanceof Error
+                ? caughtError.message
+                : "No se pudieron cargar los lotes.",
           });
         }
       });
@@ -2562,7 +2627,10 @@ function AdjustStockModal({
           setSerialsState({
             key: serialsKey,
             items: [],
-            error: caughtError instanceof Error ? caughtError.message : "No se pudieron cargar las series.",
+            error:
+              caughtError instanceof Error
+                ? caughtError.message
+                : "No se pudieron cargar las series.",
           });
         }
       });
@@ -2581,9 +2649,9 @@ function AdjustStockModal({
   });
   const currentLots = lotsState?.key === lotsKey ? lotsState : null;
   const currentSerials = serialsState?.key === serialsKey ? serialsState : null;
-  const lookupLoading =
-    (needsLotLookup && !currentLots) || (needsSerialLookup && !currentSerials);
-  const lookupError = (needsLotLookup && currentLots?.error) || (needsSerialLookup && currentSerials?.error) || null;
+  const lookupLoading = (needsLotLookup && !currentLots) || (needsSerialLookup && !currentSerials);
+  const lookupError =
+    (needsLotLookup && currentLots?.error) || (needsSerialLookup && currentSerials?.error) || null;
   const availableLots = dynamicLookup
     ? (currentLots?.items ?? []).map((lot) => ({
         id: lot.lotId,
@@ -2593,9 +2661,7 @@ function AdjustStockModal({
         quantity: lot.availableQuantity,
         locationId: lot.locationId,
       }))
-    : row.availableLots.filter(
-        (lot) => !value.locationId || lot.locationId === value.locationId,
-      );
+    : row.availableLots.filter((lot) => !value.locationId || lot.locationId === value.locationId);
   if (dynamicLookup) {
     // Orden FEFO solo informativo (vencimiento asc, luego lote); nunca se autoselecciona.
     availableLots.sort(
@@ -2628,10 +2694,18 @@ function AdjustStockModal({
   const adjustmentValidationErrors = validateAdjustment(
     { ...adjustmentDto, quantity: canonicalInputQuantity },
     row,
-    locationQuantity,
+    operationalStock,
     undefined,
-    supportsMultipleLocations,
+    // Un producto heredado sin asignacion opera su balance sin ubicacion: no exige ubicacion.
+    supportsMultipleLocations && Boolean(row.defaultLocationId),
   );
+  if (
+    lookup &&
+    row.hasStockOutsideOperationalBalance &&
+    (value.movementKind === "in" || value.movementKind === "count")
+  ) {
+    adjustmentValidationErrors.locationId = STOCK_ELSEWHERE_ADJUSTMENT_MESSAGE;
+  }
   const adjustmentQuantityError = getUnitQuantityInputError(
     value.quantity,
     selectedUnit?.unitAllowsDecimals ?? false,
@@ -2674,7 +2748,7 @@ function AdjustStockModal({
     const unit =
       row.adjustmentUnits.find((option) => option.unitId === (rawPatch.unitId ?? value.unitId)) ??
       row.adjustmentUnits[0];
-    const capacityBase = selectedLot ? selectedLot.quantity : row.availableQuantity;
+    const capacityBase = selectedLot ? selectedLot.quantity : operationalStock.availableQuantity;
     const maxInput = Math.floor((capacityBase / (unit?.toBaseFactor ?? 1)) * 1000) / 1000;
     return rawPatch.quantity > maxInput ? { ...rawPatch, quantity: maxInput } : rawPatch;
   }
@@ -2690,9 +2764,19 @@ function AdjustStockModal({
     const nextValidationErrors = validateAdjustment(
       { ...toAdjustStockDto(nextValue), quantity: nextCanonicalQuantity },
       row,
-      lookup ? row.availableQuantity : (row.locationQuantities[nextValue.locationId] ?? 0),
+      lookup
+        ? { quantity: row.quantity, availableQuantity: row.availableQuantity }
+        : !supportsMultipleLocations || !nextValue.locationId
+          ? {
+              quantity: row.unlocatedQuantity,
+              availableQuantity: row.unlocatedAvailableQuantity,
+            }
+          : {
+              quantity: row.locationQuantities[nextValue.locationId] ?? 0,
+              availableQuantity: row.locationAvailableQuantities[nextValue.locationId] ?? 0,
+            },
       undefined,
-      supportsMultipleLocations,
+      supportsMultipleLocations && Boolean(row.defaultLocationId),
     );
     const nextQuantityError = getUnitQuantityInputError(
       nextValue.quantity,
@@ -2705,7 +2789,11 @@ function AdjustStockModal({
       affectedFields.add("lotId");
       affectedFields.add("serialNumbers");
     }
-    if (patch.movementKind !== undefined || patch.unitId !== undefined || patch.quantity !== undefined) {
+    if (
+      patch.movementKind !== undefined ||
+      patch.unitId !== undefined ||
+      patch.quantity !== undefined
+    ) {
       affectedFields.add("quantity");
       affectedFields.add("lotId");
       affectedFields.add("lotNumber");
@@ -2754,32 +2842,32 @@ function AdjustStockModal({
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <ReadonlyField label="Producto" value={row.productName} />
           <ReadonlyField label="Codigo" value={row.sku} />
-          <ReadonlyField label="Existencia actual" value={String(row.quantity)} />
-          <ReadonlyField label="Reservado" value={String(row.reservedQuantity)} />
-          <ReadonlyField label="Disponible" value={String(row.availableQuantity)} />
+          <ReadonlyField label="Existencia ajustable" value={String(operationalStock.quantity)} />
+          <ReadonlyField
+            label="Disponible ajustable"
+            value={String(operationalStock.availableQuantity)}
+          />
           <ReadonlyField label="Nivel minimo" value={String(row.minStock)} />
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           {supportsMultipleLocations ? (
-            <Field id="adjust-location" label="Ubicacion" error={errors.locationId}>
-              <Select
-                id="adjust-location"
-                onChange={(event) =>
-                  update({
-                    locationId: event.target.value,
-                    lotId: undefined,
-                    serialNumbersText: "",
-                  })
+            <div className="space-y-2">
+              <ReadonlyField
+                label="Ubicacion operativa asignada"
+                value={
+                  operationalLocation
+                    ? `${operationalLocation.code} - ${operationalLocation.name}`
+                    : row.defaultLocationId
+                      ? "Sin ubicacion operativa activa"
+                      : "Balance sin ubicacion (historico)"
                 }
-                value={value.locationId}
-              >
-                {locations.map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {location.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+              />
+              {(errors.locationId ?? adjustmentValidationErrors.locationId) ? (
+                <p className="text-sm font-semibold text-[var(--color-danger)]">
+                  {errors.locationId ?? adjustmentValidationErrors.locationId}
+                </p>
+              ) : null}
+            </div>
           ) : null}
           <Field id="adjust-kind" label="Tipo de ajuste">
             <Select
@@ -2813,164 +2901,173 @@ function AdjustStockModal({
           />
         ) : (
           <>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field id="adjust-unit" label="Unidad">
-            <Select
-              id="adjust-unit"
-              onChange={(event) => update({ unitId: event.target.value, serialNumbersText: "" })}
-              value={value.unitId}
-            >
-              {row.adjustmentUnits.map((option) => (
-                <option key={option.unitId} value={option.unitId}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field
-            id="adjust-quantity"
-            label={value.movementKind === "count" ? "Existencia fisica contada" : "Cantidad"}
-            error={errors.quantity ?? adjustmentValidationErrors.quantity}
-          >
-            <Input
-              id="adjust-quantity"
-              inputMode={selectedUnit?.unitAllowsDecimals ? "decimal" : "numeric"}
-              maxLength={selectedUnit?.unitAllowsDecimals ? 12 : 6}
-              onChange={(event) =>
-                update({
-                  quantity: parseUnitQuantityInput(
-                    event.target.value,
-                    selectedUnit?.unitAllowsDecimals ?? false,
-                  ),
-                })
-              }
-              type="text"
-              value={value.quantity}
-            />
-          </Field>
-        </div>
-        {selectedUnit && selectedUnit.toBaseFactor !== 1 ? (
-          <p className="rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-title)]">
-            {toFiniteNumber(value.quantity)} {selectedUnit.unitName} = {canonicalInputQuantity}{" "}
-            {row.unitName}
-          </p>
-        ) : null}
-        {row.tracking.lot && traceQuantity > 0 ? (
-          isEntry ? (
-            <Field id="adjust-lot-number" label="Lote *" error={errors.lotNumber}>
-              <Input
-                id="adjust-lot-number"
-                maxLength={TEXT_LIMITS.lotNumber}
-                onChange={(event) => update({ lotNumber: event.target.value })}
-                value={value.lotNumber ?? ""}
-              />
-            </Field>
-          ) : (
-            <Field id="adjust-lot" label="Lote existente *" error={errors.lotId}>
-              <Select
-                disabled={lookupLoading}
-                id="adjust-lot"
-                onChange={(event) => update({ lotId: event.target.value, serialNumbersText: "" })}
-                value={value.lotId ?? ""}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field id="adjust-unit" label="Unidad">
+                <Select
+                  id="adjust-unit"
+                  onChange={(event) =>
+                    update({ unitId: event.target.value, serialNumbersText: "" })
+                  }
+                  value={value.unitId}
+                >
+                  {row.adjustmentUnits.map((option) => (
+                    <option key={option.unitId} value={option.unitId}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field
+                id="adjust-quantity"
+                label={value.movementKind === "count" ? "Existencia fisica contada" : "Cantidad"}
+                error={errors.quantity ?? adjustmentValidationErrors.quantity}
               >
-                <option value="">Seleccionar lote</option>
-                {availableLots.map((lot) => (
-                  <option key={lot.id} value={lot.id}>
-                    {lot.lotNumber} · {lot.quantity} disponibles
-                    {lot.expirationDate ? ` · vence ${formatLotDate(lot.expirationDate)}` : ""}
-                  </option>
-                ))}
-              </Select>
-              {noLotsAvailable ? (
-                <p className="mt-1 text-xs font-semibold text-[var(--color-danger)]">
-                  No hay lotes disponibles para este producto en la ubicacion seleccionada.
-                </p>
-              ) : null}
-              {selectedLot && selectedLot.quantity < traceQuantity ? (
-                <p className="mt-1 text-xs font-semibold text-[var(--color-danger)]">
-                  El lote no tiene suficientes unidades.
-                </p>
-              ) : null}
-            </Field>
-          )
-        ) : null}
-        {row.tracking.expiration && isEntry && traceQuantity > 0 ? (
-          <Field
-            id="adjust-expiration"
-            label="Fecha de vencimiento *"
-            error={errors.expirationDate}
-          >
-            <Input
-              id="adjust-expiration"
-              min={getLocalCalendarDate()}
-              type="date"
-              onChange={(event) => update({ expirationDate: event.target.value })}
-              value={value.expirationDate ?? ""}
-            />
-          </Field>
-        ) : null}
-        {row.tracking.serial && traceQuantity > 0 ? (
-          <Field
-            id="adjust-serials"
-            label={isEntry ? "Numeros de serie nuevos *" : "Series existentes que salen *"}
-            error={errors.serialNumbers}
-          >
-            {isEntry ? (
-              <textarea
-                id="adjust-serials"
-                className="min-h-32 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm"
-                maxLength={TEXT_LIMITS.serialNumbers}
-                placeholder="Una serie por linea"
-                onChange={(event) => update({ serialNumbersText: event.target.value })}
-                value={value.serialNumbersText}
-              />
-            ) : (
-              <SerialPicker
-                disabled={lookupLoading}
-                options={availableSerials.map((serial) => serial.serialNumber)}
-                required={traceQuantity}
-                selected={parsedSerials}
-                onChange={(next) => update({ serialNumbersText: next.join("\n") })}
-              />
-            )}
-            <p className="mt-1 text-sm font-semibold text-[var(--color-text-muted)]">
-              Cantidad del ajuste: {traceQuantity} {row.unitName}. Seriales requeridos:{" "}
-              {traceQuantity}. Registrados: {parsedSerials.length} / {traceQuantity}.
-            </p>
-            {isEntry && dynamicLookup && serialPrecheck.unavailable ? (
-              <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
-                No se pudo validar los seriales en este momento; se validaran al confirmar.
+                <Input
+                  id="adjust-quantity"
+                  inputMode={selectedUnit?.unitAllowsDecimals ? "decimal" : "numeric"}
+                  maxLength={selectedUnit?.unitAllowsDecimals ? 12 : 6}
+                  onChange={(event) =>
+                    update({
+                      quantity: parseUnitQuantityInput(
+                        event.target.value,
+                        selectedUnit?.unitAllowsDecimals ?? false,
+                      ),
+                    })
+                  }
+                  type="text"
+                  value={value.quantity}
+                />
+              </Field>
+            </div>
+            {selectedUnit && selectedUnit.toBaseFactor !== 1 ? (
+              <p className="rounded-md bg-[var(--color-app-background)] px-3 py-2 text-sm font-semibold text-[var(--color-title)]">
+                {toFiniteNumber(value.quantity)} {selectedUnit.unitName} = {canonicalInputQuantity}{" "}
+                {row.unitName}
               </p>
             ) : null}
-          </Field>
-        ) : null}
-        {lookupLoading ? (
-          <p className="text-sm font-semibold text-[var(--color-text-muted)]">
-            Cargando lotes y series disponibles...
-          </p>
-        ) : null}
-        {lookupError ? <InlineAlert title={lookupError} tone="danger" /> : null}
-        <Field id="adjust-reason" label="Motivo *" error={errors.reason}>
-          <textarea
-            className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
-            id="adjust-reason"
-            maxLength={TEXT_LIMITS.reason}
-            onChange={(event) => update({ reason: event.target.value })}
-            value={value.reason}
-          />
-          <CharacterCount current={value.reason.length} maximum={TEXT_LIMITS.reason} />
-        </Field>
-        <Field id="adjust-notes" label="Observaciones" error={errors.notes}>
-          <textarea
-            className="min-h-16 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
-            id="adjust-notes"
-            maxLength={TEXT_LIMITS.notes}
-            onChange={(event) => update({ notes: event.target.value })}
-            value={value.notes}
-          />
-          <CharacterCount current={value.notes.length} maximum={TEXT_LIMITS.notes} />
-        </Field>
-        <AdjustmentSummary delta={delta} finalQuantity={finalQuantity} row={row} value={value} />
+            {row.tracking.lot && traceQuantity > 0 ? (
+              isEntry ? (
+                <Field id="adjust-lot-number" label="Lote *" error={errors.lotNumber}>
+                  <Input
+                    id="adjust-lot-number"
+                    maxLength={TEXT_LIMITS.lotNumber}
+                    onChange={(event) => update({ lotNumber: event.target.value })}
+                    value={value.lotNumber ?? ""}
+                  />
+                </Field>
+              ) : (
+                <Field id="adjust-lot" label="Lote existente *" error={errors.lotId}>
+                  <Select
+                    disabled={lookupLoading}
+                    id="adjust-lot"
+                    onChange={(event) =>
+                      update({ lotId: event.target.value, serialNumbersText: "" })
+                    }
+                    value={value.lotId ?? ""}
+                  >
+                    <option value="">Seleccionar lote</option>
+                    {availableLots.map((lot) => (
+                      <option key={lot.id} value={lot.id}>
+                        {lot.lotNumber} · {lot.quantity} disponibles
+                        {lot.expirationDate ? ` · vence ${formatLotDate(lot.expirationDate)}` : ""}
+                      </option>
+                    ))}
+                  </Select>
+                  {noLotsAvailable ? (
+                    <p className="mt-1 text-xs font-semibold text-[var(--color-danger)]">
+                      No hay lotes disponibles para este producto en la ubicacion seleccionada.
+                    </p>
+                  ) : null}
+                  {selectedLot && selectedLot.quantity < traceQuantity ? (
+                    <p className="mt-1 text-xs font-semibold text-[var(--color-danger)]">
+                      El lote no tiene suficientes unidades.
+                    </p>
+                  ) : null}
+                </Field>
+              )
+            ) : null}
+            {row.tracking.expiration && isEntry && traceQuantity > 0 ? (
+              <Field
+                id="adjust-expiration"
+                label="Fecha de vencimiento *"
+                error={errors.expirationDate}
+              >
+                <Input
+                  id="adjust-expiration"
+                  min={getLocalCalendarDate()}
+                  type="date"
+                  onChange={(event) => update({ expirationDate: event.target.value })}
+                  value={value.expirationDate ?? ""}
+                />
+              </Field>
+            ) : null}
+            {row.tracking.serial && traceQuantity > 0 ? (
+              <Field
+                id="adjust-serials"
+                label={isEntry ? "Numeros de serie nuevos *" : "Series existentes que salen *"}
+                error={errors.serialNumbers}
+              >
+                {isEntry ? (
+                  <textarea
+                    id="adjust-serials"
+                    className="min-h-32 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm"
+                    maxLength={TEXT_LIMITS.serialNumbers}
+                    placeholder="Una serie por linea"
+                    onChange={(event) => update({ serialNumbersText: event.target.value })}
+                    value={value.serialNumbersText}
+                  />
+                ) : (
+                  <SerialPicker
+                    disabled={lookupLoading}
+                    options={availableSerials.map((serial) => serial.serialNumber)}
+                    required={traceQuantity}
+                    selected={parsedSerials}
+                    onChange={(next) => update({ serialNumbersText: next.join("\n") })}
+                  />
+                )}
+                <p className="mt-1 text-sm font-semibold text-[var(--color-text-muted)]">
+                  Cantidad del ajuste: {traceQuantity} {row.unitName}. Seriales requeridos:{" "}
+                  {traceQuantity}. Registrados: {parsedSerials.length} / {traceQuantity}.
+                </p>
+                {isEntry && dynamicLookup && serialPrecheck.unavailable ? (
+                  <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
+                    No se pudo validar los seriales en este momento; se validaran al confirmar.
+                  </p>
+                ) : null}
+              </Field>
+            ) : null}
+            {lookupLoading ? (
+              <p className="text-sm font-semibold text-[var(--color-text-muted)]">
+                Cargando lotes y series disponibles...
+              </p>
+            ) : null}
+            {lookupError ? <InlineAlert title={lookupError} tone="danger" /> : null}
+            <Field id="adjust-reason" label="Motivo *" error={errors.reason}>
+              <textarea
+                className="min-h-20 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
+                id="adjust-reason"
+                maxLength={TEXT_LIMITS.reason}
+                onChange={(event) => update({ reason: event.target.value })}
+                value={value.reason}
+              />
+              <CharacterCount current={value.reason.length} maximum={TEXT_LIMITS.reason} />
+            </Field>
+            <Field id="adjust-notes" label="Observaciones" error={errors.notes}>
+              <textarea
+                className="min-h-16 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-structure)] focus:ring-2 focus:ring-[var(--color-primary)]/40"
+                id="adjust-notes"
+                maxLength={TEXT_LIMITS.notes}
+                onChange={(event) => update({ notes: event.target.value })}
+                value={value.notes}
+              />
+              <CharacterCount current={value.notes.length} maximum={TEXT_LIMITS.notes} />
+            </Field>
+            <AdjustmentSummary
+              delta={delta}
+              finalQuantity={finalQuantity}
+              row={row}
+              value={value}
+            />
           </>
         )}
         {submitError ? <InlineAlert title={submitError} tone="danger" /> : null}
@@ -3049,38 +3146,38 @@ function OtherBranchesStockModal({
           unitName={row.unitName}
         />
       ) : (
-      <div className="space-y-3">
-        {row.otherBranchStocks.length === 0 ? (
-          <p className="rounded-md border border-[var(--color-border)] p-3 text-sm text-[var(--color-text-muted)]">
-            No hay otras sucursales configuradas para comparar existencias.
-          </p>
-        ) : (
-          row.otherBranchStocks.map((stock) => (
-            <div
-              className="grid gap-3 rounded-lg border border-[var(--color-border)] p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
-              key={stock.branchId}
-            >
-              <div className="min-w-0">
-                <p className="font-bold text-[var(--color-title)]">{stock.branchName}</p>
-                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                  Disponible: {stock.availableQuantity} {row.unitName}
-                </p>
-                <p className="text-xs font-semibold text-[var(--color-text-muted)]">
-                  Stock fisico {stock.quantity} - Reservado {stock.reservedQuantity}
-                </p>
-              </div>
-              <Button
-                disabled={!canManageTransfers || stock.availableQuantity <= 0}
-                onClick={() => onRequest(stock.branchId)}
-                type="button"
-                variant="secondary"
+        <div className="space-y-3">
+          {row.otherBranchStocks.length === 0 ? (
+            <p className="rounded-md border border-[var(--color-border)] p-3 text-sm text-[var(--color-text-muted)]">
+              No hay otras sucursales configuradas para comparar existencias.
+            </p>
+          ) : (
+            row.otherBranchStocks.map((stock) => (
+              <div
+                className="grid gap-3 rounded-lg border border-[var(--color-border)] p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                key={stock.branchId}
               >
-                Solicitar traslado
-              </Button>
-            </div>
-          ))
-        )}
-      </div>
+                <div className="min-w-0">
+                  <p className="font-bold text-[var(--color-title)]">{stock.branchName}</p>
+                  <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                    Disponible: {stock.availableQuantity} {row.unitName}
+                  </p>
+                  <p className="text-xs font-semibold text-[var(--color-text-muted)]">
+                    Stock fisico {stock.quantity} - Reservado {stock.reservedQuantity}
+                  </p>
+                </div>
+                <Button
+                  disabled={!canManageTransfers || stock.availableQuantity <= 0}
+                  onClick={() => onRequest(stock.branchId)}
+                  type="button"
+                  variant="secondary"
+                >
+                  Solicitar traslado
+                </Button>
+              </div>
+            ))
+          )}
+        </div>
       )}
     </Modal>
   );
@@ -3099,7 +3196,9 @@ function ApiOtherBranchesList({
   unitName: string;
 }) {
   const [state, setState] = useState<
-    { status: "loading" } | { status: "error" } | { status: "success"; items: OtherBranchAvailability[] }
+    | { status: "loading" }
+    | { status: "error" }
+    | { status: "success"; items: OtherBranchAvailability[] }
   >({ status: "loading" });
 
   useEffect(() => {
@@ -3150,7 +3249,9 @@ function ApiOtherBranchesList({
           className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-[var(--color-border)] p-3"
           key={stock.branchId}
         >
-          <p className="min-w-0 break-words font-bold text-[var(--color-title)]">{stock.branchName}</p>
+          <p className="min-w-0 break-words font-bold text-[var(--color-title)]">
+            {stock.branchName}
+          </p>
           <p className="text-sm font-semibold text-[var(--color-title)]">
             {stock.availableQuantity} {unitName}
           </p>
@@ -3256,7 +3357,9 @@ function RequestTransferModal({
         </div>
       }
       maxWidth="680px"
-      onClose={() => { if (!busy && !submittingRef.current) onClose(); }}
+      onClose={() => {
+        if (!busy && !submittingRef.current) onClose();
+      }}
       open={open}
       subtitle={row.productName}
       title="Solicitar traslado de producto"

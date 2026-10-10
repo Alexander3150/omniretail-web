@@ -72,6 +72,11 @@ export interface ReceivingDocumentLine {
   pendingQuantity: number;
   locationId: string;
   defaultLocationId?: string;
+  /**
+   * Ubicacion guardada en el borrador que ya no coincide con la operativa asignada. Se corrige al
+   * guardar (con cantidades, lotes, series e incidencias intactos); la UI lo avisa en vez de ocultarlo.
+   */
+  staleSavedLocationId?: string;
   tracking: ProductTrackingConfig;
   lotNumber: string;
   expirationDate: string;

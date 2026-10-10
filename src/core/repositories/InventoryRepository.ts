@@ -11,14 +11,7 @@ import type {
 import type { InventoryMovementType } from "@/core/enums";
 
 export type InventoryMovementDisplayType =
-  | "purchase_in"
-  | "sale"
-  | "return"
-  | "void"
-  | "dispatch"
-  | "in"
-  | "out"
-  | "transfer";
+  "purchase_in" | "sale" | "return" | "void" | "dispatch" | "in" | "out" | "transfer";
 
 export type InventoryMovementSort =
   | "createdAt,asc"
@@ -239,9 +232,7 @@ export interface DerivedKitInventoryStockItem extends InventoryStockItemBase {
 }
 
 export type InventoryStockListItem =
-  | TrackedInventoryStockItem
-  | ServiceInventoryStockItem
-  | DerivedKitInventoryStockItem;
+  TrackedInventoryStockItem | ServiceInventoryStockItem | DerivedKitInventoryStockItem;
 
 export interface InventoryStockPageResult {
   items: InventoryStockListItem[];
@@ -296,7 +287,7 @@ export interface InventoryAlertListItem {
   reservedQuantity: number;
   availableQuantity: number;
   minStock: number;
-  reorderPoint: number;
+  reorderPoint: number | null;
   defaultLocationId: string | null;
   status: Exclude<InventoryStockStatus, "normal">;
   suggestedReorder: number;
@@ -455,6 +446,11 @@ export type UpsertProductInventorySettingsInput = Omit<
   reorderPoint?: number | null;
 };
 
+export interface GetProductBalancesOptions {
+  /** Omite cache/deduplicacion: requerido antes de una mutacion que depende del saldo observado. */
+  fresh?: boolean;
+}
+
 export interface InventoryRepository {
   getBalances(): Promise<InventoryBalance[]>;
   getReservationById(tenantId: string, reservationId: string): Promise<InventoryReservation | null>;
@@ -474,6 +470,13 @@ export interface InventoryRepository {
     input: GetPickingFulfillmentTraceInput,
   ): Promise<PickingFulfillmentItemTrace[]>;
   getBalanceByProduct(productId: string, branchId?: string): Promise<InventoryBalance[]>;
+  /** Balances por ubicacion, incluido locationId NULL, de un producto y sucursal concretos. */
+  getProductBalances(
+    productId: string,
+    branchId: string,
+    tenantId: string,
+    options?: GetProductBalancesOptions,
+  ): Promise<InventoryBalance[]>;
   getMovements(productId?: string): Promise<InventoryMovement[]>;
   getMovementPage(params: InventoryMovementPageParams): Promise<InventoryMovementPageResult>;
   getStockPage(params: InventoryStockPageParams): Promise<InventoryStockPageResult>;

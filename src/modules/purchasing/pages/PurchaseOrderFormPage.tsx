@@ -66,8 +66,7 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
   const { hasCapability } = useEntitlement();
   const { hasPermission } = useCurrentSession();
   const canUsePurchasing = hasCapability(SaasCapabilityKey.purchasing);
-  const canCreatePurchaseOrders =
-    canUsePurchasing && hasPermission("purchasing.orders.create");
+  const canCreatePurchaseOrders = canUsePurchasing && hasPermission("purchasing.orders.create");
   const [pendingSupplierId, setPendingSupplierId] = useState<string | null>(null);
   const returnPath = getReturnPath(prefillContext?.source);
   const hasInvalidPurchaseQuantity = editor.model.lines.some((line) =>
@@ -259,7 +258,13 @@ export function PurchaseOrderFormPage({ mode }: PurchaseOrderFormPageProps) {
               {!editor.model.supplierId ? (
                 <EmptyState message="Selecciona un proveedor para ver sus productos." />
               ) : editor.availableProducts.length === 0 ? (
-                <EmptyState message="No hay productos disponibles para agregar." />
+                <EmptyState
+                  message={
+                    editor.catalogLoading
+                      ? "Cargando productos del proveedor..."
+                      : "No hay productos disponibles para agregar."
+                  }
+                />
               ) : (
                 editor.availableProducts.map((product) => (
                   <AvailableProductRow
@@ -819,7 +824,12 @@ function ProductInfoPopover({
         {line.sku} · Prov. {line.supplierSku}
       </p>
       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-        <SmallDescription label="Stock sucursal" value={formatOptionalNumber(line.stockQuantity)} />
+        <SmallDescription
+          label="Existencia fisica"
+          value={formatOptionalNumber(line.stockQuantity)}
+        />
+        <SmallDescription label="Reservado" value={formatOptionalNumber(line.reservedQuantity)} />
+        <SmallDescription label="Disponible" value={formatOptionalNumber(line.availableQuantity)} />
         <SmallDescription label="Minimo" value={formatOptionalNumber(line.minStock)} />
         <SmallDescription
           label="Reorder point"
@@ -968,16 +978,10 @@ function getPurchaseQuantityUiError(line: PurchaseOrderEditorLine) {
   if (line.quantity < line.minimumOrderQuantity) {
     return `La cantidad mínima de compra es ${formatNumber(line.minimumOrderQuantity)}.`;
   }
-  if (
-    !line.unitAllowsDecimals &&
-    !isQuantityCompatibleWithUnit(line.quantity, false)
-  ) {
+  if (!line.unitAllowsDecimals && !isQuantityCompatibleWithUnit(line.quantity, false)) {
     return "La unidad de compra no admite fracciones.";
   }
-  if (
-    line.unitAllowsDecimals &&
-    !hasAtMostDecimalPlaces(line.quantity, QUANTITY_DECIMAL_PLACES)
-  ) {
+  if (line.unitAllowsDecimals && !hasAtMostDecimalPlaces(line.quantity, QUANTITY_DECIMAL_PLACES)) {
     return "La cantidad admite hasta 3 decimales.";
   }
   return null;

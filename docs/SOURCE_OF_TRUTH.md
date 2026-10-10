@@ -132,7 +132,7 @@ Stock es por tenant, branch y location. Catalogo es global dentro del tenant. Pr
 
 `ProductInventorySettings` representa configuracion operativa por producto+sucursal. Es la fuente canonica para `minStock`, `reorderPoint` opcional y `defaultLocationId` opcional. La unicidad conceptual es `tenantId + productId + branchId`. `InventoryBalance.minStock/reorderPoint` se conserva solo como compatibilidad legacy temporal y no debe usarse como nueva fuente de verdad.
 
-`defaultLocationId` no crea stock, no mueve stock y no crea `InventoryBalance`. Al asignarse debe apuntar a una `StorageLocation` existente, activa, del mismo tenant y de la misma sucursal. Archivar posteriormente una ubicacion no mueve stock ni borra historial; la referencia de settings se conserva como dato historico hasta que una operacion explicita la cambie.
+`defaultLocationId` no crea stock, no mueve stock y no crea `InventoryBalance`. Al asignarse debe apuntar a una `StorageLocation` existente, activa, del mismo tenant y de la misma sucursal. Una ubicacion asignada como `defaultLocationId` no puede inactivarse ni archivarse: primero debe cambiarse o limpiarse la asignacion de cada producto+sucursal. Cambiar o limpiar esta configuracion no mueve stock, no crea balances y no borra historial.
 
 `ProductSalesPriceTier` representa precios mayoristas de venta por producto usando `minQuantity` y `unitPrice`. No mezclar estos precios de venta con costos por volumen de proveedor.
 

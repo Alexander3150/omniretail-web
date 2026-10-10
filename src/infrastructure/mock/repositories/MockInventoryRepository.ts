@@ -64,8 +64,11 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
   }
   async releaseReservation(input: ReleaseInventoryReservationInput) {
     const result = this.store.transact((db) => {
-      if (db.inventoryReservations.some((item) => item.id === input.reservationId &&
-        item.sourceType === "transfer")) {
+      if (
+        db.inventoryReservations.some(
+          (item) => item.id === input.reservationId && item.sourceType === "transfer",
+        )
+      ) {
         throw new Error("Transfer reservations can only be released by Transfer cancellation");
       }
       return releaseInventoryReservationInDatabase(db, input, { now: () => this.now() });
@@ -78,8 +81,11 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
     input: ConsumeInventoryReservationInput,
   ): Promise<ConsumeInventoryReservationResult> {
     const result = this.store.transact((db) => {
-      if (db.inventoryReservations.some((item) => item.id === input.reservationId &&
-        item.sourceType === "transfer")) {
+      if (
+        db.inventoryReservations.some(
+          (item) => item.id === input.reservationId && item.sourceType === "transfer",
+        )
+      ) {
         throw new Error("Transfer reservations can only be consumed by Transfer Dispatch");
       }
       return consumeInventoryReservationInDatabase(db, input, {
@@ -102,25 +108,34 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
           item.id === input.pickingOrderId &&
           item.tenantId === input.tenantId &&
           item.branchId === input.branchId &&
-            (item.sourceType === "transfer"
-              ? input.sourceType === "transfer" && item.sourceId === input.sourceId
-              : input.sourceType !== "transfer" && item.orderId === input.orderId),
+          (item.sourceType === "transfer"
+            ? input.sourceType === "transfer" && item.sourceId === input.sourceId
+            : input.sourceType !== "transfer" && item.orderId === input.orderId),
       );
       if (!pickingOrder) {
         throw new Error(`PickingOrder not found for tenant/branch: ${input.pickingOrderId}`);
       }
-      const order = pickingOrder.sourceType === "transfer" ? null : db.orders.find(
-        (item) =>
-          item.id === input.orderId &&
-          item.tenantId === input.tenantId &&
-          item.branchId === input.branchId,
-      );
+      const order =
+        pickingOrder.sourceType === "transfer"
+          ? null
+          : db.orders.find(
+              (item) =>
+                item.id === input.orderId &&
+                item.tenantId === input.tenantId &&
+                item.branchId === input.branchId,
+            );
       if (!order) {
-        const transfer = pickingOrder.sourceType === "transfer" &&
-          db.inventoryTransfers.find((item) => item.id === pickingOrder.sourceId &&
-            item.id === input.sourceId && item.tenantId === input.tenantId &&
-            item.sourceBranchId === input.branchId);
-        if (!transfer) throw new Error(`Fulfillment source not found for tenant/branch: ${input.sourceId}`);
+        const transfer =
+          pickingOrder.sourceType === "transfer" &&
+          db.inventoryTransfers.find(
+            (item) =>
+              item.id === pickingOrder.sourceId &&
+              item.id === input.sourceId &&
+              item.tenantId === input.tenantId &&
+              item.sourceBranchId === input.branchId,
+          );
+        if (!transfer)
+          throw new Error(`Fulfillment source not found for tenant/branch: ${input.sourceId}`);
       }
       const pickingItems = db.pickingItems.filter(
         (item) => item.pickingOrderId === pickingOrder.id && item.productId === input.productId,
@@ -150,31 +165,53 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
       if (input.pickingItemId && !pickingItem) {
         throw new Error(`PickingItem not found for product: ${input.pickingItemId}`);
       }
-      const reservation = pickingItem && db.inventoryReservations.find((item) =>
-        item.tenantId === input.tenantId && item.branchId === input.branchId &&
-        item.orderItemId === pickingItem.orderItemId && item.productId === input.productId &&
-        (pickingOrder.sourceType === "transfer"
-          ? item.sourceType === "transfer" && item.sourceId === pickingOrder.sourceId
-          : item.sourceType !== "transfer" && item.orderId === pickingOrder.orderId));
+      const reservation =
+        pickingItem &&
+        db.inventoryReservations.find(
+          (item) =>
+            item.tenantId === input.tenantId &&
+            item.branchId === input.branchId &&
+            item.orderItemId === pickingItem.orderItemId &&
+            item.productId === input.productId &&
+            (pickingOrder.sourceType === "transfer"
+              ? item.sourceType === "transfer" && item.sourceId === pickingOrder.sourceId
+              : item.sourceType !== "transfer" && item.orderId === pickingOrder.orderId),
+        );
       // The mutation planner, not React, decides which FEFO lots belong to this line.
-      const selectableAllocations = product.tracking.lot && product.tracking.serial && pickingItem && reservation
-        ? planPickingAllocationCapacity(
-            db, pickingItem, reservation, product, pickingItem.requestedQuantity,
-            input.at ?? this.now(), true,
-          ).planned
-        : null;
+      const selectableAllocations =
+        product.tracking.lot && product.tracking.serial && pickingItem && reservation
+          ? planPickingAllocationCapacity(
+              db,
+              pickingItem,
+              reservation,
+              product,
+              pickingItem.requestedQuantity,
+              input.at ?? this.now(),
+              true,
+            ).planned
+          : null;
       return {
         ...availability,
         locations: availability.locations.map((location) => ({
           ...location,
-          serialNumbers: location.serialNumbers.filter((serial) =>
-            !claimedSerials.has(serial.serialNumber) &&
-            (!product.tracking.lot || !product.tracking.serial ||
-              selectableAllocations?.some((allocation) => allocation.balanceId === location.balanceId &&
-                allocation.lotId === serial.lotId))).sort((left, right) => left.id.localeCompare(right.id)),
+          serialNumbers: location.serialNumbers
+            .filter(
+              (serial) =>
+                !claimedSerials.has(serial.serialNumber) &&
+                (!product.tracking.lot ||
+                  !product.tracking.serial ||
+                  selectableAllocations?.some(
+                    (allocation) =>
+                      allocation.balanceId === location.balanceId &&
+                      allocation.lotId === serial.lotId,
+                  )),
+            )
+            .sort((left, right) => left.id.localeCompare(right.id)),
           lots: location.lots.map((lot) => ({
             ...lot,
-            serialNumbers: lot.serialNumbers.filter((serial) => !claimedSerials.has(serial.serialNumber)),
+            serialNumbers: lot.serialNumbers.filter(
+              (serial) => !claimedSerials.has(serial.serialNumber),
+            ),
           })),
         })),
       };
@@ -230,17 +267,28 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
             throw new Error(`Duplicate reservations for PickingItem: ${item.id}`);
           }
           const reservation = reservations[0];
-          const movementIds = new Set(db.inventoryReservationConsumeOperations
-            .filter((operation) => operation.tenantId === input.tenantId &&
-              operation.branchId === input.branchId && operation.reservationId === reservation?.id)
-            .flatMap((operation) => operation.inventoryMovementIds));
+          const movementIds = new Set(
+            db.inventoryReservationConsumeOperations
+              .filter(
+                (operation) =>
+                  operation.tenantId === input.tenantId &&
+                  operation.branchId === input.branchId &&
+                  operation.reservationId === reservation?.id,
+              )
+              .flatMap((operation) => operation.inventoryMovementIds),
+          );
           const movements = reservation
             ? db.inventoryMovements
-                .filter((movement) => (movementIds.has(movement.id) ||
-                  (movement.referenceType === "inventoryReservation" &&
-                    movement.referenceId === reservation.id)) &&
-                  movement.tenantId === input.tenantId && movement.branchId === input.branchId &&
-                  movement.productId === item.productId && movement.type === InventoryMovementType.out)
+                .filter(
+                  (movement) =>
+                    (movementIds.has(movement.id) ||
+                      (movement.referenceType === "inventoryReservation" &&
+                        movement.referenceId === reservation.id)) &&
+                    movement.tenantId === input.tenantId &&
+                    movement.branchId === input.branchId &&
+                    movement.productId === item.productId &&
+                    movement.type === InventoryMovementType.out,
+                )
                 .sort(
                   (left, right) =>
                     left.createdAt.localeCompare(right.createdAt) ||
@@ -255,12 +303,24 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
           ) {
             throw new Error(`Reservation evidence not found for PickingItem: ${item.id}`);
           }
-          const selected = movements.length === 0 ? (item.pickedAllocations ?? []).flatMap<{
-            balanceId: string; locationId?: string; lotId?: string; quantity: number; serialNumber?: string;
-          }>((picked) =>
-            picked.serialNumbers?.length
-              ? picked.serialNumbers.map((number) => ({ ...picked, quantity: 1, serialNumber: number }))
-              : [{ ...picked, serialNumber: undefined }]) : [];
+          const selected =
+            movements.length === 0
+              ? (item.pickedAllocations ?? []).flatMap<{
+                  balanceId: string;
+                  locationId?: string;
+                  lotId?: string;
+                  quantity: number;
+                  serialNumber?: string;
+                }>((picked) =>
+                  picked.serialNumbers?.length
+                    ? picked.serialNumbers.map((number) => ({
+                        ...picked,
+                        quantity: 1,
+                        serialNumber: number,
+                      }))
+                    : [{ ...picked, serialNumber: undefined }],
+                )
+              : [];
           const allocations: PickingFulfillmentTraceAllocation[] = movements.map((movement) => {
             const location = movement.fromLocationId
               ? db.storageLocations.find(
@@ -319,25 +379,52 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
             };
           });
           selected.forEach((picked) => {
-            const location = picked.locationId ? db.storageLocations.find((entry) =>
-              entry.id === picked.locationId && entry.tenantId === input.tenantId &&
-              entry.branchId === input.branchId) : undefined;
-            const lot = picked.lotId ? db.stockLots.find((entry) =>
-              entry.id === picked.lotId && entry.tenantId === input.tenantId &&
-              entry.branchId === input.branchId && entry.productId === item.productId) : undefined;
-            const serial = picked.serialNumber ? db.serialNumbers.find((entry) =>
-              entry.serialNumber === picked.serialNumber && entry.tenantId === input.tenantId &&
-              entry.branchId === input.branchId && entry.productId === item.productId) : undefined;
-            if ((picked.locationId && !location) || (picked.lotId && !lot) ||
-              (picked.serialNumber && !serial)) {
+            const location = picked.locationId
+              ? db.storageLocations.find(
+                  (entry) =>
+                    entry.id === picked.locationId &&
+                    entry.tenantId === input.tenantId &&
+                    entry.branchId === input.branchId,
+                )
+              : undefined;
+            const lot = picked.lotId
+              ? db.stockLots.find(
+                  (entry) =>
+                    entry.id === picked.lotId &&
+                    entry.tenantId === input.tenantId &&
+                    entry.branchId === input.branchId &&
+                    entry.productId === item.productId,
+                )
+              : undefined;
+            const serial = picked.serialNumber
+              ? db.serialNumbers.find(
+                  (entry) =>
+                    entry.serialNumber === picked.serialNumber &&
+                    entry.tenantId === input.tenantId &&
+                    entry.branchId === input.branchId &&
+                    entry.productId === item.productId,
+                )
+              : undefined;
+            if (
+              (picked.locationId && !location) ||
+              (picked.lotId && !lot) ||
+              (picked.serialNumber && !serial)
+            ) {
               throw new Error(`Picking selection trace is incomplete: ${item.id}`);
             }
-            allocations.push({ inventoryMovementId: undefined, reservationId: reservation!.id,
+            allocations.push({
+              inventoryMovementId: undefined,
+              reservationId: reservation!.id,
               quantity: picked.quantity,
-              location: location ? { id: location.id, code: location.code, name: location.name } : undefined,
-              lot: lot ? { id: lot.id, number: lot.lotNumber, expiresAt: lot.expirationDate } : undefined,
+              location: location
+                ? { id: location.id, code: location.code, name: location.name }
+                : undefined,
+              lot: lot
+                ? { id: lot.id, number: lot.lotNumber, expiresAt: lot.expirationDate }
+                : undefined,
               serial: serial ? { id: serial.id, number: serial.serialNumber } : undefined,
-              consumedAt: undefined });
+              consumedAt: undefined,
+            });
           });
           const tracedQuantity = allocations.reduce(
             (total, allocation) => total + allocation.quantity,
@@ -365,6 +452,14 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
     return this.read((db) =>
       db.inventoryBalances.filter(
         (item) => item.productId === productId && (!branchId || item.branchId === branchId),
+      ),
+    );
+  }
+  async getProductBalances(productId: string, branchId: string, tenantId: string) {
+    return this.read((db) =>
+      db.inventoryBalances.filter(
+        (item) =>
+          item.tenantId === tenantId && item.branchId === branchId && item.productId === productId,
       ),
     );
   }
@@ -432,6 +527,7 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
       tenantId: location.tenantId,
       branchId: location.branchId,
       action: "created",
+      metadata: { entity: "StorageLocation" },
     });
     return location;
   }
@@ -439,14 +535,27 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
     id: string,
     input: Partial<Omit<StorageLocation, "id" | "createdAt" | "updatedAt">>,
   ) {
-    const location = this.store.mutate((db) =>
-      this.updateById(db.storageLocations, id, input, "StorageLocation"),
-    );
+    const location = this.store.mutate((db) => {
+      const current = db.storageLocations.find((item) => item.id === id);
+      if (!current) throw this.missing("StorageLocation", id);
+      const changesToUnavailableStatus =
+        input.status !== undefined &&
+        input.status !== current.status &&
+        input.status !== LocationStatus.active;
+      if (
+        changesToUnavailableStatus &&
+        db.productInventorySettings.some((settings) => settings.defaultLocationId === id)
+      ) {
+        throw new Error("No se puede archivar ni inactivar una ubicacion asignada a productos.");
+      }
+      return this.updateById(db.storageLocations, id, input, "StorageLocation");
+    });
     this.emit("inventory.changed", {
       entityId: location.id,
       tenantId: location.tenantId,
       branchId: location.branchId,
       action: input.status === "archived" ? "archived" : "updated",
+      metadata: { entity: "StorageLocation" },
     });
     return location;
   }
@@ -500,8 +609,14 @@ export class MockInventoryRepository extends BaseMockRepository implements Inven
         const updated: ProductInventorySettings = {
           ...current,
           ...input,
-          defaultLocationId: input.defaultLocationId ?? undefined,
-          reorderPoint: input.reorderPoint ?? undefined,
+          defaultLocationId:
+            input.defaultLocationId === undefined
+              ? current.defaultLocationId
+              : (input.defaultLocationId ?? undefined),
+          reorderPoint:
+            input.reorderPoint === undefined
+              ? current.reorderPoint
+              : (input.reorderPoint ?? undefined),
           updatedAt: now,
         };
         db.productInventorySettings[existingIndex] = updated;

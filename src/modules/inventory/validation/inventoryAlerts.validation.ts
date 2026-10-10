@@ -32,7 +32,7 @@ export interface TransferValidationErrors {
 export function validateAdjustment(
   dto: AdjustStockDto,
   row: InventoryProductRow,
-  locationQuantity: number,
+  stock: { quantity: number; availableQuantity: number },
   operationDate = getLocalCalendarDate(),
   requiresLocation = true,
 ): AdjustmentValidationErrors {
@@ -49,12 +49,15 @@ export function validateAdjustment(
     errors.quantity = "La cantidad debe ser mayor que cero.";
   } else if (
     (dto.movementKind === "out" || dto.movementKind === "waste") &&
-    dto.quantity > locationQuantity
+    dto.quantity > stock.availableQuantity
   ) {
     errors.quantity = "No puede generar stock negativo.";
-  } else if (dto.movementKind === "count" && row.quantity - dto.quantity > locationQuantity) {
+  } else if (
+    dto.movementKind === "count" &&
+    stock.quantity - dto.quantity > stock.availableQuantity
+  ) {
     errors.quantity = "La correccion no puede descontar mas stock del disponible en la ubicacion.";
-  } else if (dto.movementKind === "count" && dto.quantity === row.quantity) {
+  } else if (dto.movementKind === "count" && dto.quantity === stock.quantity) {
     errors.quantity = "La existencia ya coincide con el conteo ingresado.";
   }
   if (!dto.reason.trim()) errors.reason = "El motivo es requerido.";
@@ -66,7 +69,7 @@ export function validateAdjustment(
     errors.lotNumber = "El lote admite hasta 50 caracteres.";
   const delta =
     dto.movementKind === "count"
-      ? dto.quantity - row.quantity
+      ? dto.quantity - stock.quantity
       : dto.movementKind === "in"
         ? dto.quantity
         : -dto.quantity;
