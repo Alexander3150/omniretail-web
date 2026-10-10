@@ -23,9 +23,19 @@ export interface PendingSaleConfirmation {
     checkout: CheckoutDto;
   };
   createdAt: string;
+  /**
+   * Veces que se empezo a enviar. Se guarda ANTES de cada POST: un registro encontrado tras una
+   * recarga o un cierre inesperado nunca se puede dar por no enviado.
+   */
+  attempts: number;
 }
 
 const KEY_PREFIX = "omniretail.pos.pending-sale.";
+
+/** Alcance de la recuperacion: usuario, tienda y sucursal. No incluye el turno de caja a proposito. */
+export function pendingSaleScopeKey(userId: string, tenantId: string, branchId: string): string {
+  return `${userId}:${tenantId}:${branchId}`;
+}
 
 /** Respuesta incierta: no se sabe si el backend registro la venta. */
 export function isUncertainSaleFailure(error: unknown): boolean {
@@ -41,18 +51,29 @@ export function isDefinitiveSaleRejection(error: unknown): boolean {
   return error instanceof BackendRequestError && !isUncertainSaleFailure(error);
 }
 
+/**
+ * Solo el PRIMER envio puede descartarse por un rechazo del servidor: ahi la ausencia de venta esta
+ * demostrada. En un reintento, un 401/403/404/409... se decide antes de buscar el `confirmationId`
+ * (autorizacion, capacidad, sucursal y turno), asi que no prueba que el envio anterior no se
+ * registrara: se conserva para verificarlo o descartarlo a mano.
+ */
+export function canDiscardAfterRejection(error: unknown, attempts: number): boolean {
+  return attempts <= 1 && isDefinitiveSaleRejection(error);
+}
+
 export class PendingSaleConfirmationStore {
   constructor(private readonly store = new SessionJsonStore()) {}
 
   load(contextKey: string): PendingSaleConfirmation | null {
     const value = this.store.get<PendingSaleConfirmation>(KEY_PREFIX + contextKey);
-    return value?.version === 1 && value.contextKey === contextKey && value.confirmationId
-      ? value
-      : null;
+    if (value?.version !== 1 || value.contextKey !== contextKey || !value.confirmationId) return null;
+    // Un registro sin contador es de una version anterior: ya se habia enviado al menos una vez.
+    return { ...value, attempts: Math.max(1, Number(value.attempts) || 1) };
   }
 
-  save(pending: PendingSaleConfirmation): void {
-    this.store.set(KEY_PREFIX + pending.contextKey, pending);
+  /** `false` si el navegador no pudo guardarlo: entonces NO se debe enviar la venta. */
+  save(pending: PendingSaleConfirmation): boolean {
+    return this.store.set(KEY_PREFIX + pending.contextKey, pending);
   }
 
   clear(contextKey: string): void {

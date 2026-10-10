@@ -805,3 +805,40 @@ describe("devoluciones y anulaciones en modo API", () => {
     });
   });
 });
+
+describe("ConfirmSaleService: beforeSend", () => {
+  it("se invoca justo antes del POST y, si lanza, la venta no se envía", async () => {
+    const { repositories, posApi } = createPosRepositories();
+    const beforeSend = vi.fn();
+
+    await new ConfirmSaleService(repositories).execute(confirmInput({ beforeSend }));
+
+    expect(beforeSend).toHaveBeenCalledTimes(1);
+    expect(beforeSend.mock.invocationCallOrder[0]).toBeLessThan(
+      posApi.confirmSale.mock.invocationCallOrder[0] ?? 0,
+    );
+
+    const blocked = createPosRepositories();
+    await expect(
+      new ConfirmSaleService(blocked.repositories).execute(
+        confirmInput({
+          beforeSend: () => {
+            throw new Error("sin almacenamiento");
+          },
+        }),
+      ),
+    ).rejects.toThrow("sin almacenamiento");
+    expect(blocked.posApi.confirmSale).not.toHaveBeenCalled();
+  });
+
+  it("no se invoca si una validación local falla antes del envío", async () => {
+    const { repositories, posApi } = createPosRepositories({ role: { permissions: [] } });
+    const beforeSend = vi.fn();
+
+    await expect(
+      new ConfirmSaleService(repositories).execute(confirmInput({ beforeSend })),
+    ).rejects.toBeTruthy();
+    expect(beforeSend).not.toHaveBeenCalled();
+    expect(posApi.confirmSale).not.toHaveBeenCalled();
+  });
+});

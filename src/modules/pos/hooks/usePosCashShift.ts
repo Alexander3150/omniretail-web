@@ -15,6 +15,10 @@ import { GetCashShiftSummaryService } from "@/modules/pos/application/services/G
 import { GetOpenCashShiftService } from "@/modules/pos/application/services/GetOpenCashShiftService";
 import { OpenCashShiftService } from "@/modules/pos/application/services/OpenCashShiftService";
 import { RegisterCashMovementService } from "@/modules/pos/application/services/RegisterCashMovementService";
+import {
+  PendingSaleConfirmationStore,
+  pendingSaleScopeKey,
+} from "@/modules/pos/application/services/pendingSaleConfirmation";
 import { cleanPosError } from "@/modules/pos/application/services/posServiceContext";
 import { useDataEvent } from "@/shared/hooks/useDataEvent";
 import { useActiveBranch } from "@/shared/navigation/PrivateHeader/ActiveBranchProvider";
@@ -201,6 +205,19 @@ export function usePosCashShift() {
   const closeCashShift = useCallback(
     async (countedAmount: number) => {
       if (!cashShift) return false;
+      // Cerrar el turno ocultaria una venta cuya respuesta se perdio: debe resolverse primero.
+      if (
+        user &&
+        currentBranch &&
+        new PendingSaleConfirmationStore().load(
+          pendingSaleScopeKey(user.id, currentBranch.tenantId, currentBranch.id),
+        )
+      ) {
+        setError(
+          "Hay una venta pendiente de verificar en la terminal. Verifícala o descártala antes de cerrar el turno de caja.",
+        );
+        return false;
+      }
       const closed = await runMutation(() =>
         services.close.execute({
           ...getContext(),
@@ -217,7 +234,7 @@ export function usePosCashShift() {
       await reload();
       return true;
     },
-    [cashShift, getContext, reload, runMutation, services.close],
+    [cashShift, currentBranch, getContext, reload, runMutation, services.close, user],
   );
 
   const clearFeedback = useCallback(() => {

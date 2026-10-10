@@ -53,6 +53,11 @@ export interface ConfirmPosSaleInput {
   customerId?: string;
   sourceOrderId?: string;
   orderIdempotencyKey?: string;
+  /**
+   * Se invoca justo antes del POST (modo API), cuando ya no queda ninguna validacion local. Si
+   * lanza, la venta no se envia: sirve para persistir la solicitud antes de que pueda perderse.
+   */
+  beforeSend?: () => void;
   /** @deprecated POS now derives this snapshot from checkout.notificationContact. */
   notificationContact?: OrderNotificationContact;
 }
@@ -191,6 +196,7 @@ export class ConfirmSaleService {
     assertPaymentsMatchTotal(payments, toCents(input.ticket.total));
     const currentShift = await this.requireCurrentCashShift(input);
     const deferredOrder = this.createDeferredOrderInput(input);
+    input.beforeSend?.();
     const result = await requirePosApi(this.repositories).confirmSale({
       branchId: input.currentBranch.id,
       cashShiftId: currentShift.id,

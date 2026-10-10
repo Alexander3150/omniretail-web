@@ -77,8 +77,11 @@ vi.mock("@/modules/pos/application/services/GetPosProductsService", () => ({
 }));
 vi.mock("@/modules/pos/application/services/ConfirmSaleService", () => ({
   ConfirmSaleService: class {
-    execute(input: unknown) {
-      return mocks.confirm(input);
+    execute(input: { beforeSend?: () => void }) {
+      // El servicio real invoca `beforeSend` justo antes del POST (modo API).
+      const { beforeSend, ...request } = input;
+      beforeSend?.();
+      return mocks.confirm(request);
     }
   },
 }));
@@ -436,15 +439,17 @@ describe("usePosTerminal", () => {
       expect(result.current.confirmationError).toContain("cambió");
     });
 
-    it("solo descarta la verificación si el servidor rechaza definitivamente la solicitud", async () => {
+    it("un rechazo (401/403/409) del reintento NO descarta una venta que pudo registrarse", async () => {
       const { result } = await loseTheResponse();
 
-      mocks.confirm.mockRejectedValueOnce(new BackendRequestError("Stock insuficiente", 409));
-      await act(async () => result.current.retryPendingConfirmation());
+      for (const status of [401, 403, 409]) {
+        mocks.confirm.mockRejectedValueOnce(new BackendRequestError("Rechazado", status));
+        await act(async () => result.current.retryPendingConfirmation());
 
-      expect(result.current.pendingConfirmation).toBeNull();
-      expect(result.current.confirmationError).toContain("Stock insuficiente");
-      expect(window.sessionStorage.length).toBe(0);
+        expect(result.current.pendingConfirmation).not.toBeNull();
+        expect(result.current.confirmationError).toContain("sigue pendiente");
+      }
+      expect(window.sessionStorage.length).toBe(1);
     });
 
     it("permite descartar manualmente y vuelve a habilitar la edición", async () => {
@@ -456,6 +461,75 @@ describe("usePosTerminal", () => {
       expect(window.sessionStorage.length).toBe(0);
       act(() => result.current.addProduct(product));
       expect(result.current.ticketItems[0]?.quantity).toBe(2);
+    });
+
+    it("guarda la solicitud ANTES de enviar y la recupera si la página se cierra con el POST en vuelo", async () => {
+      const view = await renderReadyTerminal();
+      await prepareCashCheckout(view.result);
+      let storedAtSend = 0;
+      mocks.confirm.mockImplementationOnce(() => {
+        storedAtSend = window.sessionStorage.length;
+        return new Promise(() => undefined); // la respuesta nunca llega
+      });
+      act(() => {
+        void view.result.current.confirmSale();
+      });
+      await waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(1));
+      const original = mocks.confirm.mock.calls[0]?.[0];
+      expect(storedAtSend).toBe(1);
+      view.unmount();
+
+      const reloaded = renderHook(() => usePosTerminal());
+      await waitFor(() => expect(reloaded.result.current.pendingConfirmation).not.toBeNull());
+      await waitFor(() => expect(reloaded.result.current.hasOpenCashShift).toBe(true));
+      await act(async () => reloaded.result.current.retryPendingConfirmation());
+
+      expect(mocks.confirm.mock.calls[1]?.[0]).toEqual(original);
+      expect(reloaded.result.current.confirmationResult).toEqual(saleResult);
+      expect(window.sessionStorage.length).toBe(0);
+    });
+
+    it("no envía la venta si no puede garantizar su recuperación", async () => {
+      const { result } = await renderReadyTerminal();
+      await prepareCashCheckout(result);
+      const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+        throw new Error("QuotaExceededError");
+      });
+
+      await act(async () => result.current.confirmSale());
+      setItem.mockRestore();
+
+      expect(mocks.confirm).not.toHaveBeenCalled();
+      expect(result.current.confirmationError).toContain("no se envió");
+      expect(result.current.pendingConfirmation).toBeNull();
+      expect(result.current.ticketItems).toHaveLength(1);
+    });
+
+    it("el rechazo del PRIMER envío sí libera la edición", async () => {
+      const { result } = await renderReadyTerminal();
+      await prepareCashCheckout(result);
+      mocks.confirm.mockRejectedValueOnce(new BackendRequestError("Sesión expirada", 401));
+
+      await act(async () => result.current.confirmSale());
+
+      expect(result.current.pendingConfirmation).toBeNull();
+      expect(window.sessionStorage.length).toBe(0);
+    });
+
+    it("un cambio de turno no oculta la venta pendiente ni permite reenviarla en otro turno", async () => {
+      const view = await loseTheResponse();
+      view.unmount();
+      const newShift = { ...openShift(), id: id(777) };
+      mocks.openShift.mockResolvedValue(newShift);
+
+      const reloaded = renderHook(() => usePosTerminal());
+      await waitFor(() => expect(reloaded.result.current.cashShift?.id).toBe(newShift.id));
+      await waitFor(() => expect(reloaded.result.current.pendingConfirmation).not.toBeNull());
+      await act(async () => reloaded.result.current.retryPendingConfirmation());
+
+      expect(mocks.confirm).toHaveBeenCalledTimes(1);
+      expect(reloaded.result.current.confirmationError).toContain("otro turno de caja");
+      expect(reloaded.result.current.pendingConfirmation).not.toBeNull();
     });
 
     it("un rechazo 4xx de una venta nueva no deja nada pendiente", async () => {

@@ -28,8 +28,9 @@ import { ConfirmSaleService } from "@/modules/pos/application/services/ConfirmSa
 import {
   type PendingSaleConfirmation,
   PendingSaleConfirmationStore,
-  isDefinitiveSaleRejection,
+  canDiscardAfterRejection,
   isUncertainSaleFailure,
+  pendingSaleScopeKey,
 } from "@/modules/pos/application/services/pendingSaleConfirmation";
 import { GetCheckoutBankAccountsService } from "@/modules/pos/application/services/GetCheckoutBankAccountsService";
 import { GetPosProductsService } from "@/modules/pos/application/services/GetPosProductsService";
@@ -122,9 +123,7 @@ export function usePosTerminal() {
     setPendingConfirmation(value);
   }, []);
   const pendingScopeKey =
-    user && currentBranch && cashShift
-      ? `${user.id}:${currentBranch.tenantId}:${currentBranch.id}:${cashShift.id}`
-      : null;
+    user && currentBranch ? pendingSaleScopeKey(user.id, currentBranch.tenantId, currentBranch.id) : null;
   const productsRequestRef = useRef(0);
   const reloadScheduledRef = useRef(false);
   const bankAccountsRequestRef = useRef(0);
@@ -1010,9 +1009,15 @@ export function usePosTerminal() {
     }
 
     const confirmationContextKey = `${sessionId ?? ""}:${user.id}:${currentBranch.tenantId}:${currentBranch.id}:${cashShift.id}`;
-    const scopeKey = `${user.id}:${currentBranch.tenantId}:${currentBranch.id}:${cashShift.id}`;
+    const scopeKey = pendingSaleScopeKey(user.id, currentBranch.tenantId, currentBranch.id);
     if (pending && pending.contextKey !== scopeKey) {
-      setConfirmationError("La venta pendiente pertenece a otra sucursal o caja.");
+      setConfirmationError("La venta pendiente pertenece a otra sucursal.");
+      return;
+    }
+    if (pending && pending.input.cashShiftId !== cashShift.id) {
+      setConfirmationError(
+        "La venta pendiente se envió en otro turno de caja y no se puede reenviar desde este. Revisa el Historial de ventas: si aparece, ya está registrada; si no, descártala y vuelve a cobrar.",
+      );
       return;
     }
     const request = pending
@@ -1041,11 +1046,34 @@ export function usePosTerminal() {
     setConfirmationError(null);
     setConfirmationResult(null);
 
+    // Registro que quedo guardado justo antes del POST; si es `null`, la venta nunca se envio.
+    let sent: PendingSaleConfirmation | null = null;
     try {
       const result = await confirmationService.execute({
         confirmationId: attemptId,
         ...request,
         orderIdempotencyKey,
+        beforeSend: () => {
+          // La solicitud se guarda ANTES de enviarla: si la pagina se cierra o recarga con el POST
+          // en vuelo, la recuperacion existe. Si no se puede guardar, la venta no se envia.
+          const base: PendingSaleConfirmation = pending ?? {
+            version: 1,
+            contextKey: scopeKey,
+            confirmationId: attemptId,
+            orderIdempotencyKey,
+            input: request,
+            createdAt: new Date().toISOString(),
+            attempts: 0,
+          };
+          const record = { ...base, attempts: base.attempts + 1 };
+          if (!pendingStore.save(record)) {
+            throw new Error(
+              "No se pudo guardar la venta para poder recuperarla si se pierde la respuesta, así que no se envió. Habilita el almacenamiento del navegador e inténtalo de nuevo.",
+            );
+          }
+          sent = record;
+          applyPendingConfirmation(record);
+        },
       });
 
       // La venta quedo registrada: la verificacion pendiente se resuelve aunque el contexto cambiara.
@@ -1058,39 +1086,32 @@ export function usePosTerminal() {
       setTicketState({ items: [], error: null });
       setCheckoutState(createCheckoutState(0));
     } catch (confirmationFailure) {
-      if (isUncertainSaleFailure(confirmationFailure)) {
-        // El backend pudo registrar la venta: se conserva la solicitud original y se bloquea una nueva.
-        const record: PendingSaleConfirmation = pending ?? {
-          version: 1,
-          contextKey: scopeKey,
-          confirmationId: attemptId,
-          orderIdempotencyKey,
-          input: request,
-          createdAt: new Date().toISOString(),
-        };
-        pendingStore.save(record);
-        if (currentConfirmationContextRef.current !== confirmationContextKey) return;
-        applyPendingConfirmation(record);
-        setConfirmationError(UNCERTAIN_SALE_MESSAGE);
-      } else if (pending && isDefinitiveSaleRejection(confirmationFailure)) {
-        // El servidor respondio con un rechazo: esa solicitud no dejo una venta nueva.
+      const dispatched = sent as PendingSaleConfirmation | null;
+      const sameContext = currentConfirmationContextRef.current === confirmationContextKey;
+      if (dispatched && canDiscardAfterRejection(confirmationFailure, dispatched.attempts)) {
+        // Primer envio rechazado por el servidor: no hay venta y se puede volver a editar.
         pendingStore.clear(scopeKey);
         if (pendingConfirmationRef.current?.contextKey === scopeKey) applyPendingConfirmation(null);
-        if (currentConfirmationContextRef.current !== confirmationContextKey) return;
+        if (!sameContext) return;
         setConfirmationAttempt(null);
+      } else if (dispatched) {
+        // Ya se envio y no hay prueba de que no se registrara: se conserva hasta verificarla.
+        if (!sameContext) return;
         setConfirmationError(
-          `${cleanPosError(confirmationFailure, "El servidor rechazó la venta.", "idempotent")} La verificación pendiente se descartó porque el servidor rechazó la solicitud.`,
+          isUncertainSaleFailure(confirmationFailure)
+            ? UNCERTAIN_SALE_MESSAGE
+            : `${cleanPosError(confirmationFailure, "El servidor no aceptó la verificación.", "idempotent")} La venta sigue pendiente: verifícala de nuevo o revisa el Historial de ventas antes de descartarla.`,
         );
-      } else {
-        if (currentConfirmationContextRef.current !== confirmationContextKey) return;
-        setConfirmationError(
-          cleanPosError(
-            confirmationFailure,
-            "No se pudo confirmar la venta. Puedes reintentar sin perder el ticket.",
-            "idempotent",
-          ),
-        );
+        return;
       }
+      if (!sameContext) return;
+      setConfirmationError(
+        cleanPosError(
+          confirmationFailure,
+          "No se pudo confirmar la venta. Puedes reintentar sin perder el ticket.",
+          "idempotent",
+        ),
+      );
     } finally {
       confirmationLoadingRef.current = false;
       setConfirmationLoading(false);

@@ -2,6 +2,10 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CashMovementType, CashShiftStatus } from "@/core/enums";
 import { BackendRequestError } from "@/infrastructure/api/backendClient";
+import {
+  PendingSaleConfirmationStore,
+  pendingSaleScopeKey,
+} from "@/modules/pos/application/services/pendingSaleConfirmation";
 import { usePosCashShift } from "@/modules/pos/hooks/usePosCashShift";
 import { ids } from "./posFixtures";
 
@@ -179,5 +183,27 @@ describe("usePosCashShift", () => {
 
     expect(mocks.getOpen.mock.calls.length).toBe(loadsBefore + 2);
     expect(result.current.error).toBe("Turno no encontrado");
+  });
+
+  it("no cierra el turno mientras haya una venta pendiente de verificar", async () => {
+    const { result } = renderHook(() => usePosCashShift());
+    await waitFor(() => expect(result.current.cashShift?.id).toBe(ids.shift));
+    const scope = pendingSaleScopeKey(ids.user, activeBranch.currentBranch.tenantId, activeBranch.currentBranch.id);
+    new PendingSaleConfirmationStore().save({
+      version: 1,
+      contextKey: scope,
+      confirmationId: "conf-1",
+      input: { branchId: ids.branch, cashShiftId: ids.shift, ticket: {} as never, checkout: {} as never },
+      createdAt: "2026-10-10T12:00:00.000Z",
+      attempts: 1,
+    });
+
+    await act(async () => {
+      expect(await result.current.closeCashShift(100)).toBe(false);
+    });
+
+    expect(mocks.close).not.toHaveBeenCalled();
+    expect(result.current.error).toContain("venta pendiente de verificar");
+    window.sessionStorage.clear();
   });
 });
